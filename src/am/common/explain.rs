@@ -70,6 +70,11 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_contributor_duplicate_retires: u32,
     pub stats_parallel_contributor_output_limit_exits: u32,
     pub stats_parallel_contributor_poll_limit_exits: u32,
+    pub stats_parallel_contributor_poll_limit_missing_hidden: u32,
+    pub stats_parallel_contributor_poll_limit_duplicate_active: u32,
+    pub stats_parallel_contributor_poll_limit_handoff_ready: u32,
+    pub stats_parallel_contributor_poll_limit_ordered_after_visible: u32,
+    pub stats_parallel_contributor_poll_limit_no_visible_owner: u32,
     pub stats_parallel_blocked_foreign_selected_pending: u32,
     pub stats_parallel_blocked_foreign_admitted_head: u32,
     pub stats_parallel_blocked_admission_window: u32,
@@ -82,7 +87,7 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 22] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 27] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -147,6 +152,36 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 22] = [
         counter_type: "u32",
         increments_when:
             "a non-emitting contributor exits after waiting for a staged hidden output to drain",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_poll_limit_missing_hidden",
+        counter_type: "u32",
+        increments_when:
+            "a contributor poll-limit exit finds no still-published hidden row to diagnose",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_poll_limit_duplicate_active",
+        counter_type: "u32",
+        increments_when:
+            "a contributor poll-limit exit waited on a hidden row matching an active or emitted visible heap TID",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_poll_limit_handoff_ready",
+        counter_type: "u32",
+        increments_when:
+            "a contributor poll-limit exit waited on a hidden row that ordered before the visible owner row",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_poll_limit_ordered_after_visible",
+        counter_type: "u32",
+        increments_when:
+            "a contributor poll-limit exit waited on a hidden row that ordered after the visible owner row",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_poll_limit_no_visible_owner",
+        counter_type: "u32",
+        increments_when:
+            "a contributor poll-limit exit found no selected or admitted visible owner row to compare",
     },
     ExplainCounterDefinition {
         counter_name: "stats_parallel_blocked_foreign_selected_pending",
@@ -282,6 +317,26 @@ impl TqExplainCounters {
         self.stats_parallel_contributor_poll_limit_exits += 1;
     }
 
+    pub(crate) fn record_parallel_contributor_poll_limit_missing_hidden(&mut self) {
+        self.stats_parallel_contributor_poll_limit_missing_hidden += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_poll_limit_duplicate_active(&mut self) {
+        self.stats_parallel_contributor_poll_limit_duplicate_active += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_poll_limit_handoff_ready(&mut self) {
+        self.stats_parallel_contributor_poll_limit_handoff_ready += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_poll_limit_ordered_after_visible(&mut self) {
+        self.stats_parallel_contributor_poll_limit_ordered_after_visible += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_poll_limit_no_visible_owner(&mut self) {
+        self.stats_parallel_contributor_poll_limit_no_visible_owner += 1;
+    }
+
     pub(crate) fn record_parallel_blocked_foreign_selected_pending(&mut self) {
         self.stats_parallel_blocked_foreign_selected_pending += 1;
     }
@@ -326,7 +381,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 22] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 27] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -386,6 +441,36 @@ impl TqExplainCounters {
                 property_name: "Parallel Contributor Poll Limit Exits",
                 value: ExplainPropertyValue::Integer(
                     self.stats_parallel_contributor_poll_limit_exits,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Poll Limit: Missing Hidden",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_poll_limit_missing_hidden,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Poll Limit: Duplicate Active",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_poll_limit_duplicate_active,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Poll Limit: Handoff Ready",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_poll_limit_handoff_ready,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Poll Limit: Ordered After Visible",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_poll_limit_ordered_after_visible,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Poll Limit: No Visible Owner",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_poll_limit_no_visible_owner,
                 ),
             },
             ExplainProperty {
@@ -702,6 +787,37 @@ mod tests {
                         "a non-emitting contributor exits after waiting for a staged hidden output to drain",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_poll_limit_missing_hidden",
+                    counter_type: "u32",
+                    increments_when:
+                        "a contributor poll-limit exit finds no still-published hidden row to diagnose",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_poll_limit_duplicate_active",
+                    counter_type: "u32",
+                    increments_when:
+                        "a contributor poll-limit exit waited on a hidden row matching an active or emitted visible heap TID",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_poll_limit_handoff_ready",
+                    counter_type: "u32",
+                    increments_when:
+                        "a contributor poll-limit exit waited on a hidden row that ordered before the visible owner row",
+                },
+                ExplainCounterDefinition {
+                    counter_name:
+                        "stats_parallel_contributor_poll_limit_ordered_after_visible",
+                    counter_type: "u32",
+                    increments_when:
+                        "a contributor poll-limit exit waited on a hidden row that ordered after the visible owner row",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_poll_limit_no_visible_owner",
+                    counter_type: "u32",
+                    increments_when:
+                        "a contributor poll-limit exit found no selected or admitted visible owner row to compare",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_parallel_blocked_foreign_selected_pending",
                     counter_type: "u32",
                     increments_when:
@@ -796,6 +912,11 @@ mod tests {
         counters.record_parallel_contributor_duplicate_retire();
         counters.record_parallel_contributor_output_limit_exit();
         counters.record_parallel_contributor_poll_limit_exit();
+        counters.record_parallel_contributor_poll_limit_missing_hidden();
+        counters.record_parallel_contributor_poll_limit_duplicate_active();
+        counters.record_parallel_contributor_poll_limit_handoff_ready();
+        counters.record_parallel_contributor_poll_limit_ordered_after_visible();
+        counters.record_parallel_contributor_poll_limit_no_visible_owner();
         counters.record_parallel_blocked_foreign_selected_pending();
         counters.record_parallel_blocked_foreign_admitted_head();
         counters.record_parallel_blocked_admission_window();
@@ -822,6 +943,11 @@ mod tests {
                 stats_parallel_contributor_duplicate_retires: 1,
                 stats_parallel_contributor_output_limit_exits: 1,
                 stats_parallel_contributor_poll_limit_exits: 1,
+                stats_parallel_contributor_poll_limit_missing_hidden: 1,
+                stats_parallel_contributor_poll_limit_duplicate_active: 1,
+                stats_parallel_contributor_poll_limit_handoff_ready: 1,
+                stats_parallel_contributor_poll_limit_ordered_after_visible: 1,
+                stats_parallel_contributor_poll_limit_no_visible_owner: 1,
                 stats_parallel_blocked_foreign_selected_pending: 1,
                 stats_parallel_blocked_foreign_admitted_head: 1,
                 stats_parallel_blocked_admission_window: 1,
@@ -851,15 +977,20 @@ mod tests {
             stats_parallel_contributor_duplicate_retires: 29,
             stats_parallel_contributor_output_limit_exits: 31,
             stats_parallel_contributor_poll_limit_exits: 37,
-            stats_parallel_blocked_foreign_selected_pending: 41,
-            stats_parallel_blocked_foreign_admitted_head: 43,
-            stats_parallel_blocked_admission_window: 47,
-            stats_parallel_local_only_emits: 53,
-            stats_parallel_local_only_emits_foreign_selected_pending: 59,
-            stats_parallel_local_only_emits_foreign_admitted_head: 61,
-            stats_parallel_deferred_local_emits: 67,
-            stats_parallel_deferred_local_emits_foreign_selected_pending: 71,
-            stats_parallel_deferred_local_emits_foreign_admitted_head: 73,
+            stats_parallel_contributor_poll_limit_missing_hidden: 41,
+            stats_parallel_contributor_poll_limit_duplicate_active: 43,
+            stats_parallel_contributor_poll_limit_handoff_ready: 47,
+            stats_parallel_contributor_poll_limit_ordered_after_visible: 53,
+            stats_parallel_contributor_poll_limit_no_visible_owner: 59,
+            stats_parallel_blocked_foreign_selected_pending: 61,
+            stats_parallel_blocked_foreign_admitted_head: 67,
+            stats_parallel_blocked_admission_window: 71,
+            stats_parallel_local_only_emits: 73,
+            stats_parallel_local_only_emits_foreign_selected_pending: 79,
+            stats_parallel_local_only_emits_foreign_admitted_head: 83,
+            stats_parallel_deferred_local_emits: 89,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 97,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 101,
             stats_quantizer_cache_hit: true,
         };
 
@@ -883,15 +1014,20 @@ mod tests {
             stats_parallel_contributor_duplicate_retires: 29,
             stats_parallel_contributor_output_limit_exits: 31,
             stats_parallel_contributor_poll_limit_exits: 37,
-            stats_parallel_blocked_foreign_selected_pending: 41,
-            stats_parallel_blocked_foreign_admitted_head: 43,
-            stats_parallel_blocked_admission_window: 47,
-            stats_parallel_local_only_emits: 53,
-            stats_parallel_local_only_emits_foreign_selected_pending: 59,
-            stats_parallel_local_only_emits_foreign_admitted_head: 61,
-            stats_parallel_deferred_local_emits: 67,
-            stats_parallel_deferred_local_emits_foreign_selected_pending: 71,
-            stats_parallel_deferred_local_emits_foreign_admitted_head: 73,
+            stats_parallel_contributor_poll_limit_missing_hidden: 41,
+            stats_parallel_contributor_poll_limit_duplicate_active: 43,
+            stats_parallel_contributor_poll_limit_handoff_ready: 47,
+            stats_parallel_contributor_poll_limit_ordered_after_visible: 53,
+            stats_parallel_contributor_poll_limit_no_visible_owner: 59,
+            stats_parallel_blocked_foreign_selected_pending: 61,
+            stats_parallel_blocked_foreign_admitted_head: 67,
+            stats_parallel_blocked_admission_window: 71,
+            stats_parallel_local_only_emits: 73,
+            stats_parallel_local_only_emits_foreign_selected_pending: 79,
+            stats_parallel_local_only_emits_foreign_admitted_head: 83,
+            stats_parallel_deferred_local_emits: 89,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 97,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 101,
             stats_quantizer_cache_hit: true,
         };
 
@@ -947,40 +1083,60 @@ mod tests {
                     value: ExplainPropertyValue::Integer(37),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Blocked: Foreign Selected",
+                    property_name: "Parallel Contributor Poll Limit: Missing Hidden",
                     value: ExplainPropertyValue::Integer(41),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Blocked: Foreign Head",
+                    property_name: "Parallel Contributor Poll Limit: Duplicate Active",
                     value: ExplainPropertyValue::Integer(43),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Blocked: Admission Window",
+                    property_name: "Parallel Contributor Poll Limit: Handoff Ready",
                     value: ExplainPropertyValue::Integer(47),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Local-only Emits",
+                    property_name: "Parallel Contributor Poll Limit: Ordered After Visible",
                     value: ExplainPropertyValue::Integer(53),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Local-only Emits: Foreign Selected",
+                    property_name: "Parallel Contributor Poll Limit: No Visible Owner",
                     value: ExplainPropertyValue::Integer(59),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Local-only Emits: Foreign Head",
+                    property_name: "Parallel Blocked: Foreign Selected",
                     value: ExplainPropertyValue::Integer(61),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits",
+                    property_name: "Parallel Blocked: Foreign Head",
                     value: ExplainPropertyValue::Integer(67),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                    property_name: "Parallel Blocked: Admission Window",
                     value: ExplainPropertyValue::Integer(71),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits: Foreign Head",
+                    property_name: "Parallel Local-only Emits",
                     value: ExplainPropertyValue::Integer(73),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Local-only Emits: Foreign Selected",
+                    value: ExplainPropertyValue::Integer(79),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Local-only Emits: Foreign Head",
+                    value: ExplainPropertyValue::Integer(83),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits",
+                    value: ExplainPropertyValue::Integer(89),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                    value: ExplainPropertyValue::Integer(97),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Head",
+                    value: ExplainPropertyValue::Integer(101),
                 },
                 ExplainProperty {
                     property_name: "Quantizer Cache Hit",

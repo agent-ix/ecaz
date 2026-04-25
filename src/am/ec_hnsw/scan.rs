@@ -1562,9 +1562,38 @@ fn record_non_emitting_parallel_contributor_output_limit_exit(opaque: &mut TqSca
 }
 
 fn record_non_emitting_parallel_contributor_poll_limit_exit(opaque: &mut TqScanOpaque) {
+    let classification = unsafe {
+        super::parallel::classify_parallel_scan_contributor_hidden_drain(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel contributor poll-limit classification failed: {err}")
+    });
+
     opaque
         .explain_counters
         .record_parallel_contributor_poll_limit_exit();
+    match classification {
+        super::parallel::EcParallelContributorHiddenDrainClassification::MissingHidden => opaque
+            .explain_counters
+            .record_parallel_contributor_poll_limit_missing_hidden(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::DuplicateActive => opaque
+            .explain_counters
+            .record_parallel_contributor_poll_limit_duplicate_active(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::HandoffReady => opaque
+            .explain_counters
+            .record_parallel_contributor_poll_limit_handoff_ready(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::OrderedAfterVisible => {
+            opaque
+                .explain_counters
+                .record_parallel_contributor_poll_limit_ordered_after_visible()
+        }
+        super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner => opaque
+            .explain_counters
+            .record_parallel_contributor_poll_limit_no_visible_owner(),
+    }
     match unsafe {
         super::parallel::record_parallel_scan_contributor_poll_limit_exit(
             opaque.parallel_scan_state,
@@ -1573,6 +1602,19 @@ fn record_non_emitting_parallel_contributor_poll_limit_exit(opaque: &mut TqScanO
         Ok(_) => {}
         Err(err) => {
             pgrx::error!("ec_hnsw parallel contributor poll-limit counter failed: {err}")
+        }
+    }
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_poll_limit_classification(
+            opaque.parallel_scan_state,
+            classification,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!(
+                "ec_hnsw parallel contributor poll-limit classification counter failed: {err}"
+            )
         }
     }
 }
@@ -1612,6 +1654,36 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .explain_counters
         .stats_parallel_contributor_poll_limit_exits
         .max(shared.poll_limit_exits);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_missing_hidden = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_missing_hidden
+        .max(shared.poll_limit_missing_hidden);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_duplicate_active = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_duplicate_active
+        .max(shared.poll_limit_duplicate_active);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_handoff_ready = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_handoff_ready
+        .max(shared.poll_limit_handoff_ready);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_ordered_after_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_ordered_after_visible
+        .max(shared.poll_limit_ordered_after_visible);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_no_visible_owner = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_no_visible_owner
+        .max(shared.poll_limit_no_visible_owner);
 }
 
 unsafe fn poll_parallel_contributor_interrupts_and_sleep() {
@@ -8925,6 +8997,10 @@ mod tests {
             shared.poll_limit_exits, 1,
             "shared poll-limit exits should be published"
         );
+        assert_eq!(
+            shared.poll_limit_missing_hidden, 1,
+            "shared poll-limit classification should note the missing hidden slot"
+        );
 
         refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
         assert_eq!(
@@ -8940,6 +9016,13 @@ mod tests {
                 .stats_parallel_contributor_poll_limit_exits,
             1,
             "the elected emitter should fold shared poll-limit exits into explain counters"
+        );
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_poll_limit_missing_hidden,
+            1,
+            "the elected emitter should fold shared poll-limit classifications into explain counters"
         );
     }
 

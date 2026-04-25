@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 17;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 18;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -67,6 +67,11 @@ pub(crate) struct EcParallelCoordinatorState {
     contributor_duplicate_retires: AtomicU32,
     contributor_output_limit_exits: AtomicU32,
     contributor_poll_limit_exits: AtomicU32,
+    contributor_poll_limit_missing_hidden: AtomicU32,
+    contributor_poll_limit_duplicate_active: AtomicU32,
+    contributor_poll_limit_handoff_ready: AtomicU32,
+    contributor_poll_limit_ordered_after_visible: AtomicU32,
+    contributor_poll_limit_no_visible_owner: AtomicU32,
     emitted_heap_tid_cursor: AtomicU32,
     emitted_heap_block_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
     emitted_heap_offset_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
@@ -312,6 +317,20 @@ pub(crate) struct EcParallelContributorCounters {
     pub(crate) duplicate_retires: u32,
     pub(crate) output_limit_exits: u32,
     pub(crate) poll_limit_exits: u32,
+    pub(crate) poll_limit_missing_hidden: u32,
+    pub(crate) poll_limit_duplicate_active: u32,
+    pub(crate) poll_limit_handoff_ready: u32,
+    pub(crate) poll_limit_ordered_after_visible: u32,
+    pub(crate) poll_limit_no_visible_owner: u32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum EcParallelContributorHiddenDrainClassification {
+    MissingHidden,
+    DuplicateActive,
+    HandoffReady,
+    OrderedAfterVisible,
+    NoVisibleOwner,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -812,6 +831,11 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             contributor_duplicate_retires: AtomicU32::new(0),
             contributor_output_limit_exits: AtomicU32::new(0),
             contributor_poll_limit_exits: AtomicU32::new(0),
+            contributor_poll_limit_missing_hidden: AtomicU32::new(0),
+            contributor_poll_limit_duplicate_active: AtomicU32::new(0),
+            contributor_poll_limit_handoff_ready: AtomicU32::new(0),
+            contributor_poll_limit_ordered_after_visible: AtomicU32::new(0),
+            contributor_poll_limit_no_visible_owner: AtomicU32::new(0),
             emitted_heap_tid_cursor: AtomicU32::new(0),
             emitted_heap_block_numbers: std::array::from_fn(|_| {
                 AtomicU32::new(EcParallelItemPointer::INVALID.block_number)
@@ -2554,6 +2578,125 @@ pub(crate) unsafe fn record_parallel_scan_contributor_poll_limit_exit(
     Ok(())
 }
 
+pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<EcParallelContributorHiddenDrainClassification, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
+
+    let Ok(slot) = (unsafe { attachment.result_slot(slot_index) }) else {
+        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
+    };
+    let hidden_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if !coordinator_result_slot_snapshot_is_hidden_local_only(&hidden_slot, attachment.rescan_epoch)
+        || !unsafe { coordinator_result_slot_worker_claim_is_live(&attachment, slot_index) }
+    {
+        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
+    }
+    let Some(hidden_pending_output) = coordinator_pending_output_snapshot(&hidden_slot) else {
+        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
+    };
+
+    let coordinator_ref = unsafe { &*attachment.coordinator };
+    if coordinator_emitted_heap_tid_exists(coordinator_ref, hidden_pending_output.heap_tid) {
+        return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
+    }
+
+    let coordinator = load_coordinator_snapshot(coordinator_ref);
+    if let Some(selected_slot_index) = coordinator.selected_result_slot_index {
+        if selected_slot_index != slot_index {
+            let selected_slot = unsafe { attachment.result_slot(selected_slot_index) }?;
+            let selected_snapshot =
+                load_coordinator_result_slot_snapshot(unsafe { &*selected_slot });
+            if unsafe {
+                coordinator_result_slot_snapshot_is_live_with_attachment(
+                    &attachment,
+                    &selected_snapshot,
+                )
+            } {
+                if let Some(selected_pending_output) =
+                    coordinator_pending_output_snapshot(&selected_snapshot)
+                {
+                    if selected_pending_output.heap_tid == hidden_pending_output.heap_tid {
+                        return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
+                    }
+                    return Ok(
+                        if pending_output_orders_before(
+                            &hidden_pending_output,
+                            &selected_pending_output,
+                        ) {
+                            EcParallelContributorHiddenDrainClassification::HandoffReady
+                        } else {
+                            EcParallelContributorHiddenDrainClassification::OrderedAfterVisible
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let admitted_count = coordinator
+        .admitted_result_count
+        .min(attachment.admitted_result_count);
+    let mut admitted_head = None;
+    for result_index in 0..admitted_count {
+        let result = unsafe { attachment.admitted_result(result_index) }?;
+        let snapshot = load_admitted_result_snapshot(unsafe { &*result });
+        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
+            continue;
+        }
+        if snapshot.pending_output.heap_tid == hidden_pending_output.heap_tid {
+            return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
+        }
+        if result_index == 0 {
+            admitted_head = Some(snapshot.pending_output);
+        }
+    }
+
+    if let Some(admitted_head) = admitted_head {
+        return Ok(
+            if pending_output_orders_before(&hidden_pending_output, &admitted_head) {
+                EcParallelContributorHiddenDrainClassification::HandoffReady
+            } else {
+                EcParallelContributorHiddenDrainClassification::OrderedAfterVisible
+            },
+        );
+    }
+
+    Ok(EcParallelContributorHiddenDrainClassification::NoVisibleOwner)
+}
+
+pub(crate) unsafe fn record_parallel_scan_contributor_poll_limit_classification(
+    state: *mut EcParallelScanState,
+    classification: EcParallelContributorHiddenDrainClassification,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = unsafe { &*attachment.coordinator };
+    let counter = match classification {
+        EcParallelContributorHiddenDrainClassification::MissingHidden => {
+            &coordinator.contributor_poll_limit_missing_hidden
+        }
+        EcParallelContributorHiddenDrainClassification::DuplicateActive => {
+            &coordinator.contributor_poll_limit_duplicate_active
+        }
+        EcParallelContributorHiddenDrainClassification::HandoffReady => {
+            &coordinator.contributor_poll_limit_handoff_ready
+        }
+        EcParallelContributorHiddenDrainClassification::OrderedAfterVisible => {
+            &coordinator.contributor_poll_limit_ordered_after_visible
+        }
+        EcParallelContributorHiddenDrainClassification::NoVisibleOwner => {
+            &coordinator.contributor_poll_limit_no_visible_owner
+        }
+    };
+    counter.fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
 pub(crate) unsafe fn read_parallel_scan_contributor_counters(
     state: *mut EcParallelScanState,
 ) -> Result<EcParallelContributorCounters, &'static str> {
@@ -2571,6 +2714,21 @@ pub(crate) unsafe fn read_parallel_scan_contributor_counters(
             .load(Ordering::Acquire),
         poll_limit_exits: coordinator
             .contributor_poll_limit_exits
+            .load(Ordering::Acquire),
+        poll_limit_missing_hidden: coordinator
+            .contributor_poll_limit_missing_hidden
+            .load(Ordering::Acquire),
+        poll_limit_duplicate_active: coordinator
+            .contributor_poll_limit_duplicate_active
+            .load(Ordering::Acquire),
+        poll_limit_handoff_ready: coordinator
+            .contributor_poll_limit_handoff_ready
+            .load(Ordering::Acquire),
+        poll_limit_ordered_after_visible: coordinator
+            .contributor_poll_limit_ordered_after_visible
+            .load(Ordering::Acquire),
+        poll_limit_no_visible_owner: coordinator
+            .contributor_poll_limit_no_visible_owner
             .load(Ordering::Acquire),
     })
 }
@@ -4763,6 +4921,168 @@ mod tests {
                 root_slot_index: None,
             },
             "hidden result-slot publish should not seed a live coordinator heap entry"
+        );
+    }
+
+    #[test]
+    fn classify_parallel_scan_contributor_hidden_drain_reports_visible_ordering() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let visible_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("visible worker claim should succeed");
+        let hidden_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("hidden worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                visible_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 320,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 321,
+                        offset_number: 1,
+                    },
+                    score: -5.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 321,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("visible publish should succeed");
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                hidden_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 322,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 323,
+                        offset_number: 1,
+                    },
+                    score: -6.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 323,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("better hidden publish should succeed");
+
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_drain(attachment.state, hidden_slot)
+            }
+            .expect("hidden drain classification should succeed"),
+            EcParallelContributorHiddenDrainClassification::HandoffReady,
+            "a hidden row ordered before the visible owner is ready for shared handoff"
+        );
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                hidden_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 324,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 325,
+                        offset_number: 1,
+                    },
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 325,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("worse hidden publish should succeed");
+
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_drain(attachment.state, hidden_slot)
+            }
+            .expect("hidden drain classification should succeed"),
+            EcParallelContributorHiddenDrainClassification::OrderedAfterVisible,
+            "a hidden row ordered after the visible owner cannot be drained first"
+        );
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                hidden_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 326,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 321,
+                        offset_number: 1,
+                    },
+                    score: -5.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 321,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("duplicate hidden publish should succeed");
+
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_drain(attachment.state, hidden_slot)
+            }
+            .expect("hidden drain classification should succeed"),
+            EcParallelContributorHiddenDrainClassification::DuplicateActive,
+            "a hidden row matching the visible owner's heap TID is an active duplicate"
         );
     }
 
