@@ -2072,6 +2072,21 @@ mod tests {
         assert_eq!(opclasses, 2);
     }
 
+    fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
+    fn ec_ivf_index_blocks(index_name: &str) -> i64 {
+        Spi::get_one::<i64>(&format!(
+            "SELECT (pg_relation_size('{index_name}') \
+             / current_setting('block_size')::int)::bigint"
+        ))
+        .expect("SPI query should succeed")
+        .expect("relation size should exist")
+    }
+
     #[pg_test]
     fn test_ec_ivf_empty_index_build_initializes_metadata_page() {
         Spi::run("CREATE TABLE ec_ivf_empty_build (id bigint primary key, embedding ecvector)")
@@ -2083,18 +2098,57 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_empty_build_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = ec_ivf_index_oid("ec_ivf_empty_build_idx");
         let (format_version, nlists, nprobe, training_sample_rows, seed) =
             unsafe { am::debug_ec_ivf_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
 
         assert_eq!(format_version, 1);
         assert_eq!(nlists, 16);
         assert_eq!(nprobe, 4);
         assert_eq!(training_sample_rows, 128);
         assert_eq!(seed, 7);
+        assert_eq!(summary_nlists, 16);
+        assert_eq!(empty_lists, 16);
+        assert_eq!(directory_live, 0);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_singleton_index_build_records_one_live_list() {
+        Spi::run("CREATE TABLE ec_ivf_singleton_build (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_singleton_build VALUES \
+             (1, '[1.0,0.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_singleton_build_idx ON ec_ivf_singleton_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 1, seed = 13)",
+        )
+        .expect("singleton index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_singleton_build_idx");
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 1);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 1);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(summary_nlists, 1);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, 1);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
     }
 
     #[pg_test]
@@ -2115,20 +2169,12 @@ mod tests {
         )
         .expect("non-empty index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_non_empty_build_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = ec_ivf_index_oid("ec_ivf_non_empty_build_idx");
         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
             unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
             unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
-        let index_blocks = Spi::get_one::<i64>(
-            "SELECT (pg_relation_size('ec_ivf_non_empty_build_idx') \
-             / current_setting('block_size')::int)::bigint",
-        )
-        .expect("SPI query should succeed")
-        .expect("relation size should exist");
+        let index_blocks = ec_ivf_index_blocks("ec_ivf_non_empty_build_idx");
 
         assert_eq!(dimensions, 2);
         assert_eq!(nlists, 3);
@@ -2144,6 +2190,91 @@ mod tests {
         assert!(
             index_blocks >= 2,
             "non-empty ec_ivf build should write metadata plus data pages"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_duplicate_heavy_build_keeps_empty_list_counts() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_duplicate_heavy_build \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_duplicate_heavy_build \
+             SELECT g, '[1.0,0.0]'::ecvector \
+             FROM generate_series(1, 6) AS g",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_duplicate_heavy_build_idx \
+             ON ec_ivf_duplicate_heavy_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 3, nprobe = 2, training_sample_rows = 6, seed = 17)",
+        )
+        .expect("duplicate-heavy index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_duplicate_heavy_build_idx");
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 3);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 6);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(summary_nlists, 3);
+        assert_eq!(empty_lists, 2);
+        assert_eq!(directory_live, 6);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_multi_page_list_build_writes_multiple_data_pages() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_multi_page_build \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_multi_page_build \
+             SELECT g, encode_to_ecvector(array_fill(1.0::real, ARRAY[512]), 4, 42) \
+             FROM generate_series(1, 32) AS g",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_multi_page_build_idx \
+             ON ec_ivf_multi_page_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 32, seed = 19)",
+        )
+        .expect("multi-page index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_multi_page_build_idx");
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let index_blocks = ec_ivf_index_blocks("ec_ivf_multi_page_build_idx");
+
+        assert_eq!(dimensions, 512);
+        assert_eq!(nlists, 1);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 32);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(summary_nlists, 1);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, 32);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
+        assert!(
+            index_blocks > 2,
+            "multi-page ec_ivf build should write more than one data page"
         );
     }
 

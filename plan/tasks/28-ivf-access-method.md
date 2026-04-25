@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 3 build smoke tests underway.
+Status: in progress - Phase 4 scan query prep next.
 
 Working branch: `task28-ivf`
 
@@ -141,7 +141,7 @@ yet.
   append to the matching posting list.
 - [x] **Build stats.** Record per-list counts, empty-list count, centroid
   drift inputs, and source/quantizer metadata.
-- [ ] **Build smoke tests.** Cover empty, singleton, tiny multi-row,
+- [x] **Build smoke tests.** Cover empty, singleton, tiny multi-row,
   duplicate-heavy, and multi-page list builds.
 
 Phase 3 pure-training checkpoint: `src/am/ec_ivf/training.rs` now has
@@ -174,6 +174,11 @@ counts and expose PG-test readback for `nlists`, empty-list count, live/dead
 tuple totals, and inserted-since-build drift counters. Metadata already records
 the source dimensions, storage format, rerank mode, resolved `nlists`, and
 training version needed by the first scan-routing slice.
+
+Phase 3 smoke-coverage checkpoint: PG build tests now cover empty, singleton,
+tiny multi-row, duplicate-heavy, and multi-page-list IVF indexes through
+metadata and directory-summary readback. These tests intentionally stop at
+persisted build shape because populated scan routing starts in Phase 4.
 
 ### Phase 4 - scan path
 
