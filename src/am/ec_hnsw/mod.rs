@@ -1,6 +1,8 @@
 //! ec_hnsw-specific access-method implementation and tuple codecs.
 
 mod build;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use build::debug_last_build_timing;
 mod build_parallel;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use build_parallel::debug_last_parallel_build_workers_launched;

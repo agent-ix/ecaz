@@ -58,7 +58,7 @@ pub(crate) use self::ec_hnsw::{
     debug_grouped_rerank_profile, debug_grouped_scan_comparison_rows,
     debug_grouped_scan_comparison_summary, debug_grouped_scan_order_drift_summary,
     debug_grouped_scan_windowed_rows, debug_grouped_scan_windowed_summary, debug_index_metadata,
-    debug_index_pages, debug_insert_level_for_heap_tid,
+    debug_index_pages, debug_insert_level_for_heap_tid, debug_last_build_timing,
     debug_last_parallel_build_workers_launched, debug_layer0_reachable_live_element_tids,
     debug_layer_oracle_k_carrydown_scan_heap_tids,
     debug_layer_oracle_k_seed_layer0_neighbor_heap_tids,

@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::ptr;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::time::Instant;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
@@ -14,6 +16,35 @@ use crate::storage::wal;
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
 const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
+
+static LAST_BUILD_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_HEAP_TUPLES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_INDEX_TUPLES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_HEAP_INGEST_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_BEGIN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_DRAIN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_SORT_PUSH_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_FLUSH_TOTAL_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_GRAPH_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_WRITE_US: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct BuildTimingSnapshot {
+    pub(crate) requested_workers: u64,
+    pub(crate) workers_launched: u64,
+    pub(crate) heap_tuples: u64,
+    pub(crate) index_tuples: u64,
+    pub(crate) heap_ingest_us: u64,
+    pub(crate) parallel_begin_us: u64,
+    pub(crate) parallel_drain_us: u64,
+    pub(crate) parallel_sort_push_us: u64,
+    pub(crate) flush_total_us: u64,
+    pub(crate) graph_us: u64,
+    pub(crate) stage_us: u64,
+    pub(crate) write_us: u64,
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct BuildTuple {
@@ -57,6 +88,64 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_build_callback(
     }
 }
 
+pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
+    BuildTimingSnapshot {
+        requested_workers: LAST_BUILD_REQUESTED_WORKERS.load(AtomicOrdering::Acquire),
+        workers_launched: LAST_BUILD_WORKERS_LAUNCHED.load(AtomicOrdering::Acquire),
+        heap_tuples: LAST_BUILD_HEAP_TUPLES.load(AtomicOrdering::Acquire),
+        index_tuples: LAST_BUILD_INDEX_TUPLES.load(AtomicOrdering::Acquire),
+        heap_ingest_us: LAST_BUILD_HEAP_INGEST_US.load(AtomicOrdering::Acquire),
+        parallel_begin_us: LAST_BUILD_PARALLEL_BEGIN_US.load(AtomicOrdering::Acquire),
+        parallel_drain_us: LAST_BUILD_PARALLEL_DRAIN_US.load(AtomicOrdering::Acquire),
+        parallel_sort_push_us: LAST_BUILD_PARALLEL_SORT_PUSH_US.load(AtomicOrdering::Acquire),
+        flush_total_us: LAST_BUILD_FLUSH_TOTAL_US.load(AtomicOrdering::Acquire),
+        graph_us: LAST_BUILD_GRAPH_US.load(AtomicOrdering::Acquire),
+        stage_us: LAST_BUILD_STAGE_US.load(AtomicOrdering::Acquire),
+        write_us: LAST_BUILD_WRITE_US.load(AtomicOrdering::Acquire),
+    }
+}
+
+fn reset_debug_last_build_timing() {
+    record_debug_last_build_timing(BuildTimingSnapshot {
+        requested_workers: 0,
+        workers_launched: 0,
+        heap_tuples: 0,
+        index_tuples: 0,
+        heap_ingest_us: 0,
+        parallel_begin_us: 0,
+        parallel_drain_us: 0,
+        parallel_sort_push_us: 0,
+        flush_total_us: 0,
+        graph_us: 0,
+        stage_us: 0,
+        write_us: 0,
+    });
+}
+
+fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
+    LAST_BUILD_REQUESTED_WORKERS.store(snapshot.requested_workers, AtomicOrdering::Release);
+    LAST_BUILD_WORKERS_LAUNCHED.store(snapshot.workers_launched, AtomicOrdering::Release);
+    LAST_BUILD_HEAP_TUPLES.store(snapshot.heap_tuples, AtomicOrdering::Release);
+    LAST_BUILD_INDEX_TUPLES.store(snapshot.index_tuples, AtomicOrdering::Release);
+    LAST_BUILD_HEAP_INGEST_US.store(snapshot.heap_ingest_us, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_BEGIN_US.store(snapshot.parallel_begin_us, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_DRAIN_US.store(snapshot.parallel_drain_us, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_SORT_PUSH_US
+        .store(snapshot.parallel_sort_push_us, AtomicOrdering::Release);
+    LAST_BUILD_FLUSH_TOTAL_US.store(snapshot.flush_total_us, AtomicOrdering::Release);
+    LAST_BUILD_GRAPH_US.store(snapshot.graph_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_US.store(snapshot.stage_us, AtomicOrdering::Release);
+    LAST_BUILD_WRITE_US.store(snapshot.write_us, AtomicOrdering::Release);
+}
+
+fn elapsed_us(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+fn nonnegative_i32_to_u64(value: i32) -> u64 {
+    u64::try_from(value.max(0)).expect("non-negative i32 should fit u64")
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -65,6 +154,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
+            reset_debug_last_build_timing();
             build_parallel::reset_debug_last_parallel_build_workers_launched();
             let parallel_plan =
                 build_parallel::EcHnswParallelBuildPlan::from_index_info(index_info);
@@ -72,6 +162,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
 
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
+            let mut parallel_begin_us = 0_u64;
+            let mut parallel_drain_us = 0_u64;
+            let mut parallel_sort_push_us = 0_u64;
+            let heap_ingest_start = Instant::now();
             let heap_tuples = if !parallel_plan.uses_serial_build_path() {
                 build_parallel::try_parallel_build(
                     heap_relation,
@@ -80,6 +174,12 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                     &mut state,
                     parallel_plan,
                 )
+                .map(|result| {
+                    parallel_begin_us = result.begin_us;
+                    parallel_drain_us = result.drain_us;
+                    parallel_sort_push_us = result.sort_push_us;
+                    result.heap_tuples
+                })
                 .unwrap_or_else(|| {
                     if state.options.build_source_column.is_some() {
                         ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
@@ -110,12 +210,17 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                     ptr::null_mut(),
                 )
             };
+            let heap_ingest_us = elapsed_us(heap_ingest_start);
+
+            let mut flush_timing = BuildFlushTiming::default();
+            let flush_start = Instant::now();
             let index_tuples = if state.heap_tuples.is_empty() {
                 0.0
             } else {
-                flush_build_state(index_relation, &state);
+                flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
                 state.heap_tuples.len() as f64
             };
+            let flush_total_us = elapsed_us(flush_start);
 
             if heap_tuples != state.scanned_tuples as f64 {
                 pgrx::error!(
@@ -123,6 +228,23 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                     state.scanned_tuples
                 );
             }
+
+            record_debug_last_build_timing(BuildTimingSnapshot {
+                requested_workers: nonnegative_i32_to_u64(parallel_plan.requested_workers),
+                workers_launched: nonnegative_i32_to_u64(
+                    build_parallel::debug_last_parallel_build_workers_launched(),
+                ),
+                heap_tuples: heap_tuples.max(0.0) as u64,
+                index_tuples: index_tuples.max(0.0) as u64,
+                heap_ingest_us,
+                parallel_begin_us,
+                parallel_drain_us,
+                parallel_sort_push_us,
+                flush_total_us,
+                graph_us: flush_timing.graph_us,
+                stage_us: flush_timing.stage_us,
+                write_us: flush_timing.write_us,
+            });
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
@@ -712,6 +834,13 @@ pub(super) struct BuildFlushOutput {
 
 pub(super) type BuildGroupedPqModel = GroupedPq4Model;
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+struct BuildFlushTiming {
+    graph_us: u64,
+    stage_us: u64,
+    write_us: u64,
+}
+
 pub(super) fn stage_v2_grouped_page_chain(
     state: &BuildState,
     graph_nodes: &[HnswBuildNode],
@@ -1071,12 +1200,23 @@ struct NativeForwardSelection {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+    let mut timing = BuildFlushTiming::default();
+    unsafe { flush_build_state_with_timing(index_relation, state, &mut timing) };
+}
+
+unsafe fn flush_build_state_with_timing(
+    index_relation: pg_sys::Relation,
+    state: &BuildState,
+    timing: &mut BuildFlushTiming,
+) {
     let output = match state.options.storage_format {
-        options::StorageFormat::TurboQuant => current_format_flush_output(state),
+        options::StorageFormat::TurboQuant => current_format_flush_output(state, timing),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
     };
+    let write_start = Instant::now();
     unsafe { flush_build_output(index_relation, &output) };
+    timing.write_us = elapsed_us(write_start);
 }
 
 pub(super) fn pq_fastscan_flush_output(
@@ -1158,7 +1298,10 @@ fn default_pq_fastscan_group_size(dimensions: u16) -> usize {
     transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
 }
 
-fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
+fn current_format_flush_output(
+    state: &BuildState,
+    timing: &mut BuildFlushTiming,
+) -> BuildFlushOutput {
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -1166,7 +1309,10 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
     let mut data_pages = page::DataPageChain::new(state.page_size);
     let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
     let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
+    let graph_start = Instant::now();
     let graph_nodes = build_hnsw_graph(state);
+    timing.graph_us = elapsed_us(graph_start);
+    let stage_start = Instant::now();
     let persisted_binary_quantizer = ProdQuantizer::cached(
         dimensions as usize,
         bits,
@@ -1230,6 +1376,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
         choose_entry_point(&hot_tids, &graph_nodes, state).unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
     let seed = state.seed.expect("non-empty build should record seed");
+    timing.stage_us = elapsed_us(stage_start);
 
     BuildFlushOutput {
         data_pages,

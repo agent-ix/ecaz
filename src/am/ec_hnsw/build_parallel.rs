@@ -3,6 +3,7 @@ use std::mem::size_of;
 use std::ptr;
 use std::slice;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::time::Instant;
 
 use pgrx::pg_sys;
 
@@ -190,23 +191,43 @@ pub(super) unsafe fn try_parallel_build(
     index_info: *mut pg_sys::IndexInfo,
     state: &mut build::BuildState,
     plan: EcHnswParallelBuildPlan,
-) -> Option<f64> {
+) -> Option<EcHnswParallelBuildResult> {
     if plan.uses_serial_build_path() || state.options.build_source_column.is_some() {
         return None;
     }
 
+    let begin_start = Instant::now();
     let mut leader =
         unsafe { EcHnswParallelBuildLeader::begin(heap_relation, index_relation, index_info, plan) }?;
+    let begin_us = elapsed_us(begin_start);
+
+    let drain_start = Instant::now();
     let mut worker_tuples = Vec::new();
     unsafe { leader.drain_worker_messages(&mut worker_tuples) };
     unsafe { leader.finish() };
+    let drain_us = elapsed_us(drain_start);
 
+    let sort_push_start = Instant::now();
     worker_tuples.sort_by_key(build_tuple_heap_tid_key);
     for tuple in worker_tuples {
         state.push(tuple);
     }
+    let sort_push_us = elapsed_us(sort_push_start);
 
-    Some(state.scanned_tuples as f64)
+    Some(EcHnswParallelBuildResult {
+        heap_tuples: state.scanned_tuples as f64,
+        begin_us,
+        drain_us,
+        sort_push_us,
+    })
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct EcHnswParallelBuildResult {
+    pub(super) heap_tuples: f64,
+    pub(super) begin_us: u64,
+    pub(super) drain_us: u64,
+    pub(super) sort_push_us: u64,
 }
 
 struct EcHnswParallelBuildLeader {
@@ -853,6 +874,10 @@ fn checked_add_size(lhs: pg_sys::Size, rhs: pg_sys::Size, context: &str) -> pg_s
 fn checked_mul_size(lhs: pg_sys::Size, rhs: pg_sys::Size, context: &str) -> pg_sys::Size {
     lhs.checked_mul(rhs)
         .unwrap_or_else(|| panic!("{context} overflowed pg_sys::Size"))
+}
+
+fn elapsed_us(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

@@ -3159,6 +3159,48 @@ mod tests {
             workers_launched >= 1,
             "parallel build should launch at least one worker, launched {workers_launched}"
         );
+        let build_timing = Spi::connect(|client| {
+            let mut rows = client
+                .select(
+                    "SELECT requested_workers, workers_launched, heap_tuples, index_tuples,
+                            heap_ingest_us, parallel_begin_us, parallel_drain_us,
+                            parallel_sort_push_us, flush_total_us, graph_us, stage_us, write_us
+                     FROM tests.ec_hnsw_debug_last_build_timing()",
+                    None,
+                    &[],
+                )
+                .expect("timing query should succeed");
+            let row = rows.next().expect("timing query should return one row");
+            (
+                row.get::<i64>(1).expect("requested_workers should decode").unwrap(),
+                row.get::<i64>(2).expect("workers_launched should decode").unwrap(),
+                row.get::<i64>(3).expect("heap_tuples should decode").unwrap(),
+                row.get::<i64>(4).expect("index_tuples should decode").unwrap(),
+                row.get::<i64>(5).expect("heap_ingest_us should decode").unwrap(),
+                row.get::<i64>(6).expect("parallel_begin_us should decode").unwrap(),
+                row.get::<i64>(7).expect("parallel_drain_us should decode").unwrap(),
+                row.get::<i64>(8).expect("parallel_sort_push_us should decode").unwrap(),
+                row.get::<i64>(9).expect("flush_total_us should decode").unwrap(),
+                row.get::<i64>(10).expect("graph_us should decode").unwrap(),
+                row.get::<i64>(11).expect("stage_us should decode").unwrap(),
+                row.get::<i64>(12).expect("write_us should decode").unwrap(),
+            )
+        });
+        assert_eq!(build_timing.0, 2);
+        assert_eq!(build_timing.1, workers_launched as i64);
+        assert_eq!(build_timing.2, 128);
+        assert_eq!(build_timing.3, 128);
+        assert!(build_timing.4 > 0, "heap ingest timing should be recorded");
+        assert!(build_timing.5 > 0, "parallel begin timing should be recorded");
+        assert!(build_timing.6 > 0, "parallel drain timing should be recorded");
+        assert!(
+            build_timing.7 > 0,
+            "parallel sort/push timing should be recorded"
+        );
+        assert!(build_timing.8 > 0, "flush timing should be recorded");
+        assert!(build_timing.9 > 0, "graph timing should be recorded");
+        assert!(build_timing.10 > 0, "stage timing should be recorded");
+        assert!(build_timing.11 > 0, "write timing should be recorded");
 
         let index_oid =
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_parallel_build_idx'::regclass::oid")
@@ -4190,6 +4232,42 @@ mod tests {
     #[pg_extern]
     fn ec_hnsw_debug_parallel_build_workers_launched() -> i32 {
         am::debug_last_parallel_build_workers_launched()
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_hnsw_debug_last_build_timing() -> TableIterator<
+        'static,
+        (
+            name!(requested_workers, i64),
+            name!(workers_launched, i64),
+            name!(heap_tuples, i64),
+            name!(index_tuples, i64),
+            name!(heap_ingest_us, i64),
+            name!(parallel_begin_us, i64),
+            name!(parallel_drain_us, i64),
+            name!(parallel_sort_push_us, i64),
+            name!(flush_total_us, i64),
+            name!(graph_us, i64),
+            name!(stage_us, i64),
+            name!(write_us, i64),
+        ),
+    > {
+        let timing = am::debug_last_build_timing();
+        TableIterator::once((
+            timing.requested_workers as i64,
+            timing.workers_launched as i64,
+            timing.heap_tuples as i64,
+            timing.index_tuples as i64,
+            timing.heap_ingest_us as i64,
+            timing.parallel_begin_us as i64,
+            timing.parallel_drain_us as i64,
+            timing.parallel_sort_push_us as i64,
+            timing.flush_total_us as i64,
+            timing.graph_us as i64,
+            timing.stage_us as i64,
+            timing.write_us as i64,
+        ))
     }
 
     fn create_pq_fastscan_runtime_fixture_internal(
