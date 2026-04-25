@@ -1130,6 +1130,9 @@ fn validate_runtime_scan_format(
 }
 
 const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
+    "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
 
 fn saturating_u32_from_usize(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
@@ -1421,12 +1424,26 @@ fn parallel_scan_backend_can_emit_tuples() -> bool {
     }
 }
 
+fn parallel_scan_multi_emitter_diagnostic_enabled() -> bool {
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        std::env::var_os(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV).is_some()
+    }
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        false
+    }
+}
+
 fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
     if !parallel_scan_is_attached(opaque) {
         return true;
     }
     if !parallel_scan_backend_can_emit_tuples() {
         return false;
+    }
+    if parallel_scan_multi_emitter_diagnostic_enabled() {
+        return true;
     }
 
     unsafe {
@@ -8241,6 +8258,81 @@ mod tests {
         search::BeamCandidate::with_source(tid(block_number, offset_number), score, source_tid)
     }
 
+    #[repr(C, align(8))]
+    struct TestParallelScanStorage {
+        bytes: [u8; 4096],
+    }
+
+    impl Default for TestParallelScanStorage {
+        fn default() -> Self {
+            Self { bytes: [0; 4096] }
+        }
+    }
+
+    fn initialize_test_parallel_scan_storage(
+        storage: &mut TestParallelScanStorage,
+        worker_slot_count: u32,
+    ) -> *mut pg_sys::ParallelIndexScanDescData {
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target,
+                worker_slot_count,
+            )
+        }
+        .expect("parallel scan target should initialize");
+        parallel_scan
+    }
+
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .expect("env-var test lock should not be poisoned")
+    }
+
     #[test]
     fn select_next_bootstrap_candidate_skips_unselectable_candidates() {
         let mut queued = vec![beam_candidate(21, 1, -3.0), beam_candidate(21, 2, -2.0)].into_iter();
@@ -8337,32 +8429,8 @@ mod tests {
 
     #[test]
     fn bind_parallel_scan_state_captures_shared_rescan_epoch() {
-        #[repr(C, align(8))]
-        struct TestParallelScanStorage {
-            bytes: [u8; 4096],
-        }
-
-        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
-        let parallel_scan = storage
-            .bytes
-            .as_mut_ptr()
-            .cast::<pg_sys::ParallelIndexScanDescData>();
-        #[cfg(feature = "pg17")]
-        unsafe {
-            (*parallel_scan).ps_offset = 64;
-        }
-        #[cfg(feature = "pg18")]
-        unsafe {
-            (*parallel_scan).ps_offset_am = 64;
-        }
-
-        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
-        unsafe {
-            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
-                target, 2,
-            )
-        }
-        .expect("parallel scan target should initialize");
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
         assert_eq!(
             unsafe { crate::am::ec_hnsw::parallel::reset_parallel_scan_state(parallel_scan) }
                 .expect("parallel scan reset should succeed")
@@ -8394,6 +8462,64 @@ mod tests {
         assert_eq!(
             opaque.parallel_scan_worker_slot_index, 0,
             "first scan attachment should claim the first shared worker slot"
+        );
+    }
+
+    #[test]
+    fn parallel_scan_backend_may_emit_tuples_elects_single_default_emitter() {
+        let _lock = env_var_test_lock();
+        let _env = ScopedEnvVar::remove(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV);
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut first_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut second_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut first = TqScanOpaque::default();
+        let mut second = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut first_scan_desc, &mut first);
+        bind_parallel_scan_state(&mut second_scan_desc, &mut second);
+
+        assert!(
+            parallel_scan_backend_may_emit_tuples(&first),
+            "the first default emitter probe should claim the shared scan epoch"
+        );
+        assert!(
+            !parallel_scan_backend_may_emit_tuples(&second),
+            "later default emitter probes should remain non-emitting"
+        );
+    }
+
+    #[test]
+    fn parallel_scan_backend_may_emit_tuples_can_enable_diagnostic_multi_emitter() {
+        let _lock = env_var_test_lock();
+        let _env = ScopedEnvVar::set(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV, "1");
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut first_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut second_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut first = TqScanOpaque::default();
+        let mut second = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut first_scan_desc, &mut first);
+        bind_parallel_scan_state(&mut second_scan_desc, &mut second);
+
+        assert!(
+            parallel_scan_backend_may_emit_tuples(&first),
+            "the diagnostic gate should let the first attached backend emit"
+        );
+        assert!(
+            parallel_scan_backend_may_emit_tuples(&second),
+            "the diagnostic gate should bypass the single-emitter election for attached backends"
         );
     }
 
