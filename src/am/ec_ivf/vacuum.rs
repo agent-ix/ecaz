@@ -1,22 +1,29 @@
 use std::ffi::c_void;
 
-use pgrx::{pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::page;
+use crate::storage::page::ItemPointer;
+
+type BulkDeleteCallback =
+    unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
-    _callback: pg_sys::IndexBulkDeleteCallback,
-    _callback_state: *mut c_void,
+    callback: pg_sys::IndexBulkDeleteCallback,
+    callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if info.is_null() {
                 pgrx::error!("ec_ivf ambulkdelete requires vacuum info")
             }
+            let Some(callback) = callback else {
+                return noop_vacuum_stats((*info).index, stats);
+            };
 
-            noop_vacuum_stats((*info).index, stats)
+            run_bulkdelete((*info).index, stats, callback, callback_state)
         })
     }
 }
@@ -40,12 +47,160 @@ unsafe fn noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }
+}
+
+unsafe fn run_bulkdelete(
+    index_relation: pg_sys::Relation,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
         stats
     };
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let mut metadata = unsafe { page::read_metadata_page(index_relation) };
+
+    if metadata.directory_head == ItemPointer::INVALID {
+        if metadata.total_live_tuples != 0 {
+            pgrx::error!("ec_ivf metadata has live tuples but no directory head");
+        }
+        return unsafe { finish_vacuum_stats(index_relation, stats, &metadata) };
+    }
+
+    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let mut next_tid = metadata.directory_head;
+    let mut removed_heap_tids = 0_u64;
+    for expected_list_id in 0..metadata.nlists {
+        let directory_tid = next_tid;
+        let (mut directory, following_tid) =
+            unsafe { page::read_ivf_list_directory_and_next(index_relation, directory_tid) }
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if directory.list_id != expected_list_id {
+            pgrx::error!(
+                "ec_ivf directory order mismatch: got list {}, expected {}",
+                directory.list_id,
+                expected_list_id
+            );
+        }
+
+        let list_removed = unsafe {
+            bulkdelete_list_postings(
+                index_relation,
+                &directory,
+                payload_len,
+                callback,
+                callback_state,
+            )
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if list_removed > 0 {
+            directory.live_count =
+                directory
+                    .live_count
+                    .checked_sub(list_removed)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_ivf list {} live count underflow during vacuum",
+                            directory.list_id
+                        )
+                    });
+            directory.dead_count =
+                directory
+                    .dead_count
+                    .checked_add(list_removed)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_ivf list {} dead count overflow during vacuum",
+                            directory.list_id
+                        )
+                    });
+            unsafe { page::rewrite_ivf_list_directory(index_relation, directory_tid, directory) }
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            removed_heap_tids = removed_heap_tids
+                .checked_add(list_removed)
+                .unwrap_or_else(|| pgrx::error!("ec_ivf removed heap tid count overflow"));
+        }
+
+        next_tid = following_tid;
+    }
+
+    if removed_heap_tids > 0 {
+        metadata.total_live_tuples = metadata
+            .total_live_tuples
+            .checked_sub(removed_heap_tids)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf metadata live count underflow during vacuum"));
+        metadata.total_dead_tuples = metadata
+            .total_dead_tuples
+            .checked_add(removed_heap_tids)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf metadata dead count overflow during vacuum"));
+        unsafe { page::initialize_metadata_page(index_relation, metadata) };
+        unsafe {
+            (*stats).tuples_removed += removed_heap_tids as f64;
+        }
+    }
+
+    unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }
+}
+
+unsafe fn bulkdelete_list_postings(
+    index_relation: pg_sys::Relation,
+    directory: &page::IvfListDirectoryTuple,
+    payload_len: usize,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<u64, String> {
+    let postings = unsafe {
+        page::read_ivf_postings_for_list_blocks_with_tids(
+            index_relation,
+            directory.list_id,
+            directory.head_block,
+            directory.tail_block,
+            payload_len,
+        )?
+    };
+
+    let mut removed_heap_tids = 0_u64;
+    for (posting_tid, mut posting) in postings {
+        if posting.deleted {
+            continue;
+        }
+        let starting_len = posting.heaptids.len();
+        posting
+            .heaptids
+            .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
+        let removed = starting_len.saturating_sub(posting.heaptids.len());
+        if removed == 0 {
+            continue;
+        }
+
+        if posting.heaptids.is_empty() {
+            posting.deleted = true;
+        }
+        unsafe { page::rewrite_ivf_posting(index_relation, posting_tid, &posting)? };
+        removed_heap_tids = removed_heap_tids
+            .checked_add(u64::try_from(removed).map_err(|_| {
+                "ec_ivf removed heap tid count exceeds u64".to_owned()
+            })?)
+            .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
+    }
+
+    Ok(removed_heap_tids)
+}
+
+unsafe fn finish_vacuum_stats(
+    index_relation: pg_sys::Relation,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+    metadata: &page::MetadataPage,
+) -> *mut pg_sys::IndexBulkDeleteResult {
+    let stats = if stats.is_null() {
+        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+    } else {
+        stats
+    };
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(
             index_relation,
@@ -60,6 +215,33 @@ unsafe fn noop_vacuum_stats(
     }
 
     stats
+}
+
+unsafe fn heap_tid_is_dead(
+    heap_tid: ItemPointer,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> bool {
+    let mut tid = pg_sys::ItemPointerData::default();
+    item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Default)]
+struct DebugVacuumCallbackState {
+    dead_tids: std::collections::HashSet<ItemPointer>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+    itemptr: pg_sys::ItemPointer,
+    state: *mut c_void,
+) -> bool {
+    let state = unsafe { &*(state.cast::<DebugVacuumCallbackState>()) };
+    state
+        .dead_tids
+        .contains(&unsafe { super::build::decode_heap_tid(itemptr, "debug vacuum") })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -78,5 +260,43 @@ pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(
     let result = unsafe { *stats };
 
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
+    index_oid: pg_sys::Oid,
+    dead_tids: &[ItemPointer],
+) -> pg_sys::IndexBulkDeleteResult {
+    let index_relation = unsafe {
+        pg_sys::index_open(
+            index_oid,
+            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+        )
+    };
+    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    info.index = index_relation;
+    let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+    let mut callback_state = DebugVacuumCallbackState {
+        dead_tids: dead_tids.iter().copied().collect(),
+    };
+
+    let stats = unsafe {
+        ec_ivf_ambulkdelete(
+            info_ptr,
+            std::ptr::null_mut(),
+            Some(debug_vacuum_dead_tid_callback),
+            (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
+        )
+    };
+    let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
+    let result = unsafe { *stats };
+
+    unsafe {
+        pg_sys::index_close(
+            index_relation,
+            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+        )
+    };
     result
 }

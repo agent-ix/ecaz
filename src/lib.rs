@@ -2852,6 +2852,51 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_vacuum_bulkdelete_removes_dead_heap_tid() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_delete (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_vacuum_delete VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_vacuum_delete",
+            "ec_ivf_vacuum_delete_idx",
+            3,
+            3,
+            3,
+        );
+        let deleted_tid = heap_tid_for_row("ec_ivf_vacuum_delete", 1);
+
+        Spi::run("DELETE FROM ec_ivf_vacuum_delete WHERE id = 1").expect("delete should succeed");
+        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![0.0, 1.0]) };
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 1);
+        assert_eq!(inserted_since_build, 0);
+        assert_eq!(total_live, 2);
+        assert!(
+            outputs
+                .iter()
+                .all(|(block_number, offset_number, _score)| {
+                    (*block_number, *offset_number)
+                        != (deleted_tid.block_number, deleted_tid.offset_number)
+                }),
+            "vacuumed ec_ivf scan output should not include the deleted heap tid"
+        );
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

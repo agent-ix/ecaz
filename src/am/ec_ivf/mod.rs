@@ -44,4 +44,6 @@ pub(crate) use self::scan::{
 };
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::vacuum::debug_ec_ivf_vacuum_stats;
+pub(crate) use self::vacuum::{
+    debug_ec_ivf_vacuum_remove_heap_tids, debug_ec_ivf_vacuum_stats,
+};

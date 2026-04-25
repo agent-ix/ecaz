@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 6 dead-tuple cleanup next.
+Status: in progress - Phase 6 directory repair next.
 
 Working branch: `task28-ivf`
 
@@ -276,7 +276,7 @@ row. Concurrent insert coverage remains open.
 
 - [x] **No-op callback baseline.** `ambulkdelete` and `amvacuumcleanup`
   return stable stats before deletion cleanup lands.
-- [ ] **Dead tuple cleanup.** Remove dead heap TIDs from posting lists and
+- [x] **Dead tuple cleanup.** Remove dead heap TIDs from posting lists and
   mark empty candidate tuples without changing centroid assignments.
 - [ ] **Directory repair.** Keep list counts, head/tail refs, and empty-list
   stats consistent after cleanup.
@@ -290,6 +290,11 @@ Phase 6 no-op vacuum checkpoint: `ambulkdelete` and `amvacuumcleanup` no
 longer fail for IVF indexes. They return metadata-backed tuple counts and
 relation block counts without mutating posting lists. Dead tuple cleanup,
 directory repair, and drift snapshots remain open.
+
+Phase 6 dead-tuple cleanup checkpoint: `ambulkdelete` now honors the
+PostgreSQL bulkdelete callback, removes dead heap TIDs from IVF postings, marks
+fully removed postings as deleted, and updates list plus metadata live/dead
+counts. Directory head/tail repair and page compaction remain open.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 
