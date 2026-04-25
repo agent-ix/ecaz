@@ -7,7 +7,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
-use super::{graph, insert, options, page, search, shared, source, P_NEW};
+use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::training::{self, GroupedPq4Model};
 use crate::storage::wal;
 
@@ -65,11 +65,17 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
+            let parallel_plan =
+                build_parallel::EcHnswParallelBuildPlan::from_index_info(index_info);
             validate_grouped_rerank_source_column(heap_relation, &state.options);
 
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
-            let heap_tuples = if state.options.build_source_column.is_some() {
+            let heap_tuples = if !parallel_plan.uses_serial_build_path() {
+                pgrx::error!(
+                    "ec_hnsw parallel index build coordinator is scaffolded but not executable yet"
+                );
+            } else if state.options.build_source_column.is_some() {
                 ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
             } else {
                 pg_sys::table_index_build_scan(
@@ -611,8 +617,10 @@ pub(super) fn stage_v2_grouped_build_payload(
     search_code: Vec<u8>,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V2GroupedBuildPayload {
-    let binary_words =
-        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
+    let binary_words = crate::quant::rabitq::derive_persisted_sidecar_words(
+        persisted_binary_quantizer,
+        &tuple.code,
+    );
 
     V2GroupedBuildPayload {
         hot: page::TqGroupedHotTuple {
@@ -638,8 +646,10 @@ pub(super) fn stage_v3_turbo_hot_build_payload(
     reranktid: page::ItemPointer,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V3TurboHotBuildPayload {
-    let binary_words =
-        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
+    let binary_words = crate::quant::rabitq::derive_persisted_sidecar_words(
+        persisted_binary_quantizer,
+        &tuple.code,
+    );
 
     V3TurboHotBuildPayload {
         hot: page::TqTurboHotTuple {

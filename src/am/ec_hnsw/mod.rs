@@ -1,6 +1,7 @@
 //! ec_hnsw-specific access-method implementation and tuple codecs.
 
 mod build;
+mod build_parallel;
 pub(crate) use crate::am::common::{cost, explain, parallel, stats, stream};
 pub(crate) mod graph;
 mod insert;
