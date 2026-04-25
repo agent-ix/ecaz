@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 19;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 20;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -69,6 +69,7 @@ pub(crate) struct EcParallelCoordinatorState {
     contributor_publish_handoff_ready: AtomicU32,
     contributor_publish_ordered_after_visible: AtomicU32,
     contributor_publish_no_visible_owner: AtomicU32,
+    contributor_no_visible_owner_drops: AtomicU32,
     contributor_duplicate_retires: AtomicU32,
     contributor_output_limit_exits: AtomicU32,
     contributor_poll_limit_exits: AtomicU32,
@@ -324,6 +325,7 @@ pub(crate) struct EcParallelContributorCounters {
     pub(crate) publish_handoff_ready: u32,
     pub(crate) publish_ordered_after_visible: u32,
     pub(crate) publish_no_visible_owner: u32,
+    pub(crate) no_visible_owner_drops: u32,
     pub(crate) duplicate_retires: u32,
     pub(crate) output_limit_exits: u32,
     pub(crate) poll_limit_exits: u32,
@@ -843,6 +845,7 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             contributor_publish_handoff_ready: AtomicU32::new(0),
             contributor_publish_ordered_after_visible: AtomicU32::new(0),
             contributor_publish_no_visible_owner: AtomicU32::new(0),
+            contributor_no_visible_owner_drops: AtomicU32::new(0),
             contributor_duplicate_retires: AtomicU32::new(0),
             contributor_output_limit_exits: AtomicU32::new(0),
             contributor_poll_limit_exits: AtomicU32::new(0),
@@ -2600,6 +2603,16 @@ pub(crate) unsafe fn record_parallel_scan_contributor_duplicate_retire(
     Ok(())
 }
 
+pub(crate) unsafe fn record_parallel_scan_contributor_no_visible_owner_drop(
+    state: *mut EcParallelScanState,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    unsafe { &*attachment.coordinator }
+        .contributor_no_visible_owner_drops
+        .fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
 pub(crate) unsafe fn record_parallel_scan_contributor_output_limit_exit(
     state: *mut EcParallelScanState,
 ) -> Result<(), &'static str> {
@@ -2762,6 +2775,9 @@ pub(crate) unsafe fn read_parallel_scan_contributor_counters(
             .load(Ordering::Acquire),
         publish_no_visible_owner: coordinator
             .contributor_publish_no_visible_owner
+            .load(Ordering::Acquire),
+        no_visible_owner_drops: coordinator
+            .contributor_no_visible_owner_drops
             .load(Ordering::Acquire),
         duplicate_retires: coordinator
             .contributor_duplicate_retires

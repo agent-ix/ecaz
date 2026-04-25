@@ -1142,6 +1142,7 @@ const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
 const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC";
 const PARALLEL_CONTRIBUTOR_MAX_OUTPUTS: usize = 64;
 const PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT: usize = 100;
+const PARALLEL_CONTRIBUTOR_NO_VISIBLE_OWNER_DROP_POLL_LIMIT: usize = 4;
 const PARALLEL_CONTRIBUTOR_DRAIN_POLL_SLEEP_US: core::ffi::c_long = 100;
 
 fn saturating_u32_from_usize(value: usize) -> u32 {
@@ -1493,11 +1494,13 @@ fn non_emitting_parallel_backend_is_exhausted(opaque: &mut TqScanOpaque) -> bool
     true
 }
 
-fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> bool {
+fn stage_non_emitting_parallel_contributor_output(
+    opaque: &mut TqScanOpaque,
+) -> Option<super::parallel::EcParallelContributorHiddenDrainClassification> {
     if !active_result_state_ref(opaque).current().has_element()
         || active_result_state_ref(opaque).pending_count() == 0
     {
-        return false;
+        return None;
     }
 
     opaque.parallel_local_only_output_active = true;
@@ -1515,22 +1518,13 @@ fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> 
             pgrx::error!("ec_hnsw parallel contributor hidden-publish counter failed: {err}")
         }
     }
-    record_non_emitting_parallel_contributor_hidden_publish_classification(opaque);
-    true
+    Some(record_non_emitting_parallel_contributor_hidden_publish_classification(opaque))
 }
 
 fn record_non_emitting_parallel_contributor_hidden_publish_classification(
     opaque: &mut TqScanOpaque,
-) {
-    let classification = unsafe {
-        super::parallel::classify_parallel_scan_contributor_hidden_drain(
-            opaque.parallel_scan_state,
-            opaque.parallel_scan_worker_slot_index,
-        )
-    }
-    .unwrap_or_else(|err| {
-        pgrx::error!("ec_hnsw parallel contributor publish classification failed: {err}")
-    });
+) -> super::parallel::EcParallelContributorHiddenDrainClassification {
+    let classification = classify_non_emitting_parallel_contributor_hidden_drain(opaque);
 
     match classification {
         super::parallel::EcParallelContributorHiddenDrainClassification::MissingHidden => opaque
@@ -1563,6 +1557,38 @@ fn record_non_emitting_parallel_contributor_hidden_publish_classification(
             pgrx::error!(
                 "ec_hnsw parallel contributor publish classification counter failed: {err}"
             )
+        }
+    }
+
+    classification
+}
+
+fn classify_non_emitting_parallel_contributor_hidden_drain(
+    opaque: &mut TqScanOpaque,
+) -> super::parallel::EcParallelContributorHiddenDrainClassification {
+    unsafe {
+        super::parallel::classify_parallel_scan_contributor_hidden_drain(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel contributor publish classification failed: {err}")
+    })
+}
+
+fn record_non_emitting_parallel_contributor_no_visible_owner_drop(opaque: &mut TqScanOpaque) {
+    opaque
+        .explain_counters
+        .record_parallel_contributor_no_visible_owner_drop();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_no_visible_owner_drop(
+            opaque.parallel_scan_state,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor no-visible-owner drop counter failed: {err}")
         }
     }
 }
@@ -1722,6 +1748,12 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .max(shared.publish_no_visible_owner);
     opaque
         .explain_counters
+        .stats_parallel_contributor_no_visible_owner_drops = opaque
+        .explain_counters
+        .stats_parallel_contributor_no_visible_owner_drops
+        .max(shared.no_visible_owner_drops);
+    opaque
+        .explain_counters
         .stats_parallel_contributor_duplicate_retires = opaque
         .explain_counters
         .stats_parallel_contributor_duplicate_retires
@@ -1783,17 +1815,35 @@ unsafe fn contribute_non_emitting_parallel_backend(
 ) -> bool {
     let mut staged_outputs = 0usize;
     let mut drain_polls = 0usize;
+    let mut no_visible_owner_polls = 0usize;
 
     loop {
         if opaque.parallel_local_only_output_active {
             if retire_obsolete_non_emitting_parallel_contributor_output(opaque) {
                 drain_polls = 0;
+                no_visible_owner_polls = 0;
                 continue;
             }
 
             if reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque) {
                 drain_polls = 0;
+                no_visible_owner_polls = 0;
                 continue;
+            }
+
+            if classify_non_emitting_parallel_contributor_hidden_drain(opaque)
+                == super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner
+            {
+                no_visible_owner_polls += 1;
+                if no_visible_owner_polls >= PARALLEL_CONTRIBUTOR_NO_VISIBLE_OWNER_DROP_POLL_LIMIT {
+                    record_non_emitting_parallel_contributor_no_visible_owner_drop(opaque);
+                    discard_active_parallel_scan_output(opaque);
+                    drain_polls = 0;
+                    no_visible_owner_polls = 0;
+                    continue;
+                }
+            } else {
+                no_visible_owner_polls = 0;
             }
 
             if staged_outputs >= PARALLEL_CONTRIBUTOR_MAX_OUTPUTS {
@@ -1811,9 +1861,12 @@ unsafe fn contribute_non_emitting_parallel_backend(
             continue;
         }
 
-        if stage_non_emitting_parallel_contributor_output(opaque) {
+        if let Some(classification) = stage_non_emitting_parallel_contributor_output(opaque) {
             staged_outputs += 1;
             drain_polls = 0;
+            no_visible_owner_polls =
+                usize::from(classification
+                    == super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner);
             continue;
         }
 
@@ -8966,7 +9019,7 @@ mod tests {
             .materialize_from_parts(tid(42, 1), -2.5, &[tid(100, 1)]);
 
         assert!(
-            stage_non_emitting_parallel_contributor_output(&mut opaque),
+            stage_non_emitting_parallel_contributor_output(&mut opaque).is_some(),
             "a materialized contributor result should publish"
         );
         assert_eq!(
@@ -9032,7 +9085,7 @@ mod tests {
             .result_state
             .materialize_from_parts(tid(43, 1), -2.75, &[tid(101, 1)]);
         assert!(
-            stage_non_emitting_parallel_contributor_output(&mut contributor),
+            stage_non_emitting_parallel_contributor_output(&mut contributor).is_some(),
             "a contributor row should publish hidden output into shared state"
         );
         assert_eq!(
@@ -9057,6 +9110,26 @@ mod tests {
                 .stats_parallel_contributor_publish_no_visible_owner,
             1,
             "the elected emitter should fold shared publish classifications into explain counters"
+        );
+
+        record_non_emitting_parallel_contributor_no_visible_owner_drop(&mut contributor);
+        let shared = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                contributor.parallel_scan_state,
+            )
+        }
+        .expect("shared contributor counters should read");
+        assert_eq!(
+            shared.no_visible_owner_drops, 1,
+            "shared no-visible-owner drops should be published"
+        );
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_no_visible_owner_drops,
+            1,
+            "the elected emitter should fold shared no-visible-owner drops into explain counters"
         );
 
         unsafe {
@@ -9140,7 +9213,7 @@ mod tests {
             .materialize_from_parts(tid(44, 1), -3.5, &[tid(120, 1), tid(120, 2)]);
 
         assert!(
-            stage_non_emitting_parallel_contributor_output(&mut opaque),
+            stage_non_emitting_parallel_contributor_output(&mut opaque).is_some(),
             "a contributor row with pending heap tids should publish as hidden"
         );
 

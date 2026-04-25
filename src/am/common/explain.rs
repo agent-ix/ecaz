@@ -72,6 +72,7 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_contributor_publish_handoff_ready: u32,
     pub stats_parallel_contributor_publish_ordered_after_visible: u32,
     pub stats_parallel_contributor_publish_no_visible_owner: u32,
+    pub stats_parallel_contributor_no_visible_owner_drops: u32,
     pub stats_parallel_contributor_duplicate_retires: u32,
     pub stats_parallel_contributor_output_limit_exits: u32,
     pub stats_parallel_contributor_poll_limit_exits: u32,
@@ -92,7 +93,7 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 32] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 33] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -170,6 +171,12 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 32] = [
         counter_type: "u32",
         increments_when:
             "a hidden contributor publish finds no selected or admitted visible owner row to compare",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_no_visible_owner_drops",
+        counter_type: "u32",
+        increments_when:
+            "a non-emitting contributor drops a hidden row after repeatedly finding no visible owner",
     },
     ExplainCounterDefinition {
         counter_name: "stats_parallel_contributor_duplicate_retires",
@@ -360,6 +367,10 @@ impl TqExplainCounters {
         self.stats_parallel_contributor_publish_no_visible_owner += 1;
     }
 
+    pub(crate) fn record_parallel_contributor_no_visible_owner_drop(&mut self) {
+        self.stats_parallel_contributor_no_visible_owner_drops += 1;
+    }
+
     pub(crate) fn record_parallel_contributor_duplicate_retire(&mut self) {
         self.stats_parallel_contributor_duplicate_retires += 1;
     }
@@ -436,7 +447,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 32] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 33] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -508,6 +519,12 @@ impl TqExplainCounters {
                 property_name: "Parallel Contributor Publish: No Visible Owner",
                 value: ExplainPropertyValue::Integer(
                     self.stats_parallel_contributor_publish_no_visible_owner,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor No Visible Owner Drops",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_no_visible_owner_drops,
                 ),
             },
             ExplainProperty {
@@ -884,6 +901,12 @@ mod tests {
                         "a hidden contributor publish finds no selected or admitted visible owner row to compare",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_no_visible_owner_drops",
+                    counter_type: "u32",
+                    increments_when:
+                        "a non-emitting contributor drops a hidden row after repeatedly finding no visible owner",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_parallel_contributor_duplicate_retires",
                     counter_type: "u32",
                     increments_when:
@@ -1029,6 +1052,7 @@ mod tests {
         counters.record_parallel_contributor_publish_handoff_ready();
         counters.record_parallel_contributor_publish_ordered_after_visible();
         counters.record_parallel_contributor_publish_no_visible_owner();
+        counters.record_parallel_contributor_no_visible_owner_drop();
         counters.record_parallel_contributor_duplicate_retire();
         counters.record_parallel_contributor_output_limit_exit();
         counters.record_parallel_contributor_poll_limit_exit();
@@ -1065,6 +1089,7 @@ mod tests {
                 stats_parallel_contributor_publish_handoff_ready: 1,
                 stats_parallel_contributor_publish_ordered_after_visible: 1,
                 stats_parallel_contributor_publish_no_visible_owner: 1,
+                stats_parallel_contributor_no_visible_owner_drops: 1,
                 stats_parallel_contributor_duplicate_retires: 1,
                 stats_parallel_contributor_output_limit_exits: 1,
                 stats_parallel_contributor_poll_limit_exits: 1,
@@ -1104,6 +1129,7 @@ mod tests {
             stats_parallel_contributor_publish_handoff_ready: 37,
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
+            stats_parallel_contributor_no_visible_owner_drops: 44,
             stats_parallel_contributor_duplicate_retires: 47,
             stats_parallel_contributor_output_limit_exits: 53,
             stats_parallel_contributor_poll_limit_exits: 59,
@@ -1146,6 +1172,7 @@ mod tests {
             stats_parallel_contributor_publish_handoff_ready: 37,
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
+            stats_parallel_contributor_no_visible_owner_drops: 44,
             stats_parallel_contributor_duplicate_retires: 47,
             stats_parallel_contributor_output_limit_exits: 53,
             stats_parallel_contributor_poll_limit_exits: 59,
@@ -1224,6 +1251,10 @@ mod tests {
                 ExplainProperty {
                     property_name: "Parallel Contributor Publish: No Visible Owner",
                     value: ExplainPropertyValue::Integer(43),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor No Visible Owner Drops",
+                    value: ExplainPropertyValue::Integer(44),
                 },
                 ExplainProperty {
                     property_name: "Parallel Contributor Duplicate Retires",
