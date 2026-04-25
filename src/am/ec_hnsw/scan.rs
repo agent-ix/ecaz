@@ -1515,7 +1515,56 @@ fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> 
             pgrx::error!("ec_hnsw parallel contributor hidden-publish counter failed: {err}")
         }
     }
+    record_non_emitting_parallel_contributor_hidden_publish_classification(opaque);
     true
+}
+
+fn record_non_emitting_parallel_contributor_hidden_publish_classification(
+    opaque: &mut TqScanOpaque,
+) {
+    let classification = unsafe {
+        super::parallel::classify_parallel_scan_contributor_hidden_drain(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel contributor publish classification failed: {err}")
+    });
+
+    match classification {
+        super::parallel::EcParallelContributorHiddenDrainClassification::MissingHidden => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_missing_hidden(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::DuplicateActive => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_duplicate_active(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::HandoffReady => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_handoff_ready(),
+        super::parallel::EcParallelContributorHiddenDrainClassification::OrderedAfterVisible => {
+            opaque
+                .explain_counters
+                .record_parallel_contributor_publish_ordered_after_visible()
+        }
+        super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_no_visible_owner(),
+    }
+
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_hidden_publish_classification(
+            opaque.parallel_scan_state,
+            classification,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!(
+                "ec_hnsw parallel contributor publish classification counter failed: {err}"
+            )
+        }
+    }
 }
 
 fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> bool {
@@ -1641,6 +1690,36 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .explain_counters
         .stats_parallel_contributor_hidden_publishes
         .max(shared.hidden_publishes);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_missing_hidden = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_missing_hidden
+        .max(shared.publish_missing_hidden);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_duplicate_active = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_duplicate_active
+        .max(shared.publish_duplicate_active);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_handoff_ready = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_handoff_ready
+        .max(shared.publish_handoff_ready);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_ordered_after_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_ordered_after_visible
+        .max(shared.publish_ordered_after_visible);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_no_visible_owner = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_no_visible_owner
+        .max(shared.publish_no_visible_owner);
     opaque
         .explain_counters
         .stats_parallel_contributor_duplicate_retires = opaque
@@ -8897,14 +8976,22 @@ mod tests {
             1
         );
         assert_eq!(
-            unsafe {
-                crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
-                    opaque.parallel_scan_state,
-                )
-            }
-            .expect("shared contributor counters should read")
-            .hidden_publishes,
-            1
+            opaque
+                .explain_counters
+                .stats_parallel_contributor_publish_no_visible_owner,
+            1,
+            "the hidden publish should classify the immediate drain state"
+        );
+        let shared = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("shared contributor counters should read");
+        assert_eq!(shared.hidden_publishes, 1);
+        assert_eq!(
+            shared.publish_no_visible_owner, 1,
+            "shared hidden-publish classification should be published"
         );
 
         let hidden = unsafe {
@@ -8963,6 +9050,13 @@ mod tests {
                 .stats_parallel_contributor_hidden_publishes,
             1,
             "the elected emitter should fold shared contributor publishes into explain counters"
+        );
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_publish_no_visible_owner,
+            1,
+            "the elected emitter should fold shared publish classifications into explain counters"
         );
 
         unsafe {

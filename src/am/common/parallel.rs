@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 18;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 19;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -64,6 +64,11 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) admitted_head_comparison_score_bits: AtomicU32,
     pub(crate) admitted_head_approx_rank_bits: AtomicU32,
     contributor_hidden_publishes: AtomicU32,
+    contributor_publish_missing_hidden: AtomicU32,
+    contributor_publish_duplicate_active: AtomicU32,
+    contributor_publish_handoff_ready: AtomicU32,
+    contributor_publish_ordered_after_visible: AtomicU32,
+    contributor_publish_no_visible_owner: AtomicU32,
     contributor_duplicate_retires: AtomicU32,
     contributor_output_limit_exits: AtomicU32,
     contributor_poll_limit_exits: AtomicU32,
@@ -314,6 +319,11 @@ pub(crate) struct EcParallelCoordinatorAdmissionSnapshot {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct EcParallelContributorCounters {
     pub(crate) hidden_publishes: u32,
+    pub(crate) publish_missing_hidden: u32,
+    pub(crate) publish_duplicate_active: u32,
+    pub(crate) publish_handoff_ready: u32,
+    pub(crate) publish_ordered_after_visible: u32,
+    pub(crate) publish_no_visible_owner: u32,
     pub(crate) duplicate_retires: u32,
     pub(crate) output_limit_exits: u32,
     pub(crate) poll_limit_exits: u32,
@@ -828,6 +838,11 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             admitted_head_comparison_score_bits: AtomicU32::new(0),
             admitted_head_approx_rank_bits: AtomicU32::new(0),
             contributor_hidden_publishes: AtomicU32::new(0),
+            contributor_publish_missing_hidden: AtomicU32::new(0),
+            contributor_publish_duplicate_active: AtomicU32::new(0),
+            contributor_publish_handoff_ready: AtomicU32::new(0),
+            contributor_publish_ordered_after_visible: AtomicU32::new(0),
+            contributor_publish_no_visible_owner: AtomicU32::new(0),
             contributor_duplicate_retires: AtomicU32::new(0),
             contributor_output_limit_exits: AtomicU32::new(0),
             contributor_poll_limit_exits: AtomicU32::new(0),
@@ -2548,6 +2563,33 @@ pub(crate) unsafe fn record_parallel_scan_contributor_hidden_publish(
     Ok(())
 }
 
+pub(crate) unsafe fn record_parallel_scan_contributor_hidden_publish_classification(
+    state: *mut EcParallelScanState,
+    classification: EcParallelContributorHiddenDrainClassification,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = unsafe { &*attachment.coordinator };
+    let counter = match classification {
+        EcParallelContributorHiddenDrainClassification::MissingHidden => {
+            &coordinator.contributor_publish_missing_hidden
+        }
+        EcParallelContributorHiddenDrainClassification::DuplicateActive => {
+            &coordinator.contributor_publish_duplicate_active
+        }
+        EcParallelContributorHiddenDrainClassification::HandoffReady => {
+            &coordinator.contributor_publish_handoff_ready
+        }
+        EcParallelContributorHiddenDrainClassification::OrderedAfterVisible => {
+            &coordinator.contributor_publish_ordered_after_visible
+        }
+        EcParallelContributorHiddenDrainClassification::NoVisibleOwner => {
+            &coordinator.contributor_publish_no_visible_owner
+        }
+    };
+    counter.fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
 pub(crate) unsafe fn record_parallel_scan_contributor_duplicate_retire(
     state: *mut EcParallelScanState,
 ) -> Result<(), &'static str> {
@@ -2705,6 +2747,21 @@ pub(crate) unsafe fn read_parallel_scan_contributor_counters(
     Ok(EcParallelContributorCounters {
         hidden_publishes: coordinator
             .contributor_hidden_publishes
+            .load(Ordering::Acquire),
+        publish_missing_hidden: coordinator
+            .contributor_publish_missing_hidden
+            .load(Ordering::Acquire),
+        publish_duplicate_active: coordinator
+            .contributor_publish_duplicate_active
+            .load(Ordering::Acquire),
+        publish_handoff_ready: coordinator
+            .contributor_publish_handoff_ready
+            .load(Ordering::Acquire),
+        publish_ordered_after_visible: coordinator
+            .contributor_publish_ordered_after_visible
+            .load(Ordering::Acquire),
+        publish_no_visible_owner: coordinator
+            .contributor_publish_no_visible_owner
             .load(Ordering::Acquire),
         duplicate_retires: coordinator
             .contributor_duplicate_retires
