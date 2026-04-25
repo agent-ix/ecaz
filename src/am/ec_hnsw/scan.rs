@@ -6526,6 +6526,7 @@ fn clear_grouped_live_rerank_buffer(opaque: &mut TqScanOpaque) {
         .fill(BufferedGroupedScanResult::default());
     opaque.grouped_live_rerank_buffer_len = 0;
     opaque.grouped_live_rerank_next_approx_rank = 1;
+    opaque.graph_traversal_next_approx_rank = 1;
 }
 
 fn grouped_live_rerank_window(opaque: &TqScanOpaque) -> usize {
@@ -6593,6 +6594,20 @@ fn grouped_live_rerank_output_score(
     } else {
         buffered.approx_score
     }
+}
+
+fn take_graph_traversal_approx_rank_base(
+    opaque: &mut TqScanOpaque,
+    emitted_heap_rows: usize,
+) -> i32 {
+    let approx_rank_base = opaque.graph_traversal_next_approx_rank;
+    let emitted_heap_rows =
+        i32::try_from(emitted_heap_rows).expect("heap tid count should fit in i32");
+    opaque.graph_traversal_next_approx_rank = opaque
+        .graph_traversal_next_approx_rank
+        .checked_add(emitted_heap_rows)
+        .expect("graph traversal approx rank should remain in i32 range");
+    approx_rank_base
 }
 
 unsafe fn prefetch_next_graph_result_from_frontier(
@@ -6785,12 +6800,14 @@ unsafe fn materialize_graph_result_candidate(
         )
     };
     opaque.explain_counters.record_element_scored();
+    let approx_rank_base =
+        take_graph_traversal_approx_rank_base(opaque, element.heaptids.as_slice().len());
     let result_state = unsafe { &mut *result_state };
     result_state.materialize_with_details(
         candidate.node,
         candidate.score,
         None,
-        None,
+        Some(approx_rank_base),
         comparison_score,
         element.heaptids.as_slice(),
     );
@@ -8682,6 +8699,7 @@ pub(super) struct TqScanOpaque {
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
     grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
+    graph_traversal_next_approx_rank: i32,
     grouped_live_rerank_next_approx_rank: i32,
     pub(super) last_emitted_approx_score: f32,
     pub(super) last_emitted_approx_score_valid: bool,
@@ -8766,6 +8784,7 @@ impl Default for TqScanOpaque {
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
             grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,
+            graph_traversal_next_approx_rank: 1,
             grouped_live_rerank_next_approx_rank: 1,
             last_emitted_approx_score: 0.0,
             last_emitted_approx_score_valid: false,
@@ -8893,6 +8912,21 @@ mod tests {
         LOCK.get_or_init(|| std::sync::Mutex::new(()))
             .lock()
             .expect("env-var test lock should not be poisoned")
+    }
+
+    #[test]
+    fn take_graph_traversal_approx_rank_base_advances_by_heap_rows() {
+        let mut opaque = TqScanOpaque::default();
+
+        assert_eq!(take_graph_traversal_approx_rank_base(&mut opaque, 3), 1);
+        assert_eq!(take_graph_traversal_approx_rank_base(&mut opaque, 1), 4);
+
+        clear_grouped_live_rerank_buffer(&mut opaque);
+        assert_eq!(
+            take_graph_traversal_approx_rank_base(&mut opaque, 2),
+            1,
+            "resetting graph traversal state should reset scalar approx-rank hints"
+        );
     }
 
     #[test]

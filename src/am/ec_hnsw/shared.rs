@@ -772,6 +772,8 @@ const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRI
 #[cfg(any(test, feature = "pg_test"))]
 const PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV: &str =
     "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT";
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_RANK_ORDER_DIAGNOSTIC";
 
 pub(crate) fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
     #[cfg(any(test, feature = "pg_test"))]
@@ -815,9 +817,27 @@ pub(crate) fn pg18_parallel_contributor_ordered_wait_enabled() -> bool {
     }
 }
 
+pub(crate) fn pg18_parallel_rank_order_diagnostic_enabled() -> bool {
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        matches!(
+            std::env::var(PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV).as_deref(),
+            Ok("1")
+        )
+    }
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        false
+    }
+}
+
 fn planner_integration_next_runtime_blocker() -> &'static str {
     if pg18_parallel_multi_emitter_diagnostic_enabled() {
         "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge and is not the production path"
+    } else if pg18_parallel_contributor_diagnostic_enabled()
+        && pg18_parallel_rank_order_diagnostic_enabled()
+    {
+        "PG18 diagnostic rank-order env is enabled; coordinator comparisons use local serial-rank hints when both rows provide them"
     } else if pg18_parallel_contributor_diagnostic_enabled()
         && pg18_parallel_contributor_ordered_wait_enabled()
     {

@@ -15,6 +15,8 @@ const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 21;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_RANK_ORDER_DIAGNOSTIC";
 const EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY: usize =
     EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY;
 
@@ -2246,11 +2248,36 @@ fn pending_output_orders_before(
     lhs: &EcParallelPendingOutputSnapshot,
     rhs: &EcParallelPendingOutputSnapshot,
 ) -> bool {
+    if parallel_rank_order_diagnostic_enabled() {
+        if let (Some(lhs_rank), Some(rhs_rank)) = (lhs.approx_rank, rhs.approx_rank) {
+            return lhs_rank
+                .cmp(&rhs_rank)
+                .then_with(|| lhs.score.total_cmp(&rhs.score))
+                .then_with(|| lhs.heap_tid.block_number.cmp(&rhs.heap_tid.block_number))
+                .then_with(|| lhs.heap_tid.offset_number.cmp(&rhs.heap_tid.offset_number))
+                .is_lt();
+        }
+    }
+
     lhs.score
         .total_cmp(&rhs.score)
         .then_with(|| lhs.heap_tid.block_number.cmp(&rhs.heap_tid.block_number))
         .then_with(|| lhs.heap_tid.offset_number.cmp(&rhs.heap_tid.offset_number))
         .is_lt()
+}
+
+fn parallel_rank_order_diagnostic_enabled() -> bool {
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        matches!(
+            std::env::var(PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV).as_deref(),
+            Ok("1")
+        )
+    }
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        false
+    }
 }
 
 fn store_admitted_result(
@@ -4470,6 +4497,7 @@ pub(crate) unsafe fn debug_parallel_scan_lwlock_ereport() -> ! {
 mod tests {
     use super::*;
     use std::ptr;
+    use std::sync::{Mutex, OnceLock};
 
     fn pending_heap_tids<const N: usize>(
         tids: [EcParallelItemPointer; N],
@@ -4479,6 +4507,56 @@ mod tests {
             pending[index] = tid;
         }
         pending
+    }
+
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.take() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env var test lock poisoned")
+    }
+
+    fn pending_output(
+        score: f32,
+        approx_rank: Option<i32>,
+        heap_tid: EcParallelItemPointer,
+    ) -> EcParallelPendingOutputSnapshot {
+        EcParallelPendingOutputSnapshot {
+            heap_tid,
+            score,
+            approx_score: None,
+            approx_rank,
+            comparison_score: None,
+        }
     }
 
     fn worker_slot_header_snapshot(slot: &EcParallelWorkerSlot) -> (u32, u32, u32) {
@@ -4502,6 +4580,68 @@ mod tests {
 
     const TEST_PARALLEL_SCAN_OFFSET: usize = 64;
     const TEST_WORKER_SLOT_COUNT: u32 = 3;
+
+    #[test]
+    fn pending_output_orders_before_uses_score_by_default_even_with_rank_hints() {
+        let _lock = env_var_test_lock();
+        let _rank_env = ScopedEnvVar::remove(PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV);
+        let earlier_rank_worse_score = pending_output(
+            -4.0,
+            Some(1),
+            EcParallelItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+        );
+        let later_rank_better_score = pending_output(
+            -5.0,
+            Some(2),
+            EcParallelItemPointer {
+                block_number: 11,
+                offset_number: 1,
+            },
+        );
+
+        assert!(
+            !pending_output_orders_before(&earlier_rank_worse_score, &later_rank_better_score),
+            "default coordinator ordering should remain score-first"
+        );
+        assert!(
+            pending_output_orders_before(&later_rank_better_score, &earlier_rank_worse_score),
+            "default coordinator ordering should still use the better SQL score first"
+        );
+    }
+
+    #[test]
+    fn pending_output_orders_before_can_use_rank_order_diagnostic() {
+        let _lock = env_var_test_lock();
+        let _rank_env = ScopedEnvVar::set(PARALLEL_RANK_ORDER_DIAGNOSTIC_ENV, "1");
+        let earlier_rank_worse_score = pending_output(
+            -4.0,
+            Some(1),
+            EcParallelItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+        );
+        let later_rank_better_score = pending_output(
+            -5.0,
+            Some(2),
+            EcParallelItemPointer {
+                block_number: 11,
+                offset_number: 1,
+            },
+        );
+
+        assert!(
+            pending_output_orders_before(&earlier_rank_worse_score, &later_rank_better_score),
+            "rank-order diagnostic should prefer the earlier local serial-rank hint"
+        );
+        assert!(
+            !pending_output_orders_before(&later_rank_better_score, &earlier_rank_worse_score),
+            "rank-order diagnostic should not let a better score overtake an earlier rank"
+        );
+    }
 
     unsafe fn test_parallel_scan_desc(
         storage: &mut TestParallelScanStorage,
