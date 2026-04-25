@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 0 design freeze complete; Phase 1 scaffold next.
+Status: in progress - Phase 2 layout codecs underway.
 
 Working branch: `task28-ivf`
 
@@ -102,8 +102,7 @@ profile/rerank mode that claims exact final scoring.
 
 Phase 1 scaffold checkpoint: `src/am/ec_ivf/` now compiles as a registered
 AM with `ec_ivf.nprobe`, IVF reloptions, SQL bootstrap entries, and explicit
-not-implemented callbacks. Empty-index behavior remains the next functional
-slice.
+not-implemented callbacks.
 
 Phase 1 empty-index checkpoint: empty `ec_ivf` builds now write a versioned
 metadata page, preserve IVF reloptions in metadata, and return no tuples from
@@ -112,17 +111,25 @@ until Phase 2/3 storage and training land.
 
 ### Phase 2 - page and metadata layout
 
-- [ ] **Metadata page.** Encode/decode IVF metadata: format version,
+- [x] **Metadata page.** Encode/decode IVF metadata: format version,
   dimensions, quantizer format, `nlists`, `nprobe` default, centroid table
   location, and posting-list directory.
-- [ ] **Centroid storage.** Choose inline metadata vs dedicated centroid
+- [x] **Centroid storage.** Choose inline metadata vs dedicated centroid
   pages. Keep decoding independent from scan state.
-- [ ] **Posting-list tuple.** Define candidate tuple format for `tqvector`
+- [x] **Posting-list tuple.** Define candidate tuple format for `tqvector`
   and `ecvector`, including duplicate heap TID handling.
 - [ ] **List directory.** Track per-list head/tail pages and live tuple
   counts with WAL-safe updates.
-- [ ] **Layout tests.** Add roundtrip, length mismatch, small-table, and
+- [x] **Layout tests.** Add roundtrip, length mismatch, small-table, and
   page-fit coverage.
+
+Phase 2 layout-codec checkpoint: metadata now carries dimensions, training
+version, centroid/directory heads, live/dead counts, and drift counters.
+Centroids use dedicated data-page tuples, list directory entries have a fixed
+codec for head/tail/count state, and posting tuples preserve duplicate heap
+TIDs with a profile-neutral payload. WAL-safe directory updates are still
+tracked separately because build/insert/vacuum do not consume the directory
+yet.
 
 ### Phase 3 - training and build
 
