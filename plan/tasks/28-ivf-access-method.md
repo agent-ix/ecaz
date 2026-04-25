@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 posting-list candidate materialization underway.
+Status: in progress - Phase 4 bounded top-k/rerank next.
 
 Working branch: `task28-ivf`
 
@@ -187,7 +187,7 @@ persisted build shape because populated scan routing starts in Phase 4.
   list IDs.
 - [ ] **Posting-list scan.** Read selected lists sequentially, score
   candidates, deduplicate duplicate heap TIDs, and maintain a top-k heap.
-- [ ] **Result emission.** Reuse the ordered tuple production lifecycle:
+- [x] **Result emission.** Reuse the ordered tuple production lifecycle:
   forward-only scan, order-by score output, exhaustion clearing, and rescan
   reset behavior.
 - [ ] **Rerank mode.** Decide whether v1 always reranks from heap/source
@@ -207,6 +207,12 @@ candidates are scored with the prepared default quantizer query, duplicate heap
 TIDs are suppressed, and the scan opaque stores score-ordered candidates for
 the upcoming result-emission slice. This does not yet implement bounded top-k
 state or tuple emission.
+
+Phase 4 result-emission checkpoint: `amgettuple` now drains the materialized
+score-ordered IVF candidates, sets `xs_heaptid`, publishes the ORDER BY score,
+clears the score slot on exhaustion, rejects backward scans, and resets through
+the existing `amrescan` state replacement path. The remaining posting-list item
+is still open until candidate materialization becomes bounded top-k state.
 
 ### Phase 5 - live insert
 

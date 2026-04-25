@@ -2390,6 +2390,44 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_gettuple_emits_probe_candidates_with_scores() {
+        Spi::run("CREATE TABLE ec_ivf_gettuple_emit (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_gettuple_emit VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_gettuple_emit_idx ON ec_ivf_gettuple_emit USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 3, nprobe = 3, training_sample_rows = 3, seed = 29)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_gettuple_emit_idx");
+        let (outputs, orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+        let unique_heap_tids = outputs
+            .iter()
+            .map(|(block_number, offset_number, _score)| (*block_number, *offset_number))
+            .collect::<HashSet<_>>();
+
+        assert_eq!(outputs.len(), 3);
+        assert_eq!(unique_heap_tids.len(), outputs.len());
+        assert!(outputs.iter().all(|(_, _, score)| score.is_finite()));
+        assert!(
+            outputs
+                .windows(2)
+                .all(|pair| pair[0].2 <= pair[1].2),
+            "ec_ivf gettuple outputs should be ordered by ascending ORDER BY score"
+        );
+        assert!(orderby_cleared);
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

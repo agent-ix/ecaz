@@ -26,7 +26,8 @@ pub(crate) use self::ec_hnsw::{
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_ivf::{
     debug_ec_ivf_build_metadata, debug_ec_ivf_directory_summary,
-    debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_metadata,
+    debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_gettuple_outputs,
+    debug_ec_ivf_metadata,
     debug_ec_ivf_rescan_query_prep,
 };
 

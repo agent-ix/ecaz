@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 use std::ptr;
 
-use pgrx::{pg_sys, FromDatum, PgBox};
-#[cfg(any(test, feature = "pg_test"))]
-use pgrx::IntoDatum;
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 use crate::storage::page::ItemPointer;
@@ -23,6 +21,7 @@ struct EcIvfScanOpaque {
     selected_list_count: u32,
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
+    next_candidate_index: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -171,7 +170,22 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
                 pgrx::error!("ec_ivf amgettuple requires amrescan before scan execution");
             }
 
-            false
+            let opaque = &mut *opaque_ptr;
+            if opaque.scan_dimensions == 0 {
+                clear_scan_orderby_output(scan);
+                return false;
+            }
+            match next_posting_candidate(opaque) {
+                Some(candidate) => {
+                    set_scan_heap_tid(scan, candidate.heap_tid);
+                    set_scan_orderby_score(scan, candidate.score);
+                    true
+                }
+                None => {
+                    clear_scan_orderby_output(scan);
+                    false
+                }
+            }
         })
     }
 }
@@ -190,6 +204,52 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
                 (*scan).opaque = ptr::null_mut();
             }
         })
+    }
+}
+
+fn next_posting_candidate(opaque: &mut EcIvfScanOpaque) -> Option<EcIvfScoredCandidate> {
+    if opaque.posting_candidates.is_null()
+        || opaque.next_candidate_index >= opaque.posting_candidate_count
+    {
+        return None;
+    }
+
+    let candidate =
+        unsafe { *opaque.posting_candidates.add(opaque.next_candidate_index as usize) };
+    opaque.next_candidate_index += 1;
+    Some(candidate)
+}
+
+fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut (*scan).xs_heaptid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+    }
+}
+
+fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() {
+            (*scan).xs_orderbyvals =
+                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+        }
+        if (*scan).xs_orderbynulls.is_null() {
+            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        }
+
+        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
+        *(*scan).xs_orderbynulls = false;
+    }
+}
+
+fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        if !(*scan).xs_orderbynulls.is_null() {
+            *(*scan).xs_orderbynulls = true;
+        }
     }
 }
 
@@ -311,6 +371,7 @@ unsafe fn store_posting_candidates(
     opaque.posting_candidate_count =
         u32::try_from(candidates.len()).expect("posting candidate count should fit in u32");
     opaque.posting_candidates = candidate_ptr;
+    opaque.next_candidate_index = 0;
 }
 
 unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
@@ -319,6 +380,7 @@ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
         opaque.posting_candidates = ptr::null_mut();
     }
     opaque.posting_candidate_count = 0;
+    opaque.next_candidate_index = 0;
 }
 
 unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
@@ -681,6 +743,50 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (Vec<(u32, u16, f32)>, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut outputs = Vec::new();
+    while unsafe {
+        ec_ivf_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    } {
+        let (block_number, offset_number) =
+            pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let score = if unsafe { (*scan).xs_orderbyvals.is_null() }
+            || unsafe { (*scan).xs_orderbynulls.is_null() }
+            || unsafe { *(*scan).xs_orderbynulls }
+        {
+            pgrx::error!("ec_ivf debug gettuple output is missing order-by score");
+        } else {
+            f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, false)
+                .expect("score datum should decode as f32")
+        };
+        outputs.push((block_number, offset_number, score));
+    }
+    let orderby_cleared = if unsafe { (*scan).xs_orderbynulls.is_null() } {
+        false
+    } else {
+        unsafe { *(*scan).xs_orderbynulls }
+    };
+
+    unsafe { ec_ivf_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (outputs, orderby_cleared)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
