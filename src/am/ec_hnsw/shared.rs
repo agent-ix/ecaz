@@ -769,6 +769,9 @@ const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
     "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
 #[cfg(any(test, feature = "pg_test"))]
 const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC";
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV: &str =
+    "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT";
 
 pub(crate) fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
     #[cfg(any(test, feature = "pg_test"))]
@@ -798,9 +801,27 @@ pub(crate) fn pg18_parallel_contributor_diagnostic_enabled() -> bool {
     }
 }
 
+pub(crate) fn pg18_parallel_contributor_ordered_wait_enabled() -> bool {
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        matches!(
+            std::env::var(PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV).as_deref(),
+            Ok("1")
+        )
+    }
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        false
+    }
+}
+
 fn planner_integration_next_runtime_blocker() -> &'static str {
     if pg18_parallel_multi_emitter_diagnostic_enabled() {
         "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge and is not the production path"
+    } else if pg18_parallel_contributor_diagnostic_enabled()
+        && pg18_parallel_contributor_ordered_wait_enabled()
+    {
+        "PG18 diagnostic contributor ordered-wait env is enabled; non-emitting workers hold ordered-after-visible hidden rows for the full drain window"
     } else if pg18_parallel_contributor_diagnostic_enabled() {
         "PG18 diagnostic contributor env is enabled; non-emitting workers publish hidden coordinator output behind the elected visible tuple emitter"
     } else {

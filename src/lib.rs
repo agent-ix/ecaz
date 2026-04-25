@@ -2764,6 +2764,8 @@ mod tests {
     fn test_ech_planner_integration_snapshot_reports_blockers() {
         let _lock = env_var_test_lock();
         let _env = ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC");
+        let _ordered_wait_env =
+            ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT");
         Spi::run(
             "CREATE TABLE ec_hnsw_planner_integration_snapshot (id bigint primary key, embedding ecvector)",
         )
@@ -2904,6 +2906,8 @@ mod tests {
     fn test_ech_planner_snapshot_reports_contributor_blocker() {
         let _lock = env_var_test_lock();
         let _multi_env = ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC");
+        let _ordered_wait_env =
+            ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT");
         let _contributor_env =
             ScopedEnvVar::set("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC", "1");
         Spi::run(
@@ -2922,6 +2926,33 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
             "PG18 diagnostic contributor env is enabled; non-emitting workers publish hidden coordinator output behind the elected visible tuple emitter"
+        );
+    }
+
+    #[pg_test]
+    fn test_ech_planner_snapshot_reports_ordered_wait_contributor() {
+        let _lock = env_var_test_lock();
+        let _multi_env = ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC");
+        let _contributor_env =
+            ScopedEnvVar::set("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC", "1");
+        let _ordered_wait_env =
+            ScopedEnvVar::set("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT", "1");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_planner_integration_snapshot_ordered_wait_contributor (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_planner_integration_snapshot_ordered_wait_contributor_idx ON ec_hnsw_planner_integration_snapshot_ordered_wait_contributor USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT next_runtime_blocker FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_ordered_wait_contributor_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime blocker should be non-null"),
+            "PG18 diagnostic contributor ordered-wait env is enabled; non-emitting workers hold ordered-after-visible hidden rows for the full drain window"
         );
     }
 

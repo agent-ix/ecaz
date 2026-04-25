@@ -1140,6 +1140,9 @@ const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
     "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
 #[cfg(any(test, feature = "pg_test"))]
 const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC";
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV: &str =
+    "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_ORDERED_WAIT";
 const PARALLEL_CONTRIBUTOR_MAX_OUTPUTS: usize = 64;
 const PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT: usize = 100;
 const PARALLEL_CONTRIBUTOR_DUPLICATE_ACTIVE_DROP_POLL_LIMIT: usize = 4;
@@ -1466,6 +1469,10 @@ fn parallel_scan_multi_emitter_diagnostic_enabled() -> bool {
 
 fn parallel_scan_contributor_diagnostic_enabled() -> bool {
     super::shared::pg18_parallel_contributor_diagnostic_enabled()
+}
+
+fn parallel_scan_contributor_ordered_wait_enabled() -> bool {
+    super::shared::pg18_parallel_contributor_ordered_wait_enabled()
 }
 
 fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
@@ -1926,8 +1933,9 @@ unsafe fn contribute_non_emitting_parallel_backend(
                     duplicate_active_polls = 0;
                     no_visible_owner_polls = 0;
                     ordered_after_visible_polls += 1;
-                    if ordered_after_visible_polls
-                        >= PARALLEL_CONTRIBUTOR_ORDERED_AFTER_VISIBLE_DROP_POLL_LIMIT
+                    if !parallel_scan_contributor_ordered_wait_enabled()
+                        && ordered_after_visible_polls
+                            >= PARALLEL_CONTRIBUTOR_ORDERED_AFTER_VISIBLE_DROP_POLL_LIMIT
                     {
                         record_non_emitting_parallel_contributor_ordered_after_visible_drop(opaque);
                         discard_active_parallel_scan_output(opaque);
@@ -18672,6 +18680,9 @@ mod tests {
 
     #[test]
     fn parallel_scan_worker_bootstrap_candidates_preserves_serial_order() {
+        let _lock = env_var_test_lock();
+        let _contributor_env = ScopedEnvVar::remove(PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV);
+        let _ordered_wait_env = ScopedEnvVar::remove(PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV);
         let candidates = vec![
             beam_candidate(18, 1, -4.0),
             beam_candidate(18, 2, -3.0),
@@ -18689,6 +18700,9 @@ mod tests {
 
     #[test]
     fn parallel_scan_worker_bootstrap_candidates_keep_shared_parallel_order() {
+        let _lock = env_var_test_lock();
+        let _contributor_env = ScopedEnvVar::remove(PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV);
+        let _ordered_wait_env = ScopedEnvVar::remove(PARALLEL_CONTRIBUTOR_ORDERED_WAIT_ENV);
         let candidates = vec![
             beam_candidate(19, 1, -5.0),
             beam_candidate(19, 2, -4.0),
