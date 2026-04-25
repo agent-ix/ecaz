@@ -45,6 +45,48 @@ tqvector will enable **`amcanparallel = true`** for `ec_hnsw` and
 future `ec_diskann` / `tqspann` access methods. The parallel scan
 model is:
 
+### 2026-04-24 amendment: Gather Merge output compatibility
+
+The PG18 implementation may expose a planner-visible
+`Parallel Index Scan`, but it must not let multiple workers emit
+tuples directly to `Gather Merge` until the worker streams are
+rank-compatible with the SQL merge key.
+
+The local PG18 diagnostic fixture showed why. The single-emitter
+serial HNSW output can contain adjacent inversions when compared
+against the exact SQL `ORDER BY` expression, for example:
+
+```text
+177(-1.646769881) before 379(-1.742236257)
+472(-1.641386509) before 473(-1.769334435)
+172(-1.507030725) before 93(-1.649150252)
+```
+
+Those rows are acceptable when one backend emits the serial AM
+order, because `Gather Merge` only sees one non-empty stream. If
+the same serial order is partitioned across multiple emitters,
+`Gather Merge` compares each stream head by the exact sort key and
+can legally pull a later exact-smaller row ahead of an earlier
+serial row. Hash partitioning, worker-local direct emission, and
+rank-modulo partitioning all have this failure mode unless a
+coordinator withholds rows until the serial prefix is safe.
+
+Therefore the production PG18 path starts with one elected tuple
+emitter for serial-equivalent correctness. The remaining
+multi-emitter design must provide one of these contracts:
+
+- a coordinator-owned serial-rank sequencer whose exposed ordering
+  is compatible with the planner pathkeys;
+- per-worker streams that are actually sorted by the exact SQL
+  `ORDER BY` key, accepting exact-key order rather than serial HNSW
+  order;
+- a planner/runtime contract that avoids `Gather Merge` for
+  approximate serial-order output.
+
+Until one of those contracts is implemented, multi-emitter output
+remains diagnostic-only and is expected to fail strict
+serial-equivalence checks.
+
 ### Shared coordinator, independent beams
 
 The leader initializes a shared scan descriptor holding the query
@@ -175,8 +217,12 @@ more readers.
 
 - `amcanparallel = true` for `ec_hnsw`.
 - Shared scan descriptor with query, rotation, LUT, result heap.
-- Per-worker independent beams with overlap term.
-- Result heap merge via shared-memory spinlock.
+- Serial-equivalent elected tuple emitter while multi-emitter
+  output remains rank-incompatible with PG18 `Gather Merge`.
+- Per-worker independent beams with overlap term once a
+  rank-compatible output contract is available.
+- Result heap merge via shared-memory spinlock once a
+  rank-compatible output contract is available.
 - Cost model entries for parallel path.
 
 ### What does not ship in the first release
