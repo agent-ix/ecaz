@@ -127,6 +127,111 @@ pub(super) struct EcHnswParallelBuildSharedHeader {
     encoded_index_tuples: f64,
 }
 
+#[allow(dead_code)]
+#[repr(C)]
+struct EcHnswConcurrentDsmGraphHeader {
+    node_count: u32,
+    entry_idx: u32,
+    max_level: u8,
+    reserved0: [u8; 3],
+    total_neighbor_slots: u32,
+    code_len: u32,
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+struct EcHnswConcurrentDsmNode {
+    lock: pg_sys::LWLock,
+    level: u8,
+    reserved0: [u8; 3],
+    neighbor_slot_offset: u32,
+    neighbor_slot_count: u32,
+    insert_state: pg_sys::pg_atomic_uint32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmGraphLayout {
+    pub(super) node_count: u32,
+    pub(super) entry_idx: Option<u32>,
+    pub(super) max_level: u8,
+    pub(super) total_neighbor_slots: u32,
+    pub(super) code_len: u32,
+    pub(super) header_offset: pg_sys::Size,
+    pub(super) nodes_offset: pg_sys::Size,
+    pub(super) neighbor_slots_offset: pg_sys::Size,
+    pub(super) codes_offset: pg_sys::Size,
+    pub(super) total_bytes: pg_sys::Size,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmGraphLayout {
+    pub(super) fn for_levels(levels: &build::NativeBuildLevels, m: u16, code_len: usize) -> Self {
+        let node_count = checked_graph_u32(levels.levels.len(), "concurrent DSM graph nodes");
+        let entry_idx = levels
+            .entry_idx
+            .map(|idx| checked_graph_u32(idx, "concurrent DSM graph entry index"));
+        let total_neighbor_slots = levels
+            .levels
+            .iter()
+            .try_fold(0_usize, |total, level| {
+                total.checked_add(page::neighbor_slots(*level, m))
+            })
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM graph neighbor slot count overflow"));
+        let total_neighbor_slots = checked_graph_u32(
+            total_neighbor_slots,
+            "concurrent DSM graph neighbor slot count",
+        );
+        let code_len = checked_graph_u32(code_len, "concurrent DSM graph code length");
+
+        let header_offset = 0;
+        let nodes_offset = bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size);
+        let node_bytes = checked_mul_size(
+            size_of::<EcHnswConcurrentDsmNode>() as pg_sys::Size,
+            node_count as pg_sys::Size,
+            "concurrent DSM graph node array",
+        );
+        let neighbor_slots_offset = checked_add_size(
+            nodes_offset,
+            bufferalign(node_bytes),
+            "concurrent DSM graph neighbor slot offset",
+        );
+        let neighbor_slot_bytes = checked_mul_size(
+            size_of::<u32>() as pg_sys::Size,
+            total_neighbor_slots as pg_sys::Size,
+            "concurrent DSM graph neighbor slot array",
+        );
+        let codes_offset = checked_add_size(
+            neighbor_slots_offset,
+            bufferalign(neighbor_slot_bytes),
+            "concurrent DSM graph code offset",
+        );
+        let code_bytes = checked_mul_size(
+            code_len as pg_sys::Size,
+            node_count as pg_sys::Size,
+            "concurrent DSM graph code corpus",
+        );
+        let total_bytes = checked_add_size(
+            codes_offset,
+            bufferalign(code_bytes),
+            "concurrent DSM graph total bytes",
+        );
+
+        Self {
+            node_count,
+            entry_idx,
+            max_level: levels.max_level,
+            total_neighbor_slots,
+            code_len,
+            header_offset,
+            nodes_offset,
+            neighbor_slots_offset,
+            codes_offset,
+            total_bytes,
+        }
+    }
+}
+
 impl EcHnswParallelBuildSharedHeader {
     pub(super) fn new(
         plan: EcHnswParallelBuildPlan,
@@ -808,6 +913,14 @@ fn checked_u32(value: usize, field: &str) -> u32 {
     u32::try_from(value).unwrap_or_else(|_| pgrx::error!("{field} does not fit in u32"))
 }
 
+fn checked_graph_u32(value: usize, field: &str) -> u32 {
+    let value = checked_u32(value, field);
+    if value == u32::MAX {
+        pgrx::error!("{field} must leave u32::MAX reserved as the invalid graph index");
+    }
+    value
+}
+
 unsafe fn parallel_build_shared_workspace_size(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
@@ -935,6 +1048,46 @@ mod tests {
 
         assert_eq!(shared.scanned_heap_tuples(), 24.0);
         assert_eq!(shared.encoded_index_tuples(), 12.0);
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_layout_sums_slots_and_aligns_sections() {
+        let levels = build::NativeBuildLevels::from_levels(vec![0, 2]);
+        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6);
+        let alignment = pg_sys::ALIGNOF_BUFFER as pg_sys::Size;
+
+        assert_eq!(layout.node_count, 2);
+        assert_eq!(layout.entry_idx, Some(1));
+        assert_eq!(layout.max_level, 2);
+        assert_eq!(layout.total_neighbor_slots, 12);
+        assert_eq!(layout.code_len, 6);
+        assert_eq!(layout.header_offset, 0);
+        assert_eq!(
+            layout.nodes_offset,
+            bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size)
+        );
+        assert_eq!(layout.nodes_offset % alignment, 0);
+        assert_eq!(layout.neighbor_slots_offset % alignment, 0);
+        assert_eq!(layout.codes_offset % alignment, 0);
+        assert!(layout.nodes_offset < layout.neighbor_slots_offset);
+        assert!(layout.neighbor_slots_offset < layout.codes_offset);
+        assert!(layout.codes_offset < layout.total_bytes);
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_layout_handles_empty_levels() {
+        let levels = build::NativeBuildLevels::from_levels(Vec::new());
+        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6);
+
+        assert_eq!(layout.node_count, 0);
+        assert_eq!(layout.entry_idx, None);
+        assert_eq!(layout.max_level, 0);
+        assert_eq!(layout.total_neighbor_slots, 0);
+        assert_eq!(layout.code_len, 6);
+        assert_eq!(
+            layout.total_bytes,
+            bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size)
+        );
     }
 
     #[test]

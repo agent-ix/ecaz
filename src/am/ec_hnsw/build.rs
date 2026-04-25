@@ -1526,7 +1526,7 @@ pub(super) struct NativeBuildLevels {
 }
 
 impl NativeBuildLevels {
-    fn from_levels(levels: Vec<u8>) -> Self {
+    pub(super) fn from_levels(levels: Vec<u8>) -> Self {
         let mut entry_idx = None;
         let mut max_level = 0_u8;
         for (idx, level) in levels.iter().copied().enumerate() {
@@ -1866,12 +1866,10 @@ fn build_native_hnsw_graph(
         build_levels.entry_idx.is_none(),
         state.heap_tuples.is_empty()
     );
-    debug_assert!(
-        build_levels
-            .levels
-            .iter()
-            .all(|level| *level <= build_levels.max_level)
-    );
+    debug_assert!(build_levels
+        .levels
+        .iter()
+        .all(|level| *level <= build_levels.max_level));
     let mut nodes = Vec::with_capacity(state.heap_tuples.len());
     let mut entry_idx = None;
     let mut max_level = 0_u8;
