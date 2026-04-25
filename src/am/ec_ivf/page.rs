@@ -1,5 +1,6 @@
 //! ec_ivf page layout: metadata, centroid, directory, and posting-list codecs.
 
+use std::mem::size_of;
 use std::ptr;
 
 use pgrx::pg_sys;
@@ -9,7 +10,7 @@ use super::P_NEW;
 use crate::storage::{
     page::{
         align_up, aligned_tuple_bytes, usable_page_bytes, DataPage, DataPageChain, ItemPointer,
-        ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+        ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
     },
     wal,
 };
@@ -629,6 +630,111 @@ impl DataPageChain {
             .ok_or_else(|| format!("ec_ivf posting block {} not found", tid.block_number))?;
         page.read_ivf_posting(tid, payload_len)
     }
+}
+
+pub(super) unsafe fn read_ivf_list_directory_and_next(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
+    let (directory, line_pointer_count) = unsafe {
+        read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
+            IvfListDirectoryTuple::decode(tuple_bytes)
+        })?
+    };
+    Ok((directory, next_physical_tuple_tid(tid, line_pointer_count)?))
+}
+
+unsafe fn read_page_tuple<T, DecodeFn>(
+    index_relation: pg_sys::Relation,
+    tuple_tid: ItemPointer,
+    tuple_kind: &str,
+    decode: DecodeFn,
+) -> Result<(T, u16), String>
+where
+    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+{
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            tuple_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_ivf failed to open block {} for {tuple_kind} tuple",
+            tuple_tid.block_number
+        ));
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return Err(format!(
+            "ec_ivf {tuple_kind} tuple offset {} out of range on block {}",
+            tuple_tid.offset_number, tuple_tid.block_number
+        ));
+    }
+
+    let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return Err(format!(
+            "ec_ivf {tuple_kind} tuple bounds exceed block {}",
+            tuple_tid.block_number
+        ));
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let decoded = decode(tuple_bytes);
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    decoded.map(|tuple| (tuple, line_pointer_count))
+}
+
+fn next_physical_tuple_tid(
+    tid: ItemPointer,
+    line_pointer_count: u16,
+) -> Result<ItemPointer, String> {
+    if tid.offset_number < line_pointer_count {
+        return Ok(ItemPointer {
+            block_number: tid.block_number,
+            offset_number: tid.offset_number + 1,
+        });
+    }
+
+    Ok(ItemPointer {
+        block_number: tid
+            .block_number
+            .checked_add(1)
+            .ok_or_else(|| "ec_ivf tuple block number overflow".to_owned())?,
+        offset_number: 1,
+    })
+}
+
+unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+    unsafe {
+        page_ptr
+            .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+            .cast::<pg_sys::ItemIdData>()
+    }
+}
+
+fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
+    let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
+    ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
+        / size_of::<pg_sys::ItemIdData>()) as u16
 }
 
 fn decode_storage_format(value: u8) -> Result<StorageFormat, String> {

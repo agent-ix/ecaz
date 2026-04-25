@@ -2121,6 +2121,8 @@ mod tests {
                 .expect("index oid should exist");
         let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
             unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
         let index_blocks = Spi::get_one::<i64>(
             "SELECT (pg_relation_size('ec_ivf_non_empty_build_idx') \
              / current_setting('block_size')::int)::bigint",
@@ -2134,6 +2136,11 @@ mod tests {
         assert_eq!(total_live, 3);
         assert!(has_centroids);
         assert!(has_directory);
+        assert_eq!(summary_nlists, 3);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, 3);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
         assert!(
             index_blocks >= 2,
             "non-empty ec_ivf build should write metadata plus data pages"

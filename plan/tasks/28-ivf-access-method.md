@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 3 populated build smoke tests underway.
+Status: in progress - Phase 3 build smoke tests underway.
 
 Working branch: `task28-ivf`
 
@@ -139,7 +139,7 @@ yet.
   empty-cluster handling and tests for deterministic output.
 - [x] **Bulk assignment.** Assign every row to one nearest centroid and
   append to the matching posting list.
-- [ ] **Build stats.** Record per-list counts, empty-list count, centroid
+- [x] **Build stats.** Record per-list counts, empty-list count, centroid
   drift inputs, and source/quantizer metadata.
 - [ ] **Build smoke tests.** Cover empty, singleton, tiny multi-row,
   duplicate-heavy, and multi-page list builds.
@@ -168,6 +168,12 @@ posting, and directory data pages with GenericXLog full-image WAL, then rewrite
 metadata with trained dimensions, resolved `nlists`, head pointers, training
 version, and total live tuple count. Scans over populated IVF indexes still
 return no rows until the Phase 4 routing and posting-list scan path lands.
+
+Phase 3 build-stats checkpoint: populated builds now persist per-list directory
+counts and expose PG-test readback for `nlists`, empty-list count, live/dead
+tuple totals, and inserted-since-build drift counters. Metadata already records
+the source dimensions, storage format, rerank mode, resolved `nlists`, and
+training version needed by the first scan-routing slice.
 
 ### Phase 4 - scan path
 

@@ -33,5 +33,6 @@ fn not_implemented(callback: &str) -> ! {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::scan::{
-    debug_ec_ivf_build_metadata, debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_metadata,
+    debug_ec_ivf_build_metadata, debug_ec_ivf_directory_summary,
+    debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_metadata,
 };

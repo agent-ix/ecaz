@@ -226,3 +226,61 @@ pub(crate) unsafe fn debug_ec_ivf_build_metadata(
         metadata.directory_head != crate::storage::page::ItemPointer::INVALID,
     )
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_directory_summary(
+    index_oid: pg_sys::Oid,
+) -> (u32, u32, u64, u64, u64) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+
+    if metadata.directory_head == crate::storage::page::ItemPointer::INVALID {
+        if metadata.total_live_tuples != 0 {
+            unsafe {
+                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
+            pgrx::error!("ec_ivf metadata has live tuples but no directory head");
+        }
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return (metadata.nlists, metadata.nlists, 0, 0, 0);
+    }
+
+    let mut next_tid = metadata.directory_head;
+    let mut empty_lists = 0_u32;
+    let mut live_sum = 0_u64;
+    let mut dead_sum = 0_u64;
+    let mut inserted_sum = 0_u64;
+    for expected_list_id in 0..metadata.nlists {
+        let (directory, following_tid) = unsafe {
+            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)
+                .unwrap_or_else(|e| pgrx::error!("{e}"))
+        };
+        if directory.list_id != expected_list_id {
+            unsafe {
+                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
+            pgrx::error!(
+                "ec_ivf directory order mismatch: got list {}, expected {}",
+                directory.list_id,
+                expected_list_id
+            );
+        }
+        if directory.live_count == 0 {
+            empty_lists += 1;
+        }
+        live_sum += directory.live_count;
+        dead_sum += directory.dead_count;
+        inserted_sum += directory.inserted_since_build;
+        next_tid = following_tid;
+    }
+
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        metadata.nlists,
+        empty_lists,
+        live_sum,
+        dead_sum,
+        inserted_sum,
+    )
+}
