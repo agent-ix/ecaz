@@ -1223,17 +1223,16 @@ impl NativeBuildQueryScoreCache {
 }
 
 struct NativeBuildLayerSearchScratch {
-    visited: HashSet<usize>,
+    visited: NativeBuildVisitedSet,
     candidate_points: BinaryHeap<Reverse<NativeBuildLayerSearchCandidate>>,
     result_points: BinaryHeap<NativeBuildLayerSearchCandidate>,
     successors: Vec<search::BeamCandidate<usize>>,
 }
 
 impl NativeBuildLayerSearchScratch {
-    fn new(ef_construction: usize, m: usize) -> Self {
-        let capacity = ef_construction.saturating_mul(4).max(m.saturating_mul(2));
+    fn new(node_count: usize, ef_construction: usize, m: usize) -> Self {
         Self {
-            visited: HashSet::with_capacity(capacity),
+            visited: NativeBuildVisitedSet::new(node_count),
             candidate_points: BinaryHeap::with_capacity(ef_construction),
             result_points: BinaryHeap::with_capacity(ef_construction.saturating_add(1)),
             successors: Vec::with_capacity(m.saturating_mul(2)),
@@ -1241,10 +1240,44 @@ impl NativeBuildLayerSearchScratch {
     }
 
     fn clear(&mut self) {
-        self.visited.clear();
+        self.visited.begin_search();
         self.candidate_points.clear();
         self.result_points.clear();
         self.successors.clear();
+    }
+}
+
+struct NativeBuildVisitedSet {
+    generations: Vec<u32>,
+    current_generation: u32,
+}
+
+impl NativeBuildVisitedSet {
+    fn new(capacity: usize) -> Self {
+        Self {
+            generations: vec![0; capacity],
+            current_generation: 0,
+        }
+    }
+
+    fn begin_search(&mut self) {
+        self.current_generation = self.current_generation.wrapping_add(1);
+        if self.current_generation == 0 {
+            self.generations.fill(0);
+            self.current_generation = 1;
+        }
+    }
+
+    fn insert(&mut self, node_idx: usize) -> bool {
+        let generation = self
+            .generations
+            .get_mut(node_idx)
+            .expect("native build visited set should cover all graph nodes");
+        if *generation == self.current_generation {
+            return false;
+        }
+        *generation = self.current_generation;
+        true
     }
 }
 
@@ -1284,28 +1317,36 @@ struct NativeBacklinkTargetScorer<'a> {
     state: &'a BuildState,
     metric: BuildGraphMetric,
     target_idx: usize,
-    cache: HashMap<usize, f32>,
+    cache: Vec<(usize, f32)>,
 }
 
 impl<'a> NativeBacklinkTargetScorer<'a> {
-    fn new(state: &'a BuildState, metric: BuildGraphMetric, target_idx: usize) -> Self {
+    fn new(state: &'a BuildState, metric: BuildGraphMetric, cache_capacity: usize) -> Self {
         Self {
             state,
             metric,
-            target_idx,
-            cache: HashMap::new(),
+            target_idx: 0,
+            cache: Vec::with_capacity(cache_capacity),
         }
     }
 
+    fn reset_target(&mut self, target_idx: usize) {
+        self.target_idx = target_idx;
+        self.cache.clear();
+    }
+
     fn score(&mut self, candidate_idx: usize) -> f32 {
-        if let Some(score) = self.cache.get(&candidate_idx) {
+        if let Some((_, score)) = self
+            .cache
+            .iter()
+            .find(|(cached_idx, _)| *cached_idx == candidate_idx)
+        {
             return *score;
         }
-
         let score = self
             .metric
             .score_between(self.state, self.target_idx, candidate_idx);
-        self.cache.insert(candidate_idx, score);
+        self.cache.push((candidate_idx, score));
         score
     }
 }
@@ -1609,7 +1650,8 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
     let mut entry_idx = None;
     let mut max_level = 0_u8;
     let mut query_score_cache = NativeBuildQueryScoreCache::new(state.heap_tuples.len());
-    let mut layer_search_scratch = NativeBuildLayerSearchScratch::new(ef_construction, m);
+    let mut layer_search_scratch =
+        NativeBuildLayerSearchScratch::new(state.heap_tuples.len(), ef_construction, m);
 
     for node_idx in 0..state.heap_tuples.len() {
         let level = insert::choose_insert_level_for_page_size(
@@ -1884,23 +1926,18 @@ fn add_native_backlinks(
             .then_with(|| left.layer.cmp(&right.layer))
     });
     pending.dedup();
-    let mut target_scorer: Option<NativeBacklinkTargetScorer<'_>> = None;
+    let mut target_scorer = NativeBacklinkTargetScorer::new(
+        state,
+        metric,
+        m.saturating_mul(2).saturating_add(1),
+    );
+    let mut current_target_idx = None;
 
     for selection in pending {
-        let needs_new_target_scorer = match target_scorer.as_ref() {
-            Some(scorer) => scorer.target_idx != selection.node_idx,
-            None => true,
-        };
-        if needs_new_target_scorer {
-            target_scorer = Some(NativeBacklinkTargetScorer::new(
-                state,
-                metric,
-                selection.node_idx,
-            ));
+        if current_target_idx != Some(selection.node_idx) {
+            target_scorer.reset_target(selection.node_idx);
+            current_target_idx = Some(selection.node_idx);
         }
-        let target_scorer = target_scorer
-            .as_mut()
-            .expect("target scorer should exist for backlink planning");
         let Some((start, end)) = insert::backlink_slot_bounds(
             m,
             nodes[selection.node_idx].neighbor_slots.len(),
