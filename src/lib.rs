@@ -2709,33 +2709,21 @@ mod tests {
         .expect("index creation should succeed");
 
         let index_oid = ec_ivf_index_oid("ec_ivf_empty_query_prep_idx");
-        let (
-            rescan_called,
-            query_dimensions,
-            query_values,
-            scan_dimensions,
-            scan_nlists,
-            scan_nprobe,
-            has_prepared_query,
-            prepared_lut_len,
-            prepared_sq_len,
-            centroid_score_count,
-            posting_candidate_count,
-            selected_lists,
-        ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let snapshot =
+            unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
 
-        assert!(rescan_called);
-        assert_eq!(query_dimensions, 2);
-        assert_eq!(query_values, vec![1.0, 0.0]);
-        assert_eq!(scan_dimensions, 0);
-        assert_eq!(scan_nlists, 4);
-        assert_eq!(scan_nprobe, 0);
-        assert!(!has_prepared_query);
-        assert_eq!(prepared_lut_len, 0);
-        assert_eq!(prepared_sq_len, 0);
-        assert_eq!(centroid_score_count, 0);
-        assert_eq!(posting_candidate_count, 0);
-        assert!(selected_lists.is_empty());
+        assert!(snapshot.rescan_called);
+        assert_eq!(snapshot.query_dimensions, 2);
+        assert_eq!(snapshot.query_values, vec![1.0, 0.0]);
+        assert_eq!(snapshot.scan_dimensions, 0);
+        assert_eq!(snapshot.scan_nlists, 4);
+        assert_eq!(snapshot.scan_nprobe, 0);
+        assert!(!snapshot.has_prepared_query);
+        assert_eq!(snapshot.prepared_lut_len, 0);
+        assert_eq!(snapshot.prepared_sq_len, 0);
+        assert_eq!(snapshot.centroid_score_count, 0);
+        assert_eq!(snapshot.posting_candidate_count, 0);
+        assert!(snapshot.selected_lists.is_empty());
     }
 
     #[pg_test]
@@ -2757,36 +2745,31 @@ mod tests {
         .expect("index creation should succeed");
 
         let index_oid = ec_ivf_index_oid("ec_ivf_query_prep_idx");
-        let (
-            rescan_called,
-            query_dimensions,
-            query_values,
-            scan_dimensions,
-            scan_nlists,
-            scan_nprobe,
-            has_prepared_query,
-            prepared_lut_len,
-            prepared_sq_len,
-            centroid_score_count,
-            posting_candidate_count,
-            selected_lists,
-        ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
-        let unique_lists = selected_lists.iter().copied().collect::<HashSet<_>>();
+        let snapshot =
+            unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let unique_lists = snapshot
+            .selected_lists
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
 
-        assert!(rescan_called);
-        assert_eq!(query_dimensions, 2);
-        assert_eq!(query_values, vec![1.0, 0.0]);
-        assert_eq!(scan_dimensions, 2);
-        assert_eq!(scan_nlists, 3);
-        assert_eq!(scan_nprobe, 2);
-        assert!(has_prepared_query);
-        assert!(prepared_lut_len > 0);
-        assert!(prepared_sq_len > 0);
-        assert_eq!(centroid_score_count, 3);
-        assert_eq!(posting_candidate_count, 2);
-        assert_eq!(selected_lists.len(), 2);
-        assert_eq!(unique_lists.len(), selected_lists.len());
-        assert!(selected_lists.iter().all(|list_id| *list_id < scan_nlists));
+        assert!(snapshot.rescan_called);
+        assert_eq!(snapshot.query_dimensions, 2);
+        assert_eq!(snapshot.query_values, vec![1.0, 0.0]);
+        assert_eq!(snapshot.scan_dimensions, 2);
+        assert_eq!(snapshot.scan_nlists, 3);
+        assert_eq!(snapshot.scan_nprobe, 2);
+        assert!(snapshot.has_prepared_query);
+        assert!(snapshot.prepared_lut_len > 0);
+        assert!(snapshot.prepared_sq_len > 0);
+        assert_eq!(snapshot.centroid_score_count, 3);
+        assert_eq!(snapshot.posting_candidate_count, 2);
+        assert_eq!(snapshot.selected_lists.len(), 2);
+        assert_eq!(unique_lists.len(), snapshot.selected_lists.len());
+        assert!(snapshot
+            .selected_lists
+            .iter()
+            .all(|list_id| *list_id < snapshot.scan_nlists));
     }
 
     #[pg_test]
@@ -4877,7 +4860,7 @@ mod tests {
             Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
                 .expect("stats query should succeed")
                 .expect("scan counter should be non-null")
-                >= scans_before + 1
+                > scans_before
         );
         assert!(
             Spi::get_one::<i64>("SELECT total_distance_calcs FROM ecaz_stats()")

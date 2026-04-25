@@ -96,7 +96,7 @@ pub(crate) fn ivf_strategy_translation_snapshot() -> StrategyTranslationSnapshot
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
-    unsafe { pgrx::pgrx_extern_c_guard(|| ivf_tree_height_callback_value()) }
+    unsafe { pgrx::pgrx_extern_c_guard(ivf_tree_height_callback_value) }
 }
 
 #[cfg(feature = "pg18")]

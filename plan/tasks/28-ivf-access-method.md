@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 8 validation next.
+Status: in progress - Phase 8 measurement gates next.
 
 Working branch: `task28-ivf`
 
@@ -388,10 +388,10 @@ The non-PG18 path remains on the existing `ReadBufferExtended` loop behind cfg.
 
 ### Phase 8 - validation and measurement
 
-- [ ] **Unit gate.** `cargo test` for trainer, codec, list directory, and
+- [x] **Unit gate.** `cargo test` for trainer, codec, list directory, and
   scan heap behavior.
-- [ ] **Extension gate.** `cargo pgrx test pg18` for SQL callback behavior.
-- [ ] **Lint gate.** `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`.
+- [x] **Extension gate.** `cargo pgrx test pg18` for SQL callback behavior.
+- [x] **Lint gate.** `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`.
 - [ ] **Recall gate.** Real `10K` and `50K` recall@10 sweeps over
   `nlists` and `nprobe`, compared with exact and `ec_hnsw`.
 - [ ] **Latency gate.** Warm and cold p50/p95/p99 at equal recall.
@@ -399,6 +399,13 @@ The non-PG18 path remains on the existing `ReadBufferExtended` loop behind cfg.
   WAL compared against `ec_hnsw`.
 - [ ] **Review packets.** Store raw logs under packet-local artifacts for
   any measurement claim.
+
+Phase 8 PG18 validation checkpoint: pure Rust unit coverage passes under
+`--features pg18` with `pg_test` cases filtered out, the full `cargo pgrx test
+pg18` extension suite passes, and PG18 clippy is clean with `-D warnings`.
+Packet-local raw logs are stored under
+`review/30033-task28-ivf-pg18-validation/artifacts/`. Recall, latency,
+storage, and WAL measurement gates remain open.
 
 ## Owns
 

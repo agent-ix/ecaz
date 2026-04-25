@@ -869,23 +869,26 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) struct EcIvfRescanDebugSnapshot {
+    pub(crate) rescan_called: bool,
+    pub(crate) query_dimensions: u16,
+    pub(crate) query_values: Vec<f32>,
+    pub(crate) scan_dimensions: u16,
+    pub(crate) scan_nlists: u32,
+    pub(crate) scan_nprobe: u32,
+    pub(crate) has_prepared_query: bool,
+    pub(crate) prepared_lut_len: usize,
+    pub(crate) prepared_sq_len: usize,
+    pub(crate) centroid_score_count: u32,
+    pub(crate) posting_candidate_count: u32,
+    pub(crate) selected_lists: Vec<u32>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (
-    bool,
-    u16,
-    Vec<f32>,
-    u16,
-    u32,
-    u32,
-    bool,
-    usize,
-    usize,
-    u32,
-    u32,
-    Vec<u32>,
-) {
+) -> EcIvfRescanDebugSnapshot {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
@@ -897,28 +900,28 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<EcIvfScanOpaque>() };
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_nlists,
-        opaque.scan_nprobe,
-        !opaque.prepared_query.is_null(),
-        if opaque.prepared_query.is_null() {
+    let result = EcIvfRescanDebugSnapshot {
+        rescan_called: opaque.rescan_called,
+        query_dimensions: opaque.query_dimensions,
+        query_values: debug_scan_query(opaque),
+        scan_dimensions: opaque.scan_dimensions,
+        scan_nlists: opaque.scan_nlists,
+        scan_nprobe: opaque.scan_nprobe,
+        has_prepared_query: !opaque.prepared_query.is_null(),
+        prepared_lut_len: if opaque.prepared_query.is_null() {
             0
         } else {
             unsafe { (*opaque.prepared_query).lut.len() }
         },
-        if opaque.prepared_query.is_null() {
+        prepared_sq_len: if opaque.prepared_query.is_null() {
             0
         } else {
             unsafe { (*opaque.prepared_query).sq.len() }
         },
-        opaque.centroid_score_count,
-        opaque.posting_candidate_count,
-        debug_selected_lists(opaque),
-    );
+        centroid_score_count: opaque.centroid_score_count,
+        posting_candidate_count: opaque.posting_candidate_count,
+        selected_lists: debug_selected_lists(opaque),
+    };
 
     unsafe { ec_ivf_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
