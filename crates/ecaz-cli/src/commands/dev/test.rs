@@ -314,11 +314,12 @@ SET ec_hnsw.ef_search = {ef_search};
             .as_str(),
         )
         .await?;
-    let serial_ids = if args.planner_only {
+    let serial_projected_scores = if args.planner_only {
         None
     } else {
-        Some(pg18_parallel_fixture_ids(&client, args.limit).await?)
+        Some(pg18_parallel_fixture_projected_scores(&client, args.limit).await?)
     };
+    let serial_ids = serial_projected_scores.as_deref().map(ids_from_scored_ids);
 
     client
         .batch_execute(format!("SET max_parallel_workers_per_gather = {};", args.workers).as_str())
@@ -334,11 +335,14 @@ SET ec_hnsw.ef_search = {ef_search};
         plan.contains("Parallel Index Scan")
     };
     let has_launched_workers = !args.planner_only && plan.contains("Workers Launched:");
-    let candidate_ids = if args.planner_only {
+    let candidate_projected_scores = if args.planner_only {
         None
     } else {
-        Some(pg18_parallel_fixture_ids(&client, args.limit).await?)
+        Some(pg18_parallel_fixture_projected_scores(&client, args.limit).await?)
     };
+    let candidate_ids = candidate_projected_scores
+        .as_deref()
+        .map(ids_from_scored_ids);
     let serial_scores = if args.diagnose_planner {
         match &serial_ids {
             Some(ids) => Some(pg18_parallel_fixture_scores_for_ids(&client, ids).await?),
@@ -434,9 +438,14 @@ SET ec_hnsw.ef_search = {ef_search};
          [pg18-parallel] candidate_duplicate_ids={}\n\
          [pg18-parallel] candidate_missing_serial_ids={}\n\
          [pg18-parallel] candidate_extra_ids={}\n\
+         [pg18-parallel] serial_projected_orderby_scores={}\n\
+         [pg18-parallel] candidate_projected_orderby_scores={}\n\
+         [pg18-parallel] serial_projected_orderby_score_adjacent_inversions={}\n\
+         [pg18-parallel] candidate_projected_orderby_score_adjacent_inversions={}\n\
          [pg18-parallel] serial_exact_scores={}\n\
          [pg18-parallel] candidate_exact_scores={}\n\
          [pg18-parallel] serial_exact_score_adjacent_inversions={}\n\
+         [pg18-parallel] candidate_exact_score_adjacent_inversions={}\n\
          {final_status}\n",
         cluster.install_version_label,
         cluster.preload_setting,
@@ -452,9 +461,14 @@ SET ec_hnsw.ef_search = {ef_search};
         format_optional_id_counts(candidate_duplicate_ids.as_deref()),
         format_optional_id_counts(candidate_missing_serial_ids.as_deref()),
         format_optional_id_counts(candidate_extra_ids.as_deref()),
+        format_optional_scored_ids(serial_projected_scores.as_deref()),
+        format_optional_scored_ids(candidate_projected_scores.as_deref()),
+        format_optional_score_inversions(serial_projected_scores.as_deref()),
+        format_optional_score_inversions(candidate_projected_scores.as_deref()),
         format_optional_scored_ids(serial_scores.as_deref()),
         format_optional_scored_ids(candidate_scores.as_deref()),
         format_optional_score_inversions(serial_scores.as_deref()),
+        format_optional_score_inversions(candidate_scores.as_deref()),
     );
     if let Some(log_output) = &args.log_output {
         if let Some(parent) = log_output.parent() {
@@ -610,6 +624,10 @@ fn adjacent_score_inversions(scored_ids: &[ScoredId]) -> Vec<(ScoredId, ScoredId
             (right.score < left.score).then_some((left, right))
         })
         .collect()
+}
+
+fn ids_from_scored_ids(scored_ids: &[ScoredId]) -> Vec<i64> {
+    scored_ids.iter().map(|scored| scored.id).collect()
 }
 
 fn duplicate_id_counts(ids: &[i64]) -> Vec<IdCount> {
@@ -1294,15 +1312,15 @@ async fn start_pg18_validation_cluster(
     })
 }
 
-async fn pg18_parallel_fixture_ids(
+async fn pg18_parallel_fixture_projected_scores(
     client: &tokio_postgres::Client,
     limit: i64,
-) -> Result<Vec<i64>> {
+) -> Result<Vec<ScoredId>> {
     let rows = client
         .query(
             format!(
                 "
-SELECT id
+SELECT id, embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[] AS score
 FROM pg18_parallel_scan_fixture
 ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
 LIMIT {limit}
@@ -1314,7 +1332,10 @@ LIMIT {limit}
         .await?;
     Ok(rows
         .into_iter()
-        .map(|row| row.get::<_, i64>(0))
+        .map(|row| ScoredId {
+            id: row.get::<_, i64>(0),
+            score: row.get::<_, f32>(1),
+        })
         .collect::<Vec<_>>())
 }
 
@@ -1544,6 +1565,23 @@ mod tests {
             format_scored_ids(&scored),
             "[(57, -1.543027639), (56, -1.415079832)]"
         );
+    }
+
+    #[test]
+    fn ids_from_scored_ids_preserves_order() {
+        let scored = [
+            ScoredId {
+                id: 57,
+                score: -1.5,
+            },
+            ScoredId {
+                id: 12,
+                score: -0.5,
+            },
+            ScoredId { id: 99, score: 0.0 },
+        ];
+
+        assert_eq!(ids_from_scored_ids(&scored), [57, 12, 99]);
     }
 
     #[test]
