@@ -15,7 +15,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            let mut metadata = page::read_metadata_page(index_relation);
+            let metadata = page::read_metadata_page(index_relation);
             metadata
                 .storage_format
                 .validate_v1_supported()
@@ -67,11 +67,14 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let posting_tid = page::append_ivf_posting(index_relation, tail_block, &posting)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
 
-            apply_insert_stats(&mut metadata, &mut directory, posting_tid)
+            apply_directory_insert_stats(&mut directory, posting_tid)
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert stats update failed: {e}"));
             page::rewrite_ivf_list_directory(index_relation, directory_tid, directory)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            page::initialize_metadata_page(index_relation, metadata);
+            page::update_metadata_page(index_relation, |metadata| {
+                apply_metadata_insert_stats(metadata)
+            })
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert metadata update failed: {e}"));
 
             true
         })
@@ -271,8 +274,7 @@ fn live_insert_tail_block(
     }
 }
 
-fn apply_insert_stats(
-    metadata: &mut page::MetadataPage,
+fn apply_directory_insert_stats(
     directory: &mut page::IvfListDirectoryTuple,
     posting_tid: ItemPointer,
 ) -> Result<(), String> {
@@ -292,6 +294,10 @@ fn apply_insert_stats(
         .inserted_since_build
         .checked_add(1)
         .ok_or_else(|| "list inserted-since-build count overflow".to_owned())?;
+    Ok(())
+}
+
+fn apply_metadata_insert_stats(metadata: &mut page::MetadataPage) -> Result<(), String> {
     metadata.total_live_tuples = metadata
         .total_live_tuples
         .checked_add(1)

@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 concurrency coverage next.
+Status: in progress - Phase 7 planner/admin coverage next.
 
 Working branch: `task28-ivf`
 
@@ -245,7 +245,7 @@ packet-local artifacts.
   the current posting tail page and advancing drift counters.
 - [x] **Duplicate heap TID rejection.** Reject live inserts whose heap TID is
   already present in any live IVF posting.
-- [ ] **Concurrency coverage.** Cover concurrent inserts into different
+- [x] **Concurrency coverage.** Cover concurrent inserts into different
   lists.
 
 Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
@@ -278,6 +278,14 @@ length against the canonical quantizer shape before build and live insert
 writes. Dimension mismatch coverage remains in PG tests, and tqvector
 bits/seed mismatches are rejected by the canonical type codec before the AM sees
 the row.
+
+Phase 5 concurrency checkpoint: PG18 coverage now starts two separate `psql`
+sessions behind a shared advisory-lock barrier, inserts rows assigned to
+different IVF lists, and verifies heap count, metadata live count, directory
+live count, per-list inserted-since-build totals, and full-probe scan
+reachability. Live insert metadata counters now update through an exclusive
+metadata-page read-modify-write path so concurrent different-list inserts do
+not lose global counter increments.
 
 ### Phase 6 - vacuum and drift handling
 

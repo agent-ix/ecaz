@@ -1254,7 +1254,8 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use std::collections::{HashMap, HashSet};
-    use std::time::Instant;
+    use std::process::{Child, Command, Output, Stdio};
+    use std::time::{Duration, Instant};
 
     const RECALL_BITS: i32 = 4;
     const RECALL_SEED: i64 = 42;
@@ -2243,6 +2244,98 @@ mod tests {
         .expect("relation size should exist")
     }
 
+    struct PsqlTestConnection {
+        psql_bin: String,
+        host: String,
+        port: String,
+        database: String,
+        user: String,
+    }
+
+    fn pg_test_psql_connection() -> PsqlTestConnection {
+        let socket_dirs = Spi::get_one::<String>("SHOW unix_socket_directories")
+            .expect("SPI query should succeed")
+            .expect("unix socket setting should exist");
+        let host = socket_dirs
+            .split(',')
+            .map(str::trim)
+            .find(|entry| !entry.is_empty())
+            .unwrap_or("localhost")
+            .to_owned();
+        let port = Spi::get_one::<String>("SHOW port")
+            .expect("SPI query should succeed")
+            .expect("port setting should exist");
+        let database = Spi::get_one::<String>("SELECT current_database()::text")
+            .expect("SPI query should succeed")
+            .expect("current database should exist");
+        let user = Spi::get_one::<String>("SELECT current_user::text")
+            .expect("SPI query should succeed")
+            .expect("current user should exist");
+        let psql_bin = std::env::var("TQV_PSQL_BIN").unwrap_or_else(|_| "psql".to_owned());
+
+        PsqlTestConnection {
+            psql_bin,
+            host,
+            port,
+            database,
+            user,
+        }
+    }
+
+    fn psql_command(connection: &PsqlTestConnection) -> Command {
+        let mut command = Command::new(&connection.psql_bin);
+        command
+            .arg("-X")
+            .arg("-v")
+            .arg("ON_ERROR_STOP=1")
+            .arg("-q")
+            .arg("-h")
+            .arg(&connection.host)
+            .arg("-p")
+            .arg(&connection.port)
+            .arg("-d")
+            .arg(&connection.database)
+            .arg("-U")
+            .arg(&connection.user);
+        command
+    }
+
+    fn assert_psql_success(label: &str, output: Output) {
+        assert!(
+            output.status.success(),
+            "{label} failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn run_psql_script(connection: &PsqlTestConnection, label: &str, sql: &str) {
+        let output = psql_command(connection)
+            .arg("-c")
+            .arg(sql)
+            .output()
+            .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"));
+        assert_psql_success(label, output);
+    }
+
+    fn spawn_psql_script(connection: &PsqlTestConnection, label: &str, sql: &str) -> Child {
+        psql_command(connection)
+            .arg("-c")
+            .arg(sql)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"))
+    }
+
+    fn ec_ivf_insert_values(start_id: i64, count: usize, vector: &str) -> String {
+        (0..count)
+            .map(|offset| format!("({}, '{}'::ecvector)", start_id + offset as i64, vector))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     #[pg_test]
     fn test_ec_ivf_empty_index_build_initializes_metadata_page() {
         Spi::run("CREATE TABLE ec_ivf_empty_build (id bigint primary key, embedding ecvector)")
@@ -2785,6 +2878,102 @@ mod tests {
         assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
         assert!(ivf_ids.contains(&1));
         assert!(ivf_ids.contains(&2));
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_concurrent_inserts() {
+        const TABLE_NAME: &str = "ec_ivf_concurrent_insert";
+        const INDEX_NAME: &str = "ec_ivf_concurrent_insert_idx";
+        const WORKER_INSERTS: usize = 20;
+        const EXPECTED_INSERTED: u64 = (WORKER_INSERTS * 2) as u64;
+        const EXPECTED_TOTAL: u64 = EXPECTED_INSERTED + 2;
+        const BARRIER_KEY: i64 = 280_501;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_ivf concurrent insert setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} VALUES
+                   (0, '[1.0,0.0]'::ecvector),
+                   (1, '[0.0,1.0]'::ecvector);
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_ivf
+                   (embedding ecvector_ip_ops)
+                   WITH (nlists = 2, nprobe = 2, training_sample_rows = 2, seed = 37);",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let left_values = ec_ivf_insert_values(10, WORKER_INSERTS, "[1.0,0.05]");
+        let right_values = ec_ivf_insert_values(1_000, WORKER_INSERTS, "[0.05,1.0]");
+        let worker_sql = |values: String| {
+            format!(
+                "SET lock_timeout = '10s';
+                 SET statement_timeout = '30s';
+                 SELECT pg_advisory_lock_shared({BARRIER_KEY});
+                 SELECT pg_advisory_unlock_shared({BARRIER_KEY});
+                 INSERT INTO {TABLE_NAME} VALUES {values};"
+            )
+        };
+        let workers = vec![
+            (
+                "left-list worker",
+                spawn_psql_script(&connection, "left-list worker", &worker_sql(left_values)),
+            ),
+            (
+                "right-list worker",
+                spawn_psql_script(&connection, "right-list worker", &worker_sql(right_values)),
+            ),
+        ];
+        std::thread::sleep(Duration::from_millis(750));
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = ec_ivf_index_oid(INDEX_NAME);
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (_, _, list0_live, _, list0_inserted) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+        let (_, _, list1_live, _, list1_inserted) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 1) };
+        let ctid_to_id = ctid_id_map(TABLE_NAME);
+        let ivf_ids = ivf_debug_output_ids(
+            index_oid,
+            vec![1.0, 0.0],
+            &ctid_to_id,
+            EXPECTED_TOTAL as usize,
+        );
+        let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(heap_count, EXPECTED_TOTAL as i64);
+        assert_eq!(summary_nlists, 2);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, EXPECTED_TOTAL);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, EXPECTED_INSERTED);
+        assert_eq!(total_live, EXPECTED_TOTAL);
+        assert_eq!(list0_live + list1_live, EXPECTED_TOTAL);
+        assert_eq!(list0_inserted + list1_inserted, EXPECTED_INSERTED);
+        assert!(list0_inserted > 0);
+        assert!(list1_inserted > 0);
+        assert_eq!(ivf_ids.len(), EXPECTED_TOTAL as usize);
+        assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
+        assert!(ivf_ids.contains(&10));
+        assert!(ivf_ids.contains(&1_000));
     }
 
     #[pg_test]
