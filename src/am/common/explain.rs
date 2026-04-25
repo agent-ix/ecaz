@@ -72,6 +72,10 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_contributor_publish_handoff_ready: u32,
     pub stats_parallel_contributor_publish_ordered_after_visible: u32,
     pub stats_parallel_contributor_publish_no_visible_owner: u32,
+    pub stats_parallel_contributor_publish_rank_before_visible: u32,
+    pub stats_parallel_contributor_publish_rank_equal_visible: u32,
+    pub stats_parallel_contributor_publish_rank_after_visible: u32,
+    pub stats_parallel_contributor_publish_rank_missing_visible: u32,
     pub stats_parallel_contributor_no_visible_owner_drops: u32,
     pub stats_parallel_contributor_duplicate_active_drops: u32,
     pub stats_parallel_contributor_ordered_after_visible_drops: u32,
@@ -96,7 +100,7 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 36] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 40] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -174,6 +178,30 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 36] = [
         counter_type: "u32",
         increments_when:
             "a hidden contributor publish finds no selected or admitted visible owner row to compare",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_publish_rank_before_visible",
+        counter_type: "u32",
+        increments_when:
+            "a hidden contributor publish has a local rank hint before the visible owner row",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_publish_rank_equal_visible",
+        counter_type: "u32",
+        increments_when:
+            "a hidden contributor publish has the same local rank hint as the visible owner row",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_publish_rank_after_visible",
+        counter_type: "u32",
+        increments_when:
+            "a hidden contributor publish has a local rank hint after the visible owner row",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_publish_rank_missing_visible",
+        counter_type: "u32",
+        increments_when:
+            "a hidden contributor publish or visible owner row is missing a local rank hint",
     },
     ExplainCounterDefinition {
         counter_name: "stats_parallel_contributor_no_visible_owner_drops",
@@ -388,6 +416,22 @@ impl TqExplainCounters {
         self.stats_parallel_contributor_publish_no_visible_owner += 1;
     }
 
+    pub(crate) fn record_parallel_contributor_publish_rank_before_visible(&mut self) {
+        self.stats_parallel_contributor_publish_rank_before_visible += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_publish_rank_equal_visible(&mut self) {
+        self.stats_parallel_contributor_publish_rank_equal_visible += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_publish_rank_after_visible(&mut self) {
+        self.stats_parallel_contributor_publish_rank_after_visible += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_publish_rank_missing_visible(&mut self) {
+        self.stats_parallel_contributor_publish_rank_missing_visible += 1;
+    }
+
     pub(crate) fn record_parallel_contributor_no_visible_owner_drop(&mut self) {
         self.stats_parallel_contributor_no_visible_owner_drops += 1;
     }
@@ -480,7 +524,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 36] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 40] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -552,6 +596,30 @@ impl TqExplainCounters {
                 property_name: "Parallel Contributor Publish: No Visible Owner",
                 value: ExplainPropertyValue::Integer(
                     self.stats_parallel_contributor_publish_no_visible_owner,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Publish Rank: Before Visible",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_publish_rank_before_visible,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Publish Rank: Equal Visible",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_publish_rank_equal_visible,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Publish Rank: After Visible",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_publish_rank_after_visible,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Publish Rank: Missing Visible",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_publish_rank_missing_visible,
                 ),
             },
             ExplainProperty {
@@ -952,6 +1020,30 @@ mod tests {
                         "a hidden contributor publish finds no selected or admitted visible owner row to compare",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_publish_rank_before_visible",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden contributor publish has a local rank hint before the visible owner row",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_publish_rank_equal_visible",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden contributor publish has the same local rank hint as the visible owner row",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_publish_rank_after_visible",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden contributor publish has a local rank hint after the visible owner row",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_publish_rank_missing_visible",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden contributor publish or visible owner row is missing a local rank hint",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_parallel_contributor_no_visible_owner_drops",
                     counter_type: "u32",
                     increments_when:
@@ -1121,6 +1213,10 @@ mod tests {
         counters.record_parallel_contributor_publish_handoff_ready();
         counters.record_parallel_contributor_publish_ordered_after_visible();
         counters.record_parallel_contributor_publish_no_visible_owner();
+        counters.record_parallel_contributor_publish_rank_before_visible();
+        counters.record_parallel_contributor_publish_rank_equal_visible();
+        counters.record_parallel_contributor_publish_rank_after_visible();
+        counters.record_parallel_contributor_publish_rank_missing_visible();
         counters.record_parallel_contributor_no_visible_owner_drop();
         counters.record_parallel_contributor_duplicate_active_drop();
         counters.record_parallel_contributor_ordered_after_visible_drop();
@@ -1161,6 +1257,10 @@ mod tests {
                 stats_parallel_contributor_publish_handoff_ready: 1,
                 stats_parallel_contributor_publish_ordered_after_visible: 1,
                 stats_parallel_contributor_publish_no_visible_owner: 1,
+                stats_parallel_contributor_publish_rank_before_visible: 1,
+                stats_parallel_contributor_publish_rank_equal_visible: 1,
+                stats_parallel_contributor_publish_rank_after_visible: 1,
+                stats_parallel_contributor_publish_rank_missing_visible: 1,
                 stats_parallel_contributor_no_visible_owner_drops: 1,
                 stats_parallel_contributor_duplicate_active_drops: 1,
                 stats_parallel_contributor_ordered_after_visible_drops: 1,
@@ -1204,6 +1304,10 @@ mod tests {
             stats_parallel_contributor_publish_handoff_ready: 37,
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
+            stats_parallel_contributor_publish_rank_before_visible: 44,
+            stats_parallel_contributor_publish_rank_equal_visible: 45,
+            stats_parallel_contributor_publish_rank_after_visible: 46,
+            stats_parallel_contributor_publish_rank_missing_visible: 47,
             stats_parallel_contributor_no_visible_owner_drops: 44,
             stats_parallel_contributor_duplicate_active_drops: 45,
             stats_parallel_contributor_ordered_after_visible_drops: 46,
@@ -1250,6 +1354,10 @@ mod tests {
             stats_parallel_contributor_publish_handoff_ready: 37,
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
+            stats_parallel_contributor_publish_rank_before_visible: 44,
+            stats_parallel_contributor_publish_rank_equal_visible: 45,
+            stats_parallel_contributor_publish_rank_after_visible: 46,
+            stats_parallel_contributor_publish_rank_missing_visible: 47,
             stats_parallel_contributor_no_visible_owner_drops: 44,
             stats_parallel_contributor_duplicate_active_drops: 45,
             stats_parallel_contributor_ordered_after_visible_drops: 46,
@@ -1332,6 +1440,22 @@ mod tests {
                 ExplainProperty {
                     property_name: "Parallel Contributor Publish: No Visible Owner",
                     value: ExplainPropertyValue::Integer(43),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Publish Rank: Before Visible",
+                    value: ExplainPropertyValue::Integer(44),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Publish Rank: Equal Visible",
+                    value: ExplainPropertyValue::Integer(45),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Publish Rank: After Visible",
+                    value: ExplainPropertyValue::Integer(46),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Publish Rank: Missing Visible",
+                    value: ExplainPropertyValue::Integer(47),
                 },
                 ExplainProperty {
                     property_name: "Parallel Contributor No Visible Owner Drops",

@@ -1589,7 +1589,53 @@ fn record_non_emitting_parallel_contributor_hidden_publish_classification(
         }
     }
 
+    record_non_emitting_parallel_contributor_hidden_publish_rank_relation(opaque);
+
     classification
+}
+
+fn record_non_emitting_parallel_contributor_hidden_publish_rank_relation(
+    opaque: &mut TqScanOpaque,
+) {
+    let relation = unsafe {
+        super::parallel::classify_parallel_scan_contributor_hidden_publish_rank_relation(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel contributor publish rank classification failed: {err}")
+    });
+    let Some(relation) = relation else {
+        return;
+    };
+
+    match relation {
+        super::parallel::EcParallelContributorPublishRankRelation::BeforeVisible => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_rank_before_visible(),
+        super::parallel::EcParallelContributorPublishRankRelation::EqualVisible => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_rank_equal_visible(),
+        super::parallel::EcParallelContributorPublishRankRelation::AfterVisible => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_rank_after_visible(),
+        super::parallel::EcParallelContributorPublishRankRelation::MissingVisibleRank => opaque
+            .explain_counters
+            .record_parallel_contributor_publish_rank_missing_visible(),
+    }
+
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_hidden_publish_rank_relation(
+            opaque.parallel_scan_state,
+            relation,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor publish rank counter failed: {err}")
+        }
+    }
 }
 
 fn classify_non_emitting_parallel_contributor_hidden_drain(
@@ -1809,6 +1855,30 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .explain_counters
         .stats_parallel_contributor_publish_no_visible_owner
         .max(shared.publish_no_visible_owner);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_before_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_before_visible
+        .max(shared.publish_rank_before_visible);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_equal_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_equal_visible
+        .max(shared.publish_rank_equal_visible);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_after_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_after_visible
+        .max(shared.publish_rank_after_visible);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_missing_visible = opaque
+        .explain_counters
+        .stats_parallel_contributor_publish_rank_missing_visible
+        .max(shared.publish_rank_missing_visible);
     opaque
         .explain_counters
         .stats_parallel_contributor_no_visible_owner_drops = opaque
@@ -9341,6 +9411,21 @@ mod tests {
                 .stats_parallel_contributor_publish_no_visible_owner,
             1,
             "the elected emitter should fold shared publish classifications into explain counters"
+        );
+        unsafe {
+            crate::am::ec_hnsw::parallel::record_parallel_scan_contributor_hidden_publish_rank_relation(
+                contributor.parallel_scan_state,
+                crate::am::ec_hnsw::parallel::EcParallelContributorPublishRankRelation::AfterVisible,
+            )
+        }
+        .expect("shared publish rank relation should record");
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_publish_rank_after_visible,
+            1,
+            "the elected emitter should fold shared rank-relation counters into explain counters"
         );
 
         record_non_emitting_parallel_contributor_no_visible_owner_drop(&mut contributor);

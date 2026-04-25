@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 21;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 22;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -71,6 +71,10 @@ pub(crate) struct EcParallelCoordinatorState {
     contributor_publish_handoff_ready: AtomicU32,
     contributor_publish_ordered_after_visible: AtomicU32,
     contributor_publish_no_visible_owner: AtomicU32,
+    contributor_publish_rank_before_visible: AtomicU32,
+    contributor_publish_rank_equal_visible: AtomicU32,
+    contributor_publish_rank_after_visible: AtomicU32,
+    contributor_publish_rank_missing_visible: AtomicU32,
     contributor_no_visible_owner_drops: AtomicU32,
     contributor_duplicate_active_drops: AtomicU32,
     contributor_ordered_after_visible_drops: AtomicU32,
@@ -329,6 +333,10 @@ pub(crate) struct EcParallelContributorCounters {
     pub(crate) publish_handoff_ready: u32,
     pub(crate) publish_ordered_after_visible: u32,
     pub(crate) publish_no_visible_owner: u32,
+    pub(crate) publish_rank_before_visible: u32,
+    pub(crate) publish_rank_equal_visible: u32,
+    pub(crate) publish_rank_after_visible: u32,
+    pub(crate) publish_rank_missing_visible: u32,
     pub(crate) no_visible_owner_drops: u32,
     pub(crate) duplicate_active_drops: u32,
     pub(crate) ordered_after_visible_drops: u32,
@@ -349,6 +357,14 @@ pub(crate) enum EcParallelContributorHiddenDrainClassification {
     HandoffReady,
     OrderedAfterVisible,
     NoVisibleOwner,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum EcParallelContributorPublishRankRelation {
+    BeforeVisible,
+    EqualVisible,
+    AfterVisible,
+    MissingVisibleRank,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -851,6 +867,10 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             contributor_publish_handoff_ready: AtomicU32::new(0),
             contributor_publish_ordered_after_visible: AtomicU32::new(0),
             contributor_publish_no_visible_owner: AtomicU32::new(0),
+            contributor_publish_rank_before_visible: AtomicU32::new(0),
+            contributor_publish_rank_equal_visible: AtomicU32::new(0),
+            contributor_publish_rank_after_visible: AtomicU32::new(0),
+            contributor_publish_rank_missing_visible: AtomicU32::new(0),
             contributor_no_visible_owner_drops: AtomicU32::new(0),
             contributor_duplicate_active_drops: AtomicU32::new(0),
             contributor_ordered_after_visible_drops: AtomicU32::new(0),
@@ -2626,6 +2646,30 @@ pub(crate) unsafe fn record_parallel_scan_contributor_hidden_publish_classificat
     Ok(())
 }
 
+pub(crate) unsafe fn record_parallel_scan_contributor_hidden_publish_rank_relation(
+    state: *mut EcParallelScanState,
+    relation: EcParallelContributorPublishRankRelation,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = unsafe { &*attachment.coordinator };
+    let counter = match relation {
+        EcParallelContributorPublishRankRelation::BeforeVisible => {
+            &coordinator.contributor_publish_rank_before_visible
+        }
+        EcParallelContributorPublishRankRelation::EqualVisible => {
+            &coordinator.contributor_publish_rank_equal_visible
+        }
+        EcParallelContributorPublishRankRelation::AfterVisible => {
+            &coordinator.contributor_publish_rank_after_visible
+        }
+        EcParallelContributorPublishRankRelation::MissingVisibleRank => {
+            &coordinator.contributor_publish_rank_missing_visible
+        }
+    };
+    counter.fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
 pub(crate) unsafe fn record_parallel_scan_contributor_duplicate_retire(
     state: *mut EcParallelScanState,
 ) -> Result<(), &'static str> {
@@ -2684,6 +2728,96 @@ pub(crate) unsafe fn record_parallel_scan_contributor_poll_limit_exit(
         .contributor_poll_limit_exits
         .fetch_add(1, Ordering::AcqRel);
     Ok(())
+}
+
+unsafe fn visible_owner_pending_output_for_hidden_locked(
+    attachment: &ParallelScanAttachment,
+    hidden_slot_index: u32,
+    coordinator: &EcParallelCoordinatorSnapshot,
+) -> Result<Option<EcParallelPendingOutputSnapshot>, &'static str> {
+    if let Some(selected_slot_index) = coordinator.selected_result_slot_index {
+        if selected_slot_index != hidden_slot_index {
+            let selected_slot = unsafe { attachment.result_slot(selected_slot_index) }?;
+            let selected_snapshot =
+                load_coordinator_result_slot_snapshot(unsafe { &*selected_slot });
+            if unsafe {
+                coordinator_result_slot_snapshot_is_live_with_attachment(
+                    attachment,
+                    &selected_snapshot,
+                )
+            } {
+                if let Some(selected_pending_output) =
+                    coordinator_pending_output_snapshot(&selected_snapshot)
+                {
+                    return Ok(Some(selected_pending_output));
+                }
+            }
+        }
+    }
+
+    let admitted_count = coordinator
+        .admitted_result_count
+        .min(attachment.admitted_result_count);
+    if admitted_count > 0 {
+        let result = unsafe { attachment.admitted_result(0) }?;
+        let snapshot = load_admitted_result_snapshot(unsafe { &*result });
+        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
+            return Ok(Some(snapshot.pending_output));
+        }
+    }
+
+    Ok(None)
+}
+
+fn contributor_publish_rank_relation(
+    hidden: &EcParallelPendingOutputSnapshot,
+    visible: &EcParallelPendingOutputSnapshot,
+) -> EcParallelContributorPublishRankRelation {
+    match (hidden.approx_rank, visible.approx_rank) {
+        (Some(hidden_rank), Some(visible_rank)) => match hidden_rank.cmp(&visible_rank) {
+            std::cmp::Ordering::Less => EcParallelContributorPublishRankRelation::BeforeVisible,
+            std::cmp::Ordering::Equal => EcParallelContributorPublishRankRelation::EqualVisible,
+            std::cmp::Ordering::Greater => EcParallelContributorPublishRankRelation::AfterVisible,
+        },
+        _ => EcParallelContributorPublishRankRelation::MissingVisibleRank,
+    }
+}
+
+pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_publish_rank_relation(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<Option<EcParallelContributorPublishRankRelation>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
+
+    let Ok(slot) = (unsafe { attachment.result_slot(slot_index) }) else {
+        return Ok(None);
+    };
+    let hidden_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if !coordinator_result_slot_snapshot_is_hidden_local_only(&hidden_slot, attachment.rescan_epoch)
+        || !unsafe { coordinator_result_slot_worker_claim_is_live(&attachment, slot_index) }
+    {
+        return Ok(None);
+    }
+    let Some(hidden_pending_output) = coordinator_pending_output_snapshot(&hidden_slot) else {
+        return Ok(None);
+    };
+
+    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    let Some(visible_pending_output) = (unsafe {
+        visible_owner_pending_output_for_hidden_locked(&attachment, slot_index, &coordinator)
+    })?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(contributor_publish_rank_relation(
+        &hidden_pending_output,
+        &visible_pending_output,
+    )))
 }
 
 pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
@@ -2828,6 +2962,18 @@ pub(crate) unsafe fn read_parallel_scan_contributor_counters(
             .load(Ordering::Acquire),
         publish_no_visible_owner: coordinator
             .contributor_publish_no_visible_owner
+            .load(Ordering::Acquire),
+        publish_rank_before_visible: coordinator
+            .contributor_publish_rank_before_visible
+            .load(Ordering::Acquire),
+        publish_rank_equal_visible: coordinator
+            .contributor_publish_rank_equal_visible
+            .load(Ordering::Acquire),
+        publish_rank_after_visible: coordinator
+            .contributor_publish_rank_after_visible
+            .load(Ordering::Acquire),
+        publish_rank_missing_visible: coordinator
+            .contributor_publish_rank_missing_visible
             .load(Ordering::Acquire),
         no_visible_owner_drops: coordinator
             .contributor_no_visible_owner_drops
@@ -5328,6 +5474,159 @@ mod tests {
             .expect("hidden drain classification should succeed"),
             EcParallelContributorHiddenDrainClassification::DuplicateActive,
             "a hidden row matching the visible owner's heap TID is an active duplicate"
+        );
+    }
+
+    #[test]
+    fn classify_parallel_scan_contributor_hidden_publish_rank_relation_reports_visible_rank() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let visible_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("visible worker claim should succeed");
+        let hidden_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("hidden worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                visible_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 330,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 331,
+                        offset_number: 1,
+                    },
+                    score: -5.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: Some(10),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 331,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("visible publish should succeed");
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                hidden_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 332,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 333,
+                        offset_number: 1,
+                    },
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: Some(7),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 333,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("hidden publish should succeed");
+
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_drain(attachment.state, hidden_slot)
+            }
+            .expect("hidden drain classification should succeed"),
+            EcParallelContributorHiddenDrainClassification::OrderedAfterVisible,
+            "score ordering should remain the production safety gate"
+        );
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_publish_rank_relation(
+                    attachment.state,
+                    hidden_slot,
+                )
+            }
+            .expect("hidden rank relation should classify"),
+            Some(EcParallelContributorPublishRankRelation::BeforeVisible),
+            "the diagnostic should expose local-rank-before / score-after disagreement"
+        );
+
+        unsafe {
+            record_parallel_scan_contributor_hidden_publish_rank_relation(
+                attachment.state,
+                EcParallelContributorPublishRankRelation::BeforeVisible,
+            )
+        }
+        .expect("rank relation counter should record");
+        assert_eq!(
+            unsafe { read_parallel_scan_contributor_counters(attachment.state) }
+                .expect("contributor counters should read")
+                .publish_rank_before_visible,
+            1,
+            "shared rank-relation counters should be readable by the emitter"
+        );
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                hidden_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 334,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 335,
+                        offset_number: 1,
+                    },
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 335,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("hidden publish without rank should succeed");
+
+        assert_eq!(
+            unsafe {
+                classify_parallel_scan_contributor_hidden_publish_rank_relation(
+                    attachment.state,
+                    hidden_slot,
+                )
+            }
+            .expect("hidden rank relation should classify"),
+            Some(EcParallelContributorPublishRankRelation::MissingVisibleRank),
+            "missing local rank data should be classified separately"
         );
     }
 
