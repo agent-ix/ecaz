@@ -151,6 +151,57 @@ struct EcHnswConcurrentDsmNode {
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmNodeLayout {
+    pub(super) level: u8,
+    pub(super) neighbor_slot_offset: u32,
+    pub(super) neighbor_slot_count: u32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmNodeLayoutPlan {
+    pub(super) nodes: Vec<EcHnswConcurrentDsmNodeLayout>,
+    pub(super) total_neighbor_slots: u32,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmNodeLayoutPlan {
+    pub(super) fn for_levels(levels: &build::NativeBuildLevels, m: u16) -> Self {
+        let mut nodes = Vec::with_capacity(levels.levels.len());
+        let mut next_neighbor_slot_offset = 0_usize;
+
+        for level in levels.levels.iter().copied() {
+            let neighbor_slot_count = page::neighbor_slots(level, m);
+            nodes.push(EcHnswConcurrentDsmNodeLayout {
+                level,
+                neighbor_slot_offset: checked_u32(
+                    next_neighbor_slot_offset,
+                    "concurrent DSM graph node neighbor slot offset",
+                ),
+                neighbor_slot_count: checked_u32(
+                    neighbor_slot_count,
+                    "concurrent DSM graph node neighbor slot count",
+                ),
+            });
+            next_neighbor_slot_offset = next_neighbor_slot_offset
+                .checked_add(neighbor_slot_count)
+                .unwrap_or_else(|| {
+                    pgrx::error!("concurrent DSM graph neighbor slot count overflow")
+                });
+        }
+
+        Self {
+            nodes,
+            total_neighbor_slots: checked_graph_u32(
+                next_neighbor_slot_offset,
+                "concurrent DSM graph neighbor slot count",
+            ),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct EcHnswConcurrentDsmGraphLayout {
     pub(super) node_count: u32,
     pub(super) entry_idx: Option<u32>,
@@ -167,21 +218,12 @@ pub(super) struct EcHnswConcurrentDsmGraphLayout {
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmGraphLayout {
     pub(super) fn for_levels(levels: &build::NativeBuildLevels, m: u16, code_len: usize) -> Self {
+        let node_plan = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(levels, m);
         let node_count = checked_graph_u32(levels.levels.len(), "concurrent DSM graph nodes");
         let entry_idx = levels
             .entry_idx
             .map(|idx| checked_graph_u32(idx, "concurrent DSM graph entry index"));
-        let total_neighbor_slots = levels
-            .levels
-            .iter()
-            .try_fold(0_usize, |total, level| {
-                total.checked_add(page::neighbor_slots(*level, m))
-            })
-            .unwrap_or_else(|| pgrx::error!("concurrent DSM graph neighbor slot count overflow"));
-        let total_neighbor_slots = checked_graph_u32(
-            total_neighbor_slots,
-            "concurrent DSM graph neighbor slot count",
-        );
+        let total_neighbor_slots = node_plan.total_neighbor_slots;
         let code_len = checked_graph_u32(code_len, "concurrent DSM graph code length");
 
         let header_offset = 0;
@@ -1048,6 +1090,38 @@ mod tests {
 
         assert_eq!(shared.scanned_heap_tuples(), 24.0);
         assert_eq!(shared.encoded_index_tuples(), 12.0);
+    }
+
+    #[test]
+    fn concurrent_dsm_node_layout_plan_assigns_flat_neighbor_slices() {
+        let levels = build::NativeBuildLevels::from_levels(vec![0, 2]);
+        let node_plan = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(&levels, 2);
+
+        assert_eq!(node_plan.total_neighbor_slots, 12);
+        assert_eq!(
+            node_plan.nodes,
+            vec![
+                EcHnswConcurrentDsmNodeLayout {
+                    level: 0,
+                    neighbor_slot_offset: 0,
+                    neighbor_slot_count: 4,
+                },
+                EcHnswConcurrentDsmNodeLayout {
+                    level: 2,
+                    neighbor_slot_offset: 4,
+                    neighbor_slot_count: 8,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn concurrent_dsm_node_layout_plan_handles_empty_levels() {
+        let levels = build::NativeBuildLevels::from_levels(Vec::new());
+        let node_plan = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(&levels, 2);
+
+        assert_eq!(node_plan.total_neighbor_slots, 0);
+        assert!(node_plan.nodes.is_empty());
     }
 
     #[test]
