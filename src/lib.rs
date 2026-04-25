@@ -3112,6 +3112,73 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_parallel_index_build_uses_workers() {
+        Spi::run("SET max_parallel_maintenance_workers = 2").expect("set should succeed");
+        Spi::run("SET max_parallel_workers = 4").expect("set should succeed");
+        Spi::run("SET maintenance_work_mem = '128MB'").expect("set should succeed");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_parallel_build (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run("ALTER TABLE ec_hnsw_parallel_build SET (parallel_workers = 2)")
+            .expect("parallel_workers reloption should be accepted");
+        Spi::run(
+            "INSERT INTO ec_hnsw_parallel_build
+             SELECT id,
+                    encode_to_ecvector(
+                        ARRAY[
+                            id::real,
+                            (id * 2)::real,
+                            (id * 3 + 1)::real,
+                            (id * 5 + 2)::real
+                        ]::real[],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, 128) AS id",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX ec_hnsw_parallel_build_idx ON ec_hnsw_parallel_build USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 40)",
+        )
+        .expect("parallel index creation should succeed");
+
+        let workers_launched = Spi::get_one::<i32>(
+            "SELECT tests.ec_hnsw_debug_parallel_build_workers_launched()",
+        )
+        .expect("SPI query should succeed")
+        .expect("debug worker count should be non-null");
+        assert!(
+            workers_launched >= 1,
+            "parallel build should launch at least one worker, launched {workers_launched}"
+        );
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_parallel_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
+        let heap_tid_count = elements
+            .iter()
+            .map(|(_, element)| element.heaptids.len())
+            .sum::<usize>();
+        assert_eq!(heap_tid_count, 128);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        Spi::run("RESET maintenance_work_mem").expect("reset should succeed");
+        Spi::run("RESET max_parallel_workers").expect("reset should succeed");
+        Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
+    }
+
     #[pg_test]
     fn test_non_empty_index_build_supports_raw_source_column() {
         Spi::run(
@@ -4118,6 +4185,11 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes
+    }
+
+    #[pg_extern]
+    fn ec_hnsw_debug_parallel_build_workers_launched() -> i32 {
+        am::debug_last_parallel_build_workers_launched()
     }
 
     fn create_pq_fastscan_runtime_fixture_internal(

@@ -31,7 +31,7 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // disabled until Task 18 lands the shared coordinator and worker-local
     // traversal semantics.
     amroutine.amcanparallel = false;
-    amroutine.amcanbuildparallel = false;
+    amroutine.amcanbuildparallel = true;
     amroutine.amcaninclude = false;
     amroutine.amusemaintenanceworkmem = true;
     amroutine.amsummarizing = false;

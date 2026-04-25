@@ -2,6 +2,8 @@
 
 mod build;
 mod build_parallel;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use build_parallel::debug_last_parallel_build_workers_launched;
 pub(crate) use crate::am::common::{cost, explain, parallel, stats, stream};
 pub(crate) mod graph;
 mod insert;
