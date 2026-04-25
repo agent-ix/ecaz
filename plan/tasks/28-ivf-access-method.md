@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 shape validation and concurrency coverage next.
+Status: in progress - Phase 5 concurrency coverage next.
 
 Working branch: `task28-ivf`
 
@@ -235,7 +235,7 @@ packet-local artifacts.
 
 - [x] **Centroid assignment.** `aminsert` scores centroids and appends the
   row to the nearest posting list under a narrow list-tail lock.
-- [ ] **Shape validation.** Reject mismatched dimension, quantizer bits,
+- [x] **Shape validation.** Reject mismatched dimension, quantizer bits,
   seed, and unsupported source layouts with clear errors.
 - [x] **List stats.** Update per-list live counts and insert-since-build
   drift counters.
@@ -271,6 +271,13 @@ Phase 5 duplicate-heap-TID checkpoint: `aminsert` now scans live postings
 before appending and rejects a heap TID that is already present in the IVF
 index. PG debug coverage exercises the same guard against an existing indexed
 row. Concurrent insert coverage remains open.
+
+Phase 5 shape-validation checkpoint: IVF now rejects unsupported
+`storage_format` choices before build/insert/scan and validates posting payload
+length against the canonical quantizer shape before build and live insert
+writes. Dimension mismatch coverage remains in PG tests, and tqvector
+bits/seed mismatches are rejected by the canonical type codec before the AM sees
+the row.
 
 ### Phase 6 - vacuum and drift handling
 

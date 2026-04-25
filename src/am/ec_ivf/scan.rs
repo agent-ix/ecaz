@@ -171,6 +171,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
 
             let metadata = super::page::read_metadata_page((*scan).indexRelation);
             metadata
+                .storage_format
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            metadata
                 .rerank
                 .validate_v1_supported()
                 .unwrap_or_else(|e| pgrx::error!("{e}"));

@@ -17,6 +17,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
         pgrx::pgrx_extern_c_guard(|| {
             let mut metadata = page::read_metadata_page(index_relation);
             metadata
+                .storage_format
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            metadata
                 .rerank
                 .validate_v1_supported()
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -166,6 +170,15 @@ fn validate_insert_tuple(
         return Err(format!(
             "source dimensions mismatch: source dim {} vs index dim {}",
             tuple.source_vector.len(),
+            metadata.dimensions
+        ));
+    }
+    let expected_payload_len =
+        crate::code_len(usize::from(metadata.dimensions), crate::DEFAULT_QUANT_BITS);
+    if tuple.payload.len() != expected_payload_len {
+        return Err(format!(
+            "posting payload length mismatch: got {}, expected {expected_payload_len} for index dim {}",
+            tuple.payload.len(),
             metadata.dimensions
         ));
     }

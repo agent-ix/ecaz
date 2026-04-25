@@ -2614,6 +2614,19 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "ec_ivf storage_format pq_fastscan is not supported yet")]
+    fn test_ec_ivf_pq_fastscan_storage_is_unsupported() {
+        Spi::run("CREATE TABLE ec_ivf_pq_fastscan_storage (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_pq_fastscan_storage_idx ON ec_ivf_pq_fastscan_storage USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_full_probe_matches_simple_exact_oracle_top1() {
         Spi::run(
             "CREATE TABLE ec_ivf_full_probe_oracle (id bigint primary key, embedding ecvector)",

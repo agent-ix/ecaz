@@ -121,6 +121,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
             options
+                .storage_format
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            options
                 .rerank
                 .validate_v1_supported()
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -188,6 +192,15 @@ impl BuildState {
             return Err(format!(
                 "source dimensions mismatch: source dim {} vs indexed dim {}",
                 tuple.source_vector.len(),
+                tuple.dimensions
+            ));
+        }
+        let expected_payload_len =
+            crate::code_len(usize::from(tuple.dimensions), crate::DEFAULT_QUANT_BITS);
+        if tuple.payload.len() != expected_payload_len {
+            return Err(format!(
+                "posting payload length mismatch: got {}, expected {expected_payload_len} for dim {}",
+                tuple.payload.len(),
                 tuple.dimensions
             ));
         }
@@ -578,6 +591,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sy
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
+            options
+                .storage_format
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             options
                 .rerank
                 .validate_v1_supported()
