@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -2149,8 +2149,7 @@ fn flatten_native_neighbor_slots(
     m: usize,
     slots: &[Option<usize>],
 ) -> Vec<usize> {
-    let mut seen = HashSet::new();
-    let mut flattened = Vec::new();
+    let mut flattened = Vec::with_capacity(slots.len().min(m.saturating_mul(2)));
 
     for layer in 0..=level {
         let Some((start, end)) = graph::layer_slot_bounds(level, m, layer) else {
@@ -2160,8 +2159,9 @@ fn flatten_native_neighbor_slots(
             .iter()
             .flatten()
         {
-            if *neighbor_idx != origin_id && seen.insert(*neighbor_idx) {
-                flattened.push(*neighbor_idx);
+            let neighbor_idx = *neighbor_idx;
+            if neighbor_idx != origin_id && !flattened.contains(&neighbor_idx) {
+                flattened.push(neighbor_idx);
             }
         }
     }
