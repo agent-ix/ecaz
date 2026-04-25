@@ -3127,6 +3127,94 @@ mod tests {
         assert!(ivf_ids.contains(&1_000));
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_ivf_concurrent_same_list_inserts_remain_reachable() {
+        const TABLE_NAME: &str = "ec_ivf_concurrent_same_list_insert";
+        const INDEX_NAME: &str = "ec_ivf_concurrent_same_list_insert_idx";
+        const BARRIER_KEY: i64 = 280_502;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_ivf same-list concurrent insert setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} VALUES (0, '[1.0,0.0]'::ecvector);
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_ivf
+                   (embedding ecvector_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 1);",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let worker_sql = |id: i64, vector: &str| {
+            format!(
+                "SET lock_timeout = '10s';
+                 SET statement_timeout = '30s';
+                 SELECT pg_advisory_lock_shared({BARRIER_KEY});
+                 INSERT INTO {TABLE_NAME} VALUES ({id}, '{vector}'::ecvector);
+                 SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
+            )
+        };
+        let workers = vec![
+            (
+                "same-list worker 1",
+                spawn_psql_script(
+                    &connection,
+                    "same-list worker 1",
+                    &worker_sql(1, "[1.0,0.1]"),
+                ),
+            ),
+            (
+                "same-list worker 2",
+                spawn_psql_script(
+                    &connection,
+                    "same-list worker 2",
+                    &worker_sql(2, "[1.0,0.2]"),
+                ),
+            ),
+        ];
+        std::thread::sleep(Duration::from_millis(750));
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = ec_ivf_index_oid(INDEX_NAME);
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, list_live, list_dead, list_inserted) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let ctid_to_id = ctid_id_map(TABLE_NAME);
+        let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.2], &ctid_to_id, 3);
+        let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(heap_count, 3);
+        assert_eq!(directory_live, 3);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 2);
+        assert_eq!(list_live, 3);
+        assert_eq!(list_dead, 0);
+        assert_eq!(list_inserted, 2);
+        assert_eq!(total_live, 3);
+        assert_eq!(ivf_ids.len(), 3);
+        assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
+        assert!(ivf_ids.contains(&1));
+        assert!(ivf_ids.contains(&2));
+    }
+
     #[pg_test]
     #[should_panic(expected = "duplicate heap tid")]
     fn test_ec_ivf_insert_rejects_duplicate_heap_tid() {

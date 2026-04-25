@@ -245,8 +245,8 @@ packet-local artifacts.
   the current posting tail page and advancing drift counters.
 - [x] **Duplicate heap TID rejection.** Reject live inserts whose heap TID is
   already present in any live IVF posting.
-- [x] **Concurrency coverage.** Cover concurrent inserts into different
-  lists.
+- [x] **Concurrency coverage.** Cover concurrent inserts into different lists
+  and same-list insert serialization.
 
 Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
 for the existing `ecvector`/`tqvector` tuple decode paths. Inserts validate
@@ -286,6 +286,13 @@ live count, per-list inserted-since-build totals, and full-probe scan
 reachability. Live insert metadata counters now update through an exclusive
 metadata-page read-modify-write path so concurrent different-list inserts do
 not lose global counter increments.
+
+Phase 5 same-list serialization checkpoint: live insert now re-reads and
+updates the assigned list directory under the directory-page exclusive lock
+after appending the posting tuple, merging the new posting into the latest
+head/tail range without moving `tail_block` backward. PG18 coverage starts two
+`psql` sessions inserting into a single-list IVF index and verifies per-list
+live/inserted counters plus full-probe reachability for both inserted rows.
 
 ### Phase 6 - vacuum and drift handling
 

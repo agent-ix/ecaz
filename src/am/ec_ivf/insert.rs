@@ -47,7 +47,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert centroid assignment failed: {e}"));
-            let (directory_tid, mut directory) =
+            let (directory_tid, directory) =
                 load_directory_entry(index_relation, &metadata, list_id)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
             ensure_heap_tid_absent(index_relation, &metadata, tuple.heap_tid)
@@ -67,10 +67,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let posting_tid = page::append_ivf_posting(index_relation, tail_block, &posting)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
 
-            apply_directory_insert_stats(&mut directory, posting_tid)
-                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert stats update failed: {e}"));
-            page::rewrite_ivf_list_directory(index_relation, directory_tid, directory)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
+                if latest_directory.list_id != posting.list_id {
+                    return Err(format!(
+                        "ec_ivf directory order mismatch during insert: got list {}, expected {}",
+                        latest_directory.list_id, posting.list_id
+                    ));
+                }
+                apply_directory_insert_stats(latest_directory, posting_tid)
+            })
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert stats update failed: {e}"));
             page::update_metadata_page(index_relation, |metadata| {
                 apply_metadata_insert_stats(metadata)
             })
@@ -278,14 +284,38 @@ fn apply_directory_insert_stats(
     directory: &mut page::IvfListDirectoryTuple,
     posting_tid: ItemPointer,
 ) -> Result<(), String> {
-    if directory.head_block == page::BlockRef::INVALID {
-        directory.head_block = page::BlockRef {
-            block_number: posting_tid.block_number,
-        };
+    match (
+        directory.head_block == page::BlockRef::INVALID,
+        directory.tail_block == page::BlockRef::INVALID,
+    ) {
+        (true, true) => {
+            directory.head_block = page::BlockRef {
+                block_number: posting_tid.block_number,
+            };
+            directory.tail_block = page::BlockRef {
+                block_number: posting_tid.block_number,
+            };
+        }
+        (false, false) => {
+            if posting_tid.block_number < directory.head_block.block_number {
+                return Err(format!(
+                    "list {} append block {} precedes head block {}",
+                    directory.list_id, posting_tid.block_number, directory.head_block.block_number
+                ));
+            }
+            if posting_tid.block_number > directory.tail_block.block_number {
+                directory.tail_block = page::BlockRef {
+                    block_number: posting_tid.block_number,
+                };
+            }
+        }
+        _ => {
+            return Err(format!(
+                "list {} has partial posting block refs",
+                directory.list_id
+            ));
+        }
     }
-    directory.tail_block = page::BlockRef {
-        block_number: posting_tid.block_number,
-    };
     directory.live_count = directory
         .live_count
         .checked_add(1)
@@ -325,4 +355,70 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
     let result = unsafe { ensure_heap_tid_absent(index_relation, &metadata, heap_tid) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block(block_number: u32) -> page::BlockRef {
+        page::BlockRef { block_number }
+    }
+
+    fn posting_tid(block_number: u32) -> ItemPointer {
+        ItemPointer {
+            block_number,
+            offset_number: 1,
+        }
+    }
+
+    #[test]
+    fn directory_insert_stats_initializes_empty_block_range() {
+        let mut directory = page::IvfListDirectoryTuple::empty(7);
+
+        apply_directory_insert_stats(&mut directory, posting_tid(42)).unwrap();
+
+        assert_eq!(directory.head_block, block(42));
+        assert_eq!(directory.tail_block, block(42));
+        assert_eq!(directory.live_count, 1);
+        assert_eq!(directory.inserted_since_build, 1);
+    }
+
+    #[test]
+    fn directory_insert_stats_extends_tail_forward() {
+        let mut directory = page::IvfListDirectoryTuple {
+            list_id: 7,
+            head_block: block(10),
+            tail_block: block(12),
+            live_count: 2,
+            dead_count: 0,
+            inserted_since_build: 1,
+        };
+
+        apply_directory_insert_stats(&mut directory, posting_tid(13)).unwrap();
+
+        assert_eq!(directory.head_block, block(10));
+        assert_eq!(directory.tail_block, block(13));
+        assert_eq!(directory.live_count, 3);
+        assert_eq!(directory.inserted_since_build, 2);
+    }
+
+    #[test]
+    fn directory_insert_stats_preserves_newer_tail_after_stale_tail_append() {
+        let mut directory = page::IvfListDirectoryTuple {
+            list_id: 7,
+            head_block: block(10),
+            tail_block: block(14),
+            live_count: 5,
+            dead_count: 0,
+            inserted_since_build: 4,
+        };
+
+        apply_directory_insert_stats(&mut directory, posting_tid(12)).unwrap();
+
+        assert_eq!(directory.head_block, block(10));
+        assert_eq!(directory.tail_block, block(14));
+        assert_eq!(directory.live_count, 6);
+        assert_eq!(directory.inserted_since_build, 5);
+    }
 }
