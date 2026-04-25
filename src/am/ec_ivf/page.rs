@@ -632,6 +632,19 @@ impl DataPageChain {
     }
 }
 
+pub(super) unsafe fn read_ivf_centroid_and_next(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+    dimensions: usize,
+) -> Result<(IvfCentroidTuple, ItemPointer), String> {
+    let (centroid, line_pointer_count) = unsafe {
+        read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
+            IvfCentroidTuple::decode(tuple_bytes, dimensions)
+        })?
+    };
+    Ok((centroid, next_physical_tuple_tid(tid, line_pointer_count)?))
+}
+
 pub(super) unsafe fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,

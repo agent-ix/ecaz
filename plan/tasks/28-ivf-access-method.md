@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 scan query prep next.
+Status: in progress - Phase 4 posting-list scan next.
 
 Working branch: `task28-ivf`
 
@@ -182,7 +182,7 @@ persisted build shape because populated scan routing starts in Phase 4.
 
 ### Phase 4 - scan path
 
-- [ ] **Query prep.** `amrescan` validates the ORDER BY query, caches the
+- [x] **Query prep.** `amrescan` validates the ORDER BY query, caches the
   prepared scorer, scores all centroids, and stores the selected `nprobe`
   list IDs.
 - [ ] **Posting-list scan.** Read selected lists sequentially, score
@@ -194,6 +194,12 @@ persisted build shape because populated scan routing starts in Phase 4.
   data or starts compressed-only with a reloption-controlled exact tail.
 - [ ] **Recall tests.** Add small deterministic oracle tests and a real
   corpus recall smoke that compares exact scan, `ec_hnsw`, and `ec_ivf`.
+
+Phase 4 query-prep checkpoint: `amrescan` now decodes and validates the
+ORDER BY `real[]`, records query state, prepares the default quantizer scorer,
+loads persisted centroids, scores every centroid by inner product, resolves
+effective `nprobe`, and stores the selected probe-list IDs for the upcoming
+posting-list scan path. Empty indexes retain no prepared scorer or probe lists.
 
 ### Phase 5 - live insert
 

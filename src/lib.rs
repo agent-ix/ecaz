@@ -2288,16 +2288,101 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_empty_scan_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = ec_ivf_index_oid("ec_ivf_empty_scan_idx");
         let found_tuple = unsafe { am::debug_ec_ivf_gettuple_after_rescan_result(index_oid) };
 
         assert!(
             !found_tuple,
             "ec_ivf amgettuple should report no tuples for an empty index"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_empty_rescan_query_prep_has_no_probe_lists() {
+        Spi::run("CREATE TABLE ec_ivf_empty_query_prep (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_empty_query_prep_idx ON ec_ivf_empty_query_prep USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_empty_query_prep_idx");
+        let (
+            rescan_called,
+            query_dimensions,
+            query_values,
+            scan_dimensions,
+            scan_nlists,
+            scan_nprobe,
+            has_prepared_query,
+            prepared_lut_len,
+            prepared_sq_len,
+            centroid_score_count,
+            selected_lists,
+        ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+
+        assert!(rescan_called);
+        assert_eq!(query_dimensions, 2);
+        assert_eq!(query_values, vec![1.0, 0.0]);
+        assert_eq!(scan_dimensions, 0);
+        assert_eq!(scan_nlists, 4);
+        assert_eq!(scan_nprobe, 0);
+        assert!(!has_prepared_query);
+        assert_eq!(prepared_lut_len, 0);
+        assert_eq!(prepared_sq_len, 0);
+        assert_eq!(centroid_score_count, 0);
+        assert!(selected_lists.is_empty());
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_rescan_query_prep_selects_nprobe_lists() {
+        Spi::run("CREATE TABLE ec_ivf_query_prep (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_query_prep VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_query_prep_idx ON ec_ivf_query_prep USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 3, nprobe = 2, training_sample_rows = 3, seed = 23)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_query_prep_idx");
+        let (
+            rescan_called,
+            query_dimensions,
+            query_values,
+            scan_dimensions,
+            scan_nlists,
+            scan_nprobe,
+            has_prepared_query,
+            prepared_lut_len,
+            prepared_sq_len,
+            centroid_score_count,
+            selected_lists,
+        ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let unique_lists = selected_lists.iter().copied().collect::<HashSet<_>>();
+
+        assert!(rescan_called);
+        assert_eq!(query_dimensions, 2);
+        assert_eq!(query_values, vec![1.0, 0.0]);
+        assert_eq!(scan_dimensions, 2);
+        assert_eq!(scan_nlists, 3);
+        assert_eq!(scan_nprobe, 2);
+        assert!(has_prepared_query);
+        assert!(prepared_lut_len > 0);
+        assert!(prepared_sq_len > 0);
+        assert_eq!(centroid_score_count, 3);
+        assert_eq!(selected_lists.len(), 2);
+        assert_eq!(unique_lists.len(), selected_lists.len());
+        assert!(selected_lists.iter().all(|list_id| *list_id < scan_nlists));
     }
 
     #[pg_test]
