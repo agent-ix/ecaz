@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 15;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 16;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -63,6 +63,8 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) admitted_head_approx_score_bits: AtomicU32,
     pub(crate) admitted_head_comparison_score_bits: AtomicU32,
     pub(crate) admitted_head_approx_rank_bits: AtomicU32,
+    contributor_hidden_publishes: AtomicU32,
+    contributor_duplicate_retires: AtomicU32,
     emitted_heap_tid_cursor: AtomicU32,
     emitted_heap_block_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
     emitted_heap_offset_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
@@ -300,6 +302,12 @@ pub(crate) struct EcParallelCoordinatorAdmissionSnapshot {
     pub(crate) admitted_result_count: u32,
     pub(crate) admitted_result_generation: u32,
     pub(crate) admitted_worst_score: Option<f32>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelContributorCounters {
+    pub(crate) hidden_publishes: u32,
+    pub(crate) duplicate_retires: u32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -796,6 +804,8 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             admitted_head_approx_score_bits: AtomicU32::new(0),
             admitted_head_comparison_score_bits: AtomicU32::new(0),
             admitted_head_approx_rank_bits: AtomicU32::new(0),
+            contributor_hidden_publishes: AtomicU32::new(0),
+            contributor_duplicate_retires: AtomicU32::new(0),
             emitted_heap_tid_cursor: AtomicU32::new(0),
             emitted_heap_block_numbers: std::array::from_fn(|_| {
                 AtomicU32::new(EcParallelItemPointer::INVALID.block_number)
@@ -2496,6 +2506,41 @@ pub(crate) unsafe fn parallel_scan_attachment(
         return Ok(None);
     };
     Ok(Some(unsafe { validate_parallel_scan_state(state) }?))
+}
+
+pub(crate) unsafe fn record_parallel_scan_contributor_hidden_publish(
+    state: *mut EcParallelScanState,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    unsafe { &*attachment.coordinator }
+        .contributor_hidden_publishes
+        .fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
+pub(crate) unsafe fn record_parallel_scan_contributor_duplicate_retire(
+    state: *mut EcParallelScanState,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    unsafe { &*attachment.coordinator }
+        .contributor_duplicate_retires
+        .fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
+pub(crate) unsafe fn read_parallel_scan_contributor_counters(
+    state: *mut EcParallelScanState,
+) -> Result<EcParallelContributorCounters, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = unsafe { &*attachment.coordinator };
+    Ok(EcParallelContributorCounters {
+        hidden_publishes: coordinator
+            .contributor_hidden_publishes
+            .load(Ordering::Acquire),
+        duplicate_retires: coordinator
+            .contributor_duplicate_retires
+            .load(Ordering::Acquire),
+    })
 }
 
 pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(

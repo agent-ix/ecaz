@@ -1499,6 +1499,17 @@ fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> 
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     publish_parallel_scan_worker_slot_snapshot(opaque);
+    opaque
+        .explain_counters
+        .record_parallel_contributor_hidden_publish();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_hidden_publish(opaque.parallel_scan_state)
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor hidden-publish counter failed: {err}")
+        }
+    }
     true
 }
 
@@ -1518,10 +1529,45 @@ fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanO
         opaque
             .explain_counters
             .record_parallel_contributor_duplicate_retire();
+        match unsafe {
+            super::parallel::record_parallel_scan_contributor_duplicate_retire(
+                opaque.parallel_scan_state,
+            )
+        } {
+            Ok(_) => {}
+            Err(err) => {
+                pgrx::error!("ec_hnsw parallel contributor duplicate-retire counter failed: {err}")
+            }
+        }
         return true;
     }
 
     false
+}
+
+fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut TqScanOpaque) {
+    if opaque.parallel_scan_state.is_null() {
+        return;
+    }
+
+    let Ok(shared) = (unsafe {
+        super::parallel::read_parallel_scan_contributor_counters(opaque.parallel_scan_state)
+    }) else {
+        return;
+    };
+
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_hidden_publishes = opaque
+        .explain_counters
+        .stats_parallel_contributor_hidden_publishes
+        .max(shared.hidden_publishes);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_duplicate_retires = opaque
+        .explain_counters
+        .stats_parallel_contributor_duplicate_retires
+        .max(shared.duplicate_retires);
 }
 
 unsafe fn poll_parallel_contributor_interrupts_and_sleep() {
@@ -2235,6 +2281,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
             }
             if produce_next_scan_heap_tid(scan, (*scan).indexRelation, opaque, opaque.scan_code_len)
             {
+                refresh_parallel_contributor_explain_counters_from_shared_state(opaque);
                 if parallel_exec_debug_enabled() {
                     pgrx::log!(
                         "ec_hnsw parallel debug pid={} amgettuple produced slot_index={} heap_tid=({}, {})",
@@ -2247,6 +2294,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
                 return true;
             }
 
+            refresh_parallel_contributor_explain_counters_from_shared_state(opaque);
             clear_scan_orderby_output(scan);
             if parallel_exec_debug_enabled() {
                 pgrx::log!(
@@ -2330,7 +2378,8 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
         return TqExplainCounters::default();
     }
 
-    unsafe { (*opaque.cast::<TqScanOpaque>()).explain_counters }
+    let opaque = unsafe { &*opaque.cast::<TqScanOpaque>() };
+    opaque.explain_counters
 }
 
 unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
@@ -8716,6 +8765,22 @@ mod tests {
             stage_non_emitting_parallel_contributor_output(&mut opaque),
             "a materialized contributor result should publish"
         );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_contributor_hidden_publishes,
+            1
+        );
+        assert_eq!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .expect("shared contributor counters should read")
+            .hidden_publishes,
+            1
+        );
 
         let hidden = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
@@ -8731,6 +8796,69 @@ mod tests {
         assert_eq!(
             hidden.runtime.element_tid,
             parallel_item_pointer(tid(42, 1))
+        );
+    }
+
+    #[test]
+    fn refresh_parallel_contributor_explain_counters_merges_shared_totals() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut emitter_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut contributor_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut emitter = TqScanOpaque::default();
+        let mut contributor = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut emitter_scan_desc, &mut emitter);
+        bind_parallel_scan_state(&mut contributor_scan_desc, &mut contributor);
+
+        contributor
+            .result_state
+            .materialize_from_parts(tid(43, 1), -2.75, &[tid(101, 1)]);
+        assert!(
+            stage_non_emitting_parallel_contributor_output(&mut contributor),
+            "a contributor row should publish hidden output into shared state"
+        );
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_hidden_publishes,
+            0,
+            "the elected emitter starts with only its backend-local counters"
+        );
+
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_hidden_publishes,
+            1,
+            "the elected emitter should fold shared contributor publishes into explain counters"
+        );
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::remember_parallel_scan_emitted_heap_tid(
+                contributor.parallel_scan_state,
+                parallel_item_pointer(tid(101, 1)),
+            )
+        }
+        .expect("shared emitted heap tid should record");
+        assert!(
+            retire_obsolete_non_emitting_parallel_contributor_output(&mut contributor),
+            "the contributor should retire the already-emitted hidden heap tid"
+        );
+
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_duplicate_retires,
+            1,
+            "the elected emitter should fold shared duplicate retires into explain counters"
         );
     }
 
@@ -8770,6 +8898,16 @@ mod tests {
                 .stats_parallel_contributor_duplicate_retires,
             1
         );
+        assert_eq!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .expect("shared contributor counters should read")
+            .duplicate_retires,
+            1
+        );
 
         let hidden = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
@@ -8801,6 +8939,16 @@ mod tests {
             opaque
                 .explain_counters
                 .stats_parallel_contributor_duplicate_retires,
+            2
+        );
+        assert_eq!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .expect("shared contributor counters should read")
+            .duplicate_retires,
             2
         );
         assert!(
