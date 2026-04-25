@@ -24,6 +24,9 @@ const EC_HNSW_PARALLEL_BUILD_ENTRYPOINT: &[u8] = b"ec_hnsw_parallel_build_main\0
 const BUILD_TUPLE_MESSAGE: u8 = 1;
 const BUILD_DONE_MESSAGE: u8 = 2;
 
+const EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX: u32 = u32::MAX;
+const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED: u32 = 0;
+
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -147,6 +150,15 @@ struct EcHnswConcurrentDsmNode {
     neighbor_slot_offset: u32,
     neighbor_slot_count: u32,
     insert_state: pg_sys::pg_atomic_uint32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
+pub(super) struct EcHnswConcurrentDsmGraphParts {
+    header: *mut EcHnswConcurrentDsmGraphHeader,
+    nodes: *mut EcHnswConcurrentDsmNode,
+    neighbor_slots: *mut u32,
+    codes: *mut u8,
 }
 
 #[allow(dead_code)]
@@ -368,6 +380,84 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
             graph_layout,
         }
     }
+}
+
+#[allow(dead_code)]
+pub(super) unsafe fn concurrent_dsm_graph_parts(
+    base: *mut c_void,
+    layout: EcHnswConcurrentDsmGraphLayout,
+) -> EcHnswConcurrentDsmGraphParts {
+    if base.is_null() {
+        pgrx::error!("concurrent DSM graph base pointer is null");
+    }
+
+    let base = base.cast::<u8>();
+    EcHnswConcurrentDsmGraphParts {
+        header: unsafe { base.add(layout.header_offset).cast::<EcHnswConcurrentDsmGraphHeader>() },
+        nodes: unsafe { base.add(layout.nodes_offset).cast::<EcHnswConcurrentDsmNode>() },
+        neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },
+        codes: unsafe { base.add(layout.codes_offset) },
+    }
+}
+
+#[allow(dead_code)]
+pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
+    base: *mut c_void,
+    plan: &EcHnswConcurrentDsmPreassemblyPlan,
+    initialize_node_lock: unsafe fn(*mut pg_sys::LWLock),
+) -> EcHnswConcurrentDsmGraphParts {
+    let layout = plan.graph_layout;
+    let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
+
+    unsafe {
+        ptr::write(
+            parts.header,
+            EcHnswConcurrentDsmGraphHeader {
+                node_count: layout.node_count,
+                entry_idx: layout
+                    .entry_idx
+                    .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
+                max_level: layout.max_level,
+                reserved0: [0; 3],
+                total_neighbor_slots: layout.total_neighbor_slots,
+                code_len: layout.code_len,
+            },
+        );
+
+        for (node_idx, node_layout) in plan.node_layout.nodes.iter().copied().enumerate() {
+            let node = parts.nodes.add(node_idx);
+            ptr::write(
+                node,
+                EcHnswConcurrentDsmNode {
+                    lock: pg_sys::LWLock::default(),
+                    level: node_layout.level,
+                    reserved0: [0; 3],
+                    neighbor_slot_offset: node_layout.neighbor_slot_offset,
+                    neighbor_slot_count: node_layout.neighbor_slot_count,
+                    insert_state: pg_sys::pg_atomic_uint32 {
+                        value: EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+                    },
+                },
+            );
+            initialize_node_lock(ptr::addr_of_mut!((*node).lock));
+        }
+
+        slice::from_raw_parts_mut(
+            parts.neighbor_slots,
+            layout.total_neighbor_slots as usize,
+        )
+        .fill(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+
+        let code_bytes = checked_mul_size(
+            layout.code_len as pg_sys::Size,
+            layout.node_count as pg_sys::Size,
+            "concurrent DSM graph initialized code bytes",
+        );
+        slice::from_raw_parts_mut(parts.codes, code_bytes)
+            .copy_from_slice(&plan.code_corpus.bytes);
+    }
+
+    parts
 }
 
 impl EcHnswParallelBuildSharedHeader {
@@ -1135,7 +1225,9 @@ fn elapsed_us(start: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::alloc::{alloc_zeroed, dealloc, Layout};
     use std::collections::HashMap;
+    use std::slice;
 
     use super::*;
 
@@ -1337,6 +1429,134 @@ mod tests {
         let state = build_state(Some("source"));
 
         let _ = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_image_initializes_header_nodes_slots_and_codes() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        unsafe {
+            assert_eq!(
+                parts.header.cast::<u8>().offset_from(buffer.ptr),
+                plan.graph_layout.header_offset as isize
+            );
+            assert_eq!(
+                parts.nodes.cast::<u8>().offset_from(buffer.ptr),
+                plan.graph_layout.nodes_offset as isize
+            );
+            assert_eq!(
+                parts.neighbor_slots.cast::<u8>().offset_from(buffer.ptr),
+                plan.graph_layout.neighbor_slots_offset as isize
+            );
+            assert_eq!(
+                parts.codes.offset_from(buffer.ptr),
+                plan.graph_layout.codes_offset as isize
+            );
+
+            let header = &*parts.header;
+            assert_eq!(header.node_count, 2);
+            assert_eq!(header.entry_idx, plan.graph_layout.entry_idx.unwrap());
+            assert_eq!(header.max_level, plan.graph_layout.max_level);
+            assert_eq!(header.total_neighbor_slots, plan.node_layout.total_neighbor_slots);
+            assert_eq!(header.code_len, 3);
+
+            let nodes = slice::from_raw_parts(parts.nodes, plan.graph_layout.node_count as usize);
+            for (actual, expected) in nodes.iter().zip(plan.node_layout.nodes.iter()) {
+                assert_eq!(actual.level, expected.level);
+                assert_eq!(actual.neighbor_slot_offset, expected.neighbor_slot_offset);
+                assert_eq!(actual.neighbor_slot_count, expected.neighbor_slot_count);
+                assert_eq!(
+                    actual.insert_state.value,
+                    EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
+                );
+                assert_eq!(actual.lock.tranche, TEST_LOCK_TRANCHE_ID);
+                assert_eq!(actual.lock.waiters.head, pg_sys::INVALID_PROC_NUMBER);
+                assert_eq!(actual.lock.waiters.tail, pg_sys::INVALID_PROC_NUMBER);
+            }
+
+            let neighbor_slots = slice::from_raw_parts(
+                parts.neighbor_slots,
+                plan.graph_layout.total_neighbor_slots as usize,
+            );
+            assert!(neighbor_slots
+                .iter()
+                .all(|slot| *slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX));
+
+            let codes = slice::from_raw_parts(parts.codes, plan.code_corpus.bytes.len());
+            assert_eq!(codes, plan.code_corpus.bytes.as_slice());
+        }
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_image_initializes_empty_graph_header() {
+        let state = build_state(None);
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        unsafe {
+            let header = &*parts.header;
+            assert_eq!(header.node_count, 0);
+            assert_eq!(header.entry_idx, EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX);
+            assert_eq!(header.max_level, 0);
+            assert_eq!(header.total_neighbor_slots, 0);
+            assert_eq!(header.code_len, 0);
+        }
+    }
+
+    struct AlignedDsmBuffer {
+        ptr: *mut u8,
+        layout: Layout,
+    }
+
+    impl AlignedDsmBuffer {
+        fn new(size: pg_sys::Size) -> Self {
+            let layout =
+                Layout::from_size_align(size, pg_sys::ALIGNOF_BUFFER as usize).unwrap();
+            let ptr = unsafe { alloc_zeroed(layout) };
+            assert!(!ptr.is_null());
+            Self { ptr, layout }
+        }
+
+        fn as_mut_ptr(&self) -> *mut c_void {
+            self.ptr.cast()
+        }
+    }
+
+    impl Drop for AlignedDsmBuffer {
+        fn drop(&mut self) {
+            unsafe { dealloc(self.ptr, self.layout) };
+        }
+    }
+
+    const TEST_LOCK_TRANCHE_ID: u16 = 4242;
+
+    unsafe fn test_initialize_node_lock(lock: *mut pg_sys::LWLock) {
+        unsafe {
+            (*lock).tranche = TEST_LOCK_TRANCHE_ID;
+            (*lock).state.value = 0;
+            (*lock).waiters.head = pg_sys::INVALID_PROC_NUMBER;
+            (*lock).waiters.tail = pg_sys::INVALID_PROC_NUMBER;
+        }
     }
 
     fn build_state(build_source_column: Option<&str>) -> build::BuildState {
