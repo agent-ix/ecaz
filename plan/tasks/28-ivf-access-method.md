@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 live insert next.
+Status: in progress - Phase 5 live-insert validation and concurrency next.
 
 Working branch: `task28-ivf`
 
@@ -233,15 +233,23 @@ packet-local artifacts.
 
 ### Phase 5 - live insert
 
-- [ ] **Centroid assignment.** `aminsert` scores centroids and appends the
+- [x] **Centroid assignment.** `aminsert` scores centroids and appends the
   row to the nearest posting list under a narrow list-tail lock.
 - [ ] **Shape validation.** Reject mismatched dimension, quantizer bits,
   seed, and unsupported source layouts with clear errors.
-- [ ] **List stats.** Update per-list live counts and insert-since-build
+- [x] **List stats.** Update per-list live counts and insert-since-build
   drift counters.
 - [ ] **Concurrency coverage.** Cover concurrent inserts into different
   lists, same-list tail append, empty-index first insert, and duplicate
   heap TID rejection.
+
+Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
+for the existing `ecvector`/`tqvector` tuple decode paths. Inserts validate
+dimension and posting shape, assign the row to the nearest persisted centroid,
+append a posting tuple to the list tail or a new list block, and update
+directory plus metadata live/inserted-since-build counters. Empty-index first
+insert, fuller quantizer-shape validation, duplicate heap-TID handling, and
+concurrent insert coverage remain open.
 
 ### Phase 6 - vacuum and drift handling
 

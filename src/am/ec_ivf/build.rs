@@ -14,18 +14,18 @@ const DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 const DEFAULT_KMEANS_ITERATIONS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum IndexedVectorKind {
+pub(super) enum IndexedVectorKind {
     Ecvector,
     Tqvector,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct BuildTuple {
-    heap_tid: ItemPointer,
-    dimensions: u16,
-    gamma: f32,
-    payload: Vec<u8>,
-    source_vector: Vec<f32>,
+pub(super) struct BuildTuple {
+    pub(super) heap_tid: ItemPointer,
+    pub(super) dimensions: u16,
+    pub(super) gamma: f32,
+    pub(super) payload: Vec<u8>,
+    pub(super) source_vector: Vec<f32>,
 }
 
 struct BuildState {
@@ -89,8 +89,14 @@ unsafe extern "C-unwind" fn ec_ivf_build_callback(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = &mut *state.cast::<BuildState>();
-            let heap_tid = decode_heap_tid(tid);
-            let tuple = build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
+            let heap_tid = decode_heap_tid(tid, "ambuild");
+            let tuple = build_index_tuple(
+                values,
+                isnull,
+                heap_tid,
+                state.indexed_vector_kind,
+                "ambuild",
+            );
             state.push(tuple);
         })
     }
@@ -110,7 +116,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             page::initialize_metadata_page(index_relation, page::MetadataPage::empty(options));
 
-            let indexed_vector_kind = resolve_indexed_vector_kind(heap_relation, index_info);
+            let indexed_vector_kind =
+                resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
             let mut state = BuildState::new(options, indexed_vector_kind);
             let heap_tuples = pg_sys::table_index_build_scan(
                 heap_relation,
@@ -410,14 +417,15 @@ fn list_id_u32(list_id: usize) -> Result<u32, String> {
     u32::try_from(list_id).map_err(|_| format!("ec_ivf list id {list_id} exceeds u32"))
 }
 
-unsafe fn build_heap_tuple(
+pub(super) unsafe fn build_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: ItemPointer,
     indexed_vector_kind: IndexedVectorKind,
+    context: &str,
 ) -> BuildTuple {
     if values.is_null() || isnull.is_null() {
-        pgrx::error!("ec_ivf ambuild received null tuple value arrays");
+        pgrx::error!("ec_ivf {context} received null tuple value arrays");
     }
     if unsafe { *isnull } {
         pgrx::error!("ec_ivf does not support NULL indexed values");
@@ -425,25 +433,25 @@ unsafe fn build_heap_tuple(
 
     let datum = unsafe { *values };
     if datum.is_null() {
-        pgrx::error!("ec_ivf ambuild received a null indexed datum");
+        pgrx::error!("ec_ivf {context} received a null indexed datum");
     }
 
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
     match indexed_vector_kind {
-        IndexedVectorKind::Ecvector => build_ecvector_tuple(heap_tid, &bytes),
-        IndexedVectorKind::Tqvector => build_tqvector_tuple(heap_tid, &bytes),
+        IndexedVectorKind::Ecvector => build_ecvector_tuple(heap_tid, &bytes, context),
+        IndexedVectorKind::Tqvector => build_tqvector_tuple(heap_tid, &bytes, context),
     }
 }
 
-fn build_ecvector_tuple(heap_tid: ItemPointer, bytes: &[u8]) -> BuildTuple {
+fn build_ecvector_tuple(heap_tid: ItemPointer, bytes: &[u8], context: &str) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
-        .unwrap_or_else(|e| pgrx::error!("ec_ivf ambuild found invalid indexed ecvector: {e}"));
+        .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
     let (dimensions, gamma, payload) = crate::quantize_embedding_to_code(
         &source_vector,
         crate::DEFAULT_QUANT_BITS,
         crate::DEFAULT_QUANT_SEED,
     )
-    .unwrap_or_else(|e| pgrx::error!("ec_ivf ambuild found invalid indexed ecvector: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
 
     BuildTuple {
         heap_tid,
@@ -454,9 +462,9 @@ fn build_ecvector_tuple(heap_tid: ItemPointer, bytes: &[u8]) -> BuildTuple {
     }
 }
 
-fn build_tqvector_tuple(heap_tid: ItemPointer, bytes: &[u8]) -> BuildTuple {
+fn build_tqvector_tuple(heap_tid: ItemPointer, bytes: &[u8], context: &str) -> BuildTuple {
     let (dimensions, bits, seed, gamma, code) = crate::unpack(bytes)
-        .unwrap_or_else(|e| pgrx::error!("ec_ivf ambuild found invalid indexed tqvector: {e}"));
+        .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed tqvector: {e}"));
     let payload = code.to_vec();
 
     let quantizer = ProdQuantizer::cached(usize::from(dimensions), bits, seed);
@@ -490,9 +498,9 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> 
     bytes
 }
 
-unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
     if tid.is_null() {
-        pgrx::error!("ec_ivf ambuild received a null heap tid");
+        pgrx::error!("ec_ivf {context} received a null heap tid");
     }
     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
     ItemPointer {
@@ -501,12 +509,13 @@ unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     }
 }
 
-unsafe fn resolve_indexed_vector_kind(
+pub(super) unsafe fn resolve_indexed_vector_kind(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
+    context: &str,
 ) -> IndexedVectorKind {
     if index_info.is_null() {
-        pgrx::error!("ec_ivf ambuild received a null IndexInfo");
+        pgrx::error!("ec_ivf {context} received a null IndexInfo");
     }
     let index_info = unsafe { &*index_info };
     if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {

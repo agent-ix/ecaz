@@ -2610,6 +2610,67 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_insert_appends_posting_and_updates_stats() {
+        Spi::run("CREATE TABLE ec_ivf_live_insert (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_live_insert VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid = create_ivf_recall_index("ec_ivf_live_insert", "ec_ivf_live_insert_idx", 2, 2, 2);
+
+        Spi::run("INSERT INTO ec_ivf_live_insert VALUES (2, '[1.0,0.1]'::ecvector)")
+            .expect("live insert should succeed");
+
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let ctid_to_id = ctid_id_map("ec_ivf_live_insert");
+        let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.1], &ctid_to_id, 3);
+        let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(summary_nlists, 2);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, 3);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 1);
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 2);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 3);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(ivf_ids.len(), 3);
+        assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
+        assert!(
+            ivf_ids.contains(&2),
+            "live-inserted heap row should be reachable through ec_ivf scan"
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "dimension mismatch")]
+    fn test_ec_ivf_insert_rejects_dimension_mismatch() {
+        Spi::run("CREATE TABLE ec_ivf_insert_dim_mismatch (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run("INSERT INTO ec_ivf_insert_dim_mismatch VALUES (0, '[1.0,0.0]'::ecvector)")
+            .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_insert_dim_mismatch_idx \
+             ON ec_ivf_insert_dim_mismatch USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 1)",
+        )
+        .expect("index creation should succeed");
+
+        Spi::run("INSERT INTO ec_ivf_insert_dim_mismatch VALUES (1, '[1.0,0.0,0.0]'::ecvector)")
+            .expect("insert should fail");
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
