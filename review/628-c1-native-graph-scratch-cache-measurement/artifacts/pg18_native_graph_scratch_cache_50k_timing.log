@@ -1,0 +1,93 @@
+Timing is on.
+=== pg18 native graph scratch cache 50k timing fixture ===
+          started_at          |                                            postgres_version                                             | server_version | max_worker_processes
+------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 11:55:40.82939-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.791 ms
+DROP TABLE
+Time: 0.205 ms
+DROP EXTENSION
+Time: 73.037 ms
+CREATE EXTENSION
+Time: 46.466 ms
+CREATE TABLE
+Time: 5.941 ms
+=== load 50000 rows x 64 dims ===
+INSERT 0 50000
+Time: 1397.614 ms (00:01.398)
+VACUUM
+Time: 45.799 ms
+ fixture_rows
+--------------
+        50000
+(1 row)
+
+Time: 4.292 ms
+ relpages | reltuples
+----------+-----------
+     1852 |     50000
+(1 row)
+
+Time: 2.514 ms
+SET
+Time: 0.223 ms
+SET
+Time: 0.159 ms
+=== serial create index 50k ===
+SET
+Time: 0.169 ms
+ALTER TABLE
+Time: 1.279 ms
+DROP INDEX
+Time: 0.189 ms
+CREATE INDEX
+Time: 30333.870 ms (00:30.334)
+   round    | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_50k |                 0 |                0 |       50000 |        49982 |        1324566 |                 0 |                 0 |                     0 |       28972992 | 28556153 |   263868 |   134544
+(1 row)
+
+Time: 0.983 ms
+ serial_50k_index_bytes
+------------------------
+               11624448
+(1 row)
+
+Time: 0.692 ms
+DROP INDEX
+Time: 4.538 ms
+CHECKPOINT
+Time: 64.092 ms
+=== parallel create index 50k ===
+SET
+Time: 0.296 ms
+ALTER TABLE
+Time: 1.361 ms
+DROP INDEX
+Time: 0.338 ms
+CREATE INDEX
+Time: 30845.279 ms (00:30.845)
+    round     | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+--------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_50k |                 4 |                4 |       50000 |        49982 |         636071 |              2861 |            451520 |                181685 |       30190756 | 29816052 |   256141 |   103613
+(1 row)
+
+Time: 0.399 ms
+ parallel_50k_index_bytes
+--------------------------
+                 11624448
+(1 row)
+
+Time: 0.372 ms
+         finished_at
+------------------------------
+ 2026-04-25 11:56:43.56019-07
+(1 row)
+
+Time: 0.260 ms
+psql:review/628-c1-native-graph-scratch-cache-measurement/artifacts/pg18_native_graph_scratch_cache_50k_timing.sql:10: NOTICE:  table "ec_hnsw_native_graph_scratch_cache_50k_measure" does not exist, skipping
+psql:review/628-c1-native-graph-scratch-cache-measurement/artifacts/pg18_native_graph_scratch_cache_50k_timing.sql:11: NOTICE:  drop cascades to column embedding of table ec_hnsw_build_state_dedup_50k_measure
+psql:review/628-c1-native-graph-scratch-cache-measurement/artifacts/pg18_native_graph_scratch_cache_50k_timing.sql:47: NOTICE:  index "ec_hnsw_native_graph_scratch_cache_50k_measure_idx" does not exist, skipping
+psql:review/628-c1-native-graph-scratch-cache-measurement/artifacts/pg18_native_graph_scratch_cache_50k_timing.sql:61: NOTICE:  index "ec_hnsw_native_graph_scratch_cache_50k_measure_idx" does not exist, skipping
