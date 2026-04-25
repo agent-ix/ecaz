@@ -1,0 +1,93 @@
+Timing is on.
+=== pg18 BuildState dedup index 50k timing fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 11:37:19.361451-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.854 ms
+DROP TABLE
+Time: 0.227 ms
+DROP EXTENSION
+Time: 78.534 ms
+CREATE EXTENSION
+Time: 42.395 ms
+CREATE TABLE
+Time: 7.290 ms
+=== load 50000 rows x 64 dims ===
+INSERT 0 50000
+Time: 1436.506 ms (00:01.437)
+VACUUM
+Time: 49.761 ms
+ fixture_rows
+--------------
+        50000
+(1 row)
+
+Time: 4.367 ms
+ relpages | reltuples
+----------+-----------
+     1852 |     50000
+(1 row)
+
+Time: 2.431 ms
+SET
+Time: 0.174 ms
+SET
+Time: 0.169 ms
+=== serial create index 50k ===
+SET
+Time: 0.136 ms
+ALTER TABLE
+Time: 1.361 ms
+DROP INDEX
+Time: 0.270 ms
+CREATE INDEX
+Time: 48926.700 ms (00:48.927)
+   round    | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_50k |                 0 |                0 |       50000 |        49982 |        1471241 |                 0 |                 0 |                     0 |       47420047 | 47023806 |   273917 |   105676
+(1 row)
+
+Time: 0.826 ms
+ serial_50k_index_bytes
+------------------------
+               11624448
+(1 row)
+
+Time: 0.752 ms
+DROP INDEX
+Time: 3.594 ms
+CHECKPOINT
+Time: 51.602 ms
+=== parallel create index 50k ===
+SET
+Time: 0.251 ms
+ALTER TABLE
+Time: 1.427 ms
+DROP INDEX
+Time: 0.291 ms
+CREATE INDEX
+Time: 46103.259 ms (00:46.103)
+    round     | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+--------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_50k |                 4 |                4 |       50000 |        49982 |         604500 |              2943 |            444276 |                157275 |       45475128 | 45105472 |   254752 |   100398
+(1 row)
+
+Time: 0.510 ms
+ parallel_50k_index_bytes
+--------------------------
+                 11624448
+(1 row)
+
+Time: 0.518 ms
+          finished_at
+-------------------------------
+ 2026-04-25 11:38:55.984439-07
+(1 row)
+
+Time: 0.258 ms
+psql:review/627-c1-build-state-dedup-index-measurement/artifacts/pg18_build_state_dedup_index_50k_timing.sql:10: NOTICE:  table "ec_hnsw_build_state_dedup_50k_measure" does not exist, skipping
+psql:review/627-c1-build-state-dedup-index-measurement/artifacts/pg18_build_state_dedup_index_50k_timing.sql:11: NOTICE:  drop cascades to column embedding of table ec_hnsw_parallel_build_50k_scale_measure
+psql:review/627-c1-build-state-dedup-index-measurement/artifacts/pg18_build_state_dedup_index_50k_timing.sql:47: NOTICE:  index "ec_hnsw_build_state_dedup_50k_measure_idx" does not exist, skipping
+psql:review/627-c1-build-state-dedup-index-measurement/artifacts/pg18_build_state_dedup_index_50k_timing.sql:61: NOTICE:  index "ec_hnsw_build_state_dedup_50k_measure_idx" does not exist, skipping
