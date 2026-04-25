@@ -2,7 +2,7 @@
 
 ## Summary
 
-Please review commit `9f068522a5bb84e101f6145d6c620b68b1e406ef`, which adds PG18 contributor publish rank-relation diagnostics without changing the default coordinator ordering.
+Please review commits `9f068522a5bb84e101f6145d6c620b68b1e406ef` and `d484e6fa44a672538e62c1fbdf3195803e341987`, which add PG18 contributor publish rank-relation diagnostics without changing the default coordinator ordering.
 
 The new EXPLAIN counters classify a hidden contributor publish against the current visible owner when both are present:
 
@@ -11,7 +11,7 @@ The new EXPLAIN counters classify a hidden contributor publish against the curre
 - `Parallel Contributor Publish Rank: After Visible`
 - `Parallel Contributor Publish Rank: Missing Visible`
 
-These counters are folded through the shared DSM contributor counter path, so the elected visible emitter reports totals for all contributor workers.
+These counters are folded through the shared DSM contributor counter path, so the elected visible emitter reports totals for all contributor workers. The follow-up commit coalesces the normal hidden-drain classification and rank-relation diagnostic into one shared coordinator observation, so publishing a hidden contributor row does not perform an extra shared-state read just for the rank counters.
 
 ## Result
 
@@ -19,10 +19,10 @@ The 50k/16d randomized PG18 contributor diagnostic still passes serial validatio
 
 - 260 hidden publishes.
 - 252 publish classifications remain `Ordered After Visible`.
-- Rank relation for those publishes is mostly after visible: 252 after, 4 before, 4 equal, 0 missing.
+- Rank relation for those publishes is 252 after, 4 equal, 0 before, 0 missing.
 - Handoffs remain zero and serial validation passes.
 
-That means local rank hints are present and occasionally disagree with the score-first safety gate, but only a tiny minority of normal contributor publishes look rank-before/equal. Packet 616 already showed that using those local ranks as the coordinator ordering source can produce an incorrect order, so this packet keeps the rank data diagnostic-only.
+That means local rank hints are present, but normal contributor publishes do not expose a rank-before visible-owner opportunity on this fixture. Packet 616 already showed that using local ranks as the coordinator ordering source can produce an incorrect order, so this packet keeps the rank data diagnostic-only.
 
 ## Validation
 

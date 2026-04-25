@@ -4,18 +4,18 @@
 [pg18-parallel] rows=50000 workers=4 dimensions=16 randomized_embeddings=true limit=100 ef_search=500
 [pg18-parallel] planner_only=false disable_parallel_leader_participation=false
 [pg18-parallel] plan:
-Limit (actual time=144.787..153.574 rows=100.00 loops=1)
+Limit (actual time=148.389..156.944 rows=100.00 loops=1)
   Buffers: shared hit=18141
   InitPlan 1
-    ->  Sort (actual time=0.041..0.042 rows=16.00 loops=1)
+    ->  Sort (actual time=0.041..0.043 rows=16.00 loops=1)
           Sort Key: dims.d
           Sort Method: quicksort  Memory: 25kB
-          ->  Function Scan on generate_series dims (actual time=0.017..0.019 rows=16.00 loops=1)
-  ->  Gather Merge (actual time=144.785..153.533 rows=100.00 loops=1)
+          ->  Function Scan on generate_series dims (actual time=0.017..0.020 rows=16.00 loops=1)
+  ->  Gather Merge (actual time=148.387..156.917 rows=100.00 loops=1)
         Workers Planned: 4
         Workers Launched: 4
         Buffers: shared hit=18141
-        ->  Parallel Index Scan using pg18_parallel_scan_fixture_idx on pg18_parallel_scan_fixture (actual time=103.840..105.553 rows=20.00 loops=5)
+        ->  Parallel Index Scan using pg18_parallel_scan_fixture_idx on pg18_parallel_scan_fixture (actual time=104.209..105.871 rows=20.00 loops=5)
               Order By: (embedding <#> (InitPlan 1).col1)
               Index Searches: 0
               Buffers: shared hit=18141
@@ -33,7 +33,7 @@ Limit (actual time=144.787..153.574 rows=100.00 loops=1)
               Parallel Contributor Publish: Handoff Ready: 0
               Parallel Contributor Publish: Ordered After Visible: 252
               Parallel Contributor Publish: No Visible Owner: 0
-              Parallel Contributor Publish Rank: Before Visible: 4
+              Parallel Contributor Publish Rank: Before Visible: 0
               Parallel Contributor Publish Rank: Equal Visible: 4
               Parallel Contributor Publish Rank: After Visible: 252
               Parallel Contributor Publish Rank: Missing Visible: 0
@@ -62,11 +62,11 @@ Limit (actual time=144.787..153.574 rows=100.00 loops=1)
 Planning:
   Buffers: shared hit=3
 [pg18-parallel] parallel seqscan control plan:
-Gather (actual time=0.295..7.148 rows=50000.00 loops=1)
+Gather (actual time=0.228..6.946 rows=50000.00 loops=1)
   Workers Planned: 4
   Workers Launched: 4
   Buffers: shared hit=667
-  ->  Parallel Seq Scan on pg18_parallel_scan_fixture (actual time=0.013..1.357 rows=10000.00 loops=5)
+  ->  Parallel Seq Scan on pg18_parallel_scan_fixture (actual time=0.012..1.230 rows=10000.00 loops=5)
         Filter: (id > 0)
         Buffers: shared hit=667
 Planning:
