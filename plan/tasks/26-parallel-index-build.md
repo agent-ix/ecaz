@@ -32,11 +32,13 @@ Key tqvector-specific simplifications over pgvector:
   entryWaitLock` pair because level assignment happens at insertion time.
   tqvector eliminates this contention entirely.
 
-- **No DSM overflow.** pgvector's shared graph is bounded by
+- **No raw-vector DSM overflow.** pgvector's shared graph is bounded by
   `maintenance_work_mem` (it stores raw f32 vectors). tqvector encodes all
-  tuples before graph assembly; the DSM graph holds only neighbor-slot index
-  arrays (~2–4 MB at 50k nodes × m=6). The overflow-to-serial fallback that
-  costs pgvector its parallel benefit does not apply.
+  tuples before graph assembly; workers still need compact encoded code bytes
+  in DSM for candidate scoring, but not raw f32 source vectors. The graph
+  surface holds neighbor-slot index arrays (~2–4 MB at 50k nodes × m=6) plus
+  the compact code corpus. The overflow-to-serial fallback that costs pgvector
+  its parallel benefit does not apply.
 
 - **Shorter lock hold per candidate.** Score computation is
   `score(codes[a], codes[b])` via in-process SIMD kernels — no heap fetch, no
@@ -82,9 +84,9 @@ starts:
    maximum level. Store as a fixed `entry_idx: usize`. No lock needed — this
    value does not change during parallel insertion.
 
-3. **DSM node array allocation.** Allocate a flat array of `NativeBuildNode`
-   structs in DSM, pre-sized to `heap_tuples.len()`. Each node's
-   `neighbor_slots` is initialized to empty. Each node gets one
+3. **DSM graph/corpus allocation.** Allocate the compact encoded code corpus,
+   flat graph node array, and flat neighbor-slot array in DSM. Each node is
+   pre-sized from the level plan, starts with empty neighbor slots, and gets one
    `LWLock` initialized via `LWLockInitialize`. Use `BUFFERALIGN` sizing
    matching the existing DSM layout helpers in `build_parallel.rs`.
 

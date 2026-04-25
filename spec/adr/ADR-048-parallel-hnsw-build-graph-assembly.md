@@ -76,13 +76,16 @@ measured. Concurrent insertion has none of these prerequisites.
 
 ### tqvector-specific advantages over pgvector
 
-**No DSM overflow.** pgvector's shared graph arena is bounded by
+**No raw-vector DSM overflow.** pgvector's shared graph arena is bounded by
 `maintenance_work_mem` because it stores raw f32 vectors in DSM. When the
 graph overflows, pgvector falls back to serial on-disk insertion per tuple,
 losing the parallel benefit entirely. tqvector encodes all tuples before graph
-assembly; the DSM graph holds only neighbor-slot arrays (integer indices).
-At 50k nodes × m=6 the neighbor-slot footprint is 2–4 MB. The overflow fallback
-does not apply.
+assembly. The DSM build surface must expose compact code bytes so worker
+processes can score candidates without reading the leader's Rust `BuildState`,
+but it does not need to store raw source vectors. At 50k nodes × m=6 the
+neighbor-slot footprint is 2–4 MB, and the encoded-code corpus remains compact
+relative to raw f32 vectors. The pgvector raw-vector overflow fallback does not
+apply.
 
 **No entry point lock during insertion.** tqvector assigns node levels from a
 deterministic seed. All levels are knowable before workers launch. The entry
@@ -123,9 +126,13 @@ serial build. That is the acceptance criterion, not byte-level reproducibility.
 2. Leader owns `BuildState` with all encoded tuples in `heap_tuples`.
 3. Leader pre-computes all node levels from the deterministic seed.
 4. Leader identifies the entry point: the first node at the maximum level.
-5. Leader allocates the DSM graph: a flat array of `NativeBuildNode` structs,
-   each with its `neighbor_slots` and one `LWLock`. The array is pre-sized to
-   `heap_tuples.len()`. No dynamic allocation during insertion.
+5. Leader allocates the DSM build surface:
+   - compact encoded code bytes for candidate scoring across worker processes
+   - a flat node array, with each node holding one `LWLock`, level, and
+     neighbor-slot offset/count
+   - one flat neighbor-slot array addressed by node offsets
+   The graph arrays are pre-sized to `heap_tuples.len()` and the pre-computed
+   slot counts. No dynamic allocation occurs during insertion.
 
 ### Insertion phase (all participants)
 
@@ -206,7 +213,8 @@ The concurrent DSM path may become the default only after packets show:
 - Eliminates the cross-partition navigability risk of the partitioned approach.
 - Removes the boundary merge infrastructure requirement.
 - Leader participates in graph insertion (no dedicated queue drainer).
-- No DSM overflow fallback needed due to compact node representation.
+- No raw-vector DSM overflow fallback needed due to compact code and graph
+  representation.
 - No entry point lock contention due to pre-determined levels.
 - Existing page staging contract unchanged.
 
