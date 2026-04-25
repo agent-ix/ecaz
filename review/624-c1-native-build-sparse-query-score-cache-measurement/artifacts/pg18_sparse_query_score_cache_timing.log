@@ -1,0 +1,143 @@
+Timing is on.
+=== pg18 sparse query score cache timing fixture ===
+          started_at          |                                            postgres_version                                             | server_version | max_worker_processes 
+------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 10:40:14.36003-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.737 ms
+DROP TABLE
+Time: 10.103 ms
+DROP EXTENSION
+Time: 62.666 ms
+CREATE EXTENSION
+Time: 42.759 ms
+CREATE TABLE
+Time: 6.136 ms
+=== load 10000 rows x 64 dims ===
+INSERT 0 10000
+Time: 276.617 ms
+VACUUM
+Time: 11.497 ms
+ fixture_rows 
+--------------
+        10000
+(1 row)
+
+Time: 1.407 ms
+ relpages | reltuples 
+----------+-----------
+      371 |     10000
+(1 row)
+
+Time: 2.440 ms
+SET
+Time: 0.241 ms
+SET
+Time: 0.184 ms
+=== serial create index round 1 ===
+SET
+Time: 0.209 ms
+ALTER TABLE
+Time: 1.327 ms
+DROP INDEX
+Time: 0.227 ms
+CREATE INDEX
+Time: 9086.669 ms (00:09.087)
+     round      | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_round_1 |                 0 |                0 |       10000 |         9998 |         573407 |                 0 |                 0 |                     0 |        8502580 |  8427858 |    50469 |    21975
+(1 row)
+
+Time: 0.700 ms
+ serial_round_1_index_bytes 
+----------------------------
+                    2334720
+(1 row)
+
+Time: 0.598 ms
+DROP INDEX
+Time: 2.197 ms
+CHECKPOINT
+Time: 39.768 ms
+=== parallel create index round 1 ===
+SET
+Time: 0.338 ms
+ALTER TABLE
+Time: 1.475 ms
+DROP INDEX
+Time: 0.367 ms
+CREATE INDEX
+Time: 8882.599 ms (00:08.883)
+      round       | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_round_1 |                 4 |                4 |       10000 |         9998 |         399834 |              2959 |            137035 |                259834 |        8473064 |  8401233 |    50271 |    19311
+(1 row)
+
+Time: 0.464 ms
+ parallel_round_1_index_bytes 
+------------------------------
+                      2334720
+(1 row)
+
+Time: 0.491 ms
+DROP INDEX
+Time: 2.395 ms
+CHECKPOINT
+Time: 20.231 ms
+=== serial create index round 2 ===
+SET
+Time: 0.213 ms
+ALTER TABLE
+Time: 1.248 ms
+DROP INDEX
+Time: 0.232 ms
+CREATE INDEX
+Time: 8559.489 ms (00:08.559)
+     round      | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_round_2 |                 0 |                0 |       10000 |         9998 |         510251 |                 0 |                 0 |                     0 |        8039653 |  7967080 |    50940 |    19555
+(1 row)
+
+Time: 0.530 ms
+ serial_round_2_index_bytes 
+----------------------------
+                    2334720
+(1 row)
+
+Time: 0.474 ms
+DROP INDEX
+Time: 1.874 ms
+CHECKPOINT
+Time: 17.178 ms
+=== parallel create index round 2 ===
+SET
+Time: 0.289 ms
+ALTER TABLE
+Time: 1.299 ms
+DROP INDEX
+Time: 0.270 ms
+CREATE INDEX
+Time: 8514.682 ms (00:08.515)
+      round       | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_round_2 |                 4 |                4 |       10000 |         9998 |         392953 |              2378 |            130408 |                260161 |        8112529 |  8040487 |    50169 |    19796
+(1 row)
+
+Time: 0.690 ms
+ parallel_round_2_index_bytes 
+------------------------------
+                      2334720
+(1 row)
+
+Time: 0.500 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 10:40:49.862574-07
+(1 row)
+
+Time: 0.280 ms
+psql:review/624-c1-native-build-sparse-query-score-cache-measurement/artifacts/pg18_sparse_query_score_cache_timing.sql:47: NOTICE:  index "ec_hnsw_sparse_query_score_cache_measure_idx" does not exist, skipping
+psql:review/624-c1-native-build-sparse-query-score-cache-measurement/artifacts/pg18_sparse_query_score_cache_timing.sql:61: NOTICE:  index "ec_hnsw_sparse_query_score_cache_measure_idx" does not exist, skipping
+psql:review/624-c1-native-build-sparse-query-score-cache-measurement/artifacts/pg18_sparse_query_score_cache_timing.sql:75: NOTICE:  index "ec_hnsw_sparse_query_score_cache_measure_idx" does not exist, skipping
+psql:review/624-c1-native-build-sparse-query-score-cache-measurement/artifacts/pg18_sparse_query_score_cache_timing.sql:89: NOTICE:  index "ec_hnsw_sparse_query_score_cache_measure_idx" does not exist, skipping
