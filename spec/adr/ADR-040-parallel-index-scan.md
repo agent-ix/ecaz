@@ -87,6 +87,27 @@ Until one of those contracts is implemented, multi-emitter output
 remains diagnostic-only and is expected to fail strict
 serial-equivalence checks.
 
+### 2026-04-24 amendment: projected score diagnostics and next production route
+
+The follow-up projected-score diagnostics confirmed that the query-visible
+projected `ORDER BY` score and the separately recomputed exact score match on
+the PG18 fixture. They also confirmed that the current serial HNSW rank can
+contain adjacent exact-score inversions.
+
+That evidence makes direct multi-emitter `Gather Merge` a poor default
+production target. Exact-key-sorted worker streams remain a possible future
+contract, but they intentionally change the visible rank contract away from
+current serial HNSW order.
+
+The next production route is therefore cooperative single-stream output:
+non-elected workers may contribute candidate work through the shared
+coordinator, while one elected backend remains the only visible tuple emitter
+seen by `Gather Merge`. This preserves the one-stream PG18 safety property and
+keeps the serial-equivalence gate in force while the worker contribution
+protocol is built. The protocol must handle the executor lifecycle explicitly:
+a non-emitting backend that returns `false` from `amgettuple` is done, so it
+cannot rely on later executor calls to publish additional work.
+
 ### Shared coordinator, independent beams
 
 The leader initializes a shared scan descriptor holding the query

@@ -16,8 +16,9 @@ parallel-aware. Direct multi-emitter output is blocked until the emitted worker
 streams are compatible with PostgreSQL's `Gather Merge` pathkeys.
 
 Goal: keep the planner-visible PG18 path correct first, then recover the
-linear-ish latency reduction on warm indexes for 2/4/8 workers once the
-multi-emitter output contract is rank-compatible. DiskANN (task 17) and future
+linear-ish latency reduction on warm indexes for 2/4/8 workers by letting
+non-elected workers contribute through the shared coordinator while one elected
+backend remains the only visible tuple emitter. DiskANN (task 17) and future
 AMs should inherit the same scan seam once they land.
 
 ## Why now
@@ -37,16 +38,16 @@ AMs should inherit the same scan seam once they land.
 
 See ADR-040 for the full shape. Summary:
 
-- **Current PG18 output contract:** exactly one elected backend emits tuples
-  for the planner-visible path. The direct multi-emitter path is restricted to
-  diagnostics because PostgreSQL `Gather Merge` compares stream heads by the
-  exact SQL `ORDER BY` key, while serial HNSW order can contain adjacent exact
-  score inversions.
+- **Current PG18 output contract:** exactly one elected backend emits visible
+  tuples for the planner-visible path. The direct multi-emitter path is
+  restricted to diagnostics because PostgreSQL `Gather Merge` compares stream
+  heads by the exact SQL `ORDER BY` key, while serial HNSW order can contain
+  adjacent exact score inversions.
 - **Shared state (DSM):** coordinator state, worker slots, runtime snapshots,
   emitted-history duplicate suppression, hidden/deferred handoff state, and the
   staged merge/admitted-result surfaces live in the shared AM-private
   descriptor. The original shared top-K admission heap remains the target for a
-  future rank-compatible multi-emitter contract.
+  future worker-contribution contract behind one visible output stream.
 - **Per-worker state (DSM slots):** independent beam frontier, visited set,
   and scoring scratch. No shared visited set (the coordination cost
   outweighs the redundancy savings at typical `ef_search`).
@@ -67,17 +68,20 @@ See ADR-040 for the full shape. Summary:
 - `ec_hnsw` now enables `amcanparallel=true` on PG18 and the reusable
   `ecaz dev test pg18-parallel-scan --expect-parallel` gate validates a real
   planner-visible `Parallel Index Scan`.
-- The production path uses one elected tuple emitter. This keeps serial HNSW
+- The production path uses one elected visible tuple emitter. This keeps serial HNSW
   order byte-equivalent while still exercising PostgreSQL parallel scan
   callbacks, shared DSM attachment, and worker-control preflight coverage.
 - Score diagnostics in review packets 593 and 594 show that serial HNSW order
   can have adjacent inversions under the exact SQL `ORDER BY` expression. A
   direct multi-emitter stream therefore lets `Gather Merge` legally reorder the
   result away from strict serial equivalence.
-- ADR-040 records the remaining design choices for direct multi-emitter output:
-  coordinator-owned serial-rank sequencing, exact-key-sorted worker streams, or
-  a planner/runtime contract that avoids `Gather Merge` for approximate serial
-  order.
+- Review packet 598 confirms that the projected query scores match exact
+  recomputation on the PG18 fixture and that the serial HNSW stream itself has
+  adjacent exact-score inversions. Direct multi-emitter `Gather Merge` is
+  therefore not the production path for the current serial-rank contract.
+- ADR-040 now records the next production direction: keep one visible tuple
+  emitter for `Gather Merge`, and let non-elected workers contribute candidate
+  work through the shared coordinator behind that single output stream.
 
 ## Subtasks
 
@@ -113,6 +117,20 @@ See ADR-040 for the full shape. Summary:
   (default `0.1`, range `[0.0, 0.5]`) controls the overlap term.
 - [ ] **Single-worker equivalence test.** `n=1` parallel scan produces
   byte-identical results to serial scan at the same `ef_search`.
+
+### Worker contribution behind one visible emitter
+
+- [ ] **Contributor lifecycle protocol.** Let non-elected workers publish
+  useful coordinator state without returning visible tuples to `Gather Merge`.
+  A non-emitting `amgettuple` call cannot return `false` until it has completed
+  its bounded contribution, because PostgreSQL will treat that worker stream as
+  exhausted.
+- [ ] **Elected-emitter coordinator drain.** Keep the elected backend as the
+  only visible output stream while it drains shared coordinator results under
+  the current serial-equivalence gate.
+- [ ] **Contribution diagnostics.** Extend the PG18 fixture to report whether
+  non-elected workers published coordinator rows and whether the elected emitter
+  consumed them.
 
 ### Planner integration
 
@@ -747,13 +765,20 @@ See ADR-040 for the full shape. Summary:
   on PG18. `--expect-parallel` is now the default validation mode for Task 18
   PG18 work.
 
-- **Gather Merge compatibility is the remaining multi-emitter blocker.**
+- **Gather Merge compatibility is the remaining direct multi-emitter blocker.**
   Diagnostic multi-emitter runs prove that direct worker emission can fail
   strict serial equivalence even when the underlying serial ordered IDs are
   stable, because `Gather Merge` reorders per-worker stream heads by the exact
   SQL sort key. The next multi-emitter design must choose one of the contracts
   recorded in ADR-040 before it can replace the elected-emitter production
   path.
+
+- **Projected-score diagnostics shift the next production path.** Packet 598
+  confirms that the PG18 fixture's projected `ORDER BY` score matches exact
+  recomputation, while serial HNSW order still has adjacent exact-score
+  inversions. The next performance slice should therefore keep one visible
+  emitter and make non-elected workers contribute behind it, rather than trying
+  to promote direct multi-emitter `Gather Merge` output.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings

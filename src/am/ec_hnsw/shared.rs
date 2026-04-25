@@ -784,9 +784,9 @@ pub(crate) fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
 
 fn planner_integration_next_runtime_blocker() -> &'static str {
     if pg18_parallel_multi_emitter_diagnostic_enabled() {
-        "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge"
+        "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge and is not the production path"
     } else {
-        "PG18 planner-visible Parallel Index Scan is enabled with one elected tuple emitter; rank-compatible multi-emitter Gather Merge output remains the next runtime step"
+        "PG18 planner-visible Parallel Index Scan is enabled with one elected visible tuple emitter; next runtime step is shared worker contribution behind that single output stream"
     }
 }
 

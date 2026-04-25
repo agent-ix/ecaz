@@ -2861,7 +2861,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "PG18 planner-visible Parallel Index Scan is enabled with one elected tuple emitter; rank-compatible multi-emitter Gather Merge output remains the next runtime step"
+            "PG18 planner-visible Parallel Index Scan is enabled with one elected visible tuple emitter; next runtime step is shared worker contribution behind that single output stream"
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -2896,7 +2896,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge"
+            "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge and is not the production path"
         );
     }
 
@@ -15820,7 +15820,7 @@ LIMIT 1
             usize::from(!primary_round_robin.is_empty())
                 + usize::from(!secondary_round_robin.is_empty()),
             1,
-            "the planner-visible PG18 path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
+            "the planner-visible PG18 path should use one elected visible tuple emitter while shared worker contribution is still blocked; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,
@@ -15994,7 +15994,7 @@ LIMIT 1
             usize::from(!primary_round_robin.is_empty())
                 + usize::from(!secondary_round_robin.is_empty()),
             1,
-            "the planner-visible PG18 duplicate-drain path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
+            "the planner-visible PG18 duplicate-drain path should use one elected visible tuple emitter while shared worker contribution is still blocked; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,
@@ -16161,7 +16161,7 @@ LIMIT 1
                 .filter(|worker| !worker.stream.is_empty())
                 .count(),
             1,
-            "the staged {} PG18 path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; details={:?}",
+            "the staged {} PG18 path should use one elected visible tuple emitter while shared worker contribution is still blocked; details={:?}",
             fixture_label, details,
         );
         assert!(
