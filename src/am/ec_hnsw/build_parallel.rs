@@ -325,6 +325,51 @@ impl EcHnswConcurrentDsmGraphLayout {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmPreassemblyPlan {
+    pub(super) levels: build::NativeBuildLevels,
+    pub(super) node_layout: EcHnswConcurrentDsmNodeLayoutPlan,
+    pub(super) code_corpus: EcHnswConcurrentDsmCodeCorpus,
+    pub(super) graph_layout: EcHnswConcurrentDsmGraphLayout,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmPreassemblyPlan {
+    pub(super) fn for_state(state: &build::BuildState) -> Self {
+        if state.options.build_source_column.is_some() {
+            pgrx::error!(
+                "concurrent DSM graph assembly does not support source-scored builds yet"
+            );
+        }
+
+        let m = u16::try_from(state.options.m).expect("validated m should fit into u16");
+        let levels = if state.heap_tuples.is_empty() {
+            build::NativeBuildLevels::from_levels(Vec::new())
+        } else {
+            build::precompute_native_build_levels(state, m)
+        };
+        let node_layout = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(&levels, m);
+        let code_corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&state.heap_tuples);
+        let graph_layout =
+            EcHnswConcurrentDsmGraphLayout::for_levels(&levels, m, code_corpus.code_len as usize);
+
+        if graph_layout.node_count != code_corpus.node_count {
+            pgrx::error!("concurrent DSM preassembly node counts do not match");
+        }
+        if graph_layout.total_neighbor_slots != node_layout.total_neighbor_slots {
+            pgrx::error!("concurrent DSM preassembly neighbor slot counts do not match");
+        }
+
+        Self {
+            levels,
+            node_layout,
+            code_corpus,
+            graph_layout,
+        }
+    }
+}
+
 impl EcHnswParallelBuildSharedHeader {
     pub(super) fn new(
         plan: EcHnswParallelBuildPlan,
@@ -1090,6 +1135,8 @@ fn elapsed_us(start: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -1248,6 +1295,69 @@ mod tests {
             layout.total_bytes,
             bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size)
         );
+    }
+
+    #[test]
+    fn concurrent_dsm_preassembly_plan_composes_levels_slots_codes_and_layout() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+
+        assert_eq!(plan.levels.levels.len(), 2);
+        assert_eq!(plan.node_layout.nodes.len(), 2);
+        assert_eq!(plan.code_corpus.node_count, 2);
+        assert_eq!(plan.code_corpus.code_len, 3);
+        assert_eq!(plan.code_corpus.bytes, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(plan.graph_layout.node_count, 2);
+        assert_eq!(plan.graph_layout.code_len, 3);
+        assert_eq!(
+            plan.graph_layout.total_neighbor_slots,
+            plan.node_layout.total_neighbor_slots
+        );
+    }
+
+    #[test]
+    fn concurrent_dsm_preassembly_plan_handles_empty_state() {
+        let state = build_state(None);
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+
+        assert!(plan.levels.levels.is_empty());
+        assert!(plan.node_layout.nodes.is_empty());
+        assert_eq!(plan.code_corpus.node_count, 0);
+        assert_eq!(plan.code_corpus.code_len, 0);
+        assert_eq!(plan.graph_layout.node_count, 0);
+        assert_eq!(plan.graph_layout.total_neighbor_slots, 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_preassembly_plan_rejects_source_scored_builds() {
+        let state = build_state(Some("source"));
+
+        let _ = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+    }
+
+    fn build_state(build_source_column: Option<&str>) -> build::BuildState {
+        build::BuildState {
+            options: crate::am::ec_hnsw::options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: build_source_column.map(str::to_owned),
+                rerank_source_column: None,
+                storage_format: crate::quant::Family::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        }
     }
 
     fn build_tuple_with_code(code: Vec<u8>) -> build::BuildTuple {
