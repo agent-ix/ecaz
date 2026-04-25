@@ -5,6 +5,7 @@ use std::ptr;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::am::common::explain::IvfExplainCounters;
+use crate::am::stats::{self, TqStatsCounters};
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 use crate::storage::page::ItemPointer;
 
@@ -25,6 +26,7 @@ struct EcIvfScanOpaque {
     posting_candidate_count: u32,
     next_candidate_index: u32,
     explain_counters: IvfExplainCounters,
+    stats_delta: TqStatsCounters,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -198,9 +200,15 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 pgrx::error!("ec_ivf amrescan missing scan opaque state");
             }
             let opaque = &mut *opaque_ptr;
+            if opaque.rescan_called {
+                flush_scan_stats(opaque);
+            }
             free_scan_query_prep(opaque);
             opaque.explain_counters.reset();
+            opaque.stats_delta.reset();
             opaque.rescan_called = true;
+            stats::record_scan_started();
+            opaque.stats_delta.record_scan_started();
             opaque.scan_dimensions = metadata.dimensions;
             opaque.scan_nlists = metadata.nlists;
             opaque.scan_nprobe = if metadata.dimensions == 0 {
@@ -219,6 +227,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 opaque
                     .explain_counters
                     .record_centroid_scores(centroid_scores.len());
+                record_distance_calcs(opaque, centroid_scores.len());
                 opaque
                     .explain_counters
                     .record_selected_lists(selected_lists.len());
@@ -286,7 +295,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
 
             let opaque_ptr = (*scan).opaque;
             if !opaque_ptr.is_null() {
-                free_scan_query_prep(&mut *opaque_ptr.cast::<EcIvfScanOpaque>());
+                let opaque = &mut *opaque_ptr.cast::<EcIvfScanOpaque>();
+                flush_scan_stats(opaque);
+                free_scan_query_prep(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
             }
@@ -338,6 +349,28 @@ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
             *(*scan).xs_orderbynulls = true;
         }
     }
+}
+
+fn record_distance_calcs(opaque: &mut EcIvfScanOpaque, count: usize) {
+    for _ in 0..count {
+        stats::record_distance_calc();
+        opaque.stats_delta.record_distance_calc();
+    }
+}
+
+fn record_posting_pages_read(opaque: &mut EcIvfScanOpaque, count: u32) {
+    for _ in 0..count {
+        stats::record_linear_page();
+        opaque.stats_delta.record_linear_page();
+    }
+}
+
+fn flush_scan_stats(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.rescan_called || opaque.stats_delta.is_zero() {
+        return;
+    }
+    stats::flush_shared_delta(opaque.stats_delta);
+    opaque.stats_delta.reset();
 }
 
 unsafe fn store_scan_query(opaque: &mut EcIvfScanOpaque, query: &[f32]) {
@@ -577,9 +610,11 @@ unsafe fn materialize_probe_candidates(
         let directory = directories
             .get(*list_id as usize)
             .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        let posting_pages = posting_block_count(directory)?;
         opaque
             .explain_counters
-            .record_posting_pages_read(posting_block_count(directory)?);
+            .record_posting_pages_read(posting_pages);
+        record_posting_pages_read(opaque, posting_pages);
         let postings = unsafe {
             super::page::read_ivf_postings_for_list_blocks(
                 index_relation,
@@ -595,6 +630,7 @@ unsafe fn materialize_probe_candidates(
             }
             let score =
                 -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
+            record_distance_calcs(opaque, 1);
             for heap_tid in posting.heaptids {
                 opaque.explain_counters.record_candidate_scored();
                 let candidate = EcIvfScoredCandidate { heap_tid, score };

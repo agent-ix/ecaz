@@ -368,6 +368,12 @@ same `<#>` strategy-translation callbacks used by `ec_hnsw`. The
 strategy-translation readiness for reviewers. PG18 ReadStream/shared-stats
 runtime wiring remains open.
 
+Phase 7 PG18 stats checkpoint: `ec_ivf` scans now update the shared
+PG18-compatible `ecaz_stats()` counters for scans started, distance
+calculations, and posting-list pages read, with backend-local fallback still
+available when the custom pgstat kind is not preload-active. PG18 ReadStream
+runtime wiring remains open.
+
 ### Phase 8 - validation and measurement
 
 - [ ] **Unit gate.** `cargo test` for trainer, codec, list directory, and

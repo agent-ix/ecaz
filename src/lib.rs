@@ -4747,6 +4747,68 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
+    fn test_pg18_ecaz_stats_reports_backend_local_counters_for_ec_ivf() {
+        Spi::run(
+            "CREATE TABLE pg18_ivf_stats_fixture (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO pg18_ivf_stats_fixture VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector),
+             (4, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX pg18_ivf_stats_fixture_idx ON pg18_ivf_stats_fixture USING ec_ivf
+             (embedding ecvector_ip_ops)
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4)",
+        )
+        .expect("index creation should succeed");
+
+        let scans_before = Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
+            .expect("stats query should succeed")
+            .expect("scan counter should be non-null");
+        let distance_before = Spi::get_one::<i64>("SELECT total_distance_calcs FROM ecaz_stats()")
+            .expect("stats query should succeed")
+            .expect("distance counter should be non-null");
+        let posting_pages_before = Spi::get_one::<i64>("SELECT total_linear_pages FROM ecaz_stats()")
+            .expect("stats query should succeed")
+            .expect("posting page counter should be non-null");
+
+        Spi::run("SET enable_seqscan = off").expect("set should succeed");
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM pg18_ivf_stats_fixture
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
+             LIMIT 1",
+        )
+        .expect("query should succeed");
+
+        assert!(
+            Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
+                .expect("stats query should succeed")
+                .expect("scan counter should be non-null")
+                >= scans_before + 1
+        );
+        assert!(
+            Spi::get_one::<i64>("SELECT total_distance_calcs FROM ecaz_stats()")
+                .expect("stats query should succeed")
+                .expect("distance counter should be non-null")
+                > distance_before
+        );
+        assert!(
+            Spi::get_one::<i64>("SELECT total_linear_pages FROM ecaz_stats()")
+                .expect("stats query should succeed")
+                .expect("posting page counter should be non-null")
+                > posting_pages_before
+        );
+
+        Spi::run("RESET enable_seqscan").expect("reset should succeed");
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
     fn test_pg18_module_identity_reports_loaded_module_version() {
         let version = Spi::get_one::<String>(
             "SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'",
