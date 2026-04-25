@@ -161,7 +161,7 @@ Neither is needed today.
 cargo test -p ecaz-cli
 cargo pgrx test pg18
 ecaz dev test pgrx
-ecaz dev test pgrx --pg 17
+ecaz dev test pgrx --pg 18
 ecaz dev test pg18-preload-pgstat
 ```
 

@@ -5,7 +5,9 @@ use std::fs;
 use std::path::PathBuf;
 use tokio::process::Command;
 
-use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PgrxInstall};
+use super::support::{
+    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PgrxInstall, DEFAULT_PG_MAJOR,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum InstallCommand {
@@ -27,7 +29,7 @@ impl InstallCommand {
 #[derive(Args, Debug)]
 pub struct InstallEcazPgTestArgs {
     /// PostgreSQL major version to install against.
-    #[arg(long, default_value_t = 17)]
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
     pg: u16,
 
     /// Override PGRX_HOME.
@@ -50,7 +52,7 @@ pub struct InstallPgvectorArgs {
     repo: PathBuf,
 
     /// PostgreSQL major version to install against.
-    #[arg(long, default_value_t = 17)]
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
     pg: u16,
 
     /// Override PGRX_HOME.

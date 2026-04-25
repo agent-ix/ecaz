@@ -228,7 +228,7 @@ async fn ensure_debug_functions(client: &tokio_postgres::Client) -> Result<()> {
     if !has_scan {
         return Err(eyre!(
             "missing tests.ec_hnsw_debug_scan_result_count(oid, real[]); \
-             install a pg_test build (cargo pgrx install --features 'pg17 pg_test')"
+             install a pg_test build for the target PostgreSQL major version"
         ));
     }
     Ok(())
