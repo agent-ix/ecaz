@@ -1,0 +1,218 @@
+# Task 28: IVF Access Method
+
+Status: proposed - planning branch only.
+
+Working branch: `task28-ivf`
+
+## Scope
+
+Build a first-class IVF access method for tqvector as a sibling to
+`ec_hnsw`. The first target is a plain IVFFlat-style index: train
+centroids, assign each vector to one posting list, scan the nearest
+`nprobe` lists, and return ordered results through the normal PostgreSQL
+index scan path.
+
+This task intentionally does not start with SPANN-style replication or
+balanced hierarchical routing. Those are larger mechanisms from ADR-035
+and should remain follow-ons until a simple IVF baseline proves useful.
+
+Working SQL name: `ec_ivf`, unless the ADR refresh picks a better name.
+
+## Why Now
+
+ADR-017 originally chose HNSW as the default because tqvector had to serve
+heterogeneous and evolving embedding shapes. IVF was left as a reversible
+future choice for workloads where its tradeoffs are valuable:
+
+- lower write amplification than HNSW live insert
+- sequential posting-list reads that are friendlier to cold storage
+- simpler append behavior during high-ingest periods
+- a useful baseline against VectorChord-style IVF + RaBitQ designs
+
+Starting IVF as a separate access method keeps `ec_hnsw` intact while
+giving us a concrete way to measure these tradeoffs.
+
+## Design Outline
+
+- **Access method.** Add `src/am/ec_ivf/` following ADR-041's multi-AM
+  structure: `build`, `scan`, `insert`, `vacuum`, `page`, `options`,
+  `routine`, and `training`.
+- **Training.** Deterministic k-means over a bounded build sample, with
+  explicit behavior for tiny tables, empty tables, and `nlists > rows`.
+- **Metric.** Inner-product search is the current SQL surface. The centroid
+  scoring contract must be fixed up front: either spherical k-means over
+  normalized vectors or an explicitly documented inner-product centroid
+  scorer.
+- **Storage.** Metadata stores dimension, quantizer shape, `nlists`,
+  training seed/version, per-list counts, and list head/tail block refs.
+  Posting-list pages store candidate codes plus heap TIDs using existing
+  storage/WAL primitives where possible.
+- **Scan.** `amrescan` prepares the query, scores centroids, selects
+  `nprobe` lists, scans those lists, scores candidates, and emits the
+  best results through the existing ordered-scan contract.
+- **Insert.** `aminsert` assigns a new row to its nearest centroid and
+  appends it to that posting list. Centroids do not move online.
+- **Vacuum.** Vacuum removes dead heap TIDs from posting lists and updates
+  list stats without retraining centroids.
+- **Planner.** Cost model is shaped by `nprobe * avg_list_size`, not graph
+  traversal. EXPLAIN should expose `nlists`, `nprobe`, selected list count,
+  candidate count, and rerank mode.
+
+## Subtasks
+
+### Phase 0 - design freeze and ADR refresh
+
+- [ ] **ADR-017 refresh.** Amend or supersede ADR-017 so IVF is no longer
+  only a deferred option. Preserve HNSW as the default unless measurements
+  justify changing the default.
+- [ ] **Name and SQL contract.** Decide final AM name and operator-class
+  naming. Prefer PostgreSQL AM-scoped reuse where valid; otherwise use
+  explicit `*_ivf_ip_ops` names.
+- [ ] **Metric contract.** Decide and document centroid scoring for inner
+  product. This must be settled before training code lands.
+- [ ] **Reloptions and GUCs.** Define `nlists`, `nprobe`, training sample
+  size, seed, and rerank/source options. Pick defaults with a small-table
+  path that cannot fail awkwardly.
+- [ ] **Acceptance gates.** Define baseline gates for recall, latency,
+  storage, live-insert WAL volume, and vacuum behavior against `ec_hnsw`
+  and exact scan.
+
+### Phase 1 - AM scaffold
+
+- [ ] **Module layout.** Add `src/am/ec_ivf/{mod,routine,options,page,build,scan,insert,vacuum,training}.rs`.
+- [ ] **SQL bootstrap.** Register handler, access method, operator classes,
+  reloptions, and pgrx exports.
+- [ ] **Empty index behavior.** `CREATE INDEX ... USING ec_ivf` on an empty
+  table writes valid metadata and scan callbacks return no rows.
+- [ ] **Skeleton callbacks.** Wire all AM callbacks with explicit
+  not-implemented errors for unsupported populated paths, then replace
+  each callback in later phases.
+- [ ] **Review packet.** Publish the scaffold contract before build logic
+  starts.
+
+### Phase 2 - page and metadata layout
+
+- [ ] **Metadata page.** Encode/decode IVF metadata: format version,
+  dimensions, quantizer format, `nlists`, `nprobe` default, centroid table
+  location, and posting-list directory.
+- [ ] **Centroid storage.** Choose inline metadata vs dedicated centroid
+  pages. Keep decoding independent from scan state.
+- [ ] **Posting-list tuple.** Define candidate tuple format for `tqvector`
+  and `ecvector`, including duplicate heap TID handling.
+- [ ] **List directory.** Track per-list head/tail pages and live tuple
+  counts with WAL-safe updates.
+- [ ] **Layout tests.** Add roundtrip, length mismatch, small-table, and
+  page-fit coverage.
+
+### Phase 3 - training and build
+
+- [ ] **Training sample.** Heap-scan sample collection with deterministic
+  seed, type validation, NULL rejection, and dimension checks.
+- [ ] **K-means trainer.** Implement bounded-iteration k-means with stable
+  empty-cluster handling and tests for deterministic output.
+- [ ] **Bulk assignment.** Assign every row to one nearest centroid and
+  append to the matching posting list.
+- [ ] **Build stats.** Record per-list counts, empty-list count, centroid
+  drift inputs, and source/quantizer metadata.
+- [ ] **Build smoke tests.** Cover empty, singleton, tiny multi-row,
+  duplicate-heavy, and multi-page list builds.
+
+### Phase 4 - scan path
+
+- [ ] **Query prep.** `amrescan` validates the ORDER BY query, caches the
+  prepared scorer, scores all centroids, and stores the selected `nprobe`
+  list IDs.
+- [ ] **Posting-list scan.** Read selected lists sequentially, score
+  candidates, deduplicate duplicate heap TIDs, and maintain a top-k heap.
+- [ ] **Result emission.** Reuse the ordered tuple production lifecycle:
+  forward-only scan, order-by score output, exhaustion clearing, and rescan
+  reset behavior.
+- [ ] **Rerank mode.** Decide whether v1 always reranks from heap/source
+  data or starts compressed-only with a reloption-controlled exact tail.
+- [ ] **Recall tests.** Add small deterministic oracle tests and a real
+  corpus recall smoke that compares exact scan, `ec_hnsw`, and `ec_ivf`.
+
+### Phase 5 - live insert
+
+- [ ] **Centroid assignment.** `aminsert` scores centroids and appends the
+  row to the nearest posting list under a narrow list-tail lock.
+- [ ] **Shape validation.** Reject mismatched dimension, quantizer bits,
+  seed, and unsupported source layouts with clear errors.
+- [ ] **List stats.** Update per-list live counts and insert-since-build
+  drift counters.
+- [ ] **Concurrency coverage.** Cover concurrent inserts into different
+  lists, same-list tail append, empty-index first insert, and duplicate
+  heap TID rejection.
+
+### Phase 6 - vacuum and drift handling
+
+- [ ] **Dead tuple cleanup.** Remove dead heap TIDs from posting lists and
+  mark empty candidate tuples without changing centroid assignments.
+- [ ] **Directory repair.** Keep list counts, head/tail refs, and empty-list
+  stats consistent after cleanup.
+- [ ] **Drift snapshot.** Expose centroid staleness indicators: inserted
+  since build, changed row fraction, list imbalance, and recommended
+  REINDEX threshold.
+- [ ] **Vacuum safety tests.** Exercise repeated vacuum, insert plus vacuum,
+  scan plus vacuum, and post-vacuum recall sanity.
+
+### Phase 7 - planner, EXPLAIN, and admin surfaces
+
+- [ ] **Cost model.** Estimate startup and total costs from centroid count,
+  `nprobe`, average list size, scoring mode, and rerank mode.
+- [ ] **EXPLAIN counters.** Report centroid scores, selected lists, posting
+  pages read, candidates scored, rerank rows, and filtered duplicates.
+- [ ] **Admin snapshot.** Add an IVF snapshot function for metadata,
+  distribution, drift, and planner inputs.
+- [ ] **PG18 hooks.** Wire strategy translation, tree height, ReadStream,
+  and shared stats only after the PG18 `ec_hnsw` surfaces are stable enough
+  to reuse cleanly.
+
+### Phase 8 - validation and measurement
+
+- [ ] **Unit gate.** `cargo test` for trainer, codec, list directory, and
+  scan heap behavior.
+- [ ] **Extension gate.** `cargo pgrx test pg17` for SQL callback behavior.
+- [ ] **Lint gate.** `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`.
+- [ ] **Recall gate.** Real `10K` and `50K` recall@10 sweeps over
+  `nlists` and `nprobe`, compared with exact and `ec_hnsw`.
+- [ ] **Latency gate.** Warm and cold p50/p95/p99 at equal recall.
+- [ ] **Storage/WAL gate.** `pg_relation_size`, build WAL, and live-insert
+  WAL compared against `ec_hnsw`.
+- [ ] **Review packets.** Store raw logs under packet-local artifacts for
+  any measurement claim.
+
+## Owns
+
+- New IVF access method implementation under `src/am/ec_ivf/`.
+- IVF SQL bootstrap and operator classes.
+- IVF metadata, centroid, and posting-list page formats.
+- IVF planner/admin/EXPLAIN surfaces once the runtime is credible.
+- ADR update that turns IVF from a deferred option into an active lane.
+
+## Dependencies
+
+- Existing `tqvector` and `ecvector` datum/scoring surfaces.
+- Existing quantizer traits and PqFastScan/TurboQuant scoring kernels.
+- Shared storage/WAL primitives from the AM module split.
+- Planner/EXPLAIN/ReadStream common surfaces where they are already
+  reusable across access methods.
+
+## Defers
+
+- SPANN-style multi-list replication and balanced hierarchical k-means.
+- Online centroid retraining or tuple reassignment outside REINDEX.
+- Multi-metric support beyond the current inner-product operator surface.
+- Making IVF the default index type.
+- Cross-AM shared posting-list abstractions before the first IVF baseline
+  proves the shape.
+
+## Initial Review Packet
+
+Create the first review packet after Phase 0 with:
+
+- final SQL naming decision
+- ADR-017 refresh or replacement
+- metric/training contract
+- reloption defaults
+- acceptance gates for the first runnable baseline
