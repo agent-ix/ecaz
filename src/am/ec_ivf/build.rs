@@ -37,7 +37,7 @@ struct BuildState {
     dimensions: Option<u16>,
 }
 
-struct IvfBuildPlan {
+pub(super) struct IvfBuildPlan {
     data_pages: DataPageChain,
     metadata: page::MetadataPage,
     centroid_tids: Vec<ItemPointer>,
@@ -76,6 +76,16 @@ impl IvfBuildPlan {
     fn total_live_tuples(&self) -> u64 {
         self.metadata.total_live_tuples
     }
+}
+
+pub(super) fn stage_single_tuple_build_plan(
+    options: options::EcIvfOptions,
+    tuple: BuildTuple,
+) -> Result<IvfBuildPlan, String> {
+    let mut state = BuildState::new(options, IndexedVectorKind::Ecvector);
+    state.try_push(tuple)?;
+    let model = state.train_model()?;
+    state.stage_build_plan(&model)
 }
 
 unsafe extern "C-unwind" fn ec_ivf_build_callback(
@@ -354,7 +364,7 @@ fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -
     row_count.min(DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
 }
 
-unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
+pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
     let metadata_nlists = usize::try_from(plan.metadata.nlists).expect("u32 nlists should fit");
     debug_assert_eq!(plan.centroid_count(), metadata_nlists);
     debug_assert_eq!(plan.directory_count(), metadata_nlists);

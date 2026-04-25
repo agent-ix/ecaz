@@ -2652,6 +2652,42 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_insert_bootstraps_empty_index() {
+        Spi::run("CREATE TABLE ec_ivf_empty_live_insert (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_empty_live_insert",
+            "ec_ivf_empty_live_insert_idx",
+            4,
+            4,
+            4,
+        );
+
+        Spi::run("INSERT INTO ec_ivf_empty_live_insert VALUES (0, '[0.25,1.0]'::ecvector)")
+            .expect("first live insert should bootstrap the empty index");
+
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let ctid_to_id = ctid_id_map("ec_ivf_empty_live_insert");
+        let ivf_ids = ivf_debug_output_ids(index_oid, vec![0.25, 1.0], &ctid_to_id, 1);
+
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 4);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 1);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(summary_nlists, 4);
+        assert_eq!(empty_lists, 3);
+        assert_eq!(directory_live, 1);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
+        assert_eq!(ivf_ids, vec![0]);
+    }
+
+    #[pg_test]
     #[should_panic(expected = "dimension mismatch")]
     fn test_ec_ivf_insert_rejects_dimension_mismatch() {
         Spi::run("CREATE TABLE ec_ivf_insert_dim_mismatch (id bigint primary key, embedding ecvector)")

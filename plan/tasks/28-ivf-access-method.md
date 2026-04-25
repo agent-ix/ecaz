@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 live-insert validation and concurrency next.
+Status: in progress - Phase 5 duplicate and concurrency coverage next.
 
 Working branch: `task28-ivf`
 
@@ -239,17 +239,24 @@ packet-local artifacts.
   seed, and unsupported source layouts with clear errors.
 - [x] **List stats.** Update per-list live counts and insert-since-build
   drift counters.
+- [x] **Empty-index first insert.** Bootstrap centroids, directory entries,
+  and first posting when a row is inserted into an empty IVF index.
 - [ ] **Concurrency coverage.** Cover concurrent inserts into different
-  lists, same-list tail append, empty-index first insert, and duplicate
-  heap TID rejection.
+  lists, same-list tail append, and duplicate heap TID rejection.
 
 Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
 for the existing `ecvector`/`tqvector` tuple decode paths. Inserts validate
 dimension and posting shape, assign the row to the nearest persisted centroid,
 append a posting tuple to the list tail or a new list block, and update
-directory plus metadata live/inserted-since-build counters. Empty-index first
-insert, fuller quantizer-shape validation, duplicate heap-TID handling, and
-concurrent insert coverage remain open.
+directory plus metadata live/inserted-since-build counters. Fuller
+quantizer-shape validation, duplicate heap-TID handling, and concurrent insert
+coverage remain open.
+
+Phase 5 empty-index bootstrap checkpoint: the first `aminsert` into an empty
+IVF index now stages a single-row build plan from the inserted tuple, preserving
+the persisted reloptions while writing centroids, directory entries, posting
+data, and trained metadata. Duplicate heap-TID handling and concurrent insert
+coverage remain open.
 
 ### Phase 6 - vacuum and drift handling
 

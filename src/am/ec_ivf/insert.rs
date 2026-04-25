@@ -1,6 +1,6 @@
 use pgrx::pg_sys;
 
-use super::{build, page, training};
+use super::{build, options, page, training};
 use crate::storage::page::ItemPointer;
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
@@ -20,11 +20,6 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
                 .rerank
                 .validate_v1_supported()
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if metadata.dimensions == 0 {
-                pgrx::error!(
-                    "ec_ivf cannot insert into an empty index before centroids are trained"
-                );
-            }
 
             let indexed_vector_kind =
                 build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert");
@@ -36,6 +31,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
                 indexed_vector_kind,
                 "aminsert",
             );
+            if metadata.dimensions == 0 {
+                bootstrap_empty_index(index_relation, &metadata, tuple)
+                    .unwrap_or_else(|e| pgrx::error!("ec_ivf empty-index insert failed: {e}"));
+                return true;
+            }
             validate_insert_tuple(&metadata, &tuple)
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert found invalid tuple: {e}"));
 
@@ -70,6 +70,31 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             true
         })
     }
+}
+
+unsafe fn bootstrap_empty_index(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    tuple: build::BuildTuple,
+) -> Result<(), String> {
+    let options = options_from_metadata(metadata)?;
+    let plan = build::stage_single_tuple_build_plan(options, tuple)?;
+    unsafe { build::flush_build_plan(index_relation, &plan) };
+    Ok(())
+}
+
+fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvfOptions, String> {
+    Ok(options::EcIvfOptions {
+        nlists: i32::try_from(metadata.nlists)
+            .map_err(|_| "metadata nlists exceeds i32".to_owned())?,
+        nprobe: i32::try_from(metadata.nprobe)
+            .map_err(|_| "metadata nprobe exceeds i32".to_owned())?,
+        training_sample_rows: i32::try_from(metadata.training_sample_rows)
+            .map_err(|_| "metadata training sample rows exceeds i32".to_owned())?,
+        seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,
+        storage_format: metadata.storage_format,
+        rerank: metadata.rerank,
+    })
 }
 
 fn validate_insert_tuple(
