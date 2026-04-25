@@ -1025,9 +1025,11 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
             let scan_tuning = super::options::resolve_scan_tuning(&index_options);
+            let parallel_backend_may_emit_tuples = parallel_scan_backend_may_emit_tuples(opaque);
             opaque.bootstrap_frontier_limit = resolve_bootstrap_frontier_limit(
                 scan_tuning,
                 opaque.parallel_scan_worker_slot_count,
+                parallel_backend_may_emit_tuples,
             );
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_elapsed_us = u64::try_from(scan_setup_started.elapsed().as_micros())
@@ -1359,13 +1361,16 @@ fn sync_and_publish_parallel_scan_worker_slot_snapshot(opaque: &mut TqScanOpaque
 fn resolve_bootstrap_frontier_limit(
     tuning: super::options::ScanTuning,
     parallel_worker_slot_count: u32,
+    emits_visible_tuples: bool,
 ) -> usize {
-    usize::try_from(super::options::resolve_parallel_scan_ef_search(
-        tuning,
-        parallel_worker_slot_count,
-    ))
-    .expect("ef_search should fit in usize")
-    .max(1)
+    let effective_ef_search = if emits_visible_tuples {
+        tuning.effective_ef_search
+    } else {
+        super::options::resolve_parallel_scan_ef_search(tuning, parallel_worker_slot_count)
+    };
+    usize::try_from(effective_ef_search)
+        .expect("ef_search should fit in usize")
+        .max(1)
 }
 
 fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
@@ -18342,19 +18347,19 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_bootstrap_frontier_limit(tuning, 0),
+            resolve_bootstrap_frontier_limit(tuning, 0, true),
             100,
             "unbound scans should keep the serial ef_search frontier budget"
         );
         assert_eq!(
-            resolve_bootstrap_frontier_limit(tuning, 1),
+            resolve_bootstrap_frontier_limit(tuning, 1, true),
             100,
             "single-worker staged scans should keep the serial ef_search frontier budget"
         );
     }
 
     #[test]
-    fn resolve_bootstrap_frontier_limit_uses_parallel_overlap_split() {
+    fn resolve_bootstrap_frontier_limit_keeps_serial_budget_for_visible_parallel_emitters() {
         let tuning = super::super::options::ScanTuning {
             relation_ef_search: 100,
             session_ef_search: None,
@@ -18363,9 +18368,25 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_bootstrap_frontier_limit(tuning, 4),
+            resolve_bootstrap_frontier_limit(tuning, 4, true),
+            100,
+            "planner-visible parallel tuple emitters must keep the serial ef_search budget"
+        );
+    }
+
+    #[test]
+    fn resolve_bootstrap_frontier_limit_uses_parallel_overlap_split_for_contributors() {
+        let tuning = super::super::options::ScanTuning {
+            relation_ef_search: 100,
+            session_ef_search: None,
+            effective_ef_search: 100,
+            source: super::super::options::EfSearchSource::Relation,
+        };
+
+        assert_eq!(
+            resolve_bootstrap_frontier_limit(tuning, 4, false),
             28,
-            "parallel-bound scans should use the staged per-worker ef_search split with overlap"
+            "non-emitting diagnostic contributors should use the staged per-worker ef_search split with overlap"
         );
     }
 

@@ -81,8 +81,8 @@ pub(super) fn register_gucs() {
     );
     GucRegistry::define_float_guc(
         c"ec_hnsw.parallel_ef_overlap",
-        c"Overlap multiplier for staged parallel ec_hnsw search breadth.",
-        c"Applies a 0.0-0.5 overlap term to the staged per-worker ec_hnsw ef_search budget when a parallel-scan descriptor is bound; planner-visible actual worker-count budgeting remains deferred.",
+        c"Overlap multiplier for diagnostic parallel contributor ec_hnsw search breadth.",
+        c"Applies a 0.0-0.5 overlap term to non-emitting diagnostic contributor ef_search budgets; visible tuple emitters keep the serial ef_search budget for serial-equivalent output.",
         &EC_HNSW_PARALLEL_EF_OVERLAP_GUC,
         0.0,
         EC_HNSW_MAX_PARALLEL_EF_OVERLAP,
