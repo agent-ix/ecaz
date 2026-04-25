@@ -26,6 +26,73 @@ struct EcIvfReloptions {
     rerank_offset: i32,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StorageFormat {
+    Auto = 0,
+    TurboQuant = 1,
+    PqFastScan = 2,
+    RaBitQ = 3,
+}
+
+impl StorageFormat {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "turboquant" => Ok(Self::TurboQuant),
+            "pq_fastscan" => Ok(Self::PqFastScan),
+            "rabitq" => Ok(Self::RaBitQ),
+            other => Err(format!(
+                "invalid ec_ivf storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', or 'rabitq', got '{other}'"
+            )),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RerankMode {
+    Auto = 0,
+    Off = 1,
+    HeapF32 = 2,
+    SourceColumn = 3,
+}
+
+impl RerankMode {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "off" => Ok(Self::Off),
+            "heap_f32" => Ok(Self::HeapF32),
+            "source_column" => Ok(Self::SourceColumn),
+            other => Err(format!(
+                "invalid ec_ivf rerank reloption: expected 'auto', 'off', 'heap_f32', or 'source_column', got '{other}'"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct EcIvfOptions {
+    pub(super) nlists: i32,
+    pub(super) nprobe: i32,
+    pub(super) training_sample_rows: i32,
+    pub(super) seed: i32,
+    pub(super) storage_format: StorageFormat,
+    pub(super) rerank: RerankMode,
+}
+
+impl EcIvfOptions {
+    const DEFAULT: Self = Self {
+        nlists: EC_IVF_DEFAULT_NLISTS,
+        nprobe: EC_IVF_DEFAULT_NPROBE,
+        training_sample_rows: EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
+        seed: EC_IVF_DEFAULT_SEED,
+        storage_format: StorageFormat::Auto,
+        rerank: RerankMode::Auto,
+    };
+}
+
 pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_ivf.nprobe",
@@ -37,6 +104,10 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+}
+
+pub(super) fn current_session_nprobe() -> i32 {
+    EC_IVF_NPROBE_GUC.get()
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
@@ -107,5 +178,65 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             );
             pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
         })
+    }
+}
+
+unsafe fn read_string_reloption(
+    rd_options: *mut pg_sys::varlena,
+    offset: i32,
+    name: &str,
+) -> Option<String> {
+    if offset == 0 {
+        return None;
+    }
+
+    let value_ptr = unsafe {
+        rd_options
+            .cast::<u8>()
+            .add(offset as usize)
+            .cast::<std::ffi::c_char>()
+    };
+    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+        .to_str()
+        .unwrap_or_else(|e| pgrx::error!("invalid ec_ivf {name} reloption: {e}"));
+    if value.is_empty() {
+        pgrx::error!("invalid ec_ivf {name} reloption: value must not be empty");
+    }
+    Some(value.to_owned())
+}
+
+pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
+    let rd_options = unsafe { (*index_relation).rd_options };
+    if rd_options.is_null() {
+        return EcIvfOptions::DEFAULT;
+    }
+
+    let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
+    let storage_format = match unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.storage_format_offset,
+            "storage_format",
+        )
+    } {
+        Some(value) => {
+            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        }
+        None => StorageFormat::Auto,
+    };
+    let rerank = match unsafe {
+        read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
+    } {
+        Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
+        None => RerankMode::Auto,
+    };
+
+    EcIvfOptions {
+        nlists: reloptions.nlists,
+        nprobe: reloptions.nprobe,
+        training_sample_rows: reloptions.training_sample_rows,
+        seed: reloptions.seed,
+        storage_format,
+        rerank,
     }
 }

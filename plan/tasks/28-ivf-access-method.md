@@ -92,18 +92,23 @@ profile/rerank mode that claims exact final scoring.
 - [x] **Module layout.** Add `src/am/ec_ivf/{mod,routine,options,page,build,scan,insert,vacuum,training}.rs`.
 - [x] **SQL bootstrap.** Register handler, access method, operator classes,
   reloptions, and pgrx exports.
-- [ ] **Empty index behavior.** `CREATE INDEX ... USING ec_ivf` on an empty
+- [x] **Empty index behavior.** `CREATE INDEX ... USING ec_ivf` on an empty
   table writes valid metadata and scan callbacks return no rows.
 - [x] **Skeleton callbacks.** Wire all AM callbacks with explicit
   not-implemented errors for unsupported populated paths, then replace
   each callback in later phases.
-- [ ] **Review packet.** Publish the scaffold contract before build logic
+- [x] **Review packet.** Publish the scaffold contract before build logic
   starts.
 
 Phase 1 scaffold checkpoint: `src/am/ec_ivf/` now compiles as a registered
 AM with `ec_ivf.nprobe`, IVF reloptions, SQL bootstrap entries, and explicit
 not-implemented callbacks. Empty-index behavior remains the next functional
 slice.
+
+Phase 1 empty-index checkpoint: empty `ec_ivf` builds now write a versioned
+metadata page, preserve IVF reloptions in metadata, and return no tuples from
+the heap-backed AM scan path after rescan. Populated builds still fail loudly
+until Phase 2/3 storage and training land.
 
 ### Phase 2 - page and metadata layout
 

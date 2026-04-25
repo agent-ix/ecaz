@@ -2051,6 +2051,75 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_access_method_is_registered() {
+        let amname =
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'ec_ivf'")
+                .expect("SPI query should succeed")
+                .expect("access method should exist");
+        assert_eq!(amname, "ec_ivf");
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_operator_classes_are_registered() {
+        let opclasses = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_opclass opc \
+             JOIN pg_am am ON am.oid = opc.opcmethod \
+             WHERE am.amname = 'ec_ivf' \
+             AND opc.opcname IN ('tqvector_ip_ops', 'ecvector_ip_ops')",
+        )
+        .expect("SPI query should succeed")
+        .expect("operator class count should exist");
+        assert_eq!(opclasses, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_empty_index_build_initializes_metadata_page() {
+        Spi::run("CREATE TABLE ec_ivf_empty_build (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_empty_build_idx ON ec_ivf_empty_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 16, nprobe = 4, training_sample_rows = 128, seed = 7)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_empty_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (format_version, nlists, nprobe, training_sample_rows, seed) =
+            unsafe { am::debug_ec_ivf_metadata(index_oid) };
+
+        assert_eq!(format_version, 1);
+        assert_eq!(nlists, 16);
+        assert_eq!(nprobe, 4);
+        assert_eq!(training_sample_rows, 128);
+        assert_eq!(seed, 7);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_empty_gettuple_returns_false_after_rescan() {
+        Spi::run("CREATE TABLE ec_ivf_empty_scan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_empty_scan_idx ON ec_ivf_empty_scan USING ec_ivf \
+             (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_empty_scan_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let found_tuple = unsafe { am::debug_ec_ivf_gettuple_after_rescan_result(index_oid) };
+
+        assert!(
+            !found_tuple,
+            "ec_ivf amgettuple should report no tuples for an empty index"
+        );
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
