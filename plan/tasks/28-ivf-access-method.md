@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 6 directory repair next.
+Status: in progress - Phase 6 drift snapshot next.
 
 Working branch: `task28-ivf`
 
@@ -278,7 +278,7 @@ row. Concurrent insert coverage remains open.
   return stable stats before deletion cleanup lands.
 - [x] **Dead tuple cleanup.** Remove dead heap TIDs from posting lists and
   mark empty candidate tuples without changing centroid assignments.
-- [ ] **Directory repair.** Keep list counts, head/tail refs, and empty-list
+- [x] **Directory repair.** Keep list counts, head/tail refs, and empty-list
   stats consistent after cleanup.
 - [ ] **Drift snapshot.** Expose centroid staleness indicators: inserted
   since build, changed row fraction, list imbalance, and recommended
@@ -295,6 +295,12 @@ Phase 6 dead-tuple cleanup checkpoint: `ambulkdelete` now honors the
 PostgreSQL bulkdelete callback, removes dead heap TIDs from IVF postings, marks
 fully removed postings as deleted, and updates list plus metadata live/dead
 counts. Directory head/tail repair and page compaction remain open.
+
+Phase 6 directory-repair checkpoint: vacuum now recomputes each processed
+list's live heap-TID count and live posting block range from the remaining
+postings. Lists emptied by vacuum are marked with invalid head/tail refs, and
+trimmed lists stop pointing at deleted-only edge blocks. Page compaction and
+page reclamation remain open.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 

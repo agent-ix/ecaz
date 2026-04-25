@@ -990,6 +990,31 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     )
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_directory_entry(
+    index_oid: pg_sys::Oid,
+    list_id: u32,
+) -> (u32, u32, u64, u64, u64) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    let directories = unsafe { load_directory_entries(index_relation, &metadata) }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let directory = directories
+        .get(list_id as usize)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf directory list {list_id} is out of range"));
+    let result = (
+        directory.head_block.block_number,
+        directory.tail_block.block_number,
+        directory.live_count,
+        directory.dead_count,
+        directory.inserted_since_build,
+    );
+
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CandidateTopK, EcIvfScoredCandidate};

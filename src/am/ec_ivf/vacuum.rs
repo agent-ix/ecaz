@@ -8,6 +8,35 @@ use crate::storage::page::ItemPointer;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
+#[derive(Debug, Default)]
+struct ListBulkDeleteResult {
+    removed_heap_tids: u64,
+    live_heap_tids: u64,
+    live_head_block: Option<page::BlockRef>,
+    live_tail_block: Option<page::BlockRef>,
+}
+
+impl ListBulkDeleteResult {
+    fn record_live_posting(
+        &mut self,
+        block_number: pg_sys::BlockNumber,
+        heap_tid_count: usize,
+    ) -> Result<(), String> {
+        if self.live_head_block.is_none() {
+            self.live_head_block = Some(page::BlockRef { block_number });
+        }
+        self.live_tail_block = Some(page::BlockRef { block_number });
+        self.live_heap_tids = self
+            .live_heap_tids
+            .checked_add(
+                u64::try_from(heap_tid_count)
+                    .map_err(|_| "ec_ivf live posting heap tid count exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf live heap tid count overflow".to_owned())?;
+        Ok(())
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
@@ -74,6 +103,7 @@ unsafe fn run_bulkdelete(
     let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
     let mut next_tid = metadata.directory_head;
     let mut removed_heap_tids = 0_u64;
+    let mut live_heap_tids = 0_u64;
     for expected_list_id in 0..metadata.nlists {
         let directory_tid = next_tid;
         let (mut directory, following_tid) =
@@ -87,7 +117,7 @@ unsafe fn run_bulkdelete(
             );
         }
 
-        let list_removed = unsafe {
+        let list_result = unsafe {
             bulkdelete_list_postings(
                 index_relation,
                 &directory,
@@ -97,42 +127,46 @@ unsafe fn run_bulkdelete(
             )
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
-        if list_removed > 0 {
-            directory.live_count =
-                directory
-                    .live_count
-                    .checked_sub(list_removed)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_ivf list {} live count underflow during vacuum",
-                            directory.list_id
-                        )
-                    });
+        live_heap_tids = live_heap_tids
+            .checked_add(list_result.live_heap_tids)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf live heap tid count overflow during vacuum"));
+
+        let repaired_head = list_result
+            .live_head_block
+            .unwrap_or(page::BlockRef::INVALID);
+        let repaired_tail = list_result
+            .live_tail_block
+            .unwrap_or(page::BlockRef::INVALID);
+        if list_result.removed_heap_tids > 0
+            || directory.live_count != list_result.live_heap_tids
+            || directory.head_block != repaired_head
+            || directory.tail_block != repaired_tail
+        {
+            directory.live_count = list_result.live_heap_tids;
             directory.dead_count =
                 directory
                     .dead_count
-                    .checked_add(list_removed)
+                    .checked_add(list_result.removed_heap_tids)
                     .unwrap_or_else(|| {
                         pgrx::error!(
                             "ec_ivf list {} dead count overflow during vacuum",
                             directory.list_id
                         )
                     });
+            directory.head_block = repaired_head;
+            directory.tail_block = repaired_tail;
             unsafe { page::rewrite_ivf_list_directory(index_relation, directory_tid, directory) }
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             removed_heap_tids = removed_heap_tids
-                .checked_add(list_removed)
+                .checked_add(list_result.removed_heap_tids)
                 .unwrap_or_else(|| pgrx::error!("ec_ivf removed heap tid count overflow"));
         }
 
         next_tid = following_tid;
     }
 
-    if removed_heap_tids > 0 {
-        metadata.total_live_tuples = metadata
-            .total_live_tuples
-            .checked_sub(removed_heap_tids)
-            .unwrap_or_else(|| pgrx::error!("ec_ivf metadata live count underflow during vacuum"));
+    if removed_heap_tids > 0 || metadata.total_live_tuples != live_heap_tids {
+        metadata.total_live_tuples = live_heap_tids;
         metadata.total_dead_tuples = metadata
             .total_dead_tuples
             .checked_add(removed_heap_tids)
@@ -152,7 +186,7 @@ unsafe fn bulkdelete_list_postings(
     payload_len: usize,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
-) -> Result<u64, String> {
+) -> Result<ListBulkDeleteResult, String> {
     let postings = unsafe {
         page::read_ivf_postings_for_list_blocks_with_tids(
             index_relation,
@@ -163,7 +197,7 @@ unsafe fn bulkdelete_list_postings(
         )?
     };
 
-    let mut removed_heap_tids = 0_u64;
+    let mut result = ListBulkDeleteResult::default();
     for (posting_tid, mut posting) in postings {
         if posting.deleted {
             continue;
@@ -173,22 +207,28 @@ unsafe fn bulkdelete_list_postings(
             .heaptids
             .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
         let removed = starting_len.saturating_sub(posting.heaptids.len());
-        if removed == 0 {
-            continue;
-        }
 
-        if posting.heaptids.is_empty() {
+        let should_rewrite = if posting.heaptids.is_empty() {
             posting.deleted = true;
+            true
+        } else {
+            result.record_live_posting(posting_tid.block_number, posting.heaptids.len())?;
+            removed > 0
+        };
+        if should_rewrite {
+            unsafe { page::rewrite_ivf_posting(index_relation, posting_tid, &posting)? };
         }
-        unsafe { page::rewrite_ivf_posting(index_relation, posting_tid, &posting)? };
-        removed_heap_tids = removed_heap_tids
-            .checked_add(u64::try_from(removed).map_err(|_| {
-                "ec_ivf removed heap tid count exceeds u64".to_owned()
-            })?)
-            .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
+        if removed > 0 {
+            result.removed_heap_tids = result
+                .removed_heap_tids
+                .checked_add(u64::try_from(removed).map_err(|_| {
+                    "ec_ivf removed heap tid count exceeds u64".to_owned()
+                })?)
+                .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
+        }
     }
 
-    Ok(removed_heap_tids)
+    Ok(result)
 }
 
 unsafe fn finish_vacuum_stats(
