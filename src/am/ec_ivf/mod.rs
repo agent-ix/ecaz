@@ -1,5 +1,6 @@
 //! ec_ivf-specific access-method skeleton.
 
+mod admin;
 mod build;
 mod insert;
 mod options;
@@ -30,6 +31,8 @@ pub(crate) fn register_gucs() {
 fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_ivf {callback} is not implemented yet")
 }
+
+pub(crate) use self::admin::{index_drift_snapshot, IndexDriftSnapshot};
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::insert::debug_ec_ivf_validate_no_duplicate_heap_tid;

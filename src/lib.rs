@@ -185,6 +185,12 @@ fn ec_hnsw_access_method_oid() -> pg_sys::Oid {
         .expect("ec_hnsw access method should exist")
 }
 
+fn ec_ivf_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_ivf'")
+        .expect("SPI query should succeed")
+        .expect("ec_ivf access method should exist")
+}
+
 unsafe fn open_valid_ec_hnsw_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
@@ -203,6 +209,28 @@ unsafe fn open_valid_ec_hnsw_index(
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("{caller_name} requires a ec_hnsw index, got relation \"{relation_name}\"");
+    }
+    index_relation
+}
+
+unsafe fn open_valid_ec_ivf_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != ec_ivf_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires a ec_ivf index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -666,6 +694,53 @@ fn ec_hnsw_index_admin_snapshot(
         snapshot.effective_ef_search,
         snapshot.effective_source.to_owned(),
         snapshot.planner_scan_enabled,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_ivf_index_drift_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(nlists, i64),
+        name!(total_live_tuples, i64),
+        name!(total_dead_tuples, i64),
+        name!(inserted_since_build, i64),
+        name!(changed_row_fraction, f64),
+        name!(average_list_live_count, f64),
+        name!(max_list_live_count, i64),
+        name!(list_imbalance_ratio, f64),
+        name!(empty_lists, i64),
+        name!(reindex_recommended, bool),
+        name!(reindex_reason, String),
+        name!(changed_row_reindex_threshold, f64),
+        name!(list_imbalance_reindex_threshold, f64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_drift_snapshot") };
+    let snapshot = unsafe { am::ivf_index_drift_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        i64::from(snapshot.nlists),
+        i64::try_from(snapshot.total_live_tuples).expect("total live tuples should fit in i64"),
+        i64::try_from(snapshot.total_dead_tuples).expect("total dead tuples should fit in i64"),
+        i64::try_from(snapshot.inserted_since_build)
+            .expect("inserted-since-build should fit in i64"),
+        snapshot.changed_row_fraction,
+        snapshot.average_list_live_count,
+        i64::try_from(snapshot.max_list_live_count).expect("max list count should fit in i64"),
+        snapshot.list_imbalance_ratio,
+        i64::from(snapshot.empty_lists),
+        snapshot.reindex_recommended,
+        snapshot.reindex_reason.to_owned(),
+        snapshot.changed_row_reindex_threshold,
+        snapshot.list_imbalance_reindex_threshold,
     ))
 }
 
@@ -2943,6 +3018,151 @@ mod tests {
         assert_eq!(directory_dead, 2);
         assert_eq!(total_live, 0);
         assert!(outputs.is_empty());
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_drift_snapshot_handles_empty_index() {
+        Spi::run("CREATE TABLE ec_ivf_drift_empty (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_drift_empty_idx ON ec_ivf_drift_empty USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 2)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_tuples FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live tuple count should be non-null"),
+            0
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT empty_lists FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("empty-list count should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT changed_row_fraction FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("changed-row fraction should be non-null"),
+            0.0
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT reindex_recommended FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reindex recommendation should be non-null")
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_drift_snapshot_tracks_insert_and_vacuum_churn() {
+        Spi::run("CREATE TABLE ec_ivf_drift_churn (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_drift_churn VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector),
+             (4, '[0.9,0.1]'::ecvector),
+             (5, '[0.1,0.9]'::ecvector),
+             (6, '[-0.9,0.1]'::ecvector),
+             (7, '[0.1,-0.9]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_drift_churn", "ec_ivf_drift_churn_idx", 4, 4, 8);
+
+        Spi::run("INSERT INTO ec_ivf_drift_churn VALUES (8, '[1.0,0.2]'::ecvector)")
+            .expect("live insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_tuples FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live tuple count should be non-null"),
+            9
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_build FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-build should be non-null"),
+            1
+        );
+        let changed_after_insert = Spi::get_one::<f64>(
+            "SELECT changed_row_fraction FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("changed-row fraction should be non-null");
+        assert!((changed_after_insert - (1.0 / 9.0)).abs() < 1e-9);
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT reindex_recommended FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reindex recommendation should be non-null")
+        );
+
+        let dead_tid = heap_tid_for_row("ec_ivf_drift_churn", 0);
+        Spi::run("DELETE FROM ec_ivf_drift_churn WHERE id = 0").expect("delete should succeed");
+        unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_tuples FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live tuple count should be non-null"),
+            8
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_dead_tuples FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("dead tuple count should be non-null"),
+            1
+        );
+        let changed_after_vacuum = Spi::get_one::<f64>(
+            "SELECT changed_row_fraction FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("changed-row fraction should be non-null");
+        assert!((changed_after_vacuum - (2.0 / 9.0)).abs() < 1e-9);
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT list_imbalance_ratio FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("list imbalance ratio should be non-null")
+            .is_finite()
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT reindex_recommended FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reindex recommendation should be non-null")
+        );
+        let reindex_reason = Spi::get_one::<String>(
+            "SELECT reindex_reason FROM ec_ivf_index_drift_snapshot('ec_ivf_drift_churn_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("reindex reason should be non-null");
+        assert!(reindex_reason.contains("changed_rows"));
     }
 
     #[pg_test]

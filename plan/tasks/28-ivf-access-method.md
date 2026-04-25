@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 6 drift snapshot next.
+Status: in progress - Phase 6 vacuum safety coverage next.
 
 Working branch: `task28-ivf`
 
@@ -280,7 +280,7 @@ row. Concurrent insert coverage remains open.
   mark empty candidate tuples without changing centroid assignments.
 - [x] **Directory repair.** Keep list counts, head/tail refs, and empty-list
   stats consistent after cleanup.
-- [ ] **Drift snapshot.** Expose centroid staleness indicators: inserted
+- [x] **Drift snapshot.** Expose centroid staleness indicators: inserted
   since build, changed row fraction, list imbalance, and recommended
   REINDEX threshold.
 - [ ] **Vacuum safety tests.** Exercise repeated vacuum, insert plus vacuum,
@@ -301,6 +301,12 @@ list's live heap-TID count and live posting block range from the remaining
 postings. Lists emptied by vacuum are marked with invalid head/tail refs, and
 trimmed lists stop pointing at deleted-only edge blocks. Page compaction and
 page reclamation remain open.
+
+Phase 6 drift-snapshot checkpoint: `ec_ivf_index_drift_snapshot(regclass)`
+now exposes total live/dead tuples, inserted-since-build, changed-row fraction,
+average/max list live counts, list imbalance ratio, empty-list count, and
+REINDEX recommendation thresholds/reason. Broader vacuum safety tests remain
+open.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 
