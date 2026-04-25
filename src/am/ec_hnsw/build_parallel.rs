@@ -26,6 +26,7 @@ const BUILD_DONE_MESSAGE: u8 = 2;
 
 const EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX: u32 = u32::MAX;
 const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED: u32 = 0;
+const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY: u32 = 2;
 
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 
@@ -177,6 +178,25 @@ pub(super) struct EcHnswConcurrentDsmNodeLayoutPlan {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmNodePartition {
+    pub(super) participant_index: u16,
+    pub(super) start_node_idx: u32,
+    pub(super) end_node_idx: u32,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmNodePartition {
+    pub(super) fn is_empty(self) -> bool {
+        self.start_node_idx == self.end_node_idx
+    }
+
+    pub(super) fn contains(self, node_idx: u32) -> bool {
+        self.start_node_idx <= node_idx && node_idx < self.end_node_idx
+    }
+}
+
+#[allow(dead_code)]
 impl EcHnswConcurrentDsmNodeLayoutPlan {
     pub(super) fn for_levels(levels: &build::NativeBuildLevels, m: u16) -> Self {
         let mut nodes = Vec::with_capacity(levels.levels.len());
@@ -210,6 +230,47 @@ impl EcHnswConcurrentDsmNodeLayoutPlan {
             ),
         }
     }
+}
+
+#[allow(dead_code)]
+pub(super) fn concurrent_dsm_node_partitions(
+    node_count: u32,
+    participant_count: u16,
+) -> Vec<EcHnswConcurrentDsmNodePartition> {
+    if participant_count == 0 {
+        pgrx::error!("concurrent DSM graph insertion requires at least one participant");
+    }
+
+    let node_count = node_count as usize;
+    let participant_count = participant_count as usize;
+    let base_len = node_count / participant_count;
+    let remainder = node_count % participant_count;
+    let mut start_node_idx = 0_usize;
+    let mut partitions = Vec::with_capacity(participant_count);
+
+    for participant_index in 0..participant_count {
+        let len = base_len + usize::from(participant_index < remainder);
+        let end_node_idx = start_node_idx
+            .checked_add(len)
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM node partition overflow"));
+        partitions.push(EcHnswConcurrentDsmNodePartition {
+            participant_index: checked_u16(
+                participant_index as i32,
+                "concurrent DSM participant index",
+            ),
+            start_node_idx: checked_graph_u32(
+                start_node_idx,
+                "concurrent DSM partition start node index",
+            ),
+            end_node_idx: checked_graph_u32(
+                end_node_idx,
+                "concurrent DSM partition end node index",
+            ),
+        });
+        start_node_idx = end_node_idx;
+    }
+
+    partitions
 }
 
 #[allow(dead_code)]
@@ -426,6 +487,13 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
 
         for (node_idx, node_layout) in plan.node_layout.nodes.iter().copied().enumerate() {
             let node = parts.nodes.add(node_idx);
+            let node_idx =
+                checked_graph_u32(node_idx, "concurrent DSM initialized node index");
+            let insert_state = if Some(node_idx) == layout.entry_idx {
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
+            } else {
+                EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
+            };
             ptr::write(
                 node,
                 EcHnswConcurrentDsmNode {
@@ -435,7 +503,7 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
                     neighbor_slot_offset: node_layout.neighbor_slot_offset,
                     neighbor_slot_count: node_layout.neighbor_slot_count,
                     insert_state: pg_sys::pg_atomic_uint32 {
-                        value: EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
+                        value: insert_state,
                     },
                 },
             );
@@ -1315,6 +1383,75 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_dsm_node_partitions_split_remainder_across_early_participants() {
+        let partitions = concurrent_dsm_node_partitions(10, 3);
+
+        assert_eq!(
+            partitions,
+            vec![
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 0,
+                    end_node_idx: 4,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 1,
+                    start_node_idx: 4,
+                    end_node_idx: 7,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 2,
+                    start_node_idx: 7,
+                    end_node_idx: 10,
+                },
+            ]
+        );
+        assert!(partitions[1].contains(4));
+        assert!(partitions[1].contains(6));
+        assert!(!partitions[1].contains(7));
+    }
+
+    #[test]
+    fn concurrent_dsm_node_partitions_allow_empty_tail_participants() {
+        let partitions = concurrent_dsm_node_partitions(2, 4);
+
+        assert_eq!(
+            partitions,
+            vec![
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 0,
+                    end_node_idx: 1,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 1,
+                    start_node_idx: 1,
+                    end_node_idx: 2,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 2,
+                    start_node_idx: 2,
+                    end_node_idx: 2,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 3,
+                    start_node_idx: 2,
+                    end_node_idx: 2,
+                },
+            ]
+        );
+        assert!(!partitions[1].is_empty());
+        assert!(partitions[2].is_empty());
+        assert!(partitions[3].is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_node_partitions_reject_zero_participants() {
+        let _ = concurrent_dsm_node_partitions(2, 0);
+    }
+
+    #[test]
     fn concurrent_dsm_code_corpus_packs_fixed_width_codes() {
         let tuples = vec![
             build_tuple_with_code(vec![1, 2, 3]),
@@ -1473,14 +1610,18 @@ mod tests {
             assert_eq!(header.code_len, 3);
 
             let nodes = slice::from_raw_parts(parts.nodes, plan.graph_layout.node_count as usize);
-            for (actual, expected) in nodes.iter().zip(plan.node_layout.nodes.iter()) {
+            for (node_idx, (actual, expected)) in
+                nodes.iter().zip(plan.node_layout.nodes.iter()).enumerate()
+            {
                 assert_eq!(actual.level, expected.level);
                 assert_eq!(actual.neighbor_slot_offset, expected.neighbor_slot_offset);
                 assert_eq!(actual.neighbor_slot_count, expected.neighbor_slot_count);
-                assert_eq!(
-                    actual.insert_state.value,
+                let expected_insert_state = if Some(node_idx as u32) == plan.graph_layout.entry_idx {
+                    EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY
+                } else {
                     EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
-                );
+                };
+                assert_eq!(actual.insert_state.value, expected_insert_state);
                 assert_eq!(actual.lock.tranche, TEST_LOCK_TRANCHE_ID);
                 assert_eq!(actual.lock.waiters.head, pg_sys::INVALID_PROC_NUMBER);
                 assert_eq!(actual.lock.waiters.tail, pg_sys::INVALID_PROC_NUMBER);
