@@ -44,6 +44,8 @@ Diagnostic multi-emitter mode still fails as expected, now with direct ID drift 
 - `cargo check -p ecaz-cli`
 - `cargo test -p ecaz-cli`
 - `cargo clippy -p ecaz-cli --all-targets -- -D warnings`
+- `cargo test`
+- `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
 - `git diff --check`
 - `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --log-output target/pg18-parallel-id-diagnostic-default.log`
 - `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --env TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC=1 --log-output target/pg18-parallel-id-diagnostic-multi-emitter.log` (expected validation failure)

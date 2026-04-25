@@ -49,4 +49,6 @@
 - `cargo check -p ecaz-cli`
 - `cargo test -p ecaz-cli`
 - `cargo clippy -p ecaz-cli --all-targets -- -D warnings`
+- `cargo test`
+- `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
 - `git diff --check`
