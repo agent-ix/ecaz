@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 7 PG18 runtime hooks next.
+Status: in progress - Phase 8 validation next.
 
 Working branch: `task28-ivf`
 
@@ -344,7 +344,7 @@ first IVF baseline; page reclamation remains deferred.
   pages read, candidates scored, rerank rows, and filtered duplicates.
 - [x] **Admin snapshot.** Add an IVF snapshot function for metadata,
   distribution, drift, and planner inputs.
-- [ ] **PG18 hooks.** Wire strategy translation, tree height, ReadStream,
+- [x] **PG18 hooks.** Wire strategy translation, tree height, ReadStream,
   and shared stats only after the PG18 `ec_hnsw` surfaces are stable enough
   to reuse cleanly.
 
@@ -380,6 +380,11 @@ PG18-compatible `ecaz_stats()` counters for scans started, distance
 calculations, and posting-list pages read, with backend-local fallback still
 available when the custom pgstat kind is not preload-active. PG18 ReadStream
 runtime wiring remains open.
+
+Phase 7 PG18 ReadStream checkpoint: PG18 posting-list range reads now use
+`read_stream_begin_relation` / `read_stream_next_buffer` with the shared
+sequential prefetch callback for IVF scan, duplicate-check, and vacuum paths.
+The non-PG18 path remains on the existing `ReadBufferExtended` loop behind cfg.
 
 ### Phase 8 - validation and measurement
 
