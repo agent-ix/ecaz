@@ -1502,6 +1502,25 @@ fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> 
     true
 }
 
+fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> bool {
+    if !opaque.parallel_local_only_output_active
+        || !active_result_state_ref(opaque).current().has_element()
+        || active_result_state_ref(opaque).pending_count() == 0
+    {
+        return false;
+    }
+
+    if active_parallel_output_was_emitted_by_shared_coordinator(opaque)
+        || active_parallel_output_was_recently_emitted_by_foreign_worker(opaque)
+        || active_parallel_output_was_recently_emitted_locally(opaque)
+    {
+        discard_recently_emitted_active_parallel_output(opaque);
+        return true;
+    }
+
+    false
+}
+
 unsafe fn poll_parallel_contributor_interrupts_and_sleep() {
     if unsafe { pg_sys::InterruptPending } != 0 {
         unsafe { pg_sys::ProcessInterrupts() };
@@ -1518,6 +1537,11 @@ unsafe fn contribute_non_emitting_parallel_backend(
 
     loop {
         if opaque.parallel_local_only_output_active {
+            if retire_obsolete_non_emitting_parallel_contributor_output(opaque) {
+                drain_polls = 0;
+                continue;
+            }
+
             if reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque) {
                 drain_polls = 0;
                 continue;
@@ -8704,6 +8728,84 @@ mod tests {
         assert_eq!(
             hidden.runtime.element_tid,
             parallel_item_pointer(tid(42, 1))
+        );
+    }
+
+    #[test]
+    fn retire_obsolete_non_emitting_parallel_contributor_output_skips_shared_emitted_heap_tids() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque
+            .result_state
+            .materialize_from_parts(tid(44, 1), -3.5, &[tid(120, 1), tid(120, 2)]);
+
+        assert!(
+            stage_non_emitting_parallel_contributor_output(&mut opaque),
+            "a contributor row with pending heap tids should publish as hidden"
+        );
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::remember_parallel_scan_emitted_heap_tid(
+                opaque.parallel_scan_state,
+                parallel_item_pointer(tid(120, 1)),
+            )
+        }
+        .expect("shared emitted heap tid should record");
+        assert!(
+            retire_obsolete_non_emitting_parallel_contributor_output(&mut opaque),
+            "the contributor should retire the already-emitted hidden heap tid"
+        );
+
+        let hidden = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("hidden contributor slot read should succeed")
+        .expect("the hidden slot should remain active for the next pending heap tid");
+        assert_eq!(hidden.runtime.pending_index, 1);
+        assert_eq!(hidden.runtime.heap_tid, parallel_item_pointer(tid(120, 2)));
+        assert!(
+            opaque.parallel_local_only_output_active,
+            "the contributor should keep the hidden row staged while more pending heap tids remain"
+        );
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::remember_parallel_scan_emitted_heap_tid(
+                opaque.parallel_scan_state,
+                parallel_item_pointer(tid(120, 2)),
+            )
+        }
+        .expect("second shared emitted heap tid should record");
+        assert!(
+            retire_obsolete_non_emitting_parallel_contributor_output(&mut opaque),
+            "the contributor should retire the final already-emitted hidden heap tid"
+        );
+        assert!(
+            !opaque.result_state.current().has_element(),
+            "retiring the final pending heap tid should clear the local active row"
+        );
+        assert!(
+            !opaque.parallel_local_only_output_active,
+            "the contributor should leave hidden mode once the row is fully retired"
+        );
+        assert!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    opaque.parallel_scan_worker_slot_index,
+                )
+            }
+            .expect("post-retire hidden slot read should succeed")
+            .is_none(),
+            "the hidden coordinator slot should clear once all pending heap tids are obsolete"
         );
     }
 
