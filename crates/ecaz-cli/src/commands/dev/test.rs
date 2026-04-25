@@ -1375,26 +1375,25 @@ async fn pg18_parallel_fixture_explain_analyze(
     client: &tokio_postgres::Client,
     limit: i64,
 ) -> Result<String> {
-    let rows = client
-        .query(
-            format!(
-                "
-EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF)
-SELECT id
-FROM pg18_parallel_scan_fixture
-ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
-LIMIT {limit}
-"
-            )
-            .as_str(),
-            &[],
-        )
-        .await?;
+    let query = pg18_parallel_fixture_explain_analyze_sql(limit);
+    let rows = client.query(query.as_str(), &[]).await?;
     Ok(rows
         .into_iter()
         .map(|row| row.get::<_, String>(0))
         .collect::<Vec<_>>()
         .join("\n"))
+}
+
+fn pg18_parallel_fixture_explain_analyze_sql(limit: i64) -> String {
+    format!(
+        "
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, ecaz)
+SELECT id
+FROM pg18_parallel_scan_fixture
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT {limit}
+"
+    )
 }
 
 async fn pg18_parallel_fixture_parallel_seqscan_plan(
@@ -1519,6 +1518,14 @@ impl Drop for PgClusterGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pg18_parallel_fixture_explain_analyze_sql_requests_ecaz_stats() {
+        let query = pg18_parallel_fixture_explain_analyze_sql(16);
+
+        assert!(query.contains("EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, ecaz)"));
+        assert!(query.contains("LIMIT 16"));
+    }
 
     #[test]
     fn adjacent_score_inversions_reports_descending_pairs() {
