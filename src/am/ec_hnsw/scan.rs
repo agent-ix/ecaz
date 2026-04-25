@@ -1105,6 +1105,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                 enter_linear_fallback_phase(opaque);
                 reset_linear_prefetch_state(opaque);
             }
+            if non_emitting_parallel_backend_should_contribute(opaque) {
+                stage_non_emitting_parallel_contributor_output(opaque);
+            }
             #[cfg(any(test, feature = "pg_test"))]
             let initial_prefetch_elapsed_us = u64::try_from(prefetch_started.elapsed().as_micros())
                 .expect("timing should fit in u64");
@@ -1133,6 +1136,11 @@ const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;
 #[cfg(any(test, feature = "pg_test"))]
 const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
     "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC";
+const PARALLEL_CONTRIBUTOR_MAX_OUTPUTS: usize = 64;
+const PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT: usize = 100;
+const PARALLEL_CONTRIBUTOR_DRAIN_POLL_SLEEP_US: core::ffi::c_long = 100;
 
 fn saturating_u32_from_usize(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
@@ -1428,6 +1436,10 @@ fn parallel_scan_multi_emitter_diagnostic_enabled() -> bool {
     super::shared::pg18_parallel_multi_emitter_diagnostic_enabled()
 }
 
+fn parallel_scan_contributor_diagnostic_enabled() -> bool {
+    super::shared::pg18_parallel_contributor_diagnostic_enabled()
+}
+
 fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
     if !parallel_scan_is_attached(opaque) {
         return true;
@@ -1449,8 +1461,17 @@ fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
     .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan emitter election failed: {err}"))
 }
 
+fn non_emitting_parallel_backend_should_contribute(opaque: &TqScanOpaque) -> bool {
+    parallel_scan_contributor_diagnostic_enabled()
+        && parallel_scan_is_attached(opaque)
+        && !parallel_scan_backend_may_emit_tuples(opaque)
+}
+
 fn non_emitting_parallel_backend_is_exhausted(opaque: &mut TqScanOpaque) -> bool {
     if !parallel_scan_is_attached(opaque) || parallel_scan_backend_may_emit_tuples(opaque) {
+        return false;
+    }
+    if parallel_scan_contributor_diagnostic_enabled() {
         return false;
     }
     if parallel_exec_debug_enabled() {
@@ -1465,6 +1486,77 @@ fn non_emitting_parallel_backend_is_exhausted(opaque: &mut TqScanOpaque) -> bool
         mark_scan_exhausted(opaque);
     }
     true
+}
+
+fn stage_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> bool {
+    if !active_result_state_ref(opaque).current().has_element()
+        || active_result_state_ref(opaque).pending_count() == 0
+    {
+        return false;
+    }
+
+    opaque.parallel_local_only_output_active = true;
+    opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
+    publish_parallel_scan_worker_slot_snapshot(opaque);
+    true
+}
+
+unsafe fn poll_parallel_contributor_interrupts_and_sleep() {
+    if unsafe { pg_sys::InterruptPending } != 0 {
+        unsafe { pg_sys::ProcessInterrupts() };
+    }
+    unsafe { pg_sys::pg_usleep(PARALLEL_CONTRIBUTOR_DRAIN_POLL_SLEEP_US) };
+}
+
+unsafe fn contribute_non_emitting_parallel_backend(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    let mut staged_outputs = 0usize;
+    let mut drain_polls = 0usize;
+
+    loop {
+        if opaque.parallel_local_only_output_active {
+            if reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque) {
+                drain_polls = 0;
+                continue;
+            }
+
+            if staged_outputs >= PARALLEL_CONTRIBUTOR_MAX_OUTPUTS
+                || drain_polls >= PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT
+            {
+                return false;
+            }
+
+            drain_polls += 1;
+            unsafe { poll_parallel_contributor_interrupts_and_sleep() };
+            continue;
+        }
+
+        if stage_non_emitting_parallel_contributor_output(opaque) {
+            staged_outputs += 1;
+            drain_polls = 0;
+            continue;
+        }
+
+        if opaque.execution_phase.is_exhausted() {
+            return false;
+        }
+
+        if !opaque.execution_phase.is_graph_traversal() {
+            mark_scan_exhausted(opaque);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
+            return false;
+        }
+
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        if !unsafe {
+            graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
+        } {
+            return false;
+        }
+    }
 }
 
 fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
@@ -5878,6 +5970,10 @@ unsafe fn produce_next_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    if non_emitting_parallel_backend_should_contribute(opaque) {
+        return unsafe { contribute_non_emitting_parallel_backend(index_relation, opaque) };
+    }
+
     if non_emitting_parallel_backend_is_exhausted(opaque) {
         return false;
     }
@@ -8542,6 +8638,72 @@ mod tests {
         assert!(
             parallel_scan_backend_may_emit_tuples(&second),
             "the diagnostic gate should bypass the single-emitter election for attached backends"
+        );
+    }
+
+    #[test]
+    fn non_emitting_parallel_backend_should_contribute_with_diagnostic_env() {
+        let _lock = env_var_test_lock();
+        let _multi_emitter_env = ScopedEnvVar::remove(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV);
+        let _contributor_env = ScopedEnvVar::set(PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV, "1");
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut first_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut second_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut first = TqScanOpaque::default();
+        let mut second = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut first_scan_desc, &mut first);
+        bind_parallel_scan_state(&mut second_scan_desc, &mut second);
+
+        assert!(
+            !non_emitting_parallel_backend_should_contribute(&first),
+            "the elected visible emitter should not enter contributor mode"
+        );
+        assert!(
+            non_emitting_parallel_backend_should_contribute(&second),
+            "a non-elected backend should contribute hidden output when the diagnostic env is enabled"
+        );
+    }
+
+    #[test]
+    fn stage_non_emitting_parallel_contributor_output_publishes_hidden_slot() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque
+            .result_state
+            .materialize_from_parts(tid(42, 1), -2.5, &[tid(100, 1)]);
+
+        assert!(
+            stage_non_emitting_parallel_contributor_output(&mut opaque),
+            "a materialized contributor result should publish"
+        );
+
+        let hidden = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("hidden contributor slot read should succeed")
+        .expect("contributor output should be hidden from direct visible emission");
+
+        assert_eq!(hidden.runtime.score, -2.5);
+        assert_eq!(hidden.runtime.pending_count, 1);
+        assert_eq!(
+            hidden.runtime.element_tid,
+            parallel_item_pointer(tid(42, 1))
         );
     }
 

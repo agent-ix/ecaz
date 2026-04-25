@@ -2900,6 +2900,31 @@ mod tests {
         );
     }
 
+    #[pg_test]
+    fn test_ech_planner_snapshot_reports_contributor_blocker() {
+        let _lock = env_var_test_lock();
+        let _multi_env = ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC");
+        let _contributor_env =
+            ScopedEnvVar::set("TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC", "1");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_planner_integration_snapshot_contributor (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_planner_integration_snapshot_contributor_idx ON ec_hnsw_planner_integration_snapshot_contributor USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT next_runtime_blocker FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_contributor_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime blocker should be non-null"),
+            "PG18 diagnostic contributor env is enabled; non-emitting workers publish hidden coordinator output behind the elected visible tuple emitter"
+        );
+    }
+
     #[cfg(feature = "pg18")]
     #[pg_test]
     fn test_pg18_planner_path_snapshot_records_ec_hnsw_paths() {
