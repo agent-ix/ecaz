@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 2 layout codecs underway.
+Status: in progress - Phase 3 training helpers underway.
 
 Working branch: `task28-ivf`
 
@@ -135,7 +135,7 @@ yet.
 
 - [ ] **Training sample.** Heap-scan sample collection with deterministic
   seed, type validation, NULL rejection, and dimension checks.
-- [ ] **K-means trainer.** Implement bounded-iteration k-means with stable
+- [x] **K-means trainer.** Implement bounded-iteration k-means with stable
   empty-cluster handling and tests for deterministic output.
 - [ ] **Bulk assignment.** Assign every row to one nearest centroid and
   append to the matching posting list.
@@ -143,6 +143,12 @@ yet.
   drift inputs, and source/quantizer metadata.
 - [ ] **Build smoke tests.** Cover empty, singleton, tiny multi-row,
   duplicate-heavy, and multi-page list builds.
+
+Phase 3 pure-training checkpoint: `src/am/ec_ivf/training.rs` now has
+deterministic sample-index selection, auto-`nlists` resolution, finite
+non-zero vector normalization, bounded spherical k-means, stable empty-cluster
+fallback, and centroid assignment by normalized inner product. Heap scan sample
+collection and populated index writes remain future Phase 3 slices.
 
 ### Phase 4 - scan path
 
