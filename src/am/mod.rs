@@ -2,6 +2,7 @@
 
 pub(crate) mod common;
 mod ec_hnsw;
+mod ec_ivf;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
@@ -12,6 +13,7 @@ pub(crate) use self::ec_hnsw::{
 
 pub(crate) fn register_gucs() {
     ec_hnsw::register_gucs();
+    ec_ivf::register_gucs();
 }
 
 #[cfg(any(test, feature = "pg_test"))]

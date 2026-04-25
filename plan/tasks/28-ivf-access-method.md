@@ -89,16 +89,21 @@ profile/rerank mode that claims exact final scoring.
 
 ### Phase 1 - AM scaffold
 
-- [ ] **Module layout.** Add `src/am/ec_ivf/{mod,routine,options,page,build,scan,insert,vacuum,training}.rs`.
-- [ ] **SQL bootstrap.** Register handler, access method, operator classes,
+- [x] **Module layout.** Add `src/am/ec_ivf/{mod,routine,options,page,build,scan,insert,vacuum,training}.rs`.
+- [x] **SQL bootstrap.** Register handler, access method, operator classes,
   reloptions, and pgrx exports.
 - [ ] **Empty index behavior.** `CREATE INDEX ... USING ec_ivf` on an empty
   table writes valid metadata and scan callbacks return no rows.
-- [ ] **Skeleton callbacks.** Wire all AM callbacks with explicit
+- [x] **Skeleton callbacks.** Wire all AM callbacks with explicit
   not-implemented errors for unsupported populated paths, then replace
   each callback in later phases.
 - [ ] **Review packet.** Publish the scaffold contract before build logic
   starts.
+
+Phase 1 scaffold checkpoint: `src/am/ec_ivf/` now compiles as a registered
+AM with `ec_ivf.nprobe`, IVF reloptions, SQL bootstrap entries, and explicit
+not-implemented callbacks. Empty-index behavior remains the next functional
+slice.
 
 ### Phase 2 - page and metadata layout
 
