@@ -1,0 +1,124 @@
+Script started on 2026-04-25 09:06:28-07:00 [<not executed on terminal>]
+Timing is on.
+=== pg18 parallel index build timing fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 09:06:28.103456-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 7.152 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:10: NOTICE:  table "ec_hnsw_parallel_build_measure" does not exist, skipping
+DROP TABLE
+Time: 1.563 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:11: NOTICE:  extension "ecaz" does not exist, skipping
+DROP EXTENSION
+Time: 0.726 ms
+CREATE EXTENSION
+Time: 46.400 ms
+CREATE TABLE
+Time: 16.411 ms
+=== load 10000 rows x 64 dims ===
+INSERT 0 10000
+Time: 332.608 ms
+VACUUM
+Time: 18.685 ms
+ fixture_rows 
+--------------
+        10000
+(1 row)
+
+Time: 3.068 ms
+ relpages | reltuples 
+----------+-----------
+      371 |     10000
+(1 row)
+
+Time: 4.926 ms
+SET
+Time: 0.373 ms
+SET
+Time: 0.331 ms
+=== serial create index round 1 ===
+SET
+Time: 0.263 ms
+ALTER TABLE
+Time: 1.594 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:47: NOTICE:  index "ec_hnsw_parallel_build_measure_idx" does not exist, skipping
+DROP INDEX
+Time: 0.495 ms
+CREATE INDEX
+Time: 9139.351 ms (00:09.139)
+ serial_round_1_index_bytes 
+----------------------------
+                    2334720
+(1 row)
+
+Time: 1.506 ms
+DROP INDEX
+Time: 4.101 ms
+CHECKPOINT
+Time: 58.086 ms
+=== parallel create index round 1 ===
+SET
+Time: 0.242 ms
+ALTER TABLE
+Time: 1.256 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:59: NOTICE:  index "ec_hnsw_parallel_build_measure_idx" does not exist, skipping
+DROP INDEX
+Time: 0.234 ms
+CREATE INDEX
+Time: 9633.868 ms (00:09.634)
+ parallel_round_1_index_bytes 
+------------------------------
+                      2334720
+(1 row)
+
+Time: 0.845 ms
+DROP INDEX
+Time: 3.587 ms
+CHECKPOINT
+Time: 33.295 ms
+=== serial create index round 2 ===
+SET
+Time: 0.435 ms
+ALTER TABLE
+Time: 1.777 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:71: NOTICE:  index "ec_hnsw_parallel_build_measure_idx" does not exist, skipping
+DROP INDEX
+Time: 0.518 ms
+CREATE INDEX
+Time: 9011.378 ms (00:09.011)
+ serial_round_2_index_bytes 
+----------------------------
+                    2334720
+(1 row)
+
+Time: 0.571 ms
+DROP INDEX
+Time: 2.103 ms
+CHECKPOINT
+Time: 18.021 ms
+=== parallel create index round 2 ===
+SET
+Time: 0.261 ms
+ALTER TABLE
+Time: 1.510 ms
+psql:review/620-c1-parallel-index-build-pg18-measurement/artifacts/pg18_parallel_build_timing.sql:83: NOTICE:  index "ec_hnsw_parallel_build_measure_idx" does not exist, skipping
+DROP INDEX
+Time: 0.297 ms
+CREATE INDEX
+Time: 9350.732 ms (00:09.351)
+ parallel_round_2_index_bytes 
+------------------------------
+                      2334720
+(1 row)
+
+Time: 0.655 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 09:07:05.796772-07
+(1 row)
+
+Time: 0.373 ms
+
+Script done on 2026-04-25 09:07:05-07:00 [COMMAND_EXIT_CODE="0"]
