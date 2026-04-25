@@ -1,0 +1,304 @@
+[pg18-parallel] install=18.3
+[pg18-parallel] shared_preload_libraries=ecaz
+[pg18-parallel] env=["TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC"]
+[pg18-parallel] rows=512 workers=4 limit=16 ef_search=1000
+[pg18-parallel] planner_only=false disable_parallel_leader_participation=false
+[pg18-parallel] plan:
+Limit (actual time=15.599..16.479 rows=16.00 loops=1)
+  Buffers: shared hit=1952
+  ->  Gather Merge (actual time=15.598..16.474 rows=16.00 loops=1)
+        Workers Planned: 4
+        Workers Launched: 4
+        Buffers: shared hit=1952
+        ->  Parallel Index Scan using pg18_parallel_scan_fixture_idx on pg18_parallel_scan_fixture (actual time=0.064..0.349 rows=10.20 loops=5)
+              Order By: (embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])
+              Index Searches: 0
+              Buffers: shared hit=39
+Planning:
+  Buffers: shared hit=3
+[pg18-parallel] parallel seqscan control plan:
+Gather (actual time=0.225..5.851 rows=512.00 loops=1)
+  Workers Planned: 4
+  Workers Launched: 4
+  Buffers: shared hit=4
+  ->  Parallel Seq Scan on pg18_parallel_scan_fixture (actual time=0.003..0.013 rows=102.40 loops=5)
+        Filter: (id > 0)
+        Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=12
+[pg18-parallel] planner diagnostics:
+settings:
+  cpu_tuple_cost=0.01
+  enable_bitmapscan=off
+  enable_gathermerge=on
+  enable_incremental_sort=on
+  enable_indexonlyscan=on
+  enable_indexscan=on
+  enable_seqscan=off
+  enable_sort=on
+  max_parallel_workers=4
+  max_parallel_workers_per_gather=4
+  min_parallel_index_scan_size=0
+  min_parallel_table_scan_size=0
+  parallel_leader_participation=on
+  parallel_setup_cost=0
+  parallel_tuple_cost=0
+
+relations:
+  pg18_parallel_scan_fixture kind=r relpages=4 reltuples=512 reloptions=parallel_workers=4
+  pg18_parallel_scan_fixture_idx kind=i relpages=16 reltuples=512 reloptions=m=8,ef_construction=80
+
+operator:
+  <#>(ecvector,real[]) procedure=ecvector_negative_query_inner_product(ecvector,real[]) parallel=safe volatility=immutable
+
+opclass:
+  ecvector_ip_ops am=ec_hnsw input=ecvector opfamily=ecvector_ip_ops index_scan=true bitmap_scan=false distance_orderable=NULL
+
+ec_hnsw planner snapshot:
+  planner_scan_enabled=true ordered_scan_ready=true runtime_ordered_scan_ready=true planner_cost_model_ready=true planner_cost_callback_live=true
+  pg18_callback_surface_ready=true pg18_diagnostics_surface_ready=true pg18_read_stream_surface_ready=true
+  effective_ef_search=1000 effective_source=session
+  next_runtime_blocker=PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge
+
+ec_hnsw cost snapshot:
+  effective_ef_search=1000 effective_source=session relation_ef_search=40 session_ef_search=1000 m=8 dimensions=4 max_level=2
+  index_pages=16 reltuples=512 resolved_tree_height=2.000 tree_height_source=amgettreeheight_callback pg18_tree_height_callback_ready=true
+  cost_constants random_page_cost=4.000 seq_page_cost=1.000 cpu_operator_cost=0.002500
+  modeled_startup_cost=0.000 modeled_total_cost=4015.515 modeled_run_cost=4015.515 startup_fraction=0.000000 modeled_selectivity=1.000 modeled_correlation=0.000
+
+serial ordered JSON plan (max_parallel_workers_per_gather=0):
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "id",
+        "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 16,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Alias": "pg18_parallel_scan_fixture",
+          "Async Capable": false,
+          "Disabled": false,
+          "Index Name": "pg18_parallel_scan_fixture_idx",
+          "Node Type": "Index Scan",
+          "Order By": "(pg18_parallel_scan_fixture.embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])",
+          "Output": [
+            "id",
+            "(embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 512,
+          "Plan Width": 12,
+          "Relation Name": "pg18_parallel_scan_fixture",
+          "Scan Direction": "Forward",
+          "Schema": "public",
+          "Startup Cost": 0.0,
+          "Total Cost": 4037.91
+        }
+      ],
+      "Startup Cost": 0.0,
+      "Total Cost": 126.18
+    }
+  }
+]
+
+parallel-candidate ordered JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "id",
+        "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 16,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Gather Merge",
+          "Output": [
+            "id",
+            "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 512,
+          "Plan Width": 12,
+          "Plans": [
+            {
+              "Alias": "pg18_parallel_scan_fixture",
+              "Async Capable": false,
+              "Disabled": false,
+              "Index Name": "pg18_parallel_scan_fixture_idx",
+              "Node Type": "Index Scan",
+              "Order By": "(pg18_parallel_scan_fixture.embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])",
+              "Output": [
+                "id",
+                "(embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])"
+              ],
+              "Parallel Aware": true,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 128,
+              "Plan Width": 12,
+              "Relation Name": "pg18_parallel_scan_fixture",
+              "Scan Direction": "Forward",
+              "Schema": "public",
+              "Startup Cost": 0.0,
+              "Total Cost": 1021.48
+            }
+          ],
+          "Startup Cost": 0.06,
+          "Total Cost": 1028.76,
+          "Workers Planned": 4
+        }
+      ],
+      "Startup Cost": 0.06,
+      "Total Cost": 32.21
+    }
+  }
+]
+
+PG18 planner pathlist snapshot after parallel-candidate ordered plan:
+  hook_registered=true observed=true relid=1 consider_parallel=true rel_parallel_workers=4
+  ec_hnsw_index_count=1 amcanparallel_seen=true
+  path_count=1 index_path_count=1 ec_hnsw_index_path_count=1
+  partial_path_count=1 partial_index_path_count=1 partial_ec_hnsw_index_path_count=1
+  best_plain_ec_hnsw startup_cost=0.000 total_cost=4036.635 parallel_workers=0 pathkeys=1
+  best_partial_ec_hnsw startup_cost=0.000 total_cost=1021.159 parallel_workers=4 parallel_aware=true pathkeys=1
+
+parallel seqscan control JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Gather",
+      "Output": [
+        "id"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 512,
+      "Plan Width": 8,
+      "Plans": [
+        {
+          "Alias": "pg18_parallel_scan_fixture",
+          "Async Capable": false,
+          "Disabled": false,
+          "Filter": "(pg18_parallel_scan_fixture.id > 0)",
+          "Node Type": "Seq Scan",
+          "Output": [
+            "id"
+          ],
+          "Parallel Aware": true,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 128,
+          "Plan Width": 8,
+          "Relation Name": "pg18_parallel_scan_fixture",
+          "Schema": "public",
+          "Startup Cost": 0.0,
+          "Total Cost": 5.6
+        }
+      ],
+      "Single Copy": false,
+      "Startup Cost": 0.0,
+      "Total Cost": 5.6,
+      "Workers Planned": 4
+    }
+  }
+]
+
+parallel ordered seqscan control JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "id",
+        "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 16,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Gather Merge",
+          "Output": [
+            "id",
+            "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 512,
+          "Plan Width": 12,
+          "Plans": [
+            {
+              "Async Capable": false,
+              "Disabled": false,
+              "Node Type": "Sort",
+              "Output": [
+                "id",
+                "((embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+              ],
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 128,
+              "Plan Width": 12,
+              "Plans": [
+                {
+                  "Alias": "pg18_parallel_scan_fixture",
+                  "Async Capable": false,
+                  "Disabled": false,
+                  "Node Type": "Seq Scan",
+                  "Output": [
+                    "id",
+                    "(embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])"
+                  ],
+                  "Parallel Aware": true,
+                  "Parent Relationship": "Outer",
+                  "Plan Rows": 128,
+                  "Plan Width": 12,
+                  "Relation Name": "pg18_parallel_scan_fixture",
+                  "Schema": "public",
+                  "Startup Cost": 0.0,
+                  "Total Cost": 5.6
+                }
+              ],
+              "Sort Key": [
+                "((pg18_parallel_scan_fixture.embedding <#> '{0.75,0.25,0.5,-0.5}'::real[]))"
+              ],
+              "Startup Cost": 8.8,
+              "Total Cost": 9.12
+            }
+          ],
+          "Startup Cost": 8.86,
+          "Total Cost": 16.4,
+          "Workers Planned": 4
+        }
+      ],
+      "Startup Cost": 8.86,
+      "Total Cost": 9.09
+    }
+  }
+]
+[pg18-parallel] serial_ids=[177, 379, 472, 473, 378, 172, 93, 280, 57, 366, 258, 176, 82, 71, 459, 284]
+[pg18-parallel] candidate_ids=[473, 379, 379, 93, 177, 472, 378, 280, 366, 92, 258, 176, 172, 57, 366, 82]
+[pg18-parallel] serial_exact_scores=[(177, -1.646769881), (379, -1.742236257), (472, -1.641386509), (473, -1.769334435), (378, -1.614288449), (172, -1.507030725), (93, -1.649150252), (280, -1.575398922), (57, -1.543027639), (366, -1.578914285), (258, -1.510545969), (176, -1.518822074), (82, -1.491723895), (71, -1.584297538), (459, -1.478064418), (284, -1.587190151)]
+[pg18-parallel] candidate_exact_scores=[(473, -1.769334435), (379, -1.742236257), (379, -1.742236257), (93, -1.649150252), (177, -1.646769881), (472, -1.641386509), (378, -1.614288449), (280, -1.575398922), (366, -1.578914285), (92, -1.521202445), (258, -1.510545969), (176, -1.518822074), (172, -1.507030725), (57, -1.543027639), (366, -1.578914285), (82, -1.491723895)]
+[pg18-parallel] serial_exact_score_adjacent_inversions=[177(-1.646769881) before 379(-1.742236257), 472(-1.641386509) before 473(-1.769334435), 172(-1.507030725) before 93(-1.649150252), 57(-1.543027639) before 366(-1.578914285), 258(-1.510545969) before 176(-1.518822074), 82(-1.491723895) before 71(-1.584297538), 459(-1.478064418) before 284(-1.587190151)]
+[pg18-parallel] validation failed
