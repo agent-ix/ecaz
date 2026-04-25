@@ -1,6 +1,6 @@
 # Review Request: Generic ecaz dev SQL Runner
 
-Current head: `d5e404b`
+Current head: `4df5bcb`
 
 Scope:
 - `crates/ecaz-cli/src/commands/dev/sql.rs`
@@ -8,6 +8,8 @@ Scope:
 - `crates/ecaz-cli/src/commands/dev/scratch.rs`
 - `crates/ecaz-cli/src/commands/dev/support.rs`
 - `crates/ecaz-cli/src/commands/dev/test.rs`
+- `crates/ecaz-cli/src/commands/dev/install.rs`
+- `crates/ecaz-cli/src/commands/stress/vacuum.rs`
 - `crates/ecaz-cli/README.md`
 
 Problem:
@@ -37,13 +39,22 @@ What changed:
   default to PG18.
 - Made `ecaz dev scratch restart/sql` accept `--pg`, defaulting to PG18, while
   preserving explicit `--pg 17` support.
+- Made `ecaz dev install ecaz-pg-test` and `ecaz dev install pgvector`
+  default to the same PG18 target instead of retaining PG17 as their implicit
+  install lane.
+- Removed PG17-specific wording from the vacuum stress helper error so the
+  guidance applies to whichever PostgreSQL major version is selected.
 - Documented the intended packet-local SQL/log-output usage in the CLI README.
 
 Validation:
 - Passed:
   - `cargo test -p ecaz-cli dev::sql`
   - `cargo test -p ecaz-cli dev::`
+  - `cargo test -p ecaz-cli`
   - `git diff --check`
+- `cargo fmt --check` is not currently clean on the branch due to pre-existing
+  formatting drift outside this packet's touched files; this packet did not
+  sweep-format unrelated code.
 
 Review focus:
 - Whether `dev sql` is the right generic surface rather than extending the
