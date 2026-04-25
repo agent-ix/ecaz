@@ -1720,6 +1720,87 @@ mod tests {
         })
     }
 
+    fn exact_ecvector_top_k_ids(table_name: &str, query: &[f32], k: usize) -> Vec<usize> {
+        let query_literal = format_recall_vector_sql_literal(query);
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT id
+                         FROM {table_name}
+                         ORDER BY ecvector_negative_query_inner_product(embedding, {query_literal}), id
+                         LIMIT {k}"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("exact ecvector top-k query should succeed")
+                .map(|row| {
+                    let id = row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null");
+                    usize::try_from(id).expect("id should fit into usize")
+                })
+                .collect()
+        })
+    }
+
+    fn ivf_debug_output_ids(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        ctid_to_id: &HashMap<(u32, u16), usize>,
+        k: usize,
+    ) -> Vec<usize> {
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
+        outputs
+            .into_iter()
+            .take(k)
+            .map(|(block_number, offset_number, _score)| {
+                *ctid_to_id
+                    .get(&(block_number, offset_number))
+                    .expect("IVF emitted heap tid should map back to a row id")
+            })
+            .collect()
+    }
+
+    fn hnsw_debug_output_ids(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        ctid_to_id: &HashMap<(u32, u16), usize>,
+        k: usize,
+    ) -> Vec<usize> {
+        unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
+            .into_iter()
+            .take(k)
+            .map(|heap_tid| {
+                *ctid_to_id
+                    .get(&heap_tid)
+                    .expect("HNSW emitted heap tid should map back to a row id")
+            })
+            .collect()
+    }
+
+    fn create_ivf_recall_index(
+        table_name: &str,
+        index_name: &str,
+        nlists: i32,
+        nprobe: i32,
+        training_sample_rows: i32,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = {nlists}, nprobe = {nprobe}, training_sample_rows = {training_sample_rows})"
+        ))
+        .expect("IVF recall index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("IVF recall index oid query should succeed")
+            .expect("IVF recall index oid should exist")
+    }
+
     fn create_recall_index(table_name: &str, index_name: &str, m: i32) -> pg_sys::Oid {
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
@@ -2455,6 +2536,77 @@ mod tests {
              WITH (rerank = 'heap_f32')",
         )
         .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_full_probe_matches_simple_exact_oracle_top1() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_full_probe_oracle (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_full_probe_oracle VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.7,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-0.7,0.1]'::ecvector)",
+        )
+        .expect("insert should succeed");
+
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_full_probe_oracle",
+            "ec_ivf_full_probe_oracle_idx",
+            4,
+            4,
+            4,
+        );
+        let ctid_to_id = ctid_id_map("ec_ivf_full_probe_oracle");
+        let query = vec![1.0, 0.0];
+
+        let exact_top = exact_ecvector_top_k_ids("ec_ivf_full_probe_oracle", &query, 1);
+        let ivf_top = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 4);
+        let unique_ivf_ids = ivf_top.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(exact_top, vec![0]);
+        assert_eq!(ivf_top.first(), exact_top.first());
+        assert_eq!(ivf_top.len(), 4);
+        assert_eq!(unique_ivf_ids.len(), ivf_top.len());
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_recall_smoke_compares_exact_hnsw_ivf() {
+        let table_name = "ec_ivf_recall_smoke";
+        let k = 5;
+        let corpus = random_unit_vectors(64, 8, 0x1F17);
+        let query = corpus[0].clone();
+
+        create_recall_table(table_name);
+        insert_recall_corpus(table_name, &corpus);
+        let ctid_to_id = ctid_id_map(table_name);
+        let hnsw_oid = create_recall_index(table_name, "ec_ivf_recall_smoke_hnsw_idx", 8);
+        let ivf_oid = create_ivf_recall_index(table_name, "ec_ivf_recall_smoke_ivf_idx", 8, 8, 64);
+
+        let brute_force_top = brute_force_top_k(&corpus, &query, k);
+        let exact_top = exact_ecvector_top_k_ids(table_name, &query, k);
+        Spi::run("SET LOCAL ec_hnsw.ef_search = 64").expect("setting ef_search should succeed");
+        let hnsw_top = hnsw_debug_output_ids(hnsw_oid, query.clone(), &ctid_to_id, k);
+        let ivf_top = ivf_debug_output_ids(ivf_oid, query, &ctid_to_id, k);
+        let exact_set = exact_top.iter().copied().collect::<HashSet<_>>();
+        let hnsw_overlap = hnsw_top.iter().filter(|id| exact_set.contains(id)).count();
+        let ivf_overlap = ivf_top.iter().filter(|id| exact_set.contains(id)).count();
+
+        assert_eq!(exact_top, brute_force_top);
+        assert_eq!(exact_top.first(), Some(&0));
+        assert_eq!(hnsw_top.len(), k);
+        assert_eq!(ivf_top.len(), k);
+        assert!(
+            hnsw_overlap > 0,
+            "ec_hnsw should overlap exact top-k in the deterministic recall smoke"
+        );
+        assert!(
+            ivf_overlap > 0,
+            "ec_ivf should overlap exact top-k in the deterministic recall smoke"
+        );
     }
 
     #[pg_test]

@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 recall tests next.
+Status: in progress - Phase 5 live insert next.
 
 Working branch: `task28-ivf`
 
@@ -192,7 +192,7 @@ persisted build shape because populated scan routing starts in Phase 4.
   reset behavior.
 - [x] **Rerank mode.** Decide whether v1 always reranks from heap/source
   data or starts compressed-only with a reloption-controlled exact tail.
-- [ ] **Recall tests.** Add small deterministic oracle tests and a real
+- [x] **Recall tests.** Add small deterministic oracle tests and a real
   corpus recall smoke that compares exact scan, `ec_hnsw`, and `ec_ivf`.
 
 Phase 4 query-prep checkpoint: `amrescan` now decodes and validates the
@@ -224,6 +224,12 @@ Phase 4 rerank-mode checkpoint: IVF v1 now makes compressed-only scoring
 explicit. `rerank = 'auto'` resolves to persisted `off`, `rerank = 'off'` is
 accepted, and heap/source rerank modes are rejected with explicit errors until
 the required source/rerank storage contracts are implemented.
+
+Phase 4 recall-smoke checkpoint: PG tests now cover a tiny full-probe
+`ec_ivf` oracle that matches exact top-1 and a deterministic corpus smoke that
+compares exact SQL scoring, `ec_hnsw`, and full-probe `ec_ivf` top-k overlap.
+Broader real-corpus recall sweeps remain Phase 8 measurement work with
+packet-local artifacts.
 
 ### Phase 5 - live insert
 
@@ -265,8 +271,8 @@ the required source/rerank storage contracts are implemented.
 
 - [ ] **Unit gate.** `cargo test` for trainer, codec, list directory, and
   scan heap behavior.
-- [ ] **Extension gate.** `cargo pgrx test pg17` for SQL callback behavior.
-- [ ] **Lint gate.** `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`.
+- [ ] **Extension gate.** `cargo pgrx test pg18` for SQL callback behavior.
+- [ ] **Lint gate.** `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`.
 - [ ] **Recall gate.** Real `10K` and `50K` recall@10 sweeps over
   `nlists` and `nprobe`, compared with exact and `ec_hnsw`.
 - [ ] **Latency gate.** Warm and cold p50/p95/p99 at equal recall.

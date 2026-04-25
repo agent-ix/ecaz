@@ -580,7 +580,7 @@ unsafe fn materialize_probe_candidates(
         crate::DEFAULT_QUANT_SEED,
     );
     let candidate_bound = selected_list_live_count_bound(&directories, selected_lists)?;
-    let payload_len = crate::payload_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
     let mut best_by_heap_tid = HashMap::new();
     for list_id in selected_lists {
         let directory = directories
