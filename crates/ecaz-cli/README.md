@@ -71,6 +71,16 @@ ecaz
     └── vacuum      # concurrent insert/delete/VACUUM invariant harness
 ```
 
+Development SQL can be run through the CLI without shell redirection:
+
+```sh
+ecaz dev sql --pg 18 --file review/example/artifacts/run.sql --raw \
+  --log-output review/example/artifacts/run.log
+```
+
+Use repeated `--env NAME=VALUE` flags to pass temporary environment to
+the underlying `psql` process.
+
 Each command accepts `--profile` (e.g. `ec_hnsw`, `ec_diskann`) so a
 single corpus can be measured against multiple access methods without
 re-loading data. Today `ec_hnsw` and `ec_diskann` both use `ecvector` as

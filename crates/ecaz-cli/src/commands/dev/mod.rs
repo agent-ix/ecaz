@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 
 mod install;
 mod scratch;
+mod sql;
 mod support;
 mod test;
 
@@ -23,6 +24,8 @@ pub enum DevCommand {
         #[command(subcommand)]
         command: scratch::ScratchCommand,
     },
+    /// Run SQL against a local pgrx PostgreSQL install.
+    Sql(sql::SqlArgs),
     /// Validation/test entry points.
     Test {
         #[command(subcommand)]
@@ -35,6 +38,7 @@ impl DevCommand {
         match self {
             DevCommand::Install { command } => command.run(database).await,
             DevCommand::Scratch { command } => command.run(database).await,
+            DevCommand::Sql(args) => sql::run(database, args).await,
             DevCommand::Test { command } => command.run(database).await,
         }
     }
