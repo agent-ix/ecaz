@@ -1,6 +1,6 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::{build, insert, options, scan, vacuum};
+use super::{build, cost, insert, options, scan, vacuum};
 
 fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -42,7 +42,7 @@ fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.ambulkdelete = Some(vacuum::ec_ivf_ambulkdelete);
     amroutine.amvacuumcleanup = Some(vacuum::ec_ivf_amvacuumcleanup);
     amroutine.amcanreturn = None;
-    amroutine.amcostestimate = Some(ec_ivf_amcostestimate);
+    amroutine.amcostestimate = Some(cost::ec_ivf_amcostestimate);
     amroutine.amoptions = Some(options::ec_ivf_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
@@ -61,27 +61,6 @@ fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
 
 unsafe extern "C-unwind" fn ec_ivf_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     unsafe { pgrx::pgrx_extern_c_guard(|| true) }
-}
-
-unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
-    _root: *mut pg_sys::PlannerInfo,
-    _path: *mut pg_sys::IndexPath,
-    _loop_count: f64,
-    index_startup_cost: *mut pg_sys::Cost,
-    index_total_cost: *mut pg_sys::Cost,
-    index_selectivity: *mut pg_sys::Selectivity,
-    index_correlation: *mut f64,
-    index_pages: *mut f64,
-) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            *index_startup_cost = f64::MAX;
-            *index_total_cost = f64::MAX;
-            *index_selectivity = 1.0;
-            *index_correlation = 0.0;
-            *index_pages = 0.0;
-        })
-    }
 }
 
 #[pg_guard]

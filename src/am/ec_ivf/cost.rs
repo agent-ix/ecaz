@@ -1,0 +1,234 @@
+use std::mem::size_of;
+
+use pgrx::pg_sys;
+
+use super::{options, page};
+use crate::am::common::cost::{
+    current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
+};
+
+const IVF_SCORING_DIMENSION_SCALE: f64 = 0.75;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct IndexCostSnapshot {
+    pub planner_scan_enabled: bool,
+    pub planner_gate_reason: &'static str,
+    pub dimensions: u16,
+    pub nlists: u32,
+    pub relation_nprobe: u32,
+    pub session_nprobe: Option<u32>,
+    pub effective_nprobe: u32,
+    pub effective_nprobe_source: &'static str,
+    pub average_list_live_count: f64,
+    pub estimated_centroid_scores: u32,
+    pub estimated_selected_lists: u32,
+    pub estimated_candidate_rows: f64,
+    pub estimated_posting_pages: f64,
+    pub storage_format: &'static str,
+    pub scoring_mode: &'static str,
+    pub scoring_multiplier: f64,
+    pub rerank: &'static str,
+    pub rerank_multiplier: f64,
+    pub index_pages: f64,
+    pub reltuples: f64,
+    pub random_page_cost: f64,
+    pub seq_page_cost: f64,
+    pub cpu_operator_cost: f64,
+    pub modeled_startup_cost: f64,
+    pub modeled_total_cost: f64,
+    pub modeled_selectivity: f64,
+    pub modeled_correlation: f64,
+}
+
+pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
+    _root: *mut pg_sys::PlannerInfo,
+    path: *mut pg_sys::IndexPath,
+    _loop_count: f64,
+    index_startup_cost: *mut pg_sys::Cost,
+    index_total_cost: *mut pg_sys::Cost,
+    index_selectivity: *mut pg_sys::Selectivity,
+    index_correlation: *mut f64,
+    index_pages: *mut f64,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let index_info = (*path).indexinfo;
+            let index_oid = (*index_info).indexoid;
+            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let estimate = compute_amcostestimate(index_relation);
+            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+
+            *index_startup_cost = estimate.startup_cost;
+            *index_total_cost = estimate.total_cost;
+            *index_selectivity = estimate.selectivity;
+            *index_correlation = estimate.correlation;
+            *index_pages = estimate.index_pages;
+        })
+    }
+}
+
+pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let index_pages = f64::from(block_count);
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let constants = unsafe { current_planner_cost_constants() };
+    let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    let estimate = estimate_ivf_cost(&metadata, index_pages, reltuples, constants);
+    let details = estimate_details(&metadata, index_pages, reltuples);
+
+    IndexCostSnapshot {
+        planner_scan_enabled: true,
+        planner_gate_reason:
+            "planner scan selection is live: Task 28 IVF cost model active",
+        dimensions: metadata.dimensions,
+        nlists: metadata.nlists,
+        relation_nprobe: nprobe.relation_nprobe,
+        session_nprobe: nprobe.session_nprobe,
+        effective_nprobe: nprobe.effective_nprobe,
+        effective_nprobe_source: nprobe.source,
+        average_list_live_count: details.average_list_live_count,
+        estimated_centroid_scores: details.estimated_centroid_scores,
+        estimated_selected_lists: details.estimated_selected_lists,
+        estimated_candidate_rows: details.estimated_candidate_rows,
+        estimated_posting_pages: details.estimated_posting_pages,
+        storage_format: metadata.storage_format.reloption_name(),
+        scoring_mode: scoring_mode_name(metadata.storage_format),
+        scoring_multiplier: storage_scoring_multiplier(metadata.storage_format),
+        rerank: metadata.rerank.reloption_name(),
+        rerank_multiplier: rerank_multiplier(metadata.rerank),
+        index_pages,
+        reltuples,
+        random_page_cost: constants.random_page_cost,
+        seq_page_cost: constants.seq_page_cost,
+        cpu_operator_cost: constants.cpu_operator_cost,
+        modeled_startup_cost: estimate.startup_cost,
+        modeled_total_cost: estimate.total_cost,
+        modeled_selectivity: estimate.selectivity,
+        modeled_correlation: estimate.correlation,
+    }
+}
+
+unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let index_pages = f64::from(block_count);
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let constants = unsafe { current_planner_cost_constants() };
+
+    estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
+}
+
+fn estimate_ivf_cost(
+    metadata: &page::MetadataPage,
+    index_pages: f64,
+    reltuples: f64,
+    constants: PlannerCostConstants,
+) -> PlannerCostEstimate {
+    let details = estimate_details(metadata, index_pages, reltuples);
+    let scoring_dimensions = f64::from(metadata.dimensions) * IVF_SCORING_DIMENSION_SCALE;
+    let centroid_cpu =
+        f64::from(details.estimated_centroid_scores) * constants.cpu_operator_cost * scoring_dimensions;
+    let centroid_page_cost = centroid_page_estimate(metadata) * constants.random_page_cost;
+    let posting_page_cost = details.estimated_posting_pages * constants.random_page_cost;
+    let candidate_cpu = details.estimated_candidate_rows
+        * constants.cpu_operator_cost
+        * scoring_dimensions
+        * storage_scoring_multiplier(metadata.storage_format)
+        * rerank_multiplier(metadata.rerank);
+    let metadata_page_cost = if index_pages > 0.0 {
+        constants.random_page_cost
+    } else {
+        0.0
+    };
+    let startup_cost = metadata_page_cost + centroid_page_cost + centroid_cpu;
+
+    PlannerCostEstimate {
+        startup_cost,
+        total_cost: startup_cost + posting_page_cost + candidate_cpu,
+        selectivity: 1.0,
+        correlation: 0.0,
+        index_pages,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct IvfCostDetails {
+    average_list_live_count: f64,
+    estimated_centroid_scores: u32,
+    estimated_selected_lists: u32,
+    estimated_candidate_rows: f64,
+    estimated_posting_pages: f64,
+}
+
+fn estimate_details(
+    metadata: &page::MetadataPage,
+    index_pages: f64,
+    reltuples: f64,
+) -> IvfCostDetails {
+    let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    let total_live = if metadata.total_live_tuples > 0 {
+        metadata.total_live_tuples as f64
+    } else {
+        reltuples.max(0.0)
+    };
+    let average_list_live_count = if metadata.nlists == 0 {
+        0.0
+    } else {
+        total_live / f64::from(metadata.nlists)
+    };
+    let estimated_selected_lists = nprobe.effective_nprobe;
+    let estimated_candidate_rows =
+        (average_list_live_count * f64::from(estimated_selected_lists)).min(total_live);
+    let list_fraction = if metadata.nlists == 0 {
+        0.0
+    } else {
+        f64::from(estimated_selected_lists) / f64::from(metadata.nlists)
+    };
+    let data_pages = (index_pages - 1.0 - centroid_page_estimate(metadata)).max(0.0);
+    let estimated_posting_pages = (data_pages * list_fraction).min(data_pages);
+
+    IvfCostDetails {
+        average_list_live_count,
+        estimated_centroid_scores: metadata.nlists,
+        estimated_selected_lists,
+        estimated_candidate_rows,
+        estimated_posting_pages,
+    }
+}
+
+fn centroid_page_estimate(metadata: &page::MetadataPage) -> f64 {
+    if metadata.nlists == 0 || metadata.dimensions == 0 {
+        return 0.0;
+    }
+    let centroid_bytes =
+        f64::from(metadata.nlists) * (7.0 + f64::from(metadata.dimensions) * size_of::<f32>() as f64);
+    (centroid_bytes / pg_sys::BLCKSZ as f64).ceil().max(1.0)
+}
+
+fn scoring_mode_name(storage_format: options::StorageFormat) -> &'static str {
+    match storage_format {
+        options::StorageFormat::Auto | options::StorageFormat::TurboQuant => "turboquant_lut",
+        options::StorageFormat::PqFastScan => "pq_fastscan_lut",
+        options::StorageFormat::RaBitQ => "rabitq_binary",
+    }
+}
+
+fn storage_scoring_multiplier(storage_format: options::StorageFormat) -> f64 {
+    match storage_format {
+        options::StorageFormat::Auto | options::StorageFormat::TurboQuant => 1.0,
+        options::StorageFormat::PqFastScan => 0.65,
+        options::StorageFormat::RaBitQ => 0.45,
+    }
+}
+
+fn rerank_multiplier(rerank: options::RerankMode) -> f64 {
+    match rerank.v1_effective() {
+        options::RerankMode::Auto | options::RerankMode::Off => 1.0,
+        options::RerankMode::HeapF32 | options::RerankMode::SourceColumn => 1.35,
+    }
+}

@@ -813,6 +813,80 @@ fn ec_ivf_index_admin_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_ivf_index_cost_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(planner_gate_reason, String),
+        name!(dimensions, i32),
+        name!(nlists, i64),
+        name!(relation_nprobe, i64),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(average_list_live_count, f64),
+        name!(estimated_centroid_scores, i64),
+        name!(estimated_selected_lists, i64),
+        name!(estimated_candidate_rows, f64),
+        name!(estimated_posting_pages, f64),
+        name!(storage_format, String),
+        name!(scoring_mode, String),
+        name!(scoring_multiplier, f64),
+        name!(rerank, String),
+        name!(rerank_multiplier, f64),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(random_page_cost, f64),
+        name!(seq_page_cost, f64),
+        name!(cpu_operator_cost, f64),
+        name!(modeled_startup_cost, f64),
+        name!(modeled_total_cost, f64),
+        name!(modeled_selectivity, f64),
+        name!(modeled_correlation, f64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_cost_snapshot") };
+    let snapshot = unsafe { am::ivf_index_cost_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.planner_gate_reason.to_owned(),
+        i32::from(snapshot.dimensions),
+        i64::from(snapshot.nlists),
+        i64::from(snapshot.relation_nprobe),
+        snapshot
+            .session_nprobe
+            .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        snapshot.average_list_live_count,
+        i64::from(snapshot.estimated_centroid_scores),
+        i64::from(snapshot.estimated_selected_lists),
+        snapshot.estimated_candidate_rows,
+        snapshot.estimated_posting_pages,
+        snapshot.storage_format.to_owned(),
+        snapshot.scoring_mode.to_owned(),
+        snapshot.scoring_multiplier,
+        snapshot.rerank.to_owned(),
+        snapshot.rerank_multiplier,
+        snapshot.index_pages,
+        snapshot.reltuples,
+        snapshot.random_page_cost,
+        snapshot.seq_page_cost,
+        snapshot.cpu_operator_cost,
+        snapshot.modeled_startup_cost,
+        snapshot.modeled_total_cost,
+        snapshot.modeled_selectivity,
+        snapshot.modeled_correlation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_hnsw_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3459,6 +3533,146 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("effective nprobe source should be non-null"),
             "session"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_cost_snapshot_reports_modeled_costs() {
+        Spi::run("CREATE TABLE ec_ivf_cost_snapshot (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_cost_snapshot VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector),
+             (4, '[0.9,0.1]'::ecvector),
+             (5, '[0.1,0.9]'::ecvector),
+             (6, '[-0.9,0.1]'::ecvector),
+             (7, '[0.1,-0.9]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_cost_snapshot_idx ON ec_ivf_cost_snapshot USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 2, training_sample_rows = 8, storage_format = 'turboquant')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE ec_ivf_cost_snapshot").expect("analyze should succeed");
+        Spi::run("SET LOCAL ec_ivf.nprobe = 3").expect("session nprobe should set");
+
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT planner_scan_enabled FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner flag should be non-null")
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT nlists FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("nlists should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT relation_nprobe FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation nprobe should be non-null"),
+            2
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_nprobe FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("session nprobe should be non-null"),
+            3
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_nprobe_source FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective nprobe source should be non-null"),
+            "session"
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT estimated_centroid_scores FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("centroid score count should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT estimated_selected_lists FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("selected list count should be non-null"),
+            3
+        );
+        let average_list_live_count = Spi::get_one::<f64>(
+            "SELECT average_list_live_count FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("average list live count should be non-null");
+        assert!((average_list_live_count - 2.0).abs() < 1e-9);
+        let estimated_candidate_rows = Spi::get_one::<f64>(
+            "SELECT estimated_candidate_rows FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("candidate rows should be non-null");
+        assert!((estimated_candidate_rows - 6.0).abs() < 1e-9);
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT scoring_mode FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("scoring mode should be non-null"),
+            "turboquant_lut"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT rerank FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("rerank should be non-null"),
+            "off"
+        );
+
+        let modeled_startup = Spi::get_one::<f64>(
+            "SELECT modeled_startup_cost FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled startup should be non-null");
+        let modeled_total = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled total should be non-null");
+        assert!(modeled_startup.is_finite());
+        assert!(modeled_total.is_finite());
+        assert!(modeled_total > modeled_startup);
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_selectivity FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled selectivity should be non-null"),
+            1.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_correlation FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled correlation should be non-null"),
+            0.0
         );
     }
 

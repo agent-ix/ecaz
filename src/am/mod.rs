@@ -10,7 +10,10 @@ pub(crate) use self::common::{cost, explain, stats, stream};
 pub(crate) use self::ec_hnsw::{
     graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
 };
-pub(crate) use self::ec_ivf::{IndexDriftSnapshot, IndexAdminSnapshot as IvfIndexAdminSnapshot};
+pub(crate) use self::ec_ivf::{
+    IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
+    IndexDriftSnapshot,
+};
 
 pub(crate) fn register_gucs() {
     ec_hnsw::register_gucs();
@@ -64,6 +67,12 @@ pub(crate) unsafe fn ivf_index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IvfIndexAdminSnapshot {
     unsafe { ec_ivf::index_admin_snapshot(index_relation) }
+}
+
+pub(crate) unsafe fn ivf_index_cost_snapshot(
+    index_relation: pgrx::pg_sys::Relation,
+) -> IvfIndexCostSnapshot {
+    unsafe { ec_ivf::index_cost_snapshot(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

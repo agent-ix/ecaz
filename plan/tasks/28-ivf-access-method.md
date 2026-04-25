@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 7 cost model and EXPLAIN coverage next.
+Status: in progress - Phase 7 EXPLAIN counters and PG18 hooks next.
 
 Working branch: `task28-ivf`
 
@@ -331,7 +331,7 @@ first IVF baseline; page reclamation remains deferred.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 
-- [ ] **Cost model.** Estimate startup and total costs from centroid count,
+- [x] **Cost model.** Estimate startup and total costs from centroid count,
   `nprobe`, average list size, scoring mode, and rerank mode.
 - [ ] **EXPLAIN counters.** Report centroid scores, selected lists, posting
   pages read, candidates scored, rerank rows, and filtered duplicates.
@@ -346,6 +346,13 @@ reports metadata shape, relation/session/effective `nprobe`, storage/rerank
 profiles, live/dead/drift counters, list distribution, REINDEX recommendation,
 and planner inputs (`index_pages`, `reltuples`). The cost model, EXPLAIN
 counters, and PG18 hook wiring remain open.
+
+Phase 7 cost-model checkpoint: `ec_ivf` now wires a finite `amcostestimate`
+that models centroid scoring, selected-list posting reads, candidate scoring,
+storage-profile scoring multipliers, and rerank multipliers from persisted
+metadata plus planner cost constants. `ec_ivf_index_cost_snapshot(regclass)`
+exposes the modeled inputs and outputs for review. EXPLAIN counters and PG18
+hook wiring remain open.
 
 ### Phase 8 - validation and measurement
 
