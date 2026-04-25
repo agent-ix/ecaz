@@ -482,10 +482,11 @@ impl RaBitQQuantizer {
         // Compute the rotated residual in one rotation (rotation is
         // linear, so r_tilde = rotate(v) − c_rotated).
         let v_rotated = self.rotated(v);
-        let mut residual_rotated = Vec::with_capacity(self.dimensions);
-        for i in 0..self.dimensions {
-            residual_rotated.push(v_rotated[i] - center.rotated[i]);
-        }
+        let residual_rotated: Vec<_> = v_rotated
+            .iter()
+            .zip(center.rotated.iter())
+            .map(|(&v_i, &center_i)| v_i - center_i)
+            .collect();
 
         let residual_mag = l2_norm(&residual_rotated);
         let sqrt_d = (self.dimensions as f32).sqrt();
@@ -1027,10 +1028,10 @@ fn estimate_ip_impl(
 
     // Σ_i q_i · dequant(level_i) in the rotated basis.
     let mut sum_q_dequant = 0.0_f32;
-    for i in 0..dimensions {
+    for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
         let level = read_level(code, i, bits);
         let dequant = dequant_level(level, bits, sqrt_d);
-        sum_q_dequant += query_rotated[i] * dequant;
+        sum_q_dequant += query_i * dequant;
     }
 
     // Guard degenerate cases.
