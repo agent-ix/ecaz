@@ -1,20 +1,24 @@
 # Task 18: Parallel Index Scan
 
-Status: proposed — broad-reach latency win, no Postgres vector extension has this today.
+Status: in progress — PG18 planner-visible parallel index scans now land through
+a serial-equivalent elected tuple emitter. Direct multi-emitter output remains
+diagnostic-only until it has a `Gather Merge`-compatible ordering contract.
 
 Executes ADR-040.
 
 ## Scope
 
 Enable `amcanparallel=true` for `ec_hnsw` so a single `ORDER BY v <#> q LIMIT k`
-query can be split across multiple Postgres workers. Workers run independent
-beam searches against a shared top-K coordinator; `ef_search` is budgeted per
-worker with a small overlap term so aggregate recall matches (or exceeds) a
-single-worker scan at the same total budget.
+query can plan as a PostgreSQL `Parallel Index Scan`. The first PG18 shipping
+slice preserves strict serial equivalence by electing one tuple emitter while
+the shared descriptor, worker slots, coordinator state, and diagnostics remain
+parallel-aware. Direct multi-emitter output is blocked until the emitted worker
+streams are compatible with PostgreSQL's `Gather Merge` pathkeys.
 
-Goal: linear-ish latency reduction on warm indexes for 2/4/8 workers, and
-automatic inheritance of parallelism by DiskANN (task 17) and any future AM
-that shares the scan seam.
+Goal: keep the planner-visible PG18 path correct first, then recover the
+linear-ish latency reduction on warm indexes for 2/4/8 workers once the
+multi-emitter output contract is rank-compatible. DiskANN (task 17) and future
+AMs should inherit the same scan seam once they land.
 
 ## Why now
 
@@ -33,21 +37,47 @@ that shares the scan seam.
 
 See ADR-040 for the full shape. Summary:
 
-- **Shared state (DSM):** single top-K min-heap, protected by a lightweight
-  lock. Workers push candidates that beat the current kth; coordinator pops
-  on scan end.
+- **Current PG18 output contract:** exactly one elected backend emits tuples
+  for the planner-visible path. The direct multi-emitter path is restricted to
+  diagnostics because PostgreSQL `Gather Merge` compares stream heads by the
+  exact SQL `ORDER BY` key, while serial HNSW order can contain adjacent exact
+  score inversions.
+- **Shared state (DSM):** coordinator state, worker slots, runtime snapshots,
+  emitted-history duplicate suppression, hidden/deferred handoff state, and the
+  staged merge/admitted-result surfaces live in the shared AM-private
+  descriptor. The original shared top-K admission heap remains the target for a
+  future rank-compatible multi-emitter contract.
 - **Per-worker state (DSM slots):** independent beam frontier, visited set,
   and scoring scratch. No shared visited set (the coordination cost
   outweighs the redundancy savings at typical `ef_search`).
 - **Budget split:** per-worker `ef_search = ceil(ef_search_total / n) *
   (1 + overlap)`, with `overlap` in the 5–15% range. Overlap compensates
   for workers missing neighbors the others already explored.
-- **Entry points:** each worker starts from the same Layer-N+ entry point
-  but with a distinct RNG seed for beam initialization (prevents all workers
-  exploring identical paths).
+- **Entry points:** the current serial-equivalence path keeps bootstrap order
+  shared. Future independent-beam work needs deterministic diversification that
+  does not break the emitted ordering contract.
 - **Correctness invariant:** with `n=1` the parallel path must produce
-  byte-identical results to today's serial path. Enforced by a scan-mode
-  test.
+  byte-identical results to today's serial path. On PG18, the elected-emitter
+  planner-visible path must also match the serial ordered ID stream under
+  `ecaz dev test pg18-parallel-scan --expect-parallel`. Diagnostic
+  multi-emitter runs are expected to fail until the ordering contract changes.
+
+## Current PG18 status
+
+- `ec_hnsw` now enables `amcanparallel=true` on PG18 and the reusable
+  `ecaz dev test pg18-parallel-scan --expect-parallel` gate validates a real
+  planner-visible `Parallel Index Scan`.
+- The production path uses one elected tuple emitter. This keeps serial HNSW
+  order byte-equivalent while still exercising PostgreSQL parallel scan
+  callbacks, shared DSM attachment, and worker-control preflight coverage.
+- Score diagnostics in review packets 593 and 594 show that serial HNSW order
+  can have adjacent inversions under the exact SQL `ORDER BY` expression. A
+  direct multi-emitter stream therefore lets `Gather Merge` legally reorder the
+  result away from strict serial equivalence.
+- ADR-040 records the remaining design choices for direct multi-emitter output:
+  coordinator-owned serial-rank sequencing, exact-key-sorted worker streams, or
+  a planner/runtime contract that avoids `Gather Merge` for approximate serial
+  order.
 
 ## Subtasks
 
@@ -65,14 +95,14 @@ See ADR-040 for the full shape. Summary:
 
 ### AM callback wiring
 
-- [ ] **`amcanparallel = true`** in the `IndexAmRoutine` for `ec_hnsw`.
-- [ ] **`amestimateparallelscan`.** Returns DSM size = coordinator state +
+- [x] **`amcanparallel = true`** in the `IndexAmRoutine` for PG18 `ec_hnsw`.
+- [x] **`amestimateparallelscan`.** Returns DSM size = coordinator state +
   `n * per_worker_state`.
-- [ ] **`aminitparallelscan`.** Populate coordinator heap, initialize
+- [x] **`aminitparallelscan`.** Populate coordinator state and initialize
   per-worker slots.
-- [ ] **`amparallelrescan`.** Reset coordinator and per-worker state for
+- [x] **`amparallelrescan`.** Reset coordinator and per-worker state for
   re-execution (nested loops, param re-bind).
-- [ ] **Worker-side scan entry.** Each worker's `ambeginscan` path detects
+- [x] **Worker-side scan entry.** Each worker's `ambeginscan` path detects
   the parallel DSM slot and configures its local `TqScanOpaque` against
   it.
 
@@ -135,10 +165,10 @@ See ADR-040 for the full shape. Summary:
 
 ## Notes
 
-- **Staging checkpoint.** The first landing wires the callback surface and the
-  shared AM-private descriptor while leaving `amcanparallel = false`. Planner
-  visibility only flips once the coordinator and worker-local traversal
-  contracts are live.
+- **Historical staging checkpoint.** The first landing wired the callback
+  surface and shared AM-private descriptor while leaving `amcanparallel = false`.
+  PG18 now enables planner visibility after the callback surface, worker-slot
+  lifecycle, elected-emitter contract, and live CLI gate were validated.
 
 - **Descriptor sizing.** `amestimateparallelscan` does not receive the chosen
   executor worker count, so the staged shared descriptor reserves coordinator
@@ -149,8 +179,9 @@ See ADR-040 for the full shape. Summary:
   worker slot per live `TqScanOpaque`, keyed by the current rescan epoch.
   The slot also carries a staged runtime snapshot for phase, frontier, visited,
   emitted, and pending-result state at scan lifecycle boundaries.
-  `amcanparallel` still stays `false` until the coordinator heap and
-  worker-local traversal contracts are live.
+  PG18 now exposes those slots through the planner-visible elected-emitter path;
+  direct multi-emitter output still waits on a `Gather Merge`-compatible
+  ordering contract.
 
 - **Coordinator-result staging.** The shared descriptor now also reserves one
   coordinator-owned staged current-result slot per worker slot, keyed to the
@@ -711,13 +742,18 @@ See ADR-040 for the full shape. Summary:
   fixture, applies parallel-friendly planner GUCs, and compares serial vs
   parallel-enabled ordered IDs under a default full-traversal-sized budget.
   The command also runs a forced parallel seqscan control on the same fixture.
-  The current live result can launch workers for that control path, but the
-  ordered `ec_hnsw` access path still plans as a serial `Index Scan`; the
-  earlier `debug_parallel_query` experiment only wrapped that serial path in
-  `Gather Single Copy`. `amcanparallel` remains false until the AM planner
-  path can win as a real PostgreSQL `Parallel Index Scan`. Pass
-  `--expect-parallel` once that path is ready to turn the diagnostic into the
-  live executor gate.
+  The current live result can launch workers for the seqscan control and plans
+  the ordered `ec_hnsw` access path as a real PostgreSQL `Parallel Index Scan`
+  on PG18. `--expect-parallel` is now the default validation mode for Task 18
+  PG18 work.
+
+- **Gather Merge compatibility is the remaining multi-emitter blocker.**
+  Diagnostic multi-emitter runs prove that direct worker emission can fail
+  strict serial equivalence even when the underlying serial ordered IDs are
+  stable, because `Gather Merge` reorders per-worker stream heads by the exact
+  SQL sort key. The next multi-emitter design must choose one of the contracts
+  recorded in ADR-040 before it can replace the elected-emitter production
+  path.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
@@ -728,5 +764,5 @@ See ADR-040 for the full shape. Summary:
 - **Cache-line contention.** Top-K heap lock is the one hot contention
   point. Mitigation: workers snapshot the current kth score and
   fast-reject locally before taking the lock.
-- **PG17 vs PG18.** Parallel index scan callbacks exist in both. No
-  PG18 gate needed for this work.
+- **PG17 vs PG18.** PG18 is the primary validation lane for this task. PG17 is
+  retained as a compatibility lane, not the default checkpoint target.
