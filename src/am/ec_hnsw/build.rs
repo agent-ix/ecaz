@@ -16,7 +16,7 @@ use crate::storage::wal;
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
 const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
-const NATIVE_BUILD_MAX_DECODED_CODE_VALUE_BYTES: usize = 64 * 1024 * 1024;
+const NATIVE_BUILD_MAX_SCORE_VALUE_BYTES: usize = 64 * 1024 * 1024;
 
 static LAST_BUILD_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
@@ -1153,28 +1153,36 @@ impl BuildGraphMetric {
 struct BuildGraphScoringWorkspace {
     metric: BuildGraphMetric,
     decoded_code_values: Option<NativeBuildDecodedCodeValues>,
+    source_values: Option<NativeBuildSourceValues>,
 }
 
 impl BuildGraphScoringWorkspace {
     fn for_state(state: &BuildState) -> Self {
         let metric = BuildGraphMetric::for_state(state);
-        let decoded_code_values = match metric {
+        let (decoded_code_values, source_values) = match metric {
             BuildGraphMetric::Code {
                 dimensions,
                 bits,
                 seed,
-            } => NativeBuildDecodedCodeValues::try_no_qjl_4bit(state, dimensions, bits, seed),
-            BuildGraphMetric::Source => None,
+            } => (
+                NativeBuildDecodedCodeValues::try_no_qjl_4bit(state, dimensions, bits, seed),
+                None,
+            ),
+            BuildGraphMetric::Source => (None, NativeBuildSourceValues::try_for_state(state)),
         };
         Self {
             metric,
             decoded_code_values,
+            source_values,
         }
     }
 
     fn score_between(&self, state: &BuildState, left_idx: usize, right_idx: usize) -> f32 {
         if let Some(decoded_code_values) = &self.decoded_code_values {
             return -decoded_code_values.score_between(left_idx, right_idx);
+        }
+        if let Some(source_values) = &self.source_values {
+            return -source_values.score_between(left_idx, right_idx);
         }
         self.metric.score_between(state, left_idx, right_idx)
     }
@@ -1192,7 +1200,7 @@ impl NativeBuildDecodedCodeValues {
         }
         let value_count = state.heap_tuples.len().checked_mul(dimensions)?;
         match value_count.checked_mul(std::mem::size_of::<f32>()) {
-            Some(bytes) if bytes <= NATIVE_BUILD_MAX_DECODED_CODE_VALUE_BYTES => {}
+            Some(bytes) if bytes <= NATIVE_BUILD_MAX_SCORE_VALUE_BYTES => {}
             _ => return None,
         }
 
@@ -1258,6 +1266,44 @@ fn decode_no_qjl_4bit_code_values_into(
         out.push(codebook[(packed >> 4) as usize]);
     }
     debug_assert_eq!(out.len() - start_len, dimensions);
+}
+
+struct NativeBuildSourceValues {
+    dimensions: usize,
+    values: Vec<f32>,
+}
+
+impl NativeBuildSourceValues {
+    fn try_for_state(state: &BuildState) -> Option<Self> {
+        let dimensions = state.dimensions? as usize;
+        let value_count = state.heap_tuples.len().checked_mul(dimensions)?;
+        match value_count.checked_mul(std::mem::size_of::<f32>()) {
+            Some(bytes) if bytes <= NATIVE_BUILD_MAX_SCORE_VALUE_BYTES => {}
+            _ => return None,
+        }
+
+        let mut values = Vec::with_capacity(value_count);
+        for tuple in &state.heap_tuples {
+            let source = tuple.source_vector.as_ref()?;
+            if source.len() != dimensions {
+                return None;
+            }
+            values.extend_from_slice(source);
+        }
+        Some(Self { dimensions, values })
+    }
+
+    fn score_between(&self, left_idx: usize, right_idx: usize) -> f32 {
+        score_source_inner_product(self.values_for(left_idx), self.values_for(right_idx))
+    }
+
+    fn values_for(&self, node_idx: usize) -> &[f32] {
+        let start = node_idx
+            .checked_mul(self.dimensions)
+            .expect("source value offset should fit in usize");
+        let end = start + self.dimensions;
+        &self.values[start..end]
+    }
 }
 
 struct NativeBuildQueryScorer<'a> {
@@ -2782,6 +2828,82 @@ mod tests {
         let scoring = BuildGraphScoringWorkspace::for_state(&state);
 
         assert!(scoring.decoded_code_values.is_some());
+        for left_idx in 0..state.heap_tuples.len() {
+            for right_idx in 0..state.heap_tuples.len() {
+                assert_eq!(
+                    scoring.score_between(&state, left_idx, right_idx),
+                    metric.score_between(&state, left_idx, right_idx)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn flat_source_scores_match_source_metric() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: vec![
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: 1,
+                    }],
+                    dimensions: 4,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x12, 0x34],
+                    source_vector: Some(vec![1.0, 0.0, 0.5, -1.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: 2,
+                    }],
+                    dimensions: 4,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x56, 0x78],
+                    source_vector: Some(vec![0.0, 1.0, 0.25, -0.5]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: 3,
+                    }],
+                    dimensions: 4,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x9A, 0xBC],
+                    source_vector: Some(vec![-1.0, 0.5, 0.0, 1.0]),
+                    source_count: 1,
+                },
+            ],
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let metric = BuildGraphMetric::for_state(&state);
+        let scoring = BuildGraphScoringWorkspace::for_state(&state);
+
+        assert!(scoring.source_values.is_some());
         for left_idx in 0..state.heap_tuples.len() {
             for right_idx in 0..state.heap_tuples.len() {
                 assert_eq!(
