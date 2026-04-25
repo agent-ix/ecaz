@@ -1131,29 +1131,72 @@ struct NativeBuildQueryScorer<'a> {
     state: &'a BuildState,
     metric: BuildGraphMetric,
     query_idx: usize,
-    cache: Vec<Option<f32>>,
+    cache: &'a mut NativeBuildQueryScoreCache,
 }
 
 impl<'a> NativeBuildQueryScorer<'a> {
-    fn new(state: &'a BuildState, metric: BuildGraphMetric, query_idx: usize) -> Self {
+    fn new(
+        state: &'a BuildState,
+        metric: BuildGraphMetric,
+        query_idx: usize,
+        cache: &'a mut NativeBuildQueryScoreCache,
+    ) -> Self {
+        cache.begin_query();
         Self {
             state,
             metric,
             query_idx,
-            cache: vec![None; state.heap_tuples.len()],
+            cache,
         }
     }
 
     fn score(&mut self, candidate_idx: usize) -> f32 {
-        if let Some(score) = self.cache[candidate_idx] {
+        if let Some(score) = self.cache.get(candidate_idx) {
             return score;
         }
 
         let score = self
             .metric
             .score_between(self.state, self.query_idx, candidate_idx);
-        self.cache[candidate_idx] = Some(score);
+        self.cache.insert(candidate_idx, score);
         score
+    }
+}
+
+struct NativeBuildQueryScoreCache {
+    scores: Vec<f32>,
+    generations: Vec<u32>,
+    current_generation: u32,
+}
+
+impl NativeBuildQueryScoreCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            scores: vec![0.0; capacity],
+            generations: vec![0; capacity],
+            current_generation: 0,
+        }
+    }
+
+    fn begin_query(&mut self) {
+        self.current_generation = self.current_generation.wrapping_add(1);
+        if self.current_generation == 0 {
+            self.generations.fill(0);
+            self.current_generation = 1;
+        }
+    }
+
+    fn get(&self, candidate_idx: usize) -> Option<f32> {
+        if self.generations[candidate_idx] == self.current_generation {
+            Some(self.scores[candidate_idx])
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, candidate_idx: usize, score: f32) {
+        self.scores[candidate_idx] = score;
+        self.generations[candidate_idx] = self.current_generation;
     }
 }
 
@@ -1485,6 +1528,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
     let mut nodes = Vec::with_capacity(state.heap_tuples.len());
     let mut entry_idx = None;
     let mut max_level = 0_u8;
+    let mut query_score_cache = NativeBuildQueryScoreCache::new(state.heap_tuples.len());
 
     for node_idx in 0..state.heap_tuples.len() {
         let level = insert::choose_insert_level_for_page_size(
@@ -1500,7 +1544,8 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
         };
 
         if let Some(current_entry_idx) = entry_idx {
-            let mut query_scorer = NativeBuildQueryScorer::new(state, metric, node_idx);
+            let mut query_scorer =
+                NativeBuildQueryScorer::new(state, metric, node_idx, &mut query_score_cache);
             let entry_candidate = search::BeamCandidate::new(
                 current_entry_idx,
                 query_scorer.score(current_entry_idx),
