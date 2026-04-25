@@ -746,6 +746,73 @@ fn ec_ivf_index_drift_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_ivf_index_admin_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(dimensions, i32),
+        name!(nlists, i64),
+        name!(relation_nprobe, i64),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(training_sample_rows, i64),
+        name!(training_version, i32),
+        name!(storage_format, String),
+        name!(rerank, String),
+        name!(total_live_tuples, i64),
+        name!(total_dead_tuples, i64),
+        name!(inserted_since_build, i64),
+        name!(changed_row_fraction, f64),
+        name!(average_list_live_count, f64),
+        name!(max_list_live_count, i64),
+        name!(list_imbalance_ratio, f64),
+        name!(empty_lists, i64),
+        name!(reindex_recommended, bool),
+        name!(reindex_reason, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_admin_snapshot") };
+    let snapshot = unsafe { am::ivf_index_admin_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        snapshot.index_pages,
+        snapshot.reltuples,
+        i32::from(snapshot.dimensions),
+        i64::from(snapshot.nlists),
+        i64::from(snapshot.relation_nprobe),
+        snapshot
+            .session_nprobe
+            .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        i64::from(snapshot.training_sample_rows),
+        i32::from(snapshot.training_version),
+        snapshot.storage_format.to_owned(),
+        snapshot.rerank.to_owned(),
+        i64::try_from(snapshot.total_live_tuples).expect("total live tuples should fit in i64"),
+        i64::try_from(snapshot.total_dead_tuples).expect("total dead tuples should fit in i64"),
+        i64::try_from(snapshot.inserted_since_build)
+            .expect("inserted-since-build should fit in i64"),
+        snapshot.changed_row_fraction,
+        snapshot.average_list_live_count,
+        i64::try_from(snapshot.max_list_live_count).expect("max list count should fit in i64"),
+        snapshot.list_imbalance_ratio,
+        i64::from(snapshot.empty_lists),
+        snapshot.reindex_recommended,
+        snapshot.reindex_reason.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_hnsw_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3263,6 +3330,135 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("reindex recommendation should be non-null")
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_admin_snapshot() {
+        Spi::run("CREATE TABLE ec_ivf_admin_snapshot (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_admin_snapshot VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector),
+             (4, '[0.9,0.1]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_admin_snapshot_idx ON ec_ivf_admin_snapshot USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 2, training_sample_rows = 5, seed = 37, storage_format = 'turboquant')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("INSERT INTO ec_ivf_admin_snapshot VALUES (5, '[1.0,0.2]'::ecvector)")
+            .expect("live insert should succeed");
+        Spi::run("ANALYZE ec_ivf_admin_snapshot").expect("analyze should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT dimensions FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("dimensions should be non-null"),
+            2
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT nlists FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("nlists should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT relation_nprobe FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation nprobe should be non-null"),
+            2
+        );
+        assert!(
+            Spi::get_one::<i32>(
+                "SELECT session_nprobe FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .is_none()
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_nprobe_source FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective nprobe source should be non-null"),
+            "relation"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT storage_format FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("storage format should be non-null"),
+            "turboquant"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT rerank FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("rerank should be non-null"),
+            "off"
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_tuples FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live tuple count should be non-null"),
+            6
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_build FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-build should be non-null"),
+            1
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT index_pages FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("index pages should be non-null")
+                >= 1.0
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT reindex_recommended FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reindex recommendation should be non-null")
+        );
+
+        Spi::run("SET LOCAL ec_ivf.nprobe = 1").expect("session nprobe should set");
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_nprobe FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("session nprobe should be non-null"),
+            1
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_nprobe_source FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective nprobe source should be non-null"),
+            "session"
         );
     }
 

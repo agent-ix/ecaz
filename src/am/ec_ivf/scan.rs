@@ -475,29 +475,7 @@ unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
 }
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
-    if metadata.nlists == 0 {
-        return 0;
-    }
-
-    let session_nprobe = super::options::current_session_nprobe();
-    let requested = if session_nprobe > 0 {
-        session_nprobe as u32
-    } else {
-        metadata.nprobe
-    };
-    let resolved = if requested == 0 {
-        auto_nprobe(metadata.nlists)
-    } else {
-        requested
-    };
-    resolved.clamp(1, metadata.nlists)
-}
-
-fn auto_nprobe(nlists: u32) -> u32 {
-    if nlists == 0 {
-        return 0;
-    }
-    (nlists as f64).sqrt().ceil() as u32
+    super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
 }
 
 unsafe fn load_centroid_scores(

@@ -1,6 +1,6 @@
 use pgrx::pg_sys;
 
-use super::page;
+use super::{options, page};
 use crate::storage::page::ItemPointer;
 
 pub(crate) const REINDEX_CHANGED_ROW_FRACTION_THRESHOLD: f64 = 0.20;
@@ -22,6 +22,33 @@ pub(crate) struct IndexDriftSnapshot {
     pub reindex_reason: &'static str,
     pub changed_row_reindex_threshold: f64,
     pub list_imbalance_reindex_threshold: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct IndexAdminSnapshot {
+    pub block_count: u32,
+    pub index_pages: f64,
+    pub reltuples: f64,
+    pub dimensions: u16,
+    pub nlists: u32,
+    pub relation_nprobe: u32,
+    pub session_nprobe: Option<u32>,
+    pub effective_nprobe: u32,
+    pub effective_nprobe_source: &'static str,
+    pub training_sample_rows: u32,
+    pub training_version: u16,
+    pub storage_format: &'static str,
+    pub rerank: &'static str,
+    pub total_live_tuples: u64,
+    pub total_dead_tuples: u64,
+    pub inserted_since_build: u64,
+    pub changed_row_fraction: f64,
+    pub average_list_live_count: f64,
+    pub max_list_live_count: u64,
+    pub list_imbalance_ratio: f64,
+    pub empty_lists: u32,
+    pub reindex_recommended: bool,
+    pub reindex_reason: &'static str,
 }
 
 #[derive(Debug, Default)]
@@ -88,6 +115,41 @@ pub(crate) unsafe fn index_drift_snapshot(
         reindex_reason,
         changed_row_reindex_threshold: REINDEX_CHANGED_ROW_FRACTION_THRESHOLD,
         list_imbalance_reindex_threshold: REINDEX_LIST_IMBALANCE_THRESHOLD,
+    }
+}
+
+pub(crate) unsafe fn index_admin_snapshot(
+    index_relation: pg_sys::Relation,
+) -> IndexAdminSnapshot {
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    let drift = unsafe { index_drift_snapshot(index_relation) };
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+
+    IndexAdminSnapshot {
+        block_count: drift.block_count,
+        index_pages: f64::from(drift.block_count),
+        reltuples,
+        dimensions: metadata.dimensions,
+        nlists: metadata.nlists,
+        relation_nprobe: nprobe.relation_nprobe,
+        session_nprobe: nprobe.session_nprobe,
+        effective_nprobe: nprobe.effective_nprobe,
+        effective_nprobe_source: nprobe.source,
+        training_sample_rows: metadata.training_sample_rows,
+        training_version: metadata.training_version,
+        storage_format: metadata.storage_format.reloption_name(),
+        rerank: metadata.rerank.reloption_name(),
+        total_live_tuples: drift.total_live_tuples,
+        total_dead_tuples: drift.total_dead_tuples,
+        inserted_since_build: drift.inserted_since_build,
+        changed_row_fraction: drift.changed_row_fraction,
+        average_list_live_count: drift.average_list_live_count,
+        max_list_live_count: drift.max_list_live_count,
+        list_imbalance_ratio: drift.list_imbalance_ratio,
+        empty_lists: drift.empty_lists,
+        reindex_recommended: drift.reindex_recommended,
+        reindex_reason: drift.reindex_reason,
     }
 }
 

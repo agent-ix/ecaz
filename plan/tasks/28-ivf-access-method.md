@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 7 planner/admin coverage next.
+Status: in progress - Phase 7 cost model and EXPLAIN coverage next.
 
 Working branch: `task28-ivf`
 
@@ -335,11 +335,17 @@ first IVF baseline; page reclamation remains deferred.
   `nprobe`, average list size, scoring mode, and rerank mode.
 - [ ] **EXPLAIN counters.** Report centroid scores, selected lists, posting
   pages read, candidates scored, rerank rows, and filtered duplicates.
-- [ ] **Admin snapshot.** Add an IVF snapshot function for metadata,
+- [x] **Admin snapshot.** Add an IVF snapshot function for metadata,
   distribution, drift, and planner inputs.
 - [ ] **PG18 hooks.** Wire strategy translation, tree height, ReadStream,
   and shared stats only after the PG18 `ec_hnsw` surfaces are stable enough
   to reuse cleanly.
+
+Phase 7 admin-snapshot checkpoint: `ec_ivf_index_admin_snapshot(regclass)` now
+reports metadata shape, relation/session/effective `nprobe`, storage/rerank
+profiles, live/dead/drift counters, list distribution, REINDEX recommendation,
+and planner inputs (`index_pages`, `reltuples`). The cost model, EXPLAIN
+counters, and PG18 hook wiring remain open.
 
 ### Phase 8 - validation and measurement
 

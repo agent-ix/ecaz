@@ -138,6 +138,14 @@ impl EcIvfOptions {
     };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct NprobeResolution {
+    pub(super) relation_nprobe: u32,
+    pub(super) session_nprobe: Option<u32>,
+    pub(super) effective_nprobe: u32,
+    pub(super) source: &'static str,
+}
+
 pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_ivf.nprobe",
@@ -153,6 +161,41 @@ pub(super) fn register_gucs() {
 
 pub(super) fn current_session_nprobe() -> i32 {
     EC_IVF_NPROBE_GUC.get()
+}
+
+pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> NprobeResolution {
+    let session_nprobe = match current_session_nprobe() {
+        value if value > 0 => Some(value as u32),
+        _ => None,
+    };
+    if nlists == 0 {
+        return NprobeResolution {
+            relation_nprobe,
+            session_nprobe,
+            effective_nprobe: 0,
+            source: "none",
+        };
+    }
+
+    let (requested, source) = match session_nprobe {
+        Some(value) => (value, "session"),
+        None if relation_nprobe == 0 => (auto_nprobe(nlists), "auto"),
+        None => (relation_nprobe, "relation"),
+    };
+
+    NprobeResolution {
+        relation_nprobe,
+        session_nprobe,
+        effective_nprobe: requested.clamp(1, nlists),
+        source,
+    }
+}
+
+fn auto_nprobe(nlists: u32) -> u32 {
+    if nlists == 0 {
+        return 0;
+    }
+    (nlists as f64).sqrt().ceil() as u32
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
