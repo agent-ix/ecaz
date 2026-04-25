@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 6 vacuum safety coverage next.
+Status: in progress - Phase 5 shape validation and concurrency coverage next.
 
 Working branch: `task28-ivf`
 
@@ -283,7 +283,7 @@ row. Concurrent insert coverage remains open.
 - [x] **Drift snapshot.** Expose centroid staleness indicators: inserted
   since build, changed row fraction, list imbalance, and recommended
   REINDEX threshold.
-- [ ] **Vacuum safety tests.** Exercise repeated vacuum, insert plus vacuum,
+- [x] **Vacuum safety tests.** Exercise repeated vacuum, insert plus vacuum,
   scan plus vacuum, and post-vacuum recall sanity.
 
 Phase 6 no-op vacuum checkpoint: `ambulkdelete` and `amvacuumcleanup` no
@@ -307,6 +307,12 @@ now exposes total live/dead tuples, inserted-since-build, changed-row fraction,
 average/max list live counts, list imbalance ratio, empty-list count, and
 REINDEX recommendation thresholds/reason. Broader vacuum safety tests remain
 open.
+
+Phase 6 vacuum-safety checkpoint: PG coverage now exercises repeated vacuum
+idempotence and live-insert/delete/vacuum scan safety. The tests verify stable
+live/dead counters, no duplicate removal on repeated cleanup, and scan output
+excluding a deleted live-inserted row after vacuum. Phase 6 is complete for the
+first IVF baseline; page reclamation remains deferred.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 

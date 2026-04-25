@@ -3166,6 +3166,96 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_vacuum_repeated_bulkdelete_is_idempotent() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_repeat (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_vacuum_repeat VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_vacuum_repeat", "ec_ivf_vacuum_repeat_idx", 3, 3, 3);
+        let dead_tid = heap_tid_for_row("ec_ivf_vacuum_repeat", 1);
+
+        Spi::run("DELETE FROM ec_ivf_vacuum_repeat WHERE id = 1").expect("delete should succeed");
+        let first_stats =
+            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
+        let second_stats =
+            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[dead_tid]) };
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+
+        assert_eq!(first_stats.tuples_removed, 1.0);
+        assert_eq!(first_stats.num_index_tuples, 2.0);
+        assert_eq!(second_stats.tuples_removed, 0.0);
+        assert_eq!(second_stats.num_index_tuples, 2.0);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 1);
+        assert_eq!(inserted_since_build, 0);
+        assert_eq!(total_live, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_insert_vacuum_scan_safety() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_insert (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_vacuum_insert VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_vacuum_insert", "ec_ivf_vacuum_insert_idx", 2, 2, 2);
+        Spi::run("INSERT INTO ec_ivf_vacuum_insert VALUES (2, '[1.0,0.1]'::ecvector)")
+            .expect("live insert should succeed");
+        let inserted_tid = heap_tid_for_row("ec_ivf_vacuum_insert", 2);
+        let before_outputs =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
+
+        assert!(
+            before_outputs
+                .iter()
+                .any(|(block_number, offset_number, _score)| {
+                    (*block_number, *offset_number)
+                        == (inserted_tid.block_number, inserted_tid.offset_number)
+                }),
+            "live-inserted row should be reachable before vacuum"
+        );
+
+        Spi::run("DELETE FROM ec_ivf_vacuum_insert WHERE id = 2").expect("delete should succeed");
+        let stats =
+            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
+        let after_outputs =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 1);
+        assert_eq!(inserted_since_build, 1);
+        assert_eq!(total_live, 2);
+        assert!(
+            after_outputs
+                .iter()
+                .all(|(block_number, offset_number, _score)| {
+                    (*block_number, *offset_number)
+                        != (inserted_tid.block_number, inserted_tid.offset_number)
+                }),
+            "vacuumed scan output should not include the deleted live-inserted row"
+        );
+        assert_eq!(after_outputs.len(), 2);
+        assert!(after_outputs.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
