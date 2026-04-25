@@ -1553,7 +1553,8 @@ fn stage_non_emitting_parallel_contributor_output(
 fn record_non_emitting_parallel_contributor_hidden_publish_classification(
     opaque: &mut TqScanOpaque,
 ) -> super::parallel::EcParallelContributorHiddenDrainClassification {
-    let classification = classify_non_emitting_parallel_contributor_hidden_drain(opaque);
+    let observation = observe_non_emitting_parallel_contributor_hidden_drain(opaque);
+    let classification = observation.classification;
 
     match classification {
         super::parallel::EcParallelContributorHiddenDrainClassification::MissingHidden => opaque
@@ -1589,23 +1590,18 @@ fn record_non_emitting_parallel_contributor_hidden_publish_classification(
         }
     }
 
-    record_non_emitting_parallel_contributor_hidden_publish_rank_relation(opaque);
+    record_non_emitting_parallel_contributor_hidden_publish_rank_relation(
+        opaque,
+        observation.publish_rank_relation,
+    );
 
     classification
 }
 
 fn record_non_emitting_parallel_contributor_hidden_publish_rank_relation(
     opaque: &mut TqScanOpaque,
+    relation: Option<super::parallel::EcParallelContributorPublishRankRelation>,
 ) {
-    let relation = unsafe {
-        super::parallel::classify_parallel_scan_contributor_hidden_publish_rank_relation(
-            opaque.parallel_scan_state,
-            opaque.parallel_scan_worker_slot_index,
-        )
-    }
-    .unwrap_or_else(|err| {
-        pgrx::error!("ec_hnsw parallel contributor publish rank classification failed: {err}")
-    });
     let Some(relation) = relation else {
         return;
     };
@@ -1636,6 +1632,20 @@ fn record_non_emitting_parallel_contributor_hidden_publish_rank_relation(
             pgrx::error!("ec_hnsw parallel contributor publish rank counter failed: {err}")
         }
     }
+}
+
+fn observe_non_emitting_parallel_contributor_hidden_drain(
+    opaque: &mut TqScanOpaque,
+) -> super::parallel::EcParallelContributorHiddenDrainObservation {
+    unsafe {
+        super::parallel::observe_parallel_scan_contributor_hidden_drain(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel contributor publish observation failed: {err}")
+    })
 }
 
 fn classify_non_emitting_parallel_contributor_hidden_drain(

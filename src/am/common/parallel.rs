@@ -367,6 +367,12 @@ pub(crate) enum EcParallelContributorPublishRankRelation {
     MissingVisibleRank,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelContributorHiddenDrainObservation {
+    pub(crate) classification: EcParallelContributorHiddenDrainClassification,
+    pub(crate) publish_rank_relation: Option<EcParallelContributorPublishRankRelation>,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct EcParallelCoordinatorAdmitPendingOutputSelection {
     pub(crate) coordinator: EcParallelCoordinatorSnapshot,
@@ -2730,45 +2736,6 @@ pub(crate) unsafe fn record_parallel_scan_contributor_poll_limit_exit(
     Ok(())
 }
 
-unsafe fn visible_owner_pending_output_for_hidden_locked(
-    attachment: &ParallelScanAttachment,
-    hidden_slot_index: u32,
-    coordinator: &EcParallelCoordinatorSnapshot,
-) -> Result<Option<EcParallelPendingOutputSnapshot>, &'static str> {
-    if let Some(selected_slot_index) = coordinator.selected_result_slot_index {
-        if selected_slot_index != hidden_slot_index {
-            let selected_slot = unsafe { attachment.result_slot(selected_slot_index) }?;
-            let selected_snapshot =
-                load_coordinator_result_slot_snapshot(unsafe { &*selected_slot });
-            if unsafe {
-                coordinator_result_slot_snapshot_is_live_with_attachment(
-                    attachment,
-                    &selected_snapshot,
-                )
-            } {
-                if let Some(selected_pending_output) =
-                    coordinator_pending_output_snapshot(&selected_snapshot)
-                {
-                    return Ok(Some(selected_pending_output));
-                }
-            }
-        }
-    }
-
-    let admitted_count = coordinator
-        .admitted_result_count
-        .min(attachment.admitted_result_count);
-    if admitted_count > 0 {
-        let result = unsafe { attachment.admitted_result(0) }?;
-        let snapshot = load_admitted_result_snapshot(unsafe { &*result });
-        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
-            return Ok(Some(snapshot.pending_output));
-        }
-    }
-
-    Ok(None)
-}
-
 fn contributor_publish_rank_relation(
     hidden: &EcParallelPendingOutputSnapshot,
     visible: &EcParallelPendingOutputSnapshot,
@@ -2783,69 +2750,38 @@ fn contributor_publish_rank_relation(
     }
 }
 
-pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_publish_rank_relation(
-    state: *mut EcParallelScanState,
+unsafe fn observe_parallel_scan_contributor_hidden_drain_locked(
+    attachment: &ParallelScanAttachment,
     slot_index: u32,
-) -> Result<Option<EcParallelContributorPublishRankRelation>, &'static str> {
-    let attachment = unsafe { validate_parallel_scan_state(state) }?;
-    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
-    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
-    let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
-
+) -> Result<EcParallelContributorHiddenDrainObservation, &'static str> {
     let Ok(slot) = (unsafe { attachment.result_slot(slot_index) }) else {
-        return Ok(None);
+        return Ok(EcParallelContributorHiddenDrainObservation {
+            classification: EcParallelContributorHiddenDrainClassification::MissingHidden,
+            publish_rank_relation: None,
+        });
     };
     let hidden_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
     if !coordinator_result_slot_snapshot_is_hidden_local_only(&hidden_slot, attachment.rescan_epoch)
-        || !unsafe { coordinator_result_slot_worker_claim_is_live(&attachment, slot_index) }
+        || !unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) }
     {
-        return Ok(None);
+        return Ok(EcParallelContributorHiddenDrainObservation {
+            classification: EcParallelContributorHiddenDrainClassification::MissingHidden,
+            publish_rank_relation: None,
+        });
     }
     let Some(hidden_pending_output) = coordinator_pending_output_snapshot(&hidden_slot) else {
-        return Ok(None);
-    };
-
-    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
-    let Some(visible_pending_output) = (unsafe {
-        visible_owner_pending_output_for_hidden_locked(&attachment, slot_index, &coordinator)
-    })?
-    else {
-        return Ok(None);
-    };
-
-    Ok(Some(contributor_publish_rank_relation(
-        &hidden_pending_output,
-        &visible_pending_output,
-    )))
-}
-
-pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
-    state: *mut EcParallelScanState,
-    slot_index: u32,
-) -> Result<EcParallelContributorHiddenDrainClassification, &'static str> {
-    let attachment = unsafe { validate_parallel_scan_state(state) }?;
-    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
-    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
-    let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
-
-    let Ok(slot) = (unsafe { attachment.result_slot(slot_index) }) else {
-        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
-    };
-    let hidden_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
-    if !coordinator_result_slot_snapshot_is_hidden_local_only(&hidden_slot, attachment.rescan_epoch)
-        || !unsafe { coordinator_result_slot_worker_claim_is_live(&attachment, slot_index) }
-    {
-        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
-    }
-    let Some(hidden_pending_output) = coordinator_pending_output_snapshot(&hidden_slot) else {
-        return Ok(EcParallelContributorHiddenDrainClassification::MissingHidden);
+        return Ok(EcParallelContributorHiddenDrainObservation {
+            classification: EcParallelContributorHiddenDrainClassification::MissingHidden,
+            publish_rank_relation: None,
+        });
     };
 
     let coordinator_ref = unsafe { &*attachment.coordinator };
     if coordinator_emitted_heap_tid_exists(coordinator_ref, hidden_pending_output.heap_tid) {
-        return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
+        return Ok(EcParallelContributorHiddenDrainObservation {
+            classification: EcParallelContributorHiddenDrainClassification::DuplicateActive,
+            publish_rank_relation: None,
+        });
     }
 
     let coordinator = load_coordinator_snapshot(coordinator_ref);
@@ -2856,18 +2792,26 @@ pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
                 load_coordinator_result_slot_snapshot(unsafe { &*selected_slot });
             if unsafe {
                 coordinator_result_slot_snapshot_is_live_with_attachment(
-                    &attachment,
+                    attachment,
                     &selected_snapshot,
                 )
             } {
                 if let Some(selected_pending_output) =
                     coordinator_pending_output_snapshot(&selected_snapshot)
                 {
+                    let publish_rank_relation = Some(contributor_publish_rank_relation(
+                        &hidden_pending_output,
+                        &selected_pending_output,
+                    ));
                     if selected_pending_output.heap_tid == hidden_pending_output.heap_tid {
-                        return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
+                        return Ok(EcParallelContributorHiddenDrainObservation {
+                            classification:
+                                EcParallelContributorHiddenDrainClassification::DuplicateActive,
+                            publish_rank_relation,
+                        });
                     }
-                    return Ok(
-                        if pending_output_orders_before(
+                    return Ok(EcParallelContributorHiddenDrainObservation {
+                        classification: if pending_output_orders_before(
                             &hidden_pending_output,
                             &selected_pending_output,
                         ) {
@@ -2875,7 +2819,8 @@ pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
                         } else {
                             EcParallelContributorHiddenDrainClassification::OrderedAfterVisible
                         },
-                    );
+                        publish_rank_relation,
+                    });
                 }
             }
         }
@@ -2885,31 +2830,76 @@ pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
         .admitted_result_count
         .min(attachment.admitted_result_count);
     let mut admitted_head = None;
+    let mut publish_rank_relation = None;
     for result_index in 0..admitted_count {
         let result = unsafe { attachment.admitted_result(result_index) }?;
         let snapshot = load_admitted_result_snapshot(unsafe { &*result });
         if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
             continue;
         }
-        if snapshot.pending_output.heap_tid == hidden_pending_output.heap_tid {
-            return Ok(EcParallelContributorHiddenDrainClassification::DuplicateActive);
-        }
         if result_index == 0 {
             admitted_head = Some(snapshot.pending_output);
+            publish_rank_relation = Some(contributor_publish_rank_relation(
+                &hidden_pending_output,
+                &snapshot.pending_output,
+            ));
+        }
+        if snapshot.pending_output.heap_tid == hidden_pending_output.heap_tid {
+            return Ok(EcParallelContributorHiddenDrainObservation {
+                classification: EcParallelContributorHiddenDrainClassification::DuplicateActive,
+                publish_rank_relation,
+            });
         }
     }
 
     if let Some(admitted_head) = admitted_head {
-        return Ok(
-            if pending_output_orders_before(&hidden_pending_output, &admitted_head) {
+        return Ok(EcParallelContributorHiddenDrainObservation {
+            classification: if pending_output_orders_before(&hidden_pending_output, &admitted_head)
+            {
                 EcParallelContributorHiddenDrainClassification::HandoffReady
             } else {
                 EcParallelContributorHiddenDrainClassification::OrderedAfterVisible
             },
-        );
+            publish_rank_relation,
+        });
     }
 
-    Ok(EcParallelContributorHiddenDrainClassification::NoVisibleOwner)
+    Ok(EcParallelContributorHiddenDrainObservation {
+        classification: EcParallelContributorHiddenDrainClassification::NoVisibleOwner,
+        publish_rank_relation: None,
+    })
+}
+
+pub(crate) unsafe fn observe_parallel_scan_contributor_hidden_drain(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<EcParallelContributorHiddenDrainObservation, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
+    unsafe { observe_parallel_scan_contributor_hidden_drain_locked(&attachment, slot_index) }
+}
+
+pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_publish_rank_relation(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<Option<EcParallelContributorPublishRankRelation>, &'static str> {
+    Ok(
+        unsafe { observe_parallel_scan_contributor_hidden_drain(state, slot_index) }?
+            .publish_rank_relation,
+    )
+}
+
+pub(crate) unsafe fn classify_parallel_scan_contributor_hidden_drain(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<EcParallelContributorHiddenDrainClassification, &'static str> {
+    Ok(
+        unsafe { observe_parallel_scan_contributor_hidden_drain(state, slot_index) }?
+            .classification,
+    )
 }
 
 pub(crate) unsafe fn record_parallel_scan_contributor_poll_limit_classification(
