@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -355,6 +355,19 @@ SET ec_hnsw.ef_search = {ef_search};
     } else {
         None
     };
+    let candidate_duplicate_ids = candidate_ids.as_deref().map(duplicate_id_counts);
+    let candidate_missing_serial_ids =
+        if let (Some(serial_ids), Some(candidate_ids)) = (&serial_ids, &candidate_ids) {
+            Some(ordered_multiset_surplus(serial_ids, candidate_ids))
+        } else {
+            None
+        };
+    let candidate_extra_ids =
+        if let (Some(serial_ids), Some(candidate_ids)) = (&serial_ids, &candidate_ids) {
+            Some(ordered_multiset_surplus(candidate_ids, serial_ids))
+        } else {
+            None
+        };
     let parallel_seqscan_plan = if args.planner_only {
         pg18_parallel_fixture_parallel_seqscan_json(&mut client).await?
     } else {
@@ -418,6 +431,9 @@ SET ec_hnsw.ef_search = {ef_search};
          {planner_diagnostics_output}\
          [pg18-parallel] serial_ids={}\n\
          [pg18-parallel] candidate_ids={}\n\
+         [pg18-parallel] candidate_duplicate_ids={}\n\
+         [pg18-parallel] candidate_missing_serial_ids={}\n\
+         [pg18-parallel] candidate_extra_ids={}\n\
          [pg18-parallel] serial_exact_scores={}\n\
          [pg18-parallel] candidate_exact_scores={}\n\
          [pg18-parallel] serial_exact_score_adjacent_inversions={}\n\
@@ -433,6 +449,9 @@ SET ec_hnsw.ef_search = {ef_search};
         args.disable_parallel_leader_participation,
         format_optional_ids(serial_ids.as_deref()),
         format_optional_ids(candidate_ids.as_deref()),
+        format_optional_id_counts(candidate_duplicate_ids.as_deref()),
+        format_optional_id_counts(candidate_missing_serial_ids.as_deref()),
+        format_optional_id_counts(candidate_extra_ids.as_deref()),
         format_optional_scored_ids(serial_scores.as_deref()),
         format_optional_scored_ids(candidate_scores.as_deref()),
         format_optional_score_inversions(serial_scores.as_deref()),
@@ -511,9 +530,39 @@ struct ScoredId {
     score: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IdCount {
+    id: i64,
+    count: usize,
+}
+
 fn format_optional_ids(ids: Option<&[i64]>) -> String {
     ids.map(|ids| format!("{ids:?}"))
         .unwrap_or_else(|| "not collected (planner-only)".to_owned())
+}
+
+fn format_optional_id_counts(counts: Option<&[IdCount]>) -> String {
+    counts
+        .map(format_id_counts)
+        .unwrap_or_else(|| "not collected (planner-only)".to_owned())
+}
+
+fn format_id_counts(counts: &[IdCount]) -> String {
+    if counts.is_empty() {
+        return "[]".to_owned();
+    }
+    let entries = counts
+        .iter()
+        .map(|entry| {
+            if entry.count == 1 {
+                entry.id.to_string()
+            } else {
+                format!("{}x{}", entry.id, entry.count)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{entries}]")
 }
 
 fn format_optional_scored_ids(scored_ids: Option<&[ScoredId]>) -> String {
@@ -561,6 +610,49 @@ fn adjacent_score_inversions(scored_ids: &[ScoredId]) -> Vec<(ScoredId, ScoredId
             (right.score < left.score).then_some((left, right))
         })
         .collect()
+}
+
+fn duplicate_id_counts(ids: &[i64]) -> Vec<IdCount> {
+    let counts = id_counts(ids);
+    let mut emitted = HashSet::new();
+    ids.iter()
+        .filter_map(|id| {
+            let count = *counts.get(id)?;
+            (count > 1 && emitted.insert(*id)).then_some(IdCount { id: *id, count })
+        })
+        .collect()
+}
+
+fn ordered_multiset_surplus(primary: &[i64], reference: &[i64]) -> Vec<IdCount> {
+    let primary_counts = id_counts(primary);
+    let reference_counts = id_counts(reference);
+    let mut emitted = HashSet::new();
+    primary
+        .iter()
+        .filter_map(|id| {
+            if !emitted.insert(*id) {
+                return None;
+            }
+            let primary_count = *primary_counts.get(id).unwrap_or(&0);
+            let reference_count = *reference_counts.get(id).unwrap_or(&0);
+            if primary_count > reference_count {
+                Some(IdCount {
+                    id: *id,
+                    count: primary_count - reference_count,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn id_counts(ids: &[i64]) -> HashMap<i64, usize> {
+    let mut counts = HashMap::new();
+    for &id in ids {
+        *counts.entry(id).or_insert(0) += 1;
+    }
+    counts
 }
 
 async fn pg18_parallel_fixture_planner_diagnostics(
@@ -1452,5 +1544,41 @@ mod tests {
             format_scored_ids(&scored),
             "[(57, -1.543027639), (56, -1.415079832)]"
         );
+    }
+
+    #[test]
+    fn duplicate_id_counts_preserves_first_seen_order() {
+        let duplicates = duplicate_id_counts(&[3, 2, 3, 1, 2, 2]);
+
+        assert_eq!(
+            duplicates,
+            [IdCount { id: 3, count: 2 }, IdCount { id: 2, count: 3 },]
+        );
+    }
+
+    #[test]
+    fn ordered_multiset_surplus_reports_count_deltas_in_primary_order() {
+        let expected = [1, 2, 2, 3, 4];
+        let actual = [2, 3, 3, 5];
+
+        assert_eq!(
+            ordered_multiset_surplus(&expected, &actual),
+            [
+                IdCount { id: 1, count: 1 },
+                IdCount { id: 2, count: 1 },
+                IdCount { id: 4, count: 1 },
+            ]
+        );
+        assert_eq!(
+            ordered_multiset_surplus(&actual, &expected),
+            [IdCount { id: 3, count: 1 }, IdCount { id: 5, count: 1 },]
+        );
+    }
+
+    #[test]
+    fn format_id_counts_omits_count_for_singletons() {
+        let counts = [IdCount { id: 92, count: 1 }, IdCount { id: 379, count: 2 }];
+
+        assert_eq!(format_id_counts(&counts), "[92, 379x2]");
     }
 }
