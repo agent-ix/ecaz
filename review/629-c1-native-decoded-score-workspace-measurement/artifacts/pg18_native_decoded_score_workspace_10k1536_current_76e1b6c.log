@@ -1,0 +1,91 @@
+Timing is on.
+=== pg18 native decoded score workspace 10k x 1536 timing fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 12:47:08.364768-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.737 ms
+DROP TABLE
+Time: 11.821 ms
+DROP EXTENSION
+Time: 62.874 ms
+CREATE EXTENSION
+Time: 43.941 ms
+CREATE TABLE
+Time: 5.609 ms
+=== load 10000 rows x 1536 dims ===
+INSERT 0 10000
+Time: 8948.604 ms (00:08.949)
+VACUUM
+Time: 20.470 ms
+ fixture_rows
+--------------
+        10000
+(1 row)
+
+Time: 1.533 ms
+ relpages | reltuples
+----------+-----------
+     1112 |     10000
+(1 row)
+
+Time: 2.527 ms
+SET
+Time: 0.255 ms
+SET
+Time: 0.214 ms
+=== serial create index 10k x 1536 ===
+SET
+Time: 0.181 ms
+ALTER TABLE
+Time: 1.416 ms
+DROP INDEX
+Time: 0.290 ms
+CREATE INDEX
+Time: 54708.383 ms (00:54.708)
+     round      | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_10k1536 |                 0 |                0 |       10000 |        10000 |         131757 |                 0 |                 0 |                     0 |       54558263 | 54198793 |   254804 |    99949
+(1 row)
+
+Time: 0.753 ms
+ serial_10k1536_index_bytes
+----------------------------
+                   11739136
+(1 row)
+
+Time: 0.723 ms
+DROP INDEX
+Time: 3.813 ms
+CHECKPOINT
+Time: 48.051 ms
+=== parallel create index 10k x 1536 ===
+SET
+Time: 0.353 ms
+ALTER TABLE
+Time: 1.603 ms
+DROP INDEX
+Time: 0.338 ms
+CREATE INDEX
+Time: 54874.921 ms (00:54.875)
+      round       | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_10k1536 |                 4 |                4 |       10000 |        10000 |         156639 |              2997 |             25125 |                128512 |       54703445 | 54360998 |   247937 |    90365
+(1 row)
+
+Time: 0.448 ms
+ parallel_10k1536_index_bytes
+------------------------------
+                     11739136
+(1 row)
+
+Time: 0.411 ms
+          finished_at
+-------------------------------
+ 2026-04-25 12:49:06.994973-07
+(1 row)
+
+Time: 0.170 ms
+psql:review/629-c1-native-decoded-score-workspace-measurement/artifacts/pg18_native_decoded_score_workspace_10k1536_timing.sql:47: NOTICE:  index "ec_hnsw_native_decoded_score_10k1536_measure_idx" does not exist, skipping
+psql:review/629-c1-native-decoded-score-workspace-measurement/artifacts/pg18_native_decoded_score_workspace_10k1536_timing.sql:61: NOTICE:  index "ec_hnsw_native_decoded_score_10k1536_measure_idx" does not exist, skipping
