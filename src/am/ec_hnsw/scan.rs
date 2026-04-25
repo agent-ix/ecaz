@@ -1515,6 +1515,9 @@ fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanO
         || active_parallel_output_was_recently_emitted_locally(opaque)
     {
         discard_recently_emitted_active_parallel_output(opaque);
+        opaque
+            .explain_counters
+            .record_parallel_contributor_duplicate_retire();
         return true;
     }
 
@@ -8761,6 +8764,12 @@ mod tests {
             retire_obsolete_non_emitting_parallel_contributor_output(&mut opaque),
             "the contributor should retire the already-emitted hidden heap tid"
         );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_contributor_duplicate_retires,
+            1
+        );
 
         let hidden = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
@@ -8787,6 +8796,12 @@ mod tests {
         assert!(
             retire_obsolete_non_emitting_parallel_contributor_output(&mut opaque),
             "the contributor should retire the final already-emitted hidden heap tid"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_contributor_duplicate_retires,
+            2
         );
         assert!(
             !opaque.result_state.current().has_element(),
