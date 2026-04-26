@@ -677,38 +677,42 @@ unsafe fn materialize_probe_candidates(
             .explain_counters
             .record_posting_pages_read(posting_pages);
         record_posting_pages_read(opaque, posting_pages);
-        let postings = unsafe {
-            super::page::read_ivf_postings_for_list_blocks(
+        unsafe {
+            super::page::visit_ivf_postings_for_list_blocks(
                 index_relation,
                 *list_id,
                 directory.head_block,
                 directory.tail_block,
                 payload_len,
-            )?
-        };
-        for posting in postings {
-            if posting.deleted {
-                continue;
-            }
-            let score =
-                -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
-            record_distance_calcs(opaque, 1);
-            for heap_tid in posting.heaptids {
-                opaque.explain_counters.record_candidate_scored();
-                let candidate = EcIvfScoredCandidate { heap_tid, score };
-                match best_by_heap_tid.entry(heap_tid) {
-                    Entry::Occupied(mut entry) => {
-                        opaque.explain_counters.record_filtered_duplicate();
-                        let existing = entry.get_mut();
-                        if candidate_cmp(&candidate, existing) == Ordering::Less {
-                            *existing = candidate;
+                |_, posting| {
+                    if posting.deleted {
+                        return Ok(());
+                    }
+                    let score = -quantizer.score_ip_from_parts(
+                        prepared_query,
+                        posting.gamma,
+                        &posting.payload,
+                    );
+                    record_distance_calcs(opaque, 1);
+                    for heap_tid in posting.heaptids {
+                        opaque.explain_counters.record_candidate_scored();
+                        let candidate = EcIvfScoredCandidate { heap_tid, score };
+                        match best_by_heap_tid.entry(heap_tid) {
+                            Entry::Occupied(mut entry) => {
+                                opaque.explain_counters.record_filtered_duplicate();
+                                let existing = entry.get_mut();
+                                if candidate_cmp(&candidate, existing) == Ordering::Less {
+                                    *existing = candidate;
+                                }
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(candidate);
+                            }
                         }
                     }
-                    Entry::Vacant(entry) => {
-                        entry.insert(candidate);
-                    }
-                }
-            }
+                    Ok(())
+                },
+            )?
         }
     }
 

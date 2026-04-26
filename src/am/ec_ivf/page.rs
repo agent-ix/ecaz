@@ -667,30 +667,36 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
     tail_block: BlockRef,
     payload_len: usize,
 ) -> Result<Vec<IvfPostingTuple>, String> {
-    let postings = unsafe {
-        read_ivf_postings_for_list_blocks_with_tids(
+    let mut postings = Vec::new();
+    unsafe {
+        visit_ivf_postings_for_list_blocks(
             index_relation,
             list_id,
             head_block,
             tail_block,
             payload_len,
+            |_, posting| {
+                postings.push(posting);
+                Ok(())
+            },
         )?
     };
-    Ok(postings
-        .into_iter()
-        .map(|(_tid, posting)| posting)
-        .collect())
+    Ok(postings)
 }
 
-pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+pub(super) unsafe fn visit_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
     tail_block: BlockRef,
     payload_len: usize,
-) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
     if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
-        return Ok(Vec::new());
+        return Ok(());
     }
     if head_block == BlockRef::INVALID || tail_block == BlockRef::INVALID {
         return Err(format!("ec_ivf list {list_id} has partial posting block refs"));
@@ -701,17 +707,16 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
         ));
     }
 
-    let mut postings = Vec::new();
     #[cfg(feature = "pg18")]
     {
         unsafe {
-            read_ivf_posting_blocks_with_read_stream(
+            visit_ivf_posting_blocks_with_read_stream(
                 index_relation,
                 list_id,
                 head_block.block_number,
                 tail_block.block_number,
                 payload_len,
-                &mut postings,
+                &mut visitor,
             )?
         };
     }
@@ -720,28 +725,55 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     {
         for block_number in head_block.block_number..=tail_block.block_number {
             unsafe {
-                read_ivf_postings_for_list_block(
+                visit_ivf_postings_for_list_block(
                     index_relation,
                     list_id,
                     block_number,
                     payload_len,
-                    &mut postings,
+                    &mut visitor,
                 )?
             };
         }
     }
+    Ok(())
+}
+
+pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    head_block: BlockRef,
+    tail_block: BlockRef,
+    payload_len: usize,
+) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
+    let mut postings = Vec::new();
+    unsafe {
+        visit_ivf_postings_for_list_blocks(
+            index_relation,
+            list_id,
+            head_block,
+            tail_block,
+            payload_len,
+            |posting_tid, posting| {
+                postings.push((posting_tid, posting));
+                Ok(())
+            },
+        )?
+    };
     Ok(postings)
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn read_ivf_posting_blocks_with_read_stream(
+unsafe fn visit_ivf_posting_blocks_with_read_stream<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: pg_sys::BlockNumber,
     tail_block: pg_sys::BlockNumber,
     payload_len: usize,
-    postings: &mut Vec<(ItemPointer, IvfPostingTuple)>,
-) -> Result<(), String> {
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
     let mut state = LinearPrefetchState::new(head_block, tail_block);
     let stream = unsafe {
         pg_sys::read_stream_begin_relation(
@@ -767,7 +799,13 @@ unsafe fn read_ivf_posting_blocks_with_read_stream(
             unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
         };
         let result = unsafe {
-            collect_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, postings)
+            visit_ivf_postings_from_buffer(
+                buffer,
+                list_id,
+                block_number,
+                payload_len,
+                visitor,
+            )
         };
         unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
@@ -781,13 +819,16 @@ unsafe fn read_ivf_posting_blocks_with_read_stream(
 }
 
 #[cfg(not(feature = "pg18"))]
-unsafe fn read_ivf_postings_for_list_block(
+unsafe fn visit_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
-    postings: &mut Vec<(ItemPointer, IvfPostingTuple)>,
-) -> Result<(), String> {
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -804,19 +845,22 @@ unsafe fn read_ivf_postings_for_list_block(
     }
 
     let result = unsafe {
-        collect_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, postings)
+        visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
     };
     unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
-unsafe fn collect_ivf_postings_from_buffer(
+unsafe fn visit_ivf_postings_from_buffer<F>(
     buffer: pg_sys::Buffer,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
-    postings: &mut Vec<(ItemPointer, IvfPostingTuple)>,
-) -> Result<(), String> {
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     let result = (|| -> Result<(), String> {
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
@@ -844,13 +888,13 @@ unsafe fn collect_ivf_postings_from_buffer(
 
             let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
             if posting.list_id == list_id {
-                postings.push((
+                visitor(
                     ItemPointer {
                         block_number,
                         offset_number: offset,
                     },
                     posting,
-                ));
+                )?;
             }
         }
         Ok(())
