@@ -182,10 +182,10 @@ cost estimate (higher layers = fewer hops to reach the neighborhood).
 
 ### Current State
 
-- `amcanbuildparallel = false` (`src/am/ec_hnsw/routine.rs`)
-- `build_hnsw_graph()` is still single-threaded (`src/am/ec_hnsw/build.rs`)
-- The native `ec_hnsw` builder still runs leader-only after heap-tuple collection
-- Heap scan uses `table_index_build_scan` without parallel flags
+- `amcanbuildparallel = true` (`src/am/ec_hnsw/routine.rs`)
+- PG18 parallel build infrastructure is wired for `ec_hnsw`
+- Eligible builds default to ADR-048 concurrent DSM graph assembly
+- The serial native graph builder remains available as a diagnostic fallback
 
 ### GIN Parallel Build Pattern (PG18)
 
@@ -194,15 +194,15 @@ GIN uses this architecture, which we can adapt:
 ```
 Leader:
   1. CreateParallelContext("postgres", "_ec_hnsw_parallel_build_main", nworkers)
-  2. Allocate shared memory: TqBuildShared + Sharedsort + WalUsage + BufferUsage
+  2. Allocate shared memory: build shared state + shm_mq streams + WalUsage + BufferUsage
   3. InitializeParallelDSM → LaunchParallelWorkers
-  4. Leader participates in parallel heap scan too
+  4. Workers perform parallel heap scan and tuple encoding
   5. Leader waits via ConditionVariable for workers
-  6. Leader reads sorted results from Sharedsort → builds HNSW graph
+  6. Leader reads encoded tuple streams, then launches concurrent DSM graph assembly
 
 Workers:
   1. Open heap/index via shm_toc lookup
-  2. Parallel heap scan → encode tqvectors → write (heap_tid, code) to Sharedsort
+  2. Parallel heap scan → encode tqvectors → send tuple messages to leader
   3. Signal completion via ConditionVariable
 ```
 
@@ -211,19 +211,22 @@ Workers:
 The heap scan and tqvector encoding are embarrassingly parallel. Each worker:
 - Scans a portion of the heap via `ParallelTableScanDesc`
 - Detoasts and validates each tqvector datum
-- Writes `(gamma, code, heap_tids)` tuples into a shared sort
+- Sends `(gamma, code, heap_tids)` tuples to the leader via `shm_mq`
 
 This parallelizes the I/O-bound heap scan and CPU-bound detoast/validation.
 
-### Phase 2: Native Graph Construction (future)
+### Phase 2: Concurrent DSM Graph Construction
 
-The current native builder is still leader-only. Options:
-1. **Keep serial initially** — leader builds graph from sorted tuples (matches GIN pattern)
-2. **Parallelize the native builder** — shard candidate discovery / layer work inside Ecaz's own builder
-3. **Batch parallel** — partition vectors, build sub-graphs in parallel, merge
+ADR-048 selected concurrent insertion into a DSM-resident graph array. Workers
+insert node partitions into one shared graph behind per-node LWLocks, then the
+leader reads the graph back through the existing page-staging path. This is now
+the default PG18 path for eligible parallel builds, with the serial builder
+kept as a diagnostic fallback.
 
-Recommendation: Start with Phase 1 (parallel scan + encode), keep graph build serial.
-This already parallelizes the I/O bottleneck.
+Recommendation: Continue from ADR-048's default-on concurrent DSM graph
+assembly. The remaining work is scale measurement and any follow-up direct DSM
+ingestion cleanup that can replace the current `shm_mq` tuple-stream boundary
+without losing fallback behavior.
 
 ### Changes Required
 
@@ -231,11 +234,11 @@ This already parallelizes the I/O bottleneck.
 // routine.rs
 amroutine.amcanbuildparallel = true;
 
-// build.rs — new parallel infrastructure
-// - TqBuildShared struct (shared state)
-// - _ec_hnsw_parallel_build_main (worker entry point)
-// - Parallel heap scan via table_beginscan_parallel
-// - Sharedsort for coordinated tuple collection
+// build_parallel.rs — current parallel infrastructure
+// - shared build state and worker entry point
+// - parallel heap scan via table_beginscan_parallel
+// - shm_mq tuple streams for ingestion
+// - DSM graph/corpus surface for concurrent graph assembly
 ```
 
 ---

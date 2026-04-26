@@ -1,7 +1,7 @@
 # Task 26: Parallel Index Build
 
-Status: **in-progress** — heap ingestion coordinator landed (task 19); graph
-assembly architecture decided by ADR-048 (packet 632).
+Status: **in-progress** — concurrent DSM graph assembly is implemented and
+default-on for eligible PG18 parallel builds; Phase 5 scale curves remain.
 
 ## Scope
 
@@ -57,19 +57,27 @@ navigability is an uncharacterized recall risk requiring infrastructure
 measured. Concurrent insertion starts faster and has stronger recall by
 construction.
 
-## Current State (after packets 618–631)
+## Current State (after packets 618–666)
 
 - `amcanbuildparallel = true` for `ec_hnsw`.
-- Workers do parallel heap scan + tuple encoding → shm_mq → leader.
-- Leader sorts/deduplicates (O(N) after packet 627) and assembles graph
-  serially.
-- 50k × 64: serial ~30s, parallel ~31s. Graph assembly is ~94% of wall time.
-- The shm_mq ingestion path is correct and remains in place. Graph assembly is
-  what needs to change.
+- Workers do parallel heap scan + tuple encoding → shm_mq → leader for the
+  original ingestion coordinator path.
+- The leader sorts/deduplicates (O(N) after packet 627), then eligible PG18
+  parallel builds default to concurrent DSM graph assembly.
+- Concurrent DSM graph assembly precomputes levels, fixes the entry point,
+  allocates a DSM graph/corpus surface, and has workers insert node partitions
+  into the shared graph behind per-node LWLocks.
+- The diagnostic GUC `ec_hnsw.enable_parallel_build_concurrent_dsm` can disable
+  the concurrent DSM graph path and force the old serial-leader graph assembly.
+- Real 50k source-scored summary (packet 666): serial build `30:15.962`,
+  best concurrent DSM build `03:17.371`, recall@10 `0.91` / `0.91`.
+- The remaining shm_mq ingestion path is not yet superseded for every build
+  shape. Removing it requires direct worker-to-DSM tuple ingestion or an
+  explicit fallback split; do not delete it as a cleanup-only change.
 
 ## Phase Plan
 
-### Phase 1 — DSM graph pre-assembly (NEXT)
+### Phase 1 — DSM graph pre-assembly (DONE)
 
 Implement the pre-assembly phase that must complete before worker insertion
 starts:
@@ -93,10 +101,10 @@ starts:
 4. **Gate behind `EcHnswBuildGraphAssembly::ConcurrentDsm`.** Keep
    `SerialLeader` as default. New variant is opt-in for this phase.
 
-Validation target: single-participant (leader only, `requested_workers = 0`)
-round-trip that produces a valid index through the existing page-staging path.
+Validation target met: single-participant and attachment/page-staging coverage
+landed in the concurrent DSM packet chain.
 
-### Phase 2 — Worker insertion loop
+### Phase 2 — Worker insertion loop (DONE)
 
 Wire workers into graph insertion:
 
@@ -123,35 +131,42 @@ Wire workers into graph insertion:
    partition. Set `leader_participates = true` in the plan. This recovers the
    ~10–15% heap-ingest time the leader currently spends idle.
 
-6. **Remove shm_mq streams** for the `ConcurrentDsm` path. The per-worker
-   queue handles and drain loop are specific to the ingestion coordinator and
-   are not needed when workers insert directly.
+6. **Remove shm_mq streams** for a future direct-ingestion path. The current
+   default still uses the existing heap-ingestion coordinator to collect encoded
+   tuples before concurrent DSM graph assembly. Direct worker-to-DSM ingestion
+   is a separate follow-up because source-scored builds and fallback behavior
+   still need an encoded corpus boundary.
 
 Validation target: multi-worker PG18 test that verifies all heap TIDs are
 present, entry point is valid, and recall meets the existing gate.
 
-### Phase 3 — Recall and speed measurement
-
-Before enabling `ConcurrentDsm` as the default:
+### Phase 3 — Recall and speed measurement (DONE for real 50k)
 
 1. Run the existing real-corpus recall gate (50k, real embeddings) with 4
    workers. Record the recall delta vs. serial native build. Gate: no regression
-   beyond the documented tolerance.
+   beyond the documented tolerance. Packet 666 records recall@10 parity
+   (`0.91` / `0.91`).
 
 2. Run build-time measurement at 50k and 500k. Target: parallel build
    materially faster than serial on the graph assembly phase, not only heap
-   ingestion.
+   ingestion. Packet 666 records the 50k result: wall-clock speedup about
+   `9.20x`, graph-phase speedup about `10.77x`. The 500k curve remains part of
+   Phase 5 scale measurement.
 
-3. Record both results in a measurement packet before switching the default.
+3. Record results in a measurement packet before switching the default. Packet
+   666 is the Phase 3 real-50k source of truth.
 
-### Phase 4 — Default switch and cleanup
+### Phase 4 — Default switch and cleanup (PARTIAL)
 
 1. Set `ConcurrentDsm` as the default graph assembly variant in the build plan.
-2. Remove the shm_mq ingestion coordinator code paths that are superseded
-   (or keep as fallback for `build_source_column` builds which still use the
-   serial path).
+   Done in packet 665; the GUC remains as a diagnostic fallback.
+2. Remove only shm_mq ingestion coordinator code paths that are truly
+   superseded. Not done: the queue/drain path still owns parallel heap
+   ingestion for the non-direct DSM ingestion path, and is still the safe
+   fallback boundary.
 3. Update `amcanbuildparallel` docs and any pg_test smoke tests that assert
-   the worker count or timing surface.
+   the worker count or timing surface. PG18 smoke tests were updated with the
+   default switch; requirements/docs are being aligned after packet 666.
 
 ### Phase 5 — Scale measurement
 

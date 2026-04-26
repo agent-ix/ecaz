@@ -13,9 +13,21 @@ traces:
 
 ## Requirement
 
-The extension SHALL support parallel index build by parallelizing the heap scan and tqvector validation phase across multiple PostgreSQL background workers, following the GIN parallel build pattern introduced in PG18. Graph construction remains serial on the leader process.
+The extension SHALL support parallel index build by parallelizing eligible
+`ec_hnsw` build work across multiple PostgreSQL background workers. The build
+uses PostgreSQL parallel build infrastructure for heap ingestion and the
+ADR-048 concurrent DSM graph assembly path for default PG18 HNSW graph
+construction.
 
 ### Architecture
+
+Current implementation note: the heap-ingestion coordinator and the graph
+assembly coordinator are separate stages. The heap-ingestion stage still uses
+per-worker `shm_mq` streams to collect encoded tuples into the leader's build
+state. The default PG18 graph assembly stage then uses a DSM-resident graph
+surface with per-node LWLocks and worker node partitions. The serial-leader
+graph path remains available through
+`ec_hnsw.enable_parallel_build_concurrent_dsm = off` as a diagnostic fallback.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -24,10 +36,10 @@ The extension SHALL support parallel index build by parallelizing the heap scan 
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │                        Shared Memory                             │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │   │
-│  │  │ TqBuildShared │  │  Sharedsort  │  │ ParallelTableScan    │   │   │
-│  │  │  heaprelid    │  │  (sorted     │  │  Desc                │   │   │
+│  │  │ BuildShared   │  │  shm_mq      │  │ ParallelTableScan    │   │   │
+│  │  │  heaprelid    │  │  tuple       │  │  Desc                │   │   │
 │  │  │  indexrelid   │  │   tuples)    │  │  (coordinated scan)  │   │   │
-│  │  │  ndone=0      │  │              │  │                      │   │   │
+│  │  │  ndone=0      │  │  streams     │  │                      │   │   │
 │  │  │  reltuples    │  │              │  │                      │   │   │
 │  │  │  cv           │  │              │  │                      │   │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────────────┘   │   │
@@ -36,14 +48,14 @@ The extension SHALL support parallel index build by parallelizing the heap scan 
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐         ┌──────────────┐     │
 │  │ Worker 1 │  │ Worker 2 │  │ Worker N │         │   Leader     │     │
 │  │          │  │          │  │          │         │              │     │
-│  │ parallel │  │ parallel │  │ parallel │  ──cv──▶│ merge sort   │     │
-│  │ heap     │  │ heap     │  │ heap     │         │ build graph  │     │
+│  │ parallel │  │ parallel │  │ parallel │  ──mq──▶│ collect      │     │
+│  │ heap     │  │ heap     │  │ heap     │         │ tuples       │     │
 │  │ scan +   │  │ scan +   │  │ scan +   │         │ write pages  │     │
 │  │ detoast  │  │ detoast  │  │ detoast  │         │              │     │
 │  │ validate │  │ validate │  │ validate │         │              │     │
 │  │    ↓     │  │    ↓     │  │    ↓     │         │              │     │
-│  │ write to │  │ write to │  │ write to │         │              │     │
-│  │ sort     │  │ sort     │  │ sort     │         │              │     │
+│  │ send via │  │ send via │  │ send via │         │ DSM graph    │     │
+│  │ shm_mq   │  │ shm_mq   │  │ shm_mq   │         │ assembly     │     │
 │  └──────────┘  └──────────┘  └──────────┘         └──────────────┘     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +79,7 @@ sequenceDiagram
     Note over Leader,DSM: Phase 0 — Setup parallel context
 
     Leader->>DSM: CreateParallelContext("postgres", "_ec_hnsw_parallel_build_main", nworkers)
-    Leader->>DSM: Allocate TqBuildShared + Sharedsort + ParallelTableScanDesc
+    Leader->>DSM: Allocate BuildShared + shm_mq streams + ParallelTableScanDesc
     Leader->>DSM: InitializeParallelDSM()
     Leader->>DSM: LaunchParallelWorkers()
 
@@ -80,37 +92,38 @@ sequenceDiagram
             W1->>W1: Detoast tqvector datum
             W1->>W1: Validate (dim, bits, seed) consistency
             W1->>W1: Extract (gamma, code, heap_tids)
-            W1->>DSM: tuplesort_putdatum(sort, packed_tuple)
+            W1->>DSM: shm_mq_send(encoded tuple)
         end
-        W1->>DSM: tuplesort_performsort()
         W1->>DSM: ConditionVariable signal (ndone++)
     and Worker 2
         W2->>DSM: shm_toc_lookup(PARALLEL_KEY_TQ_SHARED)
         W2->>W2: table_beginscan_parallel(heap_rel)
         loop For each heap tuple in worker's range
             W2->>W2: (same as Worker 1)
-            W2->>DSM: tuplesort_putdatum(sort, packed_tuple)
+            W2->>DSM: shm_mq_send(encoded tuple)
         end
-        W2->>DSM: tuplesort_performsort()
         W2->>DSM: ConditionVariable signal (ndone++)
     end
 
-    Note over Leader: Leader also participates in parallel scan
-
-    Leader->>Leader: table_beginscan_parallel() [own range]
-    Leader->>DSM: tuplesort_putdatum() [own tuples]
-    Leader->>DSM: tuplesort_performsort()
     Leader->>DSM: ConditionVariableWait(ndone == nworkers)
 
-    Note over Leader: Phase 2 — Merge + Graph build (leader only)
+    Note over Leader: Phase 2 — Tuple collection and dedupe
 
-    Leader->>DSM: tuplesort_getdatum() [merge read all sorted tuples]
-    Leader->>Leader: Collect BuildTuples with duplicate coalescing
+    Leader->>DSM: Drain shm_mq streams
+    Leader->>Leader: Sort by heap TID and collect BuildTuples
 
-    Leader->>Graph: build_hnsw_graph(merged_build_tuples)
-    Graph-->>Leader: Vec<HnswBuildNode>
+    Note over Leader,W2: Phase 3 — Concurrent DSM graph assembly
 
-    Note over Leader: Phase 3 — Serialize graph to pages (same as FR-008)
+    Leader->>DSM: Allocate fixed graph/corpus surface
+    Leader->>DSM: Precompute levels and fixed entry point
+    par Worker graph partition
+        W1->>Graph: insert node partition with per-node LWLocks
+    and Worker graph partition
+        W2->>Graph: insert node partition with per-node LWLocks
+    end
+    Graph-->>Leader: DSM graph readback
+
+    Note over Leader: Phase 4 — Serialize graph to pages (same as FR-008)
 
     Leader->>Pages: Write element tuples + neighbor tuples
     Leader->>Pages: Fix up neighbor TID pointers
@@ -126,11 +139,12 @@ sequenceDiagram
 ┌─────────────────────────────────────────────────────┐
 │ Key                          │ Content               │
 │─────────────────────────────┼───────────────────────│
-│ PARALLEL_KEY_TQ_SHARED      │ TqBuildShared struct   │
-│ PARALLEL_KEY_TUPLESORT       │ Sharedsort handle     │
+│ PARALLEL_KEY_TQ_SHARED      │ BuildShared struct     │
+│ worker queue keys           │ shm_mq tuple streams   │
 │ PARALLEL_KEY_QUERY_TEXT      │ Query string (debug)  │
 │ PARALLEL_KEY_WAL_USAGE       │ Per-worker WalUsage   │
 │ PARALLEL_KEY_BUFFER_USAGE    │ Per-worker BufferUsage│
+│ graph key                   │ DSM graph/corpus area  │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -165,27 +179,33 @@ pub extern "C" fn _ec_hnsw_parallel_build_main(
     // 1. Lookup shared state from TOC
     // 2. Open heap/index relations
     // 3. Begin parallel table scan
-    // 4. For each tuple: detoast, validate, write to shared sort
+    // 4. For each tuple: detoast, validate, send via shm_mq
     // 5. Perform local sort
     // 6. Signal completion via ConditionVariable
 }
 ```
 
-### Sort Key Design
+### Tuple Ordering
 
-Tuples are sorted by encoded code bytes for efficient duplicate coalescing during the leader's merge phase. The sort datum is a packed representation:
+Encoded tuples are collected by the leader and sorted by heap TID before they
+are pushed into build state. Duplicate heap entries are coalesced during this
+stage. The worker message payload is a packed representation:
 
 ```
 [gamma: 4 bytes][code: code_len bytes][heap_tid: 6 bytes]
 ```
 
-### Graph Construction (Serial)
+### Graph Construction (Concurrent DSM)
 
-After the merge read, the leader constructs the HNSW graph using the same
-native `build_hnsw_graph(...)` path as the current serial build (FR-008). The
-graph construction is CPU-bound, not I/O-bound, and remains leader-only today
-because `amcanbuildparallel` is still `false` and the native builder has not
-yet been parallelized.
+After tuple collection, eligible PG18 builds use ADR-048 concurrent DSM graph
+assembly by default. The leader pre-computes node levels, chooses the fixed
+entry point, allocates the compact code/source corpus and graph arrays in DSM,
+and launches workers over node-index partitions. Each participant uses
+worker-local search scratch, reads neighbor slots under shared `LWLock`, and
+writes forward/backlink slots under exclusive `LWLock`.
+
+The serial native graph builder remains available as a diagnostic fallback and
+for build shapes that cannot use the DSM graph surface.
 
 ### Worker Count Estimation
 
@@ -202,14 +222,16 @@ fn estimate_parallel_workers(heap_rel: Relation) -> i32 {
 
 ### Fallback
 
-If `max_parallel_maintenance_workers = 0` or the table is too small for parallelism, the build falls back to the serial path (FR-008) with no overhead.
+If `max_parallel_maintenance_workers = 0`, the table is too small for
+parallelism, DSM allocation fails, or the diagnostic concurrent-DSM GUC is
+disabled, the build falls back to the serial graph path (FR-008).
 
 ### Error Conditions
 
 | Condition | Behavior |
 |---|---|
-| Worker crashes (SIGKILL, OOM) | Leader detects via `WaitForParallelWorkersToAttach`/`WaitForParallelWorkersToFinish`. Remaining workers continue; leader merges whatever tuples were committed to shared sort. If all workers fail, leader falls back to serial build. |
-| Shared memory exhaustion (`dsm_create` fails) | Fall back to serial build (FR-008). Log via `ereport(LOG)`. |
+| Worker crashes (SIGKILL, OOM) | Leader detects via `WaitForParallelWorkersToAttach`/`WaitForParallelWorkersToFinish`. The build aborts or falls back according to PostgreSQL parallel build error handling. |
+| Shared memory exhaustion (`dsm_create` fails) | Fall back to serial build (FR-008) when possible. Log via `ereport(LOG)`. |
 | Dimension mismatch across heap tuples | First worker sets `dimensions`/`bits`/`seed` in `TqBuildShared` under mutex. Subsequent workers validate against shared values. Mismatch → `ereport(ERROR, "inconsistent tqvector dimensions")`. |
 | Corrupt tqvector datum (detoast fails) | Worker skips the tuple with `ereport(WARNING)` and continues. The skipped tuple is not included in the index. |
 | `maintenance_work_mem` too low for sort | `tuplesort` spills to disk automatically — no special handling needed. Performance degrades but correctness is maintained. |
@@ -220,10 +242,16 @@ If `max_parallel_maintenance_workers = 0` or the table is too small for parallel
 With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING ec_hnsw` SHALL launch parallel workers.
 
 ### FR-021-AC-2: Correctness
-The index produced by parallel build SHALL be structurally identical (same element count, same graph connectivity, same recall) to a serial build on the same data.
+The index produced by parallel build SHALL contain the same indexed heap tuple
+set as a serial build on the same data. Concurrent graph assembly is not
+required to be byte-identical to serial topology; it SHALL meet the documented
+recall gates for the same fixture.
 
 ### FR-021-AC-3: Speedup
-Parallel build with 4 workers SHALL complete in ≤ 60% of serial build time on a 100K-row table (measured on representative hardware).
+Parallel build with 4 workers SHALL materially improve graph-phase and
+wall-clock build time on representative 50k+ fixtures. Packet 666 records the
+first accepted real-50k source-scored result: about `9.20x` wall-clock speedup
+and `10.77x` graph-phase speedup against serial.
 
 ### FR-021-AC-4: Concurrent build
 `CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` SHALL work correctly with parallel workers.
@@ -239,6 +267,7 @@ All page writes during the leader's graph serialization phase SHALL use GenericX
 - PG source: `src/backend/access/gin/gininsert.c` — `_gin_begin_parallel()`, `_gin_parallel_build_main()`, `GinBuildShared` struct, shared memory TOC keys, `ConditionVariable` signaling pattern
 - PG source: `src/backend/access/gin/ginutil.c` — `amcanbuildparallel = true` in GIN's `IndexAmRoutine`
 - PG source: `src/include/access/parallel.h` — `CreateParallelContext()`, `LaunchParallelWorkers()`, `InitializeParallelDSM()`
-- PG source: `src/include/utils/tuplesort.h` — `Sharedsort`, `tuplesort_begin_*` with `SortCoordinate`, `tuplesort_attach_shared()`
 - PG source: `src/include/storage/condition_variable.h` — `ConditionVariable` for worker-to-leader completion signaling
 - PG source: `src/backend/access/nbtree/nbtsort.c` — btree parallel build (older reference implementation using same infrastructure)
+- ADR-048: Parallel HNSW build graph assembly
+- Review packet 666: Phase 3 real-50k recall and speed summary
