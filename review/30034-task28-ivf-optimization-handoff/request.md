@@ -95,6 +95,10 @@ Checkpoint in progress / complete on this branch:
 - Scan candidate materialization no longer retains a full IVF directory vector
   just to derive selected-list counts and ranges; it now builds a narrower
   selected-probe plan directly from the ordered directory chain.
+- Runtime candidate materialization now sorts the deduplicated candidate set
+  directly after the probe pass instead of feeding it through a no-op top-k
+  heap whose bound already covered the full selected-list live-count upper
+  bound.
 
 Why this slice is worth doing here:
 
