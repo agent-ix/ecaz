@@ -17,21 +17,23 @@ The durable plan now says:
 - task 26 keeps the HNSW parallel-build result and marks the current path as
   functionally proven but performance-limited at 990k x 1536;
 - offline/staged HNSW bulk build remains a later follow-up;
-- task 28 becomes the next scale research lane: real Graviton-class IVF and
-  DiskANN build/recall/latency baselines, followed by optimization of the
-  stronger candidate.
+- task 28 becomes the IVF-first initial tuning lane for build/recall/latency
+  baselines;
+- task 29 records DiskANN as a separate future work stream rather than coupling
+  it to IVF.
 
 ## Files
 
 - `plan/tasks/26-parallel-index-build.md`
-- `plan/tasks/28-ivf-diskann-benchmark-optimization.md`
+- `plan/tasks/28-ivf-initial-tuning.md`
+- `plan/tasks/29-diskann-initial-tuning.md`
 - `plan/tasks/README.md`
 - `review/673-c1-ivf-diskann-bench-pivot/artifacts/manifest.md`
 
 ## Review Questions
 
 1. Does task 26 now make the HNSW follow-up status clear enough?
-2. Is task 28 scoped correctly as benchmark-first, with implementation choices
-   gated on measured IVF/DiskANN evidence?
-3. Is the Graviton-class benchmark metadata requirement sufficient for future
-   product claims?
+2. Is task 28 scoped correctly as IVF-first local tuning?
+3. Is task 29 enough to keep DiskANN as a first-class future stream?
+4. Is the split between local initial tuning and later Graviton-class product
+   benchmarks clear enough?
