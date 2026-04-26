@@ -571,6 +571,53 @@ impl EcHnswConcurrentDsmGraphLayout {
         let total_neighbor_slots = node_plan.total_neighbor_slots;
         let code_len = checked_graph_u32(code_len, "concurrent DSM graph code length");
 
+        Self::from_header_values(
+            node_count,
+            entry_idx,
+            levels.max_level,
+            total_neighbor_slots,
+            code_len,
+        )
+    }
+
+    unsafe fn from_header(header: *const EcHnswConcurrentDsmGraphHeader) -> Self {
+        if header.is_null() {
+            pgrx::error!("concurrent DSM graph header pointer is null");
+        }
+
+        let header = unsafe { &*header };
+        let entry_idx = match header.entry_idx {
+            EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX => None,
+            entry_idx if entry_idx < header.node_count => Some(entry_idx),
+            _ => pgrx::error!("concurrent DSM graph entry index is out of bounds"),
+        };
+
+        Self::from_header_values(
+            header.node_count,
+            entry_idx,
+            header.max_level,
+            header.total_neighbor_slots,
+            header.code_len,
+        )
+    }
+
+    fn from_header_values(
+        node_count: u32,
+        entry_idx: Option<u32>,
+        max_level: u8,
+        total_neighbor_slots: u32,
+        code_len: u32,
+    ) -> Self {
+        match entry_idx {
+            Some(entry_idx) if entry_idx >= node_count => {
+                pgrx::error!("concurrent DSM graph entry index is out of bounds");
+            }
+            None if node_count > 0 => {
+                pgrx::error!("non-empty concurrent DSM graph is missing an entry index");
+            }
+            _ => {}
+        }
+
         let header_offset = 0;
         let nodes_offset = bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size);
         let node_bytes = checked_mul_size(
@@ -607,7 +654,7 @@ impl EcHnswConcurrentDsmGraphLayout {
         Self {
             node_count,
             entry_idx,
-            max_level: levels.max_level,
+            max_level,
             total_neighbor_slots,
             code_len,
             header_offset,
@@ -660,6 +707,17 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
             graph_layout,
         }
     }
+}
+
+#[allow(dead_code)]
+pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
+    base: *const c_void,
+) -> EcHnswConcurrentDsmGraphLayout {
+    if base.is_null() {
+        pgrx::error!("concurrent DSM graph base pointer is null");
+    }
+
+    unsafe { EcHnswConcurrentDsmGraphLayout::from_header(base.cast()) }
 }
 
 #[allow(dead_code)]
@@ -2520,6 +2578,48 @@ mod tests {
             let codes = slice::from_raw_parts(parts.codes, plan.code_corpus.bytes.len());
             assert_eq!(codes, plan.code_corpus.bytes.as_slice());
         }
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_layout_reattaches_from_initialized_header() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        let attached_layout =
+            unsafe { concurrent_dsm_graph_layout_from_image(buffer.as_mut_ptr()) };
+        let attached_parts =
+            unsafe { concurrent_dsm_graph_parts(buffer.as_mut_ptr(), attached_layout) };
+
+        assert_eq!(attached_layout, plan.graph_layout);
+        assert_eq!(attached_parts.header, parts.header);
+        assert_eq!(attached_parts.nodes, parts.nodes);
+        assert_eq!(attached_parts.neighbor_slots, parts.neighbor_slots);
+        assert_eq!(attached_parts.codes, parts.codes);
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_graph_layout_rejects_non_empty_header_without_entry() {
+        let header = EcHnswConcurrentDsmGraphHeader {
+            node_count: 1,
+            entry_idx: EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX,
+            max_level: 0,
+            reserved0: [0; 3],
+            total_neighbor_slots: 2,
+            code_len: 3,
+        };
+
+        let _ = unsafe { EcHnswConcurrentDsmGraphLayout::from_header(&header) };
     }
 
     #[test]
