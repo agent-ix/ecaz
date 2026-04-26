@@ -1,0 +1,53 @@
+Timing is on.
+=== pg18 source-score AVX concurrent DSM real 50k recall check ===
+          started_at           |                                            postgres_version                                             | server_version 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------
+ 2026-04-26 07:39:14.418666-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3
+(1 row)
+
+Time: 0.921 ms
+CREATE EXTENSION
+Time: 0.345 ms
+SET
+Time: 0.157 ms
+DROP TABLE
+Time: 0.257 ms
+SELECT 10
+Time: 14.242 ms
+ALTER TABLE
+Time: 4.175 ms
+VACUUM
+Time: 8.552 ms
+=== serial baseline recall ===
+SELECT 1
+Time: 227265.933 ms (03:47.266)
+   build_path    | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ serial_existing |               0.91 |               0.762 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 0.996 ms
+=== AVX concurrent DSM recall ===
+SELECT 1
+Time: 226740.855 ms (03:46.741)
+        build_path         | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+---------------------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ concurrent_dsm_source_avx |               0.91 |               0.772 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 1.019 ms
+=== recall delta ===
+ serial_graph_recall_at_10 | avx_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | avx_dsm_graph_recall_at_100 | recall_100_delta | avx_dsm_graph_below_exact_queries | avx_dsm_worst_exact_gap 
+---------------------------+----------------------------+--------------+----------------------------+-----------------------------+------------------+-----------------------------------+-------------------------
+                      0.91 |                       0.91 |            0 |                      0.762 |                       0.772 |       0.00999999 |                                 7 |                       2
+(1 row)
+
+Time: 0.736 ms
+          finished_at          
+-------------------------------
+ 2026-04-26 07:46:46.555842-07
+(1 row)
+
+Time: 0.191 ms
+psql:review/660-c1-source-score-avx-build-timing/artifacts/pg18_source_score_avx_concurrent_50k_recall.sql:9: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/660-c1-source-score-avx-build-timing/artifacts/pg18_source_score_avx_concurrent_50k_recall.sql:12: NOTICE:  table "tqhnsw_real_50k_reloaded_avx_queries_10" does not exist, skipping
