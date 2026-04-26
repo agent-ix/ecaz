@@ -34,6 +34,10 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use crate::manifest::{
+    ChunkManifest, ChunkedFileManifest, ARTIFACT_LAYOUT_CHUNKED, ARTIFACT_LAYOUT_SINGLE_TSV,
+};
+
 pub const DEFAULT_SOURCE_DATASET: &str =
     "Qdrant dbpedia-entities-openai3-text-embedding-3-large-1536-1M";
 pub const DEFAULT_DIM: usize = 1536;
@@ -110,6 +114,44 @@ pub struct PrepareArgs {
     /// Human-readable dataset label recorded in the manifest.
     #[arg(long, default_value_t = DEFAULT_SOURCE_DATASET.to_string())]
     pub source_dataset: String,
+    /// When set, emit chunk directories instead of single TSV files.
+    #[arg(long)]
+    pub chunk_rows: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChunkKind {
+    Corpus,
+    Queries,
+}
+
+impl ChunkKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            ChunkKind::Corpus => "corpus",
+            ChunkKind::Queries => "queries",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ChunkPlan {
+    kind: ChunkKind,
+    relative_path: String,
+    final_path: PathBuf,
+    temp_path: PathBuf,
+    spill_path: PathBuf,
+    start_row: i64,
+    rows: usize,
+    first_source_id: Option<String>,
+    last_source_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SelectedOrdinal {
+    kind: ChunkKind,
+    chunk_index: usize,
+    ordinal: i64,
 }
 
 pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
@@ -123,6 +165,11 @@ pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
     })?;
     if args.dim == 0 {
         return Err(eyre!("--dim must be >= 1"));
+    }
+    if let Some(chunk_rows) = args.chunk_rows {
+        if chunk_rows == 0 {
+            return Err(eyre!("--chunk-rows must be >= 1"));
+        }
     }
     std::fs::create_dir_all(&args.output_dir)
         .wrap_err_with(|| format!("creating {}", args.output_dir.display()))?;
@@ -140,28 +187,6 @@ pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
     let sorted_ids = load_sorted_ids(&parquet_files, &id_column, profile.needed_rows())?;
     let (corpus_source_ids, query_source_ids) = split_sorted_ids(&sorted_ids, profile);
 
-    eprintln!(
-        "[prepare] pass 2: materializing {} selected vectors",
-        corpus_source_ids.len() + query_source_ids.len()
-    );
-    let mut selected: HashSet<String> =
-        HashSet::with_capacity(corpus_source_ids.len() + query_source_ids.len());
-    selected.extend(corpus_source_ids.iter().cloned());
-    selected.extend(query_source_ids.iter().cloned());
-    let rows_by_id = load_selected_rows(
-        &parquet_files,
-        &id_column,
-        &vector_column,
-        &selected,
-        args.dim,
-    )?;
-
-    let corpus_path = args
-        .output_dir
-        .join(format!("{}_corpus.tsv", profile.prefix));
-    let queries_path = args
-        .output_dir
-        .join(format!("{}_queries.tsv", profile.prefix));
     let manifest_path = args
         .output_dir
         .join(format!("{}_manifest.json", profile.prefix));
@@ -176,8 +201,6 @@ pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
         .enumerate()
         .map(|(i, s)| ((profile.query_start() + i) as i64, s.clone()))
         .collect();
-    let corpus_manifest = write_tsv(&corpus_path, &corpus_entries, &rows_by_id)?;
-    let query_manifest = write_tsv(&queries_path, &query_entries, &rows_by_id)?;
 
     let source_parquet_abs = std::fs::canonicalize(&args.parquet)
         .unwrap_or_else(|_| args.parquet.clone())
@@ -191,26 +214,75 @@ pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
         v.sort();
         v
     };
-    let manifest = build_manifest_json(
-        profile,
-        &source_parquet_abs,
-        source_parquet_basename(&args.parquet),
-        &shard_basenames,
-        &args.source_dataset,
-        &id_column,
-        &vector_column,
-        args.dim,
-        &corpus_manifest,
-        &query_manifest,
-        &chrono::Utc::now().to_rfc3339(),
-    );
+
+    let generated_at = chrono::Utc::now().to_rfc3339();
+    let manifest = if let Some(chunk_rows) = args.chunk_rows {
+        eprintln!(
+            "[prepare] pass 2: streaming {} selected vectors into chunk spill files",
+            corpus_source_ids.len() + query_source_ids.len()
+        );
+        write_chunked_outputs(
+            &args.output_dir,
+            profile,
+            chunk_rows,
+            &parquet_files,
+            &id_column,
+            &vector_column,
+            args.dim,
+            &corpus_source_ids,
+            &query_source_ids,
+            &source_parquet_abs,
+            &source_parquet_basename(&args.parquet),
+            &shard_basenames,
+            &args.source_dataset,
+            &generated_at,
+        )?
+    } else {
+        eprintln!(
+            "[prepare] pass 2: materializing {} selected vectors",
+            corpus_source_ids.len() + query_source_ids.len()
+        );
+        let mut selected: HashSet<String> =
+            HashSet::with_capacity(corpus_source_ids.len() + query_source_ids.len());
+        selected.extend(corpus_source_ids.iter().cloned());
+        selected.extend(query_source_ids.iter().cloned());
+        let rows_by_id = load_selected_rows(
+            &parquet_files,
+            &id_column,
+            &vector_column,
+            &selected,
+            args.dim,
+        )?;
+
+        let corpus_path = args
+            .output_dir
+            .join(format!("{}_corpus.tsv", profile.prefix));
+        let queries_path = args
+            .output_dir
+            .join(format!("{}_queries.tsv", profile.prefix));
+        let corpus_manifest = write_tsv(&corpus_path, &corpus_entries, &rows_by_id)?;
+        let query_manifest = write_tsv(&queries_path, &query_entries, &rows_by_id)?;
+        eprintln!("[prepare] wrote {}", corpus_path.display());
+        eprintln!("[prepare] wrote {}", queries_path.display());
+        build_manifest_json(
+            profile,
+            &source_parquet_abs,
+            source_parquet_basename(&args.parquet),
+            &shard_basenames,
+            &args.source_dataset,
+            &id_column,
+            &vector_column,
+            args.dim,
+            &corpus_manifest,
+            &query_manifest,
+            &generated_at,
+        )
+    };
     let mut handle = File::create(&manifest_path)
         .wrap_err_with(|| format!("creating {}", manifest_path.display()))?;
     serde_json::to_writer_pretty(&mut handle, &manifest)?;
     handle.write_all(b"\n")?;
 
-    eprintln!("[prepare] wrote {}", corpus_path.display());
-    eprintln!("[prepare] wrote {}", queries_path.display());
     eprintln!("[prepare] wrote {}", manifest_path.display());
     eprintln!(
         "[prepare] profile={} corpus_rows={} query_rows={} sort_key='{} ascending lexicographic'",
@@ -656,6 +728,304 @@ pub fn write_tsv(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+fn write_chunked_outputs(
+    output_dir: &Path,
+    profile: &SubsetProfile,
+    chunk_rows: usize,
+    parquet_files: &[PathBuf],
+    id_column: &str,
+    vector_column: &str,
+    dim: usize,
+    corpus_source_ids: &[String],
+    query_source_ids: &[String],
+    source_parquet_abs: &str,
+    source_parquet_basename: &str,
+    shard_basenames: &[String],
+    source_dataset: &str,
+    generated_at_utc: &str,
+) -> Result<Value> {
+    let corpus_plans = plan_chunks(
+        output_dir,
+        ChunkKind::Corpus,
+        0,
+        corpus_source_ids,
+        chunk_rows,
+    )?;
+    let query_plans = plan_chunks(
+        output_dir,
+        ChunkKind::Queries,
+        profile.query_start() as i64,
+        query_source_ids,
+        chunk_rows,
+    )?;
+
+    let total_selected = corpus_source_ids.len() + query_source_ids.len();
+    let mut selected: HashMap<String, SelectedOrdinal> = HashMap::with_capacity(total_selected);
+    for (idx, source_id) in corpus_source_ids.iter().enumerate() {
+        selected.insert(
+            source_id.clone(),
+            SelectedOrdinal {
+                kind: ChunkKind::Corpus,
+                chunk_index: idx / chunk_rows,
+                ordinal: idx as i64,
+            },
+        );
+    }
+    for (idx, source_id) in query_source_ids.iter().enumerate() {
+        selected.insert(
+            source_id.clone(),
+            SelectedOrdinal {
+                kind: ChunkKind::Queries,
+                chunk_index: idx / chunk_rows,
+                ordinal: (profile.query_start() + idx) as i64,
+            },
+        );
+    }
+
+    let mut seen: HashSet<String> = HashSet::with_capacity(total_selected);
+    stream_selected_rows_to_chunk_spills(
+        parquet_files,
+        id_column,
+        vector_column,
+        dim,
+        &selected,
+        &mut seen,
+        &corpus_plans,
+        &query_plans,
+    )?;
+    if seen.len() != total_selected {
+        return Err(eyre!(
+            "failed to recover {} selected ids from parquet scan",
+            total_selected - seen.len()
+        ));
+    }
+
+    let corpus_manifest = finalize_chunk_group(&corpus_plans)?;
+    let query_manifest = finalize_chunk_group(&query_plans)?;
+    Ok(build_chunked_manifest_json(
+        profile,
+        chunk_rows,
+        source_parquet_abs,
+        source_parquet_basename.to_owned(),
+        shard_basenames,
+        source_dataset,
+        id_column,
+        vector_column,
+        dim,
+        &corpus_manifest,
+        &query_manifest,
+        generated_at_utc,
+    ))
+}
+
+fn plan_chunks(
+    output_dir: &Path,
+    kind: ChunkKind,
+    first_row: i64,
+    source_ids: &[String],
+    chunk_rows: usize,
+) -> Result<Vec<ChunkPlan>> {
+    let dir = output_dir.join(kind.as_str());
+    std::fs::create_dir_all(&dir).wrap_err_with(|| format!("creating {}", dir.display()))?;
+    let mut plans = Vec::new();
+    for (chunk_index, slice) in source_ids.chunks(chunk_rows).enumerate() {
+        let basename = format!("{}-{chunk_index:05}.tsv", kind.as_str());
+        let relative_path = format!("{}/{}", kind.as_str(), basename);
+        let final_path = dir.join(&basename);
+        let temp_path = dir.join(format!("{basename}.tmp"));
+        let spill_path = dir.join(format!("{basename}.spill.tmp"));
+        let start_row = first_row + (chunk_index * chunk_rows) as i64;
+        plans.push(ChunkPlan {
+            kind,
+            relative_path,
+            final_path,
+            temp_path,
+            spill_path,
+            start_row,
+            rows: slice.len(),
+            first_source_id: slice.first().cloned(),
+            last_source_id: slice.last().cloned(),
+        });
+    }
+    Ok(plans)
+}
+
+fn stream_selected_rows_to_chunk_spills(
+    parquet_files: &[PathBuf],
+    id_column: &str,
+    vector_column: &str,
+    dim: usize,
+    selected: &HashMap<String, SelectedOrdinal>,
+    seen: &mut HashSet<String>,
+    corpus_plans: &[ChunkPlan],
+    query_plans: &[ChunkPlan],
+) -> Result<()> {
+    let mut corpus_writers = create_spill_writers(corpus_plans)?;
+    let mut query_writers = create_spill_writers(query_plans)?;
+    for file in parquet_files {
+        let f = File::open(file)?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(f)?;
+        let schema = builder.schema();
+        let id_idx = schema.index_of(id_column).map_err(|_| {
+            eyre!(
+                "id column {id_column:?} missing from shard {}",
+                file.display()
+            )
+        })?;
+        let vec_idx = schema.index_of(vector_column).map_err(|_| {
+            eyre!(
+                "vector column {vector_column:?} missing from shard {}",
+                file.display()
+            )
+        })?;
+        let mask = ProjectionMask::roots(builder.parquet_schema(), [id_idx, vec_idx]);
+        let reader = builder
+            .with_projection(mask)
+            .with_batch_size(4_096)
+            .build()?;
+        for batch in reader {
+            let batch = batch?;
+            let ids = batch.column(0);
+            let vecs = batch.column(1);
+            for i in 0..ids.len() {
+                let id = match read_string_at(ids, i) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let Some(meta) = selected.get(&id).copied() else {
+                    continue;
+                };
+                if !seen.insert(id.clone()) {
+                    return Err(eyre!(
+                        "duplicate selected id {id} encountered during parquet scan"
+                    ));
+                }
+                let values = read_vector_at(vecs, i, dim, vector_column, &id)?;
+                let json = canonical_json_array(&values)?;
+                let line = format!("{}\t{}\n", meta.ordinal, json);
+                match meta.kind {
+                    ChunkKind::Corpus => {
+                        corpus_writers[meta.chunk_index].write_all(line.as_bytes())?
+                    }
+                    ChunkKind::Queries => {
+                        query_writers[meta.chunk_index].write_all(line.as_bytes())?
+                    }
+                }
+            }
+        }
+    }
+    flush_writers(&mut corpus_writers)?;
+    flush_writers(&mut query_writers)?;
+    Ok(())
+}
+
+fn create_spill_writers(plans: &[ChunkPlan]) -> Result<Vec<BufWriter<File>>> {
+    let mut writers = Vec::with_capacity(plans.len());
+    for plan in plans {
+        let file = File::create(&plan.spill_path)
+            .wrap_err_with(|| format!("creating {}", plan.spill_path.display()))?;
+        writers.push(BufWriter::new(file));
+    }
+    Ok(writers)
+}
+
+fn flush_writers(writers: &mut [BufWriter<File>]) -> Result<()> {
+    for writer in writers {
+        writer.flush()?;
+    }
+    Ok(())
+}
+
+fn finalize_chunk_group(plans: &[ChunkPlan]) -> Result<ChunkedFileManifest> {
+    let mut chunks = Vec::with_capacity(plans.len());
+    for plan in plans {
+        chunks.push(finalize_chunk(plan)?);
+    }
+    Ok(ChunkedFileManifest {
+        rows: plans.iter().map(|p| p.rows).sum(),
+        first_id: plans.first().map(|p| p.start_row),
+        last_id: plans.last().map(|p| p.start_row + p.rows as i64 - 1),
+        first_source_id: plans.first().and_then(|p| p.first_source_id.clone()),
+        last_source_id: plans.last().and_then(|p| p.last_source_id.clone()),
+        chunks,
+    })
+}
+
+fn finalize_chunk(plan: &ChunkPlan) -> Result<ChunkManifest> {
+    let raw = std::fs::read_to_string(&plan.spill_path)
+        .wrap_err_with(|| format!("reading {}", plan.spill_path.display()))?;
+    let mut rows = Vec::with_capacity(plan.rows);
+    for (line_no, line) in raw.lines().enumerate() {
+        let (ordinal_str, json) = line.split_once('\t').ok_or_else(|| {
+            eyre!(
+                "{}:{}: expected '<ordinal>\\t<json_array>'",
+                plan.spill_path.display(),
+                line_no + 1
+            )
+        })?;
+        let ordinal: i64 = ordinal_str.parse().map_err(|_| {
+            eyre!(
+                "{}:{}: invalid ordinal {:?}",
+                plan.spill_path.display(),
+                line_no + 1,
+                ordinal_str
+            )
+        })?;
+        rows.push((ordinal, json.to_owned()));
+    }
+    if rows.len() != plan.rows {
+        return Err(eyre!(
+            "{}: expected {} rows, found {}",
+            plan.spill_path.display(),
+            plan.rows,
+            rows.len()
+        ));
+    }
+    rows.sort_by_key(|(ordinal, _)| *ordinal);
+
+    let file = File::create(&plan.temp_path)
+        .wrap_err_with(|| format!("creating {}", plan.temp_path.display()))?;
+    let mut writer = BufWriter::new(file);
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    for (offset, (ordinal, json)) in rows.into_iter().enumerate() {
+        let expected = plan.start_row + offset as i64;
+        if ordinal != expected {
+            return Err(eyre!(
+                "{}: expected ordinal {} at offset {}, found {}",
+                plan.spill_path.display(),
+                expected,
+                offset,
+                ordinal
+            ));
+        }
+        let line = format!("{ordinal}\t{json}\n");
+        bytes += line.len() as u64;
+        hasher.update(line.as_bytes());
+        writer.write_all(line.as_bytes())?;
+    }
+    writer.flush()?;
+    std::fs::rename(&plan.temp_path, &plan.final_path).wrap_err_with(|| {
+        format!(
+            "renaming {} to {}",
+            plan.temp_path.display(),
+            plan.final_path.display()
+        )
+    })?;
+    let _ = std::fs::remove_file(&plan.spill_path);
+    eprintln!("[prepare] wrote {}", plan.final_path.display());
+    Ok(ChunkManifest {
+        path: plan.relative_path.clone(),
+        kind: plan.kind.as_str().to_owned(),
+        start_row: plan.start_row,
+        end_row: plan.start_row + plan.rows as i64 - 1,
+        rows: plan.rows,
+        byte_length: bytes,
+        sha256: hex::encode(hasher.finalize()),
+    })
+}
+
 /// Basename of the user-provided parquet path. Mirrors the Python helper:
 /// for a trailing-slash directory input `/a/b/`, returns `b` (not `""`).
 pub fn source_parquet_basename(path: &Path) -> String {
@@ -683,6 +1053,7 @@ pub fn build_manifest_json(
 ) -> Value {
     json!({
         "manifest_version": 1,
+        "artifact_layout": ARTIFACT_LAYOUT_SINGLE_TSV,
         "prefix": profile.prefix,
         "source_dataset": source_dataset,
         "source_parquet": source_parquet_abs,
@@ -701,6 +1072,48 @@ pub fn build_manifest_json(
         },
         "corpus": file_manifest_json(corpus),
         "queries": file_manifest_json(queries),
+        "generated_at_utc": generated_at_utc,
+        "generated_by": "ecaz corpus prepare",
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_chunked_manifest_json(
+    profile: &SubsetProfile,
+    chunk_rows: usize,
+    source_parquet_abs: &str,
+    source_parquet_basename: String,
+    shard_basenames: &[String],
+    source_dataset: &str,
+    id_column: &str,
+    vector_column: &str,
+    dim: usize,
+    corpus: &ChunkedFileManifest,
+    queries: &ChunkedFileManifest,
+    generated_at_utc: &str,
+) -> Value {
+    json!({
+        "manifest_version": 1,
+        "artifact_layout": ARTIFACT_LAYOUT_CHUNKED,
+        "prefix": profile.prefix,
+        "source_dataset": source_dataset,
+        "source_parquet": source_parquet_abs,
+        "source_parquet_basename": source_parquet_basename,
+        "source_parquet_shard_basenames": shard_basenames,
+        "id_column": id_column,
+        "vector_column": vector_column,
+        "dimension": dim,
+        "chunk_rows": chunk_rows,
+        "selection_rule": {
+            "sort_key": format!("{id_column} ascending lexicographic"),
+            "corpus_start": 0,
+            "corpus_rows": profile.corpus_rows,
+            "query_start": profile.query_start(),
+            "query_rows": profile.query_rows,
+            "output_id_mode": "global_sorted_row_index",
+        },
+        "corpus": corpus,
+        "queries": queries,
         "generated_at_utc": generated_at_utc,
         "generated_by": "ecaz corpus prepare",
     })
@@ -967,5 +1380,41 @@ mod tests {
         );
         assert_eq!(v["corpus"]["rows"], 5);
         assert_eq!(v["queries"]["first_source_id"], "s5");
+    }
+
+    #[test]
+    fn plan_chunks_uses_relative_paths_and_global_row_ranges() {
+        let dir = TempDir::new().unwrap();
+        let ids = vec![
+            "s0".to_owned(),
+            "s1".to_owned(),
+            "s2".to_owned(),
+            "s3".to_owned(),
+            "s4".to_owned(),
+        ];
+        let plans = plan_chunks(dir.path(), ChunkKind::Queries, 10, &ids, 2).unwrap();
+        assert_eq!(plans.len(), 3);
+        assert_eq!(plans[0].relative_path, "queries/queries-00000.tsv");
+        assert_eq!(plans[0].start_row, 10);
+        assert_eq!(plans[1].start_row, 12);
+        assert_eq!(plans[2].rows, 1);
+        assert_eq!(plans[2].last_source_id.as_deref(), Some("s4"));
+    }
+
+    #[test]
+    fn finalize_chunk_group_sorts_spill_rows_and_records_checksums() {
+        let dir = TempDir::new().unwrap();
+        let ids = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
+        let plans = plan_chunks(dir.path(), ChunkKind::Corpus, 0, &ids, 2).unwrap();
+        std::fs::write(&plans[0].spill_path, "1\t[2,2]\n0\t[1,1]\n").unwrap();
+        std::fs::write(&plans[1].spill_path, "2\t[3,3]\n").unwrap();
+        let manifest = finalize_chunk_group(&plans).unwrap();
+        assert_eq!(manifest.rows, 3);
+        assert_eq!(manifest.chunks.len(), 2);
+        let first_chunk = dir.path().join("corpus/corpus-00000.tsv");
+        let body = std::fs::read_to_string(first_chunk).unwrap();
+        assert_eq!(body, "0\t[1,1]\n1\t[2,2]\n");
+        assert_eq!(manifest.chunks[0].byte_length as usize, body.len());
+        assert_eq!(manifest.last_source_id.as_deref(), Some("c"));
     }
 }

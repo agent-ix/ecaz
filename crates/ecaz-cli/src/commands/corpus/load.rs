@@ -15,9 +15,10 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use futures::SinkExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio_postgres::Client;
+use tokio_postgres::{Client, Transaction};
 
 use crate::manifest;
 use crate::profiles::{self, IndexProfile};
@@ -41,11 +42,11 @@ pub struct LoadArgs {
 
     /// Path to <basename>_corpus.tsv (one `id\t<json_array>` per line).
     #[arg(long)]
-    pub corpus_file: PathBuf,
+    pub corpus_file: Option<PathBuf>,
 
     /// Path to <basename>_queries.tsv (one `id\t<json_array>` per line).
     #[arg(long)]
-    pub queries_file: PathBuf,
+    pub queries_file: Option<PathBuf>,
 
     /// Vector dimensionality.
     #[arg(long, default_value_t = 1536)]
@@ -88,11 +89,42 @@ pub struct LoadArgs {
     /// Continue past manifest verification failures with a warning.
     #[arg(long)]
     pub allow_manifest_mismatch: bool,
+
+    /// Force chunked-manifest loading via `--manifest-file`.
+    #[arg(long)]
+    pub chunked: bool,
 }
 
 struct IndexJob {
     name: String,
     reloptions: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoadKind {
+    Corpus,
+    Queries,
+}
+
+impl LoadKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            LoadKind::Corpus => "corpus",
+            LoadKind::Queries => "queries",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ChunkStateRow {
+    chunk_path: String,
+    chunk_sha256: String,
+    row_count: i64,
+}
+
+struct LoadedChunkedManifest {
+    manifest: manifest::ChunkedManifest,
+    base_dir: PathBuf,
 }
 
 pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
@@ -127,14 +159,61 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         args.storage_format.as_deref(),
         &args.reloptions,
     );
+    let chunked_manifest = load_chunked_manifest_if_requested(
+        args.manifest_file.as_deref(),
+        args.chunked,
+        &args.prefix,
+        args.dim,
+    )?;
+    if args.chunked && chunked_manifest.is_none() {
+        return Err(eyre!(
+            "--chunked requires a chunked manifest passed via --manifest-file"
+        ));
+    }
+
+    if let Some(chunked_manifest) = chunked_manifest {
+        let mut client = psql::connect(database).await?;
+        let corpus_table = format!("{}_corpus", args.prefix);
+        let queries_table = format!("{}_queries", args.prefix);
+        let corpus_loaded = ensure_chunked_corpus_table(
+            &mut client,
+            &corpus_table,
+            &chunked_manifest,
+            args.bits,
+            args.seed,
+            profile,
+        )
+        .await?;
+        let queries_loaded =
+            ensure_chunked_queries_table(&mut client, &queries_table, &chunked_manifest).await?;
+        for job in &index_jobs {
+            ensure_index(&client, &corpus_table, job, profile).await?;
+        }
+        print_summary(
+            profile,
+            &corpus_table,
+            corpus_loaded,
+            &queries_table,
+            queries_loaded,
+            &index_jobs,
+        );
+        return Ok(());
+    }
+
+    let corpus_file = args.corpus_file.as_deref().ok_or_else(|| {
+        eyre!("--corpus-file is required unless --manifest-file points to a chunked manifest")
+    })?;
+    let queries_file = args.queries_file.as_deref().ok_or_else(|| {
+        eyre!("--queries-file is required unless --manifest-file points to a chunked manifest")
+    })?;
 
     // Inspect inputs first: row counts drive progress bars and manifest
     // verification, and we want to fail fast on malformed files before we
     // open any transactions.
-    eprintln!("[loader] inspecting {}", args.corpus_file.display());
-    let corpus_stats = tsv::inspect(&args.corpus_file, args.dim)?;
-    eprintln!("[loader] inspecting {}", args.queries_file.display());
-    let query_stats = tsv::inspect(&args.queries_file, args.dim)?;
+    eprintln!("[loader] inspecting {}", corpus_file.display());
+    let corpus_stats = tsv::inspect(corpus_file, args.dim)?;
+    eprintln!("[loader] inspecting {}", queries_file.display());
+    let query_stats = tsv::inspect(queries_file, args.dim)?;
 
     eprintln!(
         "[loader] corpus: {} rows, sha256={}  queries: {} rows, sha256={}",
@@ -143,8 +222,8 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
 
     verify_manifest_if_present(
         args.manifest_file.as_deref(),
-        &args.corpus_file,
-        &args.queries_file,
+        corpus_file,
+        queries_file,
         &args.prefix,
         args.dim,
         &corpus_stats,
@@ -157,7 +236,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     let corpus_loaded = ensure_corpus_table(
         &client,
         &corpus_table,
-        &args.corpus_file,
+        corpus_file,
         args.dim,
         args.bits,
         args.seed,
@@ -168,7 +247,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     let queries_loaded = ensure_queries_table(
         &client,
         &queries_table,
-        &args.queries_file,
+        queries_file,
         args.dim,
         query_stats.rows,
     )
@@ -187,6 +266,46 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         &index_jobs,
     );
     Ok(())
+}
+
+fn load_chunked_manifest_if_requested(
+    path: Option<&Path>,
+    force_chunked: bool,
+    prefix: &str,
+    dim: usize,
+) -> Result<Option<LoadedChunkedManifest>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let raw = std::fs::read_to_string(path)
+        .wrap_err_with(|| format!("reading manifest {}", path.display()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw)
+        .wrap_err_with(|| format!("parsing manifest {}", path.display()))?;
+    if !force_chunked && !manifest::is_chunked_manifest(&parsed) {
+        return Ok(None);
+    }
+    let chunked = manifest::parse_chunked_manifest(&parsed)?;
+    if chunked.prefix != prefix {
+        return Err(eyre!(
+            "manifest prefix {:?} does not match --prefix {:?}",
+            chunked.prefix,
+            prefix
+        ));
+    }
+    if chunked.dimension != dim {
+        return Err(eyre!(
+            "manifest dimension {} does not match --dim {}",
+            chunked.dimension,
+            dim
+        ));
+    }
+    Ok(Some(LoadedChunkedManifest {
+        manifest: chunked,
+        base_dir: path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(".")),
+    }))
 }
 
 /// Verify a sibling manifest if one was requested or auto-discovered.
@@ -312,6 +431,338 @@ fn plan_index_jobs(
 fn dedup_preserve_order(values: Vec<i32>) -> Vec<i32> {
     let mut seen = std::collections::HashSet::new();
     values.into_iter().filter(|v| seen.insert(*v)).collect()
+}
+
+async fn ensure_chunked_corpus_table(
+    client: &mut Client,
+    table: &str,
+    input: &LoadedChunkedManifest,
+    bits: i32,
+    seed: i64,
+    profile: &IndexProfile,
+) -> Result<usize> {
+    ensure_chunked_state_table(client).await?;
+    ensure_chunked_target_table(client, table, true, profile).await?;
+    load_chunk_set(
+        client,
+        &input.manifest.prefix,
+        table,
+        LoadKind::Corpus,
+        &input.manifest.corpus,
+        input,
+        Some((profile, bits, seed)),
+    )
+    .await
+}
+
+async fn ensure_chunked_queries_table(
+    client: &mut Client,
+    table: &str,
+    input: &LoadedChunkedManifest,
+) -> Result<usize> {
+    ensure_chunked_state_table(client).await?;
+    ensure_chunked_target_table(client, table, false, &profiles::EC_HNSW).await?;
+    load_chunk_set(
+        client,
+        &input.manifest.prefix,
+        table,
+        LoadKind::Queries,
+        &input.manifest.queries,
+        input,
+        None,
+    )
+    .await
+}
+
+async fn ensure_chunked_state_table(client: &Client) -> Result<()> {
+    client
+        .batch_execute(
+            "CREATE TABLE IF NOT EXISTS ecaz_corpus_load_state (
+                prefix text NOT NULL,
+                chunk_kind text NOT NULL,
+                chunk_path text NOT NULL,
+                chunk_sha256 text NOT NULL,
+                row_count bigint NOT NULL,
+                loaded_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (prefix, chunk_kind, chunk_path)
+            )",
+        )
+        .await
+        .wrap_err("creating ecaz_corpus_load_state")?;
+    Ok(())
+}
+
+async fn ensure_chunked_target_table(
+    client: &Client,
+    table: &str,
+    is_corpus: bool,
+    profile: &IndexProfile,
+) -> Result<()> {
+    if psql::relation_exists(client, table, 'r').await? {
+        return Ok(());
+    }
+    let ddl = if is_corpus {
+        format!(
+            "CREATE TABLE {table} (
+                id        bigint PRIMARY KEY,
+                source    real[] NOT NULL,
+                embedding {embedding} NOT NULL
+            )",
+            embedding = profile.embedding_type
+        )
+    } else {
+        format!(
+            "CREATE TABLE {table} (
+                id     bigint PRIMARY KEY,
+                source real[] NOT NULL
+            )"
+        )
+    };
+    client
+        .batch_execute(&ddl)
+        .await
+        .wrap_err_with(|| format!("creating table {table}"))?;
+    Ok(())
+}
+
+async fn load_chunk_set(
+    client: &mut Client,
+    prefix: &str,
+    table: &str,
+    kind: LoadKind,
+    section: &manifest::ChunkedFileManifest,
+    input: &LoadedChunkedManifest,
+    encode: Option<(&IndexProfile, i32, i64)>,
+) -> Result<usize> {
+    let existing_rows = if psql::relation_exists(client, table, 'r').await? {
+        psql::row_count(client, table).await? as usize
+    } else {
+        0
+    };
+    let state_rows = fetch_chunk_state_rows(client, prefix, kind).await?;
+    validate_existing_chunk_state(table, kind, section, existing_rows, &state_rows)?;
+
+    let state_map: HashMap<String, ChunkStateRow> = state_rows
+        .into_iter()
+        .map(|row| (row.chunk_path.clone(), row))
+        .collect();
+
+    for chunk in &section.chunks {
+        let chunk_path = input.base_dir.join(&chunk.path);
+        verify_chunk_file(&chunk_path, chunk, input.manifest.dimension)?;
+        if let Some(existing) = state_map.get(&chunk.path) {
+            if existing.chunk_sha256 != chunk.sha256 || existing.row_count != chunk.rows as i64 {
+                return Err(eyre!(
+                    "{table}: state row for {} does not match manifest",
+                    chunk.path
+                ));
+            }
+            eprintln!(
+                "[loader] skipping {} chunk {} (already loaded)",
+                kind.as_str(),
+                chunk.path
+            );
+            continue;
+        }
+        load_one_chunk(
+            client,
+            prefix,
+            table,
+            kind,
+            chunk,
+            &chunk_path,
+            input.manifest.dimension,
+            encode,
+        )
+        .await?;
+    }
+
+    let final_rows = psql::row_count(client, table).await? as usize;
+    if final_rows != section.rows {
+        return Err(eyre!(
+            "{table}: loaded {final_rows} rows but manifest expects {}",
+            section.rows
+        ));
+    }
+    Ok(final_rows)
+}
+
+async fn fetch_chunk_state_rows(
+    client: &Client,
+    prefix: &str,
+    kind: LoadKind,
+) -> Result<Vec<ChunkStateRow>> {
+    let rows = client
+        .query(
+            "SELECT chunk_path, chunk_sha256, row_count
+             FROM ecaz_corpus_load_state
+             WHERE prefix = $1 AND chunk_kind = $2
+             ORDER BY chunk_path",
+            &[&prefix, &kind.as_str()],
+        )
+        .await
+        .wrap_err("reading ecaz_corpus_load_state")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| ChunkStateRow {
+            chunk_path: row.get(0),
+            chunk_sha256: row.get(1),
+            row_count: row.get(2),
+        })
+        .collect())
+}
+
+fn validate_existing_chunk_state(
+    table: &str,
+    kind: LoadKind,
+    section: &manifest::ChunkedFileManifest,
+    existing_rows: usize,
+    state_rows: &[ChunkStateRow],
+) -> Result<()> {
+    if existing_rows == 0 && state_rows.is_empty() {
+        return Ok(());
+    }
+    if existing_rows == 0 && !state_rows.is_empty() {
+        return Err(eyre!(
+            "{table}: found {} {} state row(s) but table is empty; cleanup required",
+            state_rows.len(),
+            kind.as_str()
+        ));
+    }
+    if existing_rows > 0 && state_rows.is_empty() {
+        return Err(eyre!(
+            "{table}: table has {existing_rows} rows but no {} state rows; cleanup required",
+            kind.as_str()
+        ));
+    }
+    let expected: HashMap<&str, (&str, i64)> = section
+        .chunks
+        .iter()
+        .map(|chunk| {
+            (
+                chunk.path.as_str(),
+                (chunk.sha256.as_str(), chunk.rows as i64),
+            )
+        })
+        .collect();
+    let mut state_sum = 0usize;
+    for row in state_rows {
+        let Some((sha, rows)) = expected.get(row.chunk_path.as_str()) else {
+            return Err(eyre!(
+                "{table}: unexpected {} state row for {}",
+                kind.as_str(),
+                row.chunk_path
+            ));
+        };
+        if row.chunk_sha256 != *sha || row.row_count != *rows {
+            return Err(eyre!(
+                "{table}: {} state row for {} does not match manifest",
+                kind.as_str(),
+                row.chunk_path
+            ));
+        }
+        state_sum += row.row_count as usize;
+    }
+    if existing_rows != state_sum {
+        return Err(eyre!(
+            "{table}: table has {existing_rows} rows but {} state rows sum to {state_sum}",
+            kind.as_str()
+        ));
+    }
+    Ok(())
+}
+
+fn verify_chunk_file(path: &Path, chunk: &manifest::ChunkManifest, dim: usize) -> Result<()> {
+    let stats = tsv::inspect(path, dim)?;
+    let byte_length = std::fs::metadata(path)
+        .wrap_err_with(|| format!("stat {}", path.display()))?
+        .len();
+    if stats.rows != chunk.rows {
+        return Err(eyre!(
+            "{}: manifest rows={} but file has {}",
+            path.display(),
+            chunk.rows,
+            stats.rows
+        ));
+    }
+    if stats.sha256_hex != chunk.sha256 {
+        return Err(eyre!(
+            "{}: manifest sha256={} but file has {}",
+            path.display(),
+            chunk.sha256,
+            stats.sha256_hex
+        ));
+    }
+    if byte_length != chunk.byte_length {
+        return Err(eyre!(
+            "{}: manifest byte_length={} but file has {}",
+            path.display(),
+            chunk.byte_length,
+            byte_length
+        ));
+    }
+    Ok(())
+}
+
+async fn load_one_chunk(
+    client: &mut Client,
+    prefix: &str,
+    table: &str,
+    kind: LoadKind,
+    chunk: &manifest::ChunkManifest,
+    chunk_path: &Path,
+    dim: usize,
+    encode: Option<(&IndexProfile, i32, i64)>,
+) -> Result<()> {
+    let tx = client.transaction().await?;
+    tx.batch_execute(
+        "CREATE TEMP TABLE ecaz_chunk_stage (
+            id bigint NOT NULL,
+            source real[] NOT NULL
+        ) ON COMMIT DROP",
+    )
+    .await?;
+    copy_rows_to_stage(&tx, chunk_path, dim, chunk.rows, kind.as_str()).await?;
+    match encode {
+        Some((profile, bits, seed)) => {
+            tx.batch_execute(&format!(
+                "INSERT INTO {table} (id, source, embedding)
+                 SELECT id, source, {fn_name}(source, {bits}, {seed})
+                 FROM ecaz_chunk_stage
+                 ORDER BY id",
+                fn_name = profile.encoder_function
+            ))
+            .await
+            .wrap_err_with(|| format!("inserting corpus chunk {}", chunk.path))?;
+        }
+        None => {
+            tx.batch_execute(&format!(
+                "INSERT INTO {table} (id, source)
+                 SELECT id, source
+                 FROM ecaz_chunk_stage
+                 ORDER BY id"
+            ))
+            .await
+            .wrap_err_with(|| format!("inserting query chunk {}", chunk.path))?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO ecaz_corpus_load_state
+         (prefix, chunk_kind, chunk_path, chunk_sha256, row_count)
+         VALUES ($1, $2, $3, $4, $5)",
+        &[
+            &prefix,
+            &kind.as_str(),
+            &chunk.path,
+            &chunk.sha256,
+            &(chunk.rows as i64),
+        ],
+    )
+    .await
+    .wrap_err_with(|| format!("recording chunk state for {}", chunk.path))?;
+    tx.commit().await?;
+    eprintln!("[loader] loaded {} chunk {}", kind.as_str(), chunk.path);
+    Ok(())
 }
 
 async fn ensure_corpus_table(
@@ -451,6 +902,62 @@ async fn copy_rows_from_tsv(
         .await
         .wrap_err_with(|| format!("COPY finish failed for {table}"))?;
     bar.finish_with_message(format!("loaded {finished} {label} rows into {table}"));
+    Ok(())
+}
+
+async fn copy_rows_to_stage(
+    tx: &Transaction<'_>,
+    path: &Path,
+    dim: usize,
+    expected_rows: usize,
+    label: &str,
+) -> Result<()> {
+    let sink = tx
+        .copy_in::<_, bytes::Bytes>(
+            "COPY ecaz_chunk_stage (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t')",
+        )
+        .await
+        .wrap_err("opening COPY stream for ecaz_chunk_stage")?;
+    futures::pin_mut!(sink);
+
+    let bar = ProgressBar::new(expected_rows as u64);
+    bar.set_style(
+        ProgressStyle::with_template(
+            "[loader] {msg} {wide_bar} {human_pos}/{human_len} ({per_sec}, eta {eta})",
+        )
+        .unwrap(),
+    );
+    bar.set_message(format!("staging {label} chunk {}", path.display()));
+    bar.enable_steady_tick(Duration::from_millis(250));
+
+    let mut buf = BytesMut::with_capacity(COPY_CHUNK_BYTES + 4096);
+    let mut sent = 0u64;
+    for row in tsv::iter_rows(path, dim)? {
+        let row = row?;
+        use std::io::Write as _;
+        let mut w = (&mut buf).writer();
+        write!(w, "{}\t", row.id).expect("bytesmut writer is infallible");
+        let lit = tsv::format_real_array_literal(&row.values);
+        buf.put_slice(lit.as_bytes());
+        buf.put_u8(b'\n');
+        sent += 1;
+        if buf.len() >= COPY_CHUNK_BYTES {
+            sink.send(buf.split().freeze())
+                .await
+                .wrap_err("COPY send failed for ecaz_chunk_stage")?;
+            bar.set_position(sent);
+        }
+    }
+    if !buf.is_empty() {
+        sink.send(buf.split().freeze())
+            .await
+            .wrap_err("COPY send failed for ecaz_chunk_stage")?;
+    }
+    let finished = sink
+        .finish()
+        .await
+        .wrap_err("COPY finish failed for ecaz_chunk_stage")?;
+    bar.finish_with_message(format!("staged {finished} rows from {}", path.display()));
     Ok(())
 }
 
@@ -752,5 +1259,90 @@ mod tests {
             true,
         );
         assert!(lenient.is_ok());
+    }
+
+    fn chunk(path: &str, kind: &str, start_row: i64, rows: usize) -> manifest::ChunkManifest {
+        manifest::ChunkManifest {
+            path: path.to_owned(),
+            kind: kind.to_owned(),
+            start_row,
+            end_row: start_row + rows as i64 - 1,
+            rows,
+            byte_length: 10,
+            sha256: format!("{kind}-{start_row}"),
+        }
+    }
+
+    fn chunked_section(kind: &str) -> manifest::ChunkedFileManifest {
+        let chunks = if kind == "corpus" {
+            vec![
+                chunk("corpus/corpus-00000.tsv", kind, 0, 2),
+                chunk("corpus/corpus-00001.tsv", kind, 2, 1),
+            ]
+        } else {
+            vec![chunk("queries/queries-00000.tsv", kind, 3, 1)]
+        };
+        manifest::ChunkedFileManifest {
+            rows: chunks.iter().map(|c| c.rows).sum(),
+            first_id: chunks.first().map(|c| c.start_row),
+            last_id: chunks.last().map(|c| c.end_row),
+            first_source_id: Some("a".into()),
+            last_source_id: Some("z".into()),
+            chunks,
+        }
+    }
+
+    #[test]
+    fn chunk_state_validation_accepts_matching_partial_resume() {
+        let section = chunked_section("corpus");
+        let state = vec![ChunkStateRow {
+            chunk_path: "corpus/corpus-00000.tsv".into(),
+            chunk_sha256: "corpus-0".into(),
+            row_count: 2,
+        }];
+        validate_existing_chunk_state("t_corpus", LoadKind::Corpus, &section, 2, &state).unwrap();
+    }
+
+    #[test]
+    fn chunk_state_validation_rejects_rows_without_state() {
+        let section = chunked_section("corpus");
+        let err = validate_existing_chunk_state("t_corpus", LoadKind::Corpus, &section, 2, &[])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no corpus state rows"), "err: {err}");
+    }
+
+    #[test]
+    fn load_chunked_manifest_detects_chunked_layout() {
+        let td = TempDir::new().unwrap();
+        let manifest_path = td.path().join("x_manifest.json");
+        std::fs::write(
+            &manifest_path,
+            serde_json::json!({
+                "manifest_version": 1,
+                "artifact_layout": "chunked",
+                "prefix": "x",
+                "source_dataset": "dbpedia",
+                "source_parquet": "/tmp/dbpedia",
+                "source_parquet_basename": "dbpedia",
+                "source_parquet_shard_basenames": ["part-0.parquet"],
+                "id_column": "_id",
+                "vector_column": "embedding",
+                "dimension": 4,
+                "chunk_rows": 2,
+                "selection_rule": {},
+                "corpus": chunked_section("corpus"),
+                "queries": chunked_section("queries"),
+                "generated_at_utc": "2026-04-26T00:00:00Z",
+                "generated_by": "ecaz corpus prepare"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let loaded = load_chunked_manifest_if_requested(Some(&manifest_path), false, "x", 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.base_dir, td.path());
+        assert_eq!(loaded.manifest.corpus.chunks.len(), 2);
     }
 }

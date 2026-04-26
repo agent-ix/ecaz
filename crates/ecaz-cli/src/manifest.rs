@@ -27,6 +27,8 @@
 
 use std::path::{Path, PathBuf};
 
+use color_eyre::eyre::{eyre, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::tsv::VectorFileStats;
@@ -35,6 +37,49 @@ const CORPUS_SUFFIX: &str = "_corpus.tsv";
 const QUERIES_SUFFIX: &str = "_queries.tsv";
 const MANIFEST_SUFFIX: &str = "_manifest.json";
 pub const EXPECTED_MANIFEST_VERSION: i64 = 1;
+pub const ARTIFACT_LAYOUT_SINGLE_TSV: &str = "single_tsv";
+pub const ARTIFACT_LAYOUT_CHUNKED: &str = "chunked";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkManifest {
+    pub path: String,
+    pub kind: String,
+    pub start_row: i64,
+    pub end_row: i64,
+    pub rows: usize,
+    pub byte_length: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkedFileManifest {
+    pub rows: usize,
+    pub first_id: Option<i64>,
+    pub last_id: Option<i64>,
+    pub first_source_id: Option<String>,
+    pub last_source_id: Option<String>,
+    pub chunks: Vec<ChunkManifest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkedManifest {
+    pub manifest_version: i64,
+    pub artifact_layout: String,
+    pub prefix: String,
+    pub source_dataset: String,
+    pub source_parquet: String,
+    pub source_parquet_basename: String,
+    pub source_parquet_shard_basenames: Vec<String>,
+    pub id_column: String,
+    pub vector_column: String,
+    pub dimension: usize,
+    pub chunk_rows: usize,
+    pub selection_rule: Value,
+    pub corpus: ChunkedFileManifest,
+    pub queries: ChunkedFileManifest,
+    pub generated_at_utc: String,
+    pub generated_by: String,
+}
 
 /// If the corpus/queries pair follows the `<basename>_{corpus,queries}.tsv`
 /// convention with a common `<basename>`, return the sibling manifest path.
@@ -49,6 +94,115 @@ pub fn derive_manifest_path(corpus_file: &Path, queries_file: &Path) -> Option<P
         return None;
     }
     Some(PathBuf::from(format!("{corpus_base}{MANIFEST_SUFFIX}")))
+}
+
+pub fn is_chunked_manifest(manifest: &Value) -> bool {
+    manifest.get("artifact_layout").and_then(Value::as_str) == Some(ARTIFACT_LAYOUT_CHUNKED)
+}
+
+pub fn parse_chunked_manifest(manifest: &Value) -> Result<ChunkedManifest> {
+    let parsed: ChunkedManifest = serde_json::from_value(manifest.clone())
+        .map_err(|e| eyre!("parsing chunked manifest: {e}"))?;
+    validate_chunked_manifest(&parsed)?;
+    Ok(parsed)
+}
+
+fn validate_chunked_manifest(manifest: &ChunkedManifest) -> Result<()> {
+    if manifest.manifest_version != EXPECTED_MANIFEST_VERSION {
+        return Err(eyre!(
+            "manifest_version={} (expected {EXPECTED_MANIFEST_VERSION})",
+            manifest.manifest_version
+        ));
+    }
+    if manifest.artifact_layout != ARTIFACT_LAYOUT_CHUNKED {
+        return Err(eyre!(
+            "artifact_layout={:?} (expected {:?})",
+            manifest.artifact_layout,
+            ARTIFACT_LAYOUT_CHUNKED
+        ));
+    }
+    if manifest.chunk_rows == 0 {
+        return Err(eyre!("chunk_rows must be >= 1"));
+    }
+    validate_chunked_section(&manifest.corpus, "corpus")?;
+    validate_chunked_section(&manifest.queries, "queries")?;
+    Ok(())
+}
+
+fn validate_chunked_section(section: &ChunkedFileManifest, label: &str) -> Result<()> {
+    let mut total_rows = 0usize;
+    let mut expected_start: Option<i64> = None;
+    for chunk in &section.chunks {
+        if chunk.kind != label {
+            return Err(eyre!(
+                "{label} chunk {:?} has kind {:?}",
+                chunk.path,
+                chunk.kind
+            ));
+        }
+        if Path::new(&chunk.path).is_absolute() {
+            return Err(eyre!(
+                "{label} chunk path {:?} must be relative",
+                chunk.path
+            ));
+        }
+        if chunk.rows == 0 {
+            return Err(eyre!("{label} chunk {:?} has zero rows", chunk.path));
+        }
+        let expected_end = chunk.start_row + chunk.rows as i64 - 1;
+        if chunk.end_row != expected_end {
+            return Err(eyre!(
+                "{label} chunk {:?} end_row={} (expected {expected_end})",
+                chunk.path,
+                chunk.end_row
+            ));
+        }
+        if let Some(next_start) = expected_start {
+            if chunk.start_row != next_start {
+                return Err(eyre!(
+                    "{label} chunk {:?} start_row={} (expected {next_start})",
+                    chunk.path,
+                    chunk.start_row
+                ));
+            }
+        }
+        expected_start = Some(chunk.end_row + 1);
+        total_rows += chunk.rows;
+    }
+    if total_rows != section.rows {
+        return Err(eyre!(
+            "{label}.rows={} but chunks sum to {total_rows}",
+            section.rows
+        ));
+    }
+    if section.rows == 0 {
+        if section.first_id.is_some() || section.last_id.is_some() {
+            return Err(eyre!("{label} empty section must not set first_id/last_id"));
+        }
+        return Ok(());
+    }
+    let first_chunk = section
+        .chunks
+        .first()
+        .ok_or_else(|| eyre!("{label}.rows={} but chunks is empty", section.rows))?;
+    let last_chunk = section.chunks.last().unwrap();
+    let first_id = section.first_id.unwrap_or(first_chunk.start_row);
+    let last_id = section.last_id.unwrap_or(last_chunk.end_row);
+    if first_id != first_chunk.start_row {
+        return Err(eyre!(
+            "{label}.first_id={} (expected {})",
+            first_id,
+            first_chunk.start_row
+        ));
+    }
+    if last_id != last_chunk.end_row {
+        return Err(eyre!(
+            "{label}.last_id={} (expected {})",
+            last_id,
+            last_chunk.end_row
+        ));
+    }
+    Ok(())
 }
 
 /// One mismatch between the manifest and the on-disk fixture. The CLI
@@ -475,5 +629,127 @@ mod tests {
             &qs,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn parse_chunked_manifest_accepts_contiguous_relative_chunks() {
+        let manifest = json!({
+            "manifest_version": 1,
+            "artifact_layout": "chunked",
+            "prefix": "dbpedia_1m",
+            "source_dataset": "dbpedia",
+            "source_parquet": "/tmp/dbpedia",
+            "source_parquet_basename": "dbpedia",
+            "source_parquet_shard_basenames": ["part-0.parquet"],
+            "id_column": "_id",
+            "vector_column": "embedding",
+            "dimension": 1536,
+            "chunk_rows": 2,
+            "selection_rule": {},
+            "corpus": {
+                "rows": 3,
+                "first_id": 0,
+                "last_id": 2,
+                "first_source_id": "a",
+                "last_source_id": "c",
+                "chunks": [
+                    {
+                        "path": "corpus/corpus-00000.tsv",
+                        "kind": "corpus",
+                        "start_row": 0,
+                        "end_row": 1,
+                        "rows": 2,
+                        "byte_length": 10,
+                        "sha256": "a"
+                    },
+                    {
+                        "path": "corpus/corpus-00001.tsv",
+                        "kind": "corpus",
+                        "start_row": 2,
+                        "end_row": 2,
+                        "rows": 1,
+                        "byte_length": 5,
+                        "sha256": "b"
+                    }
+                ]
+            },
+            "queries": {
+                "rows": 1,
+                "first_id": 3,
+                "last_id": 3,
+                "first_source_id": "d",
+                "last_source_id": "d",
+                "chunks": [
+                    {
+                        "path": "queries/queries-00000.tsv",
+                        "kind": "queries",
+                        "start_row": 3,
+                        "end_row": 3,
+                        "rows": 1,
+                        "byte_length": 5,
+                        "sha256": "c"
+                    }
+                ]
+            },
+            "generated_at_utc": "2026-04-26T00:00:00Z",
+            "generated_by": "ecaz corpus prepare"
+        });
+        let parsed = parse_chunked_manifest(&manifest).unwrap();
+        assert_eq!(parsed.chunk_rows, 2);
+        assert_eq!(parsed.corpus.chunks.len(), 2);
+    }
+
+    #[test]
+    fn parse_chunked_manifest_rejects_absolute_chunk_paths() {
+        let manifest = json!({
+            "manifest_version": 1,
+            "artifact_layout": "chunked",
+            "prefix": "x",
+            "source_dataset": "dbpedia",
+            "source_parquet": "/tmp/dbpedia",
+            "source_parquet_basename": "dbpedia",
+            "source_parquet_shard_basenames": ["part-0.parquet"],
+            "id_column": "_id",
+            "vector_column": "embedding",
+            "dimension": 1536,
+            "chunk_rows": 2,
+            "selection_rule": {},
+            "corpus": {
+                "rows": 1,
+                "first_id": 0,
+                "last_id": 0,
+                "first_source_id": "a",
+                "last_source_id": "a",
+                "chunks": [{
+                    "path": "/abs/corpus-00000.tsv",
+                    "kind": "corpus",
+                    "start_row": 0,
+                    "end_row": 0,
+                    "rows": 1,
+                    "byte_length": 1,
+                    "sha256": "a"
+                }]
+            },
+            "queries": {
+                "rows": 1,
+                "first_id": 1,
+                "last_id": 1,
+                "first_source_id": "b",
+                "last_source_id": "b",
+                "chunks": [{
+                    "path": "queries/queries-00000.tsv",
+                    "kind": "queries",
+                    "start_row": 1,
+                    "end_row": 1,
+                    "rows": 1,
+                    "byte_length": 1,
+                    "sha256": "b"
+                }]
+            },
+            "generated_at_utc": "2026-04-26T00:00:00Z",
+            "generated_by": "ecaz corpus prepare"
+        });
+        let err = parse_chunked_manifest(&manifest).unwrap_err().to_string();
+        assert!(err.contains("must be relative"), "err: {err}");
     }
 }
