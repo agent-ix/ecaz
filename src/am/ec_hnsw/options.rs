@@ -16,6 +16,8 @@ static EC_HNSW_EF_SEARCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_HNSW_SESSION_EF_SEARCH_UNSET);
 static EC_HNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -91,6 +93,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_hnsw.enable_parallel_build_concurrent_dsm",
+        c"Enable experimental concurrent DSM graph assembly for parallel ec_hnsw builds.",
+        c"Diagnostic opt-in for ADR-048; when enabled, eligible parallel builds assemble the HNSW graph through a DSM-resident graph instead of serial leader graph construction.",
+        &EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_ef_search() -> i32 {
@@ -115,6 +125,10 @@ pub(super) fn force_binary_derivation() -> bool {
 #[cfg(not(test))]
 pub(super) fn force_binary_derivation() -> bool {
     EC_HNSW_FORCE_BINARY_DERIVATION_GUC.get()
+}
+
+pub(super) fn enable_parallel_build_concurrent_dsm() -> bool {
+    EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC.get()
 }
 
 pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {

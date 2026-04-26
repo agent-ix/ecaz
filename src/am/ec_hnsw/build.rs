@@ -147,8 +147,7 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
     LAST_BUILD_HEAP_INGEST_US.store(snapshot.heap_ingest_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_BEGIN_US.store(snapshot.parallel_begin_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_DRAIN_US.store(snapshot.parallel_drain_us, AtomicOrdering::Release);
-    LAST_BUILD_PARALLEL_SORT_PUSH_US
-        .store(snapshot.parallel_sort_push_us, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_SORT_PUSH_US.store(snapshot.parallel_sort_push_us, AtomicOrdering::Release);
     LAST_BUILD_FLUSH_TOTAL_US.store(snapshot.flush_total_us, AtomicOrdering::Release);
     LAST_BUILD_GRAPH_US.store(snapshot.graph_us, AtomicOrdering::Release);
     LAST_BUILD_STAGE_US.store(snapshot.stage_us, AtomicOrdering::Release);
@@ -182,6 +181,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
             let mut parallel_begin_us = 0_u64;
             let mut parallel_drain_us = 0_u64;
             let mut parallel_sort_push_us = 0_u64;
+            let mut parallel_flush_output = None;
+            let mut parallel_graph_us = 0_u64;
+            let mut parallel_stage_us = 0_u64;
             let heap_ingest_start = Instant::now();
             let heap_tuples = if !parallel_plan.uses_serial_build_path() {
                 build_parallel::try_parallel_build(
@@ -195,6 +197,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                     parallel_begin_us = result.begin_us;
                     parallel_drain_us = result.drain_us;
                     parallel_sort_push_us = result.sort_push_us;
+                    parallel_graph_us = result.graph_us;
+                    parallel_stage_us = result.stage_us;
+                    parallel_flush_output = result.flush_output;
                     result.heap_tuples
                 })
                 .unwrap_or_else(|| {
@@ -234,7 +239,15 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
             let index_tuples = if state.heap_tuples.is_empty() {
                 0.0
             } else {
-                flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
+                if let Some(output) = parallel_flush_output.take() {
+                    flush_timing.graph_us = parallel_graph_us;
+                    flush_timing.stage_us = parallel_stage_us;
+                    let write_start = Instant::now();
+                    flush_build_output(index_relation, &output);
+                    flush_timing.write_us = elapsed_us(write_start);
+                } else {
+                    flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
+                }
                 state.heap_tuples.len() as f64
             };
             let flush_total_us = elapsed_us(flush_start);

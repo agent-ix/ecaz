@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use pgrx::pg_sys;
 
-use super::{build, graph, insert, page, search, shared, source};
+use super::{build, graph, insert, options, page, search, shared, source};
 
 const EC_HNSW_PARALLEL_BUILD_MAGIC: u32 = u32::from_le_bytes(*b"ECBP");
 const EC_HNSW_PARALLEL_BUILD_VERSION: u16 = 1;
@@ -18,10 +18,13 @@ const EC_HNSW_PARALLEL_BUILD_QUEUE_BYTES: pg_sys::Size = 1024 * 1024;
 const PARALLEL_KEY_EC_HNSW_BUILD_SHARED: u64 = 0xECA0_0000_0000_0001;
 const PARALLEL_KEY_EC_HNSW_WAL_USAGE: u64 = 0xECA0_0000_0000_0002;
 const PARALLEL_KEY_EC_HNSW_BUFFER_USAGE: u64 = 0xECA0_0000_0000_0003;
+const PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH: u64 = 0xECA0_0000_0000_0004;
 const PARALLEL_KEY_EC_HNSW_QUEUE_BASE: u64 = 0xECA0_0000_0001_0000;
 
 const EC_HNSW_PARALLEL_BUILD_LIBRARY: &[u8] = b"ecaz\0";
 const EC_HNSW_PARALLEL_BUILD_ENTRYPOINT: &[u8] = b"ec_hnsw_parallel_build_main\0";
+const EC_HNSW_PARALLEL_GRAPH_BUILD_ENTRYPOINT: &[u8] = b"ec_hnsw_parallel_graph_build_main\0";
+const EC_HNSW_CONCURRENT_DSM_GRAPH_LWLOCK_TRANCHE: &[u8] = b"ec_hnsw_concurrent_dsm_graph\0";
 
 const BUILD_TUPLE_MESSAGE: u8 = 1;
 const BUILD_DONE_MESSAGE: u8 = 2;
@@ -32,6 +35,7 @@ const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING: u32 = 1;
 const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY: u32 = 2;
 
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
+static LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum EcHnswBuildCoordinatorKind {
@@ -76,10 +80,25 @@ impl EcHnswParallelBuildPlan {
         } else {
             unsafe { (*index_info).ii_ParallelWorkers }
         };
-        Self::for_requested_workers(requested_workers)
+        let graph_assembly = if options::enable_parallel_build_concurrent_dsm() {
+            EcHnswBuildGraphAssembly::ConcurrentDsm
+        } else {
+            EcHnswBuildGraphAssembly::SerialLeader
+        };
+        Self::for_requested_workers_with_graph_assembly(requested_workers, graph_assembly)
     }
 
     pub(super) fn for_requested_workers(requested_workers: i32) -> Self {
+        Self::for_requested_workers_with_graph_assembly(
+            requested_workers,
+            EcHnswBuildGraphAssembly::SerialLeader,
+        )
+    }
+
+    pub(super) fn for_requested_workers_with_graph_assembly(
+        requested_workers: i32,
+        graph_assembly: EcHnswBuildGraphAssembly,
+    ) -> Self {
         if requested_workers <= 0 {
             return Self {
                 requested_workers: 0,
@@ -106,7 +125,7 @@ impl EcHnswParallelBuildPlan {
             coordinator: EcHnswBuildCoordinatorKind::DedicatedParallelBuild,
             heap_ingest: EcHnswBuildHeapIngest::ParallelTableScan,
             tuple_sink: EcHnswBuildTupleSink::SharedTupleStream,
-            graph_assembly: EcHnswBuildGraphAssembly::SerialLeader,
+            graph_assembly,
         }
     }
 
@@ -825,17 +844,19 @@ pub(super) unsafe fn concurrent_dsm_graph_parts(
 pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
     base: *mut c_void,
     plan: &EcHnswConcurrentDsmPreassemblyPlan,
-    initialize_node_lock: unsafe fn(*mut pg_sys::LWLock),
+    mut initialize_node_lock: impl FnMut(*mut pg_sys::LWLock),
 ) -> EcHnswConcurrentDsmGraphParts {
     let layout = plan.graph_layout;
     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
-    let insert_config = plan.insert_config.unwrap_or(EcHnswConcurrentDsmInsertConfig {
-        dimensions: 0,
-        bits: 0,
-        seed: 0,
-        m: 0,
-        ef_construction: 0,
-    });
+    let insert_config = plan
+        .insert_config
+        .unwrap_or(EcHnswConcurrentDsmInsertConfig {
+            dimensions: 0,
+            bits: 0,
+            seed: 0,
+            m: 0,
+            ef_construction: 0,
+        });
 
     unsafe {
         ptr::write(
@@ -1628,10 +1649,22 @@ fn checked_u16(value: i32, field: &str) -> u16 {
 
 pub(super) fn reset_debug_last_parallel_build_workers_launched() {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
+    LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
+}
+
+fn record_debug_parallel_build_workers_launched(workers_launched: i32) {
+    let current = LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire);
+    if workers_launched > current {
+        LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
+    }
 }
 
 pub(crate) fn debug_last_parallel_build_workers_launched() -> i32 {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire)
+}
+
+pub(crate) fn debug_last_parallel_graph_build_workers_launched() -> i32 {
+    LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire)
 }
 
 pub(super) unsafe fn try_parallel_build(
@@ -1663,21 +1696,299 @@ pub(super) unsafe fn try_parallel_build(
         state.push(tuple);
     }
     let sort_push_us = elapsed_us(sort_push_start);
+    let graph_build = if plan.graph_assembly == EcHnswBuildGraphAssembly::ConcurrentDsm {
+        unsafe { try_parallel_concurrent_dsm_graph_build(state, plan) }
+    } else {
+        None
+    };
+    let (flush_output, graph_us, stage_us) = graph_build
+        .map(|result| (Some(result.output), result.graph_us, result.stage_us))
+        .unwrap_or((None, 0, 0));
 
     Some(EcHnswParallelBuildResult {
         heap_tuples: state.scanned_tuples as f64,
         begin_us,
         drain_us,
         sort_push_us,
+        flush_output,
+        graph_us,
+        stage_us,
     })
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(super) struct EcHnswParallelBuildResult {
     pub(super) heap_tuples: f64,
     pub(super) begin_us: u64,
     pub(super) drain_us: u64,
     pub(super) sort_push_us: u64,
+    pub(super) flush_output: Option<build::BuildFlushOutput>,
+    pub(super) graph_us: u64,
+    pub(super) stage_us: u64,
+}
+
+#[derive(Debug, Clone)]
+struct EcHnswParallelGraphBuildResult {
+    output: build::BuildFlushOutput,
+    graph_us: u64,
+    stage_us: u64,
+}
+
+unsafe fn try_parallel_concurrent_dsm_graph_build(
+    state: &build::BuildState,
+    plan: EcHnswParallelBuildPlan,
+) -> Option<EcHnswParallelGraphBuildResult> {
+    if state.heap_tuples.is_empty()
+        || state.options.storage_format != options::StorageFormat::TurboQuant
+    {
+        return None;
+    }
+
+    let graph_start = Instant::now();
+    let preassembly = EcHnswConcurrentDsmPreassemblyPlan::for_state(state);
+    let mut leader = unsafe { EcHnswParallelGraphBuildLeader::begin(plan, &preassembly) }?;
+    if leader.workers_launched == 0 {
+        unsafe { leader.finish() };
+        return None;
+    }
+
+    let attachment = unsafe { leader.insert_leader_partitions() };
+    unsafe { leader.wait_for_workers() };
+    let graph_us = elapsed_us(graph_start);
+
+    let stage_start = Instant::now();
+    let output =
+        unsafe { current_format_flush_output_from_concurrent_dsm_graph(state, attachment) };
+    let stage_us = elapsed_us(stage_start);
+    unsafe { leader.finish() };
+
+    Some(EcHnswParallelGraphBuildResult {
+        output,
+        graph_us,
+        stage_us,
+    })
+}
+
+struct EcHnswParallelGraphBuildLeader {
+    pcxt: *mut pg_sys::ParallelContext,
+    graph_base: *mut c_void,
+    walusage: *mut pg_sys::WalUsage,
+    bufferusage: *mut pg_sys::BufferUsage,
+    participant_count: u16,
+    workers_launched: i32,
+    workers_finished: bool,
+}
+
+impl EcHnswParallelGraphBuildLeader {
+    unsafe fn begin(
+        plan: EcHnswParallelBuildPlan,
+        preassembly: &EcHnswConcurrentDsmPreassemblyPlan,
+    ) -> Option<Self> {
+        debug_assert!(plan.requested_workers > 0);
+        unsafe { pg_sys::EnterParallelMode() };
+
+        let pcxt = unsafe {
+            pg_sys::CreateParallelContext(
+                EC_HNSW_PARALLEL_BUILD_LIBRARY.as_ptr().cast(),
+                EC_HNSW_PARALLEL_GRAPH_BUILD_ENTRYPOINT.as_ptr().cast(),
+                plan.requested_workers,
+            )
+        };
+        if pcxt.is_null() {
+            unsafe { pg_sys::ExitParallelMode() };
+            return None;
+        }
+
+        let graph_participant_count = plan
+            .requested_workers
+            .checked_add(1)
+            .unwrap_or_else(|| pgrx::error!("parallel graph build participant count overflow"));
+        let mut graph_plan = plan;
+        graph_plan.leader_participates = true;
+        graph_plan.participant_count = graph_participant_count;
+        graph_plan.graph_assembly = EcHnswBuildGraphAssembly::ConcurrentDsm;
+
+        unsafe {
+            estimate_chunk(
+                &mut (*pcxt).estimator,
+                bufferalign(size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size),
+            );
+            estimate_keys(&mut (*pcxt).estimator, 1);
+            estimate_chunk(&mut (*pcxt).estimator, preassembly.graph_layout.total_bytes);
+            estimate_keys(&mut (*pcxt).estimator, 1);
+            estimate_chunk(
+                &mut (*pcxt).estimator,
+                checked_mul_size(
+                    size_of::<pg_sys::WalUsage>() as pg_sys::Size,
+                    plan.requested_workers as pg_sys::Size,
+                    "parallel graph build WAL usage estimate",
+                ),
+            );
+            estimate_keys(&mut (*pcxt).estimator, 1);
+            estimate_chunk(
+                &mut (*pcxt).estimator,
+                checked_mul_size(
+                    size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
+                    plan.requested_workers as pg_sys::Size,
+                    "parallel graph build buffer usage estimate",
+                ),
+            );
+            estimate_keys(&mut (*pcxt).estimator, 1);
+        }
+
+        unsafe { pg_sys::InitializeParallelDSM(pcxt) };
+        if unsafe { (*pcxt).seg.is_null() } {
+            unsafe {
+                pg_sys::DestroyParallelContext(pcxt);
+                pg_sys::ExitParallelMode();
+            }
+            return None;
+        }
+
+        let shared = unsafe {
+            pg_sys::shm_toc_allocate(
+                (*pcxt).toc,
+                bufferalign(size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size),
+            )
+            .cast::<EcHnswParallelBuildSharedHeader>()
+        };
+        let graph_base =
+            unsafe { pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes) };
+        let tranche_id = unsafe { pg_sys::LWLockNewTrancheId() };
+        unsafe {
+            pg_sys::LWLockRegisterTranche(
+                tranche_id,
+                EC_HNSW_CONCURRENT_DSM_GRAPH_LWLOCK_TRANCHE.as_ptr().cast(),
+            );
+            ptr::write(
+                shared,
+                EcHnswParallelBuildSharedHeader::new(
+                    graph_plan,
+                    pg_sys::InvalidOid,
+                    pg_sys::InvalidOid,
+                    false,
+                ),
+            );
+            pg_sys::ConditionVariableInit(&mut (*shared).workersdonecv);
+            pg_sys::SpinLockInit(&mut (*shared).mutex);
+            pg_sys::shm_toc_insert(
+                (*pcxt).toc,
+                PARALLEL_KEY_EC_HNSW_BUILD_SHARED,
+                shared.cast(),
+            );
+            initialize_concurrent_dsm_graph_image(graph_base, preassembly, |lock| {
+                pg_sys::LWLockInitialize(lock, tranche_id)
+            });
+            pg_sys::shm_toc_insert(
+                (*pcxt).toc,
+                PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH,
+                graph_base,
+            );
+        }
+
+        let walusage = unsafe {
+            pg_sys::shm_toc_allocate(
+                (*pcxt).toc,
+                checked_mul_size(
+                    size_of::<pg_sys::WalUsage>() as pg_sys::Size,
+                    plan.requested_workers as pg_sys::Size,
+                    "parallel graph build WAL usage allocation",
+                ),
+            )
+            .cast::<pg_sys::WalUsage>()
+        };
+        let bufferusage = unsafe {
+            pg_sys::shm_toc_allocate(
+                (*pcxt).toc,
+                checked_mul_size(
+                    size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
+                    plan.requested_workers as pg_sys::Size,
+                    "parallel graph build buffer usage allocation",
+                ),
+            )
+            .cast::<pg_sys::BufferUsage>()
+        };
+        unsafe {
+            pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
+            pg_sys::shm_toc_insert(
+                (*pcxt).toc,
+                PARALLEL_KEY_EC_HNSW_BUFFER_USAGE,
+                bufferusage.cast(),
+            );
+            pg_sys::LaunchParallelWorkers(pcxt);
+        }
+        let workers_launched = unsafe { (*pcxt).nworkers_launched };
+        LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
+        record_debug_parallel_build_workers_launched(workers_launched);
+
+        if workers_launched > 0 {
+            unsafe { pg_sys::WaitForParallelWorkersToAttach(pcxt) };
+        }
+
+        Some(Self {
+            pcxt,
+            graph_base,
+            walusage,
+            bufferusage,
+            participant_count: checked_u16(graph_participant_count, "graph participant count"),
+            workers_launched,
+            workers_finished: false,
+        })
+    }
+
+    unsafe fn insert_leader_partitions(&mut self) -> EcHnswConcurrentDsmGraphAttachment {
+        let attachment = unsafe { attach_concurrent_dsm_graph_image(self.graph_base) };
+        let config = attachment.require_insert_config();
+        let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+            attachment.layout.node_count as usize,
+            config.ef_construction,
+            config.m,
+        );
+        let first_leader_partition = checked_u16(
+            self.workers_launched.max(0),
+            "graph leader participant index",
+        );
+        for participant_index in first_leader_partition..self.participant_count {
+            unsafe {
+                insert_concurrent_dsm_graph_participant(
+                    attachment.parts,
+                    attachment.layout,
+                    config,
+                    self.participant_count,
+                    participant_index,
+                    &mut scratch,
+                    EcHnswConcurrentDsmLockOps::postgres(),
+                );
+            }
+        }
+        attachment
+    }
+
+    unsafe fn wait_for_workers(&mut self) {
+        if self.workers_finished {
+            return;
+        }
+        unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+
+        let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
+        for worker_index in 0..launched {
+            unsafe {
+                pg_sys::InstrAccumParallelQuery(
+                    self.bufferusage.add(worker_index),
+                    self.walusage.add(worker_index),
+                );
+            }
+        }
+        self.workers_finished = true;
+    }
+
+    unsafe fn finish(mut self) {
+        unsafe { self.wait_for_workers() };
+        unsafe {
+            pg_sys::DestroyParallelContext(self.pcxt);
+            pg_sys::ExitParallelMode();
+        }
+    }
 }
 
 struct EcHnswParallelBuildLeader {
@@ -1831,7 +2142,7 @@ impl EcHnswParallelBuildLeader {
 
         unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
         let workers_launched = unsafe { (*pcxt).nworkers_launched };
-        LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
+        record_debug_parallel_build_workers_launched(workers_launched);
 
         let mut leader = Self {
             pcxt,
@@ -1981,6 +2292,19 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_build_main(
     }
 }
 
+#[pgrx::pg_guard]
+#[no_mangle]
+pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
+    _seg: *mut pg_sys::dsm_segment,
+    toc: *mut pg_sys::shm_toc,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            parallel_graph_build_worker_main(toc);
+        })
+    }
+}
+
 unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
     let shared = unsafe {
         pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
@@ -2066,6 +2390,64 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         );
         pg_sys::index_close(index_relation, index_lockmode);
         pg_sys::table_close(heap_relation, heap_lockmode);
+    }
+}
+
+unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+    let shared = unsafe {
+        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
+            .cast::<EcHnswParallelBuildSharedHeader>()
+    };
+    unsafe { (*shared).validate() };
+
+    let worker_number = unsafe { pg_sys::ParallelWorkerNumber };
+    if worker_number < 0 {
+        pgrx::error!("ec_hnsw parallel graph build worker started without a worker number");
+    }
+
+    let graph_base =
+        unsafe { pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, false) };
+    let attachment = unsafe { attach_concurrent_dsm_graph_image(graph_base) };
+    let config = attachment.require_insert_config();
+    let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+        attachment.layout.node_count as usize,
+        config.ef_construction,
+        config.m,
+    );
+
+    unsafe { pg_sys::InstrStartParallelQuery() };
+    let inserted = unsafe {
+        insert_concurrent_dsm_graph_participant(
+            attachment.parts,
+            attachment.layout,
+            config,
+            (*shared).participant_count,
+            checked_u16(worker_number, "graph worker participant index"),
+            &mut scratch,
+            EcHnswConcurrentDsmLockOps::postgres(),
+        )
+    };
+
+    unsafe {
+        pg_sys::SpinLockAcquire(&mut (*shared).mutex);
+        (*shared).record_worker_counts(0.0, inserted as f64);
+        pg_sys::SpinLockRelease(&mut (*shared).mutex);
+        pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
+    }
+
+    let bufferusage = unsafe {
+        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, false)
+            .cast::<pg_sys::BufferUsage>()
+    };
+    let walusage = unsafe {
+        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, false)
+            .cast::<pg_sys::WalUsage>()
+    };
+    unsafe {
+        pg_sys::InstrEndParallelQuery(
+            bufferusage.add(worker_number as usize),
+            walusage.add(worker_number as usize),
+        );
     }
 }
 
@@ -2377,6 +2759,26 @@ mod tests {
     }
 
     #[test]
+    fn parallel_build_plan_can_opt_into_concurrent_dsm_graph_assembly() {
+        let plan = EcHnswParallelBuildPlan::for_requested_workers_with_graph_assembly(
+            3,
+            EcHnswBuildGraphAssembly::ConcurrentDsm,
+        );
+
+        assert_eq!(plan.requested_workers, 3);
+        assert_eq!(plan.participant_count, 3);
+        assert!(!plan.leader_participates);
+        assert_eq!(
+            plan.coordinator,
+            EcHnswBuildCoordinatorKind::DedicatedParallelBuild
+        );
+        assert_eq!(plan.heap_ingest, EcHnswBuildHeapIngest::ParallelTableScan);
+        assert_eq!(plan.tuple_sink, EcHnswBuildTupleSink::SharedTupleStream);
+        assert_eq!(plan.graph_assembly, EcHnswBuildGraphAssembly::ConcurrentDsm);
+        assert!(!plan.uses_serial_build_path());
+    }
+
+    #[test]
     fn parallel_build_shared_header_accumulates_counts() {
         let plan = EcHnswParallelBuildPlan::for_requested_workers(2);
         let mut shared = EcHnswParallelBuildSharedHeader::new(
@@ -2657,7 +3059,9 @@ mod tests {
             );
 
             let header = &*parts.header;
-            let insert_config = plan.insert_config.expect("non-empty plan should carry config");
+            let insert_config = plan
+                .insert_config
+                .expect("non-empty plan should carry config");
             assert_eq!(header.node_count, 2);
             assert_eq!(header.entry_idx, plan.graph_layout.entry_idx.unwrap());
             assert_eq!(header.max_level, plan.graph_layout.max_level);
@@ -3154,7 +3558,7 @@ mod tests {
 
     const TEST_LOCK_TRANCHE_ID: u16 = 4242;
 
-    unsafe fn test_initialize_node_lock(lock: *mut pg_sys::LWLock) {
+    fn test_initialize_node_lock(lock: *mut pg_sys::LWLock) {
         unsafe {
             (*lock).tranche = TEST_LOCK_TRANCHE_ID;
             (*lock).state.value = 0;

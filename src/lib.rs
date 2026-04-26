@@ -3150,11 +3150,10 @@ mod tests {
         )
         .expect("parallel index creation should succeed");
 
-        let workers_launched = Spi::get_one::<i32>(
-            "SELECT tests.ec_hnsw_debug_parallel_build_workers_launched()",
-        )
-        .expect("SPI query should succeed")
-        .expect("debug worker count should be non-null");
+        let workers_launched =
+            Spi::get_one::<i32>("SELECT tests.ec_hnsw_debug_parallel_build_workers_launched()")
+                .expect("SPI query should succeed")
+                .expect("debug worker count should be non-null");
         assert!(
             workers_launched >= 1,
             "parallel build should launch at least one worker, launched {workers_launched}"
@@ -3172,15 +3171,33 @@ mod tests {
                 .expect("timing query should succeed");
             let row = rows.next().expect("timing query should return one row");
             (
-                row.get::<i64>(1).expect("requested_workers should decode").unwrap(),
-                row.get::<i64>(2).expect("workers_launched should decode").unwrap(),
-                row.get::<i64>(3).expect("heap_tuples should decode").unwrap(),
-                row.get::<i64>(4).expect("index_tuples should decode").unwrap(),
-                row.get::<i64>(5).expect("heap_ingest_us should decode").unwrap(),
-                row.get::<i64>(6).expect("parallel_begin_us should decode").unwrap(),
-                row.get::<i64>(7).expect("parallel_drain_us should decode").unwrap(),
-                row.get::<i64>(8).expect("parallel_sort_push_us should decode").unwrap(),
-                row.get::<i64>(9).expect("flush_total_us should decode").unwrap(),
+                row.get::<i64>(1)
+                    .expect("requested_workers should decode")
+                    .unwrap(),
+                row.get::<i64>(2)
+                    .expect("workers_launched should decode")
+                    .unwrap(),
+                row.get::<i64>(3)
+                    .expect("heap_tuples should decode")
+                    .unwrap(),
+                row.get::<i64>(4)
+                    .expect("index_tuples should decode")
+                    .unwrap(),
+                row.get::<i64>(5)
+                    .expect("heap_ingest_us should decode")
+                    .unwrap(),
+                row.get::<i64>(6)
+                    .expect("parallel_begin_us should decode")
+                    .unwrap(),
+                row.get::<i64>(7)
+                    .expect("parallel_drain_us should decode")
+                    .unwrap(),
+                row.get::<i64>(8)
+                    .expect("parallel_sort_push_us should decode")
+                    .unwrap(),
+                row.get::<i64>(9)
+                    .expect("flush_total_us should decode")
+                    .unwrap(),
                 row.get::<i64>(10).expect("graph_us should decode").unwrap(),
                 row.get::<i64>(11).expect("stage_us should decode").unwrap(),
                 row.get::<i64>(12).expect("write_us should decode").unwrap(),
@@ -3191,8 +3208,14 @@ mod tests {
         assert_eq!(build_timing.2, 128);
         assert_eq!(build_timing.3, 128);
         assert!(build_timing.4 > 0, "heap ingest timing should be recorded");
-        assert!(build_timing.5 > 0, "parallel begin timing should be recorded");
-        assert!(build_timing.6 > 0, "parallel drain timing should be recorded");
+        assert!(
+            build_timing.5 > 0,
+            "parallel begin timing should be recorded"
+        );
+        assert!(
+            build_timing.6 > 0,
+            "parallel drain timing should be recorded"
+        );
         assert!(
             build_timing.7 > 0,
             "parallel sort/push timing should be recorded"
@@ -3219,6 +3242,77 @@ mod tests {
         Spi::run("RESET maintenance_work_mem").expect("reset should succeed");
         Spi::run("RESET max_parallel_workers").expect("reset should succeed");
         Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_parallel_index_build_concurrent_dsm_graph_opt_in() {
+        Spi::run("SET ec_hnsw.enable_parallel_build_concurrent_dsm = on")
+            .expect("set should succeed");
+        Spi::run("SET max_parallel_maintenance_workers = 2").expect("set should succeed");
+        Spi::run("SET max_parallel_workers = 4").expect("set should succeed");
+        Spi::run("SET maintenance_work_mem = '128MB'").expect("set should succeed");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_parallel_build_dsm (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run("ALTER TABLE ec_hnsw_parallel_build_dsm SET (parallel_workers = 2)")
+            .expect("parallel_workers reloption should be accepted");
+        Spi::run(
+            "INSERT INTO ec_hnsw_parallel_build_dsm
+             SELECT id,
+                    encode_to_ecvector(
+                        ARRAY[
+                            id::real,
+                            (id * 2)::real,
+                            (id * 3 + 1)::real,
+                            (id * 5 + 2)::real
+                        ]::real[],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, 96) AS id",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX ec_hnsw_parallel_build_dsm_idx ON ec_hnsw_parallel_build_dsm USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 40)",
+        )
+        .expect("parallel concurrent DSM index creation should succeed");
+
+        let graph_workers_launched = Spi::get_one::<i32>(
+            "SELECT tests.ec_hnsw_debug_parallel_graph_build_workers_launched()",
+        )
+        .expect("SPI query should succeed")
+        .expect("debug graph worker count should be non-null");
+        assert!(
+            graph_workers_launched >= 1,
+            "parallel graph build should launch at least one worker, launched {graph_workers_launched}"
+        );
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_parallel_build_dsm_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
+        let heap_tid_count = elements
+            .iter()
+            .map(|(_, element)| element.heaptids.len())
+            .sum::<usize>();
+        assert_eq!(heap_tid_count, 96);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        Spi::run("RESET maintenance_work_mem").expect("reset should succeed");
+        Spi::run("RESET max_parallel_workers").expect("reset should succeed");
+        Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.enable_parallel_build_concurrent_dsm")
+            .expect("reset should succeed");
     }
 
     #[pg_test]
@@ -4232,6 +4326,11 @@ mod tests {
     #[pg_extern]
     fn ec_hnsw_debug_parallel_build_workers_launched() -> i32 {
         am::debug_last_parallel_build_workers_launched()
+    }
+
+    #[pg_extern]
+    fn ec_hnsw_debug_parallel_graph_build_workers_launched() -> i32 {
+        am::debug_last_parallel_graph_build_workers_launched()
     }
 
     #[pg_extern]
