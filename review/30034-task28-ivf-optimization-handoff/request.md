@@ -81,6 +81,11 @@ Checkpoint in progress / complete on this branch:
   deterministic tiebreaker.
 - Unit coverage now locks in both the truncation behavior and the tiebreak
   contract for `select_probe_lists`.
+- IVF posting-list scan now has a visitor seam in `page.rs`, and
+  `materialize_probe_candidates` consumes postings directly while buffers are
+  read instead of materializing one temporary posting `Vec` per selected list.
+- The current score/dedup/top-k behavior is intentionally unchanged; this slice
+  only removes intermediate posting allocation from the scan path.
 
 Why this slice is worth doing here:
 
