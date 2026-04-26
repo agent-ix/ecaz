@@ -1,0 +1,122 @@
+Timing is on.
+=== pg18 parallel concurrent DSM tuned recall validation fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 20:30:52.019846-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.831 ms
+DROP TABLE
+Time: 0.239 ms
+DROP TABLE
+Time: 0.160 ms
+DROP EXTENSION
+Time: 74.193 ms
+CREATE EXTENSION
+Time: 45.958 ms
+CREATE TABLE
+Time: 6.442 ms
+CREATE TABLE
+Time: 4.006 ms
+=== load 10000 corpus rows x 64 dims ===
+INSERT 0 10000
+Time: 428.222 ms
+=== load 100 query rows x 64 dims ===
+INSERT 0 100
+Time: 3.466 ms
+VACUUM
+Time: 162.550 ms
+VACUUM
+Time: 39.040 ms
+ corpus_rows 
+-------------
+       10000
+(1 row)
+
+Time: 1.595 ms
+ query_rows 
+------------
+        100
+(1 row)
+
+Time: 0.429 ms
+SET
+Time: 0.230 ms
+SET
+Time: 0.189 ms
+SET
+Time: 0.184 ms
+=== serial-built tuned index ===
+SET
+Time: 0.212 ms
+SET
+Time: 0.159 ms
+ALTER TABLE
+Time: 1.682 ms
+CREATE INDEX
+Time: 14223.802 ms (00:14.224)
+ build_path | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial     |                 0 |                0 |       10000 |         9998 |         308759 |                 0 |                 0 |                     0 |       13893046 | 13767101 |    83780 |    38469
+(1 row)
+
+Time: 0.696 ms
+ build_path | m  | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+------------+----+-----------+--------------+------------------------------+----------------------+-----------------------
+ serial     | 16 |       128 |        0.505 |                            1 |            43.905148 |             15.358791
+ serial     | 16 |       200 |        0.534 |                            1 |            44.020798 |              25.54754
+ serial     | 16 |       400 |        0.599 |                            1 |            44.650146 |             54.517635
+(3 rows)
+
+Time: 29111.653 ms (00:29.112)
+=== parallel concurrent DSM-built tuned index ===
+SET
+Time: 0.309 ms
+SET
+Time: 0.208 ms
+ALTER TABLE
+Time: 1.514 ms
+CREATE INDEX
+Time: 5366.698 ms (00:05.367)
+   build_path   | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ concurrent_dsm |                 4 |                4 |       10000 |         9998 |         173407 |              2687 |            142136 |                 28579 |        5171562 |  4988037 |   140243 |    42041
+(1 row)
+
+Time: 0.470 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.519 ms
+   build_path   | m  | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+----------------+----+-----------+--------------+------------------------------+----------------------+-----------------------
+ concurrent_dsm | 16 |       128 |        0.528 |                            1 |              44.9534 |             14.577936
+ concurrent_dsm | 16 |       200 |        0.538 |                            1 |            44.969776 |             27.278618
+ concurrent_dsm | 16 |       400 |        0.538 |                            1 |            44.957157 |             47.636326
+(3 rows)
+
+Time: 28541.127 ms (00:28.541)
+=== tuned serial vs concurrent DSM recall delta at ef_search 200 ===
+ serial_graph_recall_at_10 | concurrent_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | concurrent_dsm_graph_recall_at_100 | recall_100_delta | serial_exact_quantized_recall_at_10 | concurrent_dsm_exact_quantized_recall_at_10 | concurrent_dsm_graph_below_exact_queries | concurrent_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+----------------------------+------------------------------------+------------------+-------------------------------------+---------------------------------------------+------------------------------------------+--------------------------------
+                     0.534 |                             0.538 |  0.004000008 |                     0.7189 |                              0.714 |    -0.0049000382 |                                   1 |                                           1 |                                       84 |                             10
+(1 row)
+
+Time: 43839.837 ms (00:43.840)
+ serial_index_bytes | concurrent_dsm_index_bytes 
+--------------------+----------------------------
+            3563520 |                    3563520
+(1 row)
+
+Time: 0.741 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 20:32:53.590515-07
+(1 row)
+
+Time: 0.235 ms
+psql:review/652-c1-parallel-concurrent-dsm-tuned-recall-validation/artifacts/pg18_parallel_concurrent_dsm_tuned_recall_validation.sql:10: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_tuned_recall_corpus" does not exist, skipping
+psql:review/652-c1-parallel-concurrent-dsm-tuned-recall-validation/artifacts/pg18_parallel_concurrent_dsm_tuned_recall_validation.sql:11: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_tuned_recall_queries" does not exist, skipping
+psql:review/652-c1-parallel-concurrent-dsm-tuned-recall-validation/artifacts/pg18_parallel_concurrent_dsm_tuned_recall_validation.sql:12: NOTICE:  drop cascades to column embedding of table ec_hnsw_parallel_concurrent_dsm_50k_recall_corpus
