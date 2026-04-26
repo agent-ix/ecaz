@@ -133,6 +133,8 @@ unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
         offset += 8;
     }
 
+    // 32-lane main loop, 8-lane tail, scalar remainder; tail accumulates into
+    // acc0 and is folded back during this reduction.
     let acc01 = _mm256_add_ps(acc0, acc1);
     let acc23 = _mm256_add_ps(acc2, acc3);
     let acc = _mm256_add_ps(acc01, acc23);
@@ -637,7 +639,7 @@ mod tests {
 
     #[test]
     fn inner_product_matches_scalar_reference_for_tail_lengths() {
-        for len in 0..19 {
+        for len in (0..19).chain([41]) {
             let left = (0..len)
                 .map(|idx| idx as f32 * 0.25 - 1.5)
                 .collect::<Vec<_>>();
