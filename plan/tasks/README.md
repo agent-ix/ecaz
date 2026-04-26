@@ -55,6 +55,7 @@ These pre-lane task files are retained only for historical context under
 25. `25-rabitq-quantizer.md` — executes ADR-045 Stage 1: standalone RaBitQ quantizer + offline recall study; **research gate** for SymphonyQG Stages 2–3; shelvable as a clean null result if recall fails
 26. `26-parallel-index-build.md` — parallel `CREATE INDEX` / `REINDEX` for `ec_hnsw` (propagating to `ec_diskann`); shares DSM/slot primitives with task 18, so Phase 2+ is gated on task 18 merge; ADR TBD
 27. `27-symphony-access-method.md` — executes ADR-045 Stages 2–3: `symphony` AM with quantization-aware pruning + out-degree padding (Stage 2), then no-rerank query path (Stage 3); **gated on task 25's RaBitQ recall study passing**
+28. `28-ivf-diskann-benchmark-optimization.md` — pivots the next scale research lane from more HNSW parallel-build tuning to real Graviton-class IVF/DiskANN build, recall, and latency baselines, then optimizes the stronger candidate before reopening frontier research on top.
 
 ## Coordination rules
 

@@ -192,10 +192,19 @@ present, entry point is valid, and recall meets the existing gate.
   - index size was `1351688192` bytes
   - the loader's chunk-state table recorded 20 corpus chunks / 990,000 rows
     plus 1 query chunk / 10,000 rows
-- Current 990k conclusion: worker launch is correct, but the current in-Postgres
-  graph build remains too long for larger scale. Open follow-up design work for
-  an offline or staged checkpointed bulk builder plus a shorter PostgreSQL
-  publish step.
+- Current 990k conclusion: PostgreSQL parallel build is still a real win: the
+  50k sweep improved from `07:12.017` at 1 worker to `02:27.948` at 8 launched
+  graph workers once cluster worker headroom was fixed, and the 990k run proved
+  the worker launch path scales to the full DBPedia anchor. The remaining issue
+  is that current in-Postgres HNSW graph construction is not yet competitive at
+  990k x 1536 (`01:31:57.326`), so do not continue threshold-only tuning on
+  this branch.
+- Follow-up: an offline or staged checkpointed HNSW bulk builder plus a shorter
+  PostgreSQL publish step remains a plausible design, but it is deferred behind
+  the IVF and DiskANN benchmark/optimization lane in task 28. The next research
+  unblocker is not more HNSW build tuning; it is establishing real Graviton-class
+  recall/latency/build baselines for IVF and DiskANN candidates, then optimizing
+  on top of the stronger structure.
 - Longer-horizon target: 10M rows at 2/4/8 workers.
 - Original target remains directionally useful but should be recalibrated after
   the 990k run: ≥2× at 4 workers on 1M, ≥4× at 8 workers on 10M.
