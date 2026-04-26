@@ -69,11 +69,15 @@ pub async fn connect_with(params: &ConnectParams) -> Result<Client> {
 
 /// Does a relation with the given name and `relkind` exist?
 pub async fn relation_exists(client: &Client, name: &str, relkind: char) -> Result<bool> {
+    let relkind = match relkind {
+        'r' | 'i' => relkind,
+        _ => unreachable!("unsupported pg_class relkind {relkind:?}"),
+    };
+    let sql = format!(
+        "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = '{relkind}')"
+    );
     let row = client
-        .query_one(
-            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = $2)",
-            &[&name, &(relkind.to_string())],
-        )
+        .query_one(sql.as_str(), &[&name])
         .await
         .wrap_err_with(|| format!("checking relation {name:?} exists"))?;
     Ok(row.get::<_, bool>(0))
