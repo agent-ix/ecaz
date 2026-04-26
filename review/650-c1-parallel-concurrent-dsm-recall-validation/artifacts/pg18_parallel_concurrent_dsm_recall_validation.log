@@ -1,0 +1,134 @@
+Timing is on.
+=== pg18 parallel concurrent DSM recall validation fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 19:06:45.343481-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.879 ms
+DROP TABLE
+Time: 0.295 ms
+DROP TABLE
+Time: 0.166 ms
+DROP EXTENSION
+Time: 68.904 ms
+CREATE EXTENSION
+Time: 42.666 ms
+CREATE TABLE
+Time: 6.418 ms
+CREATE TABLE
+Time: 3.980 ms
+=== load 10000 corpus rows x 64 dims ===
+INSERT 0 10000
+Time: 374.866 ms
+=== load 100 query rows x 64 dims ===
+INSERT 0 100
+Time: 3.357 ms
+VACUUM
+Time: 121.158 ms
+VACUUM
+Time: 4.393 ms
+ corpus_rows 
+-------------
+       10000
+(1 row)
+
+Time: 1.461 ms
+ query_rows 
+------------
+        100
+(1 row)
+
+Time: 0.433 ms
+SET
+Time: 0.216 ms
+SET
+Time: 0.207 ms
+SET
+Time: 0.202 ms
+=== serial-built index ===
+SET
+Time: 0.205 ms
+SET
+Time: 0.199 ms
+ALTER TABLE
+Time: 1.481 ms
+CREATE INDEX
+Time: 4940.223 ms (00:04.940)
+ build_path | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial     |                 0 |                0 |       10000 |         9998 |         316758 |                 0 |                 0 |                     0 |        4609562 |  4529453 |    55714 |    21435
+(1 row)
+
+Time: 0.976 ms
+ build_path | m | ef_search | corpus_rows | query_count | graph_recall_at_10 | graph_recall_at_100 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | exact_quantized_recall_at_10 | graph_below_exact_queries | worst_exact_gap 
+------------+---+-----------+-------------+-------------+--------------------+---------------------+------------+----------------------+--------------------+------------------------------+---------------------------+-----------------
+ serial     | 6 |       128 |       10000 |         100 |              0.343 |              0.4446 | 0.35189754 |             42.21535 |         -0.6564239 |                            1 |                        90 |              10
+(1 row)
+
+Time: 20883.754 ms (00:20.884)
+ build_path | m | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+------------+---+-----------+--------------+------------------------------+----------------------+-----------------------
+ serial     | 6 |        64 |        0.288 |                            1 |             41.34536 |             4.3339286
+ serial     | 6 |       128 |        0.343 |                            1 |             42.21535 |              7.239009
+ serial     | 6 |       200 |        0.343 |                            1 |             42.22096 |             10.068114
+(3 rows)
+
+Time: 21683.164 ms (00:21.683)
+=== parallel concurrent DSM-built index ===
+SET
+Time: 0.238 ms
+SET
+Time: 0.111 ms
+ALTER TABLE
+Time: 1.347 ms
+CREATE INDEX
+Time: 1896.767 ms (00:01.897)
+   build_path   | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ concurrent_dsm |                 4 |                4 |       10000 |         9998 |         163860 |              2695 |            132259 |                 28899 |        1723607 |  1639823 |    62842 |    19819
+(1 row)
+
+Time: 0.464 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.381 ms
+   build_path   | m | ef_search | corpus_rows | query_count | graph_recall_at_10 | graph_recall_at_100 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | exact_quantized_recall_at_10 | graph_below_exact_queries | worst_exact_gap 
+----------------+---+-----------+-------------+-------------+--------------------+---------------------+------------+----------------------+--------------------+------------------------------+---------------------------+-----------------
+ concurrent_dsm | 6 |       128 |       10000 |         100 |              0.403 |              0.5094 |  0.4061718 |             40.89678 |          -0.673212 |                            1 |                        89 |              10
+(1 row)
+
+Time: 20048.326 ms (00:20.048)
+   build_path   | m | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms 
+----------------+---+-----------+--------------+------------------------------+----------------------+-----------------------
+ concurrent_dsm | 6 |        64 |        0.369 |                            1 |            40.450184 |              4.415332
+ concurrent_dsm | 6 |       128 |        0.403 |                            1 |             40.89678 |              8.181866
+ concurrent_dsm | 6 |       200 |        0.411 |                            1 |             41.21681 |             11.781248
+(3 rows)
+
+Time: 21954.812 ms (00:21.955)
+=== serial vs concurrent DSM recall delta at ef_search 128 ===
+ serial_graph_recall_at_10 | concurrent_dsm_graph_recall_at_10 | recall_delta | serial_exact_quantized_recall_at_10 | concurrent_dsm_exact_quantized_recall_at_10 | concurrent_dsm_graph_below_exact_queries | concurrent_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+-------------------------------------+---------------------------------------------+------------------------------------------+--------------------------------
+                     0.343 |                             0.403 |  0.060000002 |                                   1 |                                           1 |                                       89 |                             10
+(1 row)
+
+Time: 40837.345 ms (00:40.837)
+ serial_index_bytes | concurrent_dsm_index_bytes 
+--------------------+----------------------------
+            2334720 |                    2334720
+(1 row)
+
+Time: 0.665 ms
+         finished_at          
+------------------------------
+ 2026-04-25 19:08:57.95236-07
+(1 row)
+
+Time: 0.266 ms
+psql:review/650-c1-parallel-concurrent-dsm-recall-validation/artifacts/pg18_parallel_concurrent_dsm_recall_validation.sql:10: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_recall_corpus" does not exist, skipping
+psql:review/650-c1-parallel-concurrent-dsm-recall-validation/artifacts/pg18_parallel_concurrent_dsm_recall_validation.sql:11: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_recall_queries" does not exist, skipping
+psql:review/650-c1-parallel-concurrent-dsm-recall-validation/artifacts/pg18_parallel_concurrent_dsm_recall_validation.sql:12: NOTICE:  drop cascades to column embedding of table ec_hnsw_parallel_concurrent_dsm_50k_measure
