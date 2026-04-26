@@ -33,6 +33,7 @@ const EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX: u32 = u32::MAX;
 const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED: u32 = 0;
 const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_INSERTING: u32 = 1;
 const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY: u32 = 2;
+const EC_HNSW_CONCURRENT_DSM_STRIPE_CHUNK_NODES: u32 = 64;
 
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 static LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
@@ -311,6 +312,51 @@ pub(super) fn concurrent_dsm_node_partitions(
             ),
         });
         start_node_idx = end_node_idx;
+    }
+
+    partitions
+}
+
+#[allow(dead_code)]
+pub(super) fn concurrent_dsm_node_striped_partitions(
+    node_count: u32,
+    participant_count: u16,
+    participant_index: u16,
+    chunk_nodes: u32,
+) -> Vec<EcHnswConcurrentDsmNodePartition> {
+    if participant_count == 0 {
+        pgrx::error!("concurrent DSM graph insertion requires at least one participant");
+    }
+    if participant_index >= participant_count {
+        pgrx::error!("concurrent DSM graph participant index is out of bounds");
+    }
+    if chunk_nodes == 0 {
+        pgrx::error!("concurrent DSM striped partition chunk size must be nonzero");
+    }
+
+    let participant_count = u32::from(participant_count);
+    let participant_index = u32::from(participant_index);
+    let stride = participant_count
+        .checked_mul(chunk_nodes)
+        .unwrap_or_else(|| pgrx::error!("concurrent DSM striped partition stride overflow"));
+    let mut start = participant_index
+        .checked_mul(chunk_nodes)
+        .unwrap_or_else(|| pgrx::error!("concurrent DSM striped partition start overflow"));
+    let mut partitions = Vec::new();
+
+    while start < node_count {
+        let end = start.saturating_add(chunk_nodes).min(node_count);
+        partitions.push(EcHnswConcurrentDsmNodePartition {
+            participant_index: checked_u16(
+                participant_index as i32,
+                "concurrent DSM participant index",
+            ),
+            start_node_idx: start,
+            end_node_idx: end,
+        });
+        start = start
+            .checked_add(stride)
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM striped partition start overflow"));
     }
 
     partitions
@@ -1111,11 +1157,23 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
     if participant_index >= participant_count {
         pgrx::error!("concurrent DSM graph participant index is out of bounds");
     }
-    let partitions = concurrent_dsm_node_partitions(layout.node_count, participant_count);
-    let partition = partitions[participant_index as usize];
-    unsafe {
-        insert_concurrent_dsm_graph_partition(parts, layout, config, partition, scratch, locks)
+    let partitions = concurrent_dsm_node_striped_partitions(
+        layout.node_count,
+        participant_count,
+        participant_index,
+        EC_HNSW_CONCURRENT_DSM_STRIPE_CHUNK_NODES,
+    );
+    let mut inserted = 0_u32;
+    for partition in partitions {
+        inserted = inserted
+            .checked_add(unsafe {
+                insert_concurrent_dsm_graph_partition(
+                    parts, layout, config, partition, scratch, locks,
+                )
+            })
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM inserted count overflow"));
     }
+    inserted
 }
 
 unsafe fn begin_concurrent_dsm_graph_node_insert(
@@ -2881,6 +2939,99 @@ mod tests {
     #[should_panic]
     fn concurrent_dsm_node_partitions_reject_zero_participants() {
         let _ = concurrent_dsm_node_partitions(2, 0);
+    }
+
+    #[test]
+    fn concurrent_dsm_node_striped_partitions_interleave_global_order_windows() {
+        let participant_0 = concurrent_dsm_node_striped_partitions(20, 3, 0, 2);
+        let participant_1 = concurrent_dsm_node_striped_partitions(20, 3, 1, 2);
+        let participant_2 = concurrent_dsm_node_striped_partitions(20, 3, 2, 2);
+
+        assert_eq!(
+            participant_0,
+            vec![
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 0,
+                    end_node_idx: 2,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 6,
+                    end_node_idx: 8,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 12,
+                    end_node_idx: 14,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 0,
+                    start_node_idx: 18,
+                    end_node_idx: 20,
+                },
+            ]
+        );
+        assert_eq!(
+            participant_1,
+            vec![
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 1,
+                    start_node_idx: 2,
+                    end_node_idx: 4,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 1,
+                    start_node_idx: 8,
+                    end_node_idx: 10,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 1,
+                    start_node_idx: 14,
+                    end_node_idx: 16,
+                },
+            ]
+        );
+        assert_eq!(
+            participant_2,
+            vec![
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 2,
+                    start_node_idx: 4,
+                    end_node_idx: 6,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 2,
+                    start_node_idx: 10,
+                    end_node_idx: 12,
+                },
+                EcHnswConcurrentDsmNodePartition {
+                    participant_index: 2,
+                    start_node_idx: 16,
+                    end_node_idx: 18,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn concurrent_dsm_node_striped_partitions_cover_each_node_once() {
+        let mut covered = [0_u8; 19];
+        for participant_index in 0..4 {
+            for partition in concurrent_dsm_node_striped_partitions(19, 4, participant_index, 3) {
+                for node_idx in partition.start_node_idx..partition.end_node_idx {
+                    covered[node_idx as usize] += 1;
+                }
+            }
+        }
+
+        assert!(covered.iter().all(|count| *count == 1));
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_node_striped_partitions_reject_zero_chunk() {
+        let _ = concurrent_dsm_node_striped_partitions(2, 1, 0, 0);
     }
 
     #[test]
