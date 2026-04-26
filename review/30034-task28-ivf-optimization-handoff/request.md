@@ -99,6 +99,8 @@ Checkpoint in progress / complete on this branch:
   directly after the probe pass instead of feeding it through a no-op top-k
   heap whose bound already covered the full selected-list live-count upper
   bound.
+- Selected-list membership inside the merged probe pass now uses a plan-local
+  bitmap instead of a per-posting binary search over selected list ids.
 
 Why this slice is worth doing here:
 
