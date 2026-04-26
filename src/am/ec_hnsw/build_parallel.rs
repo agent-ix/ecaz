@@ -161,13 +161,14 @@ struct EcHnswConcurrentDsmGraphHeader {
     entry_idx: u32,
     total_neighbor_slots: u32,
     code_len: u32,
+    source_dim: u32,
     dimensions: u32,
     m: u32,
     ef_construction: u32,
     seed: u64,
     max_level: u8,
     bits: u8,
-    reserved0: [u8; 6],
+    reserved0: [u8; 2],
 }
 
 #[allow(dead_code)]
@@ -188,6 +189,7 @@ pub(super) struct EcHnswConcurrentDsmGraphParts {
     nodes: *mut EcHnswConcurrentDsmNode,
     neighbor_slots: *mut u32,
     codes: *mut u8,
+    sources: *mut f32,
 }
 
 #[allow(dead_code)]
@@ -591,6 +593,14 @@ pub(super) struct EcHnswConcurrentDsmCodeCorpus {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct EcHnswConcurrentDsmSourceCorpus {
+    pub(super) node_count: u32,
+    pub(super) source_dim: u32,
+    pub(super) values: Vec<f32>,
+}
+
+#[allow(dead_code)]
 impl EcHnswConcurrentDsmCodeCorpus {
     pub(super) fn from_tuples(tuples: &[build::BuildTuple]) -> Self {
         let node_count = checked_graph_u32(tuples.len(), "concurrent DSM code corpus nodes");
@@ -632,6 +642,50 @@ impl EcHnswConcurrentDsmCodeCorpus {
 }
 
 #[allow(dead_code)]
+impl EcHnswConcurrentDsmSourceCorpus {
+    pub(super) fn from_tuples(tuples: &[build::BuildTuple]) -> Option<Self> {
+        if tuples.is_empty() || tuples.iter().all(|tuple| tuple.source_vector.is_none()) {
+            return None;
+        }
+        if !tuples.iter().all(|tuple| tuple.source_vector.is_some()) {
+            pgrx::error!(
+                "concurrent DSM source corpus requires all tuples to carry source vectors"
+            );
+        }
+
+        let node_count = checked_graph_u32(tuples.len(), "concurrent DSM source corpus nodes");
+        let source_dim = tuples
+            .first()
+            .and_then(|tuple| tuple.source_vector.as_ref())
+            .map_or(0_usize, Vec::len);
+        if source_dim == 0 {
+            pgrx::error!("concurrent DSM source corpus requires non-empty source vectors");
+        }
+        let total_values = source_dim
+            .checked_mul(tuples.len())
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM source corpus value count overflow"));
+        let mut values = Vec::with_capacity(total_values);
+
+        for tuple in tuples {
+            let source = tuple
+                .source_vector
+                .as_ref()
+                .expect("validated source corpus should have source vectors");
+            if source.len() != source_dim {
+                pgrx::error!("concurrent DSM source corpus requires fixed-width source vectors");
+            }
+            values.extend_from_slice(source);
+        }
+
+        Some(Self {
+            node_count,
+            source_dim: checked_graph_u32(source_dim, "concurrent DSM source corpus dimension"),
+            values,
+        })
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct EcHnswConcurrentDsmGraphLayout {
     pub(super) node_count: u32,
@@ -639,16 +693,23 @@ pub(super) struct EcHnswConcurrentDsmGraphLayout {
     pub(super) max_level: u8,
     pub(super) total_neighbor_slots: u32,
     pub(super) code_len: u32,
+    pub(super) source_dim: u32,
     pub(super) header_offset: pg_sys::Size,
     pub(super) nodes_offset: pg_sys::Size,
     pub(super) neighbor_slots_offset: pg_sys::Size,
     pub(super) codes_offset: pg_sys::Size,
+    pub(super) sources_offset: pg_sys::Size,
     pub(super) total_bytes: pg_sys::Size,
 }
 
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmGraphLayout {
-    pub(super) fn for_levels(levels: &build::NativeBuildLevels, m: u16, code_len: usize) -> Self {
+    pub(super) fn for_levels(
+        levels: &build::NativeBuildLevels,
+        m: u16,
+        code_len: usize,
+        source_dim: usize,
+    ) -> Self {
         let node_plan = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(levels, m);
         let node_count = checked_graph_u32(levels.levels.len(), "concurrent DSM graph nodes");
         let entry_idx = levels
@@ -656,6 +717,7 @@ impl EcHnswConcurrentDsmGraphLayout {
             .map(|idx| checked_graph_u32(idx, "concurrent DSM graph entry index"));
         let total_neighbor_slots = node_plan.total_neighbor_slots;
         let code_len = checked_graph_u32(code_len, "concurrent DSM graph code length");
+        let source_dim = checked_graph_u32(source_dim, "concurrent DSM graph source dimension");
 
         Self::from_header_values(
             node_count,
@@ -663,6 +725,7 @@ impl EcHnswConcurrentDsmGraphLayout {
             levels.max_level,
             total_neighbor_slots,
             code_len,
+            source_dim,
         )
     }
 
@@ -684,6 +747,7 @@ impl EcHnswConcurrentDsmGraphLayout {
             header.max_level,
             header.total_neighbor_slots,
             header.code_len,
+            header.source_dim,
         )
     }
 
@@ -693,6 +757,7 @@ impl EcHnswConcurrentDsmGraphLayout {
         max_level: u8,
         total_neighbor_slots: u32,
         code_len: u32,
+        source_dim: u32,
     ) -> Self {
         match entry_idx {
             Some(entry_idx) if entry_idx >= node_count => {
@@ -731,9 +796,24 @@ impl EcHnswConcurrentDsmGraphLayout {
             node_count as pg_sys::Size,
             "concurrent DSM graph code corpus",
         );
-        let total_bytes = checked_add_size(
+        let sources_offset = checked_add_size(
             codes_offset,
             bufferalign(code_bytes),
+            "concurrent DSM graph source offset",
+        );
+        let source_values = checked_mul_size(
+            source_dim as pg_sys::Size,
+            node_count as pg_sys::Size,
+            "concurrent DSM graph source corpus values",
+        );
+        let source_bytes = checked_mul_size(
+            size_of::<f32>() as pg_sys::Size,
+            source_values,
+            "concurrent DSM graph source corpus bytes",
+        );
+        let total_bytes = checked_add_size(
+            sources_offset,
+            bufferalign(source_bytes),
             "concurrent DSM graph total bytes",
         );
 
@@ -743,21 +823,24 @@ impl EcHnswConcurrentDsmGraphLayout {
             max_level,
             total_neighbor_slots,
             code_len,
+            source_dim,
             header_offset,
             nodes_offset,
             neighbor_slots_offset,
             codes_offset,
+            sources_offset,
             total_bytes,
         }
     }
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct EcHnswConcurrentDsmPreassemblyPlan {
     pub(super) levels: build::NativeBuildLevels,
     pub(super) node_layout: EcHnswConcurrentDsmNodeLayoutPlan,
     pub(super) code_corpus: EcHnswConcurrentDsmCodeCorpus,
+    pub(super) source_corpus: Option<EcHnswConcurrentDsmSourceCorpus>,
     pub(super) graph_layout: EcHnswConcurrentDsmGraphLayout,
     pub(super) insert_config: Option<EcHnswConcurrentDsmInsertConfig>,
 }
@@ -765,10 +848,6 @@ pub(super) struct EcHnswConcurrentDsmPreassemblyPlan {
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmPreassemblyPlan {
     pub(super) fn for_state(state: &build::BuildState) -> Self {
-        if state.options.build_source_column.is_some() {
-            pgrx::error!("concurrent DSM graph assembly does not support source-scored builds yet");
-        }
-
         let m = u16::try_from(state.options.m).expect("validated m should fit into u16");
         let levels = if state.heap_tuples.is_empty() {
             build::NativeBuildLevels::from_levels(Vec::new())
@@ -777,8 +856,15 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
         };
         let node_layout = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(&levels, m);
         let code_corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&state.heap_tuples);
-        let graph_layout =
-            EcHnswConcurrentDsmGraphLayout::for_levels(&levels, m, code_corpus.code_len as usize);
+        let source_corpus = EcHnswConcurrentDsmSourceCorpus::from_tuples(&state.heap_tuples);
+        let graph_layout = EcHnswConcurrentDsmGraphLayout::for_levels(
+            &levels,
+            m,
+            code_corpus.code_len as usize,
+            source_corpus
+                .as_ref()
+                .map_or(0_usize, |corpus| corpus.source_dim as usize),
+        );
         let insert_config = if state.heap_tuples.is_empty() {
             None
         } else {
@@ -788,6 +874,11 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
         if graph_layout.node_count != code_corpus.node_count {
             pgrx::error!("concurrent DSM preassembly node counts do not match");
         }
+        if let Some(source_corpus) = &source_corpus {
+            if graph_layout.node_count != source_corpus.node_count {
+                pgrx::error!("concurrent DSM preassembly source node counts do not match");
+            }
+        }
         if graph_layout.total_neighbor_slots != node_layout.total_neighbor_slots {
             pgrx::error!("concurrent DSM preassembly neighbor slot counts do not match");
         }
@@ -796,6 +887,7 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
             levels,
             node_layout,
             code_corpus,
+            source_corpus,
             graph_layout,
             insert_config,
         }
@@ -883,6 +975,7 @@ pub(super) unsafe fn concurrent_dsm_graph_parts(
         },
         neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },
         codes: unsafe { base.add(layout.codes_offset) },
+        sources: unsafe { base.add(layout.sources_offset).cast::<f32>() },
     }
 }
 
@@ -914,6 +1007,7 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
                     .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
                 total_neighbor_slots: layout.total_neighbor_slots,
                 code_len: layout.code_len,
+                source_dim: layout.source_dim,
                 dimensions: checked_u32(
                     insert_config.dimensions,
                     "concurrent DSM graph dimensions",
@@ -926,7 +1020,7 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
                 seed: insert_config.seed,
                 max_level: layout.max_level,
                 bits: insert_config.bits,
-                reserved0: [0; 6],
+                reserved0: [0; 2],
             },
         );
 
@@ -963,6 +1057,15 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
             "concurrent DSM graph initialized code bytes",
         );
         slice::from_raw_parts_mut(parts.codes, code_bytes).copy_from_slice(&plan.code_corpus.bytes);
+        if let Some(source_corpus) = &plan.source_corpus {
+            let source_values = checked_mul_size(
+                layout.source_dim as pg_sys::Size,
+                layout.node_count as pg_sys::Size,
+                "concurrent DSM graph initialized source values",
+            ) as usize;
+            slice::from_raw_parts_mut(parts.sources, source_values)
+                .copy_from_slice(&source_corpus.values);
+        }
     }
 
     parts
@@ -1585,15 +1688,22 @@ unsafe fn score_concurrent_dsm_code_with_cache(
     if let Some(score) = cache.get(candidate_idx) {
         return score;
     }
-    let query_code = unsafe { concurrent_dsm_code_for_node(parts, layout, query_idx) };
-    let candidate_code = unsafe { concurrent_dsm_code_for_node(parts, layout, candidate_idx) };
-    let score = -crate::score_code_inner_product(
-        config.dimensions,
-        config.bits,
-        config.seed,
-        query_code,
-        candidate_code,
-    );
+    let score = if layout.source_dim > 0 {
+        let query_source = unsafe { concurrent_dsm_source_for_node(parts, layout, query_idx) };
+        let candidate_source =
+            unsafe { concurrent_dsm_source_for_node(parts, layout, candidate_idx) };
+        -score_concurrent_dsm_source_inner_product(query_source, candidate_source)
+    } else {
+        let query_code = unsafe { concurrent_dsm_code_for_node(parts, layout, query_idx) };
+        let candidate_code = unsafe { concurrent_dsm_code_for_node(parts, layout, candidate_idx) };
+        -crate::score_code_inner_product(
+            config.dimensions,
+            config.bits,
+            config.seed,
+            query_code,
+            candidate_code,
+        )
+    };
     cache.insert(candidate_idx, score);
     score
 }
@@ -1611,6 +1721,28 @@ unsafe fn concurrent_dsm_code_for_node(
         .checked_mul(code_len)
         .unwrap_or_else(|| pgrx::error!("concurrent DSM code offset overflow"));
     unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) }
+}
+
+unsafe fn concurrent_dsm_source_for_node(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    node_idx: u32,
+) -> &'static [f32] {
+    if node_idx >= layout.node_count {
+        pgrx::error!("concurrent DSM graph source node index out of bounds");
+    }
+    if layout.source_dim == 0 {
+        pgrx::error!("concurrent DSM graph source corpus is unavailable");
+    }
+    let source_dim = layout.source_dim as usize;
+    let start = (node_idx as usize)
+        .checked_mul(source_dim)
+        .unwrap_or_else(|| pgrx::error!("concurrent DSM source offset overflow"));
+    unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) }
+}
+
+fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
 }
 
 unsafe fn concurrent_dsm_node_slots<'a>(
@@ -3072,7 +3204,7 @@ mod tests {
     #[test]
     fn concurrent_dsm_graph_layout_sums_slots_and_aligns_sections() {
         let levels = build::NativeBuildLevels::from_levels(vec![0, 2]);
-        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6);
+        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6, 0);
         let alignment = pg_sys::ALIGNOF_BUFFER as pg_sys::Size;
 
         assert_eq!(layout.node_count, 2);
@@ -3096,7 +3228,7 @@ mod tests {
     #[test]
     fn concurrent_dsm_graph_layout_handles_empty_levels() {
         let levels = build::NativeBuildLevels::from_levels(Vec::new());
-        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6);
+        let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6, 0);
 
         assert_eq!(layout.node_count, 0);
         assert_eq!(layout.entry_idx, None);
@@ -3155,11 +3287,30 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn concurrent_dsm_preassembly_plan_rejects_source_scored_builds() {
-        let state = build_state(Some("source"));
+    fn concurrent_dsm_preassembly_plan_packs_source_scored_builds() {
+        let mut state = build_state(Some("source"));
+        state.push(build_tuple_with_source(
+            vec![1, 2, 3],
+            vec![1.0, 2.0, 3.0, 4.0],
+        ));
+        state.push(build_tuple_with_source(
+            vec![4, 5, 6],
+            vec![5.0, 6.0, 7.0, 8.0],
+        ));
 
-        let _ = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+
+        let source_corpus = plan
+            .source_corpus
+            .as_ref()
+            .expect("source-scored build should pack source vectors");
+        assert_eq!(source_corpus.node_count, 2);
+        assert_eq!(source_corpus.source_dim, 4);
+        assert_eq!(
+            source_corpus.values,
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        );
+        assert_eq!(plan.graph_layout.source_dim, 4);
     }
 
     #[test]
@@ -3279,13 +3430,14 @@ mod tests {
             entry_idx: EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX,
             total_neighbor_slots: 2,
             code_len: 3,
+            source_dim: 0,
             dimensions: 4,
             m: 2,
             ef_construction: 32,
             seed: 42,
             max_level: 0,
             bits: 4,
-            reserved0: [0; 6],
+            reserved0: [0; 2],
         };
 
         let _ = unsafe { EcHnswConcurrentDsmGraphLayout::from_header(&header) };
@@ -3299,13 +3451,14 @@ mod tests {
             entry_idx: 0,
             total_neighbor_slots: 2,
             code_len: 3,
+            source_dim: 0,
             dimensions: 0,
             m: 2,
             ef_construction: 32,
             seed: 42,
             max_level: 0,
             bits: 4,
-            reserved0: [0; 6],
+            reserved0: [0; 2],
         };
 
         let _ = unsafe { concurrent_dsm_insert_config_from_image(ptr::addr_of!(header).cast()) };
@@ -3737,13 +3890,18 @@ mod tests {
             .collect::<Vec<_>>();
         let node_layout = EcHnswConcurrentDsmNodeLayoutPlan::for_levels(&levels, 2);
         let code_corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&tuples);
-        let graph_layout =
-            EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, code_corpus.code_len as usize);
+        let graph_layout = EcHnswConcurrentDsmGraphLayout::for_levels(
+            &levels,
+            2,
+            code_corpus.code_len as usize,
+            0,
+        );
 
         EcHnswConcurrentDsmPreassemblyPlan {
             levels,
             node_layout,
             code_corpus,
+            source_corpus: None,
             graph_layout,
             insert_config: if has_codes {
                 Some(test_insert_config(4))
@@ -3787,6 +3945,14 @@ mod tests {
             code,
             source_vector: None,
             source_count: 0,
+        }
+    }
+
+    fn build_tuple_with_source(code: Vec<u8>, source_vector: Vec<f32>) -> build::BuildTuple {
+        build::BuildTuple {
+            source_vector: Some(source_vector),
+            source_count: 1,
+            ..build_tuple_with_code(code)
         }
     }
 
