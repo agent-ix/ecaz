@@ -1582,8 +1582,13 @@ unsafe fn add_concurrent_dsm_backlinks(
             .then_with(|| left.layer.cmp(&right.layer))
     });
     pending.dedup();
+    let mut current_target_idx = None;
 
     for selection in pending {
+        if current_target_idx != Some(selection.node_idx) {
+            scratch.query_scores.begin_query();
+            current_target_idx = Some(selection.node_idx);
+        }
         if selection.node_idx >= layout.node_count {
             pgrx::error!("concurrent DSM backlink target index out of bounds");
         }
@@ -1618,7 +1623,6 @@ unsafe fn add_concurrent_dsm_backlinks(
             continue;
         }
 
-        scratch.query_scores.begin_query();
         let mut candidates = layer_slice
             .iter()
             .copied()
