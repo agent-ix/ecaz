@@ -25,6 +25,30 @@ impl GraphPrefetchState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BlockSequencePrefetchState {
+    blocks: Vec<u32>,
+    index: usize,
+}
+
+impl BlockSequencePrefetchState {
+    pub(crate) fn new(blocks: Vec<u32>) -> Self {
+        Self { blocks, index: 0 }
+    }
+
+    pub(crate) fn reset(&mut self, blocks: Vec<u32>) {
+        self.blocks.clear();
+        self.blocks.extend(blocks);
+        self.index = 0;
+    }
+
+    pub(crate) fn next_block(&mut self) -> Option<u32> {
+        let block = self.blocks.get(self.index).copied()?;
+        self.index += 1;
+        Some(block)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LinearPrefetchState {
     next_block: u32,
@@ -117,6 +141,15 @@ pub(crate) fn linear_prefetch_callback(
     }
 }
 
+pub(crate) fn block_sequence_prefetch_callback(
+    state: &mut BlockSequencePrefetchState,
+) -> ReadStreamCallbackResult {
+    match state.next_block() {
+        Some(block) => ReadStreamCallbackResult::Block(block),
+        None => ReadStreamCallbackResult::EndOfStream,
+    }
+}
+
 pub(crate) fn stream_snapshot() -> ReadStreamSnapshot {
     let graph = graph_callback_signature();
     let linear = linear_callback_signature();
@@ -181,11 +214,32 @@ pub(crate) unsafe extern "C-unwind" fn linear_prefetch_cb(
     }
 }
 
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn block_sequence_prefetch_cb(
+    _stream: *mut pg_sys::ReadStream,
+    callback_private_data: *mut std::ffi::c_void,
+    per_buffer_data: *mut std::ffi::c_void,
+) -> pg_sys::BlockNumber {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &mut *callback_private_data.cast::<BlockSequencePrefetchState>();
+            match block_sequence_prefetch_callback(state) {
+                ReadStreamCallbackResult::Block(block_number) => {
+                    write_stream_block(per_buffer_data, block_number);
+                    block_number
+                }
+                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        graph_callback_signature, graph_prefetch_callback, linear_callback_signature,
-        linear_prefetch_callback, stream_snapshot, GraphPrefetchState, LinearPrefetchState,
+        block_sequence_prefetch_callback, graph_callback_signature, graph_prefetch_callback,
+        linear_callback_signature, linear_prefetch_callback, stream_snapshot,
+        BlockSequencePrefetchState, GraphPrefetchState, LinearPrefetchState,
         ReadStreamCallbackResult, ReadStreamCallbackSignature, ReadStreamSnapshot,
     };
 
@@ -297,6 +351,49 @@ mod tests {
         assert_eq!(state.next_block(), Some(30));
         assert_eq!(state.next_block(), Some(31));
         assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
+    fn block_sequence_prefetch_state_advances_until_exhausted() {
+        let mut state = BlockSequencePrefetchState::new(vec![4, 7, 8, 12]);
+
+        assert_eq!(state.next_block(), Some(4));
+        assert_eq!(state.next_block(), Some(7));
+        assert_eq!(state.next_block(), Some(8));
+        assert_eq!(state.next_block(), Some(12));
+        assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
+    fn block_sequence_prefetch_state_reset_restarts_with_new_blocks() {
+        let mut state = BlockSequencePrefetchState::new(vec![4, 7, 8]);
+
+        assert_eq!(state.next_block(), Some(4));
+        assert_eq!(state.next_block(), Some(7));
+
+        state.reset(vec![20, 21]);
+
+        assert_eq!(state.next_block(), Some(20));
+        assert_eq!(state.next_block(), Some(21));
+        assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
+    fn block_sequence_prefetch_callback_reports_end_of_stream() {
+        let mut state = BlockSequencePrefetchState::new(vec![31, 33]);
+
+        assert_eq!(
+            block_sequence_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(31)
+        );
+        assert_eq!(
+            block_sequence_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(33)
+        );
+        assert_eq!(
+            block_sequence_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::EndOfStream
+        );
     }
 
     #[test]

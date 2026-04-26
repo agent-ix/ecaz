@@ -41,6 +41,12 @@ struct EcIvfScoredCandidate {
     score: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProbeBlockRange {
+    head_block: u32,
+    tail_block: u32,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProbeListHeapEntry {
     centroid: EcIvfCentroidScore,
@@ -667,54 +673,50 @@ unsafe fn materialize_probe_candidates(
     );
     let candidate_bound = selected_list_live_count_bound(&directories, selected_lists)?;
     let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let selected_list_mask = selected_list_mask(&directories, selected_lists)?;
+    let probe_block_sequence = build_probe_block_sequence(&directories, selected_lists)?;
     let mut best_by_heap_tid = HashMap::new();
-    for list_id in selected_lists {
-        let directory = directories
-            .get(*list_id as usize)
-            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
-        let posting_pages = posting_block_count(directory)?;
-        opaque
-            .explain_counters
-            .record_posting_pages_read(posting_pages);
-        record_posting_pages_read(opaque, posting_pages);
-        unsafe {
-            super::page::visit_ivf_postings_for_list_blocks(
-                index_relation,
-                *list_id,
-                directory.head_block,
-                directory.tail_block,
-                payload_len,
-                |_, posting| {
-                    if posting.deleted {
-                        return Ok(());
-                    }
-                    let score = -quantizer.score_ip_from_parts(
-                        prepared_query,
-                        posting.gamma,
-                        &posting.payload,
-                    );
-                    record_distance_calcs(opaque, 1);
-                    for heap_tid in posting.heaptids {
-                        opaque.explain_counters.record_candidate_scored();
-                        let candidate = EcIvfScoredCandidate { heap_tid, score };
-                        match best_by_heap_tid.entry(heap_tid) {
-                            Entry::Occupied(mut entry) => {
-                                opaque.explain_counters.record_filtered_duplicate();
-                                let existing = entry.get_mut();
-                                if candidate_cmp(&candidate, existing) == Ordering::Less {
-                                    *existing = candidate;
-                                }
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(candidate);
+    let posting_pages = u32::try_from(probe_block_sequence.len())
+        .map_err(|_| "ec_ivf posting block sequence exceeds u32".to_owned())?;
+    opaque
+        .explain_counters
+        .record_posting_pages_read(posting_pages);
+    record_posting_pages_read(opaque, posting_pages);
+    unsafe {
+        super::page::visit_ivf_postings_for_block_sequence(
+            index_relation,
+            &probe_block_sequence,
+            payload_len,
+            |_, posting| {
+                let Some(is_selected) = selected_list_mask.get(posting.list_id as usize) else {
+                    return Ok(());
+                };
+                if !*is_selected || posting.deleted {
+                    return Ok(());
+                }
+                let score =
+                    -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
+                record_distance_calcs(opaque, 1);
+                for heap_tid in posting.heaptids {
+                    opaque.explain_counters.record_candidate_scored();
+                    let candidate = EcIvfScoredCandidate { heap_tid, score };
+                    match best_by_heap_tid.entry(heap_tid) {
+                        Entry::Occupied(mut entry) => {
+                            opaque.explain_counters.record_filtered_duplicate();
+                            let existing = entry.get_mut();
+                            if candidate_cmp(&candidate, existing) == Ordering::Less {
+                                *existing = candidate;
                             }
                         }
+                        Entry::Vacant(entry) => {
+                            entry.insert(candidate);
+                        }
                     }
-                    Ok(())
-                },
-            )?
-        }
-    }
+                }
+                Ok(())
+            },
+        )?
+    };
 
     let mut top_k = CandidateTopK::new(candidate_bound);
     for candidate in best_by_heap_tid.into_values() {
@@ -764,6 +766,66 @@ fn selected_list_live_count_bound(
             .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
     }
     Ok(total)
+}
+
+fn selected_list_mask(
+    directories: &[super::page::IvfListDirectoryTuple],
+    selected_lists: &[u32],
+) -> Result<Vec<bool>, String> {
+    let mut mask = vec![false; directories.len()];
+    for list_id in selected_lists {
+        let slot = mask
+            .get_mut(*list_id as usize)
+            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        *slot = true;
+    }
+    Ok(mask)
+}
+
+fn build_probe_block_sequence(
+    directories: &[super::page::IvfListDirectoryTuple],
+    selected_lists: &[u32],
+) -> Result<Vec<u32>, String> {
+    let mut ranges = Vec::new();
+    for list_id in selected_lists {
+        let directory = directories
+            .get(*list_id as usize)
+            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        if posting_block_count(directory)? == 0 {
+            continue;
+        }
+        ranges.push(ProbeBlockRange {
+            head_block: directory.head_block.block_number,
+            tail_block: directory.tail_block.block_number,
+        });
+    }
+
+    if ranges.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    ranges.sort_by(|left, right| {
+        left.head_block
+            .cmp(&right.head_block)
+            .then_with(|| left.tail_block.cmp(&right.tail_block))
+    });
+
+    let mut blocks = Vec::new();
+    let mut next_block: Option<u32> = None;
+    for range in ranges {
+        let start = next_block
+            .map(|next| next.max(range.head_block))
+            .unwrap_or(range.head_block);
+        if start > range.tail_block {
+            continue;
+        }
+        for block_number in start..=range.tail_block {
+            blocks.push(block_number);
+        }
+        next_block = range.tail_block.checked_add(1);
+    }
+
+    Ok(blocks)
 }
 
 pub(crate) unsafe fn explain_counters_from_index_scan_state(
@@ -1166,7 +1228,11 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 
 #[cfg(test)]
 mod tests {
-    use super::{select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate};
+    use super::{
+        build_probe_block_sequence, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
+        EcIvfScoredCandidate,
+    };
+    use crate::am::ec_ivf::page::{BlockRef, IvfListDirectoryTuple};
     use crate::storage::page::ItemPointer;
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
@@ -1181,6 +1247,21 @@ mod tests {
 
     fn centroid(list_id: u32, score: f32) -> EcIvfCentroidScore {
         EcIvfCentroidScore { list_id, score }
+    }
+
+    fn directory(list_id: u32, head_block: Option<u32>, tail_block: Option<u32>) -> IvfListDirectoryTuple {
+        IvfListDirectoryTuple {
+            list_id,
+            head_block: head_block
+                .map(|block_number| BlockRef { block_number })
+                .unwrap_or(BlockRef::INVALID),
+            tail_block: tail_block
+                .map(|block_number| BlockRef { block_number })
+                .unwrap_or(BlockRef::INVALID),
+            live_count: 0,
+            dead_count: 0,
+            inserted_since_build: 0,
+        }
     }
 
     #[test]
@@ -1240,5 +1321,31 @@ mod tests {
         );
 
         assert_eq!(selected, vec![1, 3, 7]);
+    }
+
+    #[test]
+    fn build_probe_block_sequence_merges_overlapping_ranges_once() {
+        let directories = vec![
+            directory(0, Some(12), Some(14)),
+            directory(1, Some(10), Some(12)),
+            directory(2, Some(18), Some(19)),
+        ];
+
+        let sequence = build_probe_block_sequence(&directories, &[0, 1, 2]).unwrap();
+
+        assert_eq!(sequence, vec![10, 11, 12, 13, 14, 18, 19]);
+    }
+
+    #[test]
+    fn build_probe_block_sequence_skips_empty_lists() {
+        let directories = vec![
+            directory(0, None, None),
+            directory(1, Some(8), Some(9)),
+            directory(2, None, None),
+        ];
+
+        let sequence = build_probe_block_sequence(&directories, &[0, 1, 2]).unwrap();
+
+        assert_eq!(sequence, vec![8, 9]);
     }
 }

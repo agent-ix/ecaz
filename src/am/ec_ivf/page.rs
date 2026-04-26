@@ -6,7 +6,7 @@ use std::ptr;
 use pgrx::pg_sys;
 
 #[cfg(feature = "pg18")]
-use crate::am::stream::LinearPrefetchState;
+use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use super::options::{EcIvfOptions, RerankMode, StorageFormat};
 use super::P_NEW;
 use crate::storage::{
@@ -762,6 +762,48 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     Ok(postings)
 }
 
+pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
+    index_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
+    if block_numbers.is_empty() {
+        return Ok(());
+    }
+
+    #[cfg(feature = "pg18")]
+    {
+        unsafe {
+            visit_ivf_posting_block_sequence_with_read_stream(
+                index_relation,
+                block_numbers,
+                payload_len,
+                &mut visitor,
+            )?
+        };
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        for block_number in block_numbers {
+            unsafe {
+                visit_all_ivf_postings_for_block(
+                    index_relation,
+                    *block_number,
+                    payload_len,
+                    &mut visitor,
+                )?
+            };
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "pg18")]
 unsafe fn visit_ivf_posting_blocks_with_read_stream<F>(
     index_relation: pg_sys::Relation,
@@ -818,6 +860,53 @@ where
     Ok(())
 }
 
+#[cfg(feature = "pg18")]
+unsafe fn visit_ivf_posting_block_sequence_with_read_stream<F>(
+    index_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
+    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_SEQUENTIAL as i32,
+            ptr::null_mut(),
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut BlockSequencePrefetchState).cast(),
+            size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        let block_number = if per_buffer_data.is_null() {
+            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
+        } else {
+            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        };
+        let result =
+            unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        if let Err(err) = result {
+            unsafe { pg_sys::read_stream_end(stream) };
+            return Err(err);
+        }
+    }
+
+    unsafe { pg_sys::read_stream_end(stream) };
+    Ok(())
+}
+
 #[cfg(not(feature = "pg18"))]
 unsafe fn visit_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
@@ -851,9 +940,58 @@ where
     result
 }
 
+#[cfg(not(feature = "pg18"))]
+unsafe fn visit_all_ivf_postings_for_block<F>(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_ivf failed to open posting-list block {block_number}"
+        ));
+    }
+
+    let result = unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
+    unsafe { pg_sys::ReleaseBuffer(buffer) };
+    result
+}
+
 unsafe fn visit_ivf_postings_from_buffer<F>(
     buffer: pg_sys::Buffer,
     list_id: u32,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
+{
+    unsafe {
+        visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, &mut |posting_tid, posting| {
+            if posting.list_id == list_id {
+                visitor(posting_tid, posting)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+unsafe fn visit_all_ivf_postings_from_buffer<F>(
+    buffer: pg_sys::Buffer,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     visitor: &mut F,
@@ -887,15 +1025,13 @@ where
             }
 
             let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-            if posting.list_id == list_id {
-                visitor(
-                    ItemPointer {
-                        block_number,
-                        offset_number: offset,
-                    },
-                    posting,
-                )?;
-            }
+            visitor(
+                ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                },
+                posting,
+            )?;
         }
         Ok(())
     })();
