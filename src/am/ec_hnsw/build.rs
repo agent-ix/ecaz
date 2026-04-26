@@ -1653,6 +1653,34 @@ fn current_format_flush_output(
     state: &BuildState,
     timing: &mut BuildFlushTiming,
 ) -> BuildFlushOutput {
+    let graph_start = Instant::now();
+    let graph_nodes = build_hnsw_graph(state);
+    timing.graph_us = elapsed_us(graph_start);
+    current_format_flush_output_from_graph_nodes_with_timing(state, &graph_nodes, timing)
+}
+
+#[allow(dead_code)]
+pub(super) fn current_format_flush_output_from_graph_nodes(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+) -> BuildFlushOutput {
+    let mut timing = BuildFlushTiming::default();
+    current_format_flush_output_from_graph_nodes_with_timing(state, graph_nodes, &mut timing)
+}
+
+fn current_format_flush_output_from_graph_nodes_with_timing(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    timing: &mut BuildFlushTiming,
+) -> BuildFlushOutput {
+    if state.heap_tuples.len() != graph_nodes.len() {
+        pgrx::error!(
+            "ec_hnsw build graph node count {} did not match tuple count {}",
+            graph_nodes.len(),
+            state.heap_tuples.len()
+        );
+    }
+
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -1660,9 +1688,6 @@ fn current_format_flush_output(
     let mut data_pages = page::DataPageChain::new(state.page_size);
     let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
     let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
-    let graph_start = Instant::now();
-    let graph_nodes = build_hnsw_graph(state);
-    timing.graph_us = elapsed_us(graph_start);
     let stage_start = Instant::now();
     let persisted_binary_quantizer = ProdQuantizer::cached(
         dimensions as usize,
@@ -1724,7 +1749,7 @@ fn current_format_flush_output(
     }
 
     let entry_point =
-        choose_entry_point(&hot_tids, &graph_nodes, state).unwrap_or(page::ItemPointer::INVALID);
+        choose_entry_point(&hot_tids, graph_nodes, state).unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
     let seed = state.seed.expect("non-empty build should record seed");
     timing.stage_us = elapsed_us(stage_start);

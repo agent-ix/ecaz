@@ -912,6 +912,26 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
     inserted
 }
 
+#[allow(dead_code)]
+pub(super) unsafe fn insert_concurrent_dsm_graph_participant(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    config: EcHnswConcurrentDsmInsertConfig,
+    participant_count: u16,
+    participant_index: u16,
+    scratch: &mut EcHnswConcurrentDsmInsertScratch,
+    locks: EcHnswConcurrentDsmLockOps,
+) -> u32 {
+    if participant_index >= participant_count {
+        pgrx::error!("concurrent DSM graph participant index is out of bounds");
+    }
+    let partitions = concurrent_dsm_node_partitions(layout.node_count, participant_count);
+    let partition = partitions[participant_index as usize];
+    unsafe {
+        insert_concurrent_dsm_graph_partition(parts, layout, config, partition, scratch, locks)
+    }
+}
+
 unsafe fn begin_concurrent_dsm_graph_node_insert(
     parts: EcHnswConcurrentDsmGraphParts,
     node_idx: u32,
@@ -2800,6 +2820,57 @@ mod tests {
             .iter()
             .skip(1)
             .all(|node| node.neighbor_slots.iter().any(Option::is_some)));
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_single_participant_stages_current_format_pages() {
+        let mut state = build_state(None);
+        state.options.storage_format = crate::quant::Family::TurboQuant;
+        state.push(build_tuple_with_code(vec![0x11, 0x11, 0x11]));
+        state.push(build_tuple_with_code(vec![0x22, 0x22, 0x22]));
+        state.push(build_tuple_with_code(vec![0x33, 0x33, 0x33]));
+        state.push(build_tuple_with_code(vec![0x44, 0x44, 0x44]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+        let config = EcHnswConcurrentDsmInsertConfig::for_state(&state);
+        let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+            plan.graph_layout.node_count as usize,
+            config.ef_construction,
+            config.m,
+        );
+
+        let inserted = unsafe {
+            insert_concurrent_dsm_graph_participant(
+                parts,
+                plan.graph_layout,
+                config,
+                1,
+                0,
+                &mut scratch,
+                test_lock_ops(),
+            )
+        };
+        assert_eq!(inserted, plan.graph_layout.node_count.saturating_sub(1));
+
+        let graph_nodes =
+            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m) };
+        let output = build::current_format_flush_output_from_graph_nodes(&state, &graph_nodes);
+
+        assert_eq!(
+            output.metadata.format_version,
+            page::INDEX_FORMAT_V3_TURBO_HOT_COLD
+        );
+        assert_ne!(output.metadata.entry_point, page::ItemPointer::INVALID);
+        let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+        assert_eq!(output.metadata.max_level, max_level);
+        assert_eq!(output.metadata.m, state.options.m as u16);
     }
 
     struct AlignedDsmBuffer {
