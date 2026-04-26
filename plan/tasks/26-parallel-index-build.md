@@ -176,9 +176,14 @@ present, entry point is valid, and recall meets the existing gate.
   - 4 workers: `03:24.964`, `graph_us = 173200231`
   - 8 requested workers launched 7 and regressed: `04:08.671`,
     `graph_us = 216938590`
-- Current best real-50k point is 4 workers on this PG18 cluster. Treat 8-worker
-  results as a separate scale surface that needs a postmaster configuration with
-  enough `max_worker_processes` headroom before drawing conclusions.
+- Packet 672 reruns the 8-worker point after raising PG18 worker-process
+  headroom to `max_worker_processes = 16`, `max_parallel_workers = 16`, and
+  `max_parallel_maintenance_workers = 8`:
+  - 8 workers launched 8 graph workers and finished in `02:27.948`,
+    `graph_us = 116850823`
+- Current best real-50k point is 8 workers when the PG18 cluster has enough
+  worker-process headroom. Packet 668's regressed 8-worker point should be
+  treated as a cluster-limit diagnostic, not a scaling conclusion.
 - Next build-time curve target is the DBPedia 990k/10k profile
   (`ec_hnsw_real_ann_benchmarks_anchor`) once chunked prepare/load support from
   Task 10066 is available, or after a one-shot non-resumable load if the
