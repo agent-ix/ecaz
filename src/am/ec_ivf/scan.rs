@@ -50,13 +50,17 @@ struct ProbeBlockRange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SelectedProbePlan {
     selected_lists: Vec<u32>,
+    selected_list_mask: Vec<bool>,
     block_sequence: Vec<u32>,
     candidate_bound: usize,
 }
 
 impl SelectedProbePlan {
     fn contains_list(&self, list_id: u32) -> bool {
-        self.selected_lists.binary_search(&list_id).is_ok()
+        self.selected_list_mask
+            .get(list_id as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     fn posting_page_count(&self) -> Result<u32, String> {
@@ -729,6 +733,7 @@ unsafe fn build_selected_probe_plan(
     if selected_lists.is_empty() {
         return Ok(SelectedProbePlan {
             selected_lists: Vec::new(),
+            selected_list_mask: Vec::new(),
             block_sequence: Vec::new(),
             candidate_bound: 0,
         });
@@ -748,6 +753,11 @@ unsafe fn build_selected_probe_plan(
         .any(|list_id| *list_id >= metadata.nlists)
     {
         return Err("ec_ivf selected list is out of range".to_owned());
+    }
+
+    let mut selected_list_mask = vec![false; metadata.nlists as usize];
+    for list_id in &sorted_selected_lists {
+        selected_list_mask[*list_id as usize] = true;
     }
 
     let mut candidate_bound = 0_usize;
@@ -793,6 +803,7 @@ unsafe fn build_selected_probe_plan(
     let block_sequence = build_probe_block_sequence(&mut ranges)?;
     Ok(SelectedProbePlan {
         selected_lists: sorted_selected_lists,
+        selected_list_mask,
         block_sequence,
         candidate_bound,
     })
