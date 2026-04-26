@@ -11,6 +11,7 @@ tags:
   - rust
   - simd
 implementation_language: rust
+depends_on: []
 relationships:
   - target: "crate://pgrx"
     type: "requires"
