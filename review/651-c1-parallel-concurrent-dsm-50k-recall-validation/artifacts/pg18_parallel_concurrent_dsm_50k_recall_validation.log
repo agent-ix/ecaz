@@ -1,0 +1,122 @@
+Timing is on.
+=== pg18 parallel concurrent DSM 50k recall validation fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 19:21:32.892599-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 0.744 ms
+DROP TABLE
+Time: 0.208 ms
+DROP TABLE
+Time: 0.130 ms
+DROP EXTENSION
+Time: 70.334 ms
+CREATE EXTENSION
+Time: 45.292 ms
+CREATE TABLE
+Time: 5.936 ms
+CREATE TABLE
+Time: 4.278 ms
+=== load 50000 corpus rows x 64 dims ===
+INSERT 0 50000
+Time: 2078.306 ms (00:02.078)
+=== load 50 query rows x 64 dims ===
+INSERT 0 50
+Time: 63.171 ms
+VACUUM
+Time: 510.940 ms
+VACUUM
+Time: 4.297 ms
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 4.368 ms
+ query_rows 
+------------
+         50
+(1 row)
+
+Time: 0.553 ms
+SET
+Time: 0.233 ms
+SET
+Time: 0.126 ms
+SET
+Time: 0.101 ms
+=== serial-built 50k index ===
+SET
+Time: 0.099 ms
+SET
+Time: 0.096 ms
+ALTER TABLE
+Time: 1.315 ms
+CREATE INDEX
+Time: 29128.289 ms (00:29.128)
+ build_path | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial     |                 0 |                0 |       50000 |        49982 |        1347700 |                 0 |                 0 |                     0 |       27745645 | 27277551 |   270089 |   183913
+(1 row)
+
+Time: 0.768 ms
+SELECT 1
+Time: 49353.254 ms (00:49.353)
+ build_path | m | ef_search | corpus_rows | query_count | graph_recall_at_10 | graph_recall_at_100 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | exact_quantized_recall_at_10 | graph_below_exact_queries | worst_exact_gap 
+------------+---+-----------+-------------+-------------+--------------------+---------------------+------------+----------------------+--------------------+------------------------------+---------------------------+-----------------
+ serial     | 6 |       128 |       50000 |          50 |              0.088 |              0.2444 |  0.0964676 |             35.85216 |         -1.0995148 |                            1 |                        49 |              10
+(1 row)
+
+Time: 0.892 ms
+=== parallel concurrent DSM-built 50k index ===
+SET
+Time: 0.204 ms
+SET
+Time: 0.202 ms
+ALTER TABLE
+Time: 51.360 ms
+CREATE INDEX
+Time: 11686.067 ms (00:11.686)
+   build_path   | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+----------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ concurrent_dsm |                 4 |                4 |       50000 |        49982 |         579369 |              2576 |            426023 |                150764 |       11083147 | 10577078 |   325105 |   171050
+(1 row)
+
+Time: 0.471 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.393 ms
+SELECT 1
+Time: 49336.073 ms (00:49.336)
+   build_path   | m | ef_search | corpus_rows | query_count | graph_recall_at_10 | graph_recall_at_100 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | exact_quantized_recall_at_10 | graph_below_exact_queries | worst_exact_gap 
+----------------+---+-----------+-------------+-------------+--------------------+---------------------+------------+----------------------+--------------------+------------------------------+---------------------------+-----------------
+ concurrent_dsm | 6 |       128 |       50000 |          50 |              0.154 |              0.3752 | 0.16382226 |             40.54376 |         -1.0750301 |                            1 |                        47 |              10
+(1 row)
+
+Time: 0.877 ms
+=== serial vs concurrent DSM 50k recall delta at ef_search 128 ===
+ serial_graph_recall_at_10 | concurrent_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | concurrent_dsm_graph_recall_at_100 | recall_100_delta | serial_exact_quantized_recall_at_10 | concurrent_dsm_exact_quantized_recall_at_10 | concurrent_dsm_graph_below_exact_queries | concurrent_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+----------------------------+------------------------------------+------------------+-------------------------------------+---------------------------------------------+------------------------------------------+--------------------------------
+                     0.088 |                             0.154 |        0.066 |                     0.2444 |                             0.3752 |       0.13080001 |                                   1 |                                           1 |                                       47 |                             10
+(1 row)
+
+Time: 0.584 ms
+ serial_index_bytes | concurrent_dsm_index_bytes 
+--------------------+----------------------------
+           11616256 |                   11616256
+(1 row)
+
+Time: 0.480 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 19:23:54.974156-07
+(1 row)
+
+Time: 0.235 ms
+psql:review/651-c1-parallel-concurrent-dsm-50k-recall-validation/artifacts/pg18_parallel_concurrent_dsm_50k_recall_validation.sql:10: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_50k_recall_corpus" does not exist, skipping
+psql:review/651-c1-parallel-concurrent-dsm-50k-recall-validation/artifacts/pg18_parallel_concurrent_dsm_50k_recall_validation.sql:11: NOTICE:  table "ec_hnsw_parallel_concurrent_dsm_50k_recall_queries" does not exist, skipping
+psql:review/651-c1-parallel-concurrent-dsm-50k-recall-validation/artifacts/pg18_parallel_concurrent_dsm_50k_recall_validation.sql:12: NOTICE:  drop cascades to column embedding of table ec_hnsw_parallel_concurrent_dsm_recall_corpus
