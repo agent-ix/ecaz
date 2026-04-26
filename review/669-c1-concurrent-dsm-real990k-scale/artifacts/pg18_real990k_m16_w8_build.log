@@ -1,0 +1,71 @@
+Timing is on.
+=== pg18 concurrent DSM real 990k m16 w8 build ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes | max_parallel_workers | max_parallel_maintenance_workers 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------+----------------------+----------------------------------
+ 2026-04-26 14:25:32.657557-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 16                   | 16                   | 8
+(1 row)
+
+Time: 2.117 ms
+CREATE EXTENSION
+Time: 1.441 ms
+=== fixture status ===
+ corpus_rows 
+-------------
+      990000
+(1 row)
+
+Time: 22.833 ms
+ query_rows 
+------------
+      10000
+(1 row)
+
+Time: 1.045 ms
+ chunk_kind | chunks |  rows  
+------------+--------+--------
+ corpus     |     20 | 990000
+ queries    |      1 |  10000
+(2 rows)
+
+Time: 5.540 ms
+SET
+Time: 0.266 ms
+SET
+Time: 0.118 ms
+SET
+Time: 0.112 ms
+SET
+Time: 0.091 ms
+ALTER TABLE
+Time: 1.852 ms
+=== controlled concurrent DSM source-scored build: m16 w8 ===
+DROP INDEX
+Time: 0.321 ms
+CREATE INDEX
+Time: 5517326.098 ms (01:31:57.326)
+   build_path    | requested_workers | workers_launched | heap_workers_launched | graph_workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us |  graph_us  | stage_us  | write_us 
+-----------------+-------------------+------------------+-----------------------+------------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+------------+-----------+----------
+ real990k_m16_w8 |                 8 |                8 |                     0 |                      8 |      990000 |       990000 |      598095013 |                 0 |                 0 |                     0 |     4892094823 | 4656361521 | 209065560 | 24934225
+(1 row)
+
+Time: 10.857 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     8
+(1 row)
+
+Time: 3.440 ms
+ index_bytes 
+-------------
+  1351688192
+(1 row)
+
+Time: 1.381 ms
+         finished_at          
+------------------------------
+ 2026-04-26 15:56:59.79969-07
+(1 row)
+
+Time: 0.291 ms
+psql:review/669-c1-concurrent-dsm-real990k-scale/artifacts/pg18_real990k_m16_w8_build.sql:12: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/669-c1-concurrent-dsm-real990k-scale/artifacts/pg18_real990k_m16_w8_build.sql:30: NOTICE:  index "ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx" does not exist, skipping
