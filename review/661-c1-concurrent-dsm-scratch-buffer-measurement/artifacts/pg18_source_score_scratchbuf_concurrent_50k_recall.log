@@ -1,0 +1,53 @@
+Timing is on.
+=== pg18 source-score scratch-buffer concurrent DSM real 50k recall check ===
+          started_at           |                                            postgres_version                                             | server_version 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------
+ 2026-04-26 08:01:42.746797-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3
+(1 row)
+
+Time: 0.894 ms
+CREATE EXTENSION
+Time: 0.290 ms
+SET
+Time: 0.169 ms
+DROP TABLE
+Time: 0.267 ms
+SELECT 10
+Time: 13.509 ms
+ALTER TABLE
+Time: 3.713 ms
+VACUUM
+Time: 8.153 ms
+=== serial baseline recall ===
+SELECT 1
+Time: 231183.641 ms (03:51.184)
+   build_path    | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ serial_existing |               0.91 |               0.762 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 0.999 ms
+=== scratch-buffer concurrent DSM recall ===
+SELECT 1
+Time: 228127.760 ms (03:48.128)
+            build_path            | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+----------------------------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ concurrent_dsm_source_scratchbuf |               0.91 |               0.768 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 0.951 ms
+=== recall delta ===
+ serial_graph_recall_at_10 | scratchbuf_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | scratchbuf_dsm_graph_recall_at_100 | recall_100_delta | scratchbuf_dsm_graph_below_exact_queries | scratchbuf_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+----------------------------+------------------------------------+------------------+------------------------------------------+--------------------------------
+                      0.91 |                              0.91 |            0 |                      0.762 |                              0.768 |     0.0059999824 |                                        7 |                              2
+(1 row)
+
+Time: 0.510 ms
+          finished_at          
+-------------------------------
+ 2026-04-26 08:09:20.156785-07
+(1 row)
+
+Time: 0.183 ms
+psql:review/661-c1-concurrent-dsm-scratch-buffer-measurement/artifacts/pg18_source_score_scratchbuf_concurrent_50k_recall.sql:9: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/661-c1-concurrent-dsm-scratch-buffer-measurement/artifacts/pg18_source_score_scratchbuf_concurrent_50k_recall.sql:12: NOTICE:  table "tqhnsw_real_50k_reloaded_scratchbuf_queries_10" does not exist, skipping
