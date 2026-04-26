@@ -1,0 +1,53 @@
+Timing is on.
+=== pg18 source-score backlink-cache concurrent DSM real 50k recall check ===
+          started_at           |                                            postgres_version                                             | server_version 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------
+ 2026-04-26 08:45:35.992357-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3
+(1 row)
+
+Time: 0.882 ms
+CREATE EXTENSION
+Time: 0.227 ms
+SET
+Time: 0.105 ms
+DROP TABLE
+Time: 0.172 ms
+SELECT 10
+Time: 10.593 ms
+ALTER TABLE
+Time: 3.637 ms
+VACUUM
+Time: 8.063 ms
+=== serial baseline recall ===
+SELECT 1
+Time: 228731.697 ms (03:48.732)
+   build_path    | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ serial_existing |               0.91 |               0.762 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 0.951 ms
+=== backlink-cache concurrent DSM recall ===
+SELECT 1
+Time: 232101.933 ms (03:52.102)
+              build_path              | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | graph_below_exact_queries | worst_exact_gap 
+--------------------------------------+--------------------+---------------------+------------------------------+------------+---------------------------+-----------------
+ concurrent_dsm_source_backlink_cache |               0.91 |                0.77 |                            1 |   0.947258 |                         7 |               2
+(1 row)
+
+Time: 1.008 ms
+=== recall delta ===
+ serial_graph_recall_at_10 | backlink_cache_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | backlink_cache_dsm_graph_recall_at_100 | recall_100_delta | backlink_cache_dsm_graph_below_exact_queries | backlink_cache_dsm_worst_exact_gap 
+---------------------------+---------------------------------------+--------------+----------------------------+----------------------------------------+------------------+----------------------------------------------+------------------------------------
+                      0.91 |                                  0.91 |            0 |                      0.762 |                                   0.77 |      0.007999957 |                                            7 |                                  2
+(1 row)
+
+Time: 0.581 ms
+         finished_at          
+------------------------------
+ 2026-04-26 08:53:14.83428-07
+(1 row)
+
+Time: 0.189 ms
+psql:review/663-c1-concurrent-dsm-backlink-score-cache-timing/artifacts/pg18_source_score_backlink_cache_concurrent_50k_recall.sql:9: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/663-c1-concurrent-dsm-backlink-score-cache-timing/artifacts/pg18_source_score_backlink_cache_concurrent_50k_recall.sql:12: NOTICE:  table "tqhnsw_real_50k_reloaded_backlink_cache_queries_10" does not exist, skipping

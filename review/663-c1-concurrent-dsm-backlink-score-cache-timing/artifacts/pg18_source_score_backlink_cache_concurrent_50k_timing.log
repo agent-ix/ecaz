@@ -1,0 +1,70 @@
+Timing is on.
+=== pg18 source-score backlink-cache concurrent DSM real 50k timing ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-26 08:42:13.080976-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.088 ms
+CREATE EXTENSION
+Time: 0.306 ms
+=== fixture status ===
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 9.126 ms
+ query_rows 
+------------
+       1000
+(1 row)
+
+Time: 1.331 ms
+ corpus_bytes 
+--------------
+      6840320
+(1 row)
+
+Time: 0.459 ms
+SET
+Time: 0.162 ms
+SET
+Time: 0.162 ms
+SET
+Time: 0.193 ms
+SET
+Time: 0.192 ms
+ALTER TABLE
+Time: 61.097 ms
+=== concurrent DSM source-scored sidecar build after backlink target score reuse ===
+DROP INDEX
+Time: 0.328 ms
+CREATE INDEX
+Time: 197371.287 ms (03:17.371)
+              build_path              | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us  | stage_us | write_us 
+--------------------------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+-----------+----------+----------
+ concurrent_dsm_source_backlink_cache |                 4 |                4 |       50000 |        50000 |       28422134 |                 0 |                 0 |                     0 |      168853075 | 165691168 |  2105372 |   983173
+(1 row)
+
+Time: 1.279 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.422 ms
+ concurrent_dsm_backlink_cache_index_bytes 
+-------------------------------------------
+                                  68280320
+(1 row)
+
+Time: 0.525 ms
+          finished_at          
+-------------------------------
+ 2026-04-26 08:45:29.584014-07
+(1 row)
+
+Time: 0.210 ms
+psql:review/663-c1-concurrent-dsm-backlink-score-cache-timing/artifacts/pg18_source_score_backlink_cache_concurrent_50k_timing.sql:10: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/663-c1-concurrent-dsm-backlink-score-cache-timing/artifacts/pg18_source_score_backlink_cache_concurrent_50k_timing.sql:24: NOTICE:  index "tqhnsw_real_50k_reloaded_m16_parallel_dsm_backlink_cache_idx" does not exist, skipping
