@@ -184,10 +184,18 @@ present, entry point is valid, and recall meets the existing gate.
 - Current best real-50k point is 8 workers when the PG18 cluster has enough
   worker-process headroom. Packet 668's regressed 8-worker point should be
   treated as a cluster-limit diagnostic, not a scaling conclusion.
-- Next build-time curve target is the DBPedia 990k/10k profile
-  (`ec_hnsw_real_ann_benchmarks_anchor`) once chunked prepare/load support from
-  Task 10066 is available, or after a one-shot non-resumable load if the
-  operator accepts the restart risk.
+- Packet 669 records the DBPedia 990k/10k profile
+  (`ec_hnsw_real_ann_benchmarks_anchor`) using chunked prepare/load from Task
+  10066 and a controlled PG18 m16/w8 build:
+  - 8 workers launched 8 graph workers and finished in `01:31:57.326`,
+    `graph_us = 4656361521`
+  - index size was `1351688192` bytes
+  - the loader's chunk-state table recorded 20 corpus chunks / 990,000 rows
+    plus 1 query chunk / 10,000 rows
+- Current 990k conclusion: worker launch is correct, but the current in-Postgres
+  graph build remains too long for larger scale. Open follow-up design work for
+  an offline or staged checkpointed bulk builder plus a shorter PostgreSQL
+  publish step.
 - Longer-horizon target: 10M rows at 2/4/8 workers.
 - Original target remains directionally useful but should be recalibrated after
   the 990k run: ≥2× at 4 workers on 1M, ≥4× at 8 workers on 10M.
