@@ -170,9 +170,22 @@ present, entry point is valid, and recall meets the existing gate.
 
 ### Phase 5 — Scale measurement
 
-- Build-time curves at 1M / 10M rows at 2/4/8 workers.
-- Target: ≥2× at 4 workers on 1M, ≥4× at 8 workers on 10M (adjust after
-  Phase 3 baselines).
+- Real 50k worker sweep is recorded in packet 668:
+  - 1 worker: `07:12.017`, `graph_us = 395621949`
+  - 2 workers: `04:59.790`, `graph_us = 268137745`
+  - 4 workers: `03:24.964`, `graph_us = 173200231`
+  - 8 requested workers launched 7 and regressed: `04:08.671`,
+    `graph_us = 216938590`
+- Current best real-50k point is 4 workers on this PG18 cluster. Treat 8-worker
+  results as a separate scale surface that needs a postmaster configuration with
+  enough `max_worker_processes` headroom before drawing conclusions.
+- Next build-time curve target is the DBPedia 990k/10k profile
+  (`ec_hnsw_real_ann_benchmarks_anchor`) once chunked prepare/load support from
+  Task 10066 is available, or after a one-shot non-resumable load if the
+  operator accepts the restart risk.
+- Longer-horizon target: 10M rows at 2/4/8 workers.
+- Original target remains directionally useful but should be recalibrated after
+  the 990k run: ≥2× at 4 workers on 1M, ≥4× at 8 workers on 10M.
 
 ## Key Files
 
