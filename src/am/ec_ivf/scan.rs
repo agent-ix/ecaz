@@ -90,75 +90,6 @@ impl Ord for ProbeListHeapEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CandidateHeapEntry {
-    candidate: EcIvfScoredCandidate,
-}
-
-impl PartialEq for CandidateHeapEntry {
-    fn eq(&self, other: &Self) -> bool {
-        candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
-    }
-}
-
-impl Eq for CandidateHeapEntry {}
-
-impl PartialOrd for CandidateHeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for CandidateHeapEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        candidate_cmp(&self.candidate, &other.candidate)
-    }
-}
-
-#[derive(Debug)]
-struct CandidateTopK {
-    limit: usize,
-    retained: BinaryHeap<CandidateHeapEntry>,
-}
-
-impl CandidateTopK {
-    fn new(limit: usize) -> Self {
-        Self {
-            limit,
-            retained: BinaryHeap::with_capacity(limit),
-        }
-    }
-
-    fn push(&mut self, candidate: EcIvfScoredCandidate) {
-        if self.limit == 0 {
-            return;
-        }
-        let entry = CandidateHeapEntry { candidate };
-        if self.retained.len() < self.limit {
-            self.retained.push(entry);
-            return;
-        }
-        if self
-            .retained
-            .peek()
-            .is_some_and(|worst| entry < *worst)
-        {
-            self.retained.pop();
-            self.retained.push(entry);
-        }
-    }
-
-    fn into_sorted_candidates(self) -> Vec<EcIvfScoredCandidate> {
-        let mut candidates = self
-            .retained
-            .into_iter()
-            .map(|entry| entry.candidate)
-            .collect::<Vec<_>>();
-        candidates.sort_by(candidate_cmp);
-        candidates
-    }
-}
-
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
@@ -690,7 +621,7 @@ unsafe fn materialize_probe_candidates(
     );
     let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
     let probe_plan = unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
-    let mut best_by_heap_tid = HashMap::new();
+    let mut best_by_heap_tid = HashMap::with_capacity(probe_plan.candidate_bound);
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
         .explain_counters
@@ -729,11 +660,9 @@ unsafe fn materialize_probe_candidates(
         )?
     };
 
-    let mut top_k = CandidateTopK::new(probe_plan.candidate_bound);
-    for candidate in best_by_heap_tid.into_values() {
-        top_k.push(candidate);
-    }
-    Ok(top_k.into_sorted_candidates())
+    let mut candidates = best_by_heap_tid.into_values().collect::<Vec<_>>();
+    candidates.sort_by(candidate_cmp);
+    Ok(candidates)
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
@@ -1270,10 +1199,80 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_probe_block_sequence, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
+        build_probe_block_sequence, candidate_cmp, select_probe_lists, EcIvfCentroidScore,
         EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
+    use std::collections::BinaryHeap;
+
+    #[derive(Debug, Clone, Copy)]
+    struct CandidateHeapEntry {
+        candidate: EcIvfScoredCandidate,
+    }
+
+    impl PartialEq for CandidateHeapEntry {
+        fn eq(&self, other: &Self) -> bool {
+            candidate_cmp(&self.candidate, &other.candidate) == std::cmp::Ordering::Equal
+        }
+    }
+
+    impl Eq for CandidateHeapEntry {}
+
+    impl PartialOrd for CandidateHeapEntry {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for CandidateHeapEntry {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            candidate_cmp(&self.candidate, &other.candidate)
+        }
+    }
+
+    #[derive(Debug)]
+    struct CandidateTopK {
+        limit: usize,
+        retained: BinaryHeap<CandidateHeapEntry>,
+    }
+
+    impl CandidateTopK {
+        fn new(limit: usize) -> Self {
+            Self {
+                limit,
+                retained: BinaryHeap::with_capacity(limit),
+            }
+        }
+
+        fn push(&mut self, candidate: EcIvfScoredCandidate) {
+            if self.limit == 0 {
+                return;
+            }
+            let entry = CandidateHeapEntry { candidate };
+            if self.retained.len() < self.limit {
+                self.retained.push(entry);
+                return;
+            }
+            if self
+                .retained
+                .peek()
+                .is_some_and(|worst| entry < *worst)
+            {
+                self.retained.pop();
+                self.retained.push(entry);
+            }
+        }
+
+        fn into_sorted_candidates(self) -> Vec<EcIvfScoredCandidate> {
+            let mut candidates = self
+                .retained
+                .into_iter()
+                .map(|entry| entry.candidate)
+                .collect::<Vec<_>>();
+            candidates.sort_by(candidate_cmp);
+            candidates
+        }
+    }
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
         EcIvfScoredCandidate {
