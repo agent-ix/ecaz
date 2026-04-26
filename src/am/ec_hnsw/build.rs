@@ -181,9 +181,6 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
             let mut parallel_begin_us = 0_u64;
             let mut parallel_drain_us = 0_u64;
             let mut parallel_sort_push_us = 0_u64;
-            let mut parallel_flush_output = None;
-            let mut parallel_graph_us = 0_u64;
-            let mut parallel_stage_us = 0_u64;
             let heap_ingest_start = Instant::now();
             let heap_tuples = if !parallel_plan.uses_serial_build_path() {
                 build_parallel::try_parallel_build(
@@ -197,9 +194,6 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                     parallel_begin_us = result.begin_us;
                     parallel_drain_us = result.drain_us;
                     parallel_sort_push_us = result.sort_push_us;
-                    parallel_graph_us = result.graph_us;
-                    parallel_stage_us = result.stage_us;
-                    parallel_flush_output = result.flush_output;
                     result.heap_tuples
                 })
                 .unwrap_or_else(|| {
@@ -239,11 +233,13 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
             let index_tuples = if state.heap_tuples.is_empty() {
                 0.0
             } else {
-                if let Some(output) = parallel_flush_output.take() {
-                    flush_timing.graph_us = parallel_graph_us;
-                    flush_timing.stage_us = parallel_stage_us;
+                if let Some(graph_build) =
+                    build_parallel::try_parallel_concurrent_dsm_graph_build(&state, parallel_plan)
+                {
+                    flush_timing.graph_us = graph_build.graph_us;
+                    flush_timing.stage_us = graph_build.stage_us;
                     let write_start = Instant::now();
-                    flush_build_output(index_relation, &output);
+                    flush_build_output(index_relation, &graph_build.output);
                     flush_timing.write_us = elapsed_us(write_start);
                 } else {
                     flush_build_state_with_timing(index_relation, &state, &mut flush_timing);

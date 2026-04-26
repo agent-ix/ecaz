@@ -1696,23 +1696,12 @@ pub(super) unsafe fn try_parallel_build(
         state.push(tuple);
     }
     let sort_push_us = elapsed_us(sort_push_start);
-    let graph_build = if plan.graph_assembly == EcHnswBuildGraphAssembly::ConcurrentDsm {
-        unsafe { try_parallel_concurrent_dsm_graph_build(state, plan) }
-    } else {
-        None
-    };
-    let (flush_output, graph_us, stage_us) = graph_build
-        .map(|result| (Some(result.output), result.graph_us, result.stage_us))
-        .unwrap_or((None, 0, 0));
 
     Some(EcHnswParallelBuildResult {
         heap_tuples: state.scanned_tuples as f64,
         begin_us,
         drain_us,
         sort_push_us,
-        flush_output,
-        graph_us,
-        stage_us,
     })
 }
 
@@ -1722,23 +1711,21 @@ pub(super) struct EcHnswParallelBuildResult {
     pub(super) begin_us: u64,
     pub(super) drain_us: u64,
     pub(super) sort_push_us: u64,
-    pub(super) flush_output: Option<build::BuildFlushOutput>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct EcHnswParallelGraphBuildResult {
+    pub(super) output: build::BuildFlushOutput,
     pub(super) graph_us: u64,
     pub(super) stage_us: u64,
 }
 
-#[derive(Debug, Clone)]
-struct EcHnswParallelGraphBuildResult {
-    output: build::BuildFlushOutput,
-    graph_us: u64,
-    stage_us: u64,
-}
-
-unsafe fn try_parallel_concurrent_dsm_graph_build(
+pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
     state: &build::BuildState,
     plan: EcHnswParallelBuildPlan,
 ) -> Option<EcHnswParallelGraphBuildResult> {
-    if state.heap_tuples.is_empty()
+    if plan.graph_assembly != EcHnswBuildGraphAssembly::ConcurrentDsm
+        || state.heap_tuples.is_empty()
         || state.options.storage_format != options::StorageFormat::TurboQuant
     {
         return None;
