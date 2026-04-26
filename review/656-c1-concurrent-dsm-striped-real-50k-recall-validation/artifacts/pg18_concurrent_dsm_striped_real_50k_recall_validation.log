@@ -1,0 +1,71 @@
+Timing is on.
+=== pg18 striped concurrent DSM real 50k recall validation ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 22:07:39.656946-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.269 ms
+CREATE EXTENSION
+Time: 0.357 ms
+=== real corpus fixture status ===
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 9.760 ms
+ query_rows 
+------------
+       1000
+(1 row)
+
+Time: 1.313 ms
+ serial_index_bytes 
+--------------------
+           68280320
+(1 row)
+
+Time: 0.902 ms
+DROP TABLE
+Time: 8.590 ms
+SELECT 10
+Time: 9.266 ms
+ALTER TABLE
+Time: 4.127 ms
+VACUUM
+Time: 9.542 ms
+ query_subset_rows 
+-------------------
+                10
+(1 row)
+
+Time: 0.517 ms
+SET
+Time: 0.292 ms
+SET
+Time: 0.174 ms
+SET
+Time: 0.241 ms
+=== existing serial-built real 50k m16 index recall at ef_search 200 ===
+SELECT 1
+Time: 231847.951 ms (03:51.848)
+   build_path    | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------+--------------------+---------------------+------------------------------+------------+----------------------+--------------------+---------------------------+-----------------
+ serial_existing |               0.91 |               0.762 |                            1 |   0.947258 |         0.0059287096 |          0.9175757 |                         7 |               2
+(1 row)
+
+Time: 0.949 ms
+=== striped concurrent DSM-built real 50k m16 sidecar index ===
+DROP INDEX
+Time: 0.284 ms
+SET
+Time: 0.194 ms
+SET
+Time: 0.195 ms
+ALTER TABLE
+Time: 16.896 ms
+Time: 28499.167 ms (00:28.499)
+psql:review/656-c1-concurrent-dsm-striped-real-50k-recall-validation/artifacts/pg18_concurrent_dsm_striped_real_50k_recall_validation.sql:10: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/656-c1-concurrent-dsm-striped-real-50k-recall-validation/artifacts/pg18_concurrent_dsm_striped_real_50k_recall_validation.sql:53: NOTICE:  index "tqhnsw_real_50k_m16_parallel_dsm_idx" does not exist, skipping
+psql:review/656-c1-concurrent-dsm-striped-real-50k-recall-validation/artifacts/pg18_concurrent_dsm_striped_real_50k_recall_validation.sql:60: ERROR:  concurrent DSM graph assembly does not support source-scored builds yet
