@@ -139,10 +139,15 @@ pub(super) struct EcHnswParallelBuildSharedHeader {
 struct EcHnswConcurrentDsmGraphHeader {
     node_count: u32,
     entry_idx: u32,
-    max_level: u8,
-    reserved0: [u8; 3],
     total_neighbor_slots: u32,
     code_len: u32,
+    dimensions: u32,
+    m: u32,
+    ef_construction: u32,
+    seed: u64,
+    max_level: u8,
+    bits: u8,
+    reserved0: [u8; 6],
 }
 
 #[allow(dead_code)]
@@ -673,6 +678,7 @@ pub(super) struct EcHnswConcurrentDsmPreassemblyPlan {
     pub(super) node_layout: EcHnswConcurrentDsmNodeLayoutPlan,
     pub(super) code_corpus: EcHnswConcurrentDsmCodeCorpus,
     pub(super) graph_layout: EcHnswConcurrentDsmGraphLayout,
+    pub(super) insert_config: Option<EcHnswConcurrentDsmInsertConfig>,
 }
 
 #[allow(dead_code)]
@@ -692,6 +698,11 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
         let code_corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&state.heap_tuples);
         let graph_layout =
             EcHnswConcurrentDsmGraphLayout::for_levels(&levels, m, code_corpus.code_len as usize);
+        let insert_config = if state.heap_tuples.is_empty() {
+            None
+        } else {
+            Some(EcHnswConcurrentDsmInsertConfig::for_state(state))
+        };
 
         if graph_layout.node_count != code_corpus.node_count {
             pgrx::error!("concurrent DSM preassembly node counts do not match");
@@ -705,6 +716,7 @@ impl EcHnswConcurrentDsmPreassemblyPlan {
             node_layout,
             code_corpus,
             graph_layout,
+            insert_config,
         }
     }
 }
@@ -718,6 +730,40 @@ pub(super) unsafe fn concurrent_dsm_graph_layout_from_image(
     }
 
     unsafe { EcHnswConcurrentDsmGraphLayout::from_header(base.cast()) }
+}
+
+#[allow(dead_code)]
+pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
+    base: *const c_void,
+) -> Option<EcHnswConcurrentDsmInsertConfig> {
+    if base.is_null() {
+        pgrx::error!("concurrent DSM graph base pointer is null");
+    }
+
+    let header = unsafe { &*base.cast::<EcHnswConcurrentDsmGraphHeader>() };
+    if header.node_count == 0 {
+        return None;
+    }
+    if header.dimensions == 0 {
+        pgrx::error!("non-empty concurrent DSM graph is missing dimensions");
+    }
+    if header.bits == 0 {
+        pgrx::error!("non-empty concurrent DSM graph is missing quantization bits");
+    }
+    if header.m == 0 {
+        pgrx::error!("non-empty concurrent DSM graph is missing m");
+    }
+    if header.ef_construction == 0 {
+        pgrx::error!("non-empty concurrent DSM graph is missing ef_construction");
+    }
+
+    Some(EcHnswConcurrentDsmInsertConfig {
+        dimensions: header.dimensions as usize,
+        bits: header.bits,
+        seed: header.seed,
+        m: header.m as usize,
+        ef_construction: header.ef_construction as usize,
+    })
 }
 
 #[allow(dead_code)]
@@ -752,6 +798,13 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
 ) -> EcHnswConcurrentDsmGraphParts {
     let layout = plan.graph_layout;
     let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
+    let insert_config = plan.insert_config.unwrap_or(EcHnswConcurrentDsmInsertConfig {
+        dimensions: 0,
+        bits: 0,
+        seed: 0,
+        m: 0,
+        ef_construction: 0,
+    });
 
     unsafe {
         ptr::write(
@@ -761,10 +814,21 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
                 entry_idx: layout
                     .entry_idx
                     .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
-                max_level: layout.max_level,
-                reserved0: [0; 3],
                 total_neighbor_slots: layout.total_neighbor_slots,
                 code_len: layout.code_len,
+                dimensions: checked_u32(
+                    insert_config.dimensions,
+                    "concurrent DSM graph dimensions",
+                ),
+                m: checked_u32(insert_config.m, "concurrent DSM graph m"),
+                ef_construction: checked_u32(
+                    insert_config.ef_construction,
+                    "concurrent DSM graph ef_construction",
+                ),
+                seed: insert_config.seed,
+                max_level: layout.max_level,
+                bits: insert_config.bits,
+                reserved0: [0; 6],
             },
         );
 
@@ -2481,6 +2545,16 @@ mod tests {
             plan.graph_layout.total_neighbor_slots,
             plan.node_layout.total_neighbor_slots
         );
+        assert_eq!(
+            plan.insert_config,
+            Some(EcHnswConcurrentDsmInsertConfig {
+                dimensions: 4,
+                bits: 4,
+                seed: 42,
+                m: 2,
+                ef_construction: 32,
+            })
+        );
     }
 
     #[test]
@@ -2494,6 +2568,7 @@ mod tests {
         assert_eq!(plan.code_corpus.code_len, 0);
         assert_eq!(plan.graph_layout.node_count, 0);
         assert_eq!(plan.graph_layout.total_neighbor_slots, 0);
+        assert_eq!(plan.insert_config, None);
     }
 
     #[test]
@@ -2539,6 +2614,7 @@ mod tests {
             );
 
             let header = &*parts.header;
+            let insert_config = plan.insert_config.expect("non-empty plan should carry config");
             assert_eq!(header.node_count, 2);
             assert_eq!(header.entry_idx, plan.graph_layout.entry_idx.unwrap());
             assert_eq!(header.max_level, plan.graph_layout.max_level);
@@ -2547,6 +2623,11 @@ mod tests {
                 plan.node_layout.total_neighbor_slots
             );
             assert_eq!(header.code_len, 3);
+            assert_eq!(header.dimensions, insert_config.dimensions as u32);
+            assert_eq!(header.bits, insert_config.bits);
+            assert_eq!(header.seed, insert_config.seed);
+            assert_eq!(header.m, insert_config.m as u32);
+            assert_eq!(header.ef_construction, insert_config.ef_construction as u32);
 
             let nodes = slice::from_raw_parts(parts.nodes, plan.graph_layout.node_count as usize);
             for (node_idx, (actual, expected)) in
@@ -2597,10 +2678,13 @@ mod tests {
 
         let attached_layout =
             unsafe { concurrent_dsm_graph_layout_from_image(buffer.as_mut_ptr()) };
+        let attached_config =
+            unsafe { concurrent_dsm_insert_config_from_image(buffer.as_mut_ptr()) };
         let attached_parts =
             unsafe { concurrent_dsm_graph_parts(buffer.as_mut_ptr(), attached_layout) };
 
         assert_eq!(attached_layout, plan.graph_layout);
+        assert_eq!(attached_config, plan.insert_config);
         assert_eq!(attached_parts.header, parts.header);
         assert_eq!(attached_parts.nodes, parts.nodes);
         assert_eq!(attached_parts.neighbor_slots, parts.neighbor_slots);
@@ -2613,13 +2697,38 @@ mod tests {
         let header = EcHnswConcurrentDsmGraphHeader {
             node_count: 1,
             entry_idx: EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX,
-            max_level: 0,
-            reserved0: [0; 3],
             total_neighbor_slots: 2,
             code_len: 3,
+            dimensions: 4,
+            m: 2,
+            ef_construction: 32,
+            seed: 42,
+            max_level: 0,
+            bits: 4,
+            reserved0: [0; 6],
         };
 
         let _ = unsafe { EcHnswConcurrentDsmGraphLayout::from_header(&header) };
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_insert_config_rejects_non_empty_header_without_dimensions() {
+        let header = EcHnswConcurrentDsmGraphHeader {
+            node_count: 1,
+            entry_idx: 0,
+            total_neighbor_slots: 2,
+            code_len: 3,
+            dimensions: 0,
+            m: 2,
+            ef_construction: 32,
+            seed: 42,
+            max_level: 0,
+            bits: 4,
+            reserved0: [0; 6],
+        };
+
+        let _ = unsafe { concurrent_dsm_insert_config_from_image(ptr::addr_of!(header).cast()) };
     }
 
     #[test]
@@ -2643,6 +2752,15 @@ mod tests {
             assert_eq!(header.max_level, 0);
             assert_eq!(header.total_neighbor_slots, 0);
             assert_eq!(header.code_len, 0);
+            assert_eq!(header.dimensions, 0);
+            assert_eq!(header.bits, 0);
+            assert_eq!(header.seed, 0);
+            assert_eq!(header.m, 0);
+            assert_eq!(header.ef_construction, 0);
+            assert_eq!(
+                concurrent_dsm_insert_config_from_image(buffer.as_mut_ptr()),
+                None
+            );
         }
     }
 
@@ -3033,6 +3151,7 @@ mod tests {
         codes: Vec<Vec<u8>>,
     ) -> EcHnswConcurrentDsmPreassemblyPlan {
         let levels = build::NativeBuildLevels::from_levels(levels);
+        let has_codes = !codes.is_empty();
         let tuples = codes
             .into_iter()
             .map(build_tuple_with_code)
@@ -3047,6 +3166,11 @@ mod tests {
             node_layout,
             code_corpus,
             graph_layout,
+            insert_config: if has_codes {
+                Some(test_insert_config(4))
+            } else {
+                None
+            },
         }
     }
 
