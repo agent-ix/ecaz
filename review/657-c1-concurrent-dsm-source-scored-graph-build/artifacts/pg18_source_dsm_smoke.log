@@ -1,0 +1,41 @@
+Timing is on.
+DROP TABLE
+Time: 0.635 ms
+DROP EXTENSION
+Time: 106.822 ms
+CREATE EXTENSION
+Time: 60.835 ms
+CREATE TABLE
+Time: 7.475 ms
+INSERT 0 2000
+Time: 40.772 ms
+VACUUM
+Time: 15.173 ms
+SET
+Time: 0.258 ms
+SET
+Time: 0.133 ms
+SET
+Time: 0.146 ms
+SET
+Time: 0.122 ms
+ALTER TABLE
+Time: 1.195 ms
+CREATE INDEX
+Time: 447.228 ms
+ requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+                 2 |                2 |        2000 |         1998 |         103490 |                 0 |                 0 |                     0 |         336289 |   305961 |    19803 |    10094
+(1 row)
+
+Time: 4.294 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     2
+(1 row)
+
+Time: 0.454 ms
+psql:tmp/pg18_source_dsm_smoke.sql:4: NOTICE:  table "ec_hnsw_source_dsm_smoke" does not exist, skipping
+psql:tmp/pg18_source_dsm_smoke.sql:5: NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to column embedding of table ec_hnsw_concurrent_dsm_striped_50k_tuned_recall_corpus
+drop cascades to column embedding of table tqhnsw_real_50k_corpus
