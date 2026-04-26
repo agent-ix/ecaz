@@ -1,0 +1,141 @@
+Timing is on.
+=== pg18 parallel concurrent DSM graph build 50k timing fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 19:01:46.743467-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.200 ms
+DROP TABLE
+Time: 17.263 ms
+DROP EXTENSION
+Time: 69.340 ms
+CREATE EXTENSION
+Time: 46.888 ms
+CREATE TABLE
+Time: 6.364 ms
+=== load 50000 rows x 64 dims ===
+INSERT 0 50000
+Time: 1423.120 ms (00:01.423)
+VACUUM
+Time: 84.707 ms
+ fixture_rows 
+--------------
+        50000
+(1 row)
+
+Time: 4.589 ms
+ relpages | reltuples 
+----------+-----------
+     1852 |     50000
+(1 row)
+
+Time: 2.613 ms
+SET
+Time: 0.277 ms
+SET
+Time: 0.144 ms
+=== serial create index 50k ===
+SET
+Time: 0.113 ms
+SET
+Time: 0.099 ms
+ALTER TABLE
+Time: 1.385 ms
+DROP INDEX
+Time: 0.191 ms
+CREATE INDEX
+Time: 29582.270 ms (00:29.582)
+   round    | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_50k |                 0 |                0 |       50000 |        49982 |        1349785 |                 0 |                 0 |                     0 |       28102264 | 27703505 |   264451 |   119547
+(1 row)
+
+Time: 0.744 ms
+ serial_graph_workers_launched 
+-------------------------------
+                             0
+(1 row)
+
+Time: 0.316 ms
+ serial_50k_index_bytes 
+------------------------
+               11624448
+(1 row)
+
+Time: 0.547 ms
+DROP INDEX
+Time: 3.832 ms
+CHECKPOINT
+Time: 67.818 ms
+=== parallel serial graph create index 50k ===
+SET
+Time: 0.291 ms
+SET
+Time: 0.190 ms
+ALTER TABLE
+Time: 1.329 ms
+DROP INDEX
+Time: 0.231 ms
+CREATE INDEX
+Time: 28463.356 ms (00:28.463)
+           round           | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+---------------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_serial_graph_50k |                 4 |                4 |       50000 |        49982 |         587231 |              2880 |            433080 |                151265 |       27853166 | 27478823 |   261621 |    97746
+(1 row)
+
+Time: 0.440 ms
+ parallel_serial_graph_workers_launched 
+----------------------------------------
+                                      0
+(1 row)
+
+Time: 0.144 ms
+ parallel_serial_graph_50k_index_bytes 
+---------------------------------------
+                              11624448
+(1 row)
+
+Time: 0.396 ms
+DROP INDEX
+Time: 27.010 ms
+CHECKPOINT
+Time: 20.798 ms
+=== parallel concurrent DSM graph create index 50k ===
+SET
+Time: 0.206 ms
+SET
+Time: 0.104 ms
+ALTER TABLE
+Time: 1.207 ms
+DROP INDEX
+Time: 0.195 ms
+CREATE INDEX
+Time: 11419.608 ms (00:11.420)
+            round            | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us 
+-----------------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_concurrent_dsm_50k |                 4 |                4 |       50000 |        49982 |         590878 |              2284 |            430571 |                158018 |       10805349 | 10365380 |   329886 |   100993
+(1 row)
+
+Time: 0.455 ms
+ parallel_concurrent_dsm_graph_workers_launched 
+------------------------------------------------
+                                              4
+(1 row)
+
+Time: 0.152 ms
+ parallel_concurrent_dsm_50k_index_bytes 
+-----------------------------------------
+                                11624448
+(1 row)
+
+Time: 0.399 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 19:02:57.859139-07
+(1 row)
+
+Time: 0.193 ms
+psql:review/648-c1-parallel-concurrent-dsm-50k-measurement/artifacts/pg18_parallel_concurrent_dsm_50k_timing.sql:48: NOTICE:  index "ec_hnsw_parallel_concurrent_dsm_50k_measure_idx" does not exist, skipping
+psql:review/648-c1-parallel-concurrent-dsm-50k-measurement/artifacts/pg18_parallel_concurrent_dsm_50k_timing.sql:65: NOTICE:  index "ec_hnsw_parallel_concurrent_dsm_50k_measure_idx" does not exist, skipping
+psql:review/648-c1-parallel-concurrent-dsm-50k-measurement/artifacts/pg18_parallel_concurrent_dsm_50k_timing.sql:82: NOTICE:  index "ec_hnsw_parallel_concurrent_dsm_50k_measure_idx" does not exist, skipping
