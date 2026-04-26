@@ -92,6 +92,9 @@ Checkpoint in progress / complete on this branch:
 - Overlapping or shared posting blocks across selected lists are now read once
   per scan materialization pass, with posting-level list filtering preserved in
   the scan layer.
+- Scan candidate materialization no longer retains a full IVF directory vector
+  just to derive selected-list counts and ranges; it now builds a narrower
+  selected-probe plan directly from the ordered directory chain.
 
 Why this slice is worth doing here:
 
