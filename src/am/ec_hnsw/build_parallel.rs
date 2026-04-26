@@ -1742,7 +1742,7 @@ unsafe fn concurrent_dsm_source_for_node(
 }
 
 fn score_concurrent_dsm_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
-    left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
+    source::inner_product(left, right)
 }
 
 unsafe fn concurrent_dsm_node_slots<'a>(

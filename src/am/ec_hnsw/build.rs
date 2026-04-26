@@ -2257,7 +2257,7 @@ pub(super) fn flatten_native_neighbor_slots(
 }
 
 fn score_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
-    left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
+    source::inner_product(left, right)
 }
 
 pub(super) fn choose_entry_point(

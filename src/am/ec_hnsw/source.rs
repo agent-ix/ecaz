@@ -7,6 +7,15 @@ use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
 
 use super::page;
 
+#[cfg(target_arch = "x86")]
+use std::arch::x86::{
+    __m256, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+};
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::{
+    __m256, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SourceTypePolicy {
     BuildSource,
@@ -57,6 +66,62 @@ pub(super) fn average_source_representatives(
             + (*incoming_value * incoming_count as f32))
             / total_count as f32;
     }
+}
+
+pub(super) fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    debug_assert_eq!(left.len(), right.len());
+    let len = left.len().min(right.len());
+    let left = &left[..len];
+    let right = &right[..len];
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
+        {
+            return unsafe { inner_product_avx2_fma(left, right) };
+        }
+    }
+
+    inner_product_scalar(left, right)
+}
+
+fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
+    let mut sum = 0.0_f32;
+    let chunk_len = left.len() / 4 * 4;
+    for (left, right) in left[..chunk_len]
+        .chunks_exact(4)
+        .zip(right[..chunk_len].chunks_exact(4))
+    {
+        sum += left[0] * right[0];
+        sum += left[1] * right[1];
+        sum += left[2] * right[2];
+        sum += left[3] * right[3];
+    }
+    for (left, right) in left[chunk_len..].iter().zip(right[chunk_len..].iter()) {
+        sum += left * right;
+    }
+    sum
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
+    let mut acc: __m256 = _mm256_setzero_ps();
+    let mut offset = 0_usize;
+    while offset + 8 <= left.len() {
+        let l = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };
+        let r = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };
+        acc = _mm256_fmadd_ps(l, r, acc);
+        offset += 8;
+    }
+
+    let mut lanes = [0.0_f32; 8];
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };
+    let mut sum = lanes.iter().sum::<f32>();
+    for idx in offset..left.len() {
+        sum += left[idx] * right[idx];
+    }
+    sum
 }
 
 pub(super) unsafe fn resolve_source_attnum(
@@ -546,6 +611,42 @@ mod tests {
         assert_eq!(
             negative_inner_product(&[1.0_f32, -2.0, 0.5], &[0.5_f32, 2.0, -1.0]),
             4.0_f32
+        );
+    }
+
+    #[test]
+    fn inner_product_matches_scalar_reference_for_tail_lengths() {
+        for len in 0..19 {
+            let left = (0..len)
+                .map(|idx| idx as f32 * 0.25 - 1.5)
+                .collect::<Vec<_>>();
+            let right = (0..len)
+                .map(|idx| (idx as f32 * 0.125).sin())
+                .collect::<Vec<_>>();
+            let expected = inner_product_scalar(&left, &right);
+            let actual = inner_product(&left, &right);
+
+            assert!(
+                (actual - expected).abs() <= 0.00001,
+                "len={len} actual={actual} expected={expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn inner_product_matches_scalar_reference_for_real_dimension() {
+        let left = (0..1536)
+            .map(|idx| (idx as f32 * 0.017).sin())
+            .collect::<Vec<_>>();
+        let right = (0..1536)
+            .map(|idx| (idx as f32 * 0.031).cos())
+            .collect::<Vec<_>>();
+        let expected = inner_product_scalar(&left, &right);
+        let actual = inner_product(&left, &right);
+
+        assert!(
+            (actual - expected).abs() <= 0.0005,
+            "actual={actual} expected={expected}"
         );
     }
 }
