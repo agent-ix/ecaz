@@ -47,6 +47,24 @@ struct ProbeBlockRange {
     tail_block: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelectedProbePlan {
+    selected_lists: Vec<u32>,
+    block_sequence: Vec<u32>,
+    candidate_bound: usize,
+}
+
+impl SelectedProbePlan {
+    fn contains_list(&self, list_id: u32) -> bool {
+        self.selected_lists.binary_search(&list_id).is_ok()
+    }
+
+    fn posting_page_count(&self) -> Result<u32, String> {
+        u32::try_from(self.block_sequence.len())
+            .map_err(|_| "ec_ivf posting block sequence exceeds u32".to_owned())
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ProbeListHeapEntry {
     centroid: EcIvfCentroidScore,
@@ -664,20 +682,16 @@ unsafe fn materialize_probe_candidates(
         return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
     }
 
-    let directories = unsafe { load_directory_entries(index_relation, metadata)? };
     let prepared_query = unsafe { &*opaque.prepared_query };
     let quantizer = ProdQuantizer::cached(
         metadata.dimensions as usize,
         crate::DEFAULT_QUANT_BITS,
         crate::DEFAULT_QUANT_SEED,
     );
-    let candidate_bound = selected_list_live_count_bound(&directories, selected_lists)?;
     let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
-    let selected_list_mask = selected_list_mask(&directories, selected_lists)?;
-    let probe_block_sequence = build_probe_block_sequence(&directories, selected_lists)?;
+    let probe_plan = unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let mut best_by_heap_tid = HashMap::new();
-    let posting_pages = u32::try_from(probe_block_sequence.len())
-        .map_err(|_| "ec_ivf posting block sequence exceeds u32".to_owned())?;
+    let posting_pages = probe_plan.posting_page_count()?;
     opaque
         .explain_counters
         .record_posting_pages_read(posting_pages);
@@ -685,13 +699,10 @@ unsafe fn materialize_probe_candidates(
     unsafe {
         super::page::visit_ivf_postings_for_block_sequence(
             index_relation,
-            &probe_block_sequence,
+            &probe_plan.block_sequence,
             payload_len,
             |_, posting| {
-                let Some(is_selected) = selected_list_mask.get(posting.list_id as usize) else {
-                    return Ok(());
-                };
-                if !*is_selected || posting.deleted {
+                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                     return Ok(());
                 }
                 let score =
@@ -718,7 +729,7 @@ unsafe fn materialize_probe_candidates(
         )?
     };
 
-    let mut top_k = CandidateTopK::new(candidate_bound);
+    let mut top_k = CandidateTopK::new(probe_plan.candidate_bound);
     for candidate in best_by_heap_tid.into_values() {
         top_k.push(candidate);
     }
@@ -750,56 +761,9 @@ fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result
     }
 }
 
-fn selected_list_live_count_bound(
-    directories: &[super::page::IvfListDirectoryTuple],
-    selected_lists: &[u32],
-) -> Result<usize, String> {
-    let mut total = 0_usize;
-    for list_id in selected_lists {
-        let directory = directories
-            .get(*list_id as usize)
-            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
-        let live_count = usize::try_from(directory.live_count)
-            .map_err(|_| format!("ec_ivf list {list_id} live count exceeds usize"))?;
-        total = total
-            .checked_add(live_count)
-            .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
-    }
-    Ok(total)
-}
-
-fn selected_list_mask(
-    directories: &[super::page::IvfListDirectoryTuple],
-    selected_lists: &[u32],
-) -> Result<Vec<bool>, String> {
-    let mut mask = vec![false; directories.len()];
-    for list_id in selected_lists {
-        let slot = mask
-            .get_mut(*list_id as usize)
-            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
-        *slot = true;
-    }
-    Ok(mask)
-}
-
 fn build_probe_block_sequence(
-    directories: &[super::page::IvfListDirectoryTuple],
-    selected_lists: &[u32],
+    ranges: &mut [ProbeBlockRange],
 ) -> Result<Vec<u32>, String> {
-    let mut ranges = Vec::new();
-    for list_id in selected_lists {
-        let directory = directories
-            .get(*list_id as usize)
-            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
-        if posting_block_count(directory)? == 0 {
-            continue;
-        }
-        ranges.push(ProbeBlockRange {
-            head_block: directory.head_block.block_number,
-            tail_block: directory.tail_block.block_number,
-        });
-    }
-
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
@@ -826,6 +790,83 @@ fn build_probe_block_sequence(
     }
 
     Ok(blocks)
+}
+
+unsafe fn build_selected_probe_plan(
+    index_relation: pg_sys::Relation,
+    metadata: &super::page::MetadataPage,
+    selected_lists: &[u32],
+) -> Result<SelectedProbePlan, String> {
+    if selected_lists.is_empty() {
+        return Ok(SelectedProbePlan {
+            selected_lists: Vec::new(),
+            block_sequence: Vec::new(),
+            candidate_bound: 0,
+        });
+    }
+    if metadata.nlists == 0 {
+        return Err("ec_ivf selected probe plan requires nonzero nlists".to_owned());
+    }
+    if metadata.directory_head == ItemPointer::INVALID {
+        return Err("ec_ivf metadata has lists but no directory head".to_owned());
+    }
+
+    let mut sorted_selected_lists = selected_lists.to_vec();
+    sorted_selected_lists.sort_unstable();
+    sorted_selected_lists.dedup();
+    if sorted_selected_lists
+        .iter()
+        .any(|list_id| *list_id >= metadata.nlists)
+    {
+        return Err("ec_ivf selected list is out of range".to_owned());
+    }
+
+    let mut candidate_bound = 0_usize;
+    let mut ranges = Vec::new();
+    let mut selected_index = 0_usize;
+    let mut next_tid = metadata.directory_head;
+
+    for expected_list_id in 0..metadata.nlists {
+        let (directory, following_tid) =
+            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
+        if directory.list_id != expected_list_id {
+            return Err(format!(
+                "ec_ivf directory order mismatch: got list {}, expected {}",
+                directory.list_id, expected_list_id
+            ));
+        }
+
+        if selected_index < sorted_selected_lists.len()
+            && sorted_selected_lists[selected_index] == expected_list_id
+        {
+            let live_count = usize::try_from(directory.live_count)
+                .map_err(|_| format!("ec_ivf list {expected_list_id} live count exceeds usize"))?;
+            candidate_bound = candidate_bound
+                .checked_add(live_count)
+                .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
+
+            if posting_block_count(&directory)? != 0 {
+                ranges.push(ProbeBlockRange {
+                    head_block: directory.head_block.block_number,
+                    tail_block: directory.tail_block.block_number,
+                });
+            }
+            selected_index += 1;
+        }
+
+        next_tid = following_tid;
+    }
+
+    if selected_index != sorted_selected_lists.len() {
+        return Err("ec_ivf selected probe plan did not resolve every selected list".to_owned());
+    }
+
+    let block_sequence = build_probe_block_sequence(&mut ranges)?;
+    Ok(SelectedProbePlan {
+        selected_lists: sorted_selected_lists,
+        block_sequence,
+        candidate_bound,
+    })
 }
 
 pub(crate) unsafe fn explain_counters_from_index_scan_state(
@@ -1230,9 +1271,8 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 mod tests {
     use super::{
         build_probe_block_sequence, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
-        EcIvfScoredCandidate,
+        EcIvfScoredCandidate, ProbeBlockRange,
     };
-    use crate::am::ec_ivf::page::{BlockRef, IvfListDirectoryTuple};
     use crate::storage::page::ItemPointer;
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
@@ -1249,18 +1289,10 @@ mod tests {
         EcIvfCentroidScore { list_id, score }
     }
 
-    fn directory(list_id: u32, head_block: Option<u32>, tail_block: Option<u32>) -> IvfListDirectoryTuple {
-        IvfListDirectoryTuple {
-            list_id,
-            head_block: head_block
-                .map(|block_number| BlockRef { block_number })
-                .unwrap_or(BlockRef::INVALID),
-            tail_block: tail_block
-                .map(|block_number| BlockRef { block_number })
-                .unwrap_or(BlockRef::INVALID),
-            live_count: 0,
-            dead_count: 0,
-            inserted_since_build: 0,
+    fn range(head_block: u32, tail_block: u32) -> ProbeBlockRange {
+        ProbeBlockRange {
+            head_block,
+            tail_block,
         }
     }
 
@@ -1325,26 +1357,18 @@ mod tests {
 
     #[test]
     fn build_probe_block_sequence_merges_overlapping_ranges_once() {
-        let directories = vec![
-            directory(0, Some(12), Some(14)),
-            directory(1, Some(10), Some(12)),
-            directory(2, Some(18), Some(19)),
-        ];
+        let mut ranges = vec![range(12, 14), range(10, 12), range(18, 19)];
 
-        let sequence = build_probe_block_sequence(&directories, &[0, 1, 2]).unwrap();
+        let sequence = build_probe_block_sequence(&mut ranges).unwrap();
 
         assert_eq!(sequence, vec![10, 11, 12, 13, 14, 18, 19]);
     }
 
     #[test]
     fn build_probe_block_sequence_skips_empty_lists() {
-        let directories = vec![
-            directory(0, None, None),
-            directory(1, Some(8), Some(9)),
-            directory(2, None, None),
-        ];
+        let mut ranges = vec![range(8, 9)];
 
-        let sequence = build_probe_block_sequence(&directories, &[0, 1, 2]).unwrap();
+        let sequence = build_probe_block_sequence(&mut ranges).unwrap();
 
         assert_eq!(sequence, vec![8, 9]);
     }
