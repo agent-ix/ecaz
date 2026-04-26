@@ -1,0 +1,109 @@
+Timing is on.
+=== pg18 source-scored real 50k serial vs concurrent DSM build timing ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-26 06:43:33.969695-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.534 ms
+CREATE EXTENSION
+Time: 0.395 ms
+=== fixture status ===
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 10.057 ms
+ query_rows 
+------------
+       1000
+(1 row)
+
+Time: 1.324 ms
+ corpus_bytes 
+--------------
+      6840320
+(1 row)
+
+Time: 0.494 ms
+ existing_serial_index_bytes 
+-----------------------------
+                    68280320
+(1 row)
+
+Time: 0.322 ms
+SET
+Time: 0.189 ms
+SET
+Time: 0.147 ms
+SET
+Time: 0.151 ms
+ALTER TABLE
+Time: 2.012 ms
+=== serial source-scored sidecar build ===
+DROP INDEX
+Time: 0.255 ms
+SET
+Time: 0.139 ms
+CREATE INDEX
+Time: 1815961.793 ms (30:15.962)
+  build_path   | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us |  graph_us  | stage_us | write_us 
+---------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+------------+----------+----------
+ serial_source |                 4 |                0 |       50000 |        50000 |       28805318 |                 0 |                 0 |                     0 |     1787071975 | 1784269081 |  1824645 |   946879
+(1 row)
+
+Time: 2.146 ms
+ serial_graph_workers_launched 
+-------------------------------
+                             0
+(1 row)
+
+Time: 0.560 ms
+ serial_timing_index_bytes 
+---------------------------
+                  68280320
+(1 row)
+
+Time: 0.601 ms
+=== concurrent DSM source-scored sidecar build ===
+DROP INDEX
+Time: 0.254 ms
+SET
+Time: 0.164 ms
+CREATE INDEX
+Time: 431268.704 ms (07:11.269)
+      build_path       | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us  | stage_us | write_us 
+-----------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+-----------+----------+----------
+ concurrent_dsm_source |                 4 |                4 |       50000 |        50000 |       28227765 |                 0 |                 0 |                     0 |      402957178 | 399932406 |  2032188 |   939198
+(1 row)
+
+Time: 0.486 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.221 ms
+ concurrent_dsm_timing_index_bytes 
+-----------------------------------
+                          68280320
+(1 row)
+
+Time: 0.682 ms
+=== timing sidecar size comparison ===
+ serial_timing_index_bytes | concurrent_dsm_timing_index_bytes 
+---------------------------+-----------------------------------
+                  68280320 |                          68280320
+(1 row)
+
+Time: 0.189 ms
+          finished_at          
+-------------------------------
+ 2026-04-26 07:20:51.978036-07
+(1 row)
+
+Time: 0.209 ms
+psql:review/659-c1-source-dsm-real-50k-build-timing/artifacts/pg18_source_dsm_real_50k_build_timing.sql:10: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/659-c1-source-dsm-real-50k-build-timing/artifacts/pg18_source_dsm_real_50k_build_timing.sql:24: NOTICE:  index "tqhnsw_real_50k_reloaded_m16_serial_timing_idx" does not exist, skipping
+psql:review/659-c1-source-dsm-real-50k-build-timing/artifacts/pg18_source_dsm_real_50k_build_timing.sql:37: NOTICE:  index "tqhnsw_real_50k_reloaded_m16_parallel_dsm_timing_idx" does not exist, skipping

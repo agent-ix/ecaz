@@ -1,0 +1,118 @@
+Timing is on.
+=== pg18 source-scored concurrent DSM real 50k rerun ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 23:11:43.773582-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.761 ms
+CREATE EXTENSION
+Time: 0.698 ms
+=== real corpus fixture status ===
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 9.561 ms
+ query_rows 
+------------
+       1000
+(1 row)
+
+Time: 0.811 ms
+ serial_index_bytes 
+--------------------
+           68280320
+(1 row)
+
+Time: 0.860 ms
+DROP TABLE
+Time: 0.381 ms
+SELECT 10
+Time: 8.680 ms
+ALTER TABLE
+Time: 3.732 ms
+VACUUM
+Time: 8.145 ms
+ query_subset_rows 
+-------------------
+                10
+(1 row)
+
+Time: 0.420 ms
+SET
+Time: 0.305 ms
+SET
+Time: 0.176 ms
+SET
+Time: 0.155 ms
+=== existing serial-built real 50k m16 source-scored index recall at ef_search 200 ===
+SELECT 1
+Time: 229064.928 ms (03:49.065)
+   build_path    | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------+--------------------+---------------------+------------------------------+------------+----------------------+--------------------+---------------------------+-----------------
+ serial_existing |               0.91 |               0.762 |                            1 |   0.947258 |         0.0059287096 |          0.9175757 |                         7 |               2
+(1 row)
+
+Time: 1.202 ms
+=== concurrent DSM-built real 50k m16 source-scored sidecar index ===
+DROP INDEX
+Time: 0.337 ms
+SET
+Time: 0.180 ms
+SET
+Time: 0.219 ms
+ALTER TABLE
+Time: 2.755 ms
+CREATE INDEX
+Time: 433026.474 ms (07:13.026)
+      build_path       | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us  | stage_us | write_us 
+-----------------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+-----------+----------+----------
+ concurrent_dsm_source |                 4 |                4 |       50000 |        50000 |       28202651 |                 0 |                 0 |                     0 |      404756965 | 401643816 |  2099800 |   951416
+(1 row)
+
+Time: 0.924 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     4
+(1 row)
+
+Time: 0.470 ms
+ concurrent_dsm_index_bytes 
+----------------------------
+                   68280320
+(1 row)
+
+Time: 0.461 ms
+=== concurrent DSM real 50k m16 source-scored recall at ef_search 200 ===
+SELECT 1
+Time: 226518.217 ms (03:46.518)
+      build_path       | graph_recall_at_10 | graph_recall_at_100 | exact_quantized_recall_at_10 | ndcg_at_10 | mean_abs_score_error | spearman_rho_at_10 | graph_below_exact_queries | worst_exact_gap 
+-----------------------+--------------------+---------------------+------------------------------+------------+----------------------+--------------------+---------------------------+-----------------
+ concurrent_dsm_source |               0.91 |               0.771 |                            1 |   0.947258 |         0.0059287096 |          0.9175757 |                         7 |               2
+(1 row)
+
+Time: 0.975 ms
+=== real 50k serial vs concurrent DSM source-scored recall delta at ef_search 200 ===
+ serial_graph_recall_at_10 | concurrent_dsm_graph_recall_at_10 | recall_delta | serial_graph_recall_at_100 | concurrent_dsm_graph_recall_at_100 | recall_100_delta | serial_exact_quantized_recall_at_10 | concurrent_dsm_exact_quantized_recall_at_10 | concurrent_dsm_graph_below_exact_queries | concurrent_dsm_worst_exact_gap 
+---------------------------+-----------------------------------+--------------+----------------------------+------------------------------------+------------------+-------------------------------------+---------------------------------------------+------------------------------------------+--------------------------------
+                      0.91 |                              0.91 |            0 |                      0.762 |                              0.771 |      0.009000003 |                                   1 |                                           1 |                                        7 |                              2
+(1 row)
+
+Time: 0.921 ms
+ serial_index_bytes | concurrent_dsm_index_bytes 
+--------------------+----------------------------
+           68280320 |                   68280320
+(1 row)
+
+Time: 0.336 ms
+          finished_at          
+-------------------------------
+ 2026-04-25 23:26:29.863833-07
+(1 row)
+
+Time: 0.248 ms
+psql:review/658-c1-concurrent-dsm-source-real-50k-rerun/artifacts/pg18_concurrent_dsm_source_real_50k_rerun.sql:10: NOTICE:  extension "ecaz" already exists, skipping
+psql:review/658-c1-concurrent-dsm-source-real-50k-rerun/artifacts/pg18_concurrent_dsm_source_real_50k_rerun.sql:17: NOTICE:  table "tqhnsw_real_50k_reloaded_parallel_queries_10" does not exist, skipping
+psql:review/658-c1-concurrent-dsm-source-real-50k-rerun/artifacts/pg18_concurrent_dsm_source_real_50k_rerun.sql:53: NOTICE:  index "tqhnsw_real_50k_reloaded_m16_parallel_dsm_idx" does not exist, skipping
