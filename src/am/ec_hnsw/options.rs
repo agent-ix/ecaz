@@ -17,7 +17,7 @@ static EC_HNSW_EF_SEARCH_GUC: GucSetting<i32> =
 static EC_HNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+    GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -95,8 +95,8 @@ pub(super) fn register_gucs() {
     );
     GucRegistry::define_bool_guc(
         c"ec_hnsw.enable_parallel_build_concurrent_dsm",
-        c"Enable experimental concurrent DSM graph assembly for parallel ec_hnsw builds.",
-        c"Diagnostic opt-in for ADR-048; when enabled, eligible parallel builds assemble the HNSW graph through a DSM-resident graph instead of serial leader graph construction.",
+        c"Enable concurrent DSM graph assembly for parallel ec_hnsw builds.",
+        c"Phase-4 ADR-048 default path; when enabled, eligible parallel builds assemble the HNSW graph through a DSM-resident graph instead of serial leader graph construction. Disable only as a diagnostic fallback.",
         &EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC,
         GucContext::Userset,
         GucFlags::default(),

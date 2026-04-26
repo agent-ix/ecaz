@@ -3246,9 +3246,7 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
-    fn test_pg18_parallel_index_build_concurrent_dsm_graph_opt_in() {
-        Spi::run("SET ec_hnsw.enable_parallel_build_concurrent_dsm = on")
-            .expect("set should succeed");
+    fn test_pg18_parallel_index_build_concurrent_dsm_graph_default() {
         Spi::run("SET max_parallel_maintenance_workers = 2").expect("set should succeed");
         Spi::run("SET max_parallel_workers = 4").expect("set should succeed");
         Spi::run("SET maintenance_work_mem = '128MB'").expect("set should succeed");
@@ -3307,6 +3305,63 @@ mod tests {
             .sum::<usize>();
         assert_eq!(heap_tid_count, 96);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        Spi::run("RESET maintenance_work_mem").expect("reset should succeed");
+        Spi::run("RESET max_parallel_workers").expect("reset should succeed");
+        Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_parallel_index_build_concurrent_dsm_can_be_disabled() {
+        Spi::run("SET ec_hnsw.enable_parallel_build_concurrent_dsm = off")
+            .expect("set should succeed");
+        Spi::run("SET max_parallel_maintenance_workers = 2").expect("set should succeed");
+        Spi::run("SET max_parallel_workers = 4").expect("set should succeed");
+        Spi::run("SET maintenance_work_mem = '128MB'").expect("set should succeed");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_parallel_build_dsm_disabled (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run("ALTER TABLE ec_hnsw_parallel_build_dsm_disabled SET (parallel_workers = 2)")
+            .expect("parallel_workers reloption should be accepted");
+        Spi::run(
+            "INSERT INTO ec_hnsw_parallel_build_dsm_disabled
+             SELECT id,
+                    encode_to_ecvector(
+                        ARRAY[
+                            id::real,
+                            (id * 2)::real,
+                            (id * 3 + 1)::real,
+                            (id * 5 + 2)::real
+                        ]::real[],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, 64) AS id",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX ec_hnsw_parallel_build_dsm_disabled_idx
+             ON ec_hnsw_parallel_build_dsm_disabled
+             USING ec_hnsw (embedding ecvector_ip_ops)
+             WITH (m = 6, ef_construction = 40)",
+        )
+        .expect("parallel fallback index creation should succeed");
+
+        let graph_workers_launched = Spi::get_one::<i32>(
+            "SELECT tests.ec_hnsw_debug_parallel_graph_build_workers_launched()",
+        )
+        .expect("SPI query should succeed")
+        .expect("debug graph worker count should be non-null");
+        assert_eq!(
+            graph_workers_launched, 0,
+            "disabled concurrent DSM graph build should not launch graph workers"
+        );
 
         Spi::run("RESET maintenance_work_mem").expect("reset should succeed");
         Spi::run("RESET max_parallel_workers").expect("reset should succeed");
