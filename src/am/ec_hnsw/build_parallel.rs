@@ -884,6 +884,34 @@ pub(super) unsafe fn insert_concurrent_dsm_graph_node(
     true
 }
 
+#[allow(dead_code)]
+pub(super) unsafe fn insert_concurrent_dsm_graph_partition(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    config: EcHnswConcurrentDsmInsertConfig,
+    partition: EcHnswConcurrentDsmNodePartition,
+    scratch: &mut EcHnswConcurrentDsmInsertScratch,
+    locks: EcHnswConcurrentDsmLockOps,
+) -> u32 {
+    if partition.start_node_idx > partition.end_node_idx
+        || partition.end_node_idx > layout.node_count
+    {
+        pgrx::error!("concurrent DSM graph partition is out of bounds");
+    }
+
+    let mut inserted = 0_u32;
+    for node_idx in partition.start_node_idx..partition.end_node_idx {
+        if unsafe {
+            insert_concurrent_dsm_graph_node(parts, layout, config, node_idx, scratch, locks)
+        } {
+            inserted = inserted
+                .checked_add(1)
+                .unwrap_or_else(|| pgrx::error!("concurrent DSM inserted count overflow"));
+        }
+    }
+    inserted
+}
+
 unsafe fn begin_concurrent_dsm_graph_node_insert(
     parts: EcHnswConcurrentDsmGraphParts,
     node_idx: u32,
@@ -2702,6 +2730,76 @@ mod tests {
                 .iter()
                 .all(|slot| *slot == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX));
         }
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_partition_insert_covers_node_range_once() {
+        let plan = preassembly_plan_with_levels(
+            vec![1, 0, 0, 0],
+            vec![
+                vec![0x11, 0x11, 0x11],
+                vec![0x22, 0x22, 0x22],
+                vec![0x33, 0x33, 0x33],
+                vec![0x44, 0x44, 0x44],
+            ],
+        );
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+        let config = test_insert_config(4);
+        let partitions = concurrent_dsm_node_partitions(plan.graph_layout.node_count, 2);
+        let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+            plan.graph_layout.node_count as usize,
+            config.ef_construction,
+            config.m,
+        );
+
+        let inserted_0 = unsafe {
+            insert_concurrent_dsm_graph_partition(
+                parts,
+                plan.graph_layout,
+                config,
+                partitions[0],
+                &mut scratch,
+                test_lock_ops(),
+            )
+        };
+        let inserted_1 = unsafe {
+            insert_concurrent_dsm_graph_partition(
+                parts,
+                plan.graph_layout,
+                config,
+                partitions[1],
+                &mut scratch,
+                test_lock_ops(),
+            )
+        };
+        let inserted_again = unsafe {
+            insert_concurrent_dsm_graph_partition(
+                parts,
+                plan.graph_layout,
+                config,
+                partitions[0],
+                &mut scratch,
+                test_lock_ops(),
+            )
+        };
+
+        assert_eq!(inserted_0, 1);
+        assert_eq!(inserted_1, 2);
+        assert_eq!(inserted_again, 0);
+        let build_nodes =
+            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m) };
+        assert_eq!(build_nodes.len(), 4);
+        assert!(build_nodes
+            .iter()
+            .skip(1)
+            .all(|node| node.neighbor_slots.iter().any(Option::is_some)));
     }
 
     struct AlignedDsmBuffer {
