@@ -86,6 +86,12 @@ Checkpoint in progress / complete on this branch:
   read instead of materializing one temporary posting `Vec` per selected list.
 - The current score/dedup/top-k behavior is intentionally unchanged; this slice
   only removes intermediate posting allocation from the scan path.
+- PG18 scan now merges the selected IVF list ranges into one deduplicated
+  posting-block sequence and streams that union through a single sequential
+  `ReadStream`, instead of starting one `ReadStream` per selected list.
+- Overlapping or shared posting blocks across selected lists are now read once
+  per scan materialization pass, with posting-level list filtering preserved in
+  the scan layer.
 
 Why this slice is worth doing here:
 
