@@ -171,6 +171,22 @@ pub(super) struct EcHnswConcurrentDsmGraphParts {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
+pub(super) struct EcHnswConcurrentDsmGraphAttachment {
+    pub(super) parts: EcHnswConcurrentDsmGraphParts,
+    pub(super) layout: EcHnswConcurrentDsmGraphLayout,
+    pub(super) insert_config: Option<EcHnswConcurrentDsmInsertConfig>,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmGraphAttachment {
+    pub(super) fn require_insert_config(self) -> EcHnswConcurrentDsmInsertConfig {
+        self.insert_config
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM graph is missing insert config"))
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct EcHnswConcurrentDsmNodeLayout {
     pub(super) level: u8,
@@ -767,6 +783,21 @@ pub(super) unsafe fn concurrent_dsm_insert_config_from_image(
 }
 
 #[allow(dead_code)]
+pub(super) unsafe fn attach_concurrent_dsm_graph_image(
+    base: *mut c_void,
+) -> EcHnswConcurrentDsmGraphAttachment {
+    let layout = unsafe { concurrent_dsm_graph_layout_from_image(base) };
+    let insert_config = unsafe { concurrent_dsm_insert_config_from_image(base) };
+    let parts = unsafe { concurrent_dsm_graph_parts(base, layout) };
+
+    EcHnswConcurrentDsmGraphAttachment {
+        parts,
+        layout,
+        insert_config,
+    }
+}
+
+#[allow(dead_code)]
 pub(super) unsafe fn concurrent_dsm_graph_parts(
     base: *mut c_void,
     layout: EcHnswConcurrentDsmGraphLayout,
@@ -911,6 +942,18 @@ pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
     }
 
     build_nodes
+}
+
+#[allow(dead_code)]
+pub(super) unsafe fn current_format_flush_output_from_concurrent_dsm_graph(
+    state: &build::BuildState,
+    attachment: EcHnswConcurrentDsmGraphAttachment,
+) -> build::BuildFlushOutput {
+    let config = attachment.require_insert_config();
+    let graph_nodes = unsafe {
+        concurrent_dsm_graph_to_build_nodes(attachment.parts, attachment.layout, config.m)
+    };
+    build::current_format_flush_output_from_graph_nodes(state, &graph_nodes)
 }
 
 #[allow(dead_code)]
@@ -2676,19 +2719,14 @@ mod tests {
             )
         };
 
-        let attached_layout =
-            unsafe { concurrent_dsm_graph_layout_from_image(buffer.as_mut_ptr()) };
-        let attached_config =
-            unsafe { concurrent_dsm_insert_config_from_image(buffer.as_mut_ptr()) };
-        let attached_parts =
-            unsafe { concurrent_dsm_graph_parts(buffer.as_mut_ptr(), attached_layout) };
+        let attachment = unsafe { attach_concurrent_dsm_graph_image(buffer.as_mut_ptr()) };
 
-        assert_eq!(attached_layout, plan.graph_layout);
-        assert_eq!(attached_config, plan.insert_config);
-        assert_eq!(attached_parts.header, parts.header);
-        assert_eq!(attached_parts.nodes, parts.nodes);
-        assert_eq!(attached_parts.neighbor_slots, parts.neighbor_slots);
-        assert_eq!(attached_parts.codes, parts.codes);
+        assert_eq!(attachment.layout, plan.graph_layout);
+        assert_eq!(attachment.insert_config, plan.insert_config);
+        assert_eq!(attachment.parts.header, parts.header);
+        assert_eq!(attachment.parts.nodes, parts.nodes);
+        assert_eq!(attachment.parts.neighbor_slots, parts.neighbor_slots);
+        assert_eq!(attachment.parts.codes, parts.codes);
     }
 
     #[test]
@@ -2757,10 +2795,9 @@ mod tests {
             assert_eq!(header.seed, 0);
             assert_eq!(header.m, 0);
             assert_eq!(header.ef_construction, 0);
-            assert_eq!(
-                concurrent_dsm_insert_config_from_image(buffer.as_mut_ptr()),
-                None
-            );
+            let attachment = attach_concurrent_dsm_graph_image(buffer.as_mut_ptr());
+            assert_eq!(attachment.layout, plan.graph_layout);
+            assert_eq!(attachment.insert_config, None);
         }
     }
 
@@ -3077,17 +3114,17 @@ mod tests {
         };
         assert_eq!(inserted, plan.graph_layout.node_count.saturating_sub(1));
 
-        let graph_nodes =
-            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, config.m) };
-        let output = build::current_format_flush_output_from_graph_nodes(&state, &graph_nodes);
+        let attachment = unsafe { attach_concurrent_dsm_graph_image(buffer.as_mut_ptr()) };
+        assert_eq!(attachment.require_insert_config(), config);
+        let output =
+            unsafe { current_format_flush_output_from_concurrent_dsm_graph(&state, attachment) };
 
         assert_eq!(
             output.metadata.format_version,
             page::INDEX_FORMAT_V3_TURBO_HOT_COLD
         );
         assert_ne!(output.metadata.entry_point, page::ItemPointer::INVALID);
-        let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
-        assert_eq!(output.metadata.max_level, max_level);
+        assert_eq!(output.metadata.max_level, plan.graph_layout.max_level);
         assert_eq!(output.metadata.m, state.options.m as u16);
     }
 
