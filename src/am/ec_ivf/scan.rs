@@ -42,6 +42,31 @@ struct EcIvfScoredCandidate {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct ProbeListHeapEntry {
+    centroid: EcIvfCentroidScore,
+}
+
+impl PartialEq for ProbeListHeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        probe_list_heap_cmp(&self.centroid, &other.centroid) == Ordering::Equal
+    }
+}
+
+impl Eq for ProbeListHeapEntry {}
+
+impl PartialOrd for ProbeListHeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProbeListHeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        probe_list_heap_cmp(&self.centroid, &other.centroid)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 struct CandidateHeapEntry {
     candidate: EcIvfScoredCandidate,
 }
@@ -568,14 +593,51 @@ fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> O
         .then_with(|| left.heap_tid.offset_number.cmp(&right.heap_tid.offset_number))
 }
 
+fn probe_list_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) -> Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| left.list_id.cmp(&right.list_id))
+}
+
+fn probe_list_heap_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) -> Ordering {
+    left.score
+        .total_cmp(&right.score)
+        .reverse()
+        .then_with(|| left.list_id.cmp(&right.list_id))
+}
+
 fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
-    let mut ranked = scores.to_vec();
-    ranked.sort_by(|left, right| {
-        right
-            .score
-            .total_cmp(&left.score)
-            .then_with(|| left.list_id.cmp(&right.list_id))
-    });
+    let limit = nprobe as usize;
+    if limit == 0 || scores.is_empty() {
+        return Vec::new();
+    }
+    if limit >= scores.len() {
+        let mut ranked = scores.to_vec();
+        ranked.sort_by(probe_list_cmp);
+        return ranked.into_iter().map(|score| score.list_id).collect();
+    }
+
+    let mut retained = BinaryHeap::with_capacity(limit);
+    for centroid in scores {
+        let entry = ProbeListHeapEntry {
+            centroid: *centroid,
+        };
+        if retained.len() < limit {
+            retained.push(entry);
+            continue;
+        }
+        if retained.peek().is_some_and(|worst| entry < *worst) {
+            retained.pop();
+            retained.push(entry);
+        }
+    }
+
+    let mut ranked = retained
+        .into_iter()
+        .map(|entry| entry.centroid)
+        .collect::<Vec<_>>();
+    ranked.sort_by(probe_list_cmp);
     ranked
         .into_iter()
         .take(nprobe as usize)
@@ -1100,7 +1162,7 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 
 #[cfg(test)]
 mod tests {
-    use super::{CandidateTopK, EcIvfScoredCandidate};
+    use super::{select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate};
     use crate::storage::page::ItemPointer;
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
@@ -1111,6 +1173,10 @@ mod tests {
             },
             score,
         }
+    }
+
+    fn centroid(list_id: u32, score: f32) -> EcIvfCentroidScore {
+        EcIvfCentroidScore { list_id, score }
     }
 
     #[test]
@@ -1139,5 +1205,36 @@ mod tests {
         assert_eq!(retained.len(), 2);
         assert_eq!(retained[0].heap_tid.offset_number, 1);
         assert_eq!(retained[1].heap_tid.offset_number, 2);
+    }
+
+    #[test]
+    fn select_probe_lists_keeps_best_nprobe_without_full_sort_requirement() {
+        let selected = select_probe_lists(
+            &[
+                centroid(0, 0.1),
+                centroid(1, 0.9),
+                centroid(2, 0.2),
+                centroid(3, 0.8),
+                centroid(4, 0.3),
+            ],
+            2,
+        );
+
+        assert_eq!(selected, vec![1, 3]);
+    }
+
+    #[test]
+    fn select_probe_lists_uses_list_id_as_tiebreaker() {
+        let selected = select_probe_lists(
+            &[
+                centroid(9, 0.5),
+                centroid(3, 0.7),
+                centroid(7, 0.7),
+                centroid(1, 0.7),
+            ],
+            3,
+        );
+
+        assert_eq!(selected, vec![1, 3, 7]);
     }
 }
