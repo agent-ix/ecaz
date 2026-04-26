@@ -4395,6 +4395,8 @@ mod tests {
         (
             name!(requested_workers, i64),
             name!(workers_launched, i64),
+            name!(heap_workers_launched, i64),
+            name!(graph_workers_launched, i64),
             name!(heap_tuples, i64),
             name!(index_tuples, i64),
             name!(heap_ingest_us, i64),
@@ -4411,6 +4413,8 @@ mod tests {
         TableIterator::once((
             timing.requested_workers as i64,
             timing.workers_launched as i64,
+            timing.heap_workers_launched as i64,
+            timing.graph_workers_launched as i64,
             timing.heap_tuples as i64,
             timing.index_tuples as i64,
             timing.heap_ingest_us as i64,

@@ -36,6 +36,7 @@ const EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY: u32 = 2;
 const EC_HNSW_CONCURRENT_DSM_STRIPE_CHUNK_NODES: u32 = 64;
 
 static LAST_PARALLEL_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
+static LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 static LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -1848,18 +1849,33 @@ fn checked_u16(value: i32, field: &str) -> u16 {
 
 pub(super) fn reset_debug_last_parallel_build_workers_launched() {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
+    LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
     LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
 }
 
-fn record_debug_parallel_build_workers_launched(workers_launched: i32) {
+fn record_debug_parallel_build_workers_launched_overall(workers_launched: i32) {
     let current = LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire);
     if workers_launched > current {
         LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
     }
 }
 
+fn record_debug_parallel_heap_build_workers_launched(workers_launched: i32) {
+    LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
+    record_debug_parallel_build_workers_launched_overall(workers_launched);
+}
+
+fn record_debug_parallel_graph_build_workers_launched(workers_launched: i32) {
+    LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
+    record_debug_parallel_build_workers_launched_overall(workers_launched);
+}
+
 pub(crate) fn debug_last_parallel_build_workers_launched() -> i32 {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire)
+}
+
+pub(crate) fn debug_last_parallel_heap_build_workers_launched() -> i32 {
+    LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire)
 }
 
 pub(crate) fn debug_last_parallel_graph_build_workers_launched() -> i32 {
@@ -2104,8 +2120,7 @@ impl EcHnswParallelGraphBuildLeader {
             pg_sys::LaunchParallelWorkers(pcxt);
         }
         let workers_launched = unsafe { (*pcxt).nworkers_launched };
-        LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.store(workers_launched, Ordering::Release);
-        record_debug_parallel_build_workers_launched(workers_launched);
+        record_debug_parallel_graph_build_workers_launched(workers_launched);
 
         if workers_launched > 0 {
             unsafe { pg_sys::WaitForParallelWorkersToAttach(pcxt) };
@@ -2328,7 +2343,7 @@ impl EcHnswParallelBuildLeader {
 
         unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
         let workers_launched = unsafe { (*pcxt).nworkers_launched };
-        record_debug_parallel_build_workers_launched(workers_launched);
+        record_debug_parallel_heap_build_workers_launched(workers_launched);
 
         let mut leader = Self {
             pcxt,

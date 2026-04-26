@@ -20,6 +20,8 @@ const NATIVE_BUILD_MAX_SCORE_VALUE_BYTES: usize = 64 * 1024 * 1024;
 
 static LAST_BUILD_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_HEAP_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_GRAPH_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_HEAP_TUPLES: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_INDEX_TUPLES: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_HEAP_INGEST_US: AtomicU64 = AtomicU64::new(0);
@@ -35,6 +37,8 @@ static LAST_BUILD_WRITE_US: AtomicU64 = AtomicU64::new(0);
 pub(crate) struct BuildTimingSnapshot {
     pub(crate) requested_workers: u64,
     pub(crate) workers_launched: u64,
+    pub(crate) heap_workers_launched: u64,
+    pub(crate) graph_workers_launched: u64,
     pub(crate) heap_tuples: u64,
     pub(crate) index_tuples: u64,
     pub(crate) heap_ingest_us: u64,
@@ -109,6 +113,8 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
     BuildTimingSnapshot {
         requested_workers: LAST_BUILD_REQUESTED_WORKERS.load(AtomicOrdering::Acquire),
         workers_launched: LAST_BUILD_WORKERS_LAUNCHED.load(AtomicOrdering::Acquire),
+        heap_workers_launched: LAST_BUILD_HEAP_WORKERS_LAUNCHED.load(AtomicOrdering::Acquire),
+        graph_workers_launched: LAST_BUILD_GRAPH_WORKERS_LAUNCHED.load(AtomicOrdering::Acquire),
         heap_tuples: LAST_BUILD_HEAP_TUPLES.load(AtomicOrdering::Acquire),
         index_tuples: LAST_BUILD_INDEX_TUPLES.load(AtomicOrdering::Acquire),
         heap_ingest_us: LAST_BUILD_HEAP_INGEST_US.load(AtomicOrdering::Acquire),
@@ -126,6 +132,8 @@ fn reset_debug_last_build_timing() {
     record_debug_last_build_timing(BuildTimingSnapshot {
         requested_workers: 0,
         workers_launched: 0,
+        heap_workers_launched: 0,
+        graph_workers_launched: 0,
         heap_tuples: 0,
         index_tuples: 0,
         heap_ingest_us: 0,
@@ -142,6 +150,9 @@ fn reset_debug_last_build_timing() {
 fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
     LAST_BUILD_REQUESTED_WORKERS.store(snapshot.requested_workers, AtomicOrdering::Release);
     LAST_BUILD_WORKERS_LAUNCHED.store(snapshot.workers_launched, AtomicOrdering::Release);
+    LAST_BUILD_HEAP_WORKERS_LAUNCHED.store(snapshot.heap_workers_launched, AtomicOrdering::Release);
+    LAST_BUILD_GRAPH_WORKERS_LAUNCHED
+        .store(snapshot.graph_workers_launched, AtomicOrdering::Release);
     LAST_BUILD_HEAP_TUPLES.store(snapshot.heap_tuples, AtomicOrdering::Release);
     LAST_BUILD_INDEX_TUPLES.store(snapshot.index_tuples, AtomicOrdering::Release);
     LAST_BUILD_HEAP_INGEST_US.store(snapshot.heap_ingest_us, AtomicOrdering::Release);
@@ -259,6 +270,12 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                 requested_workers: nonnegative_i32_to_u64(parallel_plan.requested_workers),
                 workers_launched: nonnegative_i32_to_u64(
                     build_parallel::debug_last_parallel_build_workers_launched(),
+                ),
+                heap_workers_launched: nonnegative_i32_to_u64(
+                    build_parallel::debug_last_parallel_heap_build_workers_launched(),
+                ),
+                graph_workers_launched: nonnegative_i32_to_u64(
+                    build_parallel::debug_last_parallel_graph_build_workers_launched(),
                 ),
                 heap_tuples: heap_tuples.max(0.0) as u64,
                 index_tuples: index_tuples.max(0.0) as u64,
