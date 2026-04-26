@@ -1,0 +1,71 @@
+Timing is on.
+=== pg18 concurrent DSM real 50k w8 headroom diagnostic ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes | max_parallel_workers | max_parallel_maintenance_workers 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------+----------------------+----------------------------------
+ 2026-04-26 11:20:19.489361-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 16                   | 16                   | 8
+(1 row)
+
+Time: 1.015 ms
+CREATE EXTENSION
+Time: 0.377 ms
+ALTER EXTENSION
+Time: 2.662 ms
+DROP FUNCTION
+Time: 2.876 ms
+CREATE FUNCTION
+Time: 6.946 ms
+ALTER EXTENSION
+Time: 2.067 ms
+=== fixture status ===
+ corpus_rows 
+-------------
+       50000
+(1 row)
+
+Time: 9.750 ms
+ corpus_bytes 
+--------------
+      6840320
+(1 row)
+
+Time: 0.700 ms
+SET
+Time: 0.194 ms
+SET
+Time: 0.105 ms
+SET
+Time: 0.095 ms
+SET
+Time: 0.075 ms
+ALTER TABLE
+Time: 1.878 ms
+=== concurrent DSM source-scored build: 8 workers with headroom ===
+DROP INDEX
+Time: 15.625 ms
+CREATE INDEX
+Time: 147947.506 ms (02:27.948)
+            build_path             | requested_workers | workers_launched | heap_workers_launched | graph_workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us  | stage_us | write_us 
+-----------------------------------+-------------------+------------------+-----------------------+------------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+-----------+----------+----------
+ concurrent_dsm_source_w8_headroom |                 8 |                8 |                     0 |                      8 |       50000 |        50000 |       28328966 |                 0 |                 0 |                     0 |      119547201 | 116850823 |  2030787 |   578307
+(1 row)
+
+Time: 0.916 ms
+ concurrent_dsm_graph_workers_launched 
+---------------------------------------
+                                     8
+(1 row)
+
+Time: 0.386 ms
+ index_bytes 
+-------------
+    68280320
+(1 row)
+
+Time: 0.414 ms
+          finished_at          
+-------------------------------
+ 2026-04-26 11:22:46.769409-07
+(1 row)
+
+Time: 0.150 ms
+psql:review/672-c1-concurrent-dsm-w8-headroom/artifacts/pg18_concurrent_dsm_real50k_w8_headroom.sql:12: NOTICE:  extension "ecaz" already exists, skipping
