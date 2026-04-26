@@ -5,3 +5,9 @@ __pycache__/
 .codex
 tmp/
 /data/
+
+# Local agent/session state and downloaded paper copies.
+.claude/
+CLAUDE.md
+handoff.md
+*.pdf
