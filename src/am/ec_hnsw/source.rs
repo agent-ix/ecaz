@@ -9,11 +9,11 @@ use super::page;
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::{
-    __m256, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+    __m256, _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
 };
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{
-    __m256, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+    __m256, _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,15 +106,36 @@ fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
-    let mut acc: __m256 = _mm256_setzero_ps();
+    let mut acc0: __m256 = _mm256_setzero_ps();
+    let mut acc1: __m256 = _mm256_setzero_ps();
+    let mut acc2: __m256 = _mm256_setzero_ps();
+    let mut acc3: __m256 = _mm256_setzero_ps();
     let mut offset = 0_usize;
+    while offset + 32 <= left.len() {
+        let l0 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };
+        let r0 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };
+        let l1 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 8)) };
+        let r1 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 8)) };
+        let l2 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 16)) };
+        let r2 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 16)) };
+        let l3 = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset + 24)) };
+        let r3 = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset + 24)) };
+        acc0 = _mm256_fmadd_ps(l0, r0, acc0);
+        acc1 = _mm256_fmadd_ps(l1, r1, acc1);
+        acc2 = _mm256_fmadd_ps(l2, r2, acc2);
+        acc3 = _mm256_fmadd_ps(l3, r3, acc3);
+        offset += 32;
+    }
     while offset + 8 <= left.len() {
         let l = unsafe { _mm256_loadu_ps(left.as_ptr().add(offset)) };
         let r = unsafe { _mm256_loadu_ps(right.as_ptr().add(offset)) };
-        acc = _mm256_fmadd_ps(l, r, acc);
+        acc0 = _mm256_fmadd_ps(l, r, acc0);
         offset += 8;
     }
 
+    let acc01 = _mm256_add_ps(acc0, acc1);
+    let acc23 = _mm256_add_ps(acc2, acc3);
+    let acc = _mm256_add_ps(acc01, acc23);
     let mut lanes = [0.0_f32; 8];
     unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };
     let mut sum = lanes.iter().sum::<f32>();
