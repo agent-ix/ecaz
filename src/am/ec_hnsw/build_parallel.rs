@@ -492,6 +492,7 @@ struct EcHnswConcurrentDsmLayerSearchScratch {
     candidate_points: BinaryHeap<Reverse<EcHnswConcurrentDsmLayerSearchCandidate>>,
     result_points: BinaryHeap<EcHnswConcurrentDsmLayerSearchCandidate>,
     successors: Vec<search::BeamCandidate<u32>>,
+    neighbor_idxs: Vec<u32>,
 }
 
 #[allow(dead_code)]
@@ -502,6 +503,7 @@ impl EcHnswConcurrentDsmLayerSearchScratch {
             candidate_points: BinaryHeap::with_capacity(ef_construction),
             result_points: BinaryHeap::with_capacity(ef_construction.saturating_add(1)),
             successors: Vec::with_capacity(m.saturating_mul(2)),
+            neighbor_idxs: Vec::with_capacity(m.saturating_mul(2)),
         }
     }
 
@@ -510,6 +512,7 @@ impl EcHnswConcurrentDsmLayerSearchScratch {
         self.candidate_points.clear();
         self.result_points.clear();
         self.successors.clear();
+        self.neighbor_idxs.clear();
     }
 }
 
@@ -1435,6 +1438,7 @@ unsafe fn search_concurrent_dsm_layer_result_candidates(
                 layer,
                 &mut scratch.query_scores,
                 &mut scratch.layer_search.successors,
+                &mut scratch.layer_search.neighbor_idxs,
                 locks,
             );
         }
@@ -1483,16 +1487,17 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
     layer: u8,
     query_scores: &mut EcHnswConcurrentDsmQueryScoreCache,
     out: &mut Vec<search::BeamCandidate<u32>>,
+    neighbor_idxs: &mut Vec<u32>,
     locks: EcHnswConcurrentDsmLockOps,
 ) {
     out.clear();
+    neighbor_idxs.clear();
     if source_idx >= layout.node_count {
         pgrx::error!("concurrent DSM graph search source index out of bounds");
     }
 
     let source = unsafe { parts.nodes.add(source_idx as usize) };
     let source_lock = unsafe { ptr::addr_of_mut!((*source).lock) };
-    let mut neighbor_idxs = Vec::new();
     unsafe { (locks.acquire_shared)(source_lock) };
     let source_state = unsafe { (*source).insert_state.value };
     if source_state == EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
@@ -1511,7 +1516,7 @@ unsafe fn load_concurrent_dsm_successor_candidates_into(
     }
     unsafe { (locks.release)(source_lock) };
 
-    for neighbor_idx in neighbor_idxs {
+    for neighbor_idx in neighbor_idxs.iter().copied() {
         if neighbor_idx >= layout.node_count {
             pgrx::error!("concurrent DSM graph search saw out-of-range neighbor index");
         }
