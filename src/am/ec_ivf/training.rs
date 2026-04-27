@@ -1,5 +1,7 @@
 //! IVF centroid training helpers.
 
+use crate::am::ec_hnsw::source;
+
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
@@ -144,8 +146,8 @@ pub(super) fn assign_vector_to_centroid(
     source: &[f32],
     model: &SphericalKMeansModel,
 ) -> Result<usize, String> {
-    let normalized = normalize_vector(source, model.dimensions)?;
-    nearest_centroid_for_normalized(&normalized, &model.centroids)
+    validate_assignable_vector(source, model.dimensions)?;
+    nearest_centroid_for_source(source, &model.centroids)
 }
 
 fn initial_centroids(samples: &[Vec<f32>], centroid_count: usize, seed: u64) -> Vec<Vec<f32>> {
@@ -179,6 +181,14 @@ fn nearest_centroid_for_normalized(
     normalized: &[f32],
     centroids: &[Vec<f32>],
 ) -> Result<usize, String> {
+    nearest_centroid(normalized, centroids)
+}
+
+fn nearest_centroid_for_source(source: &[f32], centroids: &[Vec<f32>]) -> Result<usize, String> {
+    nearest_centroid(source, centroids)
+}
+
+fn nearest_centroid(vector: &[f32], centroids: &[Vec<f32>]) -> Result<usize, String> {
     if centroids.is_empty() {
         return Err("ec_ivf centroid assignment requires at least one centroid".into());
     }
@@ -186,14 +196,14 @@ fn nearest_centroid_for_normalized(
     let mut best_index = 0;
     let mut best_score = f32::NEG_INFINITY;
     for (centroid_index, centroid) in centroids.iter().enumerate() {
-        if centroid.len() != normalized.len() {
+        if centroid.len() != vector.len() {
             return Err(format!(
                 "ec_ivf centroid dimensions mismatch: got {}, expected {}",
                 centroid.len(),
-                normalized.len()
+                vector.len()
             ));
         }
-        let score = inner_product(normalized, centroid);
+        let score = inner_product(vector, centroid);
         if score > best_score {
             best_score = score;
             best_index = centroid_index;
@@ -203,10 +213,28 @@ fn nearest_centroid_for_normalized(
 }
 
 fn inner_product(left: &[f32], right: &[f32]) -> f32 {
-    left.iter()
-        .zip(right.iter())
-        .map(|(left, right)| left * right)
-        .sum()
+    source::inner_product(left, right)
+}
+
+fn validate_assignable_vector(source: &[f32], dimensions: usize) -> Result<(), String> {
+    if source.len() != dimensions {
+        return Err(format!(
+            "ec_ivf vector dimensions mismatch: got {}, expected {dimensions}",
+            source.len()
+        ));
+    }
+    if source.iter().any(|value| !value.is_finite()) {
+        return Err("ec_ivf vector contains a non-finite value".into());
+    }
+
+    let norm_sq = source
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>();
+    if norm_sq <= f64::EPSILON {
+        return Err("ec_ivf spherical k-means requires non-zero vectors".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
