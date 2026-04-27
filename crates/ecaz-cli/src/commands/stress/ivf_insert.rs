@@ -249,7 +249,7 @@ async fn fetch_ivf_snapshot(
                     list_imbalance_ratio,
                     reindex_recommended,
                     reindex_reason
-             FROM ec_ivf_index_admin_snapshot($1::regclass::oid)",
+             FROM ec_ivf_index_admin_snapshot($1::text::regclass::oid)",
             &[&index_name],
         )
         .await
@@ -279,7 +279,10 @@ async fn relation_row_count(client: &tokio_postgres::Client, table_name: &str) -
 
 async fn relation_size(client: &tokio_postgres::Client, relation_name: &str) -> Result<i64> {
     let row = client
-        .query_one("SELECT pg_relation_size($1::regclass)", &[&relation_name])
+        .query_one(
+            "SELECT pg_relation_size($1::text::regclass)",
+            &[&relation_name],
+        )
         .await
         .wrap_err_with(|| format!("measuring size for {relation_name}"))?;
     Ok(row.get(0))
