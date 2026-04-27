@@ -1,0 +1,8 @@
+                    relname                     | relkind | reltuples 
+------------------------------------------------+---------+-----------
+ ec_hnsw_parallel_concurrent_dsm_recall_corpus  | r       |     10000
+ ec_hnsw_parallel_concurrent_dsm_recall_queries | r       |       100
+ ec_hnsw_real_ann_benchmarks_anchor_corpus      | r       |    990000
+ tqhnsw_real_50k_corpus                         | r       |     50000
+(4 rows)
+

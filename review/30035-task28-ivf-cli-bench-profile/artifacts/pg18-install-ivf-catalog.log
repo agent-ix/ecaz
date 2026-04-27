@@ -1,0 +1,11 @@
+Pager usage is off.
+CREATE FUNCTION
+CREATE ACCESS METHOD
+CREATE OPERATOR CLASS
+CREATE OPERATOR CLASS
+ amname  
+---------
+ ec_hnsw
+ ec_ivf
+(2 rows)
+
