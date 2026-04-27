@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
 use pgrx::pg_sys;
 
 use super::{build, options, page, training};
@@ -5,6 +8,19 @@ use crate::storage::page::ItemPointer;
 
 const EMPTY_BOOTSTRAP_LOCK_MODE: pg_sys::LOCKMODE =
     pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct CentroidModelCacheKey {
+    index_oid: pg_sys::Oid,
+    dimensions: u16,
+    nlists: u32,
+    centroid_head: ItemPointer,
+    seed: u64,
+}
+
+static CENTROID_MODEL_CACHE: OnceLock<
+    Mutex<HashMap<CentroidModelCacheKey, Arc<training::SphericalKMeansModel>>>,
+> = OnceLock::new();
 
 struct RelationLockGuard {
     relid: pg_sys::Oid,
@@ -93,7 +109,7 @@ unsafe fn insert_into_trained_index(
     validate_insert_tuple(metadata, &tuple)
         .map_err(|e| format!("ec_ivf aminsert found invalid tuple: {e}"))?;
 
-    let model = unsafe { load_centroid_model(index_relation, metadata) }?;
+    let model = unsafe { load_cached_centroid_model(index_relation, metadata) }?;
     let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) =
@@ -309,6 +325,44 @@ unsafe fn load_centroid_model(
         dimensions: usize::from(metadata.dimensions),
         centroids,
     })
+}
+
+unsafe fn load_cached_centroid_model(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> Result<Arc<training::SphericalKMeansModel>, String> {
+    let key = unsafe { centroid_model_cache_key(index_relation, metadata) };
+    let cache = CENTROID_MODEL_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(model) = cache
+        .lock()
+        .map_err(|_| "ec_ivf centroid model cache lock poisoned".to_owned())?
+        .get(&key)
+        .cloned()
+    {
+        return Ok(model);
+    }
+
+    let model = Arc::new(unsafe { load_centroid_model(index_relation, metadata) }?);
+    let mut guard = cache
+        .lock()
+        .map_err(|_| "ec_ivf centroid model cache lock poisoned".to_owned())?;
+    Ok(guard
+        .entry(key)
+        .or_insert_with(|| Arc::clone(&model))
+        .clone())
+}
+
+unsafe fn centroid_model_cache_key(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> CentroidModelCacheKey {
+    CentroidModelCacheKey {
+        index_oid: unsafe { (*index_relation).rd_id },
+        dimensions: metadata.dimensions,
+        nlists: metadata.nlists,
+        centroid_head: metadata.centroid_head,
+        seed: metadata.seed,
+    }
 }
 
 unsafe fn load_directory_entry(
