@@ -1,0 +1,64 @@
+Timing is on.
+sha	9b42a71
+Time: 0.604 ms
+postgres	PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+Time: 0.478 ms
+DROP TABLE
+Time: 38.353 ms
+SELECT 10000
+Time: 3039.956 ms (00:03.040)
+ALTER TABLE
+Time: 9.757 ms
+ANALYZE
+Time: 3233.873 ms (00:03.234)
+1	1536
+Time: 0.971 ms
+CREATE INDEX
+Time: 25130.250 ms (00:25.130)
+ANALYZE
+Time: 3190.518 ms (00:03.191)
+9379840	9160 kB	1048576	1024 kB
+Time: 0.797 ms
+SET
+Time: 0.185 ms
+SET
+Time: 0.153 ms
+SET
+Time: 0.108 ms
+DROP TABLE
+Time: 2.043 ms
+SELECT 200
+Time: 88600.644 ms (01:28.601)
+SET
+Time: 0.231 ms
+SET
+Time: 0.098 ms
+SET
+Time: 0.105 ms
+SET
+Time: 0.102 ms
+Limit (actual time=702.725..706.672 rows=10.00 loops=1)
+  Buffers: shared hit=40097 read=1146
+  InitPlan 1
+    ->  Limit (actual time=0.054..0.055 rows=1.00 loops=1)
+          Buffers: shared hit=1 read=1
+          ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual time=0.054..0.054 rows=1.00 loops=1)
+                Index Searches: 1
+                Buffers: shared hit=1 read=1
+  ->  Index Scan using task28_ivf_anchor10k1536_n32_heap_idx on task28_ivf_anchor10k1536_heap_corpus (actual time=702.723..706.666 rows=10.00 loops=1)
+        Order By: (embedding <#> (InitPlan 1).col1)
+        Index Searches: 0
+        Buffers: shared hit=40097 read=1146
+Planning:
+  Buffers: shared hit=5
+Planning Time: 0.227 ms
+Execution Time: 706.722 ms
+Time: 707.560 ms
+DROP TABLE
+Time: 2.568 ms
+SELECT 200
+Time: 14453.155 ms (00:14.453)
+200	200	1.0000
+Time: 1.999 ms
+0	10	10
+Time: 0.843 ms

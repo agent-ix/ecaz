@@ -1,0 +1,67 @@
+Timing is on.
+sha	9b42a71
+Time: 0.433 ms
+postgres	PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+Time: 0.606 ms
+DROP TABLE
+Time: 0.342 ms
+SELECT 10000
+Time: 3727.215 ms (00:03.727)
+ALTER TABLE
+Time: 10.355 ms
+ANALYZE
+Time: 2525.140 ms (00:02.525)
+1	1536
+Time: 1.546 ms
+CREATE INDEX
+Time: 24873.865 ms (00:24.874)
+ANALYZE
+Time: 2510.925 ms (00:02.511)
+9379840	9160 kB	1048576	1024 kB
+Time: 0.967 ms
+SET
+Time: 0.129 ms
+SET
+Time: 0.094 ms
+SET
+Time: 0.180 ms
+DROP TABLE
+Time: 0.204 ms
+SELECT 0
+Time: 3.713 ms
+SET
+Time: 0.160 ms
+SET
+Time: 0.144 ms
+SET
+Time: 0.172 ms
+SET
+Time: 0.146 ms
+Limit (actual time=752.214..756.141 rows=10.00 loops=1)
+  Buffers: shared hit=33632 read=7634 written=1309
+  InitPlan 1
+    ->  Limit (actual time=0.021..0.022 rows=1.00 loops=1)
+          Buffers: shared hit=2
+          ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual time=0.020..0.021 rows=1.00 loops=1)
+                Index Searches: 1
+                Buffers: shared hit=2
+  ->  Index Scan using task28_ivf_anchor10k1536_n32_heap_idx on task28_ivf_anchor10k1536_heap_corpus (actual time=752.212..756.133 rows=10.00 loops=1)
+        Order By: (embedding <#> (InitPlan 1).col1)
+        Index Searches: 0
+        Buffers: shared hit=33632 read=7634 written=1309
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.099 ms
+Execution Time: 756.222 ms
+Time: 756.820 ms
+DROP TABLE
+Time: 0.300 ms
+SELECT 0
+Time: 3.807 ms
+0	0	0.0000
+Time: 1.842 ms
+0		
+Time: 0.763 ms
+psql:review/30038-task28-ivf-heap-rerank-smoke/artifacts/pg18-ivf-anchor10k1536-heap-rerank-smoke.sql:6: NOTICE:  table "task28_ivf_anchor10k1536_heap_corpus" does not exist, skipping
+psql:review/30038-task28-ivf-heap-rerank-smoke/artifacts/pg18-ivf-anchor10k1536-heap-rerank-smoke.sql:41: NOTICE:  table "task28_ivf_anchor10k1536_heap_exact_top10" does not exist, skipping
+psql:review/30038-task28-ivf-heap-rerank-smoke/artifacts/pg18-ivf-anchor10k1536-heap-rerank-smoke.sql:64: NOTICE:  table "task28_ivf_anchor10k1536_heap_ivf_top10" does not exist, skipping

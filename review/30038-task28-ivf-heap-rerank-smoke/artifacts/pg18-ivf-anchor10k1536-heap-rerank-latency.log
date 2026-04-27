@@ -1,0 +1,26 @@
+Timing is on.
+sha	9b42a71
+Time: 0.439 ms
+SET
+Time: 0.163 ms
+SET
+Time: 0.107 ms
+SET
+Time: 0.086 ms
+SET
+Time: 0.117 ms
+DROP TABLE
+Time: 0.351 ms
+CREATE TABLE
+Time: 11.249 ms
+DO
+Time: 13914.965 ms (00:13.915)
+20	10	10	686.339	714.122	748.029	685.006
+Time: 2.973 ms
+990000	748.029	10
+990004	714.122	10
+990007	711.357	10
+990019	705.611	10
+990001	703.66	10
+Time: 0.336 ms
+psql:review/30038-task28-ivf-heap-rerank-smoke/artifacts/pg18-ivf-anchor10k1536-heap-rerank-latency.sql:10: NOTICE:  table "task28_ivf_anchor10k1536_heap_latency" does not exist, skipping
