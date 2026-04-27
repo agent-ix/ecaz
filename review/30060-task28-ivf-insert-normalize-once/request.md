@@ -23,10 +23,27 @@ advance.
 
 Both runs passed the harness and wrote packet-local raw logs.
 
+Because the long-lived local `postgres` scratch database had an older
+extension object set despite reporting extension version `0.1.1`, those first
+runs fell back to relation stats for admin fields. A fresh PG18 database
+(`task28_ivf_fresh_20260427`) created from the current extension SQL confirmed
+the admin snapshot path and drift counters:
+
+| checkpoint | database | concurrency | inserted rows/s | snapshot source | inserted_since_build | reindex_reason |
+| --- | --- | ---: | ---: | --- | ---: | --- |
+| `647abd1` normalize once | fresh PG18 | 1 | 273.20 | `ec_ivf_index_admin_snapshot` | 2732 | `changed_rows` |
+| `647abd1` normalize once | fresh PG18 | 4 | 656.20 | `ec_ivf_index_admin_snapshot` | 6562 | `changed_rows` |
+
+This fresh-database rerun is a measurement-quality follow-up; it does not
+change the conclusion that the code cleanup is not a throughput win over packet
+30057.
+
 ## Artifacts
 
 - `artifacts/ivf_insert_normonce_c1.log`
 - `artifacts/ivf_insert_normonce_c4.log`
+- `artifacts/ivf_insert_normonce_fresh_c1.log`
+- `artifacts/ivf_insert_normonce_fresh_c4.log`
 - `artifacts/manifest.md`
 
 ## Validation

@@ -104,7 +104,9 @@ in review packet 30047 feedback seq 02.
     commit `647abd1`. The change is a correctness-preserving cleanup, not a
     measured throughput win: the same nlists=16 harness reported 261.00 rows/s
     at 1 worker and 649.70 rows/s at 4 workers, below the packet 30057
-    reference.
+    reference. A fresh PG18 database created from current extension SQL reported
+    273.20 rows/s at 1 worker and 656.20 rows/s at 4 workers with
+    `ec_ivf_index_admin_snapshot` metrics available.
 
 ## Completed Slices
 
