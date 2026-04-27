@@ -100,6 +100,11 @@ in review packet 30047 feedback seq 02.
     635.50 rows/s at 4 workers, so the change was backed out in `ce7a2b0`.
     Do not treat centroid reload as the next measured live-insert lever unless
     a larger-list-specific benchmark shows otherwise.
+  - Packet 30060 removes duplicate insert source-vector normalization in
+    commit `647abd1`. The change is a correctness-preserving cleanup, not a
+    measured throughput win: the same nlists=16 harness reported 261.00 rows/s
+    at 1 worker and 649.70 rows/s at 4 workers, below the packet 30057
+    reference.
 
 ## Completed Slices
 
@@ -123,6 +128,9 @@ in review packet 30047 feedback seq 02.
 - Item 7 negative follow-up: insert centroid-model caching. Packet 30059
   records the `f2314bb` trial and `ce7a2b0` backout after the nlists=16 stress
   harness failed to improve.
+- Item 7 cleanup follow-up: duplicate source-vector normalization. Packet
+  30060 records commit `647abd1`; keep it as a small hot-path quality cleanup,
+  but do not count it as a live-insert throughput improvement.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
