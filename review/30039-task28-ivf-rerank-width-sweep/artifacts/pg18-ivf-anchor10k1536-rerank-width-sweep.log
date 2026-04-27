@@ -1,0 +1,94 @@
+Timing is on.
+sha	4d894bd
+Time: 0.515 ms
+200	20
+Time: 2.725 ms
+DROP TABLE
+Time: 0.327 ms
+CREATE TABLE
+Time: 7.042 ms
+DROP TABLE
+Time: 0.278 ms
+CREATE TABLE
+Time: 2.173 ms
+SET
+Time: 0.158 ms
+SET
+Time: 0.158 ms
+SET
+Time: 0.153 ms
+SET
+Time: 0.169 ms
+DROP INDEX
+Time: 0.276 ms
+CREATE INDEX
+Time: 25007.474 ms (00:25.007)
+DROP TABLE
+Time: 0.320 ms
+SELECT 200
+Time: 3704.448 ms (00:03.704)
+INSERT 0 1
+Time: 32.798 ms
+DO
+Time: 3621.498 ms (00:03.621)
+DROP INDEX
+Time: 4.470 ms
+CREATE INDEX
+Time: 24712.487 ms (00:24.712)
+DROP TABLE
+Time: 2.149 ms
+SELECT 200
+Time: 3860.064 ms (00:03.860)
+INSERT 0 1
+Time: 2.034 ms
+DO
+Time: 3821.096 ms (00:03.821)
+DROP INDEX
+Time: 3.279 ms
+CREATE INDEX
+Time: 24618.373 ms (00:24.618)
+DROP TABLE
+Time: 2.104 ms
+SELECT 200
+Time: 4753.514 ms (00:04.754)
+INSERT 0 1
+Time: 2.010 ms
+DO
+Time: 4668.206 ms (00:04.668)
+DROP INDEX
+Time: 3.779 ms
+CREATE INDEX
+Time: 24677.250 ms (00:24.677)
+DROP TABLE
+Time: 2.013 ms
+SELECT 200
+Time: 14106.544 ms (00:14.107)
+INSERT 0 1
+Time: 1.730 ms
+DO
+Time: 14040.049 ms (00:14.040)
+50	200	200	1.0000	0
+200	200	200	1.0000	0
+1000	200	200	1.0000	0
+0	200	200	1.0000	0
+Time: 1.375 ms
+50	20	10	10	180.608	183.371	183.742	180.817
+200	20	10	10	189.890	194.932	195.676	190.830
+1000	20	10	10	232.622	235.727	236.945	233.192
+0	20	10	10	702.929	715.203	715.447	701.786
+Time: 1.961 ms
+0	990013	715.447	10
+0	990014	715.203	10
+0	990015	715.034	10
+0	990008	711.751	10
+0	990012	711.140	10
+0	990011	709.587	10
+0	990018	709.417	10
+0	990010	706.718	10
+0	990009	705.353	10
+0	990019	704.416	10
+Time: 1.924 ms
+psql:review/30039-task28-ivf-rerank-width-sweep/artifacts/pg18-ivf-anchor10k1536-rerank-width-sweep.sql:10: NOTICE:  table "task28_ivf_anchor10k1536_width_summary" does not exist, skipping
+psql:review/30039-task28-ivf-rerank-width-sweep/artifacts/pg18-ivf-anchor10k1536-rerank-width-sweep.sql:19: NOTICE:  table "task28_ivf_anchor10k1536_width_latency" does not exist, skipping
+psql:review/30039-task28-ivf-rerank-width-sweep/artifacts/pg18-ivf-anchor10k1536-rerank-width-sweep.sql:32: NOTICE:  index "task28_ivf_anchor10k1536_width_idx" does not exist, skipping
+psql:review/30039-task28-ivf-rerank-width-sweep/artifacts/pg18-ivf-anchor10k1536-rerank-width-sweep.sql:44: NOTICE:  table "task28_ivf_anchor10k1536_width_ivf_top10" does not exist, skipping
