@@ -36,6 +36,9 @@ pub struct IvfInsertArgs {
     /// Training sample rows reloption.
     #[arg(long, default_value_t = 1000)]
     pub training_sample_rows: i64,
+    /// Synthetic vector dimensions.
+    #[arg(long, default_value_t = 4)]
+    pub dimensions: i64,
     /// Write a copy of the summary to this path.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -68,6 +71,7 @@ pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
             database.to_owned(),
             args.table.clone(),
             args.batch_rows,
+            args.dimensions,
             worker_id,
             Arc::clone(&stop),
             deadline,
@@ -107,6 +111,7 @@ pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
         concurrency: args.concurrency,
         batch_rows: args.batch_rows,
         seed_rows: args.seed_rows,
+        dimensions: args.dimensions,
         total_inserted_rows: total_rows,
         total_insert_iterations: total_iterations,
         inserted_rows_per_second: total_rows as f64 / args.duration_seconds as f64,
@@ -158,15 +163,19 @@ fn validate_args(args: &IvfInsertArgs) -> Result<()> {
     if args.training_sample_rows < 0 {
         return Err(eyre!("--training-sample-rows must be >= 0"));
     }
+    if args.dimensions <= 0 {
+        return Err(eyre!("--dimensions must be >= 1"));
+    }
     Ok(())
 }
 
 pub fn build_seed_ddl(args: &IvfInsertArgs, index_name: &str) -> String {
+    let vector_sql = synthetic_vector_sql("gs::double precision", args.dimensions, 0.013, 0.021);
     format!(
         "DROP TABLE IF EXISTS {table} CASCADE;\n\
          CREATE TABLE {table} (\n    id bigserial PRIMARY KEY,\n    embedding ecvector NOT NULL\n);\n\
          INSERT INTO {table} (embedding)\n\
-         SELECT encode_to_ecvector(\n    ARRAY[\n        sin((gs * 0.013)::double precision)::real,\n        cos((gs * 0.013)::double precision)::real,\n        sin((gs * 0.021)::double precision)::real,\n        cos((gs * 0.021)::double precision)::real\n    ]::real[],\n    4,\n    42\n)\n\
+         SELECT {vector_sql}\n\
          FROM generate_series(1, {seed_rows}) AS gs;\n\
          CREATE INDEX {index_name}\n    ON {table} USING ec_ivf (embedding ecvector_ip_ops)\n    WITH (\n        nlists = {nlists},\n        nprobe = {nprobe},\n        training_sample_rows = {training_sample_rows},\n        storage_format = 'turboquant',\n        rerank = 'heap_f32',\n        rerank_width = 10\n    );",
         table = args.table,
@@ -175,14 +184,29 @@ pub fn build_seed_ddl(args: &IvfInsertArgs, index_name: &str) -> String {
         nlists = args.nlists,
         nprobe = args.nprobe,
         training_sample_rows = args.training_sample_rows,
+        vector_sql = vector_sql,
     )
 }
 
-fn build_insert_sql(table: &str) -> String {
+fn build_insert_sql(table: &str, dimensions: i64) -> String {
+    let base = "(((extract(epoch FROM clock_timestamp()) * 1000000)::bigint + $1::bigint + gs)::double precision)";
+    let vector_sql = synthetic_vector_sql(base, dimensions, 0.017, 0.029);
     format!(
         "INSERT INTO {table} (embedding)\n\
-         SELECT encode_to_ecvector(\n    ARRAY[\n        sin((((extract(epoch FROM clock_timestamp()) * 1000000)::bigint + $1::bigint + gs)::double precision) * 0.017)::real,\n        cos((((extract(epoch FROM clock_timestamp()) * 1000000)::bigint + $1::bigint + gs)::double precision) * 0.017)::real,\n        sin((((extract(epoch FROM clock_timestamp()) * 1000000)::bigint + $1::bigint + gs)::double precision) * 0.029)::real,\n        cos((((extract(epoch FROM clock_timestamp()) * 1000000)::bigint + $1::bigint + gs)::double precision) * 0.029)::real\n    ]::real[],\n    4,\n    42\n)\n\
-         FROM generate_series(1, $2::bigint) AS gs"
+         SELECT {vector_sql}\n\
+         FROM generate_series(1, $2::bigint) AS gs",
+        vector_sql = vector_sql
+    )
+}
+
+fn synthetic_vector_sql(base: &str, dimensions: i64, first_rate: f64, second_rate: f64) -> String {
+    if dimensions == 4 {
+        return format!(
+            "encode_to_ecvector(\n    ARRAY[\n        sin(({base} * {first_rate})::double precision)::real,\n        cos(({base} * {first_rate})::double precision)::real,\n        sin(({base} * {second_rate})::double precision)::real,\n        cos(({base} * {second_rate})::double precision)::real\n    ]::real[],\n    4,\n    42\n)"
+        );
+    }
+    format!(
+        "encode_to_ecvector(\n    ARRAY(\n        SELECT CASE\n            WHEN d % 2 = 0 THEN cos(({base} * {first_rate} + d * 0.001)::double precision)::real\n            ELSE sin(({base} * {second_rate} + d * 0.001)::double precision)::real\n        END\n        FROM generate_series(1, {dimensions}) AS d\n    )::real[],\n    4,\n    42\n)"
     )
 }
 
@@ -190,12 +214,13 @@ async fn insert_worker(
     database: String,
     table: String,
     batch_rows: i64,
+    dimensions: i64,
     worker_id: usize,
     stop: Arc<AtomicBool>,
     deadline: Instant,
 ) -> Result<WorkerResult> {
     let client = crate::psql::connect(&database).await?;
-    let sql = build_insert_sql(&table);
+    let sql = build_insert_sql(&table, dimensions);
     let stmt = client.prepare(&sql).await?;
     let mut rows = 0_i64;
     let mut iterations = 0_u64;
@@ -329,6 +354,7 @@ struct InsertSummary {
     concurrency: usize,
     batch_rows: i64,
     seed_rows: i64,
+    dimensions: i64,
     total_inserted_rows: i64,
     total_insert_iterations: u64,
     inserted_rows_per_second: f64,
@@ -354,6 +380,7 @@ fn render_summary(s: &InsertSummary) -> String {
         ("concurrency", s.concurrency.to_string()),
         ("batch_rows", s.batch_rows.to_string()),
         ("seed_rows", s.seed_rows.to_string()),
+        ("dimensions", s.dimensions.to_string()),
         ("total_inserted_rows", s.total_inserted_rows.to_string()),
         (
             "total_insert_iterations",
@@ -394,6 +421,7 @@ mod tests {
             nlists: 8,
             nprobe: 4,
             training_sample_rows: 32,
+            dimensions: 4,
             log_output: None,
             require_admin_snapshot: false,
         }
@@ -409,20 +437,36 @@ mod tests {
         assert!(sql.contains("training_sample_rows = 32"));
         assert!(sql.contains("storage_format = 'turboquant'"));
         assert!(sql.contains("rerank = 'heap_f32'"));
+        assert!(sql.contains("encode_to_ecvector"));
+        assert!(sql.contains("4,"));
     }
 
     #[test]
     fn insert_sql_uses_parameterized_batch_size() {
-        let sql = build_insert_sql("ivf_insert_test");
+        let sql = build_insert_sql("ivf_insert_test", 4);
         assert!(sql.contains("INSERT INTO ivf_insert_test"));
         assert!(sql.contains("$1::bigint"));
         assert!(sql.contains("$2::bigint"));
     }
 
     #[test]
+    fn insert_sql_supports_configurable_dimensions() {
+        let sql = build_insert_sql("ivf_insert_test", 1536);
+        assert!(sql.contains("generate_series(1, 1536)"));
+        assert!(sql.contains("4,"));
+    }
+
+    #[test]
     fn rejects_zero_duration() {
         let mut args = args();
         args.duration_seconds = 0;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn rejects_zero_dimensions() {
+        let mut args = args();
+        args.dimensions = 0;
         assert!(validate_args(&args).is_err());
     }
 }
