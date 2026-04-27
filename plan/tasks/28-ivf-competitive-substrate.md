@@ -48,14 +48,19 @@ in review packet 30047 feedback seq 02.
      surface, while forcing the IVF index path returned one nprobe=8 query in
      67.987 ms. Do not quote n128 recall/latency until the benchmark force-index
      mode or cost model is fixed.
-   - Packet 30054 reruns n128 through the new benchmark `--force-index` mode.
-     It confirms n128 is not the better frontier on this fixture: 10k
-     `nprobe=64` reaches only `recall@10=0.9860` at p50 104.7 ms, and lower
-     probes only hit sub-50 ms p50 at low recall.
-   - Packet 30055 tests rerank-width reduction on the n64 surface. Width 10
-     materially reduces recall with almost no latency win, and a 10k width 5
-     spot check collapses recall to 0.5000 while staying in the same latency
-     band. Do not keep shaving rerank width as the next latency lever.
+  - Packet 30054 reruns n128 through the new benchmark `--force-index` mode.
+    It confirms n128 is not the better frontier on this fixture: 10k
+    `nprobe=64` reaches only `recall@10=0.9860` at p50 104.7 ms, and lower
+    probes only hit sub-50 ms p50 at low recall.
+  - Packet 30055 tests rerank-width reduction on the n64 surface. Width 10
+    materially reduces recall with almost no latency win, and a 10k width 5
+    spot check collapses recall to 0.5000 while staying in the same latency
+    band. Do not keep shaving rerank width as the next latency lever.
+  - Packet 30058 repairs the n128 normal-planner blocker. The prepared nprobe=8
+    query now plans as an IVF index scan, and the 20-query normal benchmark
+    smoke reports `recall@10=0.7000` at mean query time 40.98 ms without
+    `--force-index`. This fixes the planner path; it does not change the n128
+    frontier conclusion from packet 30054.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -110,12 +115,15 @@ in review packet 30047 feedback seq 02.
   bug discovered by the new insert stress harness.
 - Item 7 hot-path follow-up: assigned-list duplicate checking. Packet 30057
   records the `bfbb40d` optimization and the post-change insert stress result.
+- Planner cost repair for n128 smoke measurements. Packet 30058 records commit
+  `077aae1`, where quantized posting scans are modeled below full f32 random
+  I/O cost so the normal planner can choose IVF for prepared benchmark queries.
 
 ## Next Slice
 
 The next slice is the remaining live-insert fixed per-row work: centroid model
 reload, one-posting-per-row append shape, and list-directory plus metadata
-counter writes. Keep cost-model repair and posting-list scoring/layout work on
-the active backlog: n128 normal planning still falls back to sequential scan,
-and packet 30055 shows rerank-width reduction is not the missing high-recall
-latency lever.
+counter writes. Keep posting-list scoring/layout work on the active backlog:
+packet 30055 shows rerank-width reduction is not the missing high-recall
+latency lever, and packet 30058 only repairs planner selection for prepared IVF
+queries.
