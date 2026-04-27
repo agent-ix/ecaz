@@ -1,0 +1,40 @@
+Timing is on.
+DROP TABLE
+Time: 0.711 ms
+DROP TABLE
+Time: 0.154 ms
+DROP TABLE
+Time: 0.139 ms
+DROP TABLE
+Time: 0.134 ms
+SELECT 10000
+Time: 5124.450 ms (00:05.124)
+ALTER TABLE
+Time: 13.046 ms
+SELECT 100
+Time: 31.481 ms
+ALTER TABLE
+Time: 3.051 ms
+CREATE INDEX
+Time: 25875.514 ms (00:25.876)
+SELECT 25000
+Time: 11645.773 ms (00:11.646)
+ALTER TABLE
+Time: 15.689 ms
+SELECT 100
+Time: 16.932 ms
+ALTER TABLE
+Time: 2.884 ms
+CREATE INDEX
+Time: 47589.480 ms (00:47.589)
+             relname              | index_size |                                                reloptions                                                 
+----------------------------------+------------+-----------------------------------------------------------------------------------------------------------
+ task28_ivf_postopt10k_n32w25_idx | 9160 kB    | {nlists=32,nprobe=32,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+ task28_ivf_postopt25k_n32w25_idx | 22 MB      | {nlists=32,nprobe=32,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+(2 rows)
+
+Time: 3.056 ms
+psql:review/30051-task28-ivf-postopt-smoke/artifacts/create_postopt_n32w25_surfaces.sql:2: NOTICE:  table "task28_ivf_postopt10k_n32w25_queries" does not exist, skipping
+psql:review/30051-task28-ivf-postopt-smoke/artifacts/create_postopt_n32w25_surfaces.sql:3: NOTICE:  table "task28_ivf_postopt10k_n32w25_corpus" does not exist, skipping
+psql:review/30051-task28-ivf-postopt-smoke/artifacts/create_postopt_n32w25_surfaces.sql:4: NOTICE:  table "task28_ivf_postopt25k_n32w25_queries" does not exist, skipping
+psql:review/30051-task28-ivf-postopt-smoke/artifacts/create_postopt_n32w25_surfaces.sql:5: NOTICE:  table "task28_ivf_postopt25k_n32w25_corpus" does not exist, skipping

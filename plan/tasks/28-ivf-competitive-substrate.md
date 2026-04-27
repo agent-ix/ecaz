@@ -36,6 +36,10 @@ in review packet 30047 feedback seq 02.
    - Sweep `nlists`, `nprobe`, and `rerank_width` again because the cost ratio
      changes after prefetch/scoring work.
    - Keep packet-local raw logs and manifests.
+   - First post-optimization smoke is recorded in packet 30051 for
+     `nlists=32`, `rerank_width=25`, `nprobe in {16,24,32}`. It confirms
+     correctness but shows latency still above the 10k target, so higher
+     `nlists` and narrower rerank-width surfaces are still required.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -73,6 +77,6 @@ in review packet 30047 feedback seq 02.
 
 ## Next Slice
 
-The next slice is item 3: re-run the 10k/25k DBPedia sweep against the new
-cost profile, then use items 6 and 7 to document deeper build/training/vacuum
-risks before product benchmarking.
+The next slice is to continue item 3 with `nlists=64/128` isolated surfaces
+and a lower `nprobe` sweep, then use items 6 and 7 to document deeper
+build/training/vacuum risks before product benchmarking.
