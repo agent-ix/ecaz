@@ -86,6 +86,10 @@ in review packet 30047 feedback seq 02.
      run: 1 worker inserted 668 rows in 10s, while 4 workers inserted 1592
      rows in 10s. The run also found and fixed a large-build live-insert
      directory traversal bug in commit `43563e5`.
+   - Packet 30057 narrows live-insert duplicate heap-TID checking to the
+     assigned list. On the same synthetic PG18 harness, 1-worker throughput
+     improved from 66.80 rows/s to 275.30 rows/s, and 4-worker throughput
+     improved from 159.20 rows/s to 657.50 rows/s.
 
 ## Completed Slices
 
@@ -104,11 +108,14 @@ in review packet 30047 feedback seq 02.
   measurement. Packet 30056 records the sampled-training confirmation, vacuum
   compaction gap, live-insert hot-path risks, and the fixed directory traversal
   bug discovered by the new insert stress harness.
+- Item 7 hot-path follow-up: assigned-list duplicate checking. Packet 30057
+  records the `bfbb40d` optimization and the post-change insert stress result.
 
 ## Next Slice
 
-The next slice is live-insert hot-path repair: remove or bound the
-O(total-postings) duplicate heap-TID scan, then rerun `ecaz stress ivf-insert`.
-Keep cost-model repair and posting-list scoring/layout work on the active
-backlog: n128 normal planning still falls back to sequential scan, and packet
-30055 shows rerank-width reduction is not the missing high-recall latency lever.
+The next slice is the remaining live-insert fixed per-row work: centroid model
+reload, one-posting-per-row append shape, and list-directory plus metadata
+counter writes. Keep cost-model repair and posting-list scoring/layout work on
+the active backlog: n128 normal planning still falls back to sequential scan,
+and packet 30055 shows rerank-width reduction is not the missing high-recall
+latency lever.
