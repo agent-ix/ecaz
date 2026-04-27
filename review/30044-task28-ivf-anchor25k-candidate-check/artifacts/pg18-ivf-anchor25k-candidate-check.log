@@ -1,0 +1,55 @@
+Timing is on.
+sha	81f5468
+Time: 0.570 ms
+DROP TABLE
+Time: 0.502 ms
+SELECT 25000
+Time: 11456.016 ms (00:11.456)
+ALTER TABLE
+Time: 38.259 ms
+ANALYZE
+Time: 6475.717 ms (00:06.476)
+25000	1536
+Time: 3.452 ms
+100	1536
+Time: 1.222 ms
+SET
+Time: 0.164 ms
+SET
+Time: 0.103 ms
+SET
+Time: 0.137 ms
+DROP TABLE
+Time: 0.192 ms
+SELECT 1000
+Time: 1126749.490 ms (18:46.749)
+1000	100
+Time: 1.293 ms
+DROP TABLE
+Time: 0.175 ms
+CREATE TABLE
+Time: 4.338 ms
+DROP TABLE
+Time: 0.244 ms
+CREATE TABLE
+Time: 21.634 ms
+SET
+Time: 0.260 ms
+SET
+Time: 0.124 ms
+SET
+Time: 0.115 ms
+DO
+Time: 250734.237 ms (04:10.734)
+32	24	25	46137.984	33660.063	1000	976	0.9760	23027712	22 MB
+32	32	25	45067.688	42650.677	1000	1000	1.0000	23027712	22 MB
+Time: 1.521 ms
+32	24	25	100	10	10	331.674	371.690	407.329	329.108
+32	32	25	100	10	10	434.858	456.380	521.759	429.340
+Time: 2.421 ms
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:5: NOTICE:  table "task28_ivf_anchor25k_corpus" does not exist, skipping
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:28: NOTICE:  table "task28_ivf_anchor25k_exact100_top10" does not exist, skipping
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:44: NOTICE:  table "task28_ivf_anchor25k_summary" does not exist, skipping
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:57: NOTICE:  table "task28_ivf_anchor25k_latency" does not exist, skipping
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:162: NOTICE:  index "task28_ivf_anchor25k_idx" does not exist, skipping
+psql:review/30044-task28-ivf-anchor25k-candidate-check/artifacts/pg18-ivf-anchor25k-candidate-check.sql:162: NOTICE:  table "task28_ivf_anchor25k_ivf_top10" does not exist, skipping
