@@ -17,14 +17,14 @@ use std::arch::x86_64::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SourceTypePolicy {
+pub(crate) enum SourceTypePolicy {
     BuildSource,
     RerankSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
-pub(super) enum SourceDatumKind {
+pub(crate) enum SourceDatumKind {
     #[default]
     Unknown = 0,
     RealArray = 1,
@@ -33,21 +33,21 @@ pub(super) enum SourceDatumKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum IndexedVectorKind {
+pub(crate) enum IndexedVectorKind {
     Ecvector,
     Tqvector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SourceAttribute {
-    pub(super) attnum: i32,
-    pub(super) kind: SourceDatumKind,
+pub(crate) struct SourceAttribute {
+    pub(crate) attnum: i32,
+    pub(crate) kind: SourceDatumKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct IndexedVectorAttribute {
-    pub(super) attnum: i32,
-    pub(super) kind: IndexedVectorKind,
+pub(crate) struct IndexedVectorAttribute {
+    pub(crate) attnum: i32,
+    pub(crate) kind: IndexedVectorKind,
 }
 
 pub(super) fn average_source_representatives(
@@ -68,7 +68,7 @@ pub(super) fn average_source_representatives(
     }
 }
 
-pub(super) fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn inner_product(left: &[f32], right: &[f32]) -> f32 {
     debug_assert_eq!(left.len(), right.len());
     let len = left.len().min(right.len());
     let left = &left[..len];
@@ -147,7 +147,7 @@ unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     sum
 }
 
-pub(super) unsafe fn resolve_source_attnum(
+pub(crate) unsafe fn resolve_source_attnum(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
@@ -165,7 +165,7 @@ pub(super) unsafe fn resolve_source_attnum(
     attnum
 }
 
-pub(super) unsafe fn resolve_source_attribute(
+pub(crate) unsafe fn resolve_source_attribute(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
@@ -178,7 +178,7 @@ pub(super) unsafe fn resolve_source_attribute(
     }
 }
 
-pub(super) unsafe fn resolve_source_attribute_by_attnum(
+pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     heap_relation: pg_sys::Relation,
     source_attnum: i32,
     source_label: &str,
@@ -220,7 +220,7 @@ pub(super) unsafe fn resolve_source_attribute_by_attnum(
     }
 }
 
-pub(super) unsafe fn resolve_single_base_heap_index_attnum(
+pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> i32 {
@@ -245,7 +245,7 @@ pub(super) unsafe fn resolve_single_base_heap_index_attnum(
     attnum
 }
 
-pub(super) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
@@ -262,7 +262,7 @@ pub(super) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
     }
 }
 
-pub(super) unsafe fn resolve_indexed_ecvector_attribute(
+pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
@@ -278,7 +278,7 @@ pub(super) unsafe fn resolve_indexed_ecvector_attribute(
     attribute
 }
 
-pub(super) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
@@ -300,7 +300,7 @@ pub(super) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 }
 
-pub(super) unsafe fn resolve_indexed_vector_attribute(
+pub(crate) unsafe fn resolve_indexed_vector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
@@ -358,7 +358,7 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
     }
 }
 
-pub(super) unsafe fn allocate_heap_slot(
+pub(crate) unsafe fn allocate_heap_slot(
     heap_relation: pg_sys::Relation,
     failure_label: &str,
 ) -> *mut pg_sys::TupleTableSlot {
@@ -374,7 +374,7 @@ pub(super) unsafe fn allocate_heap_slot(
     slot
 }
 
-pub(super) unsafe fn fetch_heap_row_version(
+pub(crate) unsafe fn fetch_heap_row_version(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,
     snapshot: pg_sys::Snapshot,
@@ -395,7 +395,7 @@ pub(super) unsafe fn fetch_heap_row_version(
     }
 }
 
-pub(super) unsafe fn required_slot_datum(
+pub(crate) unsafe fn required_slot_datum(
     slot: *mut pg_sys::TupleTableSlot,
     attnum: i32,
     label: &str,
@@ -410,7 +410,7 @@ pub(super) unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
-pub(super) struct FlatFloat4ArrayRef {
+pub(crate) struct FlatFloat4ArrayRef {
     array_ptr: *mut pg_sys::ArrayType,
     owned: bool,
     data_ptr: *const f32,
@@ -418,7 +418,7 @@ pub(super) struct FlatFloat4ArrayRef {
 }
 
 impl FlatFloat4ArrayRef {
-    pub(super) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+    pub(crate) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
@@ -468,7 +468,7 @@ impl FlatFloat4ArrayRef {
         }
     }
 
-    pub(super) fn as_slice(&self) -> &[f32] {
+    pub(crate) fn as_slice(&self) -> &[f32] {
         unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
     }
 }
@@ -481,7 +481,7 @@ impl Drop for FlatFloat4ArrayRef {
     }
 }
 
-pub(super) struct FlatFloat4VarlenaRef {
+pub(crate) struct FlatFloat4VarlenaRef {
     varlena_ptr: *mut pg_sys::varlena,
     owned: bool,
     data_ptr: *const f32,
@@ -489,7 +489,7 @@ pub(super) struct FlatFloat4VarlenaRef {
 }
 
 impl FlatFloat4VarlenaRef {
-    pub(super) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+    pub(crate) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
             pgrx::error!("ec_hnsw does not support NULL {label}");
         }
@@ -519,7 +519,7 @@ impl FlatFloat4VarlenaRef {
         }
     }
 
-    pub(super) fn as_slice(&self) -> &[f32] {
+    pub(crate) fn as_slice(&self) -> &[f32] {
         unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
     }
 }
@@ -532,13 +532,13 @@ impl Drop for FlatFloat4VarlenaRef {
     }
 }
 
-pub(super) enum FlatFloat4SourceRef {
+pub(crate) enum FlatFloat4SourceRef {
     Array(FlatFloat4ArrayRef),
     Varlena(FlatFloat4VarlenaRef),
 }
 
 impl FlatFloat4SourceRef {
-    pub(super) unsafe fn from_datum(
+    pub(crate) unsafe fn from_datum(
         datum: pg_sys::Datum,
         kind: SourceDatumKind,
         label: &str,
@@ -554,7 +554,7 @@ impl FlatFloat4SourceRef {
         }
     }
 
-    pub(super) fn as_slice(&self) -> &[f32] {
+    pub(crate) fn as_slice(&self) -> &[f32] {
         match self {
             Self::Array(array) => array.as_slice(),
             Self::Varlena(varlena) => varlena.as_slice(),
@@ -562,7 +562,7 @@ impl FlatFloat4SourceRef {
     }
 }
 
-pub(super) unsafe fn load_source_from_heap_row(
+pub(crate) unsafe fn load_source_from_heap_row(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,
     snapshot: pg_sys::Snapshot,
@@ -575,7 +575,7 @@ pub(super) unsafe fn load_source_from_heap_row(
     unsafe { FlatFloat4SourceRef::from_datum(source_datum, source_attribute.kind, label) }
 }
 
-pub(super) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
+pub(crate) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
     if query.len() != source.len() {
         pgrx::error!(
             "ec_hnsw source vector dimension mismatch: left dim {}, right dim {}",

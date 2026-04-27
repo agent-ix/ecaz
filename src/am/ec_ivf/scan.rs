@@ -5,6 +5,7 @@ use std::ptr;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::am::common::explain::IvfExplainCounters;
+use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 use crate::storage::page::ItemPointer;
@@ -216,6 +217,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                     .explain_counters
                     .record_selected_lists(selected_lists.len());
                 let posting_candidates = materialize_probe_candidates(
+                    scan,
                     (*scan).indexRelation,
                     &metadata,
                     opaque,
@@ -296,8 +298,11 @@ fn next_posting_candidate(opaque: &mut EcIvfScanOpaque) -> Option<EcIvfScoredCan
         return None;
     }
 
-    let candidate =
-        unsafe { *opaque.posting_candidates.add(opaque.next_candidate_index as usize) };
+    let candidate = unsafe {
+        *opaque
+            .posting_candidates
+            .add(opaque.next_candidate_index as usize)
+    };
     opaque.next_candidate_index += 1;
     Some(candidate)
 }
@@ -404,10 +409,7 @@ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
     }
 }
 
-unsafe fn store_centroid_scores(
-    opaque: &mut EcIvfScanOpaque,
-    scores: &[EcIvfCentroidScore],
-) {
+unsafe fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
     free_centroid_scores(opaque);
     if scores.is_empty() {
         return;
@@ -545,11 +547,22 @@ fn inner_product(left: &[f32], right: &[f32]) -> f32 {
         .sum()
 }
 
+fn scan_query_values(opaque: &EcIvfScanOpaque) -> &[f32] {
+    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
+        pgrx::error!("ec_ivf scan query state is missing");
+    }
+    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+}
+
 fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
     left.score
         .total_cmp(&right.score)
         .then_with(|| left.heap_tid.block_number.cmp(&right.heap_tid.block_number))
-        .then_with(|| left.heap_tid.offset_number.cmp(&right.heap_tid.offset_number))
+        .then_with(|| {
+            left.heap_tid
+                .offset_number
+                .cmp(&right.heap_tid.offset_number)
+        })
 }
 
 fn probe_list_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) -> Ordering {
@@ -605,6 +618,7 @@ fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
 }
 
 unsafe fn materialize_probe_candidates(
+    scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
     opaque: &mut EcIvfScanOpaque,
@@ -624,7 +638,8 @@ unsafe fn materialize_probe_candidates(
         crate::DEFAULT_QUANT_SEED,
     );
     let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
-    let probe_plan = unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
+    let probe_plan =
+        unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let mut best_by_heap_tid = HashMap::with_capacity(probe_plan.candidate_bound);
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
@@ -665,8 +680,118 @@ unsafe fn materialize_probe_candidates(
     };
 
     let mut candidates = best_by_heap_tid.into_values().collect::<Vec<_>>();
+    unsafe { rerank_probe_candidates(scan, metadata, opaque, &mut candidates) };
     candidates.sort_by(candidate_cmp);
     Ok(candidates)
+}
+
+unsafe fn rerank_probe_candidates(
+    scan: pg_sys::IndexScanDesc,
+    metadata: &super::page::MetadataPage,
+    opaque: &EcIvfScanOpaque,
+    candidates: &mut [EcIvfScoredCandidate],
+) {
+    match metadata.rerank.v1_effective() {
+        super::options::RerankMode::Auto | super::options::RerankMode::Off => {}
+        super::options::RerankMode::HeapF32 => unsafe {
+            rerank_probe_candidates_heap_f32(scan, opaque, candidates)
+        },
+        super::options::RerankMode::SourceColumn => {
+            pgrx::error!("ec_ivf rerank mode source_column is not supported yet")
+        }
+    }
+}
+
+unsafe fn rerank_probe_candidates_heap_f32(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &EcIvfScanOpaque,
+    candidates: &mut [EcIvfScoredCandidate],
+) {
+    if candidates.is_empty() {
+        return;
+    }
+    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
+    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let source_attribute = unsafe {
+        source::resolve_indexed_ecvector_attribute(
+            heap_relation,
+            (*scan).indexRelation,
+            "ec_ivf heap_f32 rerank indexed column",
+        )
+    };
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "ec_ivf heap_f32 rerank failed to allocate a heap tuple slot",
+        )
+    };
+
+    for candidate in candidates {
+        unsafe {
+            source::fetch_heap_row_version(
+                heap_relation,
+                candidate.heap_tid,
+                snapshot,
+                slot,
+                "ec_ivf heap_f32 rerank source vector",
+            )
+        };
+        let source_vector = unsafe {
+            source::FlatFloat4SourceRef::from_datum(
+                source::required_slot_datum(
+                    slot,
+                    source_attribute.attnum,
+                    "ec_ivf heap_f32 rerank source vector",
+                ),
+                source_attribute.kind,
+                "ec_ivf heap_f32 rerank source vector",
+            )
+        };
+        candidate.score =
+            source::negative_inner_product(scan_query_values(opaque), source_vector.as_slice());
+        drop(source_vector);
+        unsafe { pg_sys::ExecClearTuple(slot) };
+    }
+
+    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
+    if snapshot_owned {
+        unsafe { pg_sys::UnregisterSnapshot(snapshot) };
+    }
+    if heap_relation_owned {
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+    if !unsafe { (*scan).heapRelation }.is_null() {
+        return (unsafe { (*scan).heapRelation }, false);
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
+    }
+    (
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+        true,
+    )
+}
+
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+    if !unsafe { (*scan).xs_snapshot }.is_null() {
+        return (unsafe { (*scan).xs_snapshot }, false);
+    }
+
+    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if !active_snapshot.is_null() {
+        return (active_snapshot, false);
+    }
+
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot");
+    }
+    (registered_snapshot, true)
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
@@ -675,13 +800,20 @@ fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result
         directory.tail_block == super::page::BlockRef::INVALID,
     ) {
         (true, true) => Ok(0),
-        (false, false) if directory.head_block.block_number <= directory.tail_block.block_number => {
+        (false, false)
+            if directory.head_block.block_number <= directory.tail_block.block_number =>
+        {
             directory
                 .tail_block
                 .block_number
                 .checked_sub(directory.head_block.block_number)
                 .and_then(|delta| delta.checked_add(1))
-                .ok_or_else(|| format!("ec_ivf list {} posting block count overflow", directory.list_id))
+                .ok_or_else(|| {
+                    format!(
+                        "ec_ivf list {} posting block count overflow",
+                        directory.list_id
+                    )
+                })
         }
         (false, false) => Err(format!(
             "ec_ivf list {} head block {} exceeds tail block {}",
@@ -694,9 +826,7 @@ fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result
     }
 }
 
-fn build_probe_block_sequence(
-    ranges: &mut [ProbeBlockRange],
-) -> Result<Vec<u32>, String> {
+fn build_probe_block_sequence(ranges: &mut [ProbeBlockRange]) -> Result<Vec<u32>, String> {
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
@@ -1043,42 +1173,35 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<(u32, u16, f32)>, bool) {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
-
+    let state = unsafe { debug_begin_heap_backed_scan(index_oid) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { pg_sys::index_rescan(state.scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut outputs = Vec::new();
-    while unsafe {
-        ec_ivf_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection)
-    } {
+    while unsafe { ec_ivf_amgettuple(state.scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let (block_number, offset_number) =
-            pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
-        let score = if unsafe { (*scan).xs_orderbyvals.is_null() }
-            || unsafe { (*scan).xs_orderbynulls.is_null() }
-            || unsafe { *(*scan).xs_orderbynulls }
+            pgrx::itemptr::item_pointer_get_both(unsafe { (*state.scan).xs_heaptid });
+        let score = if unsafe { (*state.scan).xs_orderbyvals.is_null() }
+            || unsafe { (*state.scan).xs_orderbynulls.is_null() }
+            || unsafe { *(*state.scan).xs_orderbynulls }
         {
             pgrx::error!("ec_ivf debug gettuple output is missing order-by score");
         } else {
-            f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, false)
+            f32::from_datum(unsafe { *(*state.scan).xs_orderbyvals }, false)
                 .expect("score datum should decode as f32")
         };
         outputs.push((block_number, offset_number, score));
     }
-    let orderby_cleared = if unsafe { (*scan).xs_orderbynulls.is_null() } {
+    let orderby_cleared = if unsafe { (*state.scan).xs_orderbynulls.is_null() } {
         false
     } else {
-        unsafe { *(*scan).xs_orderbynulls }
+        unsafe { *(*state.scan).xs_orderbynulls }
     };
 
-    unsafe { ec_ivf_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(state) };
     (outputs, orderby_cleared)
 }
 
@@ -1264,11 +1387,7 @@ mod tests {
                 self.retained.push(entry);
                 return;
             }
-            if self
-                .retained
-                .peek()
-                .is_some_and(|worst| entry < *worst)
-            {
+            if self.retained.peek().is_some_and(|worst| entry < *worst) {
                 self.retained.pop();
                 self.retained.push(entry);
             }

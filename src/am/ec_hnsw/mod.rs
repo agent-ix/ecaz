@@ -18,7 +18,7 @@ mod scan;
 mod scan_debug;
 mod search;
 pub(crate) mod shared;
-mod source;
+pub(crate) mod source;
 mod vacuum;
 
 pub(super) const EC_HNSW_DEFAULT_M: i32 = 8;

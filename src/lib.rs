@@ -2699,8 +2699,10 @@ mod tests {
 
     #[pg_test]
     fn test_ec_ivf_empty_rescan_query_prep_has_no_probe_lists() {
-        Spi::run("CREATE TABLE ec_ivf_empty_query_prep (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_ivf_empty_query_prep (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "CREATE INDEX ec_ivf_empty_query_prep_idx ON ec_ivf_empty_query_prep USING ec_ivf \
              (embedding ecvector_ip_ops) \
@@ -2709,8 +2711,7 @@ mod tests {
         .expect("index creation should succeed");
 
         let index_oid = ec_ivf_index_oid("ec_ivf_empty_query_prep_idx");
-        let snapshot =
-            unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let snapshot = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
 
         assert!(snapshot.rescan_called);
         assert_eq!(snapshot.query_dimensions, 2);
@@ -2745,8 +2746,7 @@ mod tests {
         .expect("index creation should succeed");
 
         let index_oid = ec_ivf_index_oid("ec_ivf_query_prep_idx");
-        let snapshot =
-            unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let snapshot = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
         let unique_lists = snapshot
             .selected_lists
             .iter()
@@ -2802,9 +2802,7 @@ mod tests {
         assert_eq!(unique_heap_tids.len(), outputs.len());
         assert!(outputs.iter().all(|(_, _, score)| score.is_finite()));
         assert!(
-            outputs
-                .windows(2)
-                .all(|pair| pair[0].2 <= pair[1].2),
+            outputs.windows(2).all(|pair| pair[0].2 <= pair[1].2),
             "ec_ivf gettuple outputs should be ordered by ascending ORDER BY score"
         );
         assert!(orderby_cleared);
@@ -2828,8 +2826,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "ec_ivf rerank mode heap_f32 is not supported yet")]
-    fn test_ec_ivf_heap_f32_rerank_mode_is_explicitly_unsupported() {
+    fn test_ec_ivf_heap_f32_rerank_mode_is_persisted() {
         Spi::run("CREATE TABLE ec_ivf_heap_f32_rerank (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
@@ -2837,14 +2834,21 @@ mod tests {
              (embedding ecvector_ip_ops) \
              WITH (rerank = 'heap_f32')",
         )
-        .expect("index creation should fail");
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_rerank_idx");
+        let rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
+
+        assert_eq!(rerank_mode, "heap_f32");
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_ivf storage_format pq_fastscan is not supported yet")]
     fn test_ec_ivf_pq_fastscan_storage_is_unsupported() {
-        Spi::run("CREATE TABLE ec_ivf_pq_fastscan_storage (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_ivf_pq_fastscan_storage (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "CREATE INDEX ec_ivf_pq_fastscan_storage_idx ON ec_ivf_pq_fastscan_storage USING ec_ivf \
              (embedding ecvector_ip_ops) \
@@ -2886,6 +2890,86 @@ mod tests {
         assert_eq!(ivf_top.first(), exact_top.first());
         assert_eq!(ivf_top.len(), 4);
         assert_eq!(unique_ivf_ids.len(), ivf_top.len());
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_heap_f32_rerank_full_probe_matches_exact_scores() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_heap_f32_exact (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_heap_f32_exact VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.7,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-0.7,0.1]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_heap_f32_exact_idx ON ec_ivf_heap_f32_exact USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = 4, rerank = 'heap_f32')",
+        )
+        .expect("index creation should succeed");
+
+        let query = vec![1.0, 0.0];
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let exact = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT id, embedding <#> {query_literal} AS score
+                         FROM ec_ivf_heap_f32_exact
+                         ORDER BY score, id"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("exact score query should succeed")
+                .map(|row| {
+                    let id = row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should not be NULL");
+                    let score = row["score"]
+                        .value::<f32>()
+                        .expect("score should decode")
+                        .expect("score should not be NULL");
+                    (usize::try_from(id).expect("id should fit usize"), score)
+                })
+                .collect::<Vec<_>>()
+        });
+        let ctid_to_id = ctid_id_map("ec_ivf_heap_f32_exact");
+        let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_exact_idx");
+        let (outputs, orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
+        let observed = outputs
+            .into_iter()
+            .map(|(block_number, offset_number, score)| {
+                (
+                    *ctid_to_id
+                        .get(&(block_number, offset_number))
+                        .expect("IVF emitted heap tid should map back to a row id"),
+                    score,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(observed.len(), exact.len());
+        for ((observed_id, observed_score), (exact_id, exact_score)) in
+            observed.iter().zip(exact.iter())
+        {
+            assert_eq!(observed_id, exact_id);
+            assert!(
+                (observed_score - exact_score).abs() <= f32::EPSILON,
+                "heap_f32 rerank score for id {observed_id} should match exact <#>: got {observed_score}, expected {exact_score}"
+            );
+        }
+        assert!(orderby_cleared);
     }
 
     #[pg_test]
@@ -2934,7 +3018,8 @@ mod tests {
              (1, '[0.0,1.0]'::ecvector)",
         )
         .expect("seed insert should succeed");
-        let index_oid = create_ivf_recall_index("ec_ivf_live_insert", "ec_ivf_live_insert_idx", 2, 2, 2);
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_live_insert", "ec_ivf_live_insert_idx", 2, 2, 2);
 
         Spi::run("INSERT INTO ec_ivf_live_insert VALUES (2, '[1.0,0.1]'::ecvector)")
             .expect("live insert should succeed");
@@ -3296,8 +3381,10 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "duplicate heap tid")]
     fn test_ec_ivf_insert_rejects_duplicate_heap_tid() {
-        Spi::run("CREATE TABLE ec_ivf_duplicate_heap_tid (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_ivf_duplicate_heap_tid (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO ec_ivf_duplicate_heap_tid VALUES
              (0, '[1.0,0.0]'::ecvector),
@@ -3324,8 +3411,10 @@ mod tests {
 
     #[pg_test]
     fn test_ec_ivf_insert_bootstraps_empty_index() {
-        Spi::run("CREATE TABLE ec_ivf_empty_live_insert (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_ivf_empty_live_insert (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         let index_oid = create_ivf_recall_index(
             "ec_ivf_empty_live_insert",
             "ec_ivf_empty_live_insert_idx",
@@ -3361,8 +3450,10 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "dimension mismatch")]
     fn test_ec_ivf_insert_rejects_dimension_mismatch() {
-        Spi::run("CREATE TABLE ec_ivf_insert_dim_mismatch (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_ivf_insert_dim_mismatch (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run("INSERT INTO ec_ivf_insert_dim_mismatch VALUES (0, '[1.0,0.0]'::ecvector)")
             .expect("seed insert should succeed");
         Spi::run(
@@ -3414,13 +3505,8 @@ mod tests {
              (1, '[0.0,1.0]'::ecvector)",
         )
         .expect("seed insert should succeed");
-        let index_oid = create_ivf_recall_index(
-            "ec_ivf_vacuum_noop",
-            "ec_ivf_vacuum_noop_idx",
-            2,
-            2,
-            2,
-        );
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_vacuum_noop", "ec_ivf_vacuum_noop_idx", 2, 2, 2);
         Spi::run("DELETE FROM ec_ivf_vacuum_noop WHERE id = 1").expect("delete should succeed");
 
         let index_blocks = ec_ivf_index_blocks("ec_ivf_vacuum_noop_idx");
@@ -3456,13 +3542,8 @@ mod tests {
              (2, '[-1.0,0.0]'::ecvector)",
         )
         .expect("seed insert should succeed");
-        let index_oid = create_ivf_recall_index(
-            "ec_ivf_vacuum_delete",
-            "ec_ivf_vacuum_delete_idx",
-            3,
-            3,
-            3,
-        );
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_vacuum_delete", "ec_ivf_vacuum_delete_idx", 3, 3, 3);
         let deleted_tid = heap_tid_for_row("ec_ivf_vacuum_delete", 1);
 
         Spi::run("DELETE FROM ec_ivf_vacuum_delete WHERE id = 1").expect("delete should succeed");
@@ -3480,12 +3561,10 @@ mod tests {
         assert_eq!(inserted_since_build, 0);
         assert_eq!(total_live, 2);
         assert!(
-            outputs
-                .iter()
-                .all(|(block_number, offset_number, _score)| {
-                    (*block_number, *offset_number)
-                        != (deleted_tid.block_number, deleted_tid.offset_number)
-                }),
+            outputs.iter().all(|(block_number, offset_number, _score)| {
+                (*block_number, *offset_number)
+                    != (deleted_tid.block_number, deleted_tid.offset_number)
+            }),
             "vacuumed ec_ivf scan output should not include the deleted heap tid"
         );
     }
@@ -4061,8 +4140,7 @@ mod tests {
         );
 
         Spi::run("DELETE FROM ec_ivf_vacuum_insert WHERE id = 2").expect("delete should succeed");
-        let stats =
-            unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
+        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
         let after_outputs =
             unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
         let (_, _, directory_live, directory_dead, inserted_since_build) =
@@ -4914,10 +4992,8 @@ mod tests {
     #[cfg(feature = "pg18")]
     #[pg_test]
     fn test_pg18_ecaz_stats_reports_backend_local_counters_for_ec_ivf() {
-        Spi::run(
-            "CREATE TABLE pg18_ivf_stats_fixture (id bigint primary key, embedding ecvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE pg18_ivf_stats_fixture (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO pg18_ivf_stats_fixture VALUES
              (1, '[1.0,0.0]'::ecvector),
@@ -4939,9 +5015,10 @@ mod tests {
         let distance_before = Spi::get_one::<i64>("SELECT total_distance_calcs FROM ecaz_stats()")
             .expect("stats query should succeed")
             .expect("distance counter should be non-null");
-        let posting_pages_before = Spi::get_one::<i64>("SELECT total_linear_pages FROM ecaz_stats()")
-            .expect("stats query should succeed")
-            .expect("posting page counter should be non-null");
+        let posting_pages_before =
+            Spi::get_one::<i64>("SELECT total_linear_pages FROM ecaz_stats()")
+                .expect("stats query should succeed")
+                .expect("posting page counter should be non-null");
 
         Spi::run("SET enable_seqscan = off").expect("set should succeed");
         let _ = Spi::get_one::<i64>(

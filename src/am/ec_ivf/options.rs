@@ -108,9 +108,9 @@ impl RerankMode {
 
     pub(super) fn validate_v1_supported(self) -> Result<(), String> {
         match self {
-            Self::Auto | Self::Off => Ok(()),
-            Self::HeapF32 | Self::SourceColumn => Err(format!(
-                "ec_ivf rerank mode {} is not supported yet; use rerank = 'off' or rerank = 'auto'",
+            Self::Auto | Self::Off | Self::HeapF32 => Ok(()),
+            Self::SourceColumn => Err(format!(
+                "ec_ivf rerank mode {} is not supported yet; use rerank = 'off', rerank = 'auto', or rerank = 'heap_f32'",
                 self.reloption_name()
             )),
         }
