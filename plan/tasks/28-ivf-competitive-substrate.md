@@ -120,6 +120,10 @@ in review packet 30047 feedback seq 02.
     The existing 4D fixture remains the default, and a 1536D PG18 smoke passed
     with admin snapshot metrics. Use this before drawing more live-insert
     conclusions from the 4D fixture alone.
+  - Packet 30065 records the first 1536D insert baseline on the fresh PG18
+    database: 124.30 rows/s at 1 worker and 393.60 rows/s at 4 workers. Compared
+    with packet 30060's fresh 4D runs (273.20 and 656.20 rows/s), dimensional
+    source-vector/assignment/encoding work is a major live-insert cost.
 
 ## Completed Slices
 
@@ -156,6 +160,10 @@ in review packet 30047 feedback seq 02.
   30064 records `656b2dc` and a 1536D PG18 smoke, enabling a more
   production-like live-insert split between vector-dimension work and per-row
   write-path work.
+- Item 7 dimension split: 1536D insert baseline. Packet 30065 records c1/c4
+  measurements and shifts the next useful optimization target from 4D
+  write-path micro-costs to dimension-dependent source-vector and assignment
+  work.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
