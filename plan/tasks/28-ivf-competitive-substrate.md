@@ -112,6 +112,10 @@ in review packet 30047 feedback seq 02.
     nlists=16 harness fell to 265.20 rows/s at 1 worker and 645.10 rows/s at 4
     workers, so the change was backed out and should not be treated as the next
     live-insert lever.
+  - Packet 30063 tried a live-insert-specific one-TID posting encoder to avoid
+    constructing an `IvfPostingTuple` with a one-element heap-TID vector. Tests
+    passed, but the fresh nlists=16 harness reported 267.80 rows/s at 1 worker
+    and 650.20 rows/s at 4 workers, so the change was backed out.
 
 ## Completed Slices
 
@@ -141,6 +145,9 @@ in review packet 30047 feedback seq 02.
 - Item 7 negative follow-up: combined directory/metadata insert stats WAL.
   Packet 30062 records the trial and backout after the fresh PG18 insert stress
   harness failed to improve.
+- Item 7 negative follow-up: single-posting encode helper. Packet 30063
+  records the trial and backout after the fresh PG18 insert stress harness
+  failed to improve.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
