@@ -1,0 +1,9 @@
+   pid   | state  | wait_event_type | wait_event |      age       |                                                                              query                                                                               
+---------+--------+-----------------+------------+----------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1703470 | active |                 |            | 00:00:37.36768 | CREATE TEMP TABLE task28_ivf_anchor10k1536_exact_top10 AS                                                                                                       +
+         |        |                 |            |                | SELECT q.id AS query_id, exact.id AS corpus_id                                                                                                                  +
+         |        |                 |            |                | FROM task28_ivf_anchor10k1536_queries q                                                                                                                         +
+         |        |                 |            |                | CROSS JOIN LATE
+ 1704609 | active |                 |            | 00:00:00       | select pid, state, wait_event_type, wait_event, now() - query_start as age, left(query, 160) as query from pg_stat_activity where datname='postgres' and state <
+(2 rows)
+

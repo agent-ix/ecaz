@@ -1,0 +1,42 @@
+Pager usage is off.
+Timing is on.
+                                            postgres_version                                             
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+Time: 0.696 ms
+ server_version 
+----------------
+ 18.3
+(1 row)
+
+Time: 0.412 ms
+DROP TABLE
+Time: 0.564 ms
+DROP TABLE
+Time: 0.176 ms
+SELECT 50000
+Time: 21079.118 ms (00:21.079)
+SELECT 20
+Time: 10.227 ms
+ALTER TABLE
+Time: 55.092 ms
+ALTER TABLE
+Time: 3.190 ms
+ANALYZE
+Time: 9157.153 ms (00:09.157)
+ANALYZE
+Time: 6.574 ms
+ corpus_rows | query_rows | source_dimensions 
+-------------+------------+-------------------
+       50000 |         20 |              1536
+(1 row)
+
+Time: 5.121 ms
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor50k-n128-nprobe-debug.sql:7: NOTICE:  table "task28_ivf_anchor50k_corpus" does not exist, skipping
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor50k-n128-nprobe-debug.sql:8: NOTICE:  table "task28_ivf_anchor50k_queries" does not exist, skipping
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor50k-n128-nprobe-debug.sql:40: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor50k-n128-nprobe-debug.sql:40: error: connection to server was lost

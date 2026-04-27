@@ -1,0 +1,7 @@
+      rel       |  rows  | source_dim 
+----------------+--------+------------
+ anchor_corpus  | 990000 |       1536
+ anchor_queries |  10000 |       1536
+ old10k_corpus  |  10000 |         64
+(3 rows)
+

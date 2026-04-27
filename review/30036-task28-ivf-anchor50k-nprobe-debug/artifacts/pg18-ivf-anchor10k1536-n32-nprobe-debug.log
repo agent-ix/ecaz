@@ -1,0 +1,216 @@
+Pager usage is off.
+Timing is on.
+                                            postgres_version                                             
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+Time: 0.950 ms
+DROP TABLE
+Time: 0.583 ms
+DROP TABLE
+Time: 0.268 ms
+SELECT 10000
+Time: 2437.205 ms (00:02.437)
+SELECT 20
+Time: 8.144 ms
+ALTER TABLE
+Time: 9.102 ms
+ALTER TABLE
+Time: 3.260 ms
+ANALYZE
+Time: 3755.939 ms (00:03.756)
+ANALYZE
+Time: 6.579 ms
+ corpus_rows | query_rows | source_dimensions 
+-------------+------------+-------------------
+       10000 |         20 |              1536
+(1 row)
+
+Time: 1.528 ms
+CREATE INDEX
+Time: 24934.108 ms (00:24.934)
+ANALYZE
+Time: 2847.758 ms (00:02.848)
+ index_bytes | index_pretty | heap_bytes | heap_pretty 
+-------------+--------------+------------+-------------
+     9379840 | 9160 kB      |    1048576 | 1024 kB
+(1 row)
+
+Time: 1.121 ms
+SET
+Time: 0.188 ms
+SET
+Time: 0.113 ms
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=10.00 loops=1)
+   Buffers: shared hit=146 read=9
+   InitPlan 1
+     ->  Limit (actual rows=1.00 loops=1)
+           Buffers: shared read=2
+           ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared read=2
+   ->  Index Scan using task28_ivf_anchor10k1536_n32_idx on task28_ivf_anchor10k1536_corpus (actual rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=146 read=9
+         Centroid Scores: 32
+         Selected Lists: 1
+         Posting Pages Read: 26
+         Candidates Scored: 223
+         Rerank Rows: 0
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=22 read=8
+ Planning Time: 0.545 ms
+ Execution Time: 14.888 ms
+(22 rows)
+
+Time: 16.870 ms
+SET
+Time: 0.277 ms
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=10.00 loops=1)
+   Buffers: shared hit=259
+   InitPlan 1
+     ->  Limit (actual rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Index Scan using task28_ivf_anchor10k1536_n32_idx on task28_ivf_anchor10k1536_corpus (actual rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=259
+         Centroid Scores: 32
+         Selected Lists: 4
+         Posting Pages Read: 130
+         Candidates Scored: 1137
+         Rerank Rows: 0
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.121 ms
+ Execution Time: 28.572 ms
+(22 rows)
+
+Time: 29.233 ms
+SET
+Time: 0.188 ms
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=10.00 loops=1)
+   Buffers: shared hit=807
+   InitPlan 1
+     ->  Limit (actual rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Index Scan using task28_ivf_anchor10k1536_n32_idx on task28_ivf_anchor10k1536_corpus (actual rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=807
+         Centroid Scores: 32
+         Selected Lists: 16
+         Posting Pages Read: 678
+         Candidates Scored: 6016
+         Rerank Rows: 0
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.119 ms
+ Execution Time: 108.394 ms
+(22 rows)
+
+Time: 109.056 ms
+SET
+Time: 0.404 ms
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=10.00 loops=1)
+   Buffers: shared hit=1241
+   InitPlan 1
+     ->  Limit (actual rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_anchor10k1536_queries_pkey on task28_ivf_anchor10k1536_queries (actual rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Index Scan using task28_ivf_anchor10k1536_n32_idx on task28_ivf_anchor10k1536_corpus (actual rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=1241
+         Centroid Scores: 32
+         Selected Lists: 32
+         Posting Pages Read: 1112
+         Candidates Scored: 10000
+         Rerank Rows: 0
+         Filtered Duplicates: 0
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.133 ms
+ Execution Time: 171.477 ms
+(22 rows)
+
+Time: 172.129 ms
+RESET
+Time: 0.347 ms
+RESET
+Time: 0.237 ms
+SET
+Time: 0.258 ms
+SET
+Time: 0.171 ms
+SET
+Time: 0.161 ms
+SELECT 200
+Time: 87984.832 ms (01:27.985)
+RESET
+Time: 0.228 ms
+RESET
+Time: 0.139 ms
+RESET
+Time: 0.101 ms
+CREATE TABLE
+Time: 2.419 ms
+SET
+Time: 0.173 ms
+SET
+Time: 0.158 ms
+INSERT 0 200
+Time: 320.849 ms
+SET
+Time: 0.226 ms
+INSERT 0 200
+Time: 620.651 ms
+SET
+Time: 0.290 ms
+INSERT 0 200
+Time: 1916.863 ms (00:01.917)
+SET
+Time: 0.225 ms
+INSERT 0 200
+Time: 3427.892 ms (00:03.428)
+RESET
+Time: 0.295 ms
+RESET
+Time: 0.164 ms
+ nprobe | returned | exact_hits | recall_at_10 
+--------+----------+------------+--------------
+      1 |      200 |         88 |       0.4400
+      4 |      200 |        134 |       0.6700
+     16 |      200 |        175 |       0.8750
+     32 |      200 |        184 |       0.9200
+(4 rows)
+
+Time: 3.817 ms
+ nprobe | query_id | returned_per_query 
+--------+----------+--------------------
+(0 rows)
+
+Time: 0.518 ms
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor10k1536-n32-nprobe-debug.sql:6: NOTICE:  table "task28_ivf_anchor10k1536_corpus" does not exist, skipping
+psql:review/30036-task28-ivf-anchor50k-nprobe-debug/artifacts/pg18-ivf-anchor10k1536-n32-nprobe-debug.sql:7: NOTICE:  table "task28_ivf_anchor10k1536_queries" does not exist, skipping
