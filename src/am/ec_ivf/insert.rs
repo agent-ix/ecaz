@@ -267,7 +267,6 @@ fn validate_insert_tuple(
             metadata.dimensions
         ));
     }
-    training::normalize_vector(&tuple.source_vector, usize::from(metadata.dimensions))?;
     if !page::posting_tuple_fits(tuple.payload.len(), pg_sys::BLCKSZ as usize) {
         return Err(format!(
             "posting payload for dim {} does not fit on a page",
