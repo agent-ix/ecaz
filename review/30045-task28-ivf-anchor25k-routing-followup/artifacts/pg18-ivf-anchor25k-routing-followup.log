@@ -1,0 +1,33 @@
+Timing is on.
+sha	b84c278
+Time: 0.465 ms
+1000	100
+Time: 2.414 ms
+DROP TABLE
+Time: 0.328 ms
+CREATE TABLE
+Time: 8.139 ms
+DROP TABLE
+Time: 0.244 ms
+CREATE TABLE
+Time: 2.211 ms
+SET
+Time: 0.124 ms
+SET
+Time: 0.095 ms
+SET
+Time: 0.091 ms
+DO
+Time: 434774.141 ms (07:14.774)
+32	28	25	46086.404	38764.622	1000	983	0.9830	23027712	22 MB
+64	32	25	74052.730	23880.588	1000	984	0.9840	23289856	22 MB
+64	48	25	74443.659	43213.066	1000	1000	1.0000	23289856	22 MB
+Time: 1.749 ms
+32	28	25	100	10	10	382.821	414.706	438.567	368.566
+64	32	25	100	10	10	433.881	453.544	509.243	418.803
+64	48	25	100	10	10	433.318	452.825	458.398	425.895
+Time: 2.460 ms
+psql:review/30045-task28-ivf-anchor25k-routing-followup/artifacts/pg18-ivf-anchor25k-routing-followup.sql:10: NOTICE:  table "task28_ivf_anchor25k_followup_summary" does not exist, skipping
+psql:review/30045-task28-ivf-anchor25k-routing-followup/artifacts/pg18-ivf-anchor25k-routing-followup.sql:23: NOTICE:  table "task28_ivf_anchor25k_followup_latency" does not exist, skipping
+psql:review/30045-task28-ivf-anchor25k-routing-followup/artifacts/pg18-ivf-anchor25k-routing-followup.sql:129: NOTICE:  index "task28_ivf_anchor25k_followup_idx" does not exist, skipping
+psql:review/30045-task28-ivf-anchor25k-routing-followup/artifacts/pg18-ivf-anchor25k-routing-followup.sql:129: NOTICE:  table "task28_ivf_anchor25k_followup_ivf_top10" does not exist, skipping
