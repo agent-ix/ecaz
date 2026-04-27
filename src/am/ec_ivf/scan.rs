@@ -737,7 +737,7 @@ unsafe fn materialize_probe_candidates(
         .record_posting_pages_read(posting_pages);
     record_posting_pages_read(opaque, posting_pages);
     unsafe {
-        super::page::visit_ivf_postings_for_block_sequence(
+        super::page::visit_ivf_posting_refs_for_block_sequence(
             index_relation,
             &probe_plan.block_sequence,
             payload_len,
@@ -748,10 +748,10 @@ unsafe fn materialize_probe_candidates(
                 let score = -quantizer.score_ip_from_parts(
                     prepared_query,
                     posting.gamma,
-                    &posting.payload,
+                    posting.payload,
                 )?;
                 record_distance_calcs(opaque, 1);
-                for heap_tid in posting.heaptids {
+                for heap_tid in posting.heaptids() {
                     opaque.explain_counters.record_candidate_scored();
                     let candidate = EcIvfScoredCandidate { heap_tid, score };
                     let best_by_heap_tid = &mut *best_by_heap_tid;

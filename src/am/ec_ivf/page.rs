@@ -815,6 +815,48 @@ where
     Ok(())
 }
 
+pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
+    index_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+{
+    if block_numbers.is_empty() {
+        return Ok(());
+    }
+
+    #[cfg(feature = "pg18")]
+    {
+        unsafe {
+            visit_ivf_posting_ref_block_sequence_with_read_stream(
+                index_relation,
+                block_numbers,
+                payload_len,
+                &mut visitor,
+            )?
+        };
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        for block_number in block_numbers {
+            unsafe {
+                visit_all_ivf_posting_refs_for_block(
+                    index_relation,
+                    *block_number,
+                    payload_len,
+                    &mut visitor,
+                )?
+            };
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "pg18")]
 unsafe fn visit_ivf_posting_blocks_with_read_stream<F>(
     index_relation: pg_sys::Relation,
@@ -913,6 +955,54 @@ where
     Ok(())
 }
 
+#[cfg(feature = "pg18")]
+unsafe fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
+    index_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+{
+    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_SEQUENTIAL as i32,
+            ptr::null_mut(),
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut BlockSequencePrefetchState).cast(),
+            size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        let block_number = if per_buffer_data.is_null() {
+            unsafe { pg_sys::BufferGetBlockNumber(buffer) }
+        } else {
+            unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+        };
+        let result = unsafe {
+            visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        };
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+        if let Err(err) = result {
+            unsafe { pg_sys::read_stream_end(stream) };
+            return Err(err);
+        }
+    }
+
+    unsafe { pg_sys::read_stream_end(stream) };
+    Ok(())
+}
+
 #[cfg(not(feature = "pg18"))]
 unsafe fn visit_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
@@ -977,6 +1067,38 @@ where
     result
 }
 
+#[cfg(not(feature = "pg18"))]
+unsafe fn visit_all_ivf_posting_refs_for_block<F>(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+{
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_ivf failed to open posting-list block {block_number}"
+        ));
+    }
+
+    let result = unsafe {
+        visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+    };
+    unsafe { pg_sys::ReleaseBuffer(buffer) };
+    result
+}
+
 unsafe fn visit_ivf_postings_from_buffer<F>(
     buffer: pg_sys::Buffer,
     list_id: u32,
@@ -1037,6 +1159,56 @@ where
             }
 
             let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+            visitor(
+                ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                },
+                posting,
+            )?;
+        }
+        Ok(())
+    })();
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
+    result
+}
+
+unsafe fn visit_all_ivf_posting_refs_from_buffer<F>(
+    buffer: pg_sys::Buffer,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
+{
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let result = (|| -> Result<(), String> {
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                return Err(format!(
+                    "ec_ivf posting tuple bounds exceed block {block_number}"
+                ));
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                continue;
+            }
+
+            let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
             visitor(
                 ItemPointer {
                     block_number,
