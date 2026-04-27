@@ -48,6 +48,10 @@ in review packet 30047 feedback seq 02.
      surface, while forcing the IVF index path returned one nprobe=8 query in
      67.987 ms. Do not quote n128 recall/latency until the benchmark force-index
      mode or cost model is fixed.
+   - Packet 30054 reruns n128 through the new benchmark `--force-index` mode.
+     It confirms n128 is not the better frontier on this fixture: 10k
+     `nprobe=64` reaches only `recall@10=0.9860` at p50 104.7 ms, and lower
+     probes only hit sub-50 ms p50 at low recall.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -85,9 +89,8 @@ in review packet 30047 feedback seq 02.
 
 ## Next Slice
 
-The next slice is to make the benchmark path robust for high-`nlists` IVF:
-either add an explicit force-index mode to `ecaz bench recall/latency` or
-adjust the `ec_ivf` cost model so n128 KNN does not fall back to sequential
-scan. After that, rerun n128 and vary `rerank_width` at the best routing point,
-then use items 6 and 7 to document deeper build/training/vacuum risks before
-product benchmarking.
+The next slice is `rerank_width` reduction at the best observed routing points
+instead of more `nlists` growth. Keep the cost-model repair on the backlog,
+because n128 normal planning still falls back to sequential scan. After the
+width sweep, use items 6 and 7 to document deeper build/training/vacuum risks
+before product benchmarking.
