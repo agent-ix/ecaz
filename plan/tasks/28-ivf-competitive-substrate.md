@@ -40,6 +40,9 @@ in review packet 30047 feedback seq 02.
      `nlists=32`, `rerank_width=25`, `nprobe in {16,24,32}`. It confirms
      correctness but shows latency still above the 10k target, so higher
      `nlists` and narrower rerank-width surfaces are still required.
+   - Packet 30052 records the `nlists=64`, `rerank_width=25` continuation.
+     It improves the curve, but 10k still only reaches sub-50 ms p50 at
+     `recall@10=0.7800`; high-recall points remain above the target.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -77,6 +80,7 @@ in review packet 30047 feedback seq 02.
 
 ## Next Slice
 
-The next slice is to continue item 3 with `nlists=64/128` isolated surfaces
-and a lower `nprobe` sweep, then use items 6 and 7 to document deeper
-build/training/vacuum risks before product benchmarking.
+The next slice is to continue item 3 with `nlists=128` isolated surfaces and a
+lower `nprobe` sweep, then vary `rerank_width` at the best routing point. After
+that, use items 6 and 7 to document deeper build/training/vacuum risks before
+product benchmarking.
