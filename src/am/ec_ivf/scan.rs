@@ -746,6 +746,8 @@ unsafe fn rerank_probe_candidates_heap_f32(
         )
     };
 
+    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+
     for candidate in candidates {
         unsafe {
             source::fetch_heap_row_version(
@@ -776,6 +778,56 @@ unsafe fn rerank_probe_candidates_heap_f32(
     unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
     if heap_relation_owned {
         unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn prefetch_heap_rerank_blocks(
+    heap_relation: pg_sys::Relation,
+    candidates: &[EcIvfScoredCandidate],
+) {
+    let block_numbers = candidates
+        .iter()
+        .map(|candidate| candidate.heap_tid.block_number)
+        .collect::<Vec<_>>();
+    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            ptr::null_mut(),
+            heap_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
+            std::mem::size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+    }
+
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
+#[cfg(not(feature = "pg18"))]
+unsafe fn prefetch_heap_rerank_blocks(
+    heap_relation: pg_sys::Relation,
+    candidates: &[EcIvfScoredCandidate],
+) {
+    for candidate in candidates {
+        unsafe {
+            pg_sys::PrefetchBuffer(
+                heap_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                candidate.heap_tid.block_number,
+            )
+        };
     }
 }
 
