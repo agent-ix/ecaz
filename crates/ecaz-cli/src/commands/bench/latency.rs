@@ -59,6 +59,9 @@ pub struct LatencyArgs {
     /// Quantizer seed (must match loader).
     #[arg(long, default_value_t = 42)]
     pub seed: i64,
+    /// Force benchmark queries onto the index path by disabling sequential scans.
+    #[arg(long)]
+    pub force_index: bool,
 }
 
 pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
@@ -119,6 +122,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             args.concurrency,
             args.iterations,
             profile.encode_scan_query,
+            args.force_index,
             args.bits,
             args.seed,
             args.k,
@@ -151,6 +155,7 @@ async fn run_sweep_point(
     concurrency: usize,
     iterations: usize,
     encode_scan_query: bool,
+    force_index: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -182,6 +187,7 @@ async fn run_sweep_point(
                 counter,
                 iterations,
                 encode_scan_query,
+                force_index,
                 bits,
                 seed,
                 k,
@@ -210,6 +216,7 @@ async fn worker(
     counter: Arc<AtomicUsize>,
     iterations: usize,
     encode_scan_query: bool,
+    force_index: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -241,6 +248,9 @@ async fn worker(
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
+    if force_index {
+        client.batch_execute("SET enable_seqscan = off").await?;
+    }
     let stmt = client.prepare(&sql).await?;
     let k_i64 = k as i64;
 

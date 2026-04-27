@@ -54,6 +54,9 @@ pub struct RecallArgs {
     /// Quantizer seed (must match loader's `--seed`).
     #[arg(long, default_value_t = 42)]
     pub seed: i64,
+    /// Force benchmark queries onto the index path by disabling sequential scans.
+    #[arg(long)]
+    pub force_index: bool,
 }
 
 pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
@@ -118,6 +121,12 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     t.set_header(vec!["sweep", "recall@k", "ndcg@k", "mean q-time"]);
 
     for value in &args.sweep {
+        if args.force_index {
+            client
+                .batch_execute("SET enable_seqscan = off")
+                .await
+                .wrap_err("SET enable_seqscan = off")?;
+        }
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await
