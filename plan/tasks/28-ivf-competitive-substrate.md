@@ -116,6 +116,10 @@ in review packet 30047 feedback seq 02.
     constructing an `IvfPostingTuple` with a one-element heap-TID vector. Tests
     passed, but the fresh nlists=16 harness reported 267.80 rows/s at 1 worker
     and 650.20 rows/s at 4 workers, so the change was backed out.
+  - Packet 30064 adds a `--dimensions` flag to `ecaz stress ivf-insert`.
+    The existing 4D fixture remains the default, and a 1536D PG18 smoke passed
+    with admin snapshot metrics. Use this before drawing more live-insert
+    conclusions from the 4D fixture alone.
 
 ## Completed Slices
 
@@ -148,6 +152,10 @@ in review packet 30047 feedback seq 02.
 - Item 7 negative follow-up: single-posting encode helper. Packet 30063
   records the trial and backout after the fresh PG18 insert stress harness
   failed to improve.
+- Item 7 harness follow-up: configurable insert-stress dimensions. Packet
+  30064 records `656b2dc` and a 1536D PG18 smoke, enabling a more
+  production-like live-insert split between vector-dimension work and per-row
+  write-path work.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
