@@ -40,6 +40,7 @@ pub(crate) use self::admin::{
     index_admin_snapshot, index_drift_snapshot, IndexAdminSnapshot, IndexDriftSnapshot,
 };
 pub(crate) use self::cost::{index_cost_snapshot, IndexCostSnapshot};
+#[cfg(feature = "pg18")]
 pub(crate) use self::scan::explain_counters_from_index_scan_state;
 
 #[cfg(any(test, feature = "pg_test"))]
