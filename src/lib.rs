@@ -3182,6 +3182,51 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_large_build_insert_directory_chain() {
+        const TABLE_NAME: &str = "ec_ivf_large_build_live_insert";
+        const INDEX_NAME: &str = "ec_ivf_large_build_live_insert_idx";
+
+        Spi::run(&format!(
+            "CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+             INSERT INTO {TABLE_NAME} (id, embedding)
+             SELECT gs,
+                    encode_to_ecvector(
+                        ARRAY[
+                            sin((gs * 0.013)::double precision)::real,
+                            cos((gs * 0.013)::double precision)::real,
+                            sin((gs * 0.021)::double precision)::real,
+                            cos((gs * 0.021)::double precision)::real
+                        ]::real[],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, 1000) AS gs;
+             CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_ivf
+               (embedding ecvector_ip_ops)
+               WITH (nlists = 16, nprobe = 16, training_sample_rows = 1000);"
+        ))
+        .expect("large IVF build setup should succeed");
+
+        Spi::run(&format!(
+            "INSERT INTO {TABLE_NAME} (id, embedding)
+             VALUES (
+                 1001,
+                 encode_to_ecvector(ARRAY[0.1, 0.2, 0.3, 0.4]::real[], 4, 42)
+             )"
+        ))
+        .expect("live insert after large build should keep directory chain readable");
+
+        let index_oid = ec_ivf_index_oid(INDEX_NAME);
+        let (_, _, directory_live, _, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+
+        assert_eq!(directory_live, 1001);
+        assert_eq!(inserted_since_build, 1);
+        assert_eq!(total_live, 1001);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_concurrent_inserts() {
         const TABLE_NAME: &str = "ec_ivf_concurrent_insert";
         const INDEX_NAME: &str = "ec_ivf_concurrent_insert_idx";

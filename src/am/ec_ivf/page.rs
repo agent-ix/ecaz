@@ -657,7 +657,16 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
             IvfListDirectoryTuple::decode(tuple_bytes)
         })?
     };
-    Ok((directory, next_physical_tuple_tid(tid, line_pointer_count)?))
+    let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
+    let next_directory = unsafe {
+        find_next_tuple_with_tag(
+            index_relation,
+            physical_next,
+            IVF_LIST_DIRECTORY_TAG,
+            "list directory",
+        )?
+    };
+    Ok((directory, next_directory))
 }
 
 pub(super) unsafe fn read_ivf_postings_for_list_blocks(
@@ -1456,6 +1465,83 @@ where
     let decoded = decode(tuple_bytes);
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     decoded.map(|tuple| (tuple, line_pointer_count))
+}
+
+unsafe fn find_next_tuple_with_tag(
+    index_relation: pg_sys::Relation,
+    start_tid: ItemPointer,
+    tag: u8,
+    tuple_kind: &str,
+) -> Result<ItemPointer, String> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let mut block_number = start_tid.block_number;
+    let mut offset_number = start_tid.offset_number;
+    while block_number < block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_ivf failed to open block {block_number} while locating next {tuple_kind}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let result = (|| -> Result<Option<ItemPointer>, String> {
+            for offset in offset_number..=line_pointer_count {
+                let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+                if item_id.lp_flags() == 0 {
+                    continue;
+                }
+
+                let tuple_offset = item_id.lp_off() as usize;
+                let tuple_len = item_id.lp_len() as usize;
+                if tuple_offset + tuple_len > page_size {
+                    return Err(format!(
+                        "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
+                    ));
+                }
+                if tuple_len == 0 {
+                    continue;
+                }
+
+                let tuple_bytes =
+                    unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+                if tuple_bytes.first().copied() == Some(tag) {
+                    return Ok(Some(ItemPointer {
+                        block_number,
+                        offset_number: offset,
+                    }));
+                }
+            }
+            Ok(None)
+        })();
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        if let Some(next_tid) = result? {
+            return Ok(next_tid);
+        }
+
+        block_number = block_number
+            .checked_add(1)
+            .ok_or_else(|| "ec_ivf tuple block number overflow".to_owned())?;
+        offset_number = 1;
+    }
+
+    Ok(ItemPointer {
+        block_number,
+        offset_number: 1,
+    })
 }
 
 fn next_physical_tuple_tid(
