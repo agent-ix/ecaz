@@ -43,6 +43,11 @@ in review packet 30047 feedback seq 02.
    - Packet 30052 records the `nlists=64`, `rerank_width=25` continuation.
      It improves the curve, but 10k still only reaches sub-50 ms p50 at
      `recall@10=0.7800`; high-recall points remain above the target.
+   - Packet 30053 records the `nlists=128`, `rerank_width=25` build and a
+     planner blocker. Normal planning selected a sequential scan for the n128
+     surface, while forcing the IVF index path returned one nprobe=8 query in
+     67.987 ms. Do not quote n128 recall/latency until the benchmark force-index
+     mode or cost model is fixed.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -80,7 +85,9 @@ in review packet 30047 feedback seq 02.
 
 ## Next Slice
 
-The next slice is to continue item 3 with `nlists=128` isolated surfaces and a
-lower `nprobe` sweep, then vary `rerank_width` at the best routing point. After
-that, use items 6 and 7 to document deeper build/training/vacuum risks before
+The next slice is to make the benchmark path robust for high-`nlists` IVF:
+either add an explicit force-index mode to `ecaz bench recall/latency` or
+adjust the `ec_ivf` cost model so n128 KNN does not fall back to sequential
+scan. After that, rerun n128 and vary `rerank_width` at the best routing point,
+then use items 6 and 7 to document deeper build/training/vacuum risks before
 product benchmarking.
