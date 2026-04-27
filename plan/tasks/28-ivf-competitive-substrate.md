@@ -91,10 +91,15 @@ in review packet 30047 feedback seq 02.
      run: 1 worker inserted 668 rows in 10s, while 4 workers inserted 1592
      rows in 10s. The run also found and fixed a large-build live-insert
      directory traversal bug in commit `43563e5`.
-   - Packet 30057 narrows live-insert duplicate heap-TID checking to the
-     assigned list. On the same synthetic PG18 harness, 1-worker throughput
-     improved from 66.80 rows/s to 275.30 rows/s, and 4-worker throughput
-     improved from 159.20 rows/s to 657.50 rows/s.
+  - Packet 30057 narrows live-insert duplicate heap-TID checking to the
+    assigned list. On the same synthetic PG18 harness, 1-worker throughput
+    improved from 66.80 rows/s to 275.30 rows/s, and 4-worker throughput
+    improved from 159.20 rows/s to 657.50 rows/s.
+  - Packet 30059 tried caching the insert centroid model in commit `f2314bb`.
+    The same nlists=16 harness fell to 249.60 rows/s at 1 worker and
+    635.50 rows/s at 4 workers, so the change was backed out in `ce7a2b0`.
+    Do not treat centroid reload as the next measured live-insert lever unless
+    a larger-list-specific benchmark shows otherwise.
 
 ## Completed Slices
 
@@ -115,6 +120,9 @@ in review packet 30047 feedback seq 02.
   bug discovered by the new insert stress harness.
 - Item 7 hot-path follow-up: assigned-list duplicate checking. Packet 30057
   records the `bfbb40d` optimization and the post-change insert stress result.
+- Item 7 negative follow-up: insert centroid-model caching. Packet 30059
+  records the `f2314bb` trial and `ce7a2b0` backout after the nlists=16 stress
+  harness failed to improve.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
@@ -122,8 +130,9 @@ in review packet 30047 feedback seq 02.
 ## Next Slice
 
 The next slice is the remaining live-insert fixed per-row work: centroid model
-reload, one-posting-per-row append shape, and list-directory plus metadata
-counter writes. Keep posting-list scoring/layout work on the active backlog:
+reload is not the measured nlists=16 lever, so prioritize one-posting-per-row
+append shape and list-directory plus metadata counter writes. Keep posting-list
+scoring/layout work on the active backlog:
 packet 30055 shows rerank-width reduction is not the missing high-recall
 latency lever, and packet 30058 only repairs planner selection for prepared IVF
 queries.
