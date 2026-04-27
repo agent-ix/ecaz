@@ -23,6 +23,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use rayon::prelude::*;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
@@ -57,6 +58,9 @@ pub struct RecallArgs {
     /// Force benchmark queries onto the index path by disabling sequential scans.
     #[arg(long)]
     pub force_index: bool,
+    /// Write the final recall table to this path in addition to stdout.
+    #[arg(long)]
+    pub log_output: Option<PathBuf>,
 }
 
 pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
@@ -175,7 +179,18 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         ]);
     }
 
-    println!("{t}");
+    let output = t.to_string();
+    println!("{output}");
+    if let Some(path) = args.log_output {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .wrap_err_with(|| format!("creating {}", parent.display()))?;
+        }
+        tokio::fs::write(&path, format!("{output}\n"))
+            .await
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+    }
     Ok(())
 }
 
