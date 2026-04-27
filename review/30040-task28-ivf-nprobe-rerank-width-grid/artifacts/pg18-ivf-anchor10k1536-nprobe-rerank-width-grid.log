@@ -1,0 +1,38 @@
+Timing is on.
+sha	697f49e
+Time: 0.489 ms
+10000	1536
+Time: 6.423 ms
+200	20
+Time: 0.738 ms
+DROP TABLE
+Time: 0.324 ms
+CREATE TABLE
+Time: 7.173 ms
+DROP TABLE
+Time: 0.301 ms
+CREATE TABLE
+Time: 2.692 ms
+SET
+Time: 0.207 ms
+SET
+Time: 0.184 ms
+SET
+Time: 0.136 ms
+Time: 27720.601 ms (00:27.721)
+psql:review/30040-task28-ivf-nprobe-rerank-width-grid/artifacts/pg18-ivf-anchor10k1536-nprobe-rerank-width-grid.sql:15: NOTICE:  table "task28_ivf_anchor10k1536_grid_summary" does not exist, skipping
+psql:review/30040-task28-ivf-nprobe-rerank-width-grid/artifacts/pg18-ivf-anchor10k1536-nprobe-rerank-width-grid.sql:26: NOTICE:  table "task28_ivf_anchor10k1536_grid_latency" does not exist, skipping
+psql:review/30040-task28-ivf-nprobe-rerank-width-grid/artifacts/pg18-ivf-anchor10k1536-nprobe-rerank-width-grid.sql:122: NOTICE:  index "task28_ivf_anchor10k1536_grid_idx" does not exist, skipping
+psql:review/30040-task28-ivf-nprobe-rerank-width-grid/artifacts/pg18-ivf-anchor10k1536-nprobe-rerank-width-grid.sql:122: NOTICE:  table "task28_ivf_anchor10k1536_grid_ivf_top10" does not exist, skipping
+psql:review/30040-task28-ivf-nprobe-rerank-width-grid/artifacts/pg18-ivf-anchor10k1536-nprobe-rerank-width-grid.sql:122: ERROR:  record "q" is not assigned yet
+DETAIL:  The tuple structure of a not-yet-assigned record is indeterminate.
+CONTEXT:  SQL statement "CREATE TABLE task28_ivf_anchor10k1536_grid_ivf_top10 AS
+      SELECT q.id AS query_id, ivf.id AS corpus_id, ivf.rank
+      FROM (SELECT id, source FROM task28_ivf_anchor10k1536_queries ORDER BY id LIMIT 20) q
+      CROSS JOIN LATERAL (
+        SELECT c.id, row_number() OVER (ORDER BY c.embedding <#> q.source, c.id) AS rank
+        FROM task28_ivf_anchor10k1536_heap_corpus c
+        ORDER BY c.embedding <#> q.source, c.id
+        LIMIT 10
+      ) ivf"
+PL/pgSQL function inline_code_block line 34 at SQL statement
