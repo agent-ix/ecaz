@@ -118,6 +118,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             Arc::clone(&queries),
             args.concurrency,
             args.iterations,
+            profile.encode_scan_query,
             args.bits,
             args.seed,
             args.k,
@@ -149,6 +150,7 @@ async fn run_sweep_point(
     queries: Arc<Vec<Vec<f32>>>,
     concurrency: usize,
     iterations: usize,
+    encode_scan_query: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -172,7 +174,18 @@ async fn run_sweep_point(
         let bar = Arc::clone(&bar);
         handles.push(tokio::spawn(async move {
             worker(
-                database, guc, value, sql, queries, counter, iterations, bits, seed, k, bar,
+                database,
+                guc,
+                value,
+                sql,
+                queries,
+                counter,
+                iterations,
+                encode_scan_query,
+                bits,
+                seed,
+                k,
+                bar,
             )
             .await
         }));
@@ -196,6 +209,7 @@ async fn worker(
     queries: Arc<Vec<Vec<f32>>>,
     counter: Arc<AtomicUsize>,
     iterations: usize,
+    encode_scan_query: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -238,7 +252,11 @@ async fn worker(
         }
         let q = &queries[idx % queries.len()];
         let t0 = Instant::now();
-        let _ = client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+        if encode_scan_query {
+            let _ = client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+        } else {
+            let _ = client.query(&stmt, &[q, &k_i64]).await?;
+        }
         durations.push(t0.elapsed());
         bar.inc(1);
     }

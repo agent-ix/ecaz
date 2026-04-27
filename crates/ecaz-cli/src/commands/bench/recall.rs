@@ -139,10 +139,14 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         for q in 0..queries.nrows() {
             let row_vec: Vec<f32> = queries.row(q).to_vec();
             let t0 = Instant::now();
-            let rows = client
-                .query(&stmt, &[&row_vec, &args.bits, &args.seed, &(args.k as i64)])
-                .await
-                .wrap_err("executing recall KNN query")?;
+            let rows = if profile.encode_scan_query {
+                client
+                    .query(&stmt, &[&row_vec, &args.bits, &args.seed, &(args.k as i64)])
+                    .await
+            } else {
+                client.query(&stmt, &[&row_vec, &(args.k as i64)]).await
+            }
+            .wrap_err("executing recall KNN query")?;
             total_ns += t0.elapsed().as_nanos();
             pred.push(rows.iter().map(|r| r.get::<_, i64>(0)).collect());
             bar.inc(1);
@@ -340,24 +344,31 @@ pub fn ndcg_at_k(
     sum / pred_ids.len() as f64
 }
 
-/// KNN SQL template used for recall. Binds are `($1::real[], $2::integer,
-/// $3::bigint, $4::bigint)` = (query_source, bits, seed, k). Exposed so a
-/// test can pin the operator and query-shape wiring for each profile.
+/// KNN SQL template used for recall. Encoded profiles bind
+/// `($1::real[], $2::integer, $3::bigint, $4::bigint)` = (query_source, bits,
+/// seed, k). Raw-query profiles bind `($1::real[], $2::bigint)` =
+/// (query_source, k). Exposed so a test can pin the operator and query-shape
+/// wiring for each profile.
 pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
-    let rhs = if profile.encode_scan_query {
-        format!(
+    if profile.encode_scan_query {
+        let rhs = format!(
             "{enc}($1::real[], $2::integer, $3::bigint)",
             enc = profile.encoder_function
+        );
+        format!(
+            "SELECT id FROM {corpus_table} \
+             ORDER BY embedding <#> \
+             {rhs} \
+             LIMIT $4"
         )
     } else {
-        "$1::real[]".to_owned()
-    };
-    format!(
-        "SELECT id FROM {corpus_table} \
-         ORDER BY embedding <#> \
-         {rhs} \
-         LIMIT $4"
-    )
+        format!(
+            "SELECT id FROM {corpus_table} \
+             ORDER BY embedding <#> \
+             $1::real[] \
+             LIMIT $2"
+        )
+    }
 }
 
 #[cfg(test)]
@@ -544,7 +555,9 @@ mod tests {
     fn build_knn_sql_uses_raw_real_query_for_ivf() {
         let sql = build_knn_sql(&EC_IVF, "corpus");
         assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
+        assert!(sql.contains("LIMIT $2"));
         assert!(!sql.contains("encode_to_ecvector($1::real[]"));
+        assert!(!sql.contains("LIMIT $4"));
     }
 
     // --- map_indices_to_ids ---
