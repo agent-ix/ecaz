@@ -590,6 +590,17 @@ pub(crate) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
         .sum::<f32>()
 }
 
+pub(crate) fn negative_inner_product_index_internal(query: &[f32], source: &[f32]) -> f32 {
+    if query.len() != source.len() {
+        pgrx::error!(
+            "ec_hnsw source vector dimension mismatch: left dim {}, right dim {}",
+            query.len(),
+            source.len()
+        );
+    }
+    -inner_product(query, source)
+}
+
 unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {
     unsafe {
         array_ptr
@@ -634,6 +645,23 @@ mod tests {
         assert_eq!(
             negative_inner_product(&[1.0_f32, -2.0, 0.5], &[0.5_f32, 2.0, -1.0]),
             4.0_f32
+        );
+    }
+
+    #[test]
+    fn negative_inner_product_index_internal_matches_scalar_reference() {
+        let left = (0..1536)
+            .map(|idx| (idx as f32 * 0.017).sin())
+            .collect::<Vec<_>>();
+        let right = (0..1536)
+            .map(|idx| (idx as f32 * 0.031).cos())
+            .collect::<Vec<_>>();
+        let expected = -inner_product_scalar(&left, &right);
+        let actual = negative_inner_product_index_internal(&left, &right);
+
+        assert!(
+            (actual - expected).abs() <= 0.0005,
+            "actual={actual} expected={expected}"
         );
     }
 

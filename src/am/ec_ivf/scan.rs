@@ -769,8 +769,10 @@ unsafe fn rerank_probe_candidates_heap_f32(
                 "ec_ivf heap_f32 rerank source vector",
             )
         };
-        candidate.score =
-            source::negative_inner_product(scan_query_values(opaque), source_vector.as_slice());
+        candidate.score = source::negative_inner_product_index_internal(
+            scan_query_values(opaque),
+            source_vector.as_slice(),
+        );
         drop(source_vector);
         unsafe { pg_sys::ExecClearTuple(slot) };
     }
