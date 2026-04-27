@@ -1,0 +1,12 @@
+Timing is on.
+ALTER INDEX
+Time: 6.391 ms
+ALTER INDEX
+Time: 1.504 ms
+             relname              |                                                reloptions
+----------------------------------+-----------------------------------------------------------------------------------------------------------
+ task28_ivf_postopt10k_n64w25_idx | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=10}
+ task28_ivf_postopt25k_n64w25_idx | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=10}
+(2 rows)
+
+Time: 3.111 ms

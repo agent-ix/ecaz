@@ -52,6 +52,10 @@ in review packet 30047 feedback seq 02.
      It confirms n128 is not the better frontier on this fixture: 10k
      `nprobe=64` reaches only `recall@10=0.9860` at p50 104.7 ms, and lower
      probes only hit sub-50 ms p50 at low recall.
+   - Packet 30055 tests rerank-width reduction on the n64 surface. Width 10
+     materially reduces recall with almost no latency win, and a 10k width 5
+     spot check collapses recall to 0.5000 while staying in the same latency
+     band. Do not keep shaving rerank width as the next latency lever.
 
 4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
@@ -89,8 +93,8 @@ in review packet 30047 feedback seq 02.
 
 ## Next Slice
 
-The next slice is `rerank_width` reduction at the best observed routing points
-instead of more `nlists` growth. Keep the cost-model repair on the backlog,
-because n128 normal planning still falls back to sequential scan. After the
-width sweep, use items 6 and 7 to document deeper build/training/vacuum risks
-before product benchmarking.
+The next slice is the reviewer-requested build/training/vacuum deeper pass
+plus the concurrent insert measurement. Keep cost-model repair and
+posting-list scoring/layout work on the active backlog: n128 normal planning
+still falls back to sequential scan, and packet 30055 shows rerank-width
+reduction is not the missing high-recall latency lever.
