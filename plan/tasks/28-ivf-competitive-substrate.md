@@ -107,6 +107,11 @@ in review packet 30047 feedback seq 02.
     reference. A fresh PG18 database created from current extension SQL reported
     273.20 rows/s at 1 worker and 656.20 rows/s at 4 workers with
     `ec_ivf_index_admin_snapshot` metrics available.
+  - Packet 30062 tried combining the per-insert directory and metadata counter
+    rewrites into one generic WAL transaction. Tests passed, but the fresh
+    nlists=16 harness fell to 265.20 rows/s at 1 worker and 645.10 rows/s at 4
+    workers, so the change was backed out and should not be treated as the next
+    live-insert lever.
 
 ## Completed Slices
 
@@ -133,6 +138,9 @@ in review packet 30047 feedback seq 02.
 - Item 7 cleanup follow-up: duplicate source-vector normalization. Packet
   30060 records commit `647abd1`; keep it as a small hot-path quality cleanup,
   but do not count it as a live-insert throughput improvement.
+- Item 7 negative follow-up: combined directory/metadata insert stats WAL.
+  Packet 30062 records the trial and backout after the fresh PG18 insert stress
+  harness failed to improve.
 - Planner cost repair for n128 smoke measurements. Packet 30058 records commit
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
