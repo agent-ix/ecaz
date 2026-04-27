@@ -20,12 +20,12 @@ in review packet 30047 feedback seq 02.
 
 ## Required Work Before Product Benchmarking
 
-1. **Heap-rerank heap-page prefetch**
+1. **Heap-rerank heap-page prefetch** - done in `3ef4442`
    - PG18 path should prefetch candidate heap blocks before heap-f32 rerank.
    - Keep MVCC visibility and tuple fetch semantics unchanged.
    - Validate with focused heap-f32 and `ec_ivf` PG18 tests.
 
-2. **Index-internal rerank scoring kernel**
+2. **Index-internal rerank scoring kernel** - done in `a1eda50`
    - Keep SQL `<#>` byte-stable semantics on the SQL function path.
    - Add a separate index-internal f32 IP helper that can use the faster
      unrolled/SIMD source-score kernel.
@@ -37,7 +37,7 @@ in review packet 30047 feedback seq 02.
      changes after prefetch/scoring work.
    - Keep packet-local raw logs and manifests.
 
-4. **Quantizer dispatch seam**
+4. **Quantizer dispatch seam** - done in `0e9202d`
    - Replace hardcoded `ProdQuantizer::cached(...)` build/scan paths with an
      enum-dispatched scoring/prepared-query surface selected by reloption.
    - Keep unsupported profiles rejected until their concrete implementations
@@ -57,8 +57,19 @@ in review packet 30047 feedback seq 02.
    - Measure per-list insert serialization under concurrent insert load before
      making broad concurrency claims.
 
-## Initial Slice
+## Completed Slices
 
-The first slice is item 1: heap-rerank heap-page prefetch. It is intentionally
-small because it touches only scan-time I/O scheduling and should not change
-scores, order, visibility, or index format.
+- Item 1: heap-rerank heap-page prefetch. It touches only scan-time I/O
+  scheduling and should not change scores, order, visibility, or index format.
+- Item 2: index-internal rerank scoring. It keeps SQL `<#>` on the
+  byte-stable scalar helper and routes IVF heap-f32 rerank through the
+  index-internal source scorer.
+- Item 4: quantizer dispatch seam. It keeps v1 `auto`/`turboquant` behavior
+  on the existing product quantizer while routing build encode, scan query
+  preparation, and posting score through an IVF-local enum dispatch layer.
+
+## Next Slice
+
+The next implementation slice is item 5: reduce probe-candidate aggregation
+pressure. After that, re-run the 10k/25k DBPedia sweep from item 3 against the
+new cost profile.
