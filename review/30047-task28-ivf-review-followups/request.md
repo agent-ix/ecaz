@@ -2,8 +2,8 @@
 
 ## Summary
 
-This packet responds to reviewer feedback on packet 30046 and commit
-`865dd9c`.
+This packet responds to reviewer feedback on packet 30046 and commits
+`865dd9c` and `215a788`.
 
 Resolved in code:
 
@@ -20,6 +20,8 @@ Resolved in code:
   fixed.
 - `plan/status.md` now records the Task 26 local scale conclusion and the Task
   28 IVF initial tuning checkpoint.
+- The PG18-only IVF EXPLAIN counter export is now feature-gated so PG17 clippy
+  does not see it as an unused import.
 
 ## Validation
 
@@ -30,11 +32,11 @@ Resolved in code:
 - `cargo test --lib ec_ivf --no-default-features --features pg18`
   - `74 passed; 0 failed`
 - `cargo fmt --check`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+- `cargo pgrx test pg17`
+  - library tests: `661 passed; 0 failed; 4 ignored`
+  - integration/bin/property/size/doc tests all passed
 - `git diff --check`
-
-PG17 validation was not run in this slice. Task 28 remains a PG18-default local
-tuning lane per the task instructions; PG17 coverage should be handled as a
-separate landing gate if maintainers require it before merge.
 
 ## Remaining Landing Work
 
