@@ -2973,6 +2973,49 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_heap_f32_rerank_width_bounds_exact_frontier() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_heap_f32_width (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_heap_f32_width VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.7,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-0.7,0.1]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_heap_f32_width_idx ON ec_ivf_heap_f32_width USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 4,
+                rerank = 'heap_f32',
+                rerank_width = 2
+             )",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_heap_f32_width_idx");
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+
+        assert_eq!(outputs.len(), 4);
+        let exact_scores = outputs
+            .iter()
+            .take(2)
+            .map(|(_, _, score)| *score)
+            .collect::<Vec<_>>();
+        assert_eq!(exact_scores, vec![-1.0, -0.7]);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_recall_smoke_compares_exact_hnsw_ivf() {
         let table_name = "ec_ivf_recall_smoke";
         let k = 5;

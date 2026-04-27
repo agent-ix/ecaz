@@ -190,6 +190,7 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
             .map_err(|_| "metadata nlists exceeds i32".to_owned())?,
         nprobe: i32::try_from(metadata.nprobe)
             .map_err(|_| "metadata nprobe exceeds i32".to_owned())?,
+        rerank_width: 0,
         training_sample_rows: i32::try_from(metadata.training_sample_rows)
             .map_err(|_| "metadata training sample rows exceeds i32".to_owned())?,
         seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,

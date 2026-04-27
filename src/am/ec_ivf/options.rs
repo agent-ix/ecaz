@@ -4,10 +4,11 @@ use std::ptr;
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
-    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_SEED,
-    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE, EC_IVF_MAX_SEED,
-    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE, EC_IVF_MIN_SEED,
-    EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_RERANK_WIDTH,
+    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS,
+    EC_IVF_MAX_NPROBE, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
+    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
+    EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -20,6 +21,7 @@ struct EcIvfReloptions {
     vl_len_: i32,
     nlists: i32,
     nprobe: i32,
+    rerank_width: i32,
     training_sample_rows: i32,
     seed: i32,
     storage_format_offset: i32,
@@ -121,6 +123,7 @@ impl RerankMode {
 pub(super) struct EcIvfOptions {
     pub(super) nlists: i32,
     pub(super) nprobe: i32,
+    pub(super) rerank_width: i32,
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
     pub(super) storage_format: StorageFormat,
@@ -131,6 +134,7 @@ impl EcIvfOptions {
     const DEFAULT: Self = Self {
         nlists: EC_IVF_DEFAULT_NLISTS,
         nprobe: EC_IVF_DEFAULT_NPROBE,
+        rerank_width: EC_IVF_DEFAULT_RERANK_WIDTH,
         training_sample_rows: EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_IVF_DEFAULT_SEED,
         storage_format: StorageFormat::Auto,
@@ -228,6 +232,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             );
             pg_sys::add_local_int_reloption(
                 &mut relopts,
+                c"rerank_width".as_ptr(),
+                c"Number of approximate candidates to heap-rerank when rerank = 'heap_f32'; 0 reranks the full probed frontier."
+                    .as_ptr(),
+                EC_IVF_DEFAULT_RERANK_WIDTH,
+                EC_IVF_MIN_RERANK_WIDTH,
+                EC_IVF_MAX_RERANK_WIDTH,
+                offset_of!(EcIvfReloptions, rerank_width) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
                 c"training_sample_rows".as_ptr(),
                 c"Maximum rows sampled for centroid training; 0 chooses an automatic value."
                     .as_ptr(),
@@ -322,6 +336,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
     EcIvfOptions {
         nlists: reloptions.nlists,
         nprobe: reloptions.nprobe,
+        rerank_width: reloptions.rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
         storage_format,

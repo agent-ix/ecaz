@@ -613,6 +613,7 @@ mod tests {
         options::EcIvfOptions {
             nlists,
             nprobe: 0,
+            rerank_width: 0,
             training_sample_rows,
             seed: 7,
             storage_format: options::StorageFormat::Auto,

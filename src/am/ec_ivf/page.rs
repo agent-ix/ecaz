@@ -1649,6 +1649,7 @@ mod tests {
         let mut metadata = MetadataPage::empty(EcIvfOptions {
             nlists: 128,
             nprobe: 8,
+            rerank_width: 0,
             training_sample_rows: 10_000,
             seed: 7,
             storage_format: StorageFormat::RaBitQ,
@@ -1673,6 +1674,7 @@ mod tests {
         let metadata = MetadataPage::empty(EcIvfOptions {
             nlists: 0,
             nprobe: 0,
+            rerank_width: 0,
             training_sample_rows: 0,
             seed: 42,
             storage_format: StorageFormat::Auto,

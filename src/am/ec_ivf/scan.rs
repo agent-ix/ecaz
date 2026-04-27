@@ -159,6 +159,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             }
 
             let metadata = super::page::read_metadata_page((*scan).indexRelation);
+            let index_options = super::options::relation_options((*scan).indexRelation);
             metadata
                 .storage_format
                 .validate_v1_supported()
@@ -220,6 +221,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                     scan,
                     (*scan).indexRelation,
                     &metadata,
+                    &index_options,
                     opaque,
                     &selected_lists,
                 )
@@ -621,6 +623,7 @@ unsafe fn materialize_probe_candidates(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
+    index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
     selected_lists: &[u32],
 ) -> Result<Vec<EcIvfScoredCandidate>, String> {
@@ -680,26 +683,38 @@ unsafe fn materialize_probe_candidates(
     };
 
     let mut candidates = best_by_heap_tid.into_values().collect::<Vec<_>>();
-    unsafe { rerank_probe_candidates(scan, metadata, opaque, &mut candidates) };
     candidates.sort_by(candidate_cmp);
+    unsafe { rerank_probe_candidates(scan, metadata, index_options, opaque, &mut candidates) };
     Ok(candidates)
 }
 
 unsafe fn rerank_probe_candidates(
     scan: pg_sys::IndexScanDesc,
     metadata: &super::page::MetadataPage,
+    index_options: &super::options::EcIvfOptions,
     opaque: &EcIvfScanOpaque,
     candidates: &mut [EcIvfScoredCandidate],
 ) {
     match metadata.rerank.v1_effective() {
         super::options::RerankMode::Auto | super::options::RerankMode::Off => {}
-        super::options::RerankMode::HeapF32 => unsafe {
-            rerank_probe_candidates_heap_f32(scan, opaque, candidates)
-        },
+        super::options::RerankMode::HeapF32 => {
+            let rerank_len = resolve_rerank_len(index_options.rerank_width, candidates.len());
+            unsafe { rerank_probe_candidates_heap_f32(scan, opaque, &mut candidates[..rerank_len]) };
+            candidates[..rerank_len].sort_by(candidate_cmp);
+        }
         super::options::RerankMode::SourceColumn => {
             pgrx::error!("ec_ivf rerank mode source_column is not supported yet")
         }
     }
+}
+
+fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
+    if rerank_width <= 0 {
+        return candidate_len;
+    }
+    usize::try_from(rerank_width)
+        .unwrap_or(usize::MAX)
+        .min(candidate_len)
 }
 
 unsafe fn rerank_probe_candidates_heap_f32(
