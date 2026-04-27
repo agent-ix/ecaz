@@ -1,0 +1,12 @@
+Command: cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database postgres stress ivf-insert --table task28_ivf_insert_c1 --seed-rows 1000 --duration-seconds 10 --concurrency 1 --batch-rows 1 --nlists 16 --nprobe 16 --training-sample-rows 1000 --log-output review/30056-task28-ivf-build-training-vacuum-insert/artifacts/ivf_insert_c1.log
+
+Result before fix commit 43563e53c6ca6801e8136a1775ef99d27e4a8d0a:
+
+[stress] seeding 1000 rows into task28_ivf_insert_c1 and building task28_ivf_insert_c1_idx
+Error:
+   0: insert iteration
+   1: db error
+   2: ERROR: ec_ivf aminsert failed: ec_ivf aminsert found duplicate heap tid: ec_ivf list directory tuple length mismatch: got 80, expected 37
+
+Location:
+   crates/ecaz-cli/src/commands/stress/ivf_insert.rs:201

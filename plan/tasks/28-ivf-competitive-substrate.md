@@ -72,10 +72,20 @@ in review packet 30047 feedback seq 02.
    - Confirm sampled training behavior and 1M-scale training limits.
    - Read `build.rs`, `training.rs`, and `vacuum.rs` for product-gate risks.
    - Add follow-up packets for any correctness or performance findings.
+   - Packet 30056 records the deeper pass. Training is sampled, but build
+     still retains/stages the full tuple set. Vacuum repairs counts and marks
+     empty postings deleted, but does not compact/reclaim posting pages.
+     Live insert remains the hottest product-gate concern because it reloads
+     centroids, scans all postings for duplicate heap TIDs, and updates list
+     plus metadata counters per row.
 
 7. **Concurrency measurement**
    - Measure per-list insert serialization under concurrent insert load before
      making broad concurrency claims.
+   - Packet 30056 adds `ecaz stress ivf-insert` and records a synthetic PG18
+     run: 1 worker inserted 668 rows in 10s, while 4 workers inserted 1592
+     rows in 10s. The run also found and fixed a large-build live-insert
+     directory traversal bug in commit `43563e5`.
 
 ## Completed Slices
 
@@ -90,11 +100,15 @@ in review packet 30047 feedback seq 02.
 - Item 5: probe-candidate aggregation pressure. It moves the per-query
   heap-tid dedup `HashMap` onto the scan opaque so rescans clear and reuse the
   allocation instead of allocating a fresh map for every query.
+- Item 6/7 first pass: build/training/vacuum review plus insert-concurrency
+  measurement. Packet 30056 records the sampled-training confirmation, vacuum
+  compaction gap, live-insert hot-path risks, and the fixed directory traversal
+  bug discovered by the new insert stress harness.
 
 ## Next Slice
 
-The next slice is the reviewer-requested build/training/vacuum deeper pass
-plus the concurrent insert measurement. Keep cost-model repair and
-posting-list scoring/layout work on the active backlog: n128 normal planning
-still falls back to sequential scan, and packet 30055 shows rerank-width
-reduction is not the missing high-recall latency lever.
+The next slice is live-insert hot-path repair: remove or bound the
+O(total-postings) duplicate heap-TID scan, then rerun `ecaz stress ivf-insert`.
+Keep cost-model repair and posting-list scoring/layout work on the active
+backlog: n128 normal planning still falls back to sequential scan, and packet
+30055 shows rerank-width reduction is not the missing high-recall latency lever.

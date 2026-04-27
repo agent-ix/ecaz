@@ -1,0 +1,7 @@
+Timing is on.
+ nspname |    proname     |   args
+---------+----------------+----------
+ public  | ec_ivf_handler | internal
+(1 row)
+
+Time: 13.958 ms
