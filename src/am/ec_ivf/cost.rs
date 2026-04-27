@@ -8,8 +8,9 @@ use crate::am::common::cost::{
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 
-const IVF_CENTROID_SCORING_DIMENSION_SCALE: f64 = 0.75;
-const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.03;
+const IVF_CENTROID_SCORING_DIMENSION_SCALE: f64 = 0.03;
+const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.01;
+const IVF_INDEX_PAGE_COST_SCALE: f64 = 0.25;
 const IVF_TREE_HEIGHT: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -247,8 +248,9 @@ fn estimate_ivf_cost_with_nprobe(
     let centroid_cpu = f64::from(details.estimated_centroid_scores)
         * constants.cpu_operator_cost
         * centroid_scoring_dimensions;
-    let centroid_page_cost = centroid_page_estimate(metadata) * constants.random_page_cost;
-    let posting_page_cost = details.estimated_posting_pages * constants.random_page_cost;
+    let index_page_cost = constants.seq_page_cost * IVF_INDEX_PAGE_COST_SCALE;
+    let centroid_page_cost = centroid_page_estimate(metadata) * index_page_cost;
+    let posting_page_cost = details.estimated_posting_pages * index_page_cost;
     let candidate_cpu = details.estimated_candidate_rows
         * constants.cpu_operator_cost
         * posting_scoring_dimensions
