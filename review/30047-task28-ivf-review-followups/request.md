@@ -40,7 +40,14 @@ Resolved in code:
 
 ## Remaining Landing Work
 
-- Split/rebase mechanics remain: land Task 26 first, then stack the IVF PR.
+- Split/rebase mechanics were checked after `git fetch origin`:
+  - `origin/main` is `ff0d06f`.
+  - `task28-ivf` is directly based on `origin/main`.
+  - reviewer-cited Task 26 boundary commit `5aedea0` is not reachable from
+    `task28-ivf` or any fetched remote ref, so there is no Task 26/Task 28
+    branch split to perform here.
+  - `git rebase origin/main` reports `Current branch task28-ivf is up to
+    date.`
 - Product benchmark claims remain blocked on a dedicated Graviton-class
   benchmark.
 - DiskANN remains task 29 and is not part of this packet.
