@@ -20,6 +20,7 @@ use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -62,6 +63,9 @@ pub struct LatencyArgs {
     /// Force benchmark queries onto the index path by disabling sequential scans.
     #[arg(long)]
     pub force_index: bool,
+    /// Write the final latency table to this path in addition to stdout.
+    #[arg(long)]
+    pub log_output: Option<PathBuf>,
 }
 
 pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
@@ -141,7 +145,18 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.max)),
         ]);
     }
-    println!("{table}");
+    let output = table.to_string();
+    println!("{output}");
+    if let Some(path) = args.log_output {
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .wrap_err_with(|| format!("creating {}", parent.display()))?;
+        }
+        tokio::fs::write(&path, format!("{output}\n"))
+            .await
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+    }
     Ok(())
 }
 
