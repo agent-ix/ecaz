@@ -8,7 +8,8 @@ use crate::am::common::cost::{
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 
-const IVF_SCORING_DIMENSION_SCALE: f64 = 0.75;
+const IVF_CENTROID_SCORING_DIMENSION_SCALE: f64 = 0.75;
+const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.03;
 const IVF_TREE_HEIGHT: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -221,16 +222,36 @@ fn estimate_ivf_cost(
     reltuples: f64,
     constants: PlannerCostConstants,
 ) -> PlannerCostEstimate {
-    let details = estimate_details(metadata, index_pages, reltuples);
-    let scoring_dimensions = f64::from(metadata.dimensions) * IVF_SCORING_DIMENSION_SCALE;
+    let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    estimate_ivf_cost_with_nprobe(
+        metadata,
+        index_pages,
+        reltuples,
+        constants,
+        nprobe.effective_nprobe,
+    )
+}
+
+fn estimate_ivf_cost_with_nprobe(
+    metadata: &page::MetadataPage,
+    index_pages: f64,
+    reltuples: f64,
+    constants: PlannerCostConstants,
+    effective_nprobe: u32,
+) -> PlannerCostEstimate {
+    let details = estimate_details_for_nprobe(metadata, index_pages, reltuples, effective_nprobe);
+    let centroid_scoring_dimensions =
+        f64::from(metadata.dimensions) * IVF_CENTROID_SCORING_DIMENSION_SCALE;
+    let posting_scoring_dimensions =
+        f64::from(metadata.dimensions) * IVF_POSTING_SCORING_DIMENSION_SCALE;
     let centroid_cpu = f64::from(details.estimated_centroid_scores)
         * constants.cpu_operator_cost
-        * scoring_dimensions;
+        * centroid_scoring_dimensions;
     let centroid_page_cost = centroid_page_estimate(metadata) * constants.random_page_cost;
     let posting_page_cost = details.estimated_posting_pages * constants.random_page_cost;
     let candidate_cpu = details.estimated_candidate_rows
         * constants.cpu_operator_cost
-        * scoring_dimensions
+        * posting_scoring_dimensions
         * storage_scoring_multiplier(metadata.storage_format)
         * rerank_multiplier(metadata.rerank);
     let metadata_page_cost = if index_pages > 0.0 {
@@ -264,6 +285,15 @@ fn estimate_details(
     reltuples: f64,
 ) -> IvfCostDetails {
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    estimate_details_for_nprobe(metadata, index_pages, reltuples, nprobe.effective_nprobe)
+}
+
+fn estimate_details_for_nprobe(
+    metadata: &page::MetadataPage,
+    index_pages: f64,
+    reltuples: f64,
+    effective_nprobe: u32,
+) -> IvfCostDetails {
     let total_live = if metadata.total_live_tuples > 0 {
         metadata.total_live_tuples as f64
     } else {
@@ -274,7 +304,7 @@ fn estimate_details(
     } else {
         total_live / f64::from(metadata.nlists)
     };
-    let estimated_selected_lists = nprobe.effective_nprobe;
+    let estimated_selected_lists = effective_nprobe.clamp(0, metadata.nlists);
     let estimated_candidate_rows =
         (average_list_live_count * f64::from(estimated_selected_lists)).min(total_live);
     let list_fraction = if metadata.nlists == 0 {
@@ -323,5 +353,67 @@ fn rerank_multiplier(rerank: options::RerankMode) -> f64 {
     match rerank.v1_effective() {
         options::RerankMode::Auto | options::RerankMode::Off => 1.0,
         options::RerankMode::HeapF32 | options::RerankMode::SourceColumn => 1.35,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn metadata(
+        dimensions: u16,
+        nlists: u32,
+        nprobe: u32,
+        total_live_tuples: u64,
+    ) -> page::MetadataPage {
+        let mut metadata = page::MetadataPage::empty(options::EcIvfOptions {
+            nlists: nlists as i32,
+            nprobe: nprobe as i32,
+            rerank_width: 25,
+            training_sample_rows: 1000,
+            seed: 7,
+            storage_format: options::StorageFormat::TurboQuant,
+            rerank: options::RerankMode::HeapF32,
+        });
+        metadata.dimensions = dimensions;
+        metadata.training_version = 1;
+        metadata.total_live_tuples = total_live_tuples;
+        metadata
+    }
+
+    fn default_constants() -> PlannerCostConstants {
+        PlannerCostConstants {
+            random_page_cost: 4.0,
+            seq_page_cost: 1.0,
+            cpu_operator_cost: 0.0025,
+        }
+    }
+
+    #[test]
+    fn high_dimensional_posting_cost_uses_quantized_scale() {
+        let metadata = metadata(1536, 128, 8, 10_000);
+        let estimate =
+            estimate_ivf_cost_with_nprobe(&metadata, 1300.0, 10_000.0, default_constants(), 8);
+
+        assert!(estimate.startup_cost.is_finite());
+        assert!(estimate.total_cost.is_finite());
+        assert!(estimate.total_cost > estimate.startup_cost);
+        assert!(
+            estimate.total_cost < 1_500.0,
+            "quantized nprobe=8 IVF cost should stay below a full-dimensional candidate model: {:?}",
+            estimate
+        );
+    }
+
+    #[test]
+    fn cost_increases_with_selected_probe_count() {
+        let low_probe = metadata(1536, 128, 8, 10_000);
+        let high_probe = metadata(1536, 128, 64, 10_000);
+        let low =
+            estimate_ivf_cost_with_nprobe(&low_probe, 1300.0, 10_000.0, default_constants(), 8);
+        let high =
+            estimate_ivf_cost_with_nprobe(&high_probe, 1300.0, 10_000.0, default_constants(), 64);
+
+        assert!(high.total_cost > low.total_cost);
     }
 }
