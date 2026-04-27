@@ -24,6 +24,7 @@ struct EcIvfScanOpaque {
     centroid_score_count: u32,
     selected_lists: *mut u32,
     selected_list_count: u32,
+    candidate_dedup: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
@@ -287,6 +288,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
                 let opaque = &mut *opaque_ptr.cast::<EcIvfScanOpaque>();
                 flush_scan_stats(opaque);
                 free_scan_query_prep(opaque);
+                free_candidate_dedup(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
             }
@@ -504,6 +506,30 @@ unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     opaque.scan_nprobe = 0;
 }
 
+fn candidate_dedup_map(
+    opaque: &mut EcIvfScanOpaque,
+    capacity: usize,
+) -> *mut HashMap<ItemPointer, EcIvfScoredCandidate> {
+    if opaque.candidate_dedup.is_null() {
+        opaque.candidate_dedup = Box::into_raw(Box::new(HashMap::with_capacity(capacity)));
+        return opaque.candidate_dedup;
+    }
+
+    let map = unsafe { &mut *opaque.candidate_dedup };
+    map.clear();
+    if map.capacity() < capacity {
+        map.reserve(capacity - map.capacity());
+    }
+    opaque.candidate_dedup
+}
+
+fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.candidate_dedup.is_null() {
+        drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
+        opaque.candidate_dedup = ptr::null_mut();
+    }
+}
+
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
     super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
 }
@@ -639,7 +665,7 @@ unsafe fn materialize_probe_candidates(
     let payload_len = quantizer.payload_len();
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
-    let mut best_by_heap_tid = HashMap::with_capacity(probe_plan.candidate_bound);
+    let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
         .explain_counters
@@ -663,6 +689,7 @@ unsafe fn materialize_probe_candidates(
                 for heap_tid in posting.heaptids {
                     opaque.explain_counters.record_candidate_scored();
                     let candidate = EcIvfScoredCandidate { heap_tid, score };
+                    let best_by_heap_tid = &mut *best_by_heap_tid;
                     match best_by_heap_tid.entry(heap_tid) {
                         Entry::Occupied(mut entry) => {
                             opaque.explain_counters.record_filtered_duplicate();
@@ -681,7 +708,8 @@ unsafe fn materialize_probe_candidates(
         )?
     };
 
-    let mut candidates = best_by_heap_tid.into_values().collect::<Vec<_>>();
+    let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
+    let mut candidates = best_by_heap_tid.values().copied().collect::<Vec<_>>();
     candidates.sort_by(candidate_cmp);
     unsafe { rerank_probe_candidates(scan, metadata, index_options, opaque, &mut candidates) };
     Ok(candidates)
