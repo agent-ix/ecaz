@@ -92,7 +92,7 @@ pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
     }
     let _ = deadline_watcher.await;
 
-    let snapshot = fetch_ivf_snapshot(&client, &index_name).await?;
+    let snapshot = fetch_ivf_snapshot(&client, &args.table, &index_name).await?;
     let summary = render_summary(&InsertSummary {
         duration_seconds: args.duration_seconds,
         concurrency: args.concurrency,
@@ -110,6 +110,8 @@ pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
         list_imbalance_ratio: snapshot.list_imbalance_ratio,
         reindex_recommended: snapshot.reindex_recommended,
         reindex_reason: snapshot.reindex_reason,
+        snapshot_source: snapshot.snapshot_source,
+        index_bytes: snapshot.index_bytes,
     });
     println!("{summary}");
     if let Some(path) = args.log_output {
@@ -209,8 +211,34 @@ async fn insert_worker(
 
 async fn fetch_ivf_snapshot(
     client: &tokio_postgres::Client,
+    table_name: &str,
     index_name: &str,
 ) -> Result<IvfSnapshot> {
+    let has_admin_snapshot: bool = client
+        .query_one(
+            "SELECT to_regprocedure('ec_ivf_index_admin_snapshot(oid)') IS NOT NULL",
+            &[],
+        )
+        .await
+        .wrap_err("checking ec_ivf_index_admin_snapshot availability")?
+        .get(0);
+    let index_bytes = relation_size(client, index_name).await?;
+    if !has_admin_snapshot {
+        let table_rows = relation_row_count(client, table_name).await?;
+        return Ok(IvfSnapshot {
+            total_live_tuples: table_rows.to_string(),
+            inserted_since_build: "unavailable".to_owned(),
+            changed_row_fraction: "unavailable".to_owned(),
+            average_list_live_count: "unavailable".to_owned(),
+            max_list_live_count: "unavailable".to_owned(),
+            list_imbalance_ratio: "unavailable".to_owned(),
+            reindex_recommended: "unavailable".to_owned(),
+            reindex_reason: "ec_ivf_index_admin_snapshot(oid) not installed".to_owned(),
+            snapshot_source: "fallback_relation_stats".to_owned(),
+            index_bytes,
+        });
+    }
+
     let row = client
         .query_one(
             "SELECT total_live_tuples,
@@ -227,15 +255,34 @@ async fn fetch_ivf_snapshot(
         .await
         .wrap_err("fetching ec_ivf_index_admin_snapshot")?;
     Ok(IvfSnapshot {
-        total_live_tuples: row.get(0),
-        inserted_since_build: row.get(1),
-        changed_row_fraction: row.get(2),
-        average_list_live_count: row.get(3),
-        max_list_live_count: row.get(4),
-        list_imbalance_ratio: row.get(5),
-        reindex_recommended: row.get(6),
+        total_live_tuples: row.get::<_, i64>(0).to_string(),
+        inserted_since_build: row.get::<_, i64>(1).to_string(),
+        changed_row_fraction: format!("{:.6}", row.get::<_, f64>(2)),
+        average_list_live_count: format!("{:.2}", row.get::<_, f64>(3)),
+        max_list_live_count: row.get::<_, i64>(4).to_string(),
+        list_imbalance_ratio: format!("{:.6}", row.get::<_, f64>(5)),
+        reindex_recommended: row.get::<_, bool>(6).to_string(),
         reindex_reason: row.get(7),
+        snapshot_source: "ec_ivf_index_admin_snapshot".to_owned(),
+        index_bytes,
     })
+}
+
+async fn relation_row_count(client: &tokio_postgres::Client, table_name: &str) -> Result<i64> {
+    let sql = format!("SELECT count(*) FROM {table_name}");
+    let row = client
+        .query_one(&sql, &[])
+        .await
+        .wrap_err_with(|| format!("counting rows in {table_name}"))?;
+    Ok(row.get(0))
+}
+
+async fn relation_size(client: &tokio_postgres::Client, relation_name: &str) -> Result<i64> {
+    let row = client
+        .query_one("SELECT pg_relation_size($1::regclass)", &[&relation_name])
+        .await
+        .wrap_err_with(|| format!("measuring size for {relation_name}"))?;
+    Ok(row.get(0))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -246,14 +293,16 @@ struct WorkerResult {
 
 #[derive(Debug)]
 struct IvfSnapshot {
-    total_live_tuples: i64,
-    inserted_since_build: i64,
-    changed_row_fraction: f64,
-    average_list_live_count: f64,
-    max_list_live_count: i64,
-    list_imbalance_ratio: f64,
-    reindex_recommended: bool,
+    total_live_tuples: String,
+    inserted_since_build: String,
+    changed_row_fraction: String,
+    average_list_live_count: String,
+    max_list_live_count: String,
+    list_imbalance_ratio: String,
+    reindex_recommended: String,
     reindex_reason: String,
+    snapshot_source: String,
+    index_bytes: i64,
 }
 
 #[derive(Debug)]
@@ -266,14 +315,16 @@ struct InsertSummary {
     total_insert_iterations: u64,
     inserted_rows_per_second: f64,
     index_name: String,
-    total_live_tuples: i64,
-    inserted_since_build: i64,
-    changed_row_fraction: f64,
-    average_list_live_count: f64,
-    max_list_live_count: i64,
-    list_imbalance_ratio: f64,
-    reindex_recommended: bool,
+    total_live_tuples: String,
+    inserted_since_build: String,
+    changed_row_fraction: String,
+    average_list_live_count: String,
+    max_list_live_count: String,
+    list_imbalance_ratio: String,
+    reindex_recommended: String,
     reindex_reason: String,
+    snapshot_source: String,
+    index_bytes: i64,
 }
 
 fn render_summary(s: &InsertSummary) -> String {
@@ -295,22 +346,15 @@ fn render_summary(s: &InsertSummary) -> String {
             format!("{:.2}", s.inserted_rows_per_second),
         ),
         ("index_name", s.index_name.clone()),
-        ("total_live_tuples", s.total_live_tuples.to_string()),
-        ("inserted_since_build", s.inserted_since_build.to_string()),
-        (
-            "changed_row_fraction",
-            format!("{:.6}", s.changed_row_fraction),
-        ),
-        (
-            "average_list_live_count",
-            format!("{:.2}", s.average_list_live_count),
-        ),
-        ("max_list_live_count", s.max_list_live_count.to_string()),
-        (
-            "list_imbalance_ratio",
-            format!("{:.6}", s.list_imbalance_ratio),
-        ),
-        ("reindex_recommended", s.reindex_recommended.to_string()),
+        ("snapshot_source", s.snapshot_source.clone()),
+        ("index_bytes", s.index_bytes.to_string()),
+        ("total_live_tuples", s.total_live_tuples.clone()),
+        ("inserted_since_build", s.inserted_since_build.clone()),
+        ("changed_row_fraction", s.changed_row_fraction.clone()),
+        ("average_list_live_count", s.average_list_live_count.clone()),
+        ("max_list_live_count", s.max_list_live_count.clone()),
+        ("list_imbalance_ratio", s.list_imbalance_ratio.clone()),
+        ("reindex_recommended", s.reindex_recommended.clone()),
         ("reindex_reason", s.reindex_reason.clone()),
     ] {
         t.add_row(vec![Cell::new(k), Cell::new(v)]);
