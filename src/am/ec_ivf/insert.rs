@@ -35,8 +35,14 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let indexed_vector_kind =
                 build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert");
             let heap_tid = build::decode_heap_tid(heap_tid, "aminsert");
-            let tuple =
-                build::build_index_tuple(values, isnull, heap_tid, indexed_vector_kind, "aminsert");
+            let tuple = build::build_index_tuple(
+                values,
+                isnull,
+                heap_tid,
+                indexed_vector_kind,
+                metadata.storage_format,
+                "aminsert",
+            );
 
             let result = if metadata.dimensions == 0 {
                 insert_with_empty_bootstrap_lock(index_relation, tuple)

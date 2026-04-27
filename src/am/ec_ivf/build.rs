@@ -3,6 +3,7 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
+use super::quantizer::IvfQuantizer;
 use super::{options, page, training, P_NEW};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
@@ -105,6 +106,7 @@ unsafe extern "C-unwind" fn ec_ivf_build_callback(
                 isnull,
                 heap_tid,
                 state.indexed_vector_kind,
+                state.options.storage_format,
                 "ambuild",
             );
             state.push(tuple);
@@ -445,6 +447,7 @@ pub(super) unsafe fn build_index_tuple(
     isnull: *mut bool,
     heap_tid: ItemPointer,
     indexed_vector_kind: IndexedVectorKind,
+    storage_format: options::StorageFormat,
     context: &str,
 ) -> BuildTuple {
     if values.is_null() || isnull.is_null() {
@@ -461,20 +464,26 @@ pub(super) unsafe fn build_index_tuple(
 
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
     match indexed_vector_kind {
-        IndexedVectorKind::Ecvector => build_ecvector_tuple(heap_tid, &bytes, context),
+        IndexedVectorKind::Ecvector => {
+            build_ecvector_tuple(heap_tid, &bytes, storage_format, context)
+        }
         IndexedVectorKind::Tqvector => build_tqvector_tuple(heap_tid, &bytes, context),
     }
 }
 
-fn build_ecvector_tuple(heap_tid: ItemPointer, bytes: &[u8], context: &str) -> BuildTuple {
+fn build_ecvector_tuple(
+    heap_tid: ItemPointer,
+    bytes: &[u8],
+    storage_format: options::StorageFormat,
+    context: &str,
+) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
-    let (dimensions, gamma, payload) = crate::quantize_embedding_to_code(
-        &source_vector,
-        crate::DEFAULT_QUANT_BITS,
-        crate::DEFAULT_QUANT_SEED,
-    )
-    .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
+    let quantizer = IvfQuantizer::resolve(storage_format, source_vector.len())
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let (dimensions, gamma, payload) = quantizer
+        .encode_source(&source_vector)
+        .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
 
     BuildTuple {
         heap_tid,

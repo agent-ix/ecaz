@@ -7,8 +7,9 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 use crate::am::common::explain::IvfExplainCounters;
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
-use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 use crate::storage::page::ItemPointer;
+
+use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
 
 #[derive(Debug, Default)]
 struct EcIvfScanOpaque {
@@ -18,7 +19,7 @@ struct EcIvfScanOpaque {
     scan_dimensions: u16,
     scan_nlists: u32,
     scan_nprobe: u32,
-    prepared_query: *mut PreparedQuery,
+    prepared_query: *mut IvfPreparedQuery,
     centroid_scores: *mut EcIvfCentroidScore,
     centroid_score_count: u32,
     selected_lists: *mut u32,
@@ -395,12 +396,11 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = ProdQuantizer::cached(
-        metadata.dimensions as usize,
-        crate::DEFAULT_QUANT_BITS,
-        crate::DEFAULT_QUANT_SEED,
-    );
-    let prepared = quantizer.prepare_ip_query(query);
+    let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let prepared = quantizer
+        .prepare_ip_query(query)
+        .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"));
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
 }
 
@@ -635,12 +635,8 @@ unsafe fn materialize_probe_candidates(
     }
 
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let quantizer = ProdQuantizer::cached(
-        metadata.dimensions as usize,
-        crate::DEFAULT_QUANT_BITS,
-        crate::DEFAULT_QUANT_SEED,
-    );
-    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)?;
+    let payload_len = quantizer.payload_len();
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let mut best_by_heap_tid = HashMap::with_capacity(probe_plan.candidate_bound);
@@ -658,8 +654,11 @@ unsafe fn materialize_probe_candidates(
                 if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                     return Ok(());
                 }
-                let score =
-                    -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
+                let score = -quantizer.score_ip_from_parts(
+                    prepared_query,
+                    posting.gamma,
+                    &posting.payload,
+                )?;
                 record_distance_calcs(opaque, 1);
                 for heap_tid in posting.heaptids {
                     opaque.explain_counters.record_candidate_scored();
@@ -1217,12 +1216,12 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
         prepared_lut_len: if opaque.prepared_query.is_null() {
             0
         } else {
-            unsafe { (*opaque.prepared_query).lut.len() }
+            unsafe { (*opaque.prepared_query).lut_len() }
         },
         prepared_sq_len: if opaque.prepared_query.is_null() {
             0
         } else {
-            unsafe { (*opaque.prepared_query).sq.len() }
+            unsafe { (*opaque.prepared_query).sq_len() }
         },
         centroid_score_count: opaque.centroid_score_count,
         posting_candidate_count: opaque.posting_candidate_count,

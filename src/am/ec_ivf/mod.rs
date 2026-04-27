@@ -6,6 +6,7 @@ mod cost;
 mod insert;
 mod options;
 mod page;
+mod quantizer;
 mod routine;
 mod scan;
 mod training;
