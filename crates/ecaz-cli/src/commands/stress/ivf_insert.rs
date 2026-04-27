@@ -39,6 +39,9 @@ pub struct IvfInsertArgs {
     /// Write a copy of the summary to this path.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+    /// Fail instead of falling back to relation stats when IVF admin snapshot is unavailable.
+    #[arg(long)]
+    pub require_admin_snapshot: bool,
 }
 
 pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
@@ -92,7 +95,13 @@ pub async fn run(database: &str, args: IvfInsertArgs) -> Result<()> {
     }
     let _ = deadline_watcher.await;
 
-    let snapshot = fetch_ivf_snapshot(&client, &args.table, &index_name).await?;
+    let snapshot = fetch_ivf_snapshot(
+        &client,
+        &args.table,
+        &index_name,
+        args.require_admin_snapshot,
+    )
+    .await?;
     let summary = render_summary(&InsertSummary {
         duration_seconds: args.duration_seconds,
         concurrency: args.concurrency,
@@ -213,6 +222,7 @@ async fn fetch_ivf_snapshot(
     client: &tokio_postgres::Client,
     table_name: &str,
     index_name: &str,
+    require_admin_snapshot: bool,
 ) -> Result<IvfSnapshot> {
     let has_admin_snapshot: bool = client
         .query_one(
@@ -224,6 +234,11 @@ async fn fetch_ivf_snapshot(
         .get(0);
     let index_bytes = relation_size(client, index_name).await?;
     if !has_admin_snapshot {
+        if require_admin_snapshot {
+            return Err(eyre!(
+                "ec_ivf_index_admin_snapshot(oid) is required but is not installed; use a fresh PG18 database with the current ecaz extension SQL"
+            ));
+        }
         let table_rows = relation_row_count(client, table_name).await?;
         return Ok(IvfSnapshot {
             total_live_tuples: table_rows.to_string(),
@@ -380,6 +395,7 @@ mod tests {
             nprobe: 4,
             training_sample_rows: 32,
             log_output: None,
+            require_admin_snapshot: false,
         }
     }
 
