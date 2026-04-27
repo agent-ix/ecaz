@@ -143,16 +143,15 @@ unsafe fn run_bulkdelete(
             || directory.tail_block != repaired_tail
         {
             directory.live_count = list_result.live_heap_tids;
-            directory.dead_count =
-                directory
-                    .dead_count
-                    .checked_add(list_result.removed_heap_tids)
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_ivf list {} dead count overflow during vacuum",
-                            directory.list_id
-                        )
-                    });
+            directory.dead_count = directory
+                .dead_count
+                .checked_add(list_result.removed_heap_tids)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_ivf list {} dead count overflow during vacuum",
+                        directory.list_id
+                    )
+                });
             directory.head_block = repaired_head;
             directory.tail_block = repaired_tail;
             unsafe { page::rewrite_ivf_list_directory(index_relation, directory_tid, directory) }
@@ -221,9 +220,10 @@ unsafe fn bulkdelete_list_postings(
         if removed > 0 {
             result.removed_heap_tids = result
                 .removed_heap_tids
-                .checked_add(u64::try_from(removed).map_err(|_| {
-                    "ec_ivf removed heap tid count exceeds u64".to_owned()
-                })?)
+                .checked_add(
+                    u64::try_from(removed)
+                        .map_err(|_| "ec_ivf removed heap tid count exceeds u64".to_owned())?,
+                )
                 .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
         }
     }
@@ -242,10 +242,7 @@ unsafe fn finish_vacuum_stats(
         stats
     };
     let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        )
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
 
     unsafe {

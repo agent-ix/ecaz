@@ -5,15 +5,15 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
-#[cfg(feature = "pg18")]
-use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use super::options::{EcIvfOptions, RerankMode, StorageFormat};
 use super::P_NEW;
+#[cfg(feature = "pg18")]
+use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 use crate::storage::{
     page::{
-        align_up, aligned_tuple_bytes, usable_page_bytes, DataPage, DataPageChain, ItemPointer,
-        ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
-        raw_tuple_storage_bytes,
+        align_up, aligned_tuple_bytes, raw_tuple_storage_bytes, usable_page_bytes, DataPage,
+        DataPageChain, ItemPointer, ALIGNMENT_BYTES, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+        PAGE_HEADER_BYTES,
     },
     wal,
 };
@@ -699,7 +699,9 @@ where
         return Ok(());
     }
     if head_block == BlockRef::INVALID || tail_block == BlockRef::INVALID {
-        return Err(format!("ec_ivf list {list_id} has partial posting block refs"));
+        return Err(format!(
+            "ec_ivf list {list_id} has partial posting block refs"
+        ));
     }
     if head_block.block_number > tail_block.block_number {
         return Err(format!(
@@ -841,13 +843,7 @@ where
             unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
         };
         let result = unsafe {
-            visit_ivf_postings_from_buffer(
-                buffer,
-                list_id,
-                block_number,
-                payload_len,
-                visitor,
-            )
+            visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
         };
         unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
@@ -894,8 +890,9 @@ where
         } else {
             unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
         };
-        let result =
-            unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
+        let result = unsafe {
+            visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor)
+        };
         unsafe { pg_sys::ReleaseBuffer(buffer) };
         if let Err(err) = result {
             unsafe { pg_sys::read_stream_end(stream) };
@@ -965,7 +962,8 @@ where
         ));
     }
 
-    let result = unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
+    let result =
+        unsafe { visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, visitor) };
     unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
@@ -981,12 +979,17 @@ where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
     unsafe {
-        visit_all_ivf_postings_from_buffer(buffer, block_number, payload_len, &mut |posting_tid, posting| {
-            if posting.list_id == list_id {
-                visitor(posting_tid, posting)?;
-            }
-            Ok(())
-        })
+        visit_all_ivf_postings_from_buffer(
+            buffer,
+            block_number,
+            payload_len,
+            &mut |posting_tid, posting| {
+                if posting.list_id == list_id {
+                    visitor(posting_tid, posting)?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
@@ -1086,8 +1089,7 @@ unsafe fn try_append_ivf_posting_to_block(
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     if free_space < raw_tuple_storage_bytes(payload.len()) {
         std::mem::drop(wal_txn);
@@ -1139,8 +1141,7 @@ unsafe fn append_ivf_posting_to_new_block(
 
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     unsafe { pg_sys::PageInit(page, page_size, 0) };
 
     let offset = unsafe {
@@ -1191,8 +1192,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let line_pointer_count = page_line_pointer_count(page_ptr);
@@ -1231,7 +1231,9 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
         ));
     }
 
-    unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len()) };
+    unsafe {
+        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
+    };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(())
@@ -1263,8 +1265,7 @@ where
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page =
-        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let line_pointer_count = page_line_pointer_count(page_ptr);
@@ -1319,7 +1320,9 @@ where
     }
 
     let encoded = directory.encode();
-    unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len()) };
+    unsafe {
+        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
+    };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(directory)

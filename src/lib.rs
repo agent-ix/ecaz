@@ -1405,6 +1405,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use std::collections::{HashMap, HashSet};
+    use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Output, Stdio};
     use std::time::{Duration, Instant};
 
@@ -2396,11 +2397,47 @@ mod tests {
     }
 
     struct PsqlTestConnection {
-        psql_bin: String,
+        psql_bin: PathBuf,
         host: String,
         port: String,
         database: String,
         user: String,
+    }
+
+    fn executable_on_path(binary: &str) -> Option<PathBuf> {
+        let paths = std::env::var_os("PATH")?;
+        std::env::split_paths(&paths)
+            .map(|path| path.join(binary))
+            .find(|candidate| candidate.is_file())
+    }
+
+    fn pgrx_psql_candidate(root: &Path, server_version: &str) -> PathBuf {
+        root.join(server_version)
+            .join("pgrx-install")
+            .join("bin")
+            .join("psql")
+    }
+
+    fn resolve_pg_test_psql_bin(server_version: &str) -> PathBuf {
+        if let Some(configured) = std::env::var_os("TQV_PSQL_BIN") {
+            return PathBuf::from(configured);
+        }
+        if let Some(psql) = executable_on_path("psql") {
+            return psql;
+        }
+        if let Some(pgrx_home) = std::env::var_os("PGRX_HOME") {
+            let candidate = pgrx_psql_candidate(Path::new(&pgrx_home), server_version);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            let candidate = pgrx_psql_candidate(&PathBuf::from(home).join(".pgrx"), server_version);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        PathBuf::from("psql")
     }
 
     fn pg_test_psql_connection() -> PsqlTestConnection {
@@ -2422,7 +2459,10 @@ mod tests {
         let user = Spi::get_one::<String>("SELECT current_user::text")
             .expect("SPI query should succeed")
             .expect("current user should exist");
-        let psql_bin = std::env::var("TQV_PSQL_BIN").unwrap_or_else(|_| "psql".to_owned());
+        let server_version = Spi::get_one::<String>("SHOW server_version")
+            .expect("SPI query should succeed")
+            .expect("server_version setting should exist");
+        let psql_bin = resolve_pg_test_psql_bin(&server_version);
 
         PsqlTestConnection {
             psql_bin,
@@ -3006,10 +3046,9 @@ mod tests {
         let (outputs, _orderby_cleared) =
             unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
 
-        assert_eq!(outputs.len(), 4);
+        assert_eq!(outputs.len(), 2);
         let exact_scores = outputs
             .iter()
-            .take(2)
             .map(|(_, _, score)| *score)
             .collect::<Vec<_>>();
         assert_eq!(exact_scores, vec![-1.0, -0.7]);

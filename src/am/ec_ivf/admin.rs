@@ -58,16 +58,11 @@ struct DirectoryDriftSummary {
     empty_lists: u32,
 }
 
-pub(crate) unsafe fn index_drift_snapshot(
-    index_relation: pg_sys::Relation,
-) -> IndexDriftSnapshot {
+pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
     let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        )
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
 
     let total_live_tuples = metadata.total_live_tuples;
@@ -90,8 +85,7 @@ pub(crate) unsafe fn index_drift_snapshot(
     } else {
         directory.max_live_count as f64 / average_list_live_count
     };
-    let changed_reindex =
-        changed_row_fraction >= REINDEX_CHANGED_ROW_FRACTION_THRESHOLD;
+    let changed_reindex = changed_row_fraction >= REINDEX_CHANGED_ROW_FRACTION_THRESHOLD;
     let imbalance_reindex = list_imbalance_ratio > REINDEX_LIST_IMBALANCE_THRESHOLD;
     let reindex_reason = match (changed_reindex, imbalance_reindex) {
         (true, true) => "changed_rows,list_imbalance",
@@ -118,9 +112,7 @@ pub(crate) unsafe fn index_drift_snapshot(
     }
 }
 
-pub(crate) unsafe fn index_admin_snapshot(
-    index_relation: pg_sys::Relation,
-) -> IndexAdminSnapshot {
+pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let drift = unsafe { index_drift_snapshot(index_relation) };

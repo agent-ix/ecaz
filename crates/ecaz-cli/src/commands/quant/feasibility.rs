@@ -215,7 +215,10 @@ fn run_rabitq(args: FeasibilityArgs, corpus: Vec<Vec<f32>>, queries: Vec<Vec<f32
     let (mean_err, p50_err, p99_err) = summarize(&error_samples);
 
     println!();
-    println!("recall@{} (no rerank) mean: {:.4}", args.top_k, recall_no_rerank);
+    println!(
+        "recall@{} (no rerank) mean: {:.4}",
+        args.top_k, recall_no_rerank
+    );
     if args.rerank_k > 0 {
         let recall_rerank = recall_rerank_sum / queries.len() as f64;
         println!(

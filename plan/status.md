@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-19
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, C1 now has durable real-corpus NFR-001 latency artifacts plus a verified warm-cache seam on `main`, and the PG18 shared-infrastructure merge branch now has live callback/EXPLAIN/ReadStream/shared-stats wiring with PG17 fallback preserved
+Last updated: 2026-04-27
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, C1 now has durable real-corpus NFR-001 latency artifacts plus a verified warm-cache seam on `main`, PG18 shared infrastructure is live with PG17 fallback preserved, Task 26 PG18 HNSW concurrent-DSM parallel build has completed its local scale lane through the 990k DBPedia anchor, and Task 28 has completed the first local IVF tuning slice on the `task28-ivf` branch.
 
 ## Reading Guide
 
@@ -34,6 +34,8 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 66% | Durable real-corpus NFR-001 artifacts now exist on `main`, and the launcher now supports verified warm per-cell runs, but the honest warm `10K` surface is still about `p50=14.3ms` at `m=8, ef_search=40` and NFR-002 remains open |
+| `T26` | PG18 HNSW parallel build | Concurrent DSM graph assembly, worker-headroom validation, 50k/990k scale packets | **Done for local scale lane** | 100% | `task28-ivf` carries the default-on PG18 concurrent DSM path. Packet 672 recorded real 50k improving from `07:12.017` at 1 worker to `02:27.948` at 8 launched graph workers after worker headroom was fixed; packet 669 proved the 990k DBPedia worker launch path but still took `01:31:57.326`, motivating the IVF pivot. |
+| `T28` | IVF initial tuning | `ec_ivf` profile, IVF heap-f32 rerank, rerank width, local DBPedia 10k/25k grids | **Checkpoint complete** | 90% | Local PG18 tuning found a usable first frontier: packet 30043 has 10k `nlists=32,nprobe=24,width=25` at `0.9980` recall@10 and about `135/146 ms` p50/p95; packet 30044 has 25k `32/32,width=25` at `1.0000` and about `435/456 ms`. Product claims still require a later Graviton-class benchmark. |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 100% | The scaffolded seams are complete, and their planned PG18 bindings are now live on `pg18-shared-infra-merge` |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 95% | Cost model, ADR-011 retirement, PG18 callbacks, EXPLAIN hooks, ReadStream wiring, and module identity are live on `pg18-shared-infra-merge`; the remaining gate is preload-time shared pgstat activation coverage plus post-merge follow-through |
@@ -155,14 +157,14 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts plus a verified warm per-cell seam on `main`; the next C1 work is optimization and normative `50K`/storage-result follow-through, not basic benchmark-integrity bring-up.
+2. **Task 26 / Task 28 branch:** PG18 HNSW concurrent DSM parallel build has a completed local scale lane, and IVF initial tuning now has a measured local frontier plus heap-f32 rerank correctness fixes. Landing should split Task 26 first, then stack the IVF PR.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** `main` now has live PG18 callback bindings, EXPLAIN hooks,
    ReadStream scan/vacuum wiring, shared pgstat registration via the preload-aware shim, and
    module identity with PG17 fallback preserved. The preload-aware activation lane now exists in
    repo, so the remaining follow-ons are measurement and optional parallel-scan work rather than
    PG18 toolchain bring-up.
-5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
+5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13. IVF product claims remain blocked on a dedicated Graviton-class benchmark; DiskANN remains task 29.
 
 ## Current Major Blockers
 
@@ -173,3 +175,4 @@ Release / quality-gate rollup: 62%
 | Durable NFR-001 artifacts now exist, and verified warm per-cell runs reduce the real `10K` baseline materially, but both surfaces still miss spec (`cold` canonical `m=8, ef_search=40`: `p50=50.283ms`, `p99=55.862ms`; `warm` per-cell after 3 prime passes: `p50=14.315ms`, `p99=17.613ms` vs `<5ms` / `<15ms`) | `C1` | Runtime optimization lane |
 | ~~ADR-011 planner gate is still active~~ | ~~`D2`~~ | **Resolved** (D2 cost-model activation, 2026-04-11; ADR-011 marked SUPERSEDED) |
 | aarch64 SIMD runtime validation still needs hardware | `B1` | Coder-2 / validation lane |
+| Task 26 / Task 28 branch still needs split/rebase/PR mechanics | Landing on `main` | Runtime-index lane |

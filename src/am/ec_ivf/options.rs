@@ -4,11 +4,10 @@ use std::ptr;
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
-    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_RERANK_WIDTH,
-    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS,
-    EC_IVF_MAX_NPROBE, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
-    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
-    EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
+    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
+    EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
+    EC_IVF_MIN_NPROBE, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -233,7 +232,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"rerank_width".as_ptr(),
-                c"Number of approximate candidates to heap-rerank when rerank = 'heap_f32'; 0 reranks the full probed frontier."
+                c"Number of approximate candidates to return after heap-rerank when rerank = 'heap_f32'; 0 reranks and returns the full probed frontier."
                     .as_ptr(),
                 EC_IVF_DEFAULT_RERANK_WIDTH,
                 EC_IVF_MIN_RERANK_WIDTH,

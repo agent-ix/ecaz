@@ -693,14 +693,19 @@ unsafe fn rerank_probe_candidates(
     metadata: &super::page::MetadataPage,
     index_options: &super::options::EcIvfOptions,
     opaque: &EcIvfScanOpaque,
-    candidates: &mut [EcIvfScoredCandidate],
+    candidates: &mut Vec<EcIvfScoredCandidate>,
 ) {
     match metadata.rerank.v1_effective() {
         super::options::RerankMode::Auto | super::options::RerankMode::Off => {}
         super::options::RerankMode::HeapF32 => {
             let rerank_len = resolve_rerank_len(index_options.rerank_width, candidates.len());
-            unsafe { rerank_probe_candidates_heap_f32(scan, opaque, &mut candidates[..rerank_len]) };
+            unsafe {
+                rerank_probe_candidates_heap_f32(scan, opaque, &mut candidates[..rerank_len])
+            };
             candidates[..rerank_len].sort_by(candidate_cmp);
+            if index_options.rerank_width > 0 {
+                candidates.truncate(rerank_len);
+            }
         }
         super::options::RerankMode::SourceColumn => {
             pgrx::error!("ec_ivf rerank mode source_column is not supported yet")
@@ -726,7 +731,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
         return;
     }
     let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
-    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = unsafe {
         source::resolve_indexed_ecvector_attribute(
             heap_relation,
@@ -769,9 +774,6 @@ unsafe fn rerank_probe_candidates_heap_f32(
     }
 
     unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
-    if snapshot_owned {
-        unsafe { pg_sys::UnregisterSnapshot(snapshot) };
-    }
     if heap_relation_owned {
         unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
@@ -792,21 +794,17 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Re
     )
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
     if !unsafe { (*scan).xs_snapshot }.is_null() {
-        return (unsafe { (*scan).xs_snapshot }, false);
+        return unsafe { (*scan).xs_snapshot };
     }
 
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
-        return (active_snapshot, false);
+        return active_snapshot;
     }
 
-    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-    if registered_snapshot.is_null() {
-        pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot");
-    }
-    (registered_snapshot, true)
+    pgrx::error!("ec_ivf heap_f32 rerank requires an executor or active snapshot");
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
