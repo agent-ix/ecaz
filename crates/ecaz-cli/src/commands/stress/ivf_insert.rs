@@ -221,7 +221,7 @@ async fn fetch_ivf_snapshot(
                     list_imbalance_ratio,
                     reindex_recommended,
                     reindex_reason
-             FROM ec_ivf_index_admin_snapshot($1::regclass)",
+             FROM ec_ivf_index_admin_snapshot($1::regclass::oid)",
             &[&index_name],
         )
         .await
