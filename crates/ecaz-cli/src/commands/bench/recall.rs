@@ -354,7 +354,7 @@ pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
     };
     format!(
         "SELECT id FROM {corpus_table} \
-         ORDER BY embedding OPERATOR(pg_catalog.<#>) \
+         ORDER BY embedding <#> \
          {rhs} \
          LIMIT $4"
     )
@@ -527,7 +527,7 @@ mod tests {
         let sql = build_knn_sql(&EC_HNSW, "dbpedia_10k_corpus");
         assert!(sql.contains("FROM dbpedia_10k_corpus"));
         assert!(sql.contains("encode_to_ecvector($1::real[], $2::integer, $3::bigint)"));
-        assert!(sql.contains("<#>"));
+        assert!(sql.contains("ORDER BY embedding <#>"));
         assert!(sql.contains("LIMIT $4"));
     }
 
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn build_knn_sql_uses_raw_real_query_for_ivf() {
         let sql = build_knn_sql(&EC_IVF, "corpus");
-        assert!(sql.contains("ORDER BY embedding OPERATOR(pg_catalog.<#>) $1::real[]"));
+        assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
         assert!(!sql.contains("encode_to_ecvector($1::real[]"));
     }
 
