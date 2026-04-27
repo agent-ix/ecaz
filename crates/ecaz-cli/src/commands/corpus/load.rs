@@ -1031,7 +1031,7 @@ fn print_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
     use crate::tsv::VectorFileStats;
     use std::io::Write as _;
     use tempfile::TempDir;
@@ -1137,6 +1137,31 @@ mod tests {
         assert!(jobs[0]
             .reloptions
             .contains(&opt("storage_format", "pq_fastscan")));
+    }
+
+    #[test]
+    fn ivf_plan_is_single_index_with_ivf_reloptions_only() {
+        let extras = vec![opt("nlists", "128"), opt("nprobe", "8")];
+        let jobs = plan_index_jobs(
+            &EC_IVF,
+            "foo_turboquant",
+            &[],
+            128,
+            Some("turboquant"),
+            &extras,
+        );
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].name, "foo_turboquant_idx");
+        assert!(jobs[0].reloptions.contains(&opt("nlists", "128")));
+        assert!(jobs[0].reloptions.contains(&opt("nprobe", "8")));
+        assert!(jobs[0]
+            .reloptions
+            .contains(&opt("storage_format", "turboquant")));
+        assert!(!jobs[0].reloptions.iter().any(|(k, _)| k == "m"));
+        assert!(!jobs[0]
+            .reloptions
+            .iter()
+            .any(|(k, _)| k == "build_source_column"));
     }
 
     // --- manifest orchestration ---

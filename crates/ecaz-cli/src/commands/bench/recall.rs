@@ -342,21 +342,28 @@ pub fn ndcg_at_k(
 
 /// KNN SQL template used for recall. Binds are `($1::real[], $2::integer,
 /// $3::bigint, $4::bigint)` = (query_source, bits, seed, k). Exposed so a
-/// test can pin the operator and encoder wiring for each profile.
+/// test can pin the operator and query-shape wiring for each profile.
 pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
+    let rhs = if profile.encode_scan_query {
+        format!(
+            "{enc}($1::real[], $2::integer, $3::bigint)",
+            enc = profile.encoder_function
+        )
+    } else {
+        "$1::real[]".to_owned()
+    };
     format!(
         "SELECT id FROM {corpus_table} \
          ORDER BY embedding OPERATOR(pg_catalog.<#>) \
-         {enc}($1::real[], $2::integer, $3::bigint) \
-         LIMIT $4",
-        enc = profile.encoder_function,
+         {rhs} \
+         LIMIT $4"
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
     use ndarray::arr2;
 
     // --- top_k_desc ---
@@ -531,6 +538,13 @@ mod tests {
         // hardcoded name.
         let sql = build_knn_sql(&EC_DISKANN, "corpus");
         assert!(sql.contains(EC_DISKANN.encoder_function));
+    }
+
+    #[test]
+    fn build_knn_sql_uses_raw_real_query_for_ivf() {
+        let sql = build_knn_sql(&EC_IVF, "corpus");
+        assert!(sql.contains("ORDER BY embedding OPERATOR(pg_catalog.<#>) $1::real[]"));
+        assert!(!sql.contains("encode_to_ecvector($1::real[]"));
     }
 
     // --- map_indices_to_ids ---

@@ -18,7 +18,7 @@ use crate::commands;
     about = "Operator CLI for the Ecaz Postgres extension",
     long_about = "ecaz — corpus loading, benchmarking (recall / latency / storage), \
                   and cross-engine comparison for the Ecaz Postgres vector extension. \
-                  Access methods (ec_hnsw, ec_diskann, future) are selected via \
+                  Access methods (ec_hnsw, ec_ivf, ec_diskann) are selected via \
                   `--profile`; every command is profile-aware."
 )]
 pub struct Cli {

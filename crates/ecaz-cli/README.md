@@ -26,7 +26,7 @@ own notion of "what is an HNSW index." `ecaz-cli` replaces that with:
 
 - One entry point (`ecaz`), one `--help` tree.
 - A declarative `IndexProfile` registry — commands don't hardcode
-  `tqvector` / `ecvector` / `ec_hnsw` / `ec_diskann`. Adding a new access
+  `tqvector` / `ecvector` / `ec_hnsw` / `ec_ivf` / `ec_diskann`. Adding a new access
   method is one entry in `profiles.rs` plus whatever AM-specific logic
   the new method needs.
 - Async Postgres (`tokio-postgres`) instead of shelling out to `psql`.
@@ -82,10 +82,10 @@ ecaz dev sql --pg 18 --file review/example/artifacts/run.sql --raw \
 Use repeated `--env NAME=VALUE` flags to pass temporary environment to
 the underlying `psql` process.
 
-Each command accepts `--profile` (e.g. `ec_hnsw`, `ec_diskann`) so a
+Each command accepts `--profile` (e.g. `ec_hnsw`, `ec_ivf`, `ec_diskann`) so a
 single corpus can be measured against multiple access methods without
-re-loading data. Today `ec_hnsw` and `ec_diskann` both use `ecvector` as
-the embedding column type, so one `<prefix>_corpus` table supports both
+re-loading data. Today `ec_hnsw`, `ec_ivf`, and `ec_diskann` all use `ecvector` as
+the embedding column type, so one `<prefix>_corpus` table supports multiple
 indexes side-by-side.
 
 ## Access-method profiles
@@ -109,7 +109,8 @@ Profiles live in `src/profiles.rs` and describe:
 ### Drift risk, and the plan
 
 The CLI currently hand-mirrors the extension's opclass and reloption
-surface (`src/am/ec_hnsw/options.rs`, `src/am/ec_diskann/options.rs`).
+surface (`src/am/ec_hnsw/options.rs`, `src/am/ec_ivf/options.rs`,
+`src/am/ec_diskann/options.rs`).
 That's fine for two access methods and a small handful of knobs, but
 won't stay fine as the surface grows.
 

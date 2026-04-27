@@ -146,7 +146,7 @@ pub fn build_create_index_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
 
     #[test]
     fn hnsw_index_sql_matches_legacy_loader_shape() {
@@ -168,6 +168,21 @@ mod tests {
         let sql = build_create_index_sql("dbpedia_10k_corpus", "dbpedia_10k_idx", &EC_DISKANN, &[]);
         assert!(sql.contains("USING ec_diskann (embedding ecvector_diskann_ip_ops)"));
         assert!(!sql.contains("WITH ("));
+    }
+
+    #[test]
+    fn ivf_index_sql_uses_ivf_access_method_and_ecvector_opclass() {
+        let opts = vec![
+            ("nlists".into(), "128".into()),
+            ("nprobe".into(), "8".into()),
+            ("storage_format".into(), "turboquant".into()),
+        ];
+        let sql =
+            build_create_index_sql("dbpedia_10k_corpus", "dbpedia_10k_ivf_idx", &EC_IVF, &opts);
+        assert!(sql.contains("USING ec_ivf (embedding ecvector_ip_ops)"));
+        assert!(sql.contains("nlists = 128"));
+        assert!(sql.contains("nprobe = 8"));
+        assert!(sql.contains("storage_format = 'turboquant'"));
     }
 
     #[test]

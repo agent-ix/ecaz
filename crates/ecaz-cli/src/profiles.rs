@@ -18,9 +18,9 @@
 //! # Multiple corpora, one profile
 //!
 //! Profiles describe access methods, not corpora. One corpus can be indexed
-//! by many profiles when their `embedding_type` matches — today `ec_hnsw`
-//! and `ec_diskann` both use `ecvector`, so one `<prefix>_corpus` table
-//! supports both.
+//! by many profiles when their `embedding_type` matches — today `ec_hnsw`,
+//! `ec_ivf`, and `ec_diskann` all use `ecvector`, so one
+//! `<prefix>_corpus` table supports all three.
 
 use regex::Regex;
 use std::sync::OnceLock;
@@ -38,6 +38,9 @@ pub struct IndexProfile {
     pub embedding_type: &'static str,
     /// SQL function that encodes `real[]` → `embedding_type`.
     pub encoder_function: &'static str,
+    /// Whether KNN benchmark queries should encode `real[]` into the indexed
+    /// embedding type before passing the ORDER BY probe to PostgreSQL.
+    pub encode_scan_query: bool,
     /// Per-scan tuning GUC (None when the AM has no equivalent knob).
     pub ef_search_guc: Option<&'static str>,
     /// If the AM can read raw `real[]` at build time, the column name to
@@ -75,6 +78,7 @@ pub const EC_HNSW: IndexProfile = IndexProfile {
     operator_class: "ecvector_ip_ops",
     embedding_type: "ecvector",
     encoder_function: "encode_to_ecvector",
+    encode_scan_query: true,
     ef_search_guc: Some("ec_hnsw.ef_search"),
     build_source_column: Some("source"),
     sweep_axis: SweepAxis::M,
@@ -92,6 +96,7 @@ pub const EC_DISKANN: IndexProfile = IndexProfile {
     operator_class: "ecvector_diskann_ip_ops",
     embedding_type: "ecvector",
     encoder_function: "encode_to_ecvector",
+    encode_scan_query: true,
     ef_search_guc: Some("ec_diskann.list_size"),
     build_source_column: None,
     sweep_axis: SweepAxis::ListSize,
@@ -106,7 +111,27 @@ pub const EC_DISKANN: IndexProfile = IndexProfile {
     ],
 };
 
-const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN];
+pub const EC_IVF: IndexProfile = IndexProfile {
+    name: "ec_ivf",
+    access_method: "ec_ivf",
+    operator_class: "ecvector_ip_ops",
+    embedding_type: "ecvector",
+    encoder_function: "encode_to_ecvector",
+    encode_scan_query: false,
+    ef_search_guc: Some("ec_ivf.nprobe"),
+    build_source_column: None,
+    sweep_axis: SweepAxis::None,
+    known_reloptions: &[
+        "nlists",
+        "nprobe",
+        "training_sample_rows",
+        "seed",
+        "storage_format",
+        "rerank",
+    ],
+};
+
+const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN, &EC_IVF];
 
 pub fn resolve(name: &str) -> Option<&'static IndexProfile> {
     REGISTRY.iter().find(|p| p.name == name).copied()
@@ -164,7 +189,7 @@ mod tests {
 
     #[test]
     fn names_are_sorted_and_complete() {
-        assert_eq!(names(), vec!["ec_diskann", "ec_hnsw"]);
+        assert_eq!(names(), vec!["ec_diskann", "ec_hnsw", "ec_ivf"]);
     }
 
     #[test]
@@ -210,12 +235,23 @@ mod tests {
     }
 
     #[test]
-    fn hnsw_and_diskann_share_embedding_type_so_one_corpus_serves_both() {
-        // README contract: a single <prefix>_corpus table supports both
-        // ec_hnsw and ec_diskann indexes without re-encoding. If this ever
+    fn postgres_profiles_share_embedding_type_so_one_corpus_serves_all() {
+        // README contract: a single <prefix>_corpus table supports all
+        // Postgres AM indexes without re-encoding. If this ever
         // fails, the multi-corpus story in README.md needs updating.
         assert_eq!(EC_HNSW.embedding_type, EC_DISKANN.embedding_type);
         assert_eq!(EC_HNSW.encoder_function, EC_DISKANN.encoder_function);
+        assert_eq!(EC_HNSW.embedding_type, EC_IVF.embedding_type);
+        assert_eq!(EC_HNSW.encoder_function, EC_IVF.encoder_function);
+    }
+
+    #[test]
+    fn ec_ivf_profile_uses_nprobe_and_raw_real_scan_query() {
+        let p = &EC_IVF;
+        assert_eq!(p.access_method, "ec_ivf");
+        assert_eq!(p.ef_search_guc, Some("ec_ivf.nprobe"));
+        assert_eq!(p.build_source_column, None);
+        assert!(!p.encode_scan_query);
     }
 
     #[test]
