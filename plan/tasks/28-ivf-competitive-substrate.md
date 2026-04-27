@@ -43,7 +43,7 @@ in review packet 30047 feedback seq 02.
    - Keep unsupported profiles rejected until their concrete implementations
      land, but route the default profile through the same dispatch seam.
 
-5. **Probe-candidate aggregation pressure**
+5. **Probe-candidate aggregation pressure** - done in `dc1f369`
    - Investigate pooling or bounded aggregation for per-query probe candidates.
    - Prefer a bounded/deduplicating structure if it preserves recall and avoids
      unbounded per-query `HashMap` churn.
@@ -67,9 +67,12 @@ in review packet 30047 feedback seq 02.
 - Item 4: quantizer dispatch seam. It keeps v1 `auto`/`turboquant` behavior
   on the existing product quantizer while routing build encode, scan query
   preparation, and posting score through an IVF-local enum dispatch layer.
+- Item 5: probe-candidate aggregation pressure. It moves the per-query
+  heap-tid dedup `HashMap` onto the scan opaque so rescans clear and reuse the
+  allocation instead of allocating a fresh map for every query.
 
 ## Next Slice
 
-The next implementation slice is item 5: reduce probe-candidate aggregation
-pressure. After that, re-run the 10k/25k DBPedia sweep from item 3 against the
-new cost profile.
+The next slice is item 3: re-run the 10k/25k DBPedia sweep against the new
+cost profile, then use items 6 and 7 to document deeper build/training/vacuum
+risks before product benchmarking.
