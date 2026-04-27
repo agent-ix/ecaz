@@ -1,0 +1,61 @@
+Timing is on.
+sha	a9d70f3
+Time: 0.530 ms
+10000	1536
+Time: 9.628 ms
+DROP TABLE
+Time: 0.534 ms
+SELECT 200
+Time: 4065.179 ms (00:04.065)
+200	20
+Time: 0.777 ms
+DROP TABLE
+Time: 0.167 ms
+CREATE TABLE
+Time: 6.897 ms
+DROP TABLE
+Time: 0.315 ms
+CREATE TABLE
+Time: 5.441 ms
+SET
+Time: 0.182 ms
+SET
+Time: 0.116 ms
+SET
+Time: 0.093 ms
+DO
+Time: 110462.087 ms (01:50.462)
+32	16	50	24588.127	2259.756	200	188	0.1880
+32	32	25	24342.390	3758.275	200	200	0.2000
+64	16	25	42528.695	2409.794	200	188	0.1880
+Time: 1.304 ms
+32	16	50	20	10	10	100.549	112.344	114.514	101.082
+32	32	25	20	10	10	180.261	183.146	183.961	179.914
+64	16	25	20	10	10	110.731	121.566	121.755	110.306
+Time: 1.893 ms
+32	32	25	990018	183.961	10
+32	32	25	990013	183.146	10
+32	32	25	990004	182.581	10
+32	32	25	990019	182.430	10
+32	32	25	990008	182.387	10
+32	32	25	990010	181.667	10
+32	32	25	990003	181.569	10
+32	32	25	990015	181.323	10
+32	32	25	990016	181.044	10
+32	32	25	990012	180.522	10
+32	32	25	990011	180.261	10
+32	32	25	990017	179.886	10
+32	32	25	990007	179.065	10
+32	32	25	990002	178.940	10
+32	32	25	990009	178.653	10
+32	32	25	990014	177.356	10
+32	32	25	990001	177.318	10
+32	32	25	990006	176.136	10
+32	32	25	990005	176.106	10
+32	32	25	990000	173.921	10
+Time: 1.259 ms
+psql:review/30042-task28-ivf-anchor100-query-check/artifacts/pg18-ivf-anchor10k1536-anchor100-query-check.sql:10: NOTICE:  table "task28_ivf_anchor10k1536_exact100_top10" does not exist, skipping
+psql:review/30042-task28-ivf-anchor100-query-check/artifacts/pg18-ivf-anchor10k1536-anchor100-query-check.sql:26: NOTICE:  table "task28_ivf_anchor10k1536_anchor100_summary" does not exist, skipping
+psql:review/30042-task28-ivf-anchor100-query-check/artifacts/pg18-ivf-anchor10k1536-anchor100-query-check.sql:38: NOTICE:  table "task28_ivf_anchor10k1536_anchor100_latency" does not exist, skipping
+psql:review/30042-task28-ivf-anchor100-query-check/artifacts/pg18-ivf-anchor10k1536-anchor100-query-check.sql:142: NOTICE:  index "task28_ivf_anchor10k1536_anchor100_idx" does not exist, skipping
+psql:review/30042-task28-ivf-anchor100-query-check/artifacts/pg18-ivf-anchor10k1536-anchor100-query-check.sql:142: NOTICE:  table "task28_ivf_anchor10k1536_anchor100_ivf_top10" does not exist, skipping
