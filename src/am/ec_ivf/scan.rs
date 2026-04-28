@@ -100,6 +100,13 @@ impl CandidateTopK {
         }
     }
 
+    fn worst_score_if_full(&self) -> Option<f32> {
+        if self.retained.len() < self.limit {
+            return None;
+        }
+        self.retained.peek().map(|entry| entry.candidate.score)
+    }
+
     fn into_sorted_candidates(self) -> Vec<EcIvfScoredCandidate> {
         let mut candidates = self
             .retained
@@ -771,6 +778,8 @@ unsafe fn materialize_probe_candidates(
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
+    let mut running_top =
+        pre_rerank_candidate_limit(metadata, index_options).map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
@@ -794,11 +803,20 @@ unsafe fn materialize_probe_candidates(
                 )? {
                     return Ok(());
                 }
-                let score = -quantizer.score_ip_from_parts(
+                let min_ip_to_keep = running_top
+                    .as_ref()
+                    .and_then(CandidateTopK::worst_score_if_full)
+                    .map(|worst_score| -worst_score);
+                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
                     prepared_query,
                     posting.gamma,
                     posting.payload,
-                )?;
+                    min_ip_to_keep,
+                )?
+                else {
+                    return Ok(());
+                };
+                let score = -ip;
                 record_distance_calcs(opaque, 1);
                 for heap_tid in posting.heaptids() {
                     opaque.explain_counters.record_candidate_scored();
@@ -814,6 +832,9 @@ unsafe fn materialize_probe_candidates(
                         }
                         Entry::Vacant(entry) => {
                             entry.insert(candidate);
+                            if let Some(top_k) = running_top.as_mut() {
+                                top_k.push(candidate);
+                            }
                         }
                     }
                 }
@@ -1713,6 +1734,21 @@ mod tests {
         assert_eq!(retained.len(), 2);
         assert_eq!(retained[0].heap_tid.offset_number, 1);
         assert_eq!(retained[1].heap_tid.offset_number, 2);
+    }
+
+    #[test]
+    fn candidate_top_k_reports_worst_score_only_when_full() {
+        let mut top_k = CandidateTopK::new(2);
+        assert_eq!(top_k.worst_score_if_full(), None);
+
+        top_k.push(candidate(1, 1, 3.0));
+        assert_eq!(top_k.worst_score_if_full(), None);
+
+        top_k.push(candidate(1, 2, 1.0));
+        assert_eq!(top_k.worst_score_if_full(), Some(3.0));
+
+        top_k.push(candidate(1, 3, 2.0));
+        assert_eq!(top_k.worst_score_if_full(), Some(2.0));
     }
 
     #[test]

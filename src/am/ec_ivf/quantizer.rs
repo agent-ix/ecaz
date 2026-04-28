@@ -22,7 +22,11 @@ pub(super) enum IvfQuantizerProfile {
 pub(super) enum IvfPreparedQuery {
     TurboQuant(PreparedQuery),
     TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
-    PqFastScan { lut: Vec<f32>, group_count: usize },
+    PqFastScan {
+        lut: Vec<f32>,
+        group_count: usize,
+        suffix_max: Vec<f32>,
+    },
     RaBitQ(PreparedEstimator),
 }
 
@@ -204,9 +208,11 @@ impl IvfQuantizer {
             &model.flat_codebooks,
             model.group_size,
         );
+        let suffix_max = grouped_pq_suffix_max(&lut, model.group_count);
         Ok(IvfPreparedQuery::PqFastScan {
             lut,
             group_count: model.group_count,
+            suffix_max,
         })
     }
 
@@ -246,6 +252,7 @@ impl IvfQuantizer {
                 IvfPreparedQuery::PqFastScan {
                     lut,
                     group_count: prepared_group_count,
+                    ..
                 },
             ) => {
                 let _ = gamma;
@@ -267,6 +274,41 @@ impl IvfQuantizer {
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
             }
+        }
+    }
+
+    pub(super) fn score_ip_from_parts_with_min_bound(
+        self,
+        prepared_query: &IvfPreparedQuery,
+        gamma: f32,
+        payload: &[u8],
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        match (self.profile, prepared_query, min_ip_to_keep) {
+            (
+                IvfQuantizerProfile::PqFastScan { group_count, .. },
+                IvfPreparedQuery::PqFastScan {
+                    lut,
+                    group_count: prepared_group_count,
+                    suffix_max,
+                },
+                Some(min_ip_to_keep),
+            ) => {
+                let _ = gamma;
+                if group_count != *prepared_group_count {
+                    return Err("ec_ivf pq_fastscan prepared query group count mismatch".to_owned());
+                }
+                Ok(grouped_pq_score_f32_with_min_bound(
+                    lut,
+                    suffix_max,
+                    group_count,
+                    payload,
+                    min_ip_to_keep,
+                ))
+            }
+            _ => self
+                .score_ip_from_parts(prepared_query, gamma, payload)
+                .map(Some),
         }
     }
 
@@ -418,6 +460,39 @@ impl IvfPreparedQuery {
             Self::RaBitQ(_) => 0,
         }
     }
+}
+
+fn grouped_pq_suffix_max(lut: &[f32], group_count: usize) -> Vec<f32> {
+    let mut suffix_max = vec![0.0_f32; group_count + 1];
+    for group_index in (0..group_count).rev() {
+        let row_start = group_index * GROUPED_PQ_CENTROIDS;
+        let row_max = lut[row_start..row_start + GROUPED_PQ_CENTROIDS]
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        suffix_max[group_index] = suffix_max[group_index + 1] + row_max;
+    }
+    suffix_max
+}
+
+fn grouped_pq_score_f32_with_min_bound(
+    lut: &[f32],
+    suffix_max: &[f32],
+    group_count: usize,
+    packed_nibbles: &[u8],
+    min_ip_to_keep: f32,
+) -> Option<f32> {
+    debug_assert_eq!(suffix_max.len(), group_count + 1);
+    let mut score = 0.0_f32;
+    for group_index in 0..group_count {
+        let centroid_index =
+            crate::quant::grouped_pq::grouped_pq_nibble(packed_nibbles, group_index);
+        score += lut[group_index * GROUPED_PQ_CENTROIDS + centroid_index];
+        if score + suffix_max[group_index + 1] < min_ip_to_keep {
+            return None;
+        }
+    }
+    Some(score)
 }
 
 #[cfg(test)]
@@ -605,12 +680,46 @@ mod tests {
         let score = dispatch
             .score_ip_from_parts(&prepared, gamma, &payload)
             .unwrap();
+        let low_bound_score = dispatch
+            .score_ip_from_parts_with_min_bound(&prepared, gamma, &payload, Some(score - 1.0))
+            .unwrap();
+        let high_bound_score = dispatch
+            .score_ip_from_parts_with_min_bound(&prepared, gamma, &payload, Some(score + 1.0))
+            .unwrap();
 
-        let IvfPreparedQuery::PqFastScan { lut, group_count } = prepared else {
+        let IvfPreparedQuery::PqFastScan {
+            lut,
+            group_count,
+            suffix_max,
+        } = prepared
+        else {
             panic!("expected pq_fastscan prepared query");
         };
         assert_eq!(gamma, 0.0);
         assert_eq!(payload.len(), model.group_count.div_ceil(2));
+        assert_eq!(suffix_max.len(), model.group_count + 1);
         assert_eq!(score, grouped_pq_score_f32(&lut, group_count, &payload));
+        assert_eq!(low_bound_score, Some(score));
+        assert_eq!(high_bound_score, None);
+    }
+
+    #[test]
+    fn grouped_pq_score_bound_prunes_when_suffix_cannot_reach_minimum() {
+        let group_count = 2;
+        let mut lut = vec![0.0_f32; group_count * GROUPED_PQ_CENTROIDS];
+        lut[1] = 0.25;
+        lut[GROUPED_PQ_CENTROIDS + 2] = 0.5;
+        lut[GROUPED_PQ_CENTROIDS + 3] = 2.0;
+        let suffix_max = grouped_pq_suffix_max(&lut, group_count);
+        let payload = crate::quant::grouped_pq::pack_grouped_pq_nibbles(&[1, 2]);
+
+        assert_eq!(
+            grouped_pq_score_f32_with_min_bound(&lut, &suffix_max, group_count, &payload, 0.7),
+            Some(0.75)
+        );
+        assert_eq!(
+            grouped_pq_score_f32_with_min_bound(&lut, &suffix_max, group_count, &payload, 0.8),
+            None
+        );
     }
 }
