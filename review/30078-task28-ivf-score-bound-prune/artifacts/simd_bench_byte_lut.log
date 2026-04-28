@@ -1,0 +1,19 @@
+backend=avx2+fma
+iterations=20000
+warmup_iterations=256
+fwht/1024: total=8.843634ms ns_per_iter=442.2
+fwht/2048: total=16.867902ms ns_per_iter=843.4
+fwht/4096: total=18.409558ms ns_per_iter=1841.0
+orthonormal_fwht/1024: total=9.432953ms ns_per_iter=471.6
+orthonormal_fwht/2048: total=21.331702ms ns_per_iter=1066.6
+orthonormal_fwht/4096: total=21.539066ms ns_per_iter=2153.9
+srht/d1024_td1024: total=12.042333ms ns_per_iter=602.1
+srht/d1536_td2048: total=25.128773ms ns_per_iter=1256.4
+srht/d2048_td2048: total=25.818808ms ns_per_iter=1290.9
+f32_inner_product/d1536: total=27.056545ms ns_per_iter=1352.8
+prepare_ip_query/d1024_b4: total=20.491631ms ns_per_iter=4098.3
+prepare_ip_query/d1536_b4: total=3.851799ms ns_per_iter=770.4
+prepare_ip_query/d2048_b4: total=32.3523ms ns_per_iter=6470.5
+score_ip_encoded/d1536_b4: total=27.549829ms ns_per_iter=1377.5
+score_ip_lut_no_qjl_4bit/d1536: total=21.662986ms ns_per_iter=1083.1
+score_ip_codes_lite/d1536_b4: total=248.52425ms ns_per_iter=12426.2
