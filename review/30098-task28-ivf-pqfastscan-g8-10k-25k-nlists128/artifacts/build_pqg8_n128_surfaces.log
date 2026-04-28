@@ -1,0 +1,36 @@
+Timing is on.
+DROP TABLE
+Time: 0.558 ms
+DROP TABLE
+Time: 0.244 ms
+DROP TABLE
+Time: 0.234 ms
+DROP TABLE
+Time: 0.234 ms
+SELECT 10000
+Time: 2504.774 ms (00:02.505)
+ALTER TABLE
+Time: 9.817 ms
+SELECT 100
+Time: 16.764 ms
+CREATE INDEX
+Time: 40985.646 ms (00:40.986)
+SELECT 25000
+Time: 6569.149 ms (00:06.569)
+ALTER TABLE
+Time: 16.675 ms
+SELECT 100
+Time: 18.782 ms
+CREATE INDEX
+Time: 69914.068 ms (01:09.914)
+            relname            | index_size |                                                          reloptions                                                           
+-------------------------------+------------+-------------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_pqg10k_g8_n128_idx | 2960 kB    | {nlists=128,nprobe=128,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=750}
+ task28_ivf_pqg25k_g8_n128_idx | 5688 kB    | {nlists=128,nprobe=128,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=750}
+(2 rows)
+
+Time: 2.900 ms
+psql:review/30098-task28-ivf-pqfastscan-g8-10k-25k-nlists128/artifacts/build_pqg8_n128_surfaces.sql:3: NOTICE:  table "task28_ivf_pqg10k_g8_n128_corpus" does not exist, skipping
+psql:review/30098-task28-ivf-pqfastscan-g8-10k-25k-nlists128/artifacts/build_pqg8_n128_surfaces.sql:4: NOTICE:  table "task28_ivf_pqg10k_g8_n128_queries" does not exist, skipping
+psql:review/30098-task28-ivf-pqfastscan-g8-10k-25k-nlists128/artifacts/build_pqg8_n128_surfaces.sql:5: NOTICE:  table "task28_ivf_pqg25k_g8_n128_corpus" does not exist, skipping
+psql:review/30098-task28-ivf-pqfastscan-g8-10k-25k-nlists128/artifacts/build_pqg8_n128_surfaces.sql:6: NOTICE:  table "task28_ivf_pqg25k_g8_n128_queries" does not exist, skipping
