@@ -1,0 +1,279 @@
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index 29d8764..01d6aa0 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -1,5 +1,5 @@
+ use std::cmp::Ordering;
+-use std::collections::{hash_map::Entry, BinaryHeap, HashMap};
++use std::collections::{BinaryHeap, HashMap};
+ use std::ptr;
+ 
+ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
+@@ -38,7 +38,7 @@ struct EcIvfCentroidScore {
+     score: f32,
+ }
+ 
+-#[derive(Debug, Clone, Copy)]
++#[derive(Debug, Clone, Copy, PartialEq)]
+ struct EcIvfScoredCandidate {
+     heap_tid: ItemPointer,
+     score: f32,
+@@ -109,6 +109,119 @@ impl CandidateTopK {
+     }
+ }
+ 
++#[derive(Debug)]
++struct ProbeCandidateAccumulator {
++    limit: Option<usize>,
++    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
++    retained: BinaryHeap<CandidateHeapEntry>,
++}
++
++impl ProbeCandidateAccumulator {
++    fn new(
++        limit: Option<usize>,
++        best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
++    ) -> Self {
++        Self {
++            limit,
++            best_by_heap_tid,
++            retained: limit
++                .map(BinaryHeap::with_capacity)
++                .unwrap_or_else(BinaryHeap::new),
++        }
++    }
++
++    fn posting_score_cannot_enter(&mut self, score: f32) -> bool {
++        let Some(limit) = self.limit else {
++            return false;
++        };
++        if limit == 0 {
++            return true;
++        }
++        let Some(worst) = self.current_worst_retained(limit) else {
++            return false;
++        };
++        score.total_cmp(&worst.score) == Ordering::Greater
++    }
++
++    fn push(&mut self, candidate: EcIvfScoredCandidate) -> bool {
++        let best_by_heap_tid = unsafe { &mut *self.best_by_heap_tid };
++        if let Some(existing) = best_by_heap_tid.get_mut(&candidate.heap_tid) {
++            let improved = candidate_cmp(&candidate, existing) == Ordering::Less;
++            if improved {
++                *existing = candidate;
++            }
++            if improved {
++                self.push_retained(candidate);
++            }
++            return true;
++        }
++
++        if self.candidate_cannot_enter(candidate) {
++            return false;
++        }
++        best_by_heap_tid.insert(candidate.heap_tid, candidate);
++        self.push_retained(candidate);
++        false
++    }
++
++    fn into_ranked_candidates(self) -> Vec<EcIvfScoredCandidate> {
++        let best_by_heap_tid = unsafe { &*self.best_by_heap_tid };
++        collect_ranked_probe_candidates(best_by_heap_tid.values().copied(), self.limit)
++    }
++
++    fn candidate_cannot_enter(&mut self, candidate: EcIvfScoredCandidate) -> bool {
++        let Some(limit) = self.limit else {
++            return false;
++        };
++        if limit == 0 {
++            return true;
++        }
++        self.current_worst_retained(limit)
++            .is_some_and(|worst| candidate_cmp(&candidate, &worst) != Ordering::Less)
++    }
++
++    fn push_retained(&mut self, candidate: EcIvfScoredCandidate) {
++        let Some(limit) = self.limit else {
++            return;
++        };
++        if limit == 0 {
++            return;
++        }
++        if self.current_worst_retained(limit).is_none() || self.retained.len() < limit {
++            self.retained.push(CandidateHeapEntry { candidate });
++            return;
++        }
++        if self
++            .current_worst_retained(limit)
++            .is_some_and(|worst| candidate_cmp(&candidate, &worst) == Ordering::Less)
++        {
++            self.retained.pop();
++            self.retained.push(CandidateHeapEntry { candidate });
++        }
++    }
++
++    fn current_worst_retained(&mut self, limit: usize) -> Option<EcIvfScoredCandidate> {
++        while self.retained.len() >= limit {
++            let Some(worst) = self.retained.peek() else {
++                return None;
++            };
++            if self
++                .best_by_heap_tid()
++                .get(&worst.candidate.heap_tid)
++                .is_some_and(|current| same_scored_candidate(current, &worst.candidate))
++            {
++                return Some(worst.candidate);
++            }
++            self.retained.pop();
++        }
++        None
++    }
++
++    fn best_by_heap_tid(&self) -> &HashMap<ItemPointer, EcIvfScoredCandidate> {
++        unsafe { &*self.best_by_heap_tid }
++    }
++}
++
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ struct ProbeBlockRange {
+     head_block: u32,
+@@ -658,6 +771,10 @@ fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> O
+         })
+ }
+ 
++fn same_scored_candidate(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> bool {
++    left.heap_tid == right.heap_tid && left.score.to_bits() == right.score.to_bits()
++}
++
+ fn probe_list_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) -> Ordering {
+     right
+         .score
+@@ -731,6 +848,10 @@ unsafe fn materialize_probe_candidates(
+     let probe_plan =
+         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
+     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
++    let mut candidate_accumulator = ProbeCandidateAccumulator::new(
++        pre_rerank_candidate_limit(metadata, index_options),
++        best_by_heap_tid,
++    );
+     let posting_pages = probe_plan.posting_page_count()?;
+     opaque
+         .explain_counters
+@@ -751,21 +872,14 @@ unsafe fn materialize_probe_candidates(
+                     posting.payload,
+                 )?;
+                 record_distance_calcs(opaque, 1);
++                if candidate_accumulator.posting_score_cannot_enter(score) {
++                    return Ok(());
++                }
+                 for heap_tid in posting.heaptids() {
+                     opaque.explain_counters.record_candidate_scored();
+                     let candidate = EcIvfScoredCandidate { heap_tid, score };
+-                    let best_by_heap_tid = &mut *best_by_heap_tid;
+-                    match best_by_heap_tid.entry(heap_tid) {
+-                        Entry::Occupied(mut entry) => {
+-                            opaque.explain_counters.record_filtered_duplicate();
+-                            let existing = entry.get_mut();
+-                            if candidate_cmp(&candidate, existing) == Ordering::Less {
+-                                *existing = candidate;
+-                            }
+-                        }
+-                        Entry::Vacant(entry) => {
+-                            entry.insert(candidate);
+-                        }
++                    if candidate_accumulator.push(candidate) {
++                        opaque.explain_counters.record_filtered_duplicate();
+                     }
+                 }
+                 Ok(())
+@@ -773,11 +887,7 @@ unsafe fn materialize_probe_candidates(
+         )?
+     };
+ 
+-    let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
+-    let mut candidates = collect_ranked_probe_candidates(
+-        best_by_heap_tid.values().copied(),
+-        pre_rerank_candidate_limit(metadata, index_options),
+-    );
++    let mut candidates = candidate_accumulator.into_ranked_candidates();
+     unsafe { rerank_probe_candidates(scan, metadata, index_options, opaque, &mut candidates) };
+     Ok(candidates)
+ }
+@@ -1525,9 +1635,11 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
+ 
+ #[cfg(test)]
+ mod tests {
++    use std::collections::HashMap;
++
+     use super::{
+         build_probe_block_sequence, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
+-        EcIvfScoredCandidate, ProbeBlockRange,
++        EcIvfScoredCandidate, ProbeBlockRange, ProbeCandidateAccumulator,
+     };
+     use crate::storage::page::ItemPointer;
+ 
+@@ -1580,6 +1692,63 @@ mod tests {
+         assert_eq!(retained[1].heap_tid.offset_number, 2);
+     }
+ 
++    #[test]
++    fn probe_candidate_accumulator_prunes_postings_worse_than_frontier() {
++        let mut dedup = HashMap::new();
++        let mut accumulator = ProbeCandidateAccumulator::new(Some(2), &mut dedup);
++
++        assert!(!accumulator.push(candidate(1, 1, 1.0)));
++        assert!(!accumulator.push(candidate(1, 2, 2.0)));
++
++        assert!(accumulator.posting_score_cannot_enter(3.0));
++        assert!(!accumulator.posting_score_cannot_enter(2.0));
++
++        let retained = accumulator.into_ranked_candidates();
++        assert_eq!(retained, vec![candidate(1, 1, 1.0), candidate(1, 2, 2.0)]);
++    }
++
++    #[test]
++    fn probe_candidate_accumulator_keeps_better_duplicate() {
++        let mut dedup = HashMap::new();
++        let mut accumulator = ProbeCandidateAccumulator::new(Some(2), &mut dedup);
++
++        assert!(!accumulator.push(candidate(1, 1, 4.0)));
++        assert!(!accumulator.push(candidate(1, 2, 2.0)));
++        assert!(accumulator.push(candidate(1, 1, 1.0)));
++        assert!(!accumulator.push(candidate(1, 3, 3.0)));
++
++        let retained = accumulator.into_ranked_candidates();
++        assert_eq!(retained, vec![candidate(1, 1, 1.0), candidate(1, 2, 2.0)]);
++    }
++
++    #[test]
++    fn probe_candidate_accumulator_can_reenter_after_eviction() {
++        let mut dedup = HashMap::new();
++        let mut accumulator = ProbeCandidateAccumulator::new(Some(2), &mut dedup);
++
++        assert!(!accumulator.push(candidate(1, 1, 5.0)));
++        assert!(!accumulator.push(candidate(1, 2, 2.0)));
++        assert!(!accumulator.push(candidate(1, 3, 1.0)));
++        assert!(accumulator.push(candidate(1, 1, 0.5)));
++
++        let retained = accumulator.into_ranked_candidates();
++        assert_eq!(retained, vec![candidate(1, 1, 0.5), candidate(1, 3, 1.0)]);
++    }
++
++    #[test]
++    fn probe_candidate_accumulator_unbounded_keeps_all_best_candidates() {
++        let mut dedup = HashMap::new();
++        let mut accumulator = ProbeCandidateAccumulator::new(None, &mut dedup);
++
++        assert!(!accumulator.posting_score_cannot_enter(100.0));
++        assert!(!accumulator.push(candidate(1, 1, 5.0)));
++        assert!(!accumulator.push(candidate(1, 2, 2.0)));
++        assert!(accumulator.push(candidate(1, 1, 1.0)));
++
++        let retained = accumulator.into_ranked_candidates();
++        assert_eq!(retained, vec![candidate(1, 1, 1.0), candidate(1, 2, 2.0)]);
++    }
++
+     #[test]
+     fn select_probe_lists_keeps_best_nprobe_without_full_sort_requirement() {
+         let selected = select_probe_lists(
