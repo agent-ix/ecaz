@@ -1,0 +1,51 @@
+Timing is on.
+DROP TABLE
+Time: 0.547 ms
+DROP TABLE
+Time: 0.169 ms
+DROP TABLE
+Time: 0.165 ms
+DROP TABLE
+Time: 0.181 ms
+DROP TABLE
+Time: 0.157 ms
+DROP TABLE
+Time: 0.202 ms
+SELECT 10000
+Time: 2553.990 ms (00:02.554)
+ALTER TABLE
+Time: 10.171 ms
+SELECT 100
+Time: 17.409 ms
+SELECT 10000
+Time: 2423.760 ms (00:02.424)
+ALTER TABLE
+Time: 8.062 ms
+SELECT 100
+Time: 16.101 ms
+SELECT 10000
+Time: 3403.521 ms (00:03.404)
+ALTER TABLE
+Time: 10.895 ms
+SELECT 100
+Time: 20.195 ms
+CREATE INDEX
+Time: 27697.866 ms (00:27.698)
+CREATE INDEX
+Time: 24881.716 ms (00:24.882)
+CREATE INDEX
+Time: 23914.444 ms (00:23.914)
+          relname          | index_size |                                                         reloptions                                                          
+---------------------------+------------+-----------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_pqg10k_g16_idx | 1968 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=16,rerank=heap_f32,rerank_width=25}
+ task28_ivf_pqg10k_g32_idx | 1768 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=32,rerank=heap_f32,rerank_width=25}
+ task28_ivf_pqg10k_g8_idx  | 2448 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=25}
+(3 rows)
+
+Time: 3.876 ms
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:3: NOTICE:  table "task28_ivf_pqg10k_g8_corpus" does not exist, skipping
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:4: NOTICE:  table "task28_ivf_pqg10k_g8_queries" does not exist, skipping
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:5: NOTICE:  table "task28_ivf_pqg10k_g16_corpus" does not exist, skipping
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:6: NOTICE:  table "task28_ivf_pqg10k_g16_queries" does not exist, skipping
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:7: NOTICE:  table "task28_ivf_pqg10k_g32_corpus" does not exist, skipping
+psql:review/30087-task28-ivf-pqfastscan-group-size-smoke/artifacts/build_group_size_surfaces.sql:8: NOTICE:  table "task28_ivf_pqg10k_g32_queries" does not exist, skipping
