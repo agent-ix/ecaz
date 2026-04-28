@@ -1,5 +1,5 @@
 use super::options::StorageFormat;
-use crate::quant::prod::{PreparedQuery, ProdQuantizer};
+use crate::quant::prod::{PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
@@ -8,6 +8,7 @@ pub(super) enum IvfQuantizerProfile {
 
 pub(super) enum IvfPreparedQuery {
     TurboQuant(PreparedQuery),
+    TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +79,11 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
+                if quantizer.exact_score_mode_name() == "mse_no_qjl_4bit" {
+                    return Ok(IvfPreparedQuery::TurboQuantNoQjl4BitLut(
+                        quantizer.prepare_ip_query_lut_no_qjl_4bit(query),
+                    ));
+                }
                 Ok(IvfPreparedQuery::TurboQuant(
                     quantizer.prepare_ip_query(query),
                 ))
@@ -100,6 +106,17 @@ impl IvfQuantizer {
                 );
                 Ok(quantizer.score_ip_from_parts(prepared_query, gamma, payload))
             }
+            (
+                IvfQuantizerProfile::TurboQuant,
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(prepared_query),
+            ) => {
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
+            }
         }
     }
 
@@ -117,6 +134,7 @@ impl IvfPreparedQuery {
     pub(super) fn lut_len(&self) -> usize {
         match self {
             Self::TurboQuant(prepared) => prepared.lut.len(),
+            Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
         }
     }
 
@@ -124,6 +142,7 @@ impl IvfPreparedQuery {
     pub(super) fn sq_len(&self) -> usize {
         match self {
             Self::TurboQuant(prepared) => prepared.sq.len(),
+            Self::TurboQuantNoQjl4BitLut(_) => 0,
         }
     }
 }
@@ -177,6 +196,33 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.score_ip_from_parts(&direct_prepared, gamma, &payload)
+        );
+    }
+
+    #[test]
+    fn turboquant_dispatch_uses_lut_for_no_qjl_4bit_lane() {
+        let dimensions = 1536;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions).unwrap();
+        let (_, gamma, payload) = dispatch.encode_source(&source).unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+
+        assert_eq!(prepared.lut_len(), dimensions * 16);
+        assert_eq!(prepared.sq_len(), 0);
+
+        let direct = ProdQuantizer::cached(
+            dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let direct_prepared = direct.prepare_ip_query_lut_no_qjl_4bit(&query);
+
+        assert_eq!(
+            dispatch
+                .score_ip_from_parts(&prepared, gamma, &payload)
+                .unwrap(),
+            direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
         );
     }
 }
