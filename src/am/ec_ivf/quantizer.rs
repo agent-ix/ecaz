@@ -1,5 +1,5 @@
 use super::options::StorageFormat;
-use crate::quant::prod::{PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
+use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
@@ -79,10 +79,16 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                if quantizer.exact_score_mode_name() == "mse_no_qjl_4bit" {
-                    return Ok(IvfPreparedQuery::TurboQuantNoQjl4BitLut(
-                        quantizer.prepare_ip_query_lut_no_qjl_4bit(query),
-                    ));
+                match quantizer.exact_score_mode() {
+                    ExactScoreMode::MseNoQjl4Bit => {
+                        return Ok(IvfPreparedQuery::TurboQuantNoQjl4BitLut(
+                            quantizer.prepare_ip_query_lut_no_qjl_4bit(query),
+                        ));
+                    }
+                    ExactScoreMode::MseLutQjl
+                    | ExactScoreMode::MseLutOnly
+                    | ExactScoreMode::MseQjlOnly
+                    | ExactScoreMode::MseScalarOnly => {}
                 }
                 Ok(IvfPreparedQuery::TurboQuant(
                     quantizer.prepare_ip_query(query),

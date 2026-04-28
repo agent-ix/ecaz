@@ -46,6 +46,15 @@ pub struct PreparedTiledLutNoQjl4BitQuery {
 
 pub use crate::quant::rabitq::BinarySignNoQjl4BitQuery;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExactScoreMode {
+    MseNoQjl4Bit,
+    MseLutQjl,
+    MseLutOnly,
+    MseQjlOnly,
+    MseScalarOnly,
+}
+
 #[derive(Debug)]
 pub struct ProdQuantizer {
     pub transform_dim: usize,
@@ -304,17 +313,27 @@ impl ProdQuantizer {
         qjl_enabled(self.original_dim, self.bits)
     }
 
-    pub fn exact_score_mode_name(&self) -> &'static str {
+    pub fn exact_score_mode(&self) -> ExactScoreMode {
         if self.bits == 4 && !qjl_enabled(self.original_dim, self.bits) {
-            "mse_no_qjl_4bit"
+            ExactScoreMode::MseNoQjl4Bit
         } else if self.exact_score_uses_lut() && self.exact_score_uses_qjl() {
-            "mse_lut_qjl"
+            ExactScoreMode::MseLutQjl
         } else if self.exact_score_uses_lut() {
-            "mse_lut_only"
+            ExactScoreMode::MseLutOnly
         } else if self.exact_score_uses_qjl() {
-            "mse_qjl_only"
+            ExactScoreMode::MseQjlOnly
         } else {
-            "mse_scalar_only"
+            ExactScoreMode::MseScalarOnly
+        }
+    }
+
+    pub fn exact_score_mode_name(&self) -> &'static str {
+        match self.exact_score_mode() {
+            ExactScoreMode::MseNoQjl4Bit => "mse_no_qjl_4bit",
+            ExactScoreMode::MseLutQjl => "mse_lut_qjl",
+            ExactScoreMode::MseLutOnly => "mse_lut_only",
+            ExactScoreMode::MseQjlOnly => "mse_qjl_only",
+            ExactScoreMode::MseScalarOnly => "mse_scalar_only",
         }
     }
 
@@ -1790,6 +1809,8 @@ mod tests {
         let query = random_unit_vector(1536, 8);
         let prepared = quantizer.prepare_ip_query(&query);
 
+        assert_eq!(quantizer.exact_score_mode(), ExactScoreMode::MseNoQjl4Bit);
+        assert_eq!(quantizer.exact_score_mode_name(), "mse_no_qjl_4bit");
         assert!(quantizer.qjl_signs.is_empty());
         assert!(prepared.lut.is_empty());
         assert!(prepared.sq.is_empty());
