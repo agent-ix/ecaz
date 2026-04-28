@@ -8,9 +8,16 @@ use crate::am::common::cost::{
     PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 
-const IVF_CENTROID_SCORING_DIMENSION_SCALE: f64 = 0.03;
+// Task 28 packet 30076 measured the scan kernels on local AVX2+FMA:
+// 1536D centroid f32 IP: 1306.1 ns, 1536D no-QJL 4-bit LUT posting score:
+// 1331.0 ns. Model centroid and posting scoring with the same dimension
+// scale until a wider microbenchmark shows a real divergence.
+const IVF_CENTROID_SCORING_DIMENSION_SCALE: f64 = 0.01;
 const IVF_POSTING_SCORING_DIMENSION_SCALE: f64 = 0.01;
-const IVF_INDEX_PAGE_COST_SCALE: f64 = 0.25;
+// IVF probes scan contiguous posting-list block ranges, so seq_page_cost is
+// the least-surprising page basis. Do not apply a sub-sequential warm-cache
+// discount in the planner model without a cold/warm buffer-backed measurement.
+const IVF_INDEX_PAGE_COST_SCALE: f64 = 1.0;
 const IVF_TREE_HEIGHT: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
