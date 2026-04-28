@@ -1,0 +1,21 @@
+Timing is on.
+DROP TABLE
+Time: 0.598 ms
+DROP TABLE
+Time: 0.201 ms
+SELECT 100000
+Time: 25969.616 ms (00:25.970)
+ALTER TABLE
+Time: 63.916 ms
+SELECT 100
+Time: 17.877 ms
+CREATE INDEX
+Time: 136602.323 ms (02:16.602)
+           relname            | index_size |                                                reloptions                                                 
+------------------------------+------------+-----------------------------------------------------------------------------------------------------------
+ task28_ivf_tq100k_n64w25_idx | 87 MB      | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+(1 row)
+
+Time: 1.649 ms
+psql:review/30091-task28-ivf-100k-pqfastscan-turboquant-comparison/artifacts/build_turboquant_100k_surface.sql:3: NOTICE:  table "task28_ivf_tq100k_n64w25_corpus" does not exist, skipping
+psql:review/30091-task28-ivf-100k-pqfastscan-turboquant-comparison/artifacts/build_turboquant_100k_surface.sql:4: NOTICE:  table "task28_ivf_tq100k_n64w25_queries" does not exist, skipping
