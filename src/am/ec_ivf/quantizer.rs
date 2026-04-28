@@ -1,18 +1,36 @@
 use super::options::StorageFormat;
+use super::page;
+use crate::quant::grouped_pq::{
+    build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS,
+};
 use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 use crate::quant::rabitq::{PreparedEstimator, RaBitQQuantizer};
+use crate::quant::rotation;
 use crate::quant::Quantizer;
+use crate::storage::page::ItemPointer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
     TurboQuant,
+    PqFastScan {
+        group_count: usize,
+        group_size: usize,
+    },
     RaBitQ,
 }
 
 pub(super) enum IvfPreparedQuery {
     TurboQuant(PreparedQuery),
     TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
+    PqFastScan { lut: Vec<f32>, group_count: usize },
     RaBitQ(PreparedEstimator),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfPqFastScanModel {
+    pub(super) group_count: usize,
+    pub(super) group_size: usize,
+    pub(super) flat_codebooks: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,10 +47,15 @@ impl IvfQuantizer {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
-            StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
             StorageFormat::PqFastScan => {
-                unreachable!("validate_v1_supported rejects unsupported IVF storage formats")
+                let transform_dim = rotation::effective_transform_dim(dimensions);
+                let group_size = default_pq_fastscan_group_size(dimensions);
+                IvfQuantizerProfile::PqFastScan {
+                    group_count: transform_dim / group_size,
+                    group_size,
+                }
             }
+            StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
         };
         Ok(Self {
             profile,
@@ -70,7 +93,42 @@ impl IvfQuantizer {
                 let quantizer = self.rabitq_quantizer()?;
                 Ok((dimensions, 0.0, quantizer.encode_code(source).into_vec()))
             }
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                Err("ec_ivf pq_fastscan encoding requires a trained grouped codebook".to_owned())
+            }
         }
+    }
+
+    pub(super) fn encode_source_with_pq_model(
+        self,
+        source: &[f32],
+        model: &IvfPqFastScanModel,
+    ) -> Result<(u16, f32, Vec<u8>), String> {
+        if source.is_empty() {
+            return Err("embedding must not be empty".to_owned());
+        }
+        if source.len() != self.dimensions {
+            return Err(format!(
+                "embedding dimension mismatch: got {}, expected {}",
+                source.len(),
+                self.dimensions
+            ));
+        }
+        self.validate_pq_model(model)?;
+        let dimensions = u16::try_from(source.len())
+            .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
+        let prod = ProdQuantizer::cached(
+            self.dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let rotated = rotation::srht_padded(source, &prod.signs);
+        let codebook_iter = model
+            .flat_codebooks
+            .chunks_exact(model.group_size * GROUPED_PQ_CENTROIDS);
+        let payload =
+            crate::quant::grouped_pq::encode_grouped_pq(&rotated, codebook_iter, model.group_size);
+        Ok((dimensions, 0.0, payload))
     }
 
     pub(super) fn prepare_ip_query(self, query: &[f32]) -> Result<IvfPreparedQuery, String> {
@@ -107,7 +165,41 @@ impl IvfQuantizer {
                 let quantizer = self.rabitq_quantizer()?;
                 Ok(IvfPreparedQuery::RaBitQ(quantizer.prepare_estimator(query)))
             }
+            IvfQuantizerProfile::PqFastScan { .. } => {
+                Err("ec_ivf pq_fastscan query prep requires persisted grouped codebooks".to_owned())
+            }
         }
+    }
+
+    pub(super) fn prepare_ip_query_with_pq_model(
+        self,
+        query: &[f32],
+        model: &IvfPqFastScanModel,
+    ) -> Result<IvfPreparedQuery, String> {
+        if query.len() != self.dimensions {
+            return Err(format!(
+                "query dimension mismatch: got {}, expected {}",
+                query.len(),
+                self.dimensions
+            ));
+        }
+        self.validate_pq_model(model)?;
+        let prod = ProdQuantizer::cached(
+            self.dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let rotated = rotation::srht_padded(query, &prod.signs);
+        let transform_dim = model.group_count * model.group_size;
+        let lut = build_grouped_pq_lut_f32(
+            &rotated[..transform_dim],
+            &model.flat_codebooks,
+            model.group_size,
+        );
+        Ok(IvfPreparedQuery::PqFastScan {
+            lut,
+            group_count: model.group_count,
+        })
     }
 
     pub(super) fn score_ip_from_parts(
@@ -141,9 +233,30 @@ impl IvfQuantizer {
                 let _ = gamma;
                 Ok(quantizer.estimate_ip(prepared_query, payload).estimate)
             }
+            (
+                IvfQuantizerProfile::PqFastScan { group_count, .. },
+                IvfPreparedQuery::PqFastScan {
+                    lut,
+                    group_count: prepared_group_count,
+                },
+            ) => {
+                let _ = gamma;
+                if group_count != *prepared_group_count {
+                    return Err("ec_ivf pq_fastscan prepared query group count mismatch".to_owned());
+                }
+                Ok(grouped_pq_score_f32(lut, group_count, payload))
+            }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
-            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_)) => {
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::PqFastScan { .. },
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
             }
         }
@@ -154,6 +267,7 @@ impl IvfQuantizer {
             IvfQuantizerProfile::TurboQuant => {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
             }
+            IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
             IvfQuantizerProfile::RaBitQ => self
                 .rabitq_quantizer()
                 .expect("default RaBitQ configuration should be valid")
@@ -168,6 +282,89 @@ impl IvfQuantizer {
             crate::DEFAULT_QUANT_BITS,
         )
     }
+
+    fn validate_pq_model(self, model: &IvfPqFastScanModel) -> Result<(), String> {
+        match self.profile {
+            IvfQuantizerProfile::PqFastScan {
+                group_count,
+                group_size,
+            } => {
+                if model.group_count != group_count || model.group_size != group_size {
+                    return Err(format!(
+                        "ec_ivf pq_fastscan model shape mismatch: model {}x{}, expected {}x{}",
+                        model.group_count, model.group_size, group_count, group_size
+                    ));
+                }
+                let expected = group_count * GROUPED_PQ_CENTROIDS * group_size;
+                if model.flat_codebooks.len() != expected {
+                    return Err(format!(
+                        "ec_ivf pq_fastscan codebook length mismatch: got {}, expected {expected}",
+                        model.flat_codebooks.len()
+                    ));
+                }
+                Ok(())
+            }
+            _ => Err("ec_ivf pq_fastscan model used with non-pq quantizer".to_owned()),
+        }
+    }
+}
+
+pub(super) fn default_pq_fastscan_group_size(dimensions: usize) -> usize {
+    rotation::effective_transform_dim(dimensions).min(16)
+}
+
+pub(super) unsafe fn load_pq_fastscan_model(
+    index_relation: pgrx::pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> Result<IvfPqFastScanModel, String> {
+    if metadata.storage_format != StorageFormat::PqFastScan {
+        return Err("ec_ivf pq_fastscan model load requires a pq_fastscan index".to_owned());
+    }
+    if metadata.pq_codebook_head == ItemPointer::INVALID {
+        return Err("ec_ivf pq_fastscan metadata is missing a codebook head".to_owned());
+    }
+    if metadata.pq_group_size == 0 {
+        return Err("ec_ivf pq_fastscan metadata has zero group size".to_owned());
+    }
+    let group_size = usize::from(metadata.pq_group_size);
+    let transform_dim = rotation::effective_transform_dim(metadata.dimensions as usize);
+    if transform_dim % group_size != 0 {
+        return Err(format!(
+            "ec_ivf pq_fastscan transform dim {transform_dim} is not divisible by group size {group_size}"
+        ));
+    }
+    let group_count = transform_dim / group_size;
+    let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
+    let mut flat_codebooks = Vec::with_capacity(group_count * centroid_count);
+    let mut next_tid = metadata.pq_codebook_head;
+
+    for expected_group_index in 0..group_count {
+        if next_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_ivf pq_fastscan codebook chain ended at group {expected_group_index}"
+            ));
+        }
+        let tuple =
+            unsafe { page::read_ivf_pq_codebook(index_relation, next_tid, centroid_count)? };
+        if usize::from(tuple.group_index) != expected_group_index {
+            return Err(format!(
+                "ec_ivf pq_fastscan codebook order mismatch: got {}, expected {expected_group_index}",
+                tuple.group_index
+            ));
+        }
+        flat_codebooks.extend(tuple.centroids);
+        next_tid = tuple.next_tid;
+    }
+
+    if next_tid != ItemPointer::INVALID {
+        return Err("ec_ivf pq_fastscan codebook chain has trailing tuples".to_owned());
+    }
+
+    Ok(IvfPqFastScanModel {
+        group_count,
+        group_size,
+        flat_codebooks,
+    })
 }
 
 impl IvfPreparedQuery {
@@ -176,6 +373,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
+            Self::PqFastScan { lut, .. } => lut.len(),
             Self::RaBitQ(_) => 0,
         }
     }
@@ -185,6 +383,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
+            Self::PqFastScan { .. } => 0,
             Self::RaBitQ(_) => 0,
         }
     }
@@ -220,8 +419,16 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_v1_formats_are_rejected_at_dispatch() {
-        assert!(IvfQuantizer::resolve(StorageFormat::PqFastScan, 16).is_err());
+    fn pq_fastscan_v1_format_resolves_to_grouped_profile() {
+        let explicit = IvfQuantizer::resolve(StorageFormat::PqFastScan, 16).unwrap();
+
+        assert_eq!(
+            explicit.profile,
+            IvfQuantizerProfile::PqFastScan {
+                group_count: 1,
+                group_size: 16
+            }
+        );
     }
 
     #[test]
@@ -300,5 +507,54 @@ mod tests {
                 .unwrap(),
             direct.estimate_ip(&direct_prepared, &payload).estimate
         );
+    }
+
+    #[test]
+    fn pq_fastscan_dispatch_scores_grouped_code_with_persisted_model() {
+        let dimensions = 16;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let training_rows = [
+            unit_vector(dimensions),
+            unit_vector(dimensions),
+            (0..dimensions)
+                .map(|index| if index % 2 == 0 { 0.25 } else { -0.25 })
+                .collect::<Vec<_>>(),
+            (0..dimensions)
+                .map(|index| if index % 2 == 0 { -0.25 } else { 0.25 })
+                .collect::<Vec<_>>(),
+        ];
+        let training_refs = training_rows.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let trained = crate::am::common::training::train_grouped_pq4_model(
+            &training_refs,
+            dimensions,
+            crate::DEFAULT_QUANT_SEED,
+            default_pq_fastscan_group_size(dimensions),
+            training_refs.len(),
+            3,
+        )
+        .unwrap();
+        let model = IvfPqFastScanModel {
+            group_count: trained.group_count,
+            group_size: trained.group_size,
+            flat_codebooks: trained.codebooks.into_iter().flatten().collect(),
+        };
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let (_, gamma, payload) = dispatch
+            .encode_source_with_pq_model(&source, &model)
+            .unwrap();
+        let prepared = dispatch
+            .prepare_ip_query_with_pq_model(&query, &model)
+            .unwrap();
+        let score = dispatch
+            .score_ip_from_parts(&prepared, gamma, &payload)
+            .unwrap();
+
+        let IvfPreparedQuery::PqFastScan { lut, group_count } = prepared else {
+            panic!("expected pq_fastscan prepared query");
+        };
+        assert_eq!(gamma, 0.0);
+        assert_eq!(payload.len(), model.group_count.div_ceil(2));
+        assert_eq!(score, grouped_pq_score_f32(&lut, group_count, &payload));
     }
 }

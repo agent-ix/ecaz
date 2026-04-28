@@ -1,6 +1,6 @@
 use pgrx::pg_sys;
 
-use super::{build, options, page, training};
+use super::{build, options, page, quantizer, training};
 use crate::storage::page::ItemPointer;
 
 const EMPTY_BOOTSTRAP_LOCK_MODE: pg_sys::LOCKMODE =
@@ -35,7 +35,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let indexed_vector_kind =
                 build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert");
             let heap_tid = build::decode_heap_tid(heap_tid, "aminsert");
-            let tuple = build::build_index_tuple(
+            let mut tuple = build::build_index_tuple(
                 values,
                 isnull,
                 heap_tid,
@@ -47,6 +47,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let result = if metadata.dimensions == 0 {
                 insert_with_empty_bootstrap_lock(index_relation, tuple)
             } else {
+                tuple = reencode_tuple_for_storage(index_relation, &metadata, tuple)
+                    .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert failed: {e}"));
                 insert_into_trained_index(index_relation, &metadata, tuple)
             };
             result.unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert failed: {e}"));
@@ -82,6 +84,27 @@ unsafe fn insert_with_empty_bootstrap_lock(
     }
     drop(guard);
     unsafe { insert_into_trained_index(index_relation, &metadata, tuple) }
+}
+
+unsafe fn reencode_tuple_for_storage(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    mut tuple: build::BuildTuple,
+) -> Result<build::BuildTuple, String> {
+    if metadata.storage_format != options::StorageFormat::PqFastScan {
+        return Ok(tuple);
+    }
+    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+    let ivf_quantizer = quantizer::IvfQuantizer::resolve(
+        metadata.storage_format,
+        usize::from(metadata.dimensions),
+    )?;
+    let (dimensions, gamma, payload) =
+        ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
+    tuple.dimensions = dimensions;
+    tuple.gamma = gamma;
+    tuple.payload = payload;
+    Ok(tuple)
 }
 
 unsafe fn insert_into_trained_index(

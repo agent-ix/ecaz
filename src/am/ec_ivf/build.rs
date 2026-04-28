@@ -3,8 +3,9 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
-use super::quantizer::IvfQuantizer;
+use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{options, page, training, P_NEW};
+use crate::am::common::training as common_training;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
     page::{DataPageChain, ItemPointer},
@@ -13,6 +14,7 @@ use crate::storage::{
 
 const DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 const DEFAULT_KMEANS_ITERATIONS: usize = 8;
+const DEFAULT_PQ_FASTSCAN_KMEANS_ITERATIONS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IndexedVectorKind {
@@ -200,7 +202,9 @@ impl BuildState {
         let expected_payload_len =
             IvfQuantizer::resolve(self.options.storage_format, usize::from(tuple.dimensions))?
                 .payload_len();
-        if tuple.payload.len() != expected_payload_len {
+        let deferred_pq_encode = self.options.storage_format == options::StorageFormat::PqFastScan
+            && tuple.payload.is_empty();
+        if !deferred_pq_encode && tuple.payload.len() != expected_payload_len {
             return Err(format!(
                 "posting payload length mismatch: got {}, expected {expected_payload_len} for dim {}",
                 tuple.payload.len(),
@@ -291,6 +295,16 @@ impl BuildState {
         if !page::list_directory_tuple_fits(self.page_size) {
             return Err("list directory tuple does not fit on a page".into());
         }
+        let pq_model = self.train_pq_fastscan_model(dimensions)?;
+        let pq_centroid_count = pq_model
+            .as_ref()
+            .map(|model| model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS)
+            .unwrap_or(0);
+        if pq_model.is_some() && !page::pq_codebook_tuple_fits(pq_centroid_count, self.page_size) {
+            return Err(format!(
+                "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
+            ));
+        }
 
         let nlists = model.centroid_count();
         let mut data_pages = DataPageChain::new(self.page_size);
@@ -303,6 +317,41 @@ impl BuildState {
             centroid_tids.push(data_pages.insert_ivf_centroid(&centroid)?);
         }
 
+        let mut pq_codebook_head = ItemPointer::INVALID;
+        if let Some(pq_model) = &pq_model {
+            let mut pq_codebook_tids = Vec::with_capacity(pq_model.group_count);
+            for group_index in 0..pq_model.group_count {
+                let start = group_index * pq_centroid_count;
+                let end = start + pq_centroid_count;
+                let tuple = page::IvfPqCodebookTuple {
+                    group_index: u16::try_from(group_index)
+                        .map_err(|_| "pq_fastscan group index exceeds u16".to_owned())?,
+                    next_tid: ItemPointer::INVALID,
+                    centroids: pq_model.flat_codebooks[start..end].to_vec(),
+                };
+                pq_codebook_tids.push(data_pages.insert_ivf_pq_codebook(&tuple)?);
+            }
+            for group_index in 0..pq_codebook_tids.len() {
+                let next_tid = pq_codebook_tids
+                    .get(group_index + 1)
+                    .copied()
+                    .unwrap_or(ItemPointer::INVALID);
+                let start = group_index * pq_centroid_count;
+                let end = start + pq_centroid_count;
+                let tuple = page::IvfPqCodebookTuple {
+                    group_index: u16::try_from(group_index)
+                        .map_err(|_| "pq_fastscan group index exceeds u16".to_owned())?,
+                    next_tid,
+                    centroids: pq_model.flat_codebooks[start..end].to_vec(),
+                };
+                data_pages.update_ivf_pq_codebook(pq_codebook_tids[group_index], &tuple)?;
+            }
+            pq_codebook_head = pq_codebook_tids
+                .first()
+                .copied()
+                .unwrap_or(ItemPointer::INVALID);
+        }
+
         let mut tuple_indices_by_list = vec![Vec::new(); nlists];
         for (tuple_index, tuple) in self.heap_tuples.iter().enumerate() {
             let list_id = training::assign_vector_to_centroid(&tuple.source_vector, model)?;
@@ -313,13 +362,25 @@ impl BuildState {
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             for tuple_index in tuple_indices {
                 let tuple = &self.heap_tuples[*tuple_index];
+                let (gamma, payload) = match &pq_model {
+                    Some(pq_model) => {
+                        let quantizer = IvfQuantizer::resolve(
+                            self.options.storage_format,
+                            usize::from(tuple.dimensions),
+                        )?;
+                        let (_, gamma, payload) = quantizer
+                            .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
+                        (gamma, payload)
+                    }
+                    None => (tuple.gamma, tuple.payload.clone()),
+                };
                 let posting = page::IvfPostingTuple {
                     list_id: list_id_u32(list_id)?,
                     deleted: false,
                     heaptids: vec![tuple.heap_tid],
-                    gamma: tuple.gamma,
+                    gamma,
                     rerank_tid: ItemPointer::INVALID,
-                    payload: tuple.payload.clone(),
+                    payload,
                 };
                 posting_tids_by_list[list_id].push(data_pages.insert_ivf_posting(&posting)?);
             }
@@ -356,6 +417,11 @@ impl BuildState {
             .first()
             .copied()
             .unwrap_or(ItemPointer::INVALID);
+        if let Some(pq_model) = pq_model {
+            metadata.pq_codebook_head = pq_codebook_head;
+            metadata.pq_group_size = u16::try_from(pq_model.group_size)
+                .map_err(|_| "pq_fastscan group size exceeds u16".to_owned())?;
+        }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
 
@@ -367,6 +433,30 @@ impl BuildState {
             posting_tids_by_list,
             directory_entries,
         })
+    }
+
+    fn train_pq_fastscan_model(
+        &self,
+        dimensions: u16,
+    ) -> Result<Option<IvfPqFastScanModel>, String> {
+        if self.options.storage_format != options::StorageFormat::PqFastScan {
+            return Ok(None);
+        }
+        let group_size = quantizer::default_pq_fastscan_group_size(usize::from(dimensions));
+        let sample_vectors = self.training_sample_vectors();
+        let model = common_training::train_grouped_pq4_model(
+            &sample_vectors,
+            usize::from(dimensions),
+            self.options.seed as u64,
+            group_size,
+            self.training_sample_count(),
+            DEFAULT_PQ_FASTSCAN_KMEANS_ITERATIONS,
+        )?;
+        Ok(Some(IvfPqFastScanModel {
+            group_count: model.group_count,
+            group_size: model.group_size,
+            flat_codebooks: model.codebooks.into_iter().flatten().collect(),
+        }))
     }
 }
 
@@ -468,7 +558,9 @@ pub(super) unsafe fn build_index_tuple(
         IndexedVectorKind::Ecvector => {
             build_ecvector_tuple(heap_tid, &bytes, storage_format, context)
         }
-        IndexedVectorKind::Tqvector => build_tqvector_tuple(heap_tid, &bytes, context),
+        IndexedVectorKind::Tqvector => {
+            build_tqvector_tuple(heap_tid, &bytes, storage_format, context)
+        }
     }
 }
 
@@ -480,6 +572,21 @@ fn build_ecvector_tuple(
 ) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
+    if storage_format == options::StorageFormat::PqFastScan {
+        let dimensions = u16::try_from(source_vector.len()).unwrap_or_else(|_| {
+            pgrx::error!(
+                "ec_ivf {context} found invalid indexed ecvector: embedding dimension {} exceeds maximum 65535",
+                source_vector.len()
+            )
+        });
+        return BuildTuple {
+            heap_tid,
+            dimensions,
+            gamma: 0.0,
+            payload: Vec::new(),
+            source_vector,
+        };
+    }
     let quantizer = IvfQuantizer::resolve(storage_format, source_vector.len())
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let (dimensions, gamma, payload) = quantizer
@@ -495,7 +602,12 @@ fn build_ecvector_tuple(
     }
 }
 
-fn build_tqvector_tuple(heap_tid: ItemPointer, bytes: &[u8], context: &str) -> BuildTuple {
+fn build_tqvector_tuple(
+    heap_tid: ItemPointer,
+    bytes: &[u8],
+    storage_format: options::StorageFormat,
+    context: &str,
+) -> BuildTuple {
     let (dimensions, bits, seed, gamma, code) = crate::unpack(bytes)
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed tqvector: {e}"));
     let payload = code.to_vec();
@@ -505,6 +617,15 @@ fn build_tqvector_tuple(heap_tid: ItemPointer, bytes: &[u8], context: &str) -> B
     full_payload.extend_from_slice(&gamma.to_le_bytes());
     full_payload.extend_from_slice(&payload);
     let source_vector = quantizer.decode_approximate(&full_payload);
+    if storage_format == options::StorageFormat::PqFastScan {
+        return BuildTuple {
+            heap_tid,
+            dimensions,
+            gamma: 0.0,
+            payload: Vec::new(),
+            source_vector,
+        };
+    }
 
     BuildTuple {
         heap_tid,

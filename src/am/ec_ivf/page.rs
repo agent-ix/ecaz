@@ -28,6 +28,7 @@ const BLOCK_REF_BYTES: usize = 4;
 const IVF_CENTROID_TAG: u8 = 0x21;
 const IVF_LIST_DIRECTORY_TAG: u8 = 0x22;
 const IVF_POSTING_TAG: u8 = 0x23;
+const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
 const POSTING_FLAG_DELETED: u8 = 1 << 0;
 const POSTING_FIXED_BYTES: usize =
     1 + 4 + 1 + 1 + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES + 4 + ITEM_POINTER_BYTES;
@@ -48,6 +49,8 @@ pub(super) struct MetadataPage {
     pub(super) total_live_tuples: u64,
     pub(super) total_dead_tuples: u64,
     pub(super) inserted_since_build: u64,
+    pub(super) pq_codebook_head: ItemPointer,
+    pub(super) pq_group_size: u16,
 }
 
 impl MetadataPage {
@@ -68,6 +71,8 @@ impl MetadataPage {
             total_live_tuples: 0,
             total_dead_tuples: 0,
             inserted_since_build: 0,
+            pq_codebook_head: ItemPointer::INVALID,
+            pq_group_size: 0,
         }
     }
 
@@ -88,6 +93,8 @@ impl MetadataPage {
         out[48..56].copy_from_slice(&self.total_live_tuples.to_le_bytes());
         out[56..64].copy_from_slice(&self.total_dead_tuples.to_le_bytes());
         out[64..72].copy_from_slice(&self.inserted_since_build.to_le_bytes());
+        write_item_pointer(&mut out[72..78], self.pq_codebook_head);
+        out[78..80].copy_from_slice(&self.pq_group_size.to_le_bytes());
         out
     }
 
@@ -166,6 +173,12 @@ impl MetadataPage {
                 bytes[64..72]
                     .try_into()
                     .expect("metadata inserted-since-build slice should be 8 bytes"),
+            ),
+            pq_codebook_head: ItemPointer::decode(&bytes[72..78])?,
+            pq_group_size: u16::from_le_bytes(
+                bytes[78..80]
+                    .try_into()
+                    .expect("metadata pq group size slice should be 2 bytes"),
             ),
         })
     }
@@ -522,6 +535,88 @@ impl IvfPostingTuple {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfPqCodebookTuple {
+    pub(super) group_index: u16,
+    pub(super) next_tid: ItemPointer,
+    pub(super) centroids: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfPqCodebookTupleRef<'a> {
+    pub(super) group_index: u16,
+    pub(super) next_tid: ItemPointer,
+    centroid_bytes: &'a [u8],
+}
+
+impl<'a> IvfPqCodebookTupleRef<'a> {
+    pub(super) fn decode(input: &'a [u8], centroid_count: usize) -> Result<Self, String> {
+        let expected_len = IvfPqCodebookTuple::encoded_len(centroid_count);
+        if input.len() != expected_len {
+            return Err(format!(
+                "ec_ivf pq codebook tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_PQ_CODEBOOK_TAG {
+            return Err(format!(
+                "invalid ec_ivf pq codebook tuple tag: {}",
+                input[0]
+            ));
+        }
+
+        Ok(Self {
+            group_index: u16::from_le_bytes(
+                input[1..3]
+                    .try_into()
+                    .expect("pq codebook group index slice should be 2 bytes"),
+            ),
+            next_tid: ItemPointer::decode(&input[3..9])?,
+            centroid_bytes: &input[9..],
+        })
+    }
+
+    pub(super) fn centroid_values(&self) -> impl Iterator<Item = f32> + '_ {
+        self.centroid_bytes
+            .chunks_exact(std::mem::size_of::<f32>())
+            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated f32 chunk")))
+    }
+
+    pub(super) fn collect_centroids(&self) -> Vec<f32> {
+        self.centroid_values().collect()
+    }
+}
+
+impl IvfPqCodebookTuple {
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.centroids.iter().any(|value| !value.is_finite()) {
+            return Err("ec_ivf pq codebook contains a non-finite value".into());
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(self.centroids.len()));
+        out.push(IVF_PQ_CODEBOOK_TAG);
+        out.extend_from_slice(&self.group_index.to_le_bytes());
+        self.next_tid.encode_into(&mut out);
+        for value in &self.centroids {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8], centroid_count: usize) -> Result<Self, String> {
+        let tuple = IvfPqCodebookTupleRef::decode(input, centroid_count)?;
+        Ok(Self {
+            group_index: tuple.group_index,
+            next_tid: tuple.next_tid,
+            centroids: tuple.collect_centroids(),
+        })
+    }
+
+    pub(super) const fn encoded_len(centroid_count: usize) -> usize {
+        1 + 2 + ITEM_POINTER_BYTES + centroid_count * std::mem::size_of::<f32>()
+    }
+}
+
 pub(super) fn centroid_tuple_fits(dimensions: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfCentroidTuple::encoded_len(dimensions)) <= usable_page_bytes(page_size)
 }
@@ -532,6 +627,11 @@ pub(super) fn list_directory_tuple_fits(page_size: usize) -> bool {
 
 pub(super) fn posting_tuple_fits(payload_len: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfPostingTuple::encoded_len(payload_len)) <= usable_page_bytes(page_size)
+}
+
+pub(super) fn pq_codebook_tuple_fits(centroid_count: usize, page_size: usize) -> bool {
+    aligned_tuple_bytes(IvfPqCodebookTuple::encoded_len(centroid_count))
+        <= usable_page_bytes(page_size)
 }
 
 impl DataPage {
@@ -569,6 +669,21 @@ impl DataPage {
         tuple: &IvfPostingTuple,
     ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_pq_codebook(
+        &mut self,
+        tuple: &IvfPqCodebookTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_pq_codebook(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfPqCodebookTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
     }
 
     pub(super) fn read_ivf_posting(
@@ -623,6 +738,23 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_pq_codebook(
+        &mut self,
+        tuple: &IvfPqCodebookTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_pq_codebook(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfPqCodebookTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("ec_ivf pq codebook block {} not found", tid.block_number))?
+            .update_ivf_pq_codebook(tid, tuple)
+    }
+
     pub(super) fn read_ivf_posting(
         &self,
         tid: ItemPointer,
@@ -667,6 +799,19 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
         )?
     };
     Ok((directory, next_directory))
+}
+
+pub(super) unsafe fn read_ivf_pq_codebook(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+    centroid_count: usize,
+) -> Result<IvfPqCodebookTuple, String> {
+    let (codebook, _) = unsafe {
+        read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+            IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
+        })?
+    };
+    Ok(codebook)
 }
 
 pub(super) unsafe fn read_ivf_postings_for_list_blocks(
@@ -2222,6 +2367,24 @@ mod tests {
         let err = tuple.encode().unwrap_err();
 
         assert!(err.contains("too many ec_ivf posting heap tids"));
+    }
+
+    #[test]
+    fn pq_codebook_tuple_roundtrip() {
+        let tuple = IvfPqCodebookTuple {
+            group_index: 2,
+            next_tid: tid(9, 3),
+            centroids: vec![0.0, 0.25, -0.5, 1.0],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfPqCodebookTuple::decode(&encoded, tuple.centroids.len()).unwrap();
+        let borrowed = IvfPqCodebookTupleRef::decode(&encoded, tuple.centroids.len()).unwrap();
+
+        assert_eq!(decoded, tuple);
+        assert_eq!(borrowed.group_index, 2);
+        assert_eq!(borrowed.next_tid, tuple.next_tid);
+        assert_eq!(borrowed.collect_centroids(), tuple.centroids);
     }
 
     #[test]

@@ -9,7 +9,8 @@ use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 use crate::storage::page::ItemPointer;
 
-use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
+use super::options::StorageFormat;
+use super::quantizer::{self, IvfPreparedQuery, IvfQuantizer};
 
 #[derive(Debug, Default)]
 struct EcIvfScanOpaque {
@@ -270,7 +271,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 resolve_effective_nprobe(&metadata)
             };
             store_scan_query(opaque, &query);
-            store_scan_prepared_query(opaque, &query, &metadata);
+            store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
 
             if metadata.dimensions != 0 {
                 let centroid_scores =
@@ -455,6 +456,7 @@ unsafe fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
 
 fn store_scan_prepared_query(
     opaque: &mut EcIvfScanOpaque,
+    index_relation: pg_sys::Relation,
     query: &[f32],
     metadata: &super::page::MetadataPage,
 ) {
@@ -465,9 +467,17 @@ fn store_scan_prepared_query(
 
     let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
-    let prepared = quantizer
-        .prepare_ip_query(query)
-        .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"));
+    let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
+        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load pq_fastscan model: {e}"));
+        quantizer
+            .prepare_ip_query_with_pq_model(query, &model)
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
+    } else {
+        quantizer
+            .prepare_ip_query(query)
+            .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
+    };
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
 }
 
