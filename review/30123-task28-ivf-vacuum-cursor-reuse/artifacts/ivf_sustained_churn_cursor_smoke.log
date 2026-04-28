@@ -1,0 +1,84 @@
+Timing is on.
+CREATE EXTENSION
+Time: 0.407 ms
+DROP TABLE
+Time: 33.757 ms
+DROP TABLE
+Time: 7.317 ms
+CREATE TABLE
+Time: 7.164 ms
+CREATE TABLE
+Time: 4.117 ms
+INSERT 0 50000
+Time: 334.129 ms
+INSERT 0 50000
+Time: 120.191 ms
+CREATE INDEX
+Time: 1246.559 ms (00:01.247)
+CREATE INDEX
+Time: 1834.177 ms (00:01.834)
+    phase     |         relname          | index_bytes | index_size
+--------------+--------------------------+-------------+------------
+ cycle0_build | task28_ivf_churn_n32_idx |     4464640 | 4360 kB
+ cycle0_build | task28_ivf_churn_n64_idx |     4472832 | 4368 kB
+(2 rows)
+
+Time: 2.503 ms
+DELETE 25000
+Time: 14.931 ms
+DELETE 25000
+Time: 14.866 ms
+VACUUM
+Time: 123.780 ms
+VACUUM
+Time: 114.139 ms
+INSERT 0 25000
+Time: 44891.922 ms (00:44.892)
+INSERT 0 25000
+Time: 36117.590 ms (00:36.118)
+     phase     |         relname          | index_bytes | index_size
+---------------+--------------------------+-------------+------------
+ cycle1_refill | task28_ivf_churn_n32_idx |     4464640 | 4360 kB
+ cycle1_refill | task28_ivf_churn_n64_idx |     4579328 | 4472 kB
+(2 rows)
+
+Time: 0.846 ms
+DELETE 25000
+Time: 16.358 ms
+DELETE 25000
+Time: 17.480 ms
+VACUUM
+Time: 109.073 ms
+VACUUM
+Time: 514.346 ms
+INSERT 0 25000
+Time: 45734.061 ms (00:45.734)
+INSERT 0 25000
+Time: 113753.512 ms (01:53.754)
+     phase     |         relname          | index_bytes | index_size
+---------------+--------------------------+-------------+------------
+ cycle2_refill | task28_ivf_churn_n32_idx |     4464640 | 4360 kB
+ cycle2_refill | task28_ivf_churn_n64_idx |     4751360 | 4640 kB
+(2 rows)
+
+Time: 1.034 ms
+DELETE 25000
+Time: 19.246 ms
+DELETE 25000
+Time: 21.953 ms
+VACUUM
+Time: 121.432 ms
+VACUUM
+Time: 673.987 ms
+INSERT 0 25000
+Time: 44860.814 ms (00:44.861)
+INSERT 0 25000
+Time: 134251.989 ms (02:14.252)
+     phase     |         relname          | index_bytes | index_size
+---------------+--------------------------+-------------+------------
+ cycle3_refill | task28_ivf_churn_n32_idx |     4464640 | 4360 kB
+ cycle3_refill | task28_ivf_churn_n64_idx |     4964352 | 4848 kB
+(2 rows)
+
+Time: 0.834 ms
+psql:review/30120-task28-ivf-vacuum-sustained-churn/artifacts/ivf_sustained_churn_smoke.sql:3: NOTICE:  extension "ecaz" already exists, skipping
