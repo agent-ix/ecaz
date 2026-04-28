@@ -1,0 +1,40 @@
+Timing is on.
+                  relname                  | relkind | reltuples 
+-------------------------------------------+---------+-----------
+ task28_ivf_postopt25k_n64w25_corpus       | r       |     25000
+ task28_ivf_postopt25k_n64w25_corpus_pkey  | i       |     25000
+ task28_ivf_postopt25k_n64w25_idx          | i       |     25000
+ task28_ivf_postopt25k_n64w25_queries      | r       |       100
+ task28_ivf_postopt25k_n64w25_queries_pkey | i       |       100
+ task28_ivf_pqg10k_g8_corpus               | r       |     10000
+ task28_ivf_pqg10k_g8_corpus_pkey          | i       |     10000
+ task28_ivf_pqg10k_g8_idx                  | i       |     10000
+ task28_ivf_pqg10k_g8_queries              | r       |       100
+ task28_ivf_pqg25k_g8_corpus               | r       |     25000
+ task28_ivf_pqg25k_g8_corpus_pkey          | i       |     25000
+ task28_ivf_pqg25k_g8_idx                  | i       |     25000
+ task28_ivf_pqg25k_g8_queries              | r       |       100
+ task28_ivf_qcmp10k_pqfastscan_corpus      | r       |     10000
+ task28_ivf_qcmp10k_pqfastscan_corpus_pkey | i       |     10000
+ task28_ivf_qcmp10k_pqfastscan_idx         | i       |     10000
+ task28_ivf_qcmp10k_pqfastscan_queries     | r       |       100
+ task28_ivf_qcmp10k_rabitq_corpus          | r       |     10000
+ task28_ivf_qcmp10k_rabitq_corpus_pkey     | i       |     10000
+ task28_ivf_qcmp10k_rabitq_idx             | i       |     10000
+ task28_ivf_qcmp10k_rabitq_queries         | r       |       100
+ task28_ivf_qcmp10k_turboquant_corpus      | r       |     10000
+ task28_ivf_qcmp10k_turboquant_corpus_pkey | i       |     10000
+ task28_ivf_qcmp10k_turboquant_idx         | i       |     10000
+ task28_ivf_qcmp10k_turboquant_queries     | r       |       100
+(25 rows)
+
+Time: 4.941 ms
+              relname              |  size   |                                                         reloptions                                                         
+-----------------------------------+---------+----------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_postopt25k_n64w25_idx  | 22 MB   | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+ task28_ivf_pqg10k_g8_idx          | 2448 kB | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=25}
+ task28_ivf_pqg25k_g8_idx          | 5176 kB | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=25}
+ task28_ivf_qcmp10k_turboquant_idx | 9416 kB | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+(4 rows)
+
+Time: 3.420 ms
