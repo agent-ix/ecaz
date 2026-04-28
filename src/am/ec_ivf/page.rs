@@ -924,6 +924,7 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     head_block: BlockRef,
     tail_block: BlockRef,
     payload_len: usize,
+    no_compact_blocks: &[pg_sys::BlockNumber],
     mut rewrite: F,
 ) -> Result<(), String>
 where
@@ -950,6 +951,7 @@ where
                 list_id,
                 block_number,
                 payload_len,
+                !no_compact_blocks.contains(&block_number),
                 &mut rewrite,
             )?
         };
@@ -1777,6 +1779,7 @@ unsafe fn rewrite_ivf_postings_for_list_block<F>(
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
+    compact_deletes: bool,
     rewrite: &mut F,
 ) -> Result<(), String>
 where
@@ -1805,6 +1808,7 @@ where
             list_id,
             block_number,
             payload_len,
+            compact_deletes,
             rewrite,
         )
     };
@@ -1818,6 +1822,7 @@ unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
+    compact_deletes: bool,
     rewrite: &mut F,
 ) -> Result<(), String>
 where
@@ -1890,10 +1895,21 @@ where
         }
     }
 
-    for offset in delete_offsets.iter().rev() {
-        // Directory and metadata tuples can hold stable ItemPointers into the
-        // same page, so reclaim tuple storage without compacting line pointers.
-        unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
+    if compact_deletes && !delete_offsets.is_empty() {
+        unsafe {
+            pg_sys::PageIndexMultiDelete(
+                page,
+                delete_offsets.as_mut_ptr(),
+                delete_offsets
+                    .len()
+                    .try_into()
+                    .map_err(|_| "ec_ivf posting delete count exceeds c_int".to_owned())?,
+            )
+        };
+    } else {
+        for offset in delete_offsets.iter().rev() {
+            unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
+        }
     }
 
     if changed {

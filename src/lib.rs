@@ -3959,6 +3959,45 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_vacuum_compacts_deleted_posting_space_for_reuse() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_reuse (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_vacuum_reuse VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[1.0,0.1]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid =
+            create_ivf_recall_index("ec_ivf_vacuum_reuse", "ec_ivf_vacuum_reuse_idx", 1, 1, 2);
+        let deleted_tid = heap_tid_for_row("ec_ivf_vacuum_reuse", 1);
+        let blocks_before_delete = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+
+        Spi::run("DELETE FROM ec_ivf_vacuum_reuse WHERE id = 1").expect("delete should succeed");
+        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+        let blocks_after_vacuum = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(blocks_after_vacuum, blocks_before_delete);
+
+        Spi::run("INSERT INTO ec_ivf_vacuum_reuse VALUES (2, '[1.0,0.2]'::ecvector)")
+            .expect("insert should reuse compacted posting page space");
+        let blocks_after_reinsert = ec_ivf_index_blocks("ec_ivf_vacuum_reuse_idx");
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+
+        assert_eq!(
+            blocks_after_reinsert, blocks_after_vacuum,
+            "post-vacuum insert should reuse compacted posting page space before extending the index"
+        );
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 1);
+        assert_eq!(inserted_since_build, 1);
+        assert_eq!(total_live, 2);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_vacuum_repairs_empty_list_directory_refs() {
         Spi::run(
             "CREATE TABLE ec_ivf_vacuum_empty_list (id bigint primary key, embedding ecvector)",

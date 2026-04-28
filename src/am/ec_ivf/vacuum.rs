@@ -121,6 +121,7 @@ unsafe fn run_bulkdelete(
             bulkdelete_list_postings(
                 index_relation,
                 &directory,
+                directory_tid.block_number,
                 payload_len,
                 callback,
                 callback_state,
@@ -198,6 +199,7 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
 unsafe fn bulkdelete_list_postings(
     index_relation: pg_sys::Relation,
     directory: &page::IvfListDirectoryTuple,
+    directory_block_number: pg_sys::BlockNumber,
     payload_len: usize,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
@@ -210,6 +212,7 @@ unsafe fn bulkdelete_list_postings(
             directory.head_block,
             directory.tail_block,
             payload_len,
+            &[directory_block_number],
             |posting_tid, mut posting| {
                 bulkdelete_posting(
                     &mut result,
