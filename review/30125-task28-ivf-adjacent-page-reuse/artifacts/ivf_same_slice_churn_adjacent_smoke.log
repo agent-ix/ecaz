@@ -1,0 +1,84 @@
+Timing is on.
+CREATE EXTENSION
+Time: 0.397 ms
+DROP TABLE
+Time: 12.010 ms
+DROP TABLE
+Time: 6.865 ms
+CREATE TABLE
+Time: 7.115 ms
+CREATE TABLE
+Time: 4.415 ms
+INSERT 0 50000
+Time: 339.376 ms
+INSERT 0 50000
+Time: 109.737 ms
+CREATE INDEX
+Time: 1365.868 ms (00:01.366)
+CREATE INDEX
+Time: 1999.626 ms (00:02.000)
+    phase     |            relname            | index_bytes | index_size
+--------------+-------------------------------+-------------+------------
+ cycle0_build | task28_ivf_same_slice_n32_idx |     4464640 | 4360 kB
+ cycle0_build | task28_ivf_same_slice_n64_idx |     4472832 | 4368 kB
+(2 rows)
+
+Time: 2.932 ms
+DELETE 25000
+Time: 15.616 ms
+DELETE 25000
+Time: 14.894 ms
+VACUUM
+Time: 136.852 ms
+VACUUM
+Time: 120.753 ms
+INSERT 0 25000
+Time: 47932.344 ms (00:47.932)
+INSERT 0 25000
+Time: 31710.069 ms (00:31.710)
+     phase     |            relname            | index_bytes | index_size
+---------------+-------------------------------+-------------+------------
+ cycle1_refill | task28_ivf_same_slice_n32_idx |     4464640 | 4360 kB
+ cycle1_refill | task28_ivf_same_slice_n64_idx |     4472832 | 4368 kB
+(2 rows)
+
+Time: 0.654 ms
+DELETE 25000
+Time: 17.610 ms
+DELETE 25000
+Time: 23.005 ms
+VACUUM
+Time: 142.340 ms
+VACUUM
+Time: 125.805 ms
+INSERT 0 25000
+Time: 46746.694 ms (00:46.747)
+INSERT 0 25000
+Time: 33247.982 ms (00:33.248)
+     phase     |            relname            | index_bytes | index_size
+---------------+-------------------------------+-------------+------------
+ cycle2_refill | task28_ivf_same_slice_n32_idx |     4464640 | 4360 kB
+ cycle2_refill | task28_ivf_same_slice_n64_idx |     4489216 | 4384 kB
+(2 rows)
+
+Time: 0.646 ms
+DELETE 25000
+Time: 17.430 ms
+DELETE 25000
+Time: 17.629 ms
+VACUUM
+Time: 113.681 ms
+VACUUM
+Time: 199.120 ms
+INSERT 0 25000
+Time: 47312.721 ms (00:47.313)
+INSERT 0 25000
+Time: 43756.698 ms (00:43.757)
+     phase     |            relname            | index_bytes | index_size
+---------------+-------------------------------+-------------+------------
+ cycle3_refill | task28_ivf_same_slice_n32_idx |     4464640 | 4360 kB
+ cycle3_refill | task28_ivf_same_slice_n64_idx |     4538368 | 4432 kB
+(2 rows)
+
+Time: 0.886 ms
+psql:review/30124-task28-ivf-vacuum-same-slice-churn/artifacts/ivf_same_slice_churn_smoke.sql:3: NOTICE:  extension "ecaz" already exists, skipping
