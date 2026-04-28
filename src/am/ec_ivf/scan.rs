@@ -121,6 +121,7 @@ struct ProbeBlockRange {
 struct SelectedProbePlan {
     selected_lists: Vec<u32>,
     selected_list_mask: Vec<bool>,
+    remaining_live_tids_by_list: Vec<u64>,
     block_sequence: Vec<u32>,
     candidate_bound: usize,
 }
@@ -770,6 +771,7 @@ unsafe fn materialize_probe_candidates(
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
+    let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
         .explain_counters
@@ -782,6 +784,14 @@ unsafe fn materialize_probe_candidates(
             payload_len,
             |_, posting| {
                 if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                    return Ok(());
+                }
+                let heap_tid_count = posting.heaptids().count();
+                if !consume_live_tid_budget(
+                    &mut remaining_live_tids_by_list,
+                    posting.list_id,
+                    heap_tid_count,
+                )? {
                     return Ok(());
                 }
                 let score = -quantizer.score_ip_from_parts(
@@ -851,6 +861,26 @@ where
         ranked.sort_by(candidate_cmp);
         ranked
     }
+}
+
+fn consume_live_tid_budget(
+    remaining_live_tids_by_list: &mut [u64],
+    list_id: u32,
+    heap_tid_count: usize,
+) -> Result<bool, String> {
+    if heap_tid_count == 0 {
+        return Ok(false);
+    }
+    let remaining = remaining_live_tids_by_list
+        .get_mut(list_id as usize)
+        .ok_or_else(|| format!("ec_ivf posting list {list_id} is out of range"))?;
+    if *remaining == 0 {
+        return Ok(false);
+    }
+    let heap_tid_count = u64::try_from(heap_tid_count)
+        .map_err(|_| "ec_ivf posting heap tid count exceeds u64".to_owned())?;
+    *remaining = remaining.saturating_sub(heap_tid_count);
+    Ok(true)
 }
 
 unsafe fn rerank_probe_candidates(
@@ -1107,6 +1137,7 @@ unsafe fn build_selected_probe_plan(
         return Ok(SelectedProbePlan {
             selected_lists: Vec::new(),
             selected_list_mask: Vec::new(),
+            remaining_live_tids_by_list: Vec::new(),
             block_sequence: Vec::new(),
             candidate_bound: 0,
         });
@@ -1129,6 +1160,7 @@ unsafe fn build_selected_probe_plan(
     }
 
     let mut selected_list_mask = vec![false; metadata.nlists as usize];
+    let mut remaining_live_tids_by_list = vec![0_u64; metadata.nlists as usize];
     for list_id in &sorted_selected_lists {
         selected_list_mask[*list_id as usize] = true;
     }
@@ -1153,6 +1185,7 @@ unsafe fn build_selected_probe_plan(
         {
             let live_count = usize::try_from(directory.live_count)
                 .map_err(|_| format!("ec_ivf list {expected_list_id} live count exceeds usize"))?;
+            remaining_live_tids_by_list[expected_list_id as usize] = directory.live_count;
             candidate_bound = candidate_bound
                 .checked_add(live_count)
                 .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
@@ -1177,6 +1210,7 @@ unsafe fn build_selected_probe_plan(
     Ok(SelectedProbePlan {
         selected_lists: sorted_selected_lists,
         selected_list_mask,
+        remaining_live_tids_by_list,
         block_sequence,
         candidate_bound,
     })
@@ -1627,8 +1661,8 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_probe_block_sequence, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
-        EcIvfScoredCandidate, ProbeBlockRange,
+        build_probe_block_sequence, consume_live_tid_budget, select_probe_lists, CandidateTopK,
+        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -1728,5 +1762,26 @@ mod tests {
         let sequence = build_probe_block_sequence(&mut ranges).unwrap();
 
         assert_eq!(sequence, vec![8, 9]);
+    }
+
+    #[test]
+    fn consume_live_tid_budget_stops_after_directory_live_count() {
+        let mut remaining = vec![0, 2, 0];
+
+        assert!(consume_live_tid_budget(&mut remaining, 1, 1).unwrap());
+        assert_eq!(remaining[1], 1);
+        assert!(consume_live_tid_budget(&mut remaining, 1, 3).unwrap());
+        assert_eq!(remaining[1], 0);
+        assert!(!consume_live_tid_budget(&mut remaining, 1, 1).unwrap());
+        assert!(!consume_live_tid_budget(&mut remaining, 1, 0).unwrap());
+    }
+
+    #[test]
+    fn consume_live_tid_budget_rejects_unknown_list() {
+        let mut remaining = vec![1];
+
+        let err = consume_live_tid_budget(&mut remaining, 3, 1).unwrap_err();
+
+        assert!(err.contains("posting list 3 is out of range"));
     }
 }
