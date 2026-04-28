@@ -12,20 +12,10 @@ type BulkDeleteCallback =
 struct ListBulkDeleteResult {
     removed_heap_tids: u64,
     live_heap_tids: u64,
-    live_head_block: Option<page::BlockRef>,
-    live_tail_block: Option<page::BlockRef>,
 }
 
 impl ListBulkDeleteResult {
-    fn record_live_posting(
-        &mut self,
-        block_number: pg_sys::BlockNumber,
-        heap_tid_count: usize,
-    ) -> Result<(), String> {
-        if self.live_head_block.is_none() {
-            self.live_head_block = Some(page::BlockRef { block_number });
-        }
-        self.live_tail_block = Some(page::BlockRef { block_number });
+    fn record_live_posting(&mut self, heap_tid_count: usize) -> Result<(), String> {
         self.live_heap_tids = self
             .live_heap_tids
             .checked_add(
@@ -132,11 +122,7 @@ unsafe fn run_bulkdelete(
             .checked_add(list_result.live_heap_tids)
             .unwrap_or_else(|| pgrx::error!("ec_ivf live heap tid count overflow during vacuum"));
 
-        let (repaired_head, repaired_tail) = if list_result.live_heap_tids == 0 {
-            (page::BlockRef::INVALID, page::BlockRef::INVALID)
-        } else {
-            (directory.head_block, directory.tail_block)
-        };
+        let (repaired_head, repaired_tail) = (directory.head_block, directory.tail_block);
         if list_result.removed_heap_tids > 0
             || directory.live_count != list_result.live_heap_tids
             || directory.head_block != repaired_head
@@ -229,7 +215,7 @@ unsafe fn bulkdelete_list_postings(
 
 fn bulkdelete_posting(
     result: &mut ListBulkDeleteResult,
-    posting_tid: ItemPointer,
+    _posting_tid: ItemPointer,
     posting: &mut page::IvfPostingTuple,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
@@ -246,7 +232,7 @@ fn bulkdelete_posting(
     let rewrite = if posting.heaptids.is_empty() {
         page::IvfPostingRewrite::Delete
     } else {
-        result.record_live_posting(posting_tid.block_number, posting.heaptids.len())?;
+        result.record_live_posting(posting.heaptids.len())?;
         if removed > 0 {
             page::IvfPostingRewrite::Rewrite(posting.clone())
         } else {

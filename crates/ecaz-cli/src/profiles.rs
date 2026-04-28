@@ -129,6 +129,7 @@ pub const EC_IVF: IndexProfile = IndexProfile {
         "seed",
         "pq_group_size",
         "storage_format",
+        "quantizer",
         "rerank",
     ],
 };

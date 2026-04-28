@@ -1438,6 +1438,9 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
             return Ok(tid);
         }
 
+        // Vacuum can free space before the current tail. This v1 reuse path is
+        // intentionally simple and can walk the whole list range under churn;
+        // a persisted free-space sidecar is the expected scale-up path.
         for block_number in (head_block..tail_block).rev() {
             if let Some(tid) =
                 unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }

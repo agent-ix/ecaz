@@ -3076,6 +3076,89 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_quantizer_reloption_alias_accepts_pq_fastscan() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_quantizer_alias_pq (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_quantizer_alias_pq VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_quantizer_alias_pq_idx ON ec_ivf_quantizer_alias_pq USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, quantizer = 'pq_fastscan')",
+        )
+        .expect("PqFastScan IVF index creation through quantizer alias should succeed");
+
+        let storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM ec_ivf_index_admin_snapshot('ec_ivf_quantizer_alias_pq_idx'::regclass)",
+        )
+        .expect("admin snapshot should succeed")
+        .expect("storage format should be present");
+        let index_oid = ec_ivf_index_oid("ec_ivf_quantizer_alias_pq_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_quantizer_alias_pq");
+        let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+
+        assert_eq!(storage_format, "pq_fastscan");
+        assert!(build_ids.contains(&0));
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_quantizer_reloption_alias_accepts_rabitq() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_quantizer_alias_rabitq (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_quantizer_alias_rabitq VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_quantizer_alias_rabitq_idx ON ec_ivf_quantizer_alias_rabitq USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, quantizer = 'rabitq')",
+        )
+        .expect("RaBitQ IVF index creation through quantizer alias should succeed");
+
+        let storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM ec_ivf_index_admin_snapshot('ec_ivf_quantizer_alias_rabitq_idx'::regclass)",
+        )
+        .expect("admin snapshot should succeed")
+        .expect("storage format should be present");
+        let index_oid = ec_ivf_index_oid("ec_ivf_quantizer_alias_rabitq_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_quantizer_alias_rabitq");
+        let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+
+        assert_eq!(storage_format, "rabitq");
+        assert!(build_ids.contains(&0));
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "storage_format and quantizer reloptions conflict")]
+    fn test_ec_ivf_quantizer_reloption_conflicts_with_storage_format() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_quantizer_alias_conflict (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_quantizer_alias_conflict_idx ON ec_ivf_quantizer_alias_conflict USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (storage_format = 'turboquant', quantizer = 'rabitq')",
+        )
+        .expect("conflicting quantizer reloptions should fail");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_rabitq_storage_build_scan_insert_vacuum() {
         Spi::run("CREATE TABLE ec_ivf_rabitq_storage (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
@@ -4020,6 +4103,7 @@ mod tests {
             heap_tid_for_row("ec_ivf_vacuum_empty_list", 0),
             heap_tid_for_row("ec_ivf_vacuum_empty_list", 1),
         ];
+        let blocks_before_vacuum = ec_ivf_index_blocks("ec_ivf_vacuum_empty_list_idx");
 
         Spi::run("DELETE FROM ec_ivf_vacuum_empty_list").expect("delete should succeed");
         let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &dead_tids) };
@@ -4033,8 +4117,8 @@ mod tests {
 
         assert_eq!(stats.tuples_removed, 2.0);
         assert_eq!(stats.num_index_tuples, 0.0);
-        assert_eq!(head_block, u32::MAX);
-        assert_eq!(tail_block, u32::MAX);
+        assert_ne!(head_block, u32::MAX);
+        assert_ne!(tail_block, u32::MAX);
         assert_eq!(live_count, 0);
         assert_eq!(dead_count, 2);
         assert_eq!(inserted_since_build, 0);
@@ -4044,6 +4128,21 @@ mod tests {
         assert_eq!(directory_dead, 2);
         assert_eq!(total_live, 0);
         assert!(outputs.is_empty());
+
+        Spi::run("INSERT INTO ec_ivf_vacuum_empty_list VALUES (2, '[1.0,0.2]'::ecvector)")
+            .expect("insert should reuse preserved empty-list range");
+        let blocks_after_reinsert = ec_ivf_index_blocks("ec_ivf_vacuum_empty_list_idx");
+        let (head_after_reinsert, tail_after_reinsert, live_after_reinsert, _, inserted_after) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+
+        assert_eq!(
+            blocks_after_reinsert, blocks_before_vacuum,
+            "refilling an emptied list should reuse its preserved posting range"
+        );
+        assert_eq!(head_after_reinsert, head_block);
+        assert_eq!(tail_after_reinsert, tail_block);
+        assert_eq!(live_after_reinsert, 1);
+        assert_eq!(inserted_after, 1);
     }
 
     #[pg_test]

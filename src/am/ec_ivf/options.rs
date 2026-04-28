@@ -30,6 +30,7 @@ struct EcIvfReloptions {
     seed: i32,
     pq_group_size: i32,
     storage_format_offset: i32,
+    quantizer_offset: i32,
     rerank_offset: i32,
 }
 
@@ -332,6 +333,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
+                c"quantizer".as_ptr(),
+                c"Alias for storage_format: IVF posting-list quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcIvfReloptions, quantizer_offset) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
                 c"rerank".as_ptr(),
                 c"IVF rerank mode: 'off', 'heap_f32', 'source_column', or 'auto'.".as_ptr(),
                 ptr::null(),
@@ -375,18 +386,30 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
     }
 
     let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
-    let storage_format = match unsafe {
+    let storage_format_reloption = unsafe {
         read_string_reloption(
             rd_options,
             reloptions.storage_format_offset,
             "storage_format",
         )
-    } {
-        Some(value) => {
-            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-        }
-        None => StorageFormat::Auto,
     };
+    let quantizer_reloption =
+        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
+    if let (Some(storage_format), Some(quantizer)) =
+        (&storage_format_reloption, &quantizer_reloption)
+    {
+        if storage_format != quantizer {
+            pgrx::error!(
+                "ec_ivf storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
+                storage_format,
+                quantizer
+            );
+        }
+    }
+    let storage_format = storage_format_reloption
+        .or(quantizer_reloption)
+        .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
+        .unwrap_or(StorageFormat::Auto);
     let rerank = match unsafe {
         read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
     } {
