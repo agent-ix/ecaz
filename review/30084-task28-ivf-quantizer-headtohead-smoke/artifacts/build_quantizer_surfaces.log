@@ -1,0 +1,51 @@
+Timing is on.
+DROP TABLE
+Time: 0.984 ms
+DROP TABLE
+Time: 0.193 ms
+DROP TABLE
+Time: 0.179 ms
+DROP TABLE
+Time: 0.172 ms
+DROP TABLE
+Time: 0.133 ms
+DROP TABLE
+Time: 0.132 ms
+SELECT 10000
+Time: 4239.608 ms (00:04.240)
+ALTER TABLE
+Time: 20.560 ms
+SELECT 100
+Time: 78.791 ms
+SELECT 10000
+Time: 2950.152 ms (00:02.950)
+ALTER TABLE
+Time: 8.662 ms
+SELECT 100
+Time: 16.999 ms
+SELECT 10000
+Time: 2760.577 ms (00:02.761)
+ALTER TABLE
+Time: 8.417 ms
+SELECT 100
+Time: 17.350 ms
+CREATE INDEX
+Time: 21722.014 ms (00:21.722)
+CREATE INDEX
+Time: 24761.363 ms (00:24.761)
+CREATE INDEX
+Time: 22143.177 ms (00:22.143)
+              relname              | index_size |                                                 reloptions                                                 
+-----------------------------------+------------+------------------------------------------------------------------------------------------------------------
+ task28_ivf_qcmp10k_pqfastscan_idx | 1968 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,rerank=heap_f32,rerank_width=25}
+ task28_ivf_qcmp10k_rabitq_idx     | 9416 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=rabitq,rerank=heap_f32,rerank_width=25}
+ task28_ivf_qcmp10k_turboquant_idx | 9416 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=turboquant,rerank=heap_f32,rerank_width=25}
+(3 rows)
+
+Time: 10.938 ms
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:3: NOTICE:  table "task28_ivf_qcmp10k_turboquant_corpus" does not exist, skipping
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:4: NOTICE:  table "task28_ivf_qcmp10k_turboquant_queries" does not exist, skipping
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:5: NOTICE:  table "task28_ivf_qcmp10k_pqfastscan_corpus" does not exist, skipping
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:6: NOTICE:  table "task28_ivf_qcmp10k_pqfastscan_queries" does not exist, skipping
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:7: NOTICE:  table "task28_ivf_qcmp10k_rabitq_corpus" does not exist, skipping
+psql:review/30084-task28-ivf-quantizer-headtohead-smoke/artifacts/build_quantizer_surfaces.sql:8: NOTICE:  table "task28_ivf_qcmp10k_rabitq_queries" does not exist, skipping
