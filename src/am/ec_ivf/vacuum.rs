@@ -100,7 +100,7 @@ unsafe fn run_bulkdelete(
         return unsafe { finish_vacuum_stats(index_relation, stats, &metadata) };
     }
 
-    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let payload_len = page_payload_len(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
     let mut next_tid = metadata.directory_head;
     let mut removed_heap_tids = 0_u64;
     let mut live_heap_tids = 0_u64;
@@ -177,6 +177,11 @@ unsafe fn run_bulkdelete(
     }
 
     unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }
+}
+
+fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
+    super::quantizer::IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
+        .map(|quantizer| quantizer.payload_len())
 }
 
 unsafe fn bulkdelete_list_postings(

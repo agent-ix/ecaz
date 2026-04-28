@@ -198,7 +198,8 @@ impl BuildState {
             ));
         }
         let expected_payload_len =
-            crate::code_len(usize::from(tuple.dimensions), crate::DEFAULT_QUANT_BITS);
+            IvfQuantizer::resolve(self.options.storage_format, usize::from(tuple.dimensions))?
+                .payload_len();
         if tuple.payload.len() != expected_payload_len {
             return Err(format!(
                 "posting payload length mismatch: got {}, expected {expected_payload_len} for dim {}",

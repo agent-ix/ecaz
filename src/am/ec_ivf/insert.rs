@@ -141,7 +141,11 @@ unsafe fn ensure_heap_tid_absent(
         return Err("ec_ivf metadata has live dimensions but no directory head".to_owned());
     }
 
-    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let payload_len = super::quantizer::IvfQuantizer::resolve(
+        metadata.storage_format,
+        metadata.dimensions as usize,
+    )?
+    .payload_len();
     let mut next_tid = metadata.directory_head;
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
@@ -185,7 +189,11 @@ unsafe fn ensure_heap_tid_absent_in_list(
     directory: &page::IvfListDirectoryTuple,
     heap_tid: ItemPointer,
 ) -> Result<(), String> {
-    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let payload_len = super::quantizer::IvfQuantizer::resolve(
+        metadata.storage_format,
+        metadata.dimensions as usize,
+    )?
+    .payload_len();
     let postings = unsafe {
         page::read_ivf_postings_for_list_blocks(
             index_relation,
@@ -258,8 +266,11 @@ fn validate_insert_tuple(
             metadata.dimensions
         ));
     }
-    let expected_payload_len =
-        crate::code_len(usize::from(metadata.dimensions), crate::DEFAULT_QUANT_BITS);
+    let expected_payload_len = super::quantizer::IvfQuantizer::resolve(
+        metadata.storage_format,
+        usize::from(metadata.dimensions),
+    )?
+    .payload_len();
     if tuple.payload.len() != expected_payload_len {
         return Err(format!(
             "posting payload length mismatch: got {}, expected {expected_payload_len} for index dim {}",

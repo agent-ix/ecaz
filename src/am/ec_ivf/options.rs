@@ -60,9 +60,9 @@ impl StorageFormat {
 
     pub(super) fn validate_v1_supported(self) -> Result<(), String> {
         match self {
-            Self::Auto | Self::TurboQuant => Ok(()),
-            Self::PqFastScan | Self::RaBitQ => Err(format!(
-                "ec_ivf storage_format {} is not supported yet; use storage_format = 'auto' or storage_format = 'turboquant'",
+            Self::Auto | Self::TurboQuant | Self::RaBitQ => Ok(()),
+            Self::PqFastScan => Err(format!(
+                "ec_ivf storage_format {} is not supported yet; use storage_format = 'auto', storage_format = 'turboquant', or storage_format = 'rabitq'",
                 self.reloption_name()
             )),
         }

@@ -2930,6 +2930,68 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_rabitq_storage_build_scan_insert_vacuum() {
+        Spi::run("CREATE TABLE ec_ivf_rabitq_storage (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_rabitq_storage VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_rabitq_storage_idx ON ec_ivf_rabitq_storage USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, storage_format = 'rabitq')",
+        )
+        .expect("RaBitQ IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_rabitq_storage_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_rabitq_storage");
+        let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+
+        assert!(
+            build_ids.contains(&0),
+            "RaBitQ IVF scan should return the matching build-time row"
+        );
+
+        Spi::run("INSERT INTO ec_ivf_rabitq_storage VALUES (4, '[1.0,0.1]'::ecvector)")
+            .expect("live insert should succeed");
+        let inserted_tid = heap_tid_for_row("ec_ivf_rabitq_storage", 4);
+        let before_vacuum =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
+
+        assert!(
+            before_vacuum
+                .iter()
+                .any(|(block_number, offset_number, _score)| {
+                    (*block_number, *offset_number)
+                        == (inserted_tid.block_number, inserted_tid.offset_number)
+                }),
+            "RaBitQ IVF scan should include the live-inserted row"
+        );
+
+        Spi::run("DELETE FROM ec_ivf_rabitq_storage WHERE id = 4").expect("delete should succeed");
+        let stats = unsafe { am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[inserted_tid]) };
+        let after_vacuum =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.1]) }.0;
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert!(
+            after_vacuum
+                .iter()
+                .all(|(block_number, offset_number, _score)| {
+                    (*block_number, *offset_number)
+                        != (inserted_tid.block_number, inserted_tid.offset_number)
+                }),
+            "RaBitQ IVF scan should not include the vacuumed row"
+        );
+        assert!(after_vacuum.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    #[pg_test]
     fn test_ec_ivf_full_probe_matches_simple_exact_oracle_top1() {
         Spi::run(
             "CREATE TABLE ec_ivf_full_probe_oracle (id bigint primary key, embedding ecvector)",

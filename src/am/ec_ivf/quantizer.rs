@@ -1,14 +1,18 @@
 use super::options::StorageFormat;
 use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
+use crate::quant::rabitq::{PreparedEstimator, RaBitQQuantizer};
+use crate::quant::Quantizer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
     TurboQuant,
+    RaBitQ,
 }
 
 pub(super) enum IvfPreparedQuery {
     TurboQuant(PreparedQuery),
     TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
+    RaBitQ(PreparedEstimator),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +29,8 @@ impl IvfQuantizer {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
-            StorageFormat::PqFastScan | StorageFormat::RaBitQ => {
+            StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
+            StorageFormat::PqFastScan => {
                 unreachable!("validate_v1_supported rejects unsupported IVF storage formats")
             }
         };
@@ -61,6 +66,10 @@ impl IvfQuantizer {
                 payload.extend_from_slice(&encoded.qjl_packed);
                 Ok((dimensions, encoded.gamma, payload))
             }
+            IvfQuantizerProfile::RaBitQ => {
+                let quantizer = self.rabitq_quantizer()?;
+                Ok((dimensions, 0.0, quantizer.encode_code(source).into_vec()))
+            }
         }
     }
 
@@ -94,6 +103,10 @@ impl IvfQuantizer {
                     quantizer.prepare_ip_query(query),
                 ))
             }
+            IvfQuantizerProfile::RaBitQ => {
+                let quantizer = self.rabitq_quantizer()?;
+                Ok(IvfPreparedQuery::RaBitQ(quantizer.prepare_estimator(query)))
+            }
         }
     }
 
@@ -123,6 +136,16 @@ impl IvfQuantizer {
                 );
                 Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
             }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
+                let quantizer = self.rabitq_quantizer()?;
+                let _ = gamma;
+                Ok(quantizer.estimate_ip(prepared_query, payload).estimate)
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_)) => {
+                Err("ec_ivf prepared query does not match quantizer profile".to_owned())
+            }
         }
     }
 
@@ -131,7 +154,19 @@ impl IvfQuantizer {
             IvfQuantizerProfile::TurboQuant => {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
             }
+            IvfQuantizerProfile::RaBitQ => self
+                .rabitq_quantizer()
+                .expect("default RaBitQ configuration should be valid")
+                .code_len(),
         }
+    }
+
+    fn rabitq_quantizer(self) -> Result<RaBitQQuantizer, String> {
+        RaBitQQuantizer::with_seeded_srht_bits(
+            self.dimensions,
+            crate::DEFAULT_QUANT_SEED,
+            crate::DEFAULT_QUANT_BITS,
+        )
     }
 }
 
@@ -141,6 +176,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
+            Self::RaBitQ(_) => 0,
         }
     }
 
@@ -149,6 +185,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
+            Self::RaBitQ(_) => 0,
         }
     }
 }
@@ -176,9 +213,15 @@ mod tests {
     }
 
     #[test]
+    fn rabitq_v1_format_resolves_to_rabitq() {
+        let explicit = IvfQuantizer::resolve(StorageFormat::RaBitQ, 16).unwrap();
+
+        assert_eq!(explicit.profile, IvfQuantizerProfile::RaBitQ);
+    }
+
+    #[test]
     fn unsupported_v1_formats_are_rejected_at_dispatch() {
         assert!(IvfQuantizer::resolve(StorageFormat::PqFastScan, 16).is_err());
-        assert!(IvfQuantizer::resolve(StorageFormat::RaBitQ, 16).is_err());
     }
 
     #[test]
@@ -229,6 +272,33 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
+        );
+    }
+
+    #[test]
+    fn rabitq_dispatch_matches_direct_quantizer_score() {
+        let dimensions = 32;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::RaBitQ, dimensions).unwrap();
+        let (_, gamma, payload) = dispatch.encode_source(&source).unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+
+        let direct = RaBitQQuantizer::with_seeded_srht_bits(
+            dimensions,
+            crate::DEFAULT_QUANT_SEED,
+            crate::DEFAULT_QUANT_BITS,
+        )
+        .unwrap();
+        let direct_prepared = direct.prepare_estimator(&query);
+
+        assert_eq!(gamma, 0.0);
+        assert_eq!(payload.len(), direct.code_len());
+        assert_eq!(
+            dispatch
+                .score_ip_from_parts(&prepared, gamma, &payload)
+                .unwrap(),
+            direct.estimate_ip(&direct_prepared, &payload).estimate
         );
     }
 }
