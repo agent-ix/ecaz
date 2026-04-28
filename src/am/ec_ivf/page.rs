@@ -1488,6 +1488,37 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
                 return Ok(tid);
             }
         }
+
+        // Vacuum can leave reusable capacity on the immediate boundary pages
+        // of neighboring lists. Keep this deliberately bounded to one block
+        // on either side so reuse does not turn one list into a wide scan range.
+        if let Some(left_neighbor) = head_block.checked_sub(1) {
+            if left_neighbor >= FIRST_DATA_BLOCK_NUMBER {
+                if let Some(tid) = unsafe {
+                    try_append_ivf_posting_to_block(index_relation, left_neighbor, &payload)?
+                } {
+                    remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
+                    return Ok(tid);
+                }
+            }
+        }
+
+        let relation_blocks = unsafe {
+            pg_sys::RelationGetNumberOfBlocksInFork(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            )
+        };
+        if let Some(right_neighbor) = tail_block.checked_add(1) {
+            if right_neighbor < relation_blocks {
+                if let Some(tid) = unsafe {
+                    try_append_ivf_posting_to_block(index_relation, right_neighbor, &payload)?
+                } {
+                    remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
+                    return Ok(tid);
+                }
+            }
+        }
     }
 
     unsafe { append_ivf_posting_to_new_block(index_relation, &payload) }

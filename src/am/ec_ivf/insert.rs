@@ -424,10 +424,9 @@ fn apply_directory_insert_stats(
         }
         (false, false) => {
             if posting_tid.block_number < directory.head_block.block_number {
-                return Err(format!(
-                    "list {} append block {} precedes head block {}",
-                    directory.list_id, posting_tid.block_number, directory.head_block.block_number
-                ));
+                directory.head_block = page::BlockRef {
+                    block_number: posting_tid.block_number,
+                };
             }
             if posting_tid.block_number > directory.tail_block.block_number {
                 directory.tail_block = page::BlockRef {
@@ -543,6 +542,25 @@ mod tests {
         apply_directory_insert_stats(&mut directory, posting_tid(12)).unwrap();
 
         assert_eq!(directory.head_block, block(10));
+        assert_eq!(directory.tail_block, block(14));
+        assert_eq!(directory.live_count, 6);
+        assert_eq!(directory.inserted_since_build, 5);
+    }
+
+    #[test]
+    fn directory_insert_stats_extends_head_backward() {
+        let mut directory = page::IvfListDirectoryTuple {
+            list_id: 7,
+            head_block: block(10),
+            tail_block: block(14),
+            live_count: 5,
+            dead_count: 0,
+            inserted_since_build: 4,
+        };
+
+        apply_directory_insert_stats(&mut directory, posting_tid(9)).unwrap();
+
+        assert_eq!(directory.head_block, block(9));
         assert_eq!(directory.tail_block, block(14));
         assert_eq!(directory.live_count, 6);
         assert_eq!(directory.inserted_since_build, 5);
