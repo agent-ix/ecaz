@@ -132,12 +132,11 @@ unsafe fn run_bulkdelete(
             .checked_add(list_result.live_heap_tids)
             .unwrap_or_else(|| pgrx::error!("ec_ivf live heap tid count overflow during vacuum"));
 
-        let repaired_head = list_result
-            .live_head_block
-            .unwrap_or(page::BlockRef::INVALID);
-        let repaired_tail = list_result
-            .live_tail_block
-            .unwrap_or(page::BlockRef::INVALID);
+        let (repaired_head, repaired_tail) = if list_result.live_heap_tids == 0 {
+            (page::BlockRef::INVALID, page::BlockRef::INVALID)
+        } else {
+            (directory.head_block, directory.tail_block)
+        };
         if list_result.removed_heap_tids > 0
             || directory.live_count != list_result.live_heap_tids
             || directory.head_block != repaired_head
