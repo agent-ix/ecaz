@@ -2980,6 +2980,35 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_pq_fastscan_scan_reuses_loaded_model() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_pq_fastscan_model_cache (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_pq_fastscan_model_cache VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_pq_fastscan_model_cache_idx ON ec_ivf_pq_fastscan_model_cache USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, storage_format = 'pq_fastscan')",
+        )
+        .expect("PqFastScan IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_pq_fastscan_model_cache_idx");
+
+        assert!(
+            unsafe { am::debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid) },
+            "PqFastScan IVF scans should reuse one loaded grouped-codebook model across rescans"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_rabitq_storage_build_scan_insert_vacuum() {
         Spi::run("CREATE TABLE ec_ivf_rabitq_storage (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

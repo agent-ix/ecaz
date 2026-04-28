@@ -10,7 +10,7 @@ use crate::am::stats::{self, TqStatsCounters};
 use crate::storage::page::ItemPointer;
 
 use super::options::StorageFormat;
-use super::quantizer::{self, IvfPreparedQuery, IvfQuantizer};
+use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
 
 #[derive(Debug, Default)]
 struct EcIvfScanOpaque {
@@ -20,6 +20,7 @@ struct EcIvfScanOpaque {
     scan_dimensions: u16,
     scan_nlists: u32,
     scan_nprobe: u32,
+    pq_fastscan_model: *mut IvfPqFastScanModel,
     prepared_query: *mut IvfPreparedQuery,
     centroid_scores: *mut EcIvfCentroidScore,
     centroid_score_count: u32,
@@ -354,6 +355,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
                 let opaque = &mut *opaque_ptr.cast::<EcIvfScanOpaque>();
                 flush_scan_stats(opaque);
                 free_scan_query_prep(opaque);
+                free_pq_fastscan_model(opaque);
                 free_candidate_dedup(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
@@ -468,10 +470,10 @@ fn store_scan_prepared_query(
     let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
-        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }
+        let model = pq_fastscan_model_for_scan(opaque, index_relation, metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load pq_fastscan model: {e}"));
         quantizer
-            .prepare_ip_query_with_pq_model(query, &model)
+            .prepare_ip_query_with_pq_model(query, model)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to prepare scan query: {e}"))
     } else {
         quantizer
@@ -485,6 +487,25 @@ fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
     if !opaque.prepared_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.prepared_query) });
         opaque.prepared_query = ptr::null_mut();
+    }
+}
+
+fn pq_fastscan_model_for_scan<'a>(
+    opaque: &'a mut EcIvfScanOpaque,
+    index_relation: pg_sys::Relation,
+    metadata: &super::page::MetadataPage,
+) -> Result<&'a IvfPqFastScanModel, String> {
+    if opaque.pq_fastscan_model.is_null() {
+        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+        opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
+    }
+    Ok(unsafe { &*opaque.pq_fastscan_model })
+}
+
+fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.pq_fastscan_model.is_null() {
+        drop(unsafe { Box::from_raw(opaque.pq_fastscan_model) });
+        opaque.pq_fastscan_model = ptr::null_mut();
     }
 }
 
@@ -1369,6 +1390,41 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
+
+    let mut first_orderby = pg_sys::ScanKeyData {
+        sk_argument: IntoDatum::into_datum(vec![1.0_f32, 0.0_f32])
+            .expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };
+    let first_ptr =
+        unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }.and_then(|opaque| {
+            (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
+        });
+
+    let mut second_orderby = pg_sys::ScanKeyData {
+        sk_argument: IntoDatum::into_datum(vec![0.0_f32, 1.0_f32])
+            .expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { ec_ivf_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
+    let second_ptr =
+        unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }.and_then(|opaque| {
+            (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
+        });
+
+    unsafe { ec_ivf_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    first_ptr.is_some() && first_ptr == second_ptr
 }
 
 #[cfg(any(test, feature = "pg_test"))]
