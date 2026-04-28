@@ -1,0 +1,9 @@
+Timing is on.
+ALTER INDEX
+Time: 4.899 ms
+         relname          |                                                         reloptions                                                         
+--------------------------+----------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_pqg25k_g8_idx | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=25}
+(1 row)
+
+Time: 1.242 ms

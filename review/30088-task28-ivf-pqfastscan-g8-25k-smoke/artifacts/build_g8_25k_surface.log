@@ -1,0 +1,21 @@
+Timing is on.
+DROP TABLE
+Time: 0.556 ms
+DROP TABLE
+Time: 0.158 ms
+SELECT 25000
+Time: 8039.513 ms (00:08.040)
+ALTER TABLE
+Time: 16.923 ms
+SELECT 100
+Time: 24.070 ms
+CREATE INDEX
+Time: 47798.422 ms (00:47.798)
+         relname          | index_size |                                                         reloptions                                                         
+--------------------------+------------+----------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_pqg25k_g8_idx | 5176 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=25}
+(1 row)
+
+Time: 1.671 ms
+psql:review/30088-task28-ivf-pqfastscan-g8-25k-smoke/artifacts/build_g8_25k_surface.sql:3: NOTICE:  table "task28_ivf_pqg25k_g8_corpus" does not exist, skipping
+psql:review/30088-task28-ivf-pqfastscan-g8-25k-smoke/artifacts/build_g8_25k_surface.sql:4: NOTICE:  table "task28_ivf_pqg25k_g8_queries" does not exist, skipping
