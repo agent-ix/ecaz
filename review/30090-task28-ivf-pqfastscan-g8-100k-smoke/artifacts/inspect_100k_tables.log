@@ -1,0 +1,36 @@
+Timing is on.
+ relname 
+---------
+(0 rows)
+
+Time: 3.331 ms
+                        relname                         | estimated_rows 
+--------------------------------------------------------+----------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus              |         990000
+ ec_hnsw_concurrent_dsm_striped_50k_tuned_recall_corpus |          50000
+ ec_hnsw_parallel_concurrent_dsm_50k_recall_corpus      |          50000
+ task28_ivf_anchor50k_corpus                            |          50000
+ tqhnsw_real_50k_corpus                                 |          50000
+ tqhnsw_real_50k_reloaded_corpus                        |          50000
+ task28_ivf_anchor25k_corpus                            |          25000
+ task28_ivf_postopt25k_n128w25_corpus                   |          25000
+ task28_ivf_postopt25k_n32w25_corpus                    |          25000
+ task28_ivf_postopt25k_n64w25_corpus                    |          25000
+ task28_ivf_pqg25k_g8_corpus                            |          25000
+ ec_hnsw_parallel_concurrent_dsm_recall_corpus          |          10000
+ ec_hnsw_parallel_concurrent_dsm_tuned_recall_corpus    |          10000
+ task28_ivf_anchor10k1536_corpus                        |          10000
+ task28_ivf_anchor10k1536_heap_corpus                   |          10000
+ task28_ivf_postopt10k_n128w25_corpus                   |          10000
+ task28_ivf_postopt10k_n32w25_corpus                    |          10000
+ task28_ivf_postopt10k_n64w25_corpus                    |          10000
+ task28_ivf_pqg10k_g16_corpus                           |          10000
+ task28_ivf_pqg10k_g32_corpus                           |          10000
+ task28_ivf_pqg10k_g8_corpus                            |          10000
+ task28_ivf_qcmp10k_pqfastscan_corpus                   |          10000
+ task28_ivf_qcmp10k_rabitq_corpus                       |          10000
+ task28_ivf_qcmp10k_turboquant_corpus                   |          10000
+ task28_ivf_smoke10k_corpus                             |          10000
+(25 rows)
+
+Time: 1.901 ms
