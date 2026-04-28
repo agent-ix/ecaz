@@ -1853,6 +1853,7 @@ where
     let line_pointer_count = page_line_pointer_count(page_ptr);
     let mut delete_offsets = Vec::new();
     let mut changed = false;
+    let mut saw_non_posting_tuple = false;
 
     for offset in 1..=line_pointer_count {
         let item_id = unsafe { &*page_item_id(page_ptr, offset) };
@@ -1872,6 +1873,7 @@ where
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
         if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+            saw_non_posting_tuple = true;
             continue;
         }
 
@@ -1913,7 +1915,9 @@ where
         }
     }
 
-    if compact_deletes && !delete_offsets.is_empty() {
+    if should_compact_posting_deletes(compact_deletes, saw_non_posting_tuple)
+        && !delete_offsets.is_empty()
+    {
         unsafe {
             pg_sys::PageIndexMultiDelete(
                 page,
@@ -1934,6 +1938,13 @@ where
         unsafe { wal_txn.finish() };
     }
     Ok(())
+}
+
+fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: bool) -> bool {
+    // Directory and centroid tuple TIDs are persistent metadata links. Compacting
+    // a mixed page can renumber those line pointers, so mixed pages must use
+    // no-compact deletion even when their deleted postings are reclaimable.
+    compact_deletes && !saw_non_posting_tuple
 }
 
 unsafe fn read_page_tuple<T, DecodeFn>(
@@ -2494,5 +2505,12 @@ mod tests {
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
+    fn posting_delete_compaction_is_disabled_on_mixed_pages() {
+        assert!(should_compact_posting_deletes(true, false));
+        assert!(!should_compact_posting_deletes(true, true));
+        assert!(!should_compact_posting_deletes(false, false));
     }
 }
