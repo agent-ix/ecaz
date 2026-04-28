@@ -1,0 +1,188 @@
+Timing is on.
+Pager usage is off.
+LOAD
+Time: 0.967 ms
+SET
+Time: 0.174 ms
+SET
+Time: 0.131 ms
+SET
+Time: 0.137 ms
+SET
+Time: 0.126 ms
+                                                 version                                                 
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+Time: 0.492 ms
+ random_page_cost 
+------------------
+ 4
+(1 row)
+
+Time: 0.124 ms
+ seq_page_cost 
+---------------
+ 1
+(1 row)
+
+Time: 0.103 ms
+ cpu_operator_cost 
+-------------------
+ 0.0025
+(1 row)
+
+Time: 0.103 ms
+ ec_ivf.nprobe 
+---------------
+ 32
+(1 row)
+
+Time: 0.101 ms
+ ec_hnsw.ef_search 
+-------------------
+ 64
+(1 row)
+
+Time: 0.100 ms
+CREATE INDEX
+Time: 83960.482 ms (01:23.960)
+ANALYZE
+Time: 3477.808 ms (00:03.478)
+                  relname                  | amname  |  bytes   
+-------------------------------------------+---------+----------
+ task28_ivf_postopt10k_n128w25_corpus_pkey | btree   |   245760
+ task28_ivf_postopt10k_n128w25_hnsw_idx    | ec_hnsw | 13664256
+ task28_ivf_postopt10k_n128w25_idx         | ec_ivf  | 10166272
+(3 rows)
+
+Time: 10.280 ms
+              section               
+------------------------------------
+ shape 1: non-prepared knn limit 10
+(1 row)
+
+Time: 0.242 ms
+                                                                                              QUERY PLAN                                                                                               
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=106.19..107.11 rows=10 width=12) (actual time=45.711..49.858 rows=10.00 loops=1)
+   Buffers: shared hit=466 read=431
+   InitPlan 1
+     ->  Limit  (cost=0.14..0.28 rows=1 width=26) (actual time=0.057..0.058 rows=1.00 loops=1)
+           Buffers: shared read=2
+           ->  Index Scan using task28_ivf_postopt10k_n128w25_queries_pkey on task28_ivf_postopt10k_n128w25_queries  (cost=0.14..13.64 rows=100 width=26) (actual time=0.057..0.057 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared read=2
+   ->  Index Scan using task28_ivf_postopt10k_n128w25_idx on task28_ivf_postopt10k_n128w25_corpus  (cost=105.92..1022.27 rows=10000 width=12) (actual time=45.708..49.850 rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=466 read=431
+ Planning:
+   Buffers: shared hit=57 read=4
+ Planning Time: 1.044 ms
+ Execution Time: 50.003 ms
+(16 rows)
+
+Time: 52.708 ms
+               section                
+--------------------------------------
+ shape 2: non-prepared knn limit 1000
+(1 row)
+
+Time: 0.355 ms
+                                                                                              QUERY PLAN                                                                                               
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=106.19..197.83 rows=1000 width=12) (actual time=41.734..53.982 rows=25.00 loops=1)
+   Buffers: shared hit=961
+   InitPlan 1
+     ->  Limit  (cost=0.14..0.28 rows=1 width=26) (actual time=0.027..0.028 rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_postopt10k_n128w25_queries_pkey on task28_ivf_postopt10k_n128w25_queries  (cost=0.14..13.64 rows=100 width=26) (actual time=0.027..0.027 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Index Scan using task28_ivf_postopt10k_n128w25_idx on task28_ivf_postopt10k_n128w25_corpus  (cost=105.92..1022.27 rows=10000 width=12) (actual time=41.733..53.964 rows=25.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=961
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.146 ms
+ Execution Time: 54.043 ms
+(16 rows)
+
+Time: 54.686 ms
+                   section                    
+----------------------------------------------
+ shape 3: mixed predicate id <= 1000 limit 10
+(1 row)
+
+Time: 0.465 ms
+                                                                                               QUERY PLAN                                                                                                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=71.21..71.24 rows=10 width=12) (actual time=467.365..467.368 rows=10.00 loops=1)
+   Buffers: shared hit=4008 read=1013
+   InitPlan 1
+     ->  Limit  (cost=0.14..0.28 rows=1 width=26) (actual time=0.025..0.025 rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using task28_ivf_postopt10k_n128w25_queries_pkey on task28_ivf_postopt10k_n128w25_queries  (cost=0.14..13.64 rows=100 width=26) (actual time=0.024..0.025 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Sort  (cost=70.94..73.44 rows=1001 width=12) (actual time=467.363..467.364 rows=10.00 loops=1)
+         Sort Key: ((task28_ivf_postopt10k_n128w25_corpus.embedding <#> (InitPlan 1).col1))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=4008 read=1013
+         ->  Index Scan using task28_ivf_postopt10k_n128w25_corpus_pkey on task28_ivf_postopt10k_n128w25_corpus  (cost=0.29..49.30 rows=1001 width=12) (actual time=0.671..466.510 rows=1001.00 loops=1)
+               Index Cond: (id <= 1000)
+               Index Searches: 1
+               Buffers: shared hit=4008 read=1013
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.255 ms
+ Execution Time: 467.404 ms
+(20 rows)
+
+Time: 468.223 ms
+             section              
+----------------------------------
+ shape 4: non-knn selective count
+(1 row)
+
+Time: 0.274 ms
+                                                                                            QUERY PLAN                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=6.31..6.32 rows=1 width=8) (actual time=0.050..0.050 rows=1.00 loops=1)
+   Buffers: shared hit=3
+   ->  Index Only Scan using task28_ivf_postopt10k_n128w25_corpus_pkey on task28_ivf_postopt10k_n128w25_corpus  (cost=0.29..6.05 rows=101 width=0) (actual time=0.038..0.045 rows=101.00 loops=1)
+         Index Cond: (id <= 100)
+         Heap Fetches: 0
+         Index Searches: 1
+         Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=2 read=2
+ Planning Time: 0.137 ms
+ Execution Time: 0.096 ms
+(11 rows)
+
+Time: 0.614 ms
+                section                 
+----------------------------------------
+ shape 5: low-selectivity non-knn count
+(1 row)
+
+Time: 0.166 ms
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=244.00..244.01 rows=1 width=8) (actual time=1.746..1.747 rows=1.00 loops=1)
+   Buffers: shared hit=30 read=64
+   ->  Seq Scan on task28_ivf_postopt10k_n128w25_corpus  (cost=0.00..219.00 rows=9999 width=0) (actual time=0.009..1.369 rows=9999.00 loops=1)
+         Filter: (id > 0)
+         Rows Removed by Filter: 1
+         Buffers: shared hit=30 read=64
+ Planning:
+   Buffers: shared hit=7
+ Planning Time: 0.114 ms
+ Execution Time: 1.779 ms
+(10 rows)
+
+Time: 2.265 ms
