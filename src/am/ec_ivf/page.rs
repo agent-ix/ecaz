@@ -1,7 +1,9 @@
 //! ec_ivf page layout: metadata, centroid, directory, and posting-list codecs.
 
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::ptr;
+use std::sync::{Mutex, OnceLock};
 
 use pgrx::pg_sys;
 
@@ -1432,19 +1434,45 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
             ));
         }
 
+        let relid = unsafe { (*index_relation).rd_id };
+        if let Some(hint_block) = posting_free_hint(relid, tuple.list_id) {
+            if block_in_range(hint_block, head_block, tail_block) && hint_block != tail_block {
+                if let Some(tid) = unsafe {
+                    try_append_ivf_posting_to_block(index_relation, hint_block, &payload)?
+                } {
+                    remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
+                    return Ok(tid);
+                }
+                forget_posting_free_hint(relid, tuple.list_id);
+            }
+        }
+
         if let Some(tid) =
             unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
         {
+            remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
             return Ok(tid);
         }
 
+        let required_space = raw_tuple_storage_bytes(payload.len());
+        let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };
+        if block_in_range(fsm_block, head_block, tail_block) && fsm_block != tail_block {
+            if let Some(tid) =
+                unsafe { try_append_ivf_posting_to_block(index_relation, fsm_block, &payload)? }
+            {
+                remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
+                return Ok(tid);
+            }
+        }
+
         // Vacuum can free space before the current tail. This v1 reuse path is
-        // intentionally simple and can walk the whole list range under churn;
-        // a persisted free-space sidecar is the expected scale-up path.
+        // intentionally conservative: use the global index FSM as a hint, then
+        // fall back to a bounded range walk because free space is not list-keyed.
         for block_number in (head_block..tail_block).rev() {
             if let Some(tid) =
                 unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
             {
+                remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                 return Ok(tid);
             }
         }
@@ -1469,7 +1497,7 @@ unsafe fn try_append_ivf_posting_to_block(
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
         return Err(format!(
-            "ec_ivf failed to open posting-list tail block {block_number}"
+            "ec_ivf failed to open posting-list block {block_number}"
         ));
     }
 
@@ -1478,6 +1506,7 @@ unsafe fn try_append_ivf_posting_to_block(
     let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
     if free_space < raw_tuple_storage_bytes(payload.len()) {
+        unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
         std::mem::drop(wal_txn);
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         return Ok(None);
@@ -1501,6 +1530,8 @@ unsafe fn try_append_ivf_posting_to_block(
     }
 
     unsafe { wal_txn.finish() };
+    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(Some(ItemPointer {
         block_number,
@@ -1547,6 +1578,8 @@ unsafe fn append_ivf_posting_to_new_block(
     let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
 
     unsafe { wal_txn.finish() };
+    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     Ok(ItemPointer {
         block_number,
@@ -1937,7 +1970,47 @@ where
     if changed {
         unsafe { wal_txn.finish() };
     }
+    let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+    unsafe { pg_sys::RecordPageWithFreeSpace(index_relation, block_number, free_space) };
     Ok(())
+}
+
+fn block_in_range(
+    block_number: pg_sys::BlockNumber,
+    head_block: pg_sys::BlockNumber,
+    tail_block: pg_sys::BlockNumber,
+) -> bool {
+    block_number != P_NEW && head_block <= block_number && block_number <= tail_block
+}
+
+type PostingFreeHintKey = (pg_sys::Oid, u32);
+
+static POSTING_FREE_HINTS: OnceLock<Mutex<HashMap<PostingFreeHintKey, pg_sys::BlockNumber>>> =
+    OnceLock::new();
+
+fn posting_free_hint(relid: pg_sys::Oid, list_id: u32) -> Option<pg_sys::BlockNumber> {
+    POSTING_FREE_HINTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("ec_ivf posting free hint mutex poisoned")
+        .get(&(relid, list_id))
+        .copied()
+}
+
+fn remember_posting_free_hint(relid: pg_sys::Oid, list_id: u32, block_number: pg_sys::BlockNumber) {
+    POSTING_FREE_HINTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("ec_ivf posting free hint mutex poisoned")
+        .insert((relid, list_id), block_number);
+}
+
+fn forget_posting_free_hint(relid: pg_sys::Oid, list_id: u32) {
+    POSTING_FREE_HINTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("ec_ivf posting free hint mutex poisoned")
+        .remove(&(relid, list_id));
 }
 
 fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: bool) -> bool {
@@ -2512,5 +2585,29 @@ mod tests {
         assert!(should_compact_posting_deletes(true, false));
         assert!(!should_compact_posting_deletes(true, true));
         assert!(!should_compact_posting_deletes(false, false));
+    }
+
+    #[test]
+    fn block_in_range_rejects_invalid_and_out_of_range_blocks() {
+        assert!(block_in_range(7, 5, 9));
+        assert!(!block_in_range(P_NEW, 5, 9));
+        assert!(!block_in_range(4, 5, 9));
+        assert!(!block_in_range(10, 5, 9));
+    }
+
+    #[test]
+    fn posting_free_hint_roundtrip_is_keyed_by_relation_and_list() {
+        let relid = pg_sys::Oid::from(4242);
+        forget_posting_free_hint(relid, 7);
+        forget_posting_free_hint(relid, 8);
+
+        assert_eq!(posting_free_hint(relid, 7), None);
+        remember_posting_free_hint(relid, 7, 12);
+
+        assert_eq!(posting_free_hint(relid, 7), Some(12));
+        assert_eq!(posting_free_hint(relid, 8), None);
+
+        forget_posting_free_hint(relid, 7);
+        assert_eq!(posting_free_hint(relid, 7), None);
     }
 }
