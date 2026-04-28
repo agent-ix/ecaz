@@ -51,7 +51,8 @@ pub(crate) use self::insert::debug_ec_ivf_validate_no_duplicate_heap_tid;
 pub(crate) use self::scan::{
     debug_ec_ivf_build_metadata, debug_ec_ivf_directory_entry, debug_ec_ivf_directory_summary,
     debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_gettuple_outputs,
-    debug_ec_ivf_metadata, debug_ec_ivf_rerank_mode, debug_ec_ivf_rescan_query_prep,
+    debug_ec_ivf_metadata, debug_ec_ivf_quantizer_cache_ptr, debug_ec_ivf_rerank_mode,
+    debug_ec_ivf_rescan_query_prep,
 };
 
 #[cfg(any(test, feature = "pg_test"))]

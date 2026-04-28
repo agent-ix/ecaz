@@ -123,6 +123,15 @@ impl ProdQuantizer {
         (quantizer, was_present)
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
+    pub fn cached_ptr(dim: usize, bits: u8, seed: u64) -> Option<usize> {
+        let key = (dim, bits, seed);
+        let guard = cache().lock().expect("quantizer cache poisoned");
+        guard
+            .get(&key)
+            .map(|quantizer| Arc::as_ptr(quantizer) as usize)
+    }
+
     pub fn encode(&self, vector: &[f32]) -> EncodedTq {
         assert_eq!(
             vector.len(),

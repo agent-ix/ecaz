@@ -1414,6 +1414,22 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if metadata.dimensions == 0 {
+        return None;
+    }
+    crate::quant::prod::ProdQuantizer::cached_ptr(
+        metadata.dimensions as usize,
+        crate::DEFAULT_QUANT_BITS,
+        crate::DEFAULT_QUANT_SEED,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };

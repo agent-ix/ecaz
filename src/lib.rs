@@ -2813,6 +2813,38 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_rescan_reuses_cached_prod_quantizer() {
+        Spi::run("CREATE TABLE ec_ivf_quantizer_cache (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_quantizer_cache VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_quantizer_cache_idx ON ec_ivf_quantizer_cache USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 3, nprobe = 2, training_sample_rows = 3, seed = 23)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_quantizer_cache_idx");
+        let _first_scan = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
+        let first_ptr = unsafe { am::debug_ec_ivf_quantizer_cache_ptr(index_oid) }
+            .expect("first IVF scan should populate the ProdQuantizer cache");
+        let _second_scan = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![0.0, 1.0]) };
+        let second_ptr = unsafe { am::debug_ec_ivf_quantizer_cache_ptr(index_oid) }
+            .expect("second IVF scan should find the cached ProdQuantizer");
+
+        assert_eq!(
+            first_ptr, second_ptr,
+            "IVF rescans on the same index should reuse the same cached ProdQuantizer"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_gettuple_emits_probe_candidates_with_scores() {
         Spi::run("CREATE TABLE ec_ivf_gettuple_emit (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
