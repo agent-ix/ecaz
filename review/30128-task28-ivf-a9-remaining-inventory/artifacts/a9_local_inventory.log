@@ -1,0 +1,18 @@
+                  relname                   | estimated_rows | heap_bytes | total_bytes
+--------------------------------------------+----------------+------------+-------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus  |         990000 |   75800576 | 17853349888
+ ec_hnsw_real_ann_benchmarks_anchor_queries |          10000 |     606208 |    83771392
+ task28_a9_100k_hnsw_corpus                 |         100000 |    7864320 |  1667129344
+ task28_a9_100k_hnsw_queries                |            100 |       8192 |      843776
+ task28_a9_100k_ivf_corpus                  |         100000 |    7864320 |  1686921216
+ task28_a9_100k_ivf_queries                 |            100 |       8192 |      843776
+(6 rows)
+
+                 tablename                 |                   indexname                    | estimated_rows | index_bytes | index_size |                                                                                                                    indexdef
+-------------------------------------------+------------------------------------------------+----------------+-------------+------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ ec_hnsw_real_ann_benchmarks_anchor_corpus | ec_hnsw_real_ann_benchmarks_anchor_corpus_pkey |         900000 |    22257664 | 21 MB      | CREATE UNIQUE INDEX ec_hnsw_real_ann_benchmarks_anchor_corpus_pkey ON public.ec_hnsw_real_ann_benchmarks_anchor_corpus USING btree (id)
+ ec_hnsw_real_ann_benchmarks_anchor_corpus | ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx  |         990000 |  1351688192 | 1289 MB    | CREATE INDEX ec_hnsw_real_ann_benchmarks_anchor_m16_w8_idx ON public.ec_hnsw_real_ann_benchmarks_anchor_corpus USING ec_hnsw (embedding) WITH (m='16', ef_construction='128', build_source_column=source)
+ task28_a9_100k_hnsw_corpus                | task28_a9_100k_hnsw_corpus_pkey                |         100000 |     2260992 | 2208 kB    | CREATE UNIQUE INDEX task28_a9_100k_hnsw_corpus_pkey ON public.task28_a9_100k_hnsw_corpus USING btree (id)
+ task28_a9_100k_ivf_corpus                 | task28_a9_100k_ivf_corpus_pkey                 |         100000 |     2260992 | 2208 kB    | CREATE UNIQUE INDEX task28_a9_100k_ivf_corpus_pkey ON public.task28_a9_100k_ivf_corpus USING btree (id)
+ task28_a9_100k_ivf_corpus                 | task28_a9_100k_ivf_idx                         |         100000 |    19791872 | 19 MB      | CREATE INDEX task28_a9_100k_ivf_idx ON public.task28_a9_100k_ivf_corpus USING ec_ivf (embedding) WITH (nlists='128', nprobe='128', training_sample_rows='2000', quantizer=pq_fastscan, pq_group_size='8', rerank=heap_f32, rerank_width='500')
+(5 rows)
