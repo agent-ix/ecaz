@@ -760,6 +760,10 @@ fn ec_ivf_index_admin_snapshot(
         name!(session_nprobe, Option<i32>),
         name!(effective_nprobe, i64),
         name!(effective_nprobe_source, String),
+        name!(relation_rerank_width, i32),
+        name!(session_rerank_width, Option<i32>),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
         name!(training_sample_rows, i64),
         name!(training_version, i32),
         name!(storage_format, String),
@@ -793,6 +797,10 @@ fn ec_ivf_index_admin_snapshot(
             .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
         i64::from(snapshot.effective_nprobe),
         snapshot.effective_nprobe_source.to_owned(),
+        snapshot.relation_rerank_width,
+        snapshot.session_rerank_width,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
         i64::from(snapshot.training_sample_rows),
         i32::from(snapshot.training_version),
         snapshot.storage_format.to_owned(),
@@ -3284,6 +3292,28 @@ mod tests {
             .map(|(_, _, score)| *score)
             .collect::<Vec<_>>();
         assert_eq!(exact_scores, vec![-1.0, -0.7]);
+
+        Spi::run("SET LOCAL ec_ivf.rerank_width = 3").expect("session rerank_width should set");
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+        assert_eq!(outputs.len(), 3);
+        let exact_scores = outputs
+            .iter()
+            .map(|(_, _, score)| *score)
+            .collect::<Vec<_>>();
+        assert_eq!(exact_scores, vec![-1.0, -0.7, -0.0]);
+
+        Spi::run("SET LOCAL ec_ivf.rerank_width = 0")
+            .expect("session rerank_width should accept full-frontier override");
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+        assert_eq!(outputs.len(), 4);
+
+        Spi::run("SET LOCAL ec_ivf.rerank_width = -1")
+            .expect("session rerank_width should return to relation default");
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+        assert_eq!(outputs.len(), 2);
     }
 
     #[pg_test]
@@ -4037,7 +4067,7 @@ mod tests {
         Spi::run(
             "CREATE INDEX ec_ivf_admin_snapshot_idx ON ec_ivf_admin_snapshot USING ec_ivf \
              (embedding ecvector_ip_ops) \
-             WITH (nlists = 4, nprobe = 2, training_sample_rows = 5, seed = 37, storage_format = 'turboquant')",
+             WITH (nlists = 4, nprobe = 2, rerank_width = 25, training_sample_rows = 5, seed = 37, storage_format = 'turboquant')",
         )
         .expect("index creation should succeed");
         Spi::run("INSERT INTO ec_ivf_admin_snapshot VALUES (5, '[1.0,0.2]'::ecvector)")
@@ -4081,6 +4111,37 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("effective nprobe source should be non-null"),
+            "relation"
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_rerank_width FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation rerank width should be non-null"),
+            25
+        );
+        assert!(
+            Spi::get_one::<i32>(
+                "SELECT session_rerank_width FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .is_none()
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT effective_rerank_width FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective rerank width should be non-null"),
+            25
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_rerank_width_source FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective rerank width source should be non-null"),
             "relation"
         );
         assert_eq!(
@@ -4146,6 +4207,24 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("effective nprobe source should be non-null"),
+            "session"
+        );
+
+        Spi::run("SET LOCAL ec_ivf.rerank_width = 10").expect("session rerank width should set");
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_rerank_width FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("session rerank width should be non-null"),
+            10
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_rerank_width_source FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective rerank width source should be non-null"),
             "session"
         );
     }

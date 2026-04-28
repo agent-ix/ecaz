@@ -825,10 +825,10 @@ fn pre_rerank_candidate_limit(
     metadata: &super::page::MetadataPage,
     index_options: &super::options::EcIvfOptions,
 ) -> Option<usize> {
+    let rerank_width = super::options::resolve_scan_rerank_width(index_options.rerank_width)
+        .effective_rerank_width;
     match metadata.rerank.v1_effective() {
-        super::options::RerankMode::HeapF32 if index_options.rerank_width > 0 => {
-            Some(index_options.rerank_width as usize)
-        }
+        super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
 }
@@ -863,12 +863,15 @@ unsafe fn rerank_probe_candidates(
     match metadata.rerank.v1_effective() {
         super::options::RerankMode::Auto | super::options::RerankMode::Off => {}
         super::options::RerankMode::HeapF32 => {
-            let rerank_len = resolve_rerank_len(index_options.rerank_width, candidates.len());
+            let rerank_width =
+                super::options::resolve_scan_rerank_width(index_options.rerank_width)
+                    .effective_rerank_width;
+            let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
             unsafe {
                 rerank_probe_candidates_heap_f32(scan, opaque, &mut candidates[..rerank_len])
             };
             candidates[..rerank_len].sort_by(candidate_cmp);
-            if index_options.rerank_width > 0 {
+            if rerank_width > 0 {
                 candidates.truncate(rerank_len);
             }
         }

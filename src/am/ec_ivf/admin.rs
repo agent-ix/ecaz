@@ -35,6 +35,10 @@ pub(crate) struct IndexAdminSnapshot {
     pub session_nprobe: Option<u32>,
     pub effective_nprobe: u32,
     pub effective_nprobe_source: &'static str,
+    pub relation_rerank_width: i32,
+    pub session_rerank_width: Option<i32>,
+    pub effective_rerank_width: i32,
+    pub effective_rerank_width_source: &'static str,
     pub training_sample_rows: u32,
     pub training_version: u16,
     pub storage_format: &'static str,
@@ -114,7 +118,9 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let index_options = unsafe { options::relation_options(index_relation) };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
     let drift = unsafe { index_drift_snapshot(index_relation) };
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
 
@@ -128,6 +134,10 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
         session_nprobe: nprobe.session_nprobe,
         effective_nprobe: nprobe.effective_nprobe,
         effective_nprobe_source: nprobe.source,
+        relation_rerank_width: rerank_width.relation_rerank_width,
+        session_rerank_width: rerank_width.session_rerank_width,
+        effective_rerank_width: rerank_width.effective_rerank_width,
+        effective_rerank_width_source: rerank_width.source,
         training_sample_rows: metadata.training_sample_rows,
         training_version: metadata.training_version,
         storage_format: metadata.storage_format.reloption_name(),

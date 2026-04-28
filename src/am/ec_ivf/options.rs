@@ -13,8 +13,11 @@ use super::{
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
+const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
+static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -158,6 +161,14 @@ pub(super) struct NprobeResolution {
     pub(super) source: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RerankWidthResolution {
+    pub(super) relation_rerank_width: i32,
+    pub(super) session_rerank_width: Option<i32>,
+    pub(super) effective_rerank_width: i32,
+    pub(super) source: &'static str,
+}
+
 pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_ivf.nprobe",
@@ -169,10 +180,24 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.rerank_width",
+        c"Session override for ec_ivf heap_f32 rerank frontier width.",
+        c"Overrides ec_ivf index rerank_width reloption when set to 0 or higher; -1 uses the relation value.",
+        &EC_IVF_RERANK_WIDTH_GUC,
+        EC_IVF_SESSION_RERANK_WIDTH_UNSET,
+        EC_IVF_MAX_RERANK_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
     EC_IVF_NPROBE_GUC.get()
+}
+
+pub(super) fn current_session_rerank_width() -> i32 {
+    EC_IVF_RERANK_WIDTH_GUC.get()
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> NprobeResolution {
@@ -199,6 +224,24 @@ pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> NprobeRe
         relation_nprobe,
         session_nprobe,
         effective_nprobe: requested.clamp(1, nlists),
+        source,
+    }
+}
+
+pub(super) fn resolve_scan_rerank_width(relation_rerank_width: i32) -> RerankWidthResolution {
+    let session_rerank_width = match current_session_rerank_width() {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+    let (effective_rerank_width, source) = match session_rerank_width {
+        Some(value) => (value.clamp(0, EC_IVF_MAX_RERANK_WIDTH), "session"),
+        None => (relation_rerank_width, "relation"),
+    };
+
+    RerankWidthResolution {
+        relation_rerank_width,
+        session_rerank_width,
+        effective_rerank_width,
         source,
     }
 }
