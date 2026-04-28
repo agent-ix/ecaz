@@ -199,9 +199,12 @@ impl BuildState {
                 tuple.dimensions
             ));
         }
-        let expected_payload_len =
-            IvfQuantizer::resolve(self.options.storage_format, usize::from(tuple.dimensions))?
-                .payload_len();
+        let expected_payload_len = IvfQuantizer::resolve_with_pq_group_size(
+            self.options.storage_format,
+            usize::from(tuple.dimensions),
+            self.options.requested_pq_group_size(),
+        )?
+        .payload_len();
         let deferred_pq_encode = self.options.storage_format == options::StorageFormat::PqFastScan
             && tuple.payload.is_empty();
         if !deferred_pq_encode && tuple.payload.len() != expected_payload_len {
@@ -364,9 +367,10 @@ impl BuildState {
                 let tuple = &self.heap_tuples[*tuple_index];
                 let (gamma, payload) = match &pq_model {
                     Some(pq_model) => {
-                        let quantizer = IvfQuantizer::resolve(
+                        let quantizer = IvfQuantizer::resolve_with_pq_group_size(
                             self.options.storage_format,
                             usize::from(tuple.dimensions),
+                            self.options.requested_pq_group_size(),
                         )?;
                         let (_, gamma, payload) = quantizer
                             .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
@@ -442,7 +446,10 @@ impl BuildState {
         if self.options.storage_format != options::StorageFormat::PqFastScan {
             return Ok(None);
         }
-        let group_size = quantizer::default_pq_fastscan_group_size(usize::from(dimensions));
+        let group_size = quantizer::resolve_pq_fastscan_group_size(
+            usize::from(dimensions),
+            self.options.requested_pq_group_size(),
+        )?;
         let sample_vectors = self.training_sample_vectors();
         let model = common_training::train_grouped_pq4_model(
             &sample_vectors,
@@ -747,6 +754,7 @@ mod tests {
             rerank_width: 0,
             training_sample_rows,
             seed: 7,
+            pq_group_size: 0,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }

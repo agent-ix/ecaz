@@ -467,8 +467,12 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+        metadata.storage_format,
+        metadata.dimensions as usize,
+        metadata_pq_group_size(metadata),
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
         let model = pq_fastscan_model_for_scan(opaque, index_relation, metadata)
             .unwrap_or_else(|e| pgrx::error!("ec_ivf failed to load pq_fastscan model: {e}"));
@@ -757,7 +761,11 @@ unsafe fn materialize_probe_candidates(
     }
 
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let quantizer = IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)?;
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+        metadata.storage_format,
+        metadata.dimensions as usize,
+        metadata_pq_group_size(metadata),
+    )?;
     let payload_len = quantizer.payload_len();
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
@@ -1077,6 +1085,14 @@ fn build_probe_block_sequence(ranges: &mut [ProbeBlockRange]) -> Result<Vec<u32>
     }
 
     Ok(blocks)
+}
+
+fn metadata_pq_group_size(metadata: &super::page::MetadataPage) -> Option<usize> {
+    if metadata.storage_format == StorageFormat::PqFastScan && metadata.pq_group_size > 0 {
+        Some(usize::from(metadata.pq_group_size))
+    } else {
+        None
+    }
 }
 
 unsafe fn build_selected_probe_plan(

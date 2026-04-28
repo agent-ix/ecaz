@@ -180,8 +180,19 @@ unsafe fn run_bulkdelete(
 }
 
 fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
-    super::quantizer::IvfQuantizer::resolve(metadata.storage_format, metadata.dimensions as usize)
-        .map(|quantizer| quantizer.payload_len())
+    let pq_group_size = if metadata.storage_format == super::options::StorageFormat::PqFastScan
+        && metadata.pq_group_size > 0
+    {
+        Some(usize::from(metadata.pq_group_size))
+    } else {
+        None
+    };
+    super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
+        metadata.storage_format,
+        metadata.dimensions as usize,
+        pq_group_size,
+    )
+    .map(|quantizer| quantizer.payload_len())
 }
 
 unsafe fn bulkdelete_list_postings(

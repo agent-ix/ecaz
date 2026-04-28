@@ -2980,6 +2980,65 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_pq_fastscan_accepts_group_size_reloption() {
+        fn literal(values: &[f32]) -> String {
+            let body = values
+                .iter()
+                .map(|value| format!("{value:.1}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("'[{body}]'::ecvector")
+        }
+
+        let mut base = vec![0.0_f32; 32];
+        base[0] = 1.0;
+        let mut near = vec![0.0_f32; 32];
+        near[0] = 0.9;
+        near[1] = 0.1;
+        let mut orthogonal = vec![0.0_f32; 32];
+        orthogonal[8] = 1.0;
+        let mut opposite = vec![0.0_f32; 32];
+        opposite[0] = -1.0;
+
+        Spi::run(
+            "CREATE TABLE ec_ivf_pq_fastscan_group_size (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_ivf_pq_fastscan_group_size VALUES
+             (0, {}),
+             (1, {}),
+             (2, {}),
+             (3, {})",
+            literal(&base),
+            literal(&near),
+            literal(&orthogonal),
+            literal(&opposite)
+        ))
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_pq_fastscan_group_size_idx ON ec_ivf_pq_fastscan_group_size USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, storage_format = 'pq_fastscan', pq_group_size = 8)",
+        )
+        .expect("PqFastScan IVF index creation with pq_group_size should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_pq_fastscan_group_size_idx");
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'ec_ivf_pq_fastscan_group_size_idx'::regclass",
+        )
+        .expect("reloptions query should succeed")
+        .expect("reloptions should exist");
+        let outputs = unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, base) }.0;
+
+        assert!(reloptions.contains(&"pq_group_size=8".to_string()));
+        assert!(
+            outputs.iter().all(|(_, _, score)| score.is_finite()),
+            "PqFastScan IVF scan should work with non-default grouped-PQ subvector size"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_pq_fastscan_scan_reuses_loaded_model() {
         Spi::run(
             "CREATE TABLE ec_ivf_pq_fastscan_model_cache (id bigint primary key, embedding ecvector)",

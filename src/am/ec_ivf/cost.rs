@@ -381,6 +381,7 @@ mod tests {
             rerank_width: 25,
             training_sample_rows: 1000,
             seed: 7,
+            pq_group_size: 0,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
         });

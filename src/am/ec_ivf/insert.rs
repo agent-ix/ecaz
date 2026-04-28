@@ -95,9 +95,10 @@ unsafe fn reencode_tuple_for_storage(
         return Ok(tuple);
     }
     let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
-    let ivf_quantizer = quantizer::IvfQuantizer::resolve(
+    let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         usize::from(metadata.dimensions),
+        metadata_pq_group_size(metadata),
     )?;
     let (dimensions, gamma, payload) =
         ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
@@ -164,9 +165,10 @@ unsafe fn ensure_heap_tid_absent(
         return Err("ec_ivf metadata has live dimensions but no directory head".to_owned());
     }
 
-    let payload_len = super::quantizer::IvfQuantizer::resolve(
+    let payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         metadata.dimensions as usize,
+        metadata_pq_group_size(metadata),
     )?
     .payload_len();
     let mut next_tid = metadata.directory_head;
@@ -212,9 +214,10 @@ unsafe fn ensure_heap_tid_absent_in_list(
     directory: &page::IvfListDirectoryTuple,
     heap_tid: ItemPointer,
 ) -> Result<(), String> {
-    let payload_len = super::quantizer::IvfQuantizer::resolve(
+    let payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         metadata.dimensions as usize,
+        metadata_pq_group_size(metadata),
     )?
     .payload_len();
     let postings = unsafe {
@@ -261,9 +264,18 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         training_sample_rows: i32::try_from(metadata.training_sample_rows)
             .map_err(|_| "metadata training sample rows exceeds i32".to_owned())?,
         seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,
+        pq_group_size: i32::from(metadata.pq_group_size),
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
     })
+}
+
+fn metadata_pq_group_size(metadata: &page::MetadataPage) -> Option<usize> {
+    if metadata.storage_format == options::StorageFormat::PqFastScan && metadata.pq_group_size > 0 {
+        Some(usize::from(metadata.pq_group_size))
+    } else {
+        None
+    }
 }
 
 fn validate_insert_tuple(
@@ -289,9 +301,10 @@ fn validate_insert_tuple(
             metadata.dimensions
         ));
     }
-    let expected_payload_len = super::quantizer::IvfQuantizer::resolve(
+    let expected_payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         usize::from(metadata.dimensions),
+        metadata_pq_group_size(metadata),
     )?
     .payload_len();
     if tuple.payload.len() != expected_payload_len {

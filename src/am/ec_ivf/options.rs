@@ -4,10 +4,12 @@ use std::ptr;
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
-    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
-    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
-    EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
-    EC_IVF_MIN_NPROBE, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_PQ_GROUP_SIZE,
+    EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_RERANK_WIDTH,
+    EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
+    EC_IVF_MIN_PQ_GROUP_SIZE, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
+    EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -23,6 +25,7 @@ struct EcIvfReloptions {
     rerank_width: i32,
     training_sample_rows: i32,
     seed: i32,
+    pq_group_size: i32,
     storage_format_offset: i32,
     rerank_offset: i32,
 }
@@ -121,6 +124,7 @@ pub(super) struct EcIvfOptions {
     pub(super) rerank_width: i32,
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
+    pub(super) pq_group_size: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -132,9 +136,18 @@ impl EcIvfOptions {
         rerank_width: EC_IVF_DEFAULT_RERANK_WIDTH,
         training_sample_rows: EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_IVF_DEFAULT_SEED,
+        pq_group_size: EC_IVF_DEFAULT_PQ_GROUP_SIZE,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
+
+    pub(super) fn requested_pq_group_size(self) -> Option<usize> {
+        if self.pq_group_size > 0 {
+            Some(self.pq_group_size as usize)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +267,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
                 EC_IVF_MAX_SEED,
                 offset_of!(EcIvfReloptions, seed) as i32,
             );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"pq_group_size".as_ptr(),
+                c"Grouped-PQ subvector size for storage_format = 'pq_fastscan'; 0 chooses the default."
+                    .as_ptr(),
+                EC_IVF_DEFAULT_PQ_GROUP_SIZE,
+                EC_IVF_MIN_PQ_GROUP_SIZE,
+                EC_IVF_MAX_PQ_GROUP_SIZE,
+                offset_of!(EcIvfReloptions, pq_group_size) as i32,
+            );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -334,6 +357,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         rerank_width: reloptions.rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
+        pq_group_size: reloptions.pq_group_size,
         storage_format,
         rerank,
     }

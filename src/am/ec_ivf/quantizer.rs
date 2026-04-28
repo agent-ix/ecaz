@@ -44,12 +44,20 @@ impl IvfQuantizer {
         storage_format: StorageFormat,
         dimensions: usize,
     ) -> Result<Self, String> {
+        Self::resolve_with_pq_group_size(storage_format, dimensions, None)
+    }
+
+    pub(super) fn resolve_with_pq_group_size(
+        storage_format: StorageFormat,
+        dimensions: usize,
+        pq_group_size: Option<usize>,
+    ) -> Result<Self, String> {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
             StorageFormat::PqFastScan => {
                 let transform_dim = rotation::effective_transform_dim(dimensions);
-                let group_size = default_pq_fastscan_group_size(dimensions);
+                let group_size = resolve_pq_fastscan_group_size(dimensions, pq_group_size)?;
                 IvfQuantizerProfile::PqFastScan {
                     group_count: transform_dim / group_size,
                     group_size,
@@ -313,6 +321,29 @@ pub(super) fn default_pq_fastscan_group_size(dimensions: usize) -> usize {
     rotation::effective_transform_dim(dimensions).min(16)
 }
 
+pub(super) fn resolve_pq_fastscan_group_size(
+    dimensions: usize,
+    requested_group_size: Option<usize>,
+) -> Result<usize, String> {
+    let transform_dim = rotation::effective_transform_dim(dimensions);
+    let group_size =
+        requested_group_size.unwrap_or_else(|| default_pq_fastscan_group_size(dimensions));
+    if group_size == 0 {
+        return Err("ec_ivf pq_fastscan pq_group_size must be greater than zero".to_owned());
+    }
+    if !matches!(group_size, 8 | 16 | 32) && group_size != transform_dim {
+        return Err(format!(
+            "ec_ivf pq_fastscan pq_group_size must be 8, 16, 32, or the full transformed dimension {transform_dim}; got {group_size}"
+        ));
+    }
+    if group_size > transform_dim || transform_dim % group_size != 0 {
+        return Err(format!(
+            "ec_ivf pq_fastscan pq_group_size {group_size} must divide transformed dimension {transform_dim}"
+        ));
+    }
+    Ok(group_size)
+}
+
 pub(super) unsafe fn load_pq_fastscan_model(
     index_relation: pgrx::pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -429,6 +460,31 @@ mod tests {
                 group_size: 16
             }
         );
+    }
+
+    #[test]
+    fn pq_fastscan_accepts_metadata_group_size_override() {
+        let explicit =
+            IvfQuantizer::resolve_with_pq_group_size(StorageFormat::PqFastScan, 64, Some(8))
+                .unwrap();
+
+        assert_eq!(
+            explicit.profile,
+            IvfQuantizerProfile::PqFastScan {
+                group_count: 8,
+                group_size: 8
+            }
+        );
+        assert_eq!(explicit.payload_len(), 4);
+    }
+
+    #[test]
+    fn pq_fastscan_rejects_group_size_that_does_not_divide_transform() {
+        let err = IvfQuantizer::resolve_with_pq_group_size(StorageFormat::PqFastScan, 64, Some(12))
+            .unwrap_err();
+
+        assert!(err.contains("pq_group_size"));
+        assert!(err.contains("must be 8, 16, 32"));
     }
 
     #[test]
