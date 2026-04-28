@@ -186,49 +186,67 @@ unsafe fn bulkdelete_list_postings(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<ListBulkDeleteResult, String> {
-    let postings = unsafe {
-        page::read_ivf_postings_for_list_blocks_with_tids(
+    let mut result = ListBulkDeleteResult::default();
+    unsafe {
+        page::rewrite_ivf_postings_for_list_blocks(
             index_relation,
             directory.list_id,
             directory.head_block,
             directory.tail_block,
             payload_len,
+            |posting_tid, mut posting| {
+                bulkdelete_posting(
+                    &mut result,
+                    posting_tid,
+                    &mut posting,
+                    callback,
+                    callback_state,
+                )
+            },
         )?
     };
 
-    let mut result = ListBulkDeleteResult::default();
-    for (posting_tid, mut posting) in postings {
-        if posting.deleted {
-            continue;
-        }
-        let starting_len = posting.heaptids.len();
-        posting
-            .heaptids
-            .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
-        let removed = starting_len.saturating_sub(posting.heaptids.len());
+    Ok(result)
+}
 
-        let should_rewrite = if posting.heaptids.is_empty() {
-            posting.deleted = true;
-            true
-        } else {
-            result.record_live_posting(posting_tid.block_number, posting.heaptids.len())?;
-            removed > 0
-        };
-        if should_rewrite {
-            unsafe { page::rewrite_ivf_posting(index_relation, posting_tid, &posting)? };
-        }
-        if removed > 0 {
-            result.removed_heap_tids = result
-                .removed_heap_tids
-                .checked_add(
-                    u64::try_from(removed)
-                        .map_err(|_| "ec_ivf removed heap tid count exceeds u64".to_owned())?,
-                )
-                .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
-        }
+fn bulkdelete_posting(
+    result: &mut ListBulkDeleteResult,
+    posting_tid: ItemPointer,
+    posting: &mut page::IvfPostingTuple,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<Option<page::IvfPostingTuple>, String> {
+    if posting.deleted {
+        return Ok(None);
+    }
+    let starting_len = posting.heaptids.len();
+    posting
+        .heaptids
+        .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
+    let removed = starting_len.saturating_sub(posting.heaptids.len());
+
+    let should_rewrite = if posting.heaptids.is_empty() {
+        posting.deleted = true;
+        true
+    } else {
+        result.record_live_posting(posting_tid.block_number, posting.heaptids.len())?;
+        removed > 0
+    };
+    if removed > 0 {
+        result.removed_heap_tids = result
+            .removed_heap_tids
+            .checked_add(
+                u64::try_from(removed)
+                    .map_err(|_| "ec_ivf removed heap tid count exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
     }
 
-    Ok(result)
+    if should_rewrite {
+        Ok(Some(posting.clone()))
+    } else {
+        Ok(None)
+    }
 }
 
 unsafe fn finish_vacuum_stats(

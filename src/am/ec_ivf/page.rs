@@ -773,6 +773,46 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
     Ok(postings)
 }
 
+pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    head_block: BlockRef,
+    tail_block: BlockRef,
+    payload_len: usize,
+    mut rewrite: F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+{
+    if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
+        return Ok(());
+    }
+    if head_block == BlockRef::INVALID || tail_block == BlockRef::INVALID {
+        return Err(format!(
+            "ec_ivf list {list_id} has partial posting block refs"
+        ));
+    }
+    if head_block.block_number > tail_block.block_number {
+        return Err(format!(
+            "ec_ivf list {list_id} posting block range is inverted"
+        ));
+    }
+
+    for block_number in head_block.block_number..=tail_block.block_number {
+        unsafe {
+            rewrite_ivf_postings_for_list_block(
+                index_relation,
+                list_id,
+                block_number,
+                payload_len,
+                &mut rewrite,
+            )?
+        };
+    }
+
+    Ok(())
+}
+
 pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
@@ -1577,6 +1617,119 @@ pub(super) unsafe fn rewrite_ivf_posting(
     };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    Ok(())
+}
+
+unsafe fn rewrite_ivf_postings_for_list_block<F>(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    rewrite: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+{
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_ivf failed to open posting-list block {block_number}"
+        ));
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let result = unsafe {
+        rewrite_ivf_postings_from_exclusive_buffer(
+            index_relation,
+            buffer,
+            list_id,
+            block_number,
+            payload_len,
+            rewrite,
+        )
+    };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    result
+}
+
+unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
+    index_relation: pg_sys::Relation,
+    buffer: pg_sys::Buffer,
+    list_id: u32,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    rewrite: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+{
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_ptr = page.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    let mut changed = false;
+
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            std::mem::drop(wal_txn);
+            return Err(format!(
+                "ec_ivf posting tuple bounds exceed block {block_number}"
+            ));
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+            continue;
+        }
+
+        let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+        if posting.list_id != list_id {
+            continue;
+        }
+
+        let posting_tid = ItemPointer {
+            block_number,
+            offset_number: offset,
+        };
+        let Some(updated) = rewrite(posting_tid, posting)? else {
+            continue;
+        };
+        let encoded = updated.encode()?;
+        if encoded.len() != tuple_len {
+            std::mem::drop(wal_txn);
+            return Err(format!(
+                "ec_ivf posting tuple size changed from {} to {}",
+                tuple_len,
+                encoded.len()
+            ));
+        }
+
+        unsafe {
+            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
+        };
+        changed = true;
+    }
+
+    if changed {
+        unsafe { wal_txn.finish() };
+    }
     Ok(())
 }
 
