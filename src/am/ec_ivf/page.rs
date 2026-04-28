@@ -782,7 +782,7 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     mut rewrite: F,
 ) -> Result<(), String>
 where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
     if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
         return Ok(());
@@ -1620,6 +1620,13 @@ pub(super) unsafe fn rewrite_ivf_posting(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum IvfPostingRewrite {
+    Keep,
+    Rewrite(IvfPostingTuple),
+    Delete,
+}
+
 unsafe fn rewrite_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1628,7 +1635,7 @@ unsafe fn rewrite_ivf_postings_for_list_block<F>(
     rewrite: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
@@ -1669,13 +1676,14 @@ unsafe fn rewrite_ivf_postings_from_exclusive_buffer<F>(
     rewrite: &mut F,
 ) -> Result<(), String>
 where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<Option<IvfPostingTuple>, String>,
+    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let page_ptr = page.cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let line_pointer_count = page_line_pointer_count(page_ptr);
+    let mut delete_offsets = Vec::new();
     let mut changed = false;
 
     for offset in 1..=line_pointer_count {
@@ -1708,23 +1716,39 @@ where
             block_number,
             offset_number: offset,
         };
-        let Some(updated) = rewrite(posting_tid, posting)? else {
-            continue;
-        };
-        let encoded = updated.encode()?;
-        if encoded.len() != tuple_len {
-            std::mem::drop(wal_txn);
-            return Err(format!(
-                "ec_ivf posting tuple size changed from {} to {}",
-                tuple_len,
-                encoded.len()
-            ));
-        }
+        match rewrite(posting_tid, posting)? {
+            IvfPostingRewrite::Keep => {}
+            IvfPostingRewrite::Rewrite(updated) => {
+                let encoded = updated.encode()?;
+                if encoded.len() != tuple_len {
+                    std::mem::drop(wal_txn);
+                    return Err(format!(
+                        "ec_ivf posting tuple size changed from {} to {}",
+                        tuple_len,
+                        encoded.len()
+                    ));
+                }
 
-        unsafe {
-            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len())
-        };
-        changed = true;
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        encoded.as_ptr(),
+                        page_ptr.add(tuple_offset),
+                        encoded.len(),
+                    )
+                };
+                changed = true;
+            }
+            IvfPostingRewrite::Delete => {
+                delete_offsets.push(offset);
+                changed = true;
+            }
+        }
+    }
+
+    for offset in delete_offsets.iter().rev() {
+        // Directory and metadata tuples can hold stable ItemPointers into the
+        // same page, so reclaim tuple storage without compacting line pointers.
+        unsafe { pg_sys::PageIndexTupleDeleteNoCompact(page, *offset) };
     }
 
     if changed {

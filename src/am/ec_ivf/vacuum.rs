@@ -215,9 +215,9 @@ fn bulkdelete_posting(
     posting: &mut page::IvfPostingTuple,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
-) -> Result<Option<page::IvfPostingTuple>, String> {
+) -> Result<page::IvfPostingRewrite, String> {
     if posting.deleted {
-        return Ok(None);
+        return Ok(page::IvfPostingRewrite::Delete);
     }
     let starting_len = posting.heaptids.len();
     posting
@@ -225,12 +225,15 @@ fn bulkdelete_posting(
         .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
     let removed = starting_len.saturating_sub(posting.heaptids.len());
 
-    let should_rewrite = if posting.heaptids.is_empty() {
-        posting.deleted = true;
-        true
+    let rewrite = if posting.heaptids.is_empty() {
+        page::IvfPostingRewrite::Delete
     } else {
         result.record_live_posting(posting_tid.block_number, posting.heaptids.len())?;
-        removed > 0
+        if removed > 0 {
+            page::IvfPostingRewrite::Rewrite(posting.clone())
+        } else {
+            page::IvfPostingRewrite::Keep
+        }
     };
     if removed > 0 {
         result.removed_heap_tids = result
@@ -242,11 +245,7 @@ fn bulkdelete_posting(
             .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
     }
 
-    if should_rewrite {
-        Ok(Some(posting.clone()))
-    } else {
-        Ok(None)
-    }
+    Ok(rewrite)
 }
 
 unsafe fn finish_vacuum_stats(
