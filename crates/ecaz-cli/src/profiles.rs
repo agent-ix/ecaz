@@ -124,8 +124,10 @@ pub const EC_IVF: IndexProfile = IndexProfile {
     known_reloptions: &[
         "nlists",
         "nprobe",
+        "rerank_width",
         "training_sample_rows",
         "seed",
+        "pq_group_size",
         "storage_format",
         "rerank",
     ],

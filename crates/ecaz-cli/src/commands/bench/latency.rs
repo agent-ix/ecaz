@@ -54,6 +54,10 @@ pub struct LatencyArgs {
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
+    /// IVF-only: session override for heap-f32 rerank frontier width.
+    /// Use -1 for the index reloption, 0 for the full probed frontier.
+    #[arg(long)]
+    pub rerank_width: Option<i32>,
     /// Quantization bits used when encoding query vectors (must match loader).
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -89,6 +93,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             "--sweep requires at least one value (e.g. --sweep 100,200,400)"
         ));
     }
+    validate_rerank_width_arg(profile, args.rerank_width)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -127,6 +132,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             args.iterations,
             profile.encode_scan_query,
             args.force_index,
+            args.rerank_width,
             args.bits,
             args.seed,
             args.k,
@@ -171,6 +177,7 @@ async fn run_sweep_point(
     iterations: usize,
     encode_scan_query: bool,
     force_index: bool,
+    rerank_width: Option<i32>,
     bits: i32,
     seed: i64,
     k: usize,
@@ -179,7 +186,11 @@ async fn run_sweep_point(
     bar.set_style(
         ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
-    bar.set_message(format!("{guc}={value}"));
+    let msg = match rerank_width {
+        Some(rerank_width) => format!("{guc}={value} ec_ivf.rerank_width={rerank_width}"),
+        None => format!("{guc}={value}"),
+    };
+    bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
 
@@ -203,6 +214,7 @@ async fn run_sweep_point(
                 iterations,
                 encode_scan_query,
                 force_index,
+                rerank_width,
                 bits,
                 seed,
                 k,
@@ -232,6 +244,7 @@ async fn worker(
     iterations: usize,
     encode_scan_query: bool,
     force_index: bool,
+    rerank_width: Option<i32>,
     bits: i32,
     seed: i64,
     k: usize,
@@ -263,6 +276,11 @@ async fn worker(
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
+    if let Some(rerank_width) = rerank_width {
+        client
+            .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
+            .await?;
+    }
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
@@ -285,6 +303,24 @@ async fn worker(
         durations.push(t0.elapsed());
         bar.inc(1);
     }
+}
+
+fn validate_rerank_width_arg(
+    profile: &profiles::IndexProfile,
+    rerank_width: Option<i32>,
+) -> Result<()> {
+    let Some(value) = rerank_width else {
+        return Ok(());
+    };
+    if profile.name != "ec_ivf" {
+        return Err(eyre!(
+            "--rerank-width is only supported with --profile ec_ivf"
+        ));
+    }
+    if value < -1 {
+        return Err(eyre!("--rerank-width must be >= -1"));
+    }
+    Ok(())
 }
 
 /// Fixed-field summary of a latency sample. All durations are in the

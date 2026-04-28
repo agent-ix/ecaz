@@ -45,6 +45,10 @@ pub struct RecallArgs {
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
+    /// IVF-only: session override for heap-f32 rerank frontier width.
+    /// Use -1 for the index reloption, 0 for the full probed frontier.
+    #[arg(long)]
+    pub rerank_width: Option<i32>,
     /// Cap the query set (default: all rows in `<prefix>_queries`).
     #[arg(long)]
     pub queries_limit: Option<usize>,
@@ -84,6 +88,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             "--sweep requires at least one value (e.g. --sweep 100,200,400)"
         ));
     }
+    validate_rerank_width_arg(profile, args.rerank_width)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -131,6 +136,12 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
                 .await
                 .wrap_err("SET enable_seqscan = off")?;
         }
+        if let Some(rerank_width) = args.rerank_width {
+            client
+                .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
+                .await
+                .wrap_err_with(|| format!("SET ec_ivf.rerank_width = {rerank_width}"))?;
+        }
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await
@@ -140,7 +151,13 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             ProgressStyle::with_template("[recall {msg}] {wide_bar} {pos}/{len} ({per_sec})")
                 .unwrap(),
         );
-        bar.set_message(format!("{guc}={value}"));
+        let msg = match args.rerank_width {
+            Some(rerank_width) => {
+                format!("{guc}={value} ec_ivf.rerank_width={rerank_width}")
+            }
+            None => format!("{guc}={value}"),
+        };
+        bar.set_message(msg);
         bar.enable_steady_tick(Duration::from_millis(250));
 
         let mut pred: Vec<Vec<i64>> = Vec::with_capacity(queries.nrows());
@@ -190,6 +207,24 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         tokio::fs::write(&path, format!("{output}\n"))
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn validate_rerank_width_arg(
+    profile: &profiles::IndexProfile,
+    rerank_width: Option<i32>,
+) -> Result<()> {
+    let Some(value) = rerank_width else {
+        return Ok(());
+    };
+    if profile.name != "ec_ivf" {
+        return Err(eyre!(
+            "--rerank-width is only supported with --profile ec_ivf"
+        ));
+    }
+    if value < -1 {
+        return Err(eyre!("--rerank-width must be >= -1"));
     }
     Ok(())
 }
