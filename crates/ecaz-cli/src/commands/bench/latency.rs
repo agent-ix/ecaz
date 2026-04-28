@@ -22,10 +22,11 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio_postgres::NoTls;
 
 use crate::profiles;
@@ -67,6 +68,12 @@ pub struct LatencyArgs {
     /// Force benchmark queries onto the index path by disabling sequential scans.
     #[arg(long)]
     pub force_index: bool,
+    /// Sample each worker backend's /proc status while the latency sweep runs.
+    #[arg(long)]
+    pub sample_backend_memory: bool,
+    /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
+    #[arg(long, default_value_t = 25)]
+    pub memory_sample_interval_ms: u64,
     /// Write the final latency table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -77,6 +84,9 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 || args.iterations == 0 || args.concurrency == 0 {
         return Err(eyre!("--k, --iterations, --concurrency must all be >= 1"));
+    }
+    if args.memory_sample_interval_ms == 0 {
+        return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
     }
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
         eyre!(
@@ -117,12 +127,16 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
 
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
-    table.set_header(vec![
+    let mut header = vec![
         "sweep", "count", "mean", "stddev", "min", "p50", "p95", "p99", "max",
-    ]);
+    ];
+    if args.sample_backend_memory {
+        header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
+    }
+    table.set_header(header);
 
     for value in &args.sweep {
-        let durations = run_sweep_point(
+        let sweep = run_sweep_point(
             database,
             guc,
             *value,
@@ -136,10 +150,12 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             args.bits,
             args.seed,
             args.k,
+            args.sample_backend_memory,
+            args.memory_sample_interval_ms,
         )
         .await?;
-        let stats = summarize(&durations);
-        table.add_row(vec![
+        let stats = summarize(&sweep.durations);
+        let mut row = vec![
             Cell::new(value),
             Cell::new(stats.count),
             Cell::new(format_ms(stats.mean)),
@@ -149,7 +165,15 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.p95)),
             Cell::new(format_ms(stats.p99)),
             Cell::new(format_ms(stats.max)),
-        ]);
+        ];
+        if args.sample_backend_memory {
+            row.extend([
+                Cell::new(sweep.memory.rss_peak_kb),
+                Cell::new(sweep.memory.hwm_peak_kb),
+                Cell::new(sweep.memory.samples),
+            ]);
+        }
+        table.add_row(row);
     }
     let output = table.to_string();
     println!("{output}");
@@ -181,7 +205,9 @@ async fn run_sweep_point(
     bits: i32,
     seed: i64,
     k: usize,
-) -> Result<Vec<Duration>> {
+    sample_backend_memory: bool,
+    memory_sample_interval_ms: u64,
+) -> Result<LatencySweepResult> {
     let bar = ProgressBar::new(iterations as u64);
     bar.set_style(
         ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
@@ -218,6 +244,8 @@ async fn run_sweep_point(
                 bits,
                 seed,
                 k,
+                sample_backend_memory,
+                memory_sample_interval_ms,
                 bar,
             )
             .await
@@ -225,12 +253,17 @@ async fn run_sweep_point(
     }
 
     let mut merged: Vec<Duration> = Vec::with_capacity(iterations);
+    let mut memory = MemorySample::default();
     for h in handles {
-        let durs = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
-        merged.extend(durs);
+        let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
+        merged.extend(result.durations);
+        memory.merge(result.memory);
     }
     bar.finish_and_clear();
-    Ok(merged)
+    Ok(LatencySweepResult {
+        durations: merged,
+        memory,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -248,8 +281,10 @@ async fn worker(
     bits: i32,
     seed: i64,
     k: usize,
+    sample_backend_memory: bool,
+    memory_sample_interval_ms: u64,
     bar: Arc<ProgressBar>,
-) -> Result<Vec<Duration>> {
+) -> Result<LatencyWorkerResult> {
     // Each worker needs its own connection so the session-local GUC sticks.
     let mut config = tokio_postgres::Config::new();
     config.dbname(&database);
@@ -284,25 +319,55 @@ async fn worker(
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
+    let memory = Arc::new(Mutex::new(MemorySample::default()));
+    let stop_memory_monitor = Arc::new(AtomicBool::new(false));
+    let memory_monitor = if sample_backend_memory {
+        let backend_pid: i32 = client
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await
+            .wrap_err("fetching latency worker backend pid")?
+            .get(0);
+        Some(tokio::spawn(monitor_backend_memory(
+            backend_pid,
+            memory_sample_interval_ms,
+            Arc::clone(&stop_memory_monitor),
+            Arc::clone(&memory),
+        )))
+    } else {
+        None
+    };
     let stmt = client.prepare(&sql).await?;
     let k_i64 = k as i64;
 
     let mut durations = Vec::new();
-    loop {
+    let query_result: Result<()> = loop {
         let idx = counter.fetch_add(1, Ordering::Relaxed);
         if idx >= iterations {
-            return Ok(durations);
+            break Ok(());
         }
         let q = &queries[idx % queries.len()];
         let t0 = Instant::now();
-        if encode_scan_query {
-            let _ = client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+        let query_result = if encode_scan_query {
+            client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
         } else {
-            let _ = client.query(&stmt, &[q, &k_i64]).await?;
+            client.query(&stmt, &[q, &k_i64]).await
+        };
+        if let Err(err) = query_result {
+            break Err(err.into());
         }
         durations.push(t0.elapsed());
         bar.inc(1);
+    };
+
+    stop_memory_monitor.store(true, Ordering::SeqCst);
+    if let Some(memory_monitor) = memory_monitor {
+        memory_monitor
+            .await
+            .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
     }
+    query_result?;
+    let memory = *memory.lock().await;
+    Ok(LatencyWorkerResult { durations, memory })
 }
 
 fn validate_rerank_width_arg(
@@ -381,6 +446,76 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
         p99: ns_to_duration(percentile_sorted(&sorted_ns, 0.99)),
         max: ns_to_duration(sorted_ns[count - 1]),
     }
+}
+
+#[derive(Debug, Default)]
+struct LatencySweepResult {
+    durations: Vec<Duration>,
+    memory: MemorySample,
+}
+
+#[derive(Debug, Default)]
+struct LatencyWorkerResult {
+    durations: Vec<Duration>,
+    memory: MemorySample,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct MemorySample {
+    rss_peak_kb: i64,
+    hwm_peak_kb: i64,
+    samples: i64,
+}
+
+impl MemorySample {
+    fn merge(&mut self, other: Self) {
+        self.rss_peak_kb = self.rss_peak_kb.max(other.rss_peak_kb);
+        self.hwm_peak_kb = self.hwm_peak_kb.max(other.hwm_peak_kb);
+        self.samples += other.samples;
+    }
+}
+
+async fn monitor_backend_memory(
+    pid: i32,
+    sample_interval_ms: u64,
+    stop: Arc<AtomicBool>,
+    peak: Arc<Mutex<MemorySample>>,
+) -> Result<()> {
+    while !stop.load(Ordering::Relaxed) {
+        if let Some(sample) = read_proc_status_memory(pid).await? {
+            let mut peak = peak.lock().await;
+            peak.samples += 1;
+            peak.rss_peak_kb = peak.rss_peak_kb.max(sample.rss_peak_kb);
+            peak.hwm_peak_kb = peak.hwm_peak_kb.max(sample.hwm_peak_kb);
+        }
+        tokio::time::sleep(Duration::from_millis(sample_interval_ms)).await;
+    }
+    Ok(())
+}
+
+async fn read_proc_status_memory(pid: i32) -> Result<Option<MemorySample>> {
+    let path = format!("/proc/{pid}/status");
+    let Ok(contents) = tokio::fs::read_to_string(&path).await else {
+        return Ok(None);
+    };
+    let mut sample = MemorySample::default();
+    for line in contents.lines() {
+        if let Some(value) = line.strip_prefix("VmRSS:") {
+            sample.rss_peak_kb = parse_status_kb(value)?;
+        } else if let Some(value) = line.strip_prefix("VmHWM:") {
+            sample.hwm_peak_kb = parse_status_kb(value)?;
+        }
+    }
+    Ok(Some(sample))
+}
+
+fn parse_status_kb(value: &str) -> Result<i64> {
+    value
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| eyre!("missing /proc status memory value"))?
+        .parse::<i64>()
+        .wrap_err("parsing /proc status memory value")
 }
 
 /// Linear-interpolated percentile from a pre-sorted ascending sample.
@@ -534,5 +669,33 @@ mod tests {
         assert_eq!(ns_to_duration(f64::NAN), Duration::ZERO);
         assert_eq!(ns_to_duration(-1.0), Duration::ZERO);
         assert_eq!(ns_to_duration(f64::INFINITY), Duration::ZERO);
+    }
+
+    #[test]
+    fn memory_sample_merge_keeps_peaks_and_adds_samples() {
+        let mut left = MemorySample {
+            rss_peak_kb: 10,
+            hwm_peak_kb: 30,
+            samples: 2,
+        };
+        left.merge(MemorySample {
+            rss_peak_kb: 20,
+            hwm_peak_kb: 25,
+            samples: 3,
+        });
+
+        assert_eq!(
+            left,
+            MemorySample {
+                rss_peak_kb: 20,
+                hwm_peak_kb: 30,
+                samples: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_status_kb_reads_proc_status_value() {
+        assert_eq!(parse_status_kb("   12345 kB").unwrap(), 12345);
     }
 }
