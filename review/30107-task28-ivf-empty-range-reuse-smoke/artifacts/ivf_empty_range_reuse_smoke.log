@@ -1,0 +1,102 @@
+Timing is on.
+                                                 version                                                 
+---------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+Time: 0.591 ms
+ section 
+---------
+ setup
+(1 row)
+
+Time: 0.136 ms
+CREATE EXTENSION
+Time: 0.320 ms
+DROP TABLE
+Time: 10.168 ms
+DROP TABLE
+Time: 4.924 ms
+DROP TABLE
+Time: 4.689 ms
+CREATE TABLE
+Time: 7.002 ms
+CREATE TABLE
+Time: 3.989 ms
+CREATE TABLE
+Time: 3.847 ms
+INSERT 0 5000
+Time: 54.185 ms
+INSERT 0 5000
+Time: 15.112 ms
+INSERT 0 5000
+Time: 14.817 ms
+CREATE INDEX
+Time: 135.367 ms
+CREATE INDEX
+Time: 118.842 ms
+CREATE INDEX
+Time: 181.626 ms
+ANALYZE
+Time: 4.317 ms
+ANALYZE
+Time: 2.921 ms
+ANALYZE
+Time: 2.669 ms
+    phase    |             relname              | bytes  | pretty 
+-------------+----------------------------------+--------+--------
+ after build | task28_ivf_vacuum_replace_32_idx | 458752 | 448 kB
+ after build | task28_ivf_vacuum_replace_64_idx | 458752 | 448 kB
+ after build | task28_ivf_vacuum_replace_8_idx  | 458752 | 448 kB
+(3 rows)
+
+Time: 2.148 ms
+DELETE 2500
+Time: 3.882 ms
+DELETE 2500
+Time: 3.450 ms
+DELETE 2500
+Time: 3.444 ms
+VACUUM
+Time: 17.266 ms
+VACUUM
+Time: 22.746 ms
+VACUUM
+Time: 58.212 ms
+        phase        |             relname              | bytes  | pretty 
+---------------------+----------------------------------+--------+--------
+ after delete vacuum | task28_ivf_vacuum_replace_32_idx | 458752 | 448 kB
+ after delete vacuum | task28_ivf_vacuum_replace_64_idx | 458752 | 448 kB
+ after delete vacuum | task28_ivf_vacuum_replace_8_idx  | 458752 | 448 kB
+(3 rows)
+
+Time: 0.704 ms
+INSERT 0 2500
+Time: 2579.251 ms (00:02.579)
+INSERT 0 2500
+Time: 1514.928 ms (00:01.515)
+INSERT 0 2500
+Time: 1869.906 ms (00:01.870)
+ANALYZE
+Time: 2.819 ms
+ANALYZE
+Time: 2.359 ms
+ANALYZE
+Time: 2.271 ms
+    phase     |             relname              | bytes  | pretty 
+--------------+----------------------------------+--------+--------
+ after refill | task28_ivf_vacuum_replace_32_idx | 475136 | 464 kB
+ after refill | task28_ivf_vacuum_replace_64_idx | 548864 | 536 kB
+ after refill | task28_ivf_vacuum_replace_8_idx  | 458752 | 448 kB
+(3 rows)
+
+Time: 0.651 ms
+     section      | surface | live_rows 
+------------------+---------+-----------
+ final row counts | n32     |      5000
+ final row counts | n64     |      5000
+ final row counts | n8      |      5000
+(3 rows)
+
+Time: 2.862 ms
+psql:review/30107-task28-ivf-empty-range-reuse-smoke/artifacts/ivf_empty_range_reuse_smoke.sql:5: NOTICE:  extension "ecaz" already exists, skipping
