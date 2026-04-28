@@ -1435,23 +1435,35 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         }
 
         let relid = unsafe { (*index_relation).rd_id };
+        let mut range_walk_start = tail_block.saturating_sub(1);
+        let mut tried_tail_hint = false;
         if let Some(hint_block) = posting_free_hint(relid, tuple.list_id) {
-            if block_in_range(hint_block, head_block, tail_block) && hint_block != tail_block {
+            if block_in_range(hint_block, head_block, tail_block) {
+                tried_tail_hint = hint_block == tail_block;
                 if let Some(tid) = unsafe {
                     try_append_ivf_posting_to_block(index_relation, hint_block, &payload)?
                 } {
                     remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                     return Ok(tid);
                 }
+                if hint_block > head_block {
+                    range_walk_start = hint_block - 1;
+                    remember_posting_free_hint(relid, tuple.list_id, range_walk_start);
+                } else {
+                    forget_posting_free_hint(relid, tuple.list_id);
+                }
+            } else {
                 forget_posting_free_hint(relid, tuple.list_id);
             }
         }
 
-        if let Some(tid) =
-            unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
-        {
-            remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
-            return Ok(tid);
+        if !tried_tail_hint {
+            if let Some(tid) =
+                unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
+            {
+                remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
+                return Ok(tid);
+            }
         }
 
         let required_space = raw_tuple_storage_bytes(payload.len());
@@ -1468,7 +1480,7 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         // Vacuum can free space before the current tail. This v1 reuse path is
         // intentionally conservative: use the global index FSM as a hint, then
         // fall back to a bounded range walk because free space is not list-keyed.
-        for block_number in (head_block..tail_block).rev() {
+        for block_number in (head_block..=range_walk_start).rev() {
             if let Some(tid) =
                 unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
             {
