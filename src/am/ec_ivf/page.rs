@@ -1411,9 +1411,9 @@ where
     result
 }
 
-pub(super) unsafe fn append_ivf_posting(
+pub(super) unsafe fn append_ivf_posting_to_list_range(
     index_relation: pg_sys::Relation,
-    tail_block: Option<pg_sys::BlockNumber>,
+    block_range: Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>,
     tuple: &IvfPostingTuple,
 ) -> Result<ItemPointer, String> {
     if !posting_tuple_fits(tuple.payload.len(), pg_sys::BLCKSZ as usize) {
@@ -1424,11 +1424,26 @@ pub(super) unsafe fn append_ivf_posting(
     }
     let payload = tuple.encode()?;
 
-    if let Some(block_number) = tail_block {
+    if let Some((head_block, tail_block)) = block_range {
+        if head_block > tail_block {
+            return Err(format!(
+                "ec_ivf list {} has invalid posting block range {}..{}",
+                tuple.list_id, head_block, tail_block
+            ));
+        }
+
         if let Some(tid) =
-            unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
+            unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
         {
             return Ok(tid);
+        }
+
+        for block_number in (head_block..tail_block).rev() {
+            if let Some(tid) =
+                unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
+            {
+                return Ok(tid);
+            }
         }
     }
 

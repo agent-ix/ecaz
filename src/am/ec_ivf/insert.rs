@@ -134,9 +134,10 @@ unsafe fn insert_into_trained_index(
         rerank_tid: ItemPointer::INVALID,
         payload: tuple.payload,
     };
-    let tail_block = live_insert_tail_block(&directory)
+    let block_range = live_insert_block_range(&directory)
         .map_err(|e| format!("ec_ivf aminsert found invalid directory: {e}"))?;
-    let posting_tid = unsafe { page::append_ivf_posting(index_relation, tail_block, &posting) }?;
+    let posting_tid =
+        unsafe { page::append_ivf_posting_to_list_range(index_relation, block_range, &posting) }?;
 
     unsafe {
         page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
@@ -386,15 +387,18 @@ unsafe fn load_directory_entry(
     Err(format!("ec_ivf assigned list {list_id} is out of range"))
 }
 
-fn live_insert_tail_block(
+fn live_insert_block_range(
     directory: &page::IvfListDirectoryTuple,
-) -> Result<Option<pg_sys::BlockNumber>, String> {
+) -> Result<Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>, String> {
     match (
         directory.head_block == page::BlockRef::INVALID,
         directory.tail_block == page::BlockRef::INVALID,
     ) {
         (true, true) => Ok(None),
-        (false, false) => Ok(Some(directory.tail_block.block_number)),
+        (false, false) => Ok(Some((
+            directory.head_block.block_number,
+            directory.tail_block.block_number,
+        ))),
         _ => Err(format!(
             "list {} has partial posting block refs",
             directory.list_id
