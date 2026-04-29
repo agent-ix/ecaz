@@ -352,7 +352,7 @@ async fn relation_size(client: &tokio_postgres::Client, relation_name: &str) -> 
 
 async fn relation_row_count(client: &tokio_postgres::Client, table_name: &str) -> Result<i64> {
     let row = client
-        .query_one(&format!("SELECT count(*) FROM {table_name}"), &[])
+        .query_one(&format!("SELECT count(id) FROM {table_name}"), &[])
         .await
         .wrap_err_with(|| format!("counting rows in {table_name}"))?;
     Ok(row.get(0))
