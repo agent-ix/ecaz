@@ -122,8 +122,6 @@ unsafe fn insert_into_trained_index(
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) =
         unsafe { load_directory_entry(index_relation, metadata, list_id) }?;
-    unsafe { ensure_heap_tid_absent_in_list(index_relation, metadata, &directory, tuple.heap_tid) }
-        .map_err(|e| format!("ec_ivf aminsert found duplicate heap tid: {e}"))?;
 
     let posting = page::IvfPostingTuple {
         list_id: u32::try_from(list_id)
@@ -204,41 +202,6 @@ unsafe fn ensure_heap_tid_absent(
         }
 
         next_tid = following_tid;
-    }
-
-    Ok(())
-}
-
-unsafe fn ensure_heap_tid_absent_in_list(
-    index_relation: pg_sys::Relation,
-    metadata: &page::MetadataPage,
-    directory: &page::IvfListDirectoryTuple,
-    heap_tid: ItemPointer,
-) -> Result<(), String> {
-    let payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
-        metadata.storage_format,
-        metadata.dimensions as usize,
-        metadata_pq_group_size(metadata),
-    )?
-    .payload_len();
-    let postings = unsafe {
-        page::read_ivf_postings_for_list_blocks(
-            index_relation,
-            directory.list_id,
-            directory.head_block,
-            directory.tail_block,
-            payload_len,
-        )?
-    };
-    if postings
-        .iter()
-        .filter(|posting| !posting.deleted)
-        .any(|posting| posting.heaptids.contains(&heap_tid))
-    {
-        return Err(format!(
-            "{}:{} is already present in list {}",
-            heap_tid.block_number, heap_tid.offset_number, directory.list_id
-        ));
     }
 
     Ok(())

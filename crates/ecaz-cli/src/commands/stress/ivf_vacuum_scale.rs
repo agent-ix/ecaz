@@ -31,6 +31,9 @@ pub struct IvfVacuumScaleArgs {
     /// Synthetic vector dimensions.
     #[arg(long, default_value_t = 4)]
     pub dimensions: i64,
+    /// Optional ID period for synthetic vectors; keeps refill distribution stable.
+    #[arg(long)]
+    pub vector_period: Option<i64>,
     /// Quantizer profile reloption.
     #[arg(long, default_value = "turboquant")]
     pub quantizer: String,
@@ -111,6 +114,9 @@ fn validate_args(args: &IvfVacuumScaleArgs) -> Result<()> {
     if args.dimensions <= 0 {
         return Err(eyre!("--dimensions must be >= 1"));
     }
+    if args.vector_period.is_some_and(|period| period <= 0) {
+        return Err(eyre!("--vector-period must be >= 1"));
+    }
     if args.sample_interval_ms == 0 {
         return Err(eyre!("--sample-interval-ms must be >= 1"));
     }
@@ -157,7 +163,8 @@ impl VacuumSurface {
 }
 
 fn build_setup_sql(args: &IvfVacuumScaleArgs, surface: &VacuumSurface) -> String {
-    let vector_sql = synthetic_vector_sql("gs::double precision", args.dimensions, 0.013, 0.021);
+    let vector_base = vector_base_sql("gs", args.vector_period);
+    let vector_sql = synthetic_vector_sql(&vector_base, args.dimensions, 0.013, 0.021);
     format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
          DROP TABLE IF EXISTS {table} CASCADE;\n\
@@ -242,6 +249,7 @@ async fn run_vacuum_cycle(
                 insert_start_id,
                 insert_end_id,
                 args.dimensions,
+                args.vector_period,
             ))
             .await
             .wrap_err_with(|| format!("refilling churn range in {}", surface.table_name))?;
@@ -276,13 +284,29 @@ async fn run_vacuum_cycle(
     })
 }
 
-fn refill_sql(table_name: &str, start_id: i64, end_id: i64, dimensions: i64) -> String {
-    let vector_sql = synthetic_vector_sql("gs::double precision", dimensions, 0.013, 0.021);
+fn refill_sql(
+    table_name: &str,
+    start_id: i64,
+    end_id: i64,
+    dimensions: i64,
+    vector_period: Option<i64>,
+) -> String {
+    let vector_base = vector_base_sql("gs", vector_period);
+    let vector_sql = synthetic_vector_sql(&vector_base, dimensions, 0.013, 0.021);
     format!(
         "INSERT INTO {table_name} (id, embedding)\n\
          SELECT gs, {vector_sql}\n\
          FROM generate_series({start_id}, {end_id}) AS gs;"
     )
+}
+
+fn vector_base_sql(series_alias: &str, vector_period: Option<i64>) -> String {
+    match vector_period {
+        Some(period) => {
+            format!("(((({series_alias} - 1) % {period}) + 1)::double precision)")
+        }
+        None => format!("{series_alias}::double precision"),
+    }
 }
 
 fn synthetic_vector_sql(base: &str, dimensions: i64, first_rate: f64, second_rate: f64) -> String {
@@ -451,6 +475,7 @@ mod tests {
             nprobe: 8,
             training_sample_rows: 50,
             dimensions: 4,
+            vector_period: None,
             quantizer: "turboquant".to_owned(),
             cycles: 1,
             churn_rows: None,
@@ -490,9 +515,15 @@ mod tests {
 
     #[test]
     fn refill_sql_uses_insert_range() {
-        let sql = refill_sql("ivf_vacuum_test_n8", 101, 125, 4);
+        let sql = refill_sql("ivf_vacuum_test_n8", 101, 125, 4, None);
         assert!(sql.contains("INSERT INTO ivf_vacuum_test_n8"));
         assert!(sql.contains("generate_series(101, 125)"));
+    }
+
+    #[test]
+    fn vector_base_sql_can_pin_refill_distribution() {
+        let base = vector_base_sql("gs", Some(100));
+        assert_eq!(base, "((((gs - 1) % 100) + 1)::double precision)");
     }
 
     #[test]
