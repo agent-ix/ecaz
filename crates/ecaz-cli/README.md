@@ -123,6 +123,9 @@ Profiles live in `src/profiles.rs` and describe:
 - `operator_class` — the opclass used in `CREATE INDEX`.
 - `embedding_type` — the column type used for the indexed expression.
 - `encoder_function` — the SQL function that encodes `real[]` into that type.
+- `encode_scan_query` — whether benchmark KNN probes should encode query
+  parameters before `ORDER BY`; this is false for current opclasses because
+  they declare `<#>(embedding, real[])`.
 - `ef_search_guc` — the per-scan tuning GUC name.
 - `build_source_column` — whether the AM can index from a raw `real[]`
   column (HNSW can; DiskANN reads the indexed column directly).

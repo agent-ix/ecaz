@@ -39,7 +39,10 @@ pub struct IndexProfile {
     /// SQL function that encodes `real[]` → `embedding_type`.
     pub encoder_function: &'static str,
     /// Whether KNN benchmark queries should encode `real[]` into the indexed
-    /// embedding type before passing the ORDER BY probe to PostgreSQL.
+    /// embedding type before passing the ORDER BY probe to PostgreSQL. This
+    /// must stay false for profiles whose opclass declares `<#>(embedding,
+    /// real[])`; otherwise prepared benchmark queries will miss the ANN
+    /// operator family and fall back to seqscan/sort.
     pub encode_scan_query: bool,
     /// Per-scan tuning GUC (None when the AM has no equivalent knob).
     pub ef_search_guc: Option<&'static str>,
@@ -111,7 +114,7 @@ pub const EC_HNSW: IndexProfile = IndexProfile {
     operator_class: "ecvector_ip_ops",
     embedding_type: "ecvector",
     encoder_function: "encode_to_ecvector",
-    encode_scan_query: true,
+    encode_scan_query: false,
     ef_search_guc: Some("ec_hnsw.ef_search"),
     build_source_column: Some("source"),
     sweep_axis: SweepAxis::M,
@@ -130,7 +133,7 @@ pub const EC_DISKANN: IndexProfile = IndexProfile {
     operator_class: "ecvector_diskann_ip_ops",
     embedding_type: "ecvector",
     encoder_function: "encode_to_ecvector",
-    encode_scan_query: true,
+    encode_scan_query: false,
     ef_search_guc: Some("ec_diskann.list_size"),
     build_source_column: None,
     sweep_axis: SweepAxis::ListSize,
@@ -236,6 +239,7 @@ mod tests {
         let p = &EC_HNSW;
         assert!(p.sweep_axis_is_m());
         assert_eq!(p.build_source_column, Some("source"));
+        assert!(!p.encode_scan_query);
     }
 
     #[test]
@@ -244,6 +248,7 @@ mod tests {
         assert!(!p.sweep_axis_is_m());
         assert_eq!(p.build_source_column, None);
         assert_eq!(p.ef_search_guc, Some("ec_diskann.list_size"));
+        assert!(!p.encode_scan_query);
     }
 
     #[test]

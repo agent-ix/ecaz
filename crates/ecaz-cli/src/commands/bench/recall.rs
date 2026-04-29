@@ -9,7 +9,7 @@
 //!    `--truth-cache-dir` is set, reuse an exact top-k truth cache keyed by
 //!    source ids, source values, dimensions, query limit, and k.
 //! 3. For each sweep value, set the profile's tuning GUC and run one
-//!    `ORDER BY embedding <#> encode_to_<embedding>(...) LIMIT k` per query.
+//!    `ORDER BY embedding <#> $1::real[] LIMIT k` per query.
 //! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
 //!
 //! # Purity boundary
@@ -840,11 +840,11 @@ fn inner_product_slice(queries: &Array2<f32>, query_row: usize, source: &[f32]) 
         .sum()
 }
 
-/// KNN SQL template used for recall. Encoded profiles bind
+/// KNN SQL template used for recall. Raw-query profiles bind
+/// `($1::real[], $2::bigint)` = (query_source, k). Encoded profiles bind
 /// `($1::real[], $2::integer, $3::bigint, $4::bigint)` = (query_source, bits,
-/// seed, k). Raw-query profiles bind `($1::real[], $2::bigint)` =
-/// (query_source, k). Exposed so a test can pin the operator and query-shape
-/// wiring for each profile.
+/// seed, k). Exposed so a test can pin the operator and query-shape wiring for
+/// each profile.
 pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
     if profile.encode_scan_query {
         let rhs = format!(
@@ -1097,22 +1097,21 @@ mod tests {
     // --- build_knn_sql ---
 
     #[test]
-    fn build_knn_sql_uses_profile_encoder_and_ip_operator() {
+    fn build_knn_sql_uses_raw_real_query_for_hnsw() {
         let sql = build_knn_sql(&EC_HNSW, "dbpedia_10k_corpus");
         assert!(sql.contains("FROM dbpedia_10k_corpus"));
-        assert!(sql.contains("encode_to_ecvector($1::real[], $2::integer, $3::bigint)"));
-        assert!(sql.contains("ORDER BY embedding <#>"));
+        assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
         assert!(!sql.contains("pg_catalog"), "got: {sql}");
-        assert!(sql.contains("LIMIT $4"));
+        assert!(sql.contains("LIMIT $2"));
+        assert!(!sql.contains("encode_to_ecvector($1::real[]"));
     }
 
     #[test]
-    fn build_knn_sql_is_profile_polymorphic() {
-        // DiskANN uses the same embedding type + encoder today, but the SQL
-        // must reference the profile's `encoder_function` field, not a
-        // hardcoded name.
+    fn build_knn_sql_uses_raw_real_query_for_diskann() {
         let sql = build_knn_sql(&EC_DISKANN, "corpus");
-        assert!(sql.contains(EC_DISKANN.encoder_function));
+        assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
+        assert!(sql.contains("LIMIT $2"));
+        assert!(!sql.contains("encode_to_ecvector($1::real[]"));
     }
 
     #[test]
