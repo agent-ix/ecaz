@@ -12,6 +12,8 @@ It introduces no new measurements. Source packets:
 - 30137: post-A7 10k/25k PQ-FastScan g8 recall/latency/HWM
 - 30143: 10k/25k TurboQuant matched-width latency/HWM
 - 30144: 10k/25k RaBitQ bounded recall/latency/HWM and 25k build
+- 30152: corrected 10k/25k RaBitQ bounded recall/latency/HWM after fixing
+  the per-posting quantizer rebuild in the IVF RaBitQ score path
 
 ## Current A10 Matrix
 
@@ -22,15 +24,15 @@ It introduces no new measurements. Source packets:
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | 10k | TurboQuant | 1.0000 | 0.9966 | 130.6 ms | 231.6 ms | 267.9 ms | 109600 kB | 9,641,984 B |
 | 10k | PQ-FastScan g8 | 0.9910 | 0.9360 | 77.3 ms | 80.4 ms | 82.2 ms | 137244 kB | 2,506,752 B |
-| 10k | RaBitQ | 1.0000 | 0.9930 | 1947.8 ms | 2096.9 ms | 2128.3 ms | 69980 kB | 9,641,984 B |
+| 10k | RaBitQ | 1.0000 | 0.9930 | 344.2 ms | 401.3 ms | 413.1 ms | 68212 kB | 9,641,984 B |
 | 25k | TurboQuant | 0.9990 | 0.9929 | 284.5 ms | 402.4 ms | 441.5 ms | 155540 kB | 23,289,856 B |
 | 25k | PQ-FastScan g8 | 0.9940 | 0.9256 | 116.8 ms | 123.7 ms | 125.7 ms | 156112 kB | 5,300,224 B |
-| 25k | RaBitQ | 1.0000 | 0.9915 | 4973.0 ms | 5257.7 ms | 5327.9 ms | 145012 kB | 23,519,232 B |
+| 25k | RaBitQ | 1.0000 | 0.9915 | 775.7 ms | 835.6 ms | 858.8 ms | 92996 kB | 23,519,232 B |
 
 RaBitQ recall and latency rows use bounded samples (`queries-limit=20`,
-`iterations=10`) because the measured per-query latency is already
-multi-second. They are sufficient to classify the current RaBitQ IVF scan path
-as latency-uncompetitive.
+`iterations=10`). Packet 30152 replaces the earlier multi-second RaBitQ rows
+from packet 30144; those older rows measured an IVF wiring bug that rebuilt the
+seeded SRHT quantizer per posting score.
 
 100k selected point:
 
@@ -53,7 +55,8 @@ Measured recommendation:
 - For smaller 10k/25k workloads where recall@100 matters more than index size
   and latency, TurboQuant remains the safer default profile.
 - RaBitQ should remain selectable, but it is not a current IVF default
-  candidate until its scan scoring path is optimized.
+  candidate: after the score hot-path fix it keeps strong recall, but remains
+  slower than both TurboQuant and PQ-FastScan at this matched shape.
 
 The reason to keep `auto` unchanged is not historical inertia. It is the
 measured smaller-corpus recall@100 gap: TurboQuant keeps about `0.993-0.997`
@@ -65,9 +68,8 @@ trade away that recall@100 behavior globally in this task.
 
 - Cache state is warm local development for these rows; no explicit OS or
   PostgreSQL buffer-cache drop was performed.
-- RaBitQ rows are intentionally bounded because full 100-query runs would spend
-  several minutes per row on a profile that is already outside the latency
-  band.
+- RaBitQ rows are intentionally bounded and should be treated as local
+  corrected replacement rows, not as full-product latency claims.
 - The 100k TurboQuant and RaBitQ rows are not freshly rebuilt at current head;
   the current practical 100k recommendation is based on the selected
   PQ-FastScan point plus packet 30091's direct comparison.

@@ -15,14 +15,14 @@ kept outside the local desktop gate.
 |---|---|---|
 | A1 cost model audit | done | 30076, 30077 |
 | A2 streaming vacuum | done | 30079, 30109, 30129 |
-| A3 physical compaction/reuse | done for local v1 claim | 30080, 30139, 30140, 30141, 30142 |
+| A3 physical compaction/reuse | done for local v1 claim with slack caveat | 30080, 30139, 30140, 30141, 30142 |
 | A4 typed exact-score dispatch | done | 30102 |
 | A5 quantizer cache-key audit | done | 30102 |
 | A6 planner cross-test matrix | done with mixed-predicate caveat | 30077 |
 | A7 score-bound pruning | done for PQ-FastScan selected path | 30115, 30116, 30117, 30137, 30138 |
-| A8 PQ-FastScan + RaBitQ wiring | done | 30081, 30082 |
+| A8 PQ-FastScan + RaBitQ wiring | done after RaBitQ score hot-path fix | 30081, 30082, 30152 |
 | A9 100k+ scale | local IVF lane covered; larger/fresher exact comparison deferred | 30126, 30130, 30131, 30133, 30135, 30146, 30149, 30150 |
-| A10 quantizer assessment | done for local recommendation | 30097, 30137, 30143, 30144, 30145 |
+| A10 quantizer assessment | done for local recommendation with corrected RaBitQ rows | 30097, 30137, 30143, 30144, 30145, 30152 |
 
 ## Local Landing Read
 
@@ -54,8 +54,11 @@ current IVF implementation.
 
 - A9 is not a product benchmark. It is local scale evidence plus explicit
   deferral of measurements that do not fit this machine.
-- A10's RaBitQ rows are bounded because current RaBitQ IVF scan latency is
-  already far outside the competitive band.
+- A3's flat rotating-window churn behavior requires explicit
+  `posting_slack_percent`; default `posting_slack_percent=0` preserves build
+  size but the rotating-window churn packet grew about 24%.
+- A10's corrected RaBitQ rows are still bounded, but packet 30152 replaces the
+  earlier multi-second rows that measured a per-posting quantizer rebuild bug.
 - The recall harness now has better cache mechanics, but first-generation
   990k exact truth is still too expensive to make a local gate.
 
