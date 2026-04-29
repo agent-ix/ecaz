@@ -1,0 +1,8 @@
+   pid   | state  | wait_event_type | wait_event |                                                          query
+---------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------
+ 2961158 | active |                 |            | INSERT INTO task28_ivf_a3_100k_n32 (id, embedding)                                                                      +
+         |        |                 |            | SELECT gs, encode_to_ecvector(                                                                                          +
+         |        |                 |            |     ARRAY[                                                                                                              +
+         |        |                 |            |         sin((gs::double pre
+ 2961759 | active |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query, 120) AS query FROM pg_stat_activity WHERE datname = 'postgre
+(2 rows)

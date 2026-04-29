@@ -1,0 +1,33 @@
+VACUUM
+INFO:  vacuuming "postgres.public.task28_ivf_a3_100k_onecycle_stable_n32"
+INFO:  finished vacuuming "postgres.public.task28_ivf_a3_100k_onecycle_stable_n32": index scans: 0
+pages: 0 removed, 920 remain, 920 scanned (100.00% of total), 0 eagerly scanned
+tuples: 0 removed, 125000 remain, 25000 are dead but not yet removable
+removable cutoff: 121383, which was 12 XIDs old when operation ended
+frozen: 0 pages from table (0.00% of total) had 0 tuples frozen
+visibility map: 0 pages set all-visible, 0 pages set all-frozen (0 were all-visible)
+index scan not needed: 0 pages from table (0.00% of total) had 0 dead item identifiers removed
+index "task28_ivf_a3_100k_onecycle_stable_n32_idx": pages: 1300 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 1919 hits, 0 reads, 0 dirtied
+WAL usage: 1 records, 0 full page images, 383 bytes, 0 buffers full
+system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.01 s
+INFO:  vacuuming "postgres.pg_toast.pg_toast_7554570"
+INFO:  finished vacuuming "postgres.pg_toast.pg_toast_7554570": index scans: 0
+pages: 0 removed, 0 remain, 0 scanned (100.00% of total), 0 eagerly scanned
+tuples: 0 removed, 0 remain, 0 are dead but not yet removable
+removable cutoff: 121383, which was 12 XIDs old when operation ended
+frozen: 0 pages from table (100.00% of total) had 0 tuples frozen
+visibility map: 0 pages set all-visible, 0 pages set all-frozen (0 were all-visible)
+index scan not needed: 0 pages from table (100.00% of total) had 0 dead item identifiers removed
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 29 hits, 0 reads, 0 dirtied
+WAL usage: 0 records, 0 full page images, 0 bytes, 0 buffers full
+system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+INFO:  analyzing "public.task28_ivf_a3_100k_onecycle_stable_n32"
+INFO:  "task28_ivf_a3_100k_onecycle_stable_n32": scanned 920 of 920 pages, containing 100000 live rows and 25000 dead rows; 30000 rows in sample, 100000 estimated total rows
+INFO:  finished analyzing table "postgres.public.task28_ivf_a3_100k_onecycle_stable_n32"
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 1120 hits, 0 reads, 0 dirtied
+WAL usage: 3 records, 0 full page images, 1338 bytes, 0 buffers full
+system usage: CPU: user: 0.01 s, system: 0.00 s, elapsed: 0.02 s

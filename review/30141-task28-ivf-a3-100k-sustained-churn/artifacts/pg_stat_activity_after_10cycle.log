@@ -1,0 +1,5 @@
+   pid   | state  | backend_xmin |                                                           left
+---------+--------+--------------+--------------------------------------------------------------------------------------------------------------------------
+ 2976478 | active | 121475       | SELECT 'n32' AS idx, count(*) FILTER (WHERE posting_tuples > 0) AS posting_blocks, sum(unused_line_pointers) AS unused_l
+ 2976501 | active | 121475       | SELECT pid, state, backend_xmin::text, left(query, 120) FROM pg_stat_activity WHERE datname = 'postgres' ORDER BY pid;
+(2 rows)
