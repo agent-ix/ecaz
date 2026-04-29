@@ -130,15 +130,15 @@ async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
     let selected_port = selected_port
         .ok_or_else(|| eyre!("could not find a free local port starting at {}", args.port))?;
 
-    let base = psql::ConnectParams {
+    let base = psql::ConnectionOptions {
         database: "postgres".into(),
         host: Some("127.0.0.1".into()),
         port: Some(selected_port),
         user: Some("postgres".into()),
         password: None,
     };
-    let observer = psql::connect_with(&base).await?;
-    let actor = psql::connect_with(&base).await?;
+    let observer = psql::connect(&base).await?;
+    let actor = psql::connect(&base).await?;
 
     let preload_setting = single_text(&observer, "SHOW shared_preload_libraries").await?;
     if !preload_setting.contains("ecaz") {

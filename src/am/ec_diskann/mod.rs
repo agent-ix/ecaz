@@ -141,10 +141,10 @@ pub(super) fn warn_on_non_unit_source_vector_sample(
 
 #[inline]
 pub(super) fn maybe_check_for_interrupts() {
-    #[cfg(all(test, not(feature = "pg_test")))]
+    #[cfg(test)]
     {}
 
-    #[cfg(not(all(test, not(feature = "pg_test"))))]
+    #[cfg(not(test))]
     {
         pgrx::check_for_interrupts!();
     }

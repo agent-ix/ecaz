@@ -93,7 +93,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
-    let full_sql = build_knn_sql(&corpus_table);
+    let full_sql = build_knn_sql(profile, &corpus_table);
     let encode_sql = build_encode_only_sql(profile);
     // EXPLAIN's result columns are `text`, even with FORMAT JSON — so we
     // read them as String and parse client-side with serde_json rather

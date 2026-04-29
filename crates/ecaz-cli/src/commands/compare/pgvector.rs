@@ -160,7 +160,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         .batch_execute(&format!("SET {ecaz_guc} = {}", args.ecaz_sweep))
         .await
         .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
-    let ecaz_sql = build_knn_sql(&corpus_table);
+    let ecaz_sql = build_knn_sql(profile, &corpus_table);
     let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
         &client,
         &ecaz_label,
