@@ -1,0 +1,5 @@
+            relname            | index_bytes | index_size |                                               reloptions
+-------------------------------+-------------+------------+--------------------------------------------------------------------------------------------------------
+ task28_ivf_qcmp10k_rabitq_idx |     9641984 | 9416 kB    | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=rabitq,rerank=heap_f32,rerank_width=25}
+ task28_ivf_qcmp25k_rabitq_idx |    23519232 | 22 MB      | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=rabitq,rerank=heap_f32,rerank_width=750}
+(2 rows)

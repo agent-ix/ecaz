@@ -1,0 +1,17 @@
+DROP TABLE
+DROP TABLE
+SELECT 25000
+ALTER TABLE
+SELECT 100
+ALTER TABLE
+DO
+ANALYZE
+ANALYZE
+            relname            | index_bytes | index_size |                                               reloptions
+-------------------------------+-------------+------------+--------------------------------------------------------------------------------------------------------
+ task28_ivf_qcmp25k_rabitq_idx |    23519232 | 22 MB      | {nlists=64,nprobe=64,training_sample_rows=2000,storage_format=rabitq,rerank=heap_f32,rerank_width=750}
+(1 row)
+
+psql:review/30144-task28-ivf-a10-rabitq-fill/artifacts/build_rabitq_25k.sql:1: NOTICE:  table "task28_ivf_qcmp25k_rabitq_corpus" does not exist, skipping
+psql:review/30144-task28-ivf-a10-rabitq-fill/artifacts/build_rabitq_25k.sql:2: NOTICE:  table "task28_ivf_qcmp25k_rabitq_queries" does not exist, skipping
+psql:review/30144-task28-ivf-a10-rabitq-fill/artifacts/build_rabitq_25k.sql:36: NOTICE:  task28_ivf_qcmp25k_rabitq_idx build_ms=40699.103
