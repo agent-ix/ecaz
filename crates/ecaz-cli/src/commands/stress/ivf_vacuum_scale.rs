@@ -37,6 +37,9 @@ pub struct IvfVacuumScaleArgs {
     /// Quantizer profile reloption.
     #[arg(long, default_value = "turboquant")]
     pub quantizer: String,
+    /// Build-time empty posting-page reserve per IVF list.
+    #[arg(long, default_value_t = 0)]
+    pub posting_slack_percent: i64,
     /// Number of delete/VACUUM cycles to run.
     #[arg(long, default_value_t = 1)]
     pub cycles: i64,
@@ -120,6 +123,9 @@ fn validate_args(args: &IvfVacuumScaleArgs) -> Result<()> {
     if args.vector_period.is_some_and(|period| period <= 0) {
         return Err(eyre!("--vector-period must be >= 1"));
     }
+    if args.posting_slack_percent < 0 {
+        return Err(eyre!("--posting-slack-percent must be >= 0"));
+    }
     if args.sample_interval_ms == 0 {
         return Err(eyre!("--sample-interval-ms must be >= 1"));
     }
@@ -178,7 +184,7 @@ fn build_setup_sql(args: &IvfVacuumScaleArgs, surface: &VacuumSurface) -> String
          INSERT INTO {table} (id, embedding)\n\
          SELECT gs, {vector_sql}\n\
          FROM generate_series(1, {rows}) AS gs;\n\
-         CREATE INDEX {index}\n    ON {table} USING ec_ivf (embedding ecvector_ip_ops)\n    WITH (\n        nlists = {nlists},\n        nprobe = {nprobe},\n        training_sample_rows = {training_sample_rows},\n        quantizer = '{quantizer}',\n        rerank = 'heap_f32'\n    );\n\
+         CREATE INDEX {index}\n    ON {table} USING ec_ivf (embedding ecvector_ip_ops)\n    WITH (\n        nlists = {nlists},\n        nprobe = {nprobe},\n        training_sample_rows = {training_sample_rows},\n        quantizer = '{quantizer}',\n        posting_slack_percent = {posting_slack_percent},\n        rerank = 'heap_f32'\n    );\n\
          ANALYZE {table};",
         table = surface.table_name,
         index = surface.index_name,
@@ -187,6 +193,7 @@ fn build_setup_sql(args: &IvfVacuumScaleArgs, surface: &VacuumSurface) -> String
         nprobe = args.nprobe,
         training_sample_rows = args.training_sample_rows,
         quantizer = args.quantizer,
+        posting_slack_percent = args.posting_slack_percent,
         vector_sql = vector_sql,
     )
 }
@@ -491,6 +498,7 @@ mod tests {
             dimensions: 4,
             vector_period: None,
             quantizer: "turboquant".to_owned(),
+            posting_slack_percent: 0,
             cycles: 1,
             churn_rows: None,
             refill_after_vacuum: false,
@@ -511,6 +519,7 @@ mod tests {
         assert!(sql.contains("nprobe = 8"));
         assert!(sql.contains("training_sample_rows = 50"));
         assert!(sql.contains("quantizer = 'turboquant'"));
+        assert!(sql.contains("posting_slack_percent = 0"));
         assert!(sql.contains("generate_series(1, 100)"));
     }
 

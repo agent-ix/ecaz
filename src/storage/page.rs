@@ -205,6 +205,29 @@ impl DataPageChain {
         self.pages.push(DataPage::new(next_block, self.page_size));
     }
 
+    pub fn append_empty_pages(&mut self, count: usize) -> Option<(u32, u32)> {
+        if count == 0 {
+            return None;
+        }
+
+        let first_block = self
+            .pages
+            .last()
+            .expect("page chain is non-empty")
+            .block_number
+            + 1;
+        for offset in 0..count {
+            self.pages
+                .push(DataPage::new(first_block + offset as u32, self.page_size));
+        }
+        let last_block = self
+            .pages
+            .last()
+            .expect("empty pages were appended")
+            .block_number;
+        Some((first_block, last_block))
+    }
+
     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {
             return Err(format!(
@@ -318,5 +341,19 @@ mod tests {
         assert_eq!(second.block_number, FIRST_DATA_BLOCK_NUMBER + 1);
         assert_eq!(second.offset_number, 1);
         assert_eq!(chain.pages().len(), 2);
+    }
+
+    #[test]
+    fn data_page_chain_appends_empty_pages_contiguously() {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let range = chain.append_empty_pages(2).unwrap();
+
+        assert_eq!(
+            range,
+            (FIRST_DATA_BLOCK_NUMBER + 1, FIRST_DATA_BLOCK_NUMBER + 2)
+        );
+        assert_eq!(chain.pages().len(), 3);
+        assert_eq!(chain.pages()[1].tuple_count(), 0);
+        assert_eq!(chain.pages()[2].tuple_count(), 0);
     }
 }

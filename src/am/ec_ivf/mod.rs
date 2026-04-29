@@ -30,6 +30,9 @@ pub(super) const EC_IVF_MAX_SEED: i32 = i32::MAX;
 pub(super) const EC_IVF_DEFAULT_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_IVF_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_IVF_MAX_PQ_GROUP_SIZE: i32 = 32;
+pub(super) const EC_IVF_DEFAULT_POSTING_SLACK_PERCENT: i32 = 0;
+pub(super) const EC_IVF_MIN_POSTING_SLACK_PERCENT: i32 = 0;
+pub(super) const EC_IVF_MAX_POSTING_SLACK_PERCENT: i32 = 1000;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 
 pub(crate) fn register_gucs() {

@@ -362,6 +362,7 @@ impl BuildState {
         }
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
+        let mut directory_tail_blocks_by_list = vec![None; nlists];
         data_pages.start_new_page_if_current_has_tuples();
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
@@ -392,6 +393,30 @@ impl BuildState {
                 };
                 posting_tids_by_list[list_id].push(data_pages.insert_ivf_posting(&posting)?);
             }
+            if !tuple_indices.is_empty() {
+                let head = posting_tids_by_list[list_id]
+                    .first()
+                    .expect("non-empty list should have posting tids")
+                    .block_number;
+                let tail = posting_tids_by_list[list_id]
+                    .last()
+                    .expect("non-empty list should have posting tids")
+                    .block_number;
+                let posting_pages = tail - head + 1;
+                directory_tail_blocks_by_list[list_id] = Some(tail);
+                let slack_pages =
+                    posting_slack_pages(posting_pages, self.options.posting_slack_percent)?;
+                if slack_pages > 0 {
+                    let (_, slack_tail) = data_pages
+                        .append_empty_pages(slack_pages + 1)
+                        .expect("positive slack should append pages");
+                    directory_tail_blocks_by_list[list_id] = Some(
+                        slack_tail
+                            .checked_sub(1)
+                            .ok_or_else(|| "posting slack page underflow".to_owned())?,
+                    );
+                }
+            }
         }
 
         let mut directory_entries = Vec::with_capacity(nlists);
@@ -404,7 +429,8 @@ impl BuildState {
                     block_number: head.block_number,
                 };
                 directory.tail_block = page::BlockRef {
-                    block_number: tail.block_number,
+                    block_number: directory_tail_blocks_by_list[list_id]
+                        .unwrap_or(tail.block_number),
                 };
                 directory.live_count = u64::try_from(posting_tids.len())
                     .map_err(|_| "posting count exceeds u64".to_owned())?;
@@ -470,6 +496,21 @@ impl BuildState {
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
         }))
     }
+}
+
+fn posting_slack_pages(posting_pages: u32, slack_percent: i32) -> Result<usize, String> {
+    if posting_pages == 0 || slack_percent <= 0 {
+        return Ok(0);
+    }
+    let posting_pages = u64::from(posting_pages);
+    let slack_percent =
+        u64::try_from(slack_percent).map_err(|_| "posting slack percent is negative")?;
+    let slack_pages = posting_pages
+        .checked_mul(slack_percent)
+        .and_then(|value| value.checked_add(99))
+        .ok_or_else(|| "posting slack page count overflow".to_owned())?
+        / 100;
+    usize::try_from(slack_pages).map_err(|_| "posting slack page count exceeds usize".to_owned())
 }
 
 fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
@@ -760,6 +801,7 @@ mod tests {
             training_sample_rows,
             seed: 7,
             pq_group_size: 0,
+            posting_slack_percent: 0,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }
@@ -914,6 +956,36 @@ mod tests {
                     tid.block_number
                 );
             }
+        }
+    }
+
+    #[test]
+    fn build_state_can_reserve_list_local_posting_slack() {
+        let mut options = options(0, 2);
+        options.posting_slack_percent = 100;
+        let mut state = BuildState::new(options, IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        for list_id in 0..2 {
+            let posting_tail = plan.posting_tids_by_list[list_id]
+                .last()
+                .expect("test list has postings")
+                .block_number;
+            let directory_tail = plan.directory_entries[list_id].tail_block.block_number;
+            assert!(
+                directory_tail > posting_tail,
+                "list {list_id} should reserve slack after posting tail"
+            );
+            assert_eq!(
+                plan.directory_entries[list_id].live_count,
+                2 - list_id as u64
+            );
         }
     }
 

@@ -2514,6 +2514,7 @@ mod tests {
             training_sample_rows: 10_000,
             seed: 7,
             pq_group_size: 0,
+            posting_slack_percent: 0,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -2540,6 +2541,7 @@ mod tests {
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
+            posting_slack_percent: 0,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });

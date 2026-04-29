@@ -3190,6 +3190,43 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_posting_slack_reloption_reserves_list_range() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_posting_slack_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_posting_slack_build VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.8,0.2]'::ecvector),
+             (3, '[0.7,0.3]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_posting_slack_build_idx ON ec_ivf_posting_slack_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, posting_slack_percent = 100)",
+        )
+        .expect("IVF index creation with posting slack should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_posting_slack_build_idx");
+        let (head_block, tail_block, live_count, dead_count, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+        let ctid_to_id = ctid_id_map("ec_ivf_posting_slack_build");
+        let build_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+
+        assert!(
+            tail_block > head_block,
+            "posting_slack_percent should extend the list-local block range"
+        );
+        assert_eq!(live_count, 4);
+        assert_eq!(dead_count, 0);
+        assert_eq!(inserted_since_build, 0);
+        assert!(build_ids.contains(&0));
+    }
+
+    #[pg_test]
     #[should_panic(expected = "storage_format and quantizer reloptions conflict")]
     fn test_ec_ivf_quantizer_reloption_conflicts_with_storage_format() {
         Spi::run(

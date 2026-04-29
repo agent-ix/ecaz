@@ -382,6 +382,7 @@ mod tests {
             training_sample_rows: 1000,
             seed: 7,
             pq_group_size: 0,
+            posting_slack_percent: 0,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
         });

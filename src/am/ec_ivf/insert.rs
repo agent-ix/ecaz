@@ -229,6 +229,7 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
             .map_err(|_| "metadata training sample rows exceeds i32".to_owned())?,
         seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,
         pq_group_size: i32::from(metadata.pq_group_size),
+        posting_slack_percent: 0,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
     })
