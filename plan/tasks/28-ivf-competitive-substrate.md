@@ -1,6 +1,6 @@
 # Task 28 Follow-On: IVF Competitive Substrate
 
-Status: active follow-up on `task28-ivf`
+Status: **active — merge of `task28-ivf` to `main` is gated on completion of A1–A10**
 Owner: coder1 / runtime-index track
 
 ## Goal
@@ -177,3 +177,315 @@ scoring/layout work on the active backlog:
 packet 30055 shows rerank-width reduction is not the missing high-recall
 latency lever, and packet 30058 only repairs planner selection for prepared IVF
 queries.
+
+## Required Before Merge to `main` — From Reviewer Code Read 2026-04-27
+
+**These items are part of this task.** They came out of the reviewer
+code-read recorded in
+`review/30070-task28-ivf-borrowed-scan-recall/feedback/2026-04-27-02-reviewer.md`.
+**All of them must land before this branch merges to `main`.** They are
+not follow-ups. They are not optional. They are not deferred to a
+later lane. The branch is not merge-ready until A1 through A10 are
+complete and recorded in packets.
+
+Each item is independent of the others in implementation but ordered
+in the sequencing section below for impact and risk.
+
+Read every requirement literally. Where the action is "add," "wire up," or
+"introduce," it is **purely additive** — no existing surface is removed or
+deprecated unless the requirement explicitly says so.
+
+### A1. Audit `cost.rs` constants against measured runtime cost
+
+**Action:** verify the IVF planner-cost constants in
+`src/am/ec_ivf/cost.rs` reflect actual runtime cost, not planner-selection
+tuning. Specifically:
+
+- `IVF_CENTROID_SCORING_DIMENSION_SCALE = 0.03` (was `0.75` before
+  commit `077aae1`). A 25× reduction landed without a corresponding
+  implementation change in centroid scoring. Either centroid scoring was
+  quantized somewhere I did not read — in which case document the constant
+  with a code reference — or the constant is hand-tuned to make the planner
+  choose IVF and must be replaced with a faithful model.
+- `IVF_POSTING_SCORING_DIMENSION_SCALE = 0.01`. Justify against the actual
+  TurboQuant posting-scoring kernel cost. Cite a microbenchmark.
+- `IVF_INDEX_PAGE_COST_SCALE = 0.25` applied to `seq_page_cost`. Justify
+  against actual page-access pattern (warm-cache vs cold-cache).
+
+**Done when:** each constant has either a microbenchmark-backed cost basis
+documented in code comments, or has been adjusted to match measured cost.
+
+**Cross-test:** confirm planner picks the correct path on a workload that
+should *not* select IVF (e.g., low-selectivity scan, small table, no
+ORDER BY on the indexed column). Add a test packet with the cross-test
+matrix.
+
+### A2. Replace full-list-into-memory vacuum with streaming bulkdelete
+
+**Action:** rewrite `bulkdelete_list_postings` in
+`src/am/ec_ivf/vacuum.rs` to walk posting pages incrementally instead of
+calling `read_ivf_postings_for_list_blocks_with_tids` to materialize the
+whole list as a `Vec<(tid, posting)>` before filtering.
+
+**Why:** at `nlists=8` on a 10M-row corpus, a single list contains ≈1.25M
+postings. Loading all of them into memory before filtering is a hard
+scaling cliff. At product scale `ambulkdelete` will OOM or thrash.
+
+**Done when:** vacuum walks one page at a time, applies the bulkdelete
+callback per posting, rewrites the page in place, and updates running
+totals. No data structure proportional to list size held in memory at
+once. Add a packet measuring vacuum wall time and peak memory at
+nlists ∈ {8, 32, 64} on at least 1M rows.
+
+**Acceptance:** vacuum peak memory bounded by O(page_size), not
+O(list_size).
+
+### A3. Add physical-compaction support to vacuum
+
+**Action:** extend vacuum so empty postings (those marked
+`deleted = true` after all heap-TIDs are removed) reclaim their page
+slots instead of remaining as on-disk tombstones forever.
+
+**Why:** the current `vacuum.rs:210–212` path sets `posting.deleted =
+true` and rewrites the tuple in place. The slot is never reclaimed. Over
+a long-lived index with churn, the index never shrinks — same shape as
+pgvector ivfflat. This is acceptable for v1 correctness, blocking for
+any "vacuum reclaims space" claim.
+
+**Done when:** vacuum either truncates trailing empty pages from a
+posting list's block range, or rewrites the list to compact away
+tombstones. Index size on a churn workload should track live tuple count,
+not lifetime tuple count. Add a packet showing index-size convergence
+under sustained insert+delete load.
+
+### A4. Replace `exact_score_mode_name()` String comparison with typed enum match
+
+**Action:** in `src/am/ec_ivf/quantizer.rs:81`, the dispatch into the
+4-bit-LUT fast path uses
+`quantizer.exact_score_mode_name() == "mse_no_qjl_4bit"`. Replace the
+string comparison with a typed enum match on whatever the underlying
+mode discriminator is in `crate::quant::prod`.
+
+**Why:** string comparison on a mode name is fragile under refactor and
+silently breaks if the underlying name changes. A typed match is
+compile-time checked.
+
+**Done when:** the dispatch arm in `prepare_ip_query` and
+`score_ip_from_parts` matches a typed value, not a string. No literal
+mode-name string appears in `quantizer.rs`.
+
+### A5. Audit `ProdQuantizer::cached` cache key correctness across scans
+
+**Action:** confirm that `ProdQuantizer::cached(dimensions, bits, seed)`
+called from `IvfQuantizer::resolve` (and the build/insert call sites)
+returns a cached instance keyed in a way that survives across scans and
+across query executions on the same index. If the cache misses on every
+call, the prepare cost is hitting every query.
+
+**Why:** flagged in packet 30047 reviewer feedback as item 5; not
+addressed by the dispatch refactor in commit `0e9202d`. The dispatch
+refactor moved the call site but did not audit cache behavior.
+
+**Done when:** there is either a microbenchmark showing the cache hits
+across consecutive scans on the same index, or — if it doesn't — a fix
+that makes it hit, plus a regression test asserting cache identity for a
+fixed `(dimensions, bits, seed)` triple.
+
+### A6. Revisit planner cost behavior at higher `nlists`
+
+**Action:** packet 30053 noted that the planner did not select the IVF
+index at `nlists=128`; packet 30058 patched the cost model so the
+prepared-query path now does. Confirm the patch holds across:
+
+- non-prepared queries (typical user workload),
+- workloads with small `LIMIT`,
+- workloads with large `LIMIT`,
+- mixed `WHERE` predicates that combine the IVF column with other
+  filters.
+
+This is downstream of A1: if the constants in `cost.rs` are tuned to make
+the planner pick IVF, they may make it pick IVF in cases where a
+sequential scan or alternative index would be faster. A1 fixes the
+constants; A6 verifies the planner behaves on real query shapes.
+
+**Done when:** there is a packet matrix of planner-choice tests on at
+least four query shapes against an `ec_ivf` index alongside an
+`ec_hnsw` index on the same column, with EXPLAIN output and timing.
+
+### A7. Add posting-scan early-stop with score-bound pruning
+
+**Action:** during posting-list scoring, maintain a running top-`k ×
+oversample` heap of the best scores seen so far. For each candidate
+posting, compute a cheap lower bound on its possible score (using
+`gamma` and a coarse summary of the payload — no full IP). If the lower
+bound cannot enter the heap, skip the full IP score. This is the
+standard FAISS-style pruning optimization for IVF posting scan.
+
+**Why:** at the current operating point (`nlists=64, nprobe=48`), the
+scan visits ≈75% of corpus postings per query. Score-volume reduction
+is the structural latency lever the current arc has not exploited.
+Items 1–4 from the prior list closed individual hot-path costs but did
+not change how many postings are scored.
+
+**Done when:** the scan path has an early-stop branch governed by the
+top-`k` heap; a packet measures latency reduction on the existing
+10k/25k DBPedia frontier; recall is verified to remain within tolerance
+of the baseline top-`k` (the bound must be a true lower bound, not a
+heuristic that can prune correct answers).
+
+**Reference:** FAISS `IVF` `polysemous_ht` and `IndexIVFFastScan`
+early-termination logic for the algorithm shape, but do not require the
+exact polysemous-hash technique here — the running-top-`k` bound is the
+mandatory part.
+
+### A8. Wire PQ-FastScan and RaBitQ into ec_ivf alongside TurboQuant
+
+**Action:** wire the existing PQ-FastScan and RaBitQ quantizer
+implementations from `crate::quant` (see
+`plan/tasks/15-pqfastscan-first-class.md` and
+`plan/tasks/25-rabitq-quantizer.md`) into `ec_ivf` as additional
+variants of `IvfQuantizerProfile`. After this work:
+
+- `IvfQuantizerProfile` enum has three variants: `TurboQuant`,
+  `PqFastScan`, `RaBitQ`. All three are real, supported variants.
+- `IvfPreparedQuery` enum has matching `PqFastScan(...)` and
+  `RaBitQ(...)` arms.
+- `options.rs:63–64` no longer rejects `quantizer = 'pq_fastscan'` or
+  `quantizer = 'rabitq'`; validation accepts both.
+- `IvfQuantizer::encode_source`, `prepare_ip_query`, and
+  `score_ip_from_parts` have `PqFastScan` and `RaBitQ` arms that call
+  into the respective existing kernels.
+
+**This work is purely additive.** TurboQuant remains a supported
+variant. The existing TurboQuant code paths are not changed.
+PQ-FastScan and RaBitQ as quantizers outside of `ec_ivf` (in
+`crate::quant`) are not changed, removed, deprecated, or replaced. The
+work is to make all three *selectable* on an `ec_ivf` index via the
+`quantizer` reloption.
+
+**Default selection:** keep the current default (`auto` → TurboQuant)
+unchanged in this task. Whether to change the default after the
+comparative measurement in A10 is a separate decision and out of scope
+for A8.
+
+**Done when:** for each of `quantizer = 'turboquant'`,
+`quantizer = 'pq_fastscan'`, `quantizer = 'rabitq'`, an IVF index
+builds, scans, inserts, and vacuums correctly; per-quantizer unit and
+integration tests pass on PG17 and PG18; clippy is clean.
+
+**Why this matters:** the dispatch seam from item 4 of the prior list is
+currently exercised by exactly one variant. A seam with one variant is
+a stub. Landing PQ-FastScan and RaBitQ as real second and third
+variants validates the seam and prevents single-variant assumptions
+from leaking into the dispatch interface.
+
+### A10. Honest head-to-head quantizer assessment
+
+**Action:** measure all three IVF quantizer variants from A8 against
+each other on the same fixtures, with the same `nlists`, `nprobe`,
+and `rerank_width` values. Report the comparison without a default-
+favoring bias. Specifically:
+
+- Build identical-shape `ec_ivf` indexes on the **same** corpus rows
+  with three reloption settings: `quantizer = 'turboquant'`,
+  `quantizer = 'pq_fastscan'`, `quantizer = 'rabitq'`. All other
+  reloptions (`nlists`, `ef_construction`-equivalent, `rerank`,
+  `rerank_width`, `training_sample_rows`) must be identical.
+- For each variant, capture: build wall time, peak build memory, index
+  size on disk, recall@10, recall@100, NDCG@10, p50/p95/p99 latency at
+  matched recall points (sweep `nprobe` until each variant reaches
+  recall@10 ≥ 0.99 and recall@10 ≥ 0.95, report both).
+- Run on the existing 10k and 25k DBPedia slices for parity with the
+  current frontier. Then extend to 100k once A9 lands.
+- Capture cache state (cold and warm) for each measurement.
+- Capture per-variant memory high-water mark during scan.
+
+**Honest write-up requirements:**
+
+- The packet must report the comparison **without preferring TurboQuant
+  by default**. The user has flagged that TurboQuant may be worse than
+  PQ-FastScan or RaBitQ on size and speed at comparable recall. The
+  measurement is the source of truth, not the historical default.
+- If TurboQuant loses on size, speed, or recall at a given recall
+  target, the packet must say so plainly.
+- If PQ-FastScan or RaBitQ wins on a Pareto axis (smaller index,
+  faster scan, better recall at fixed compute), the packet must say
+  so plainly.
+- The packet must include a recommendation on which variant should be
+  the default for `quantizer = 'auto'`. The recommendation must be
+  grounded in the measured numbers, not in which variant is currently
+  the default.
+- Include a note on which variant best fits which workload (e.g.,
+  "PQ-FastScan dominates at high recall on >512-d corpora;
+  TurboQuant is preferable when …" — only if the data supports it).
+
+**Done when:**
+
+1. The comparison packet exists with the data above for 10k and 25k.
+2. The packet is also extended to 100k once A9 lands (a follow-up
+   packet is acceptable).
+3. The packet's recommendation on the `auto` default is recorded. If
+   the recommendation is to change the default away from TurboQuant,
+   that change is opened as a separate task — A10 records the
+   recommendation but does not itself change the default.
+4. The recommendation does not handwave. If TurboQuant is kept as the
+   default, the reason must be a property the measurement supports
+   (e.g., "TurboQuant has lower variance across `nprobe` settings"),
+   not "TurboQuant is the existing default."
+
+**Sequencing:** A10 runs after A8 lands all three variants. A10 should
+be re-run after A7 (early-stop pruning) lands, since the cost ratio
+between variants may shift once score-volume reduction is in place.
+
+### A9. Re-measure ec_ivf at 100k+ scale
+
+**Action:** the current frontier is recorded only at 10k and 25k DBPedia
+slices. Build a 100k slice and a 1M slice from the same DBPedia source,
+and re-run the recall/latency sweep at the post-arc operating point
+(currently `nlists=64, nprobe∈{32,48}, rerank_width=25` per packet
+30070).
+
+**Why:** IVF cost scales differently from HNSW with corpus size. The
+10k/25k curve is positive but does not predict the 1M shape. Without a
+100k+ measurement, "competitive substrate" cannot be claimed.
+
+**Done when:** a packet records build time, index size, recall@10,
+recall@100, p50/p95/p99 latency, cache state, and memory high-water
+mark at 100k and 1M corpus sizes, alongside the same metrics on
+`ec_hnsw` for comparison. Use the existing chunked corpus loader for
+the 1M load.
+
+**Sequencing:** A9 should be run *after* at least A1, A2, A4, and A7
+land, so the measurement reflects the post-optimization substrate, not
+the current snapshot.
+
+## Sequencing of A1–A10 Before Merge
+
+The 10 items above are independent in implementation but have natural
+ordering for impact and risk. All 10 must land before merge.
+
+1. **A4** (typed enum match) and **A5** (cache key audit) — small,
+   localized, low-risk. Do these first to clear small debt before
+   bigger work.
+2. **A1** (cost-model audit) — required before A6. Honest cost
+   constants are foundational.
+3. **A6** (planner cross-test matrix) — runs immediately after A1.
+4. **A7** (posting-scan early-stop with score-bound pruning) —
+   biggest latency lever in the list.
+5. **A8** (wire PQ-FastScan and RaBitQ as IVF quantizer variants) —
+   substrate validation. Sequence after A7 so the early-stop
+   optimization applies to all three quantizer variants when they are
+   measured against each other.
+6. **A10** (head-to-head quantizer assessment) — runs immediately
+   after A8 lands all three variants. Includes the recommendation on
+   which variant should back `quantizer = 'auto'`. Re-run once A7 is
+   in place if A7 lands after A8.
+7. **A2** (streaming vacuum) — can run in parallel with A1–A8;
+   independent code surface.
+8. **A3** (vacuum compaction) — sequence after A2.
+9. **A9** (100k+ measurement) — runs after A1, A2, A4, A7, A8 land.
+   A10 should also be re-run on the 100k+ slice as part of A9.
+
+None of A1–A10 deprecate, remove, or replace existing functionality
+unless the item explicitly calls that out. Default to additive
+implementations.
