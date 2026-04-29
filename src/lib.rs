@@ -821,6 +821,52 @@ fn ec_ivf_index_admin_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_ivf_index_page_ownership(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_number, i64),
+        name!(line_pointer_count, i32),
+        name!(unused_line_pointers, i32),
+        name!(non_posting_tuples, i32),
+        name!(posting_tuples, i32),
+        name!(live_posting_tuples, i32),
+        name!(deleted_posting_tuples, i32),
+        name!(heap_tid_refs, i64),
+        name!(distinct_lists, i32),
+        name!(min_list_id, Option<i32>),
+        name!(max_list_id, Option<i32>),
+        name!(list_ids, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_ivf_index(index_oid, "ec_ivf_index_page_ownership") };
+    let rows = unsafe { am::ivf_index_page_ownership(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::from(row.block_number),
+            i32::from(row.line_pointer_count),
+            i32::from(row.unused_line_pointers),
+            i32::from(row.non_posting_tuples),
+            i32::from(row.posting_tuples),
+            i32::from(row.live_posting_tuples),
+            i32::from(row.deleted_posting_tuples),
+            i64::from(row.heap_tid_refs),
+            i32::try_from(row.distinct_lists).expect("distinct-list count should fit in i32"),
+            row.min_list_id
+                .map(|value| i32::try_from(value).expect("list id should fit in i32")),
+            row.max_list_id
+                .map(|value| i32::try_from(value).expect("list id should fit in i32")),
+            row.list_ids,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -4414,6 +4460,55 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("effective rerank width source should be non-null"),
             "session"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_page_ownership_snapshot_reports_posting_blocks() {
+        Spi::run("CREATE TABLE ec_ivf_page_ownership (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_page_ownership VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[0.1,0.9]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_page_ownership_idx ON ec_ivf_page_ownership USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4, storage_format = 'turboquant')",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT COALESCE(sum(posting_tuples), 0) \
+                 FROM ec_ivf_index_page_ownership('ec_ivf_page_ownership_idx'::regclass)",
+            )
+            .expect("page ownership query should succeed")
+            .expect("posting tuple count should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT COALESCE(sum(deleted_posting_tuples), 0) \
+                 FROM ec_ivf_index_page_ownership('ec_ivf_page_ownership_idx'::regclass)",
+            )
+            .expect("page ownership query should succeed")
+            .expect("deleted tuple count should be non-null"),
+            0
+        );
+        assert!(
+            Spi::get_one::<i64>(
+                "SELECT count(*) \
+                 FROM ec_ivf_index_page_ownership('ec_ivf_page_ownership_idx'::regclass) \
+                 WHERE posting_tuples > 0 AND distinct_lists >= 1",
+            )
+            .expect("page ownership query should succeed")
+            .expect("posting block count should be non-null")
+                >= 1
         );
     }
 

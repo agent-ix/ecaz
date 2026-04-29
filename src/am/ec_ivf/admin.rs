@@ -1,6 +1,6 @@
 use pgrx::pg_sys;
 
-use super::{options, page};
+use super::{options, page, quantizer::IvfQuantizer};
 use crate::storage::page::ItemPointer;
 
 pub(crate) const REINDEX_CHANGED_ROW_FRACTION_THRESHOLD: f64 = 0.20;
@@ -53,6 +53,22 @@ pub(crate) struct IndexAdminSnapshot {
     pub empty_lists: u32,
     pub reindex_recommended: bool,
     pub reindex_reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IndexPageOwnershipSnapshot {
+    pub block_number: u32,
+    pub line_pointer_count: u16,
+    pub unused_line_pointers: u16,
+    pub non_posting_tuples: u16,
+    pub posting_tuples: u16,
+    pub live_posting_tuples: u16,
+    pub deleted_posting_tuples: u16,
+    pub heap_tid_refs: u32,
+    pub distinct_lists: u32,
+    pub min_list_id: Option<u32>,
+    pub max_list_id: Option<u32>,
+    pub list_ids: String,
 }
 
 #[derive(Debug, Default)]
@@ -155,6 +171,51 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     }
 }
 
+pub(crate) unsafe fn index_page_ownership(
+    index_relation: pg_sys::Relation,
+) -> Vec<IndexPageOwnershipSnapshot> {
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+        metadata.storage_format,
+        usize::from(metadata.dimensions),
+        metadata_pq_group_size(&metadata),
+    )
+    .unwrap_or_else(|err| pgrx::error!("{err}"));
+    let summaries = unsafe {
+        page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+            .unwrap_or_else(|err| pgrx::error!("{err}"))
+    };
+    summaries
+        .into_iter()
+        .map(|summary| {
+            let min_list_id = summary.list_ids.first().copied();
+            let max_list_id = summary.list_ids.last().copied();
+            let distinct_lists = u32::try_from(summary.list_ids.len())
+                .unwrap_or_else(|_| pgrx::error!("ec_ivf block list-id count exceeds u32"));
+            let list_ids = summary
+                .list_ids
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            IndexPageOwnershipSnapshot {
+                block_number: summary.block_number,
+                line_pointer_count: summary.line_pointer_count,
+                unused_line_pointers: summary.unused_line_pointers,
+                non_posting_tuples: summary.non_posting_tuples,
+                posting_tuples: summary.posting_tuples,
+                live_posting_tuples: summary.live_posting_tuples,
+                deleted_posting_tuples: summary.deleted_posting_tuples,
+                heap_tid_refs: summary.heap_tid_refs,
+                distinct_lists,
+                min_list_id,
+                max_list_id,
+                list_ids,
+            }
+        })
+        .collect()
+}
+
 unsafe fn directory_drift_summary(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -198,4 +259,12 @@ unsafe fn directory_drift_summary(
     }
 
     summary
+}
+
+fn metadata_pq_group_size(metadata: &page::MetadataPage) -> Option<usize> {
+    if metadata.storage_format == options::StorageFormat::PqFastScan && metadata.pq_group_size > 0 {
+        Some(usize::from(metadata.pq_group_size))
+    } else {
+        None
+    }
 }

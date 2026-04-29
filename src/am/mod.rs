@@ -12,7 +12,7 @@ pub(crate) use self::ec_hnsw::{
 };
 pub(crate) use self::ec_ivf::{
     IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
-    IndexDriftSnapshot,
+    IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
 };
 
 pub(crate) fn register_gucs() {
@@ -71,6 +71,12 @@ pub(crate) unsafe fn ivf_index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IvfIndexCostSnapshot {
     unsafe { ec_ivf::index_cost_snapshot(index_relation) }
+}
+
+pub(crate) unsafe fn ivf_index_page_ownership(
+    index_relation: pgrx::pg_sys::Relation,
+) -> Vec<IvfIndexPageOwnershipSnapshot> {
+    unsafe { ec_ivf::index_page_ownership(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

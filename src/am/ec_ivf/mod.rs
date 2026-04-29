@@ -41,7 +41,8 @@ fn not_implemented(callback: &str) -> ! {
 }
 
 pub(crate) use self::admin::{
-    index_admin_snapshot, index_drift_snapshot, IndexAdminSnapshot, IndexDriftSnapshot,
+    index_admin_snapshot, index_drift_snapshot, index_page_ownership, IndexAdminSnapshot,
+    IndexDriftSnapshot, IndexPageOwnershipSnapshot,
 };
 pub(crate) use self::cost::{index_cost_snapshot, IndexCostSnapshot};
 #[cfg(feature = "pg18")]

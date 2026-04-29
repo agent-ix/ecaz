@@ -1,6 +1,6 @@
 //! ec_ivf page layout: metadata, centroid, directory, and posting-list codecs.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ptr;
 use std::sync::{Mutex, OnceLock};
@@ -1868,6 +1868,41 @@ pub(super) enum IvfPostingRewrite {
     Delete,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct IvfPostingBlockSummary {
+    pub(super) block_number: pg_sys::BlockNumber,
+    pub(super) line_pointer_count: u16,
+    pub(super) unused_line_pointers: u16,
+    pub(super) non_posting_tuples: u16,
+    pub(super) posting_tuples: u16,
+    pub(super) live_posting_tuples: u16,
+    pub(super) deleted_posting_tuples: u16,
+    pub(super) heap_tid_refs: u32,
+    pub(super) list_ids: Vec<u32>,
+}
+
+pub(super) unsafe fn debug_ivf_posting_block_summaries(
+    index_relation: pg_sys::Relation,
+    payload_len: usize,
+) -> Result<Vec<IvfPostingBlockSummary>, String> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let mut summaries = Vec::new();
+    for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+        let summary =
+            unsafe { debug_ivf_posting_block_summary(index_relation, block_number, payload_len)? };
+        if summary.line_pointer_count > 0
+            || summary.posting_tuples > 0
+            || summary.non_posting_tuples > 0
+            || summary.unused_line_pointers > 0
+        {
+            summaries.push(summary);
+        }
+    }
+    Ok(summaries)
+}
+
 unsafe fn rewrite_ivf_postings_for_list_block<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1907,6 +1942,88 @@ where
         )
     };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    result
+}
+
+unsafe fn debug_ivf_posting_block_summary(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+) -> Result<IvfPostingBlockSummary, String> {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!("ec_ivf failed to open block {block_number}"));
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let result = (|| -> Result<IvfPostingBlockSummary, String> {
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let mut unused_line_pointers = 0_u16;
+        let mut non_posting_tuples = 0_u16;
+        let mut posting_tuples = 0_u16;
+        let mut live_posting_tuples = 0_u16;
+        let mut deleted_posting_tuples = 0_u16;
+        let mut heap_tid_refs = 0_u32;
+        let mut list_ids = BTreeSet::new();
+
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                unused_line_pointers = unused_line_pointers.saturating_add(1);
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                return Err(format!("ec_ivf tuple bounds exceed block {block_number}"));
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+                non_posting_tuples = non_posting_tuples.saturating_add(1);
+                continue;
+            }
+
+            let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+            posting_tuples = posting_tuples.saturating_add(1);
+            if posting.deleted {
+                deleted_posting_tuples = deleted_posting_tuples.saturating_add(1);
+            } else {
+                live_posting_tuples = live_posting_tuples.saturating_add(1);
+            }
+            heap_tid_refs = heap_tid_refs.saturating_add(
+                u32::try_from(posting.heaptid_count())
+                    .map_err(|_| "ec_ivf posting heap tid count exceeds u32".to_owned())?,
+            );
+            list_ids.insert(posting.list_id);
+        }
+
+        Ok(IvfPostingBlockSummary {
+            block_number,
+            line_pointer_count,
+            unused_line_pointers,
+            non_posting_tuples,
+            posting_tuples,
+            live_posting_tuples,
+            deleted_posting_tuples,
+            heap_tid_refs,
+            list_ids: list_ids.into_iter().collect(),
+        })
+    })();
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_UNLOCK as i32) };
+    unsafe { pg_sys::ReleaseBuffer(buffer) };
     result
 }
 
