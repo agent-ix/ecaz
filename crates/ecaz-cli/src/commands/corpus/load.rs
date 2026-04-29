@@ -17,7 +17,7 @@ use futures::SinkExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio_postgres::{Client, Transaction};
 
 use crate::manifest;
@@ -130,6 +130,7 @@ struct LoadedChunkedManifest {
 }
 
 pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
+    let total_started = Instant::now();
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
@@ -156,7 +157,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
 
     let unknown = profile.unknown_reloption_keys(&args.reloptions);
     if !unknown.is_empty() {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] warning: profile {:?} does not list {} as known reloption{}; \
              passing through verbatim. Known reloptions: {}",
             profile.name,
@@ -231,6 +232,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             queries_loaded,
             &index_jobs,
         );
+        crate::ecaz_eprintln!(
+            "[loader] completed prefix {} in {:.2?}",
+            args.prefix,
+            total_started.elapsed()
+        );
         return Ok(());
     }
 
@@ -244,14 +250,17 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     // Inspect inputs first: row counts drive progress bars and manifest
     // verification, and we want to fail fast on malformed files before we
     // open any transactions.
-    eprintln!("[loader] inspecting {}", corpus_file.display());
+    crate::ecaz_eprintln!("[loader] inspecting {}", corpus_file.display());
     let corpus_stats = tsv::inspect(corpus_file, args.dim)?;
-    eprintln!("[loader] inspecting {}", queries_file.display());
+    crate::ecaz_eprintln!("[loader] inspecting {}", queries_file.display());
     let query_stats = tsv::inspect(queries_file, args.dim)?;
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] corpus: {} rows, sha256={}  queries: {} rows, sha256={}",
-        corpus_stats.rows, corpus_stats.sha256_hex, query_stats.rows, query_stats.sha256_hex
+        corpus_stats.rows,
+        corpus_stats.sha256_hex,
+        query_stats.rows,
+        query_stats.sha256_hex
     );
 
     verify_manifest_if_present(
@@ -302,6 +311,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         &queries_table,
         queries_loaded,
         &index_jobs,
+    );
+    crate::ecaz_eprintln!(
+        "[loader] completed prefix {} in {:.2?}",
+        args.prefix,
+        total_started.elapsed()
     );
     Ok(())
 }
@@ -371,7 +385,7 @@ fn verify_manifest_if_present(
         (Some(p), _) => (p.to_path_buf(), true),
         (None, Some(p)) if p.exists() => (p, false),
         (None, Some(p)) => {
-            eprintln!(
+            crate::ecaz_eprintln!(
                 "[loader] no sibling manifest at {}; continuing without verification",
                 p.display()
             );
@@ -396,7 +410,7 @@ fn verify_manifest_if_present(
         query_stats,
     );
     if problems.is_empty() {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] verified manifest {} for prefix {prefix}",
             path.display()
         );
@@ -412,7 +426,7 @@ fn verify_manifest_if_present(
         path.display()
     );
     if allow_mismatch {
-        eprintln!("[loader] warning: {msg}");
+        crate::ecaz_eprintln!("[loader] warning: {msg}");
         Ok(())
     } else {
         Err(eyre!(msg))
@@ -705,7 +719,7 @@ async fn load_chunk_set(
                     chunk.path
                 ));
             }
-            eprintln!(
+            crate::ecaz_eprintln!(
                 "[loader] skipping {} chunk {} (already loaded)",
                 kind.as_str(),
                 chunk.path
@@ -909,7 +923,7 @@ async fn load_one_chunk(
     .await
     .wrap_err_with(|| format!("recording chunk state for {}", chunk.path))?;
     tx.commit().await?;
-    eprintln!("[loader] loaded {} chunk {}", kind.as_str(), chunk.path);
+    crate::ecaz_eprintln!("[loader] loaded {} chunk {}", kind.as_str(), chunk.path);
     Ok(())
 }
 
@@ -926,10 +940,10 @@ async fn ensure_corpus_table(
     if psql::relation_exists(client, table, 'r').await? {
         let existing = psql::row_count(client, table).await? as usize;
         if existing > 0 {
-            eprintln!("[loader] {table} already has {existing} rows; skipping reload");
+            crate::ecaz_eprintln!("[loader] {table} already has {existing} rows; skipping reload");
             return Ok(existing);
         }
-        eprintln!("[loader] {table} exists but is empty; dropping and reloading");
+        crate::ecaz_eprintln!("[loader] {table} exists but is empty; dropping and reloading");
         client
             .batch_execute(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
             .await?;
@@ -946,13 +960,19 @@ async fn ensure_corpus_table(
         .await
         .wrap_err_with(|| format!("creating table {table}"))?;
 
+    let copy_started = Instant::now();
     copy_rows_from_tsv(client, table, path, dim, expected_rows, "corpus").await?;
+    crate::ecaz_eprintln!(
+        "[loader] copied corpus table {table} in {:.2?}",
+        copy_started.elapsed()
+    );
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] encoding {embedding_type} embeddings via {fn_name}(source, {bits}, {seed}) ...",
         embedding_type = profile.embedding_type,
         fn_name = profile.encoder_function
     );
+    let encode_started = Instant::now();
     client
         .batch_execute(&format!(
             "UPDATE {table} SET embedding = {fn_name}(source, {bits}, {seed})",
@@ -960,6 +980,10 @@ async fn ensure_corpus_table(
         ))
         .await
         .wrap_err_with(|| format!("encoding embeddings for {table}"))?;
+    crate::ecaz_eprintln!(
+        "[loader] encoded corpus table {table} in {:.2?}",
+        encode_started.elapsed()
+    );
     psql::row_count(client, table).await.map(|n| n as usize)
 }
 
@@ -973,10 +997,10 @@ async fn ensure_queries_table(
     if psql::relation_exists(client, table, 'r').await? {
         let existing = psql::row_count(client, table).await? as usize;
         if existing > 0 {
-            eprintln!("[loader] {table} already has {existing} rows; skipping reload");
+            crate::ecaz_eprintln!("[loader] {table} already has {existing} rows; skipping reload");
             return Ok(existing);
         }
-        eprintln!("[loader] {table} exists but is empty; dropping and reloading");
+        crate::ecaz_eprintln!("[loader] {table} exists but is empty; dropping and reloading");
         client
             .batch_execute(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
             .await?;
@@ -990,7 +1014,12 @@ async fn ensure_queries_table(
         ))
         .await
         .wrap_err_with(|| format!("creating table {table}"))?;
+    let copy_started = Instant::now();
     copy_rows_from_tsv(client, table, path, dim, expected_rows, "queries").await?;
+    crate::ecaz_eprintln!(
+        "[loader] copied queries table {table} in {:.2?}",
+        copy_started.elapsed()
+    );
     psql::row_count(client, table).await.map(|n| n as usize)
 }
 
@@ -1121,7 +1150,7 @@ async fn ensure_index(
         reloptions::normalize_list(&job.reloptions).join(", ")
     };
     if psql::index_exists_with_reloptions(client, &job.name, &job.reloptions).await? {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] {index} already exists with reloptions=[{summary}]; skipping rebuild",
             index = job.name
         );
@@ -1134,16 +1163,22 @@ async fn ensure_index(
             &job.reloptions
         )));
     }
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] building {index} using {am} (reloptions=[{summary}]) ...",
         index = job.name,
         am = profile.access_method,
     );
     let sql = psql::build_create_index_sql(corpus_table, &job.name, profile, &job.reloptions);
+    let build_started = Instant::now();
     client
         .batch_execute(&sql)
         .await
         .wrap_err_with(|| format!("building index {}", job.name))?;
+    crate::ecaz_eprintln!(
+        "[loader] built {index} in {:.2?}",
+        build_started.elapsed(),
+        index = job.name
+    );
     Ok(())
 }
 
@@ -1180,7 +1215,7 @@ fn print_summary(
         .collect::<Vec<_>>()
         .join("\n");
     t.add_row(vec!["indexes".into(), Cell::new(indexes)]);
-    println!("{t}");
+    crate::ecaz_println!("{t}");
 }
 
 #[cfg(test)]
