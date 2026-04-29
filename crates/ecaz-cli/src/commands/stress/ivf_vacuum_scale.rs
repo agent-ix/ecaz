@@ -34,6 +34,15 @@ pub struct IvfVacuumScaleArgs {
     /// Quantizer profile reloption.
     #[arg(long, default_value = "turboquant")]
     pub quantizer: String,
+    /// Number of delete/VACUUM cycles to run.
+    #[arg(long, default_value_t = 1)]
+    pub cycles: i64,
+    /// Rows deleted per cycle. Defaults to half of --rows.
+    #[arg(long)]
+    pub churn_rows: Option<i64>,
+    /// Refill the deleted range after each VACUUM to keep live rows steady.
+    #[arg(long, default_value_t = false)]
+    pub refill_after_vacuum: bool,
     /// Milliseconds between backend RSS samples during VACUUM.
     #[arg(long, default_value_t = 25)]
     pub sample_interval_ms: u64,
@@ -60,63 +69,12 @@ pub async fn run(database: &str, args: IvfVacuumScaleArgs) -> Result<()> {
             .await
             .wrap_err_with(|| format!("preparing {}", surface.table_name))?;
 
-        let before_delete_bytes = relation_size(&client, &surface.index_name).await?;
-        let delete_start = Instant::now();
-        client
-            .batch_execute(&format!(
-                "DELETE FROM {} WHERE id > {};",
-                surface.table_name,
-                args.rows / 2
-            ))
-            .await
-            .wrap_err_with(|| format!("deleting half of {}", surface.table_name))?;
-        let delete_elapsed_ms = elapsed_ms(delete_start);
-        let after_delete_bytes = relation_size(&client, &surface.index_name).await?;
-
-        let vacuum_pid: i32 = client
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await
-            .wrap_err("fetching vacuum backend pid")?
-            .get(0);
-        let stop = Arc::new(AtomicBool::new(false));
-        let peak = Arc::new(Mutex::new(MemorySample::default()));
-        let monitor = tokio::spawn(monitor_backend_memory(
-            vacuum_pid,
-            args.sample_interval_ms,
-            Arc::clone(&stop),
-            Arc::clone(&peak),
-        ));
-
-        let vacuum_start = Instant::now();
-        client
-            .batch_execute(&format!("VACUUM (ANALYZE) {};", surface.table_name))
-            .await
-            .wrap_err_with(|| format!("vacuuming {}", surface.table_name))?;
-        let vacuum_elapsed_ms = elapsed_ms(vacuum_start);
-        stop.store(true, Ordering::SeqCst);
-        monitor
-            .await
-            .map_err(|e| eyre!("memory monitor task failed: {e}"))??;
-
-        let after_vacuum_bytes = relation_size(&client, &surface.index_name).await?;
-        let live_rows = relation_row_count(&client, &surface.table_name).await?;
-        let memory = *peak.lock().await;
-        summaries.push(VacuumScaleSummary {
-            nlists: *nlists,
-            table_name: surface.table_name,
-            index_name: surface.index_name,
-            rows_before_delete: args.rows,
-            rows_after_vacuum: live_rows,
-            delete_elapsed_ms,
-            vacuum_elapsed_ms,
-            index_bytes_before_delete: before_delete_bytes,
-            index_bytes_after_delete: after_delete_bytes,
-            index_bytes_after_vacuum: after_vacuum_bytes,
-            vacuum_backend_pid: vacuum_pid,
-            rss_peak_kb: memory.rss_peak_kb,
-            hwm_peak_kb: memory.hwm_peak_kb,
-            memory_samples: memory.samples,
-        });
+        for cycle in 1..=args.cycles {
+            let cycle_summary = run_vacuum_cycle(&client, &args, &surface, cycle)
+                .await
+                .wrap_err_with(|| format!("running cycle {cycle} for {}", surface.table_name))?;
+            summaries.push(cycle_summary);
+        }
     }
 
     let summary = render_summary(&summaries);
@@ -156,9 +114,28 @@ fn validate_args(args: &IvfVacuumScaleArgs) -> Result<()> {
     if args.sample_interval_ms == 0 {
         return Err(eyre!("--sample-interval-ms must be >= 1"));
     }
+    if args.cycles <= 0 {
+        return Err(eyre!("--cycles must be >= 1"));
+    }
+    let churn_rows = resolved_churn_rows(args)?;
+    if churn_rows <= 0 {
+        return Err(eyre!("--churn-rows must be >= 1"));
+    }
+    if churn_rows > args.rows {
+        return Err(eyre!("--churn-rows must be <= --rows"));
+    }
+    if args.cycles > 1 && !args.refill_after_vacuum {
+        return Err(eyre!(
+            "--cycles greater than 1 requires --refill-after-vacuum"
+        ));
+    }
     crate::profiles::validate_ident(&args.quantizer)
         .wrap_err_with(|| format!("invalid --quantizer {:?}", args.quantizer))?;
     Ok(())
+}
+
+fn resolved_churn_rows(args: &IvfVacuumScaleArgs) -> Result<i64> {
+    Ok(args.churn_rows.unwrap_or(args.rows / 2))
 }
 
 #[derive(Debug)]
@@ -198,6 +175,113 @@ fn build_setup_sql(args: &IvfVacuumScaleArgs, surface: &VacuumSurface) -> String
         training_sample_rows = args.training_sample_rows,
         quantizer = args.quantizer,
         vector_sql = vector_sql,
+    )
+}
+
+async fn run_vacuum_cycle(
+    client: &tokio_postgres::Client,
+    args: &IvfVacuumScaleArgs,
+    surface: &VacuumSurface,
+    cycle: i64,
+) -> Result<VacuumScaleSummary> {
+    let churn_rows = resolved_churn_rows(args)?;
+    let delete_start_id = (cycle - 1) * churn_rows + 1;
+    let delete_end_id = cycle * churn_rows;
+    let rows_before_delete = relation_row_count(client, &surface.table_name).await?;
+    let before_delete_bytes = relation_size(client, &surface.index_name).await?;
+
+    let delete_start = Instant::now();
+    client
+        .execute(
+            &format!(
+                "DELETE FROM {} WHERE id BETWEEN $1 AND $2;",
+                surface.table_name
+            ),
+            &[&delete_start_id, &delete_end_id],
+        )
+        .await
+        .wrap_err_with(|| format!("deleting churn range from {}", surface.table_name))?;
+    let delete_elapsed_ms = elapsed_ms(delete_start);
+    let after_delete_bytes = relation_size(client, &surface.index_name).await?;
+
+    let vacuum_pid: i32 = client
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await
+        .wrap_err("fetching vacuum backend pid")?
+        .get(0);
+    let stop = Arc::new(AtomicBool::new(false));
+    let peak = Arc::new(Mutex::new(MemorySample::default()));
+    let monitor = tokio::spawn(monitor_backend_memory(
+        vacuum_pid,
+        args.sample_interval_ms,
+        Arc::clone(&stop),
+        Arc::clone(&peak),
+    ));
+
+    let vacuum_start = Instant::now();
+    client
+        .batch_execute(&format!("VACUUM (ANALYZE) {};", surface.table_name))
+        .await
+        .wrap_err_with(|| format!("vacuuming {}", surface.table_name))?;
+    let vacuum_elapsed_ms = elapsed_ms(vacuum_start);
+    stop.store(true, Ordering::SeqCst);
+    monitor
+        .await
+        .map_err(|e| eyre!("memory monitor task failed: {e}"))??;
+
+    let after_vacuum_bytes = relation_size(client, &surface.index_name).await?;
+    let rows_after_vacuum = relation_row_count(client, &surface.table_name).await?;
+
+    let (insert_elapsed_ms, after_refill_bytes, rows_after_refill) = if args.refill_after_vacuum {
+        let insert_start_id = args.rows + (cycle - 1) * churn_rows + 1;
+        let insert_end_id = args.rows + cycle * churn_rows;
+        let insert_start = Instant::now();
+        client
+            .batch_execute(&refill_sql(
+                &surface.table_name,
+                insert_start_id,
+                insert_end_id,
+                args.dimensions,
+            ))
+            .await
+            .wrap_err_with(|| format!("refilling churn range in {}", surface.table_name))?;
+        let insert_elapsed_ms = elapsed_ms(insert_start);
+        let after_refill_bytes = relation_size(client, &surface.index_name).await?;
+        let rows_after_refill = relation_row_count(client, &surface.table_name).await?;
+        (insert_elapsed_ms, after_refill_bytes, rows_after_refill)
+    } else {
+        (0, after_vacuum_bytes, rows_after_vacuum)
+    };
+
+    let memory = *peak.lock().await;
+    Ok(VacuumScaleSummary {
+        nlists: surface.nlists,
+        cycle,
+        table_name: surface.table_name.clone(),
+        index_name: surface.index_name.clone(),
+        rows_before_delete,
+        rows_after_vacuum,
+        rows_after_refill,
+        delete_elapsed_ms,
+        vacuum_elapsed_ms,
+        insert_elapsed_ms,
+        index_bytes_before_delete: before_delete_bytes,
+        index_bytes_after_delete: after_delete_bytes,
+        index_bytes_after_vacuum: after_vacuum_bytes,
+        index_bytes_after_refill: after_refill_bytes,
+        vacuum_backend_pid: vacuum_pid,
+        rss_peak_kb: memory.rss_peak_kb,
+        hwm_peak_kb: memory.hwm_peak_kb,
+        memory_samples: memory.samples,
+    })
+}
+
+fn refill_sql(table_name: &str, start_id: i64, end_id: i64, dimensions: i64) -> String {
+    let vector_sql = synthetic_vector_sql("gs::double precision", dimensions, 0.013, 0.021);
+    format!(
+        "INSERT INTO {table_name} (id, embedding)\n\
+         SELECT gs, {vector_sql}\n\
+         FROM generate_series({start_id}, {end_id}) AS gs;"
     )
 }
 
@@ -288,15 +372,19 @@ struct MemorySample {
 #[derive(Debug)]
 struct VacuumScaleSummary {
     nlists: i64,
+    cycle: i64,
     table_name: String,
     index_name: String,
     rows_before_delete: i64,
     rows_after_vacuum: i64,
+    rows_after_refill: i64,
     delete_elapsed_ms: i64,
     vacuum_elapsed_ms: i64,
+    insert_elapsed_ms: i64,
     index_bytes_before_delete: i64,
     index_bytes_after_delete: i64,
     index_bytes_after_vacuum: i64,
+    index_bytes_after_refill: i64,
     vacuum_backend_pid: i32,
     rss_peak_kb: i64,
     hwm_peak_kb: i64,
@@ -308,15 +396,19 @@ fn render_summary(summaries: &[VacuumScaleSummary]) -> String {
     t.load_preset(UTF8_FULL);
     t.set_header(vec![
         "nlists",
+        "cycle",
         "table",
         "index",
         "rows_before",
-        "rows_after",
+        "rows_after_vacuum",
+        "rows_after_refill",
         "delete_ms",
         "vacuum_ms",
+        "insert_ms",
         "idx_before",
         "idx_after_delete",
         "idx_after_vacuum",
+        "idx_after_refill",
         "backend_pid",
         "rss_peak_kb",
         "hwm_peak_kb",
@@ -325,15 +417,19 @@ fn render_summary(summaries: &[VacuumScaleSummary]) -> String {
     for s in summaries {
         t.add_row(vec![
             Cell::new(s.nlists),
+            Cell::new(s.cycle),
             Cell::new(&s.table_name),
             Cell::new(&s.index_name),
             Cell::new(s.rows_before_delete),
             Cell::new(s.rows_after_vacuum),
+            Cell::new(s.rows_after_refill),
             Cell::new(s.delete_elapsed_ms),
             Cell::new(s.vacuum_elapsed_ms),
+            Cell::new(s.insert_elapsed_ms),
             Cell::new(s.index_bytes_before_delete),
             Cell::new(s.index_bytes_after_delete),
             Cell::new(s.index_bytes_after_vacuum),
+            Cell::new(s.index_bytes_after_refill),
             Cell::new(s.vacuum_backend_pid),
             Cell::new(s.rss_peak_kb),
             Cell::new(s.hwm_peak_kb),
@@ -356,6 +452,9 @@ mod tests {
             training_sample_rows: 50,
             dimensions: 4,
             quantizer: "turboquant".to_owned(),
+            cycles: 1,
+            churn_rows: None,
+            refill_after_vacuum: false,
             sample_interval_ms: 10,
             log_output: None,
         }
@@ -380,6 +479,20 @@ mod tests {
         let mut args = args();
         args.nlists.clear();
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn rejects_multi_cycle_without_refill() {
+        let mut args = args();
+        args.cycles = 2;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn refill_sql_uses_insert_range() {
+        let sql = refill_sql("ivf_vacuum_test_n8", 101, 125, 4);
+        assert!(sql.contains("INSERT INTO ivf_vacuum_test_n8"));
+        assert!(sql.contains("generate_series(101, 125)"));
     }
 
     #[test]
