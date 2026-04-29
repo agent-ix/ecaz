@@ -193,7 +193,11 @@ impl DataPageChain {
     }
 
     pub fn start_new_page_if_current_has_tuples(&mut self) {
-        if self.pages.last().is_none_or(|page| page.tuple_count() == 0) {
+        if self
+            .pages
+            .last()
+            .map_or(true, |page| page.tuple_count() == 0)
+        {
             return;
         }
         let next_block = self
