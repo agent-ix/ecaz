@@ -795,6 +795,7 @@ unsafe fn materialize_probe_candidates(
                 if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                     return Ok(());
                 }
+                opaque.explain_counters.record_posting_visited();
                 let heap_tid_count = posting.heaptids().count();
                 if !consume_live_tid_budget(
                     &mut remaining_live_tids_by_list,
@@ -814,9 +815,14 @@ unsafe fn materialize_probe_candidates(
                     min_ip_to_keep,
                 )?
                 else {
+                    opaque.explain_counters.record_posting_pruned_by_bound();
                     return Ok(());
                 };
                 let score = -ip;
+                opaque.explain_counters.record_posting_scored();
+                opaque
+                    .explain_counters
+                    .record_heap_tids_scored(heap_tid_count);
                 record_distance_calcs(opaque, 1);
                 for heap_tid in posting.heaptids() {
                     opaque.explain_counters.record_candidate_scored();
@@ -832,6 +838,7 @@ unsafe fn materialize_probe_candidates(
                         }
                         Entry::Vacant(entry) => {
                             entry.insert(candidate);
+                            opaque.explain_counters.record_candidate_inserted();
                             if let Some(top_k) = running_top.as_mut() {
                                 top_k.push(candidate);
                             }

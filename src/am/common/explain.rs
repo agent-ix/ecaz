@@ -72,7 +72,12 @@ pub(crate) struct IvfExplainCounters {
     pub stats_centroid_scores: u32,
     pub stats_selected_lists: u32,
     pub stats_posting_pages_read: u32,
+    pub stats_postings_visited: u32,
+    pub stats_postings_scored: u32,
+    pub stats_postings_pruned_by_bound: u32,
+    pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
+    pub stats_candidates_inserted: u32,
     pub stats_rerank_rows: u32,
     pub stats_filtered_duplicates: u32,
 }
@@ -225,8 +230,30 @@ impl IvfExplainCounters {
         self.stats_posting_pages_read = self.stats_posting_pages_read.saturating_add(count);
     }
 
+    pub(crate) fn record_posting_visited(&mut self) {
+        self.stats_postings_visited = self.stats_postings_visited.saturating_add(1);
+    }
+
+    pub(crate) fn record_posting_scored(&mut self) {
+        self.stats_postings_scored = self.stats_postings_scored.saturating_add(1);
+    }
+
+    pub(crate) fn record_posting_pruned_by_bound(&mut self) {
+        self.stats_postings_pruned_by_bound = self.stats_postings_pruned_by_bound.saturating_add(1);
+    }
+
+    pub(crate) fn record_heap_tids_scored(&mut self, count: usize) {
+        self.stats_heap_tids_scored = self
+            .stats_heap_tids_scored
+            .saturating_add(u32::try_from(count).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn record_candidate_scored(&mut self) {
         self.stats_candidates_scored = self.stats_candidates_scored.saturating_add(1);
+    }
+
+    pub(crate) fn record_candidate_inserted(&mut self) {
+        self.stats_candidates_inserted = self.stats_candidates_inserted.saturating_add(1);
     }
 
     pub(crate) fn record_rerank_row(&mut self) {
@@ -241,7 +268,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 6] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 11] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -256,8 +283,28 @@ impl IvfExplainCounters {
                 value: ExplainPropertyValue::Integer(self.stats_posting_pages_read),
             },
             ExplainProperty {
+                property_name: "Postings Visited",
+                value: ExplainPropertyValue::Integer(self.stats_postings_visited),
+            },
+            ExplainProperty {
+                property_name: "Postings Scored",
+                value: ExplainPropertyValue::Integer(self.stats_postings_scored),
+            },
+            ExplainProperty {
+                property_name: "Postings Pruned By Bound",
+                value: ExplainPropertyValue::Integer(self.stats_postings_pruned_by_bound),
+            },
+            ExplainProperty {
+                property_name: "Heap TIDs Scored",
+                value: ExplainPropertyValue::Integer(self.stats_heap_tids_scored),
+            },
+            ExplainProperty {
                 property_name: "Candidates Scored",
                 value: ExplainPropertyValue::Integer(self.stats_candidates_scored),
+            },
+            ExplainProperty {
+                property_name: "Candidates Inserted",
+                value: ExplainPropertyValue::Integer(self.stats_candidates_inserted),
             },
             ExplainProperty {
                 property_name: "Rerank Rows",
@@ -626,8 +673,13 @@ mod tests {
         counters.record_centroid_scores(4);
         counters.record_selected_lists(2);
         counters.record_posting_pages_read(3);
+        counters.record_posting_visited();
+        counters.record_posting_scored();
+        counters.record_posting_pruned_by_bound();
+        counters.record_heap_tids_scored(9);
         counters.record_candidate_scored();
         counters.record_candidate_scored();
+        counters.record_candidate_inserted();
         counters.record_rerank_row();
         counters.record_filtered_duplicate();
 
@@ -637,7 +689,12 @@ mod tests {
                 stats_centroid_scores: 4,
                 stats_selected_lists: 2,
                 stats_posting_pages_read: 3,
+                stats_postings_visited: 1,
+                stats_postings_scored: 1,
+                stats_postings_pruned_by_bound: 1,
+                stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
+                stats_candidates_inserted: 1,
                 stats_rerank_rows: 1,
                 stats_filtered_duplicates: 1,
             }
@@ -650,9 +707,14 @@ mod tests {
             stats_centroid_scores: 4,
             stats_selected_lists: 2,
             stats_posting_pages_read: 3,
-            stats_candidates_scored: 5,
-            stats_rerank_rows: 7,
-            stats_filtered_duplicates: 11,
+            stats_postings_visited: 5,
+            stats_postings_scored: 7,
+            stats_postings_pruned_by_bound: 11,
+            stats_heap_tids_scored: 13,
+            stats_candidates_scored: 17,
+            stats_candidates_inserted: 19,
+            stats_rerank_rows: 23,
+            stats_filtered_duplicates: 29,
         };
 
         assert_eq!(
@@ -671,16 +733,36 @@ mod tests {
                     value: ExplainPropertyValue::Integer(3),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Scored",
+                    property_name: "Postings Visited",
                     value: ExplainPropertyValue::Integer(5),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Rows",
+                    property_name: "Postings Scored",
                     value: ExplainPropertyValue::Integer(7),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Postings Pruned By Bound",
                     value: ExplainPropertyValue::Integer(11),
+                },
+                ExplainProperty {
+                    property_name: "Heap TIDs Scored",
+                    value: ExplainPropertyValue::Integer(13),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Scored",
+                    value: ExplainPropertyValue::Integer(17),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Inserted",
+                    value: ExplainPropertyValue::Integer(19),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Rows",
+                    value: ExplainPropertyValue::Integer(23),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(29),
                 },
             ]
         );

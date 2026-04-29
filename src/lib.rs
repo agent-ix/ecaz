@@ -5739,7 +5739,12 @@ mod tests {
             "Centroid Scores",
             "Selected Lists",
             "Posting Pages Read",
+            "Postings Visited",
+            "Postings Scored",
+            "Postings Pruned By Bound",
+            "Heap TIDs Scored",
             "Candidates Scored",
+            "Candidates Inserted",
             "Filtered Duplicates",
         ] {
             if !plan.contains(expected) {
