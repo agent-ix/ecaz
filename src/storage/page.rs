@@ -192,6 +192,19 @@ impl DataPageChain {
         self.pages.get_mut(index)
     }
 
+    pub fn start_new_page_if_current_has_tuples(&mut self) {
+        if self.pages.last().is_none_or(|page| page.tuple_count() == 0) {
+            return;
+        }
+        let next_block = self
+            .pages
+            .last()
+            .expect("page chain is non-empty")
+            .block_number
+            + 1;
+        self.pages.push(DataPage::new(next_block, self.page_size));
+    }
+
     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
         if !element_or_neighbor_tuple_fits(payload.len(), self.page_size) {
             return Err(format!(
@@ -289,6 +302,21 @@ mod tests {
         assert_eq!(first.block_number, FIRST_DATA_BLOCK_NUMBER);
         assert_eq!(second.block_number, FIRST_DATA_BLOCK_NUMBER);
         assert_eq!(third.block_number, FIRST_DATA_BLOCK_NUMBER + 1);
+        assert_eq!(chain.pages().len(), 2);
+    }
+
+    #[test]
+    fn data_page_chain_can_start_next_tuple_on_fresh_page() {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let first = chain.insert_raw_tuple(vec![0; 8]).unwrap();
+
+        chain.start_new_page_if_current_has_tuples();
+        chain.start_new_page_if_current_has_tuples();
+        let second = chain.insert_raw_tuple(vec![0; 8]).unwrap();
+
+        assert_eq!(first.block_number, FIRST_DATA_BLOCK_NUMBER);
+        assert_eq!(second.block_number, FIRST_DATA_BLOCK_NUMBER + 1);
+        assert_eq!(second.offset_number, 1);
         assert_eq!(chain.pages().len(), 2);
     }
 }

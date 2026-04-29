@@ -362,7 +362,11 @@ impl BuildState {
         }
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
+        data_pages.start_new_page_if_current_has_tuples();
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
+            if !tuple_indices.is_empty() {
+                data_pages.start_new_page_if_current_has_tuples();
+            }
             for tuple_index in tuple_indices {
                 let tuple = &self.heap_tuples[*tuple_index];
                 let (gamma, payload) = match &pq_model {
@@ -392,6 +396,7 @@ impl BuildState {
 
         let mut directory_entries = Vec::with_capacity(nlists);
         let mut directory_tids = Vec::with_capacity(nlists);
+        data_pages.start_new_page_if_current_has_tuples();
         for (list_id, posting_tids) in posting_tids_by_list.iter().enumerate() {
             let mut directory = page::IvfListDirectoryTuple::empty(list_id_u32(list_id)?);
             if let (Some(head), Some(tail)) = (posting_tids.first(), posting_tids.last()) {
@@ -875,6 +880,39 @@ mod tests {
                 assert_eq!(posting.list_id, list_id as u32);
                 assert_eq!(posting.heaptids.len(), 1);
                 assert!(!posting.deleted);
+            }
+        }
+    }
+
+    #[test]
+    fn build_state_segregates_posting_blocks_by_list() {
+        let mut state = BuildState::new(options(0, 3), IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![0.0, 1.0])).unwrap();
+        state.try_push(tuple(4, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![
+                vec![1.0, 0.0],
+                vec![0.0, 1.0],
+                vec![-1.0, 0.0],
+            ]))
+            .unwrap();
+
+        let mut posting_blocks = std::collections::BTreeMap::new();
+        for (list_id, posting_tids) in plan.posting_tids_by_list.iter().enumerate() {
+            for tid in posting_tids {
+                assert_ne!(
+                    plan.directory_tids[0].block_number, tid.block_number,
+                    "directory tuples should not share posting blocks"
+                );
+                let previous_list = posting_blocks.insert(tid.block_number, list_id);
+                assert!(
+                    previous_list.is_none() || previous_list == Some(list_id),
+                    "posting block {} is shared across lists",
+                    tid.block_number
+                );
             }
         }
     }
