@@ -1,0 +1,28 @@
+Pager usage is off.
+Timing is on.
+DROP TABLE
+Time: 0.661 ms
+DROP TABLE
+Time: 0.275 ms
+SELECT 990000
+Time: 350927.311 ms (05:50.927)
+ALTER TABLE
+Time: 655.180 ms
+SELECT 10000
+Time: 1910.149 ms (00:01.910)
+CREATE INDEX
+Time: 2033834.524 ms (33:53.835)
+ANALYZE
+Time: 9773.600 ms (00:09.774)
+ANALYZE
+Time: 2822.926 ms (00:02.823)
+              relname               | relation_bytes | relation_size |                                                        reloptions
+------------------------------------+----------------+---------------+--------------------------------------------------------------------------------------------------------------------------
+ task28_ivf_pqg990k_g8_n128_corpus  |       76201984 | 73 MB         |
+ task28_ivf_pqg990k_g8_n128_idx     |      185491456 | 177 MB        | {nlists=128,nprobe=128,training_sample_rows=2000,quantizer=pq_fastscan,pq_group_size=8,rerank=heap_f32,rerank_width=500}
+ task28_ivf_pqg990k_g8_n128_queries |         606208 | 592 kB        |
+(3 rows)
+
+Time: 3.765 ms
+psql:review/30130-task28-ivf-a9-990k-ivf-surface/artifacts/build_pqg8_990k_n128_w500.sql:4: NOTICE:  table "task28_ivf_pqg990k_g8_n128_corpus" does not exist, skipping
+psql:review/30130-task28-ivf-a9-990k-ivf-surface/artifacts/build_pqg8_990k_n128_w500.sql:5: NOTICE:  table "task28_ivf_pqg990k_g8_n128_queries" does not exist, skipping

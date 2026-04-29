@@ -1,0 +1,17 @@
+Pager usage is off.
+   pid   | state  | wait_event_type | wait_event |   query_age    |                          query
+---------+--------+-----------------+------------+----------------+----------------------------------------------------------
+ 2797871 | active | LWLock          | WALWrite   | 00:03:43.94898 | CREATE TABLE task28_ivf_pqg990k_g8_n128_corpus AS       +
+         |        |                 |            |                | SELECT * FROM ec_hnsw_real_ann_benchmarks_anchor_corpus;
+ 2798550 | active |                 |            | 00:00:00       | SELECT pid,                                             +
+         |        |                 |            |                |        state,                                           +
+         |        |                 |            |                |        wait_event_type,                                 +
+         |        |                 |            |                |        wait_event,                                      +
+         |        |                 |            |                |        now() - query_start AS query_age,                +
+         |        |                 |            |                |        left(query, 160) AS query                        +
+         |        |                 |            |                | FROM pg_stat_acti
+(2 rows)
+
+ phase | lockers_total | lockers_done | blocks_total | blocks_done | tuples_total | tuples_done | partitions_total | partitions_done
+-------+---------------+--------------+--------------+-------------+--------------+-------------+------------------+-----------------
+(0 rows)

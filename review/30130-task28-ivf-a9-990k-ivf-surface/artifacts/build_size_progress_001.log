@@ -1,0 +1,7 @@
+Pager usage is off.
+                relname                 | estimated_rows | relation_bytes | total_bytes
+----------------------------------------+----------------+----------------+-------------
+ task28_ivf_pqg990k_g8_n128_corpus      |         990000 |       76201984 | 16497614848
+ task28_ivf_pqg990k_g8_n128_corpus_pkey |         990000 |       22257664 |    22257664
+ task28_ivf_pqg990k_g8_n128_queries     |          10000 |         606208 |    83476480
+(3 rows)
