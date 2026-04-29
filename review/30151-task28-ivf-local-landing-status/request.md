@@ -15,12 +15,12 @@ kept outside the local desktop gate.
 |---|---|---|
 | A1 cost model audit | done | 30076, 30077 |
 | A2 streaming vacuum | done | 30079, 30109, 30129 |
-| A3 physical compaction/reuse | done for local v1 claim with slack caveat | 30080, 30139, 30140, 30141, 30142 |
+| A3 physical compaction/reuse | done for local v1 claim; flat rotating-window churn requires explicit slack | 30080, 30139, 30140, 30141, 30142, 30153 |
 | A4 typed exact-score dispatch | done | 30102 |
 | A5 quantizer cache-key audit | done | 30102 |
 | A6 planner cross-test matrix | done with mixed-predicate caveat | 30077 |
 | A7 score-bound pruning | done for PQ-FastScan selected path | 30115, 30116, 30117, 30137, 30138 |
-| A8 PQ-FastScan + RaBitQ wiring | done after RaBitQ score hot-path fix | 30081, 30082, 30152 |
+| A8 PQ-FastScan + RaBitQ wiring | done after RaBitQ score hot-path fix and seeded quantizer cache | 30081, 30082, 30152, 30153 |
 | A9 100k+ scale | local IVF lane covered; larger/fresher exact comparison deferred | 30126, 30130, 30131, 30133, 30135, 30146, 30149, 30150 |
 | A10 quantizer assessment | done for local recommendation with corrected RaBitQ rows | 30097, 30137, 30143, 30144, 30145, 30152 |
 
@@ -31,7 +31,8 @@ substrate work:
 
 - correctness and PG18 callback behavior have focused test coverage in the code
   packets
-- streaming vacuum and page reuse have 1M/100k local evidence
+- streaming vacuum and page reuse have 1M/100k local evidence; the flat
+  rotating-window churn result depends on explicit `posting_slack_percent`
 - PQ-FastScan and RaBitQ are wired through build, scan, insert, and vacuum
 - A7 score-bound pruning is landed and measured on the selected PQ-FastScan path
 - A10 has an explicit recommendation: keep `auto` unchanged, recommend explicit
@@ -55,8 +56,10 @@ current IVF implementation.
 - A9 is not a product benchmark. It is local scale evidence plus explicit
   deferral of measurements that do not fit this machine.
 - A3's flat rotating-window churn behavior requires explicit
-  `posting_slack_percent`; default `posting_slack_percent=0` preserves build
-  size but the rotating-window churn packet grew about 24%.
+  `posting_slack_percent`. Default `posting_slack_percent=0` preserves build
+  size and reserves no churn headroom; packet 30142 measured about 24% growth
+  on the rotating-window workload without slack and flat behavior with slack
+  enabled.
 - A10's corrected RaBitQ rows are still bounded, but packet 30152 replaces the
   earlier multi-second rows that measured a per-posting quantizer rebuild bug.
 - The recall harness now has better cache mechanics, but first-generation
