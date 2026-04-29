@@ -70,6 +70,14 @@ pub struct RecallArgs {
     /// Optional directory for exact top-k ground-truth cache files.
     #[arg(long)]
     pub truth_cache_dir: Option<PathBuf>,
+    /// Optional exact top-k ground-truth cache file.
+    ///
+    /// When the file exists, the harness validates it against the query set and
+    /// k before fetching the full corpus, then fetches only predicted source
+    /// rows needed for NDCG. When absent, the harness computes truth and writes
+    /// this file.
+    #[arg(long)]
+    pub truth_cache_file: Option<PathBuf>,
     /// Write the final recall table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -96,40 +104,66 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             "--sweep requires at least one value (e.g. --sweep 100,200,400)"
         ));
     }
+    if args.truth_cache_dir.is_some() && args.truth_cache_file.is_some() {
+        return Err(eyre!(
+            "--truth-cache-dir and --truth-cache-file are mutually exclusive"
+        ));
+    }
     validate_rerank_width_arg(profile, args.rerank_width)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
 
     let client = psql::connect(database).await?;
-    eprintln!("[recall] fetching corpus from {corpus_table} ...");
-    let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
     eprintln!("[recall] fetching queries from {queries_table} ...");
     let (query_ids, queries) = fetch_sources(&client, &queries_table, args.queries_limit).await?;
-    if corpus.nrows() == 0 || queries.nrows() == 0 {
-        return Err(eyre!(
-            "corpus ({} rows) or queries ({} rows) is empty",
-            corpus.nrows(),
-            queries.nrows()
-        ));
-    }
-    if corpus.ncols() != queries.ncols() {
-        return Err(eyre!(
-            "dim mismatch: corpus={} queries={}",
-            corpus.ncols(),
-            queries.ncols()
-        ));
+    if queries.nrows() == 0 {
+        return Err(eyre!("queries table {queries_table} is empty"));
     }
 
-    let truth = load_or_compute_truth(
-        args.truth_cache_dir.as_deref(),
-        &corpus_ids,
-        &corpus,
-        &query_ids,
-        &queries,
-        args.k,
-    )
-    .await?;
+    let mut corpus_for_ndcg: Option<(Vec<i64>, Array2<f32>)> = None;
+    let truth = if let Some(path) = args.truth_cache_file.as_deref() {
+        match load_truth_cache_file_if_valid(path, &query_ids, &queries, args.k).await? {
+            Some(truth) => truth,
+            None => {
+                eprintln!("[recall] fetching corpus from {corpus_table} ...");
+                let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
+                validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
+                let truth = load_or_compute_truth_file(
+                    path,
+                    &corpus_ids,
+                    &corpus,
+                    &query_ids,
+                    &queries,
+                    args.k,
+                )
+                .await?;
+                corpus_for_ndcg = Some((corpus_ids, corpus));
+                truth
+            }
+        }
+    } else {
+        eprintln!("[recall] fetching corpus from {corpus_table} ...");
+        let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
+        validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
+        let truth = load_or_compute_truth(
+            args.truth_cache_dir.as_deref(),
+            &corpus_ids,
+            &corpus,
+            &query_ids,
+            &queries,
+            args.k,
+        )
+        .await?;
+        corpus_for_ndcg = Some((corpus_ids, corpus));
+        truth
+    };
+
+    if let Some(path) = args.truth_cache_file.as_deref() {
+        if !path.exists() {
+            return Err(eyre!("truth cache file {} was not written", path.display()));
+        }
+    }
 
     let sql = build_knn_sql(profile, &corpus_table);
 
@@ -192,8 +226,13 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         bar.finish_and_clear();
 
         let recall = recall_at_k(&truth.ids, &pred, args.k);
-        let ndcg =
-            ndcg_at_k_from_sources(&truth.scores, &pred, &corpus_ids, &corpus, &queries, args.k);
+        let ndcg = if let Some((corpus_ids, corpus)) = &corpus_for_ndcg {
+            ndcg_at_k_from_sources(&truth.scores, &pred, corpus_ids, corpus, &queries, args.k)
+        } else {
+            let source_by_id =
+                fetch_sources_for_predicted_ids(&client, &corpus_table, &pred).await?;
+            ndcg_at_k_from_source_map(&truth.scores, &pred, &source_by_id, &queries, args.k)
+        };
         let mean_ms = (total_ns as f64 / queries.nrows() as f64) / 1e6;
 
         t.add_row(vec![
@@ -216,6 +255,101 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
+    Ok(())
+}
+
+fn validate_corpus_and_queries(
+    table: &str,
+    corpus: &Array2<f32>,
+    queries: &Array2<f32>,
+) -> Result<()> {
+    if corpus.nrows() == 0 {
+        return Err(eyre!("corpus table {table} is empty"));
+    }
+    if corpus.ncols() != queries.ncols() {
+        return Err(eyre!(
+            "dim mismatch: corpus={} queries={}",
+            corpus.ncols(),
+            queries.ncols()
+        ));
+    }
+    Ok(())
+}
+
+async fn load_truth_cache_file_if_valid(
+    path: &Path,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    k: usize,
+) -> Result<Option<TruthSet>> {
+    match tokio::fs::read(path).await {
+        Ok(bytes) => {
+            let cache: TruthCacheFile = serde_json::from_slice(&bytes)
+                .wrap_err_with(|| format!("reading {}", path.display()))?;
+            validate_truth_cache_for_queries(path, &cache, query_ids, queries, k)?;
+            eprintln!("[recall] loaded ground truth cache {}", path.display());
+            Ok(Some(cache.truth))
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).wrap_err_with(|| format!("reading {}", path.display())),
+    }
+}
+
+fn validate_truth_cache_for_queries(
+    path: &Path,
+    cache: &TruthCacheFile,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    k: usize,
+) -> Result<()> {
+    let expected_query_hash = source_fingerprint(query_ids, queries);
+    if cache.descriptor.version != 1
+        || cache.descriptor.query_rows != queries.nrows()
+        || cache.descriptor.dimensions != queries.ncols()
+        || cache.descriptor.k != k
+        || cache.descriptor.query_hash != expected_query_hash
+    {
+        return Err(eyre!(
+            "truth cache file {} does not match query set and k",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+async fn load_or_compute_truth_file(
+    path: &Path,
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    k: usize,
+) -> Result<TruthSet> {
+    if let Some(truth) = load_truth_cache_file_if_valid(path, query_ids, queries, k).await? {
+        return Ok(truth);
+    }
+    let descriptor = TruthCacheDescriptor::new(corpus_ids, corpus, query_ids, queries, k);
+    let truth = compute_truth_set(corpus_ids, corpus, queries, k);
+    write_truth_cache_file(path, descriptor, truth.clone()).await?;
+    Ok(truth)
+}
+
+async fn write_truth_cache_file(
+    path: &Path,
+    descriptor: TruthCacheDescriptor,
+    truth: TruthSet,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let cache = TruthCacheFile { descriptor, truth };
+    let bytes = serde_json::to_vec_pretty(&cache)?;
+    tokio::fs::write(path, bytes)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))?;
+    eprintln!("[recall] wrote ground truth cache {}", path.display());
     Ok(())
 }
 
@@ -251,15 +385,7 @@ async fn load_or_compute_truth(
         tokio::fs::create_dir_all(cache_dir)
             .await
             .wrap_err_with(|| format!("creating {}", cache_dir.display()))?;
-        let cache = TruthCacheFile {
-            descriptor,
-            truth: truth.clone(),
-        };
-        let bytes = serde_json::to_vec_pretty(&cache)?;
-        tokio::fs::write(&path, bytes)
-            .await
-            .wrap_err_with(|| format!("writing {}", path.display()))?;
-        eprintln!("[recall] wrote ground truth cache {}", path.display());
+        write_truth_cache_file(&path, descriptor, truth.clone()).await?;
         return Ok(truth);
     }
 
@@ -433,6 +559,34 @@ async fn fetch_sources(
     Ok((ids, arr))
 }
 
+async fn fetch_sources_for_predicted_ids(
+    client: &Client,
+    table: &str,
+    pred: &[Vec<i64>],
+) -> Result<std::collections::HashMap<i64, Vec<f32>>> {
+    let mut ids: Vec<i64> = pred
+        .iter()
+        .flat_map(|row| row.iter().copied())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    ids.sort_unstable();
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let sql = format!("SELECT id, source FROM {table} WHERE id = ANY($1::bigint[])");
+    let rows = client
+        .query(sql.as_str(), &[&ids])
+        .await
+        .wrap_err_with(|| format!("fetching predicted sources from {table}"))?;
+    let mut by_id = std::collections::HashMap::with_capacity(rows.len());
+    for row in rows {
+        by_id.insert(row.get::<_, i64>(0), row.get::<_, Vec<f32>>(1));
+    }
+    Ok(by_id)
+}
+
 /// Ground-truth bundle. `indices[q]` is the sorted list of *row positions*
 /// (not ids) into the corpus; `scores[q]` is the matching IP scores;
 /// `all_scores[q]` is the full score row (queries · corpusᵀ) used for NDCG
@@ -601,6 +755,41 @@ pub fn ndcg_at_k_from_sources(
     sum / pred_ids.len() as f64
 }
 
+/// NDCG@k variant for explicit cache hits. The exact truth file supplies IDCG;
+/// this function fetches only predicted source rows and computes their true
+/// relevance.
+pub fn ndcg_at_k_from_source_map(
+    true_scores: &[Vec<f32>],
+    pred_ids: &[Vec<i64>],
+    source_by_id: &std::collections::HashMap<i64, Vec<f32>>,
+    queries: &Array2<f32>,
+    k: usize,
+) -> f64 {
+    if pred_ids.is_empty() || k == 0 {
+        return 0.0;
+    }
+    let log2 = |x: f64| x.log2();
+    let mut sum = 0.0f64;
+    for (q, pred) in pred_ids.iter().enumerate() {
+        let mut dcg = 0.0f64;
+        for (rank, pid) in pred.iter().take(k).enumerate() {
+            let Some(source) = source_by_id.get(pid) else {
+                continue;
+            };
+            let rel = inner_product_slice(queries, q, source).max(0.0) as f64;
+            dcg += rel / log2((rank + 2) as f64);
+        }
+        let mut idcg = 0.0f64;
+        for (rank, score) in true_scores[q].iter().take(k).enumerate() {
+            let rel = (*score).max(0.0) as f64;
+            idcg += rel / log2((rank + 2) as f64);
+        }
+        let denom = idcg.max(1e-10);
+        sum += dcg / denom;
+    }
+    sum / pred_ids.len() as f64
+}
+
 fn inner_product_rows(
     queries: &Array2<f32>,
     query_row: usize,
@@ -611,6 +800,15 @@ fn inner_product_rows(
         .row(query_row)
         .iter()
         .zip(corpus.row(corpus_row).iter())
+        .map(|(a, b)| a * b)
+        .sum()
+}
+
+fn inner_product_slice(queries: &Array2<f32>, query_row: usize, source: &[f32]) -> f32 {
+    queries
+        .row(query_row)
+        .iter()
+        .zip(source.iter())
         .map(|(a, b)| a * b)
         .sum()
 }
@@ -812,6 +1010,27 @@ mod tests {
 
         let matrix = ndcg_at_k(&gt.scores, &pred, &ids, &gt.all_scores, 2);
         let sourced = ndcg_at_k_from_sources(&gt.scores, &pred, &ids, &corpus, &queries, 2);
+        assert!(
+            (matrix - sourced).abs() < 1e-6,
+            "matrix={matrix} sourced={sourced}"
+        );
+    }
+
+    #[test]
+    fn ndcg_from_source_map_matches_matrix_backed_ndcg() {
+        let corpus = arr2(&[[1.0_f32, 0.0], [0.0, 1.0], [1.0, 1.0]]);
+        let queries = arr2(&[[1.0_f32, 0.0], [0.5, 0.5]]);
+        let ids = vec![10_i64, 20, 30];
+        let gt = brute_force_top_k(&corpus, &queries, 2);
+        let pred = vec![vec![30_i64, 10], vec![20_i64, 30]];
+        let source_by_id = std::collections::HashMap::from([
+            (10_i64, vec![1.0_f32, 0.0]),
+            (20_i64, vec![0.0_f32, 1.0]),
+            (30_i64, vec![1.0_f32, 1.0]),
+        ]);
+
+        let matrix = ndcg_at_k(&gt.scores, &pred, &ids, &gt.all_scores, 2);
+        let sourced = ndcg_at_k_from_source_map(&gt.scores, &pred, &source_by_id, &queries, 2);
         assert!(
             (matrix - sourced).abs() < 1e-6,
             "matrix={matrix} sourced={sourced}"
