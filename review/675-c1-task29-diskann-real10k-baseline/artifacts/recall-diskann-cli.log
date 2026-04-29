@@ -1,0 +1,10 @@
+
+   0: [91mexecuting recall KNN query[0m
+   1: [91mdb error[0m
+   2: [91mERROR: canceling statement due to user request[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m248[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

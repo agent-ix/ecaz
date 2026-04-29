@@ -1,0 +1,28 @@
+SET
+SET
+SET
+SET
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=7229.318..7229.325 rows=10.00 loops=1)
+   Buffers: shared hit=60223
+   InitPlan 1
+     ->  Limit (actual time=0.025..0.026 rows=1.00 loops=1)
+           Buffers: shared hit=2
+           ->  Index Scan using ec_hnsw_real_10k_queries_pkey on ec_hnsw_real_10k_queries (actual time=0.025..0.026 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=2
+   ->  Sort (actual time=7229.316..7229.319 rows=10.00 loops=1)
+         Disabled: true
+         Sort Key: ((ec_hnsw_real_10k_corpus.embedding <#> encode_to_ecvector((InitPlan 1).col1, 4, '42'::bigint)))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=60223
+         ->  Seq Scan on ec_hnsw_real_10k_corpus (actual time=1.536..7220.268 rows=10000.00 loops=1)
+               Disabled: true
+               Buffers: shared hit=60220
+ Planning:
+   Buffers: shared hit=150
+ Planning Time: 2.497 ms
+ Execution Time: 7229.407 ms
+(20 rows)
+
