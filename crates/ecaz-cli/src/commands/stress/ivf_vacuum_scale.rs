@@ -46,6 +46,9 @@ pub struct IvfVacuumScaleArgs {
     /// Refill the deleted range after each VACUUM to keep live rows steady.
     #[arg(long, default_value_t = false)]
     pub refill_after_vacuum: bool,
+    /// Repeatedly delete the previous refill slice after cycle 1.
+    #[arg(long, default_value_t = false)]
+    pub same_slice_churn: bool,
     /// Milliseconds between backend RSS samples during VACUUM.
     #[arg(long, default_value_t = 25)]
     pub sample_interval_ms: u64,
@@ -135,6 +138,9 @@ fn validate_args(args: &IvfVacuumScaleArgs) -> Result<()> {
             "--cycles greater than 1 requires --refill-after-vacuum"
         ));
     }
+    if args.same_slice_churn && !args.refill_after_vacuum {
+        return Err(eyre!("--same-slice-churn requires --refill-after-vacuum"));
+    }
     crate::profiles::validate_ident(&args.quantizer)
         .wrap_err_with(|| format!("invalid --quantizer {:?}", args.quantizer))?;
     Ok(())
@@ -192,8 +198,7 @@ async fn run_vacuum_cycle(
     cycle: i64,
 ) -> Result<VacuumScaleSummary> {
     let churn_rows = resolved_churn_rows(args)?;
-    let delete_start_id = (cycle - 1) * churn_rows + 1;
-    let delete_end_id = cycle * churn_rows;
+    let (delete_start_id, delete_end_id) = delete_range(args, churn_rows, cycle);
     let rows_before_delete = relation_row_count(client, &surface.table_name).await?;
     let before_delete_bytes = relation_size(client, &surface.index_name).await?;
 
@@ -282,6 +287,15 @@ async fn run_vacuum_cycle(
         hwm_peak_kb: memory.hwm_peak_kb,
         memory_samples: memory.samples,
     })
+}
+
+fn delete_range(args: &IvfVacuumScaleArgs, churn_rows: i64, cycle: i64) -> (i64, i64) {
+    if args.same_slice_churn && cycle > 1 {
+        let start = args.rows + (cycle - 2) * churn_rows + 1;
+        return (start, start + churn_rows - 1);
+    }
+    let start = (cycle - 1) * churn_rows + 1;
+    (start, start + churn_rows - 1)
 }
 
 fn refill_sql(
@@ -480,6 +494,7 @@ mod tests {
             cycles: 1,
             churn_rows: None,
             refill_after_vacuum: false,
+            same_slice_churn: false,
             sample_interval_ms: 10,
             log_output: None,
         }
@@ -511,6 +526,20 @@ mod tests {
         let mut args = args();
         args.cycles = 2;
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn same_slice_churn_deletes_previous_refill_range() {
+        let mut args = args();
+        args.rows = 100;
+        args.cycles = 3;
+        args.churn_rows = Some(25);
+        args.refill_after_vacuum = true;
+        args.same_slice_churn = true;
+        assert!(validate_args(&args).is_ok());
+        assert_eq!(delete_range(&args, 25, 1), (1, 25));
+        assert_eq!(delete_range(&args, 25, 2), (101, 125));
+        assert_eq!(delete_range(&args, 25, 3), (126, 150));
     }
 
     #[test]
