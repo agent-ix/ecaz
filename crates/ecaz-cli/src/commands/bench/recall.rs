@@ -5,7 +5,9 @@
 //! 1. Fetch `<prefix>_corpus.source` and `<prefix>_queries.source` into an
 //!    ndarray `Array2<f32>`.
 //! 2. Compute ground truth with a parallel `queries · corpusᵀ` matmul
-//!    (ndarray+rayon), then argsort the top-k per row.
+//!    (ndarray+rayon), then argsort the top-k per row. When
+//!    `--truth-cache-dir` is set, reuse an exact top-k truth cache keyed by
+//!    source ids, source values, dimensions, query limit, and k.
 //! 3. For each sweep value, set the profile's `ef_search` GUC and run one
 //!    `ORDER BY embedding <#> encode_to_<embedding>(...) LIMIT k` per query.
 //! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
@@ -23,7 +25,10 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
@@ -62,6 +67,9 @@ pub struct RecallArgs {
     /// Force benchmark queries onto the index path by disabling sequential scans.
     #[arg(long)]
     pub force_index: bool,
+    /// Optional directory for exact top-k ground-truth cache files.
+    #[arg(long)]
+    pub truth_cache_dir: Option<PathBuf>,
     /// Write the final recall table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -97,7 +105,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     eprintln!("[recall] fetching corpus from {corpus_table} ...");
     let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
     eprintln!("[recall] fetching queries from {queries_table} ...");
-    let (_query_ids, queries) = fetch_sources(&client, &queries_table, args.queries_limit).await?;
+    let (query_ids, queries) = fetch_sources(&client, &queries_table, args.queries_limit).await?;
     if corpus.nrows() == 0 || queries.nrows() == 0 {
         return Err(eyre!(
             "corpus ({} rows) or queries ({} rows) is empty",
@@ -113,15 +121,15 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         ));
     }
 
-    eprintln!(
-        "[recall] computing ground truth: {} queries vs {} corpus rows (dim={}) ...",
-        queries.nrows(),
-        corpus.nrows(),
-        corpus.ncols()
-    );
-    let t0 = Instant::now();
-    let gt = brute_force_top_k(&corpus, &queries, args.k);
-    eprintln!("[recall] ground truth in {:.2?}", t0.elapsed());
+    let truth = load_or_compute_truth(
+        args.truth_cache_dir.as_deref(),
+        &corpus_ids,
+        &corpus,
+        &query_ids,
+        &queries,
+        args.k,
+    )
+    .await?;
 
     let sql = build_knn_sql(profile, &corpus_table);
 
@@ -183,9 +191,9 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         }
         bar.finish_and_clear();
 
-        let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
-        let recall = recall_at_k(&truth_ids, &pred, args.k);
-        let ndcg = ndcg_at_k(&gt.scores, &pred, &corpus_ids, &gt.all_scores, args.k);
+        let recall = recall_at_k(&truth.ids, &pred, args.k);
+        let ndcg =
+            ndcg_at_k_from_sources(&truth.scores, &pred, &corpus_ids, &corpus, &queries, args.k);
         let mean_ms = (total_ns as f64 / queries.nrows() as f64) / 1e6;
 
         t.add_row(vec![
@@ -209,6 +217,154 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
     Ok(())
+}
+
+async fn load_or_compute_truth(
+    cache_dir: Option<&Path>,
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    k: usize,
+) -> Result<TruthSet> {
+    let descriptor = TruthCacheDescriptor::new(corpus_ids, corpus, query_ids, queries, k);
+    if let Some(cache_dir) = cache_dir {
+        let path = truth_cache_path(cache_dir, &descriptor);
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => {
+                let cache: TruthCacheFile = serde_json::from_slice(&bytes)
+                    .wrap_err_with(|| format!("reading {}", path.display()))?;
+                if cache.descriptor == descriptor {
+                    eprintln!("[recall] loaded ground truth cache {}", path.display());
+                    return Ok(cache.truth);
+                }
+                eprintln!(
+                    "[recall] ignoring stale ground truth cache {}",
+                    path.display()
+                );
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
+            Err(err) => return Err(err).wrap_err_with(|| format!("reading {}", path.display())),
+        }
+
+        let truth = compute_truth_set(corpus_ids, corpus, queries, k);
+        tokio::fs::create_dir_all(cache_dir)
+            .await
+            .wrap_err_with(|| format!("creating {}", cache_dir.display()))?;
+        let cache = TruthCacheFile {
+            descriptor,
+            truth: truth.clone(),
+        };
+        let bytes = serde_json::to_vec_pretty(&cache)?;
+        tokio::fs::write(&path, bytes)
+            .await
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+        eprintln!("[recall] wrote ground truth cache {}", path.display());
+        return Ok(truth);
+    }
+
+    Ok(compute_truth_set(corpus_ids, corpus, queries, k))
+}
+
+fn compute_truth_set(
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    queries: &Array2<f32>,
+    k: usize,
+) -> TruthSet {
+    eprintln!(
+        "[recall] computing ground truth: {} queries vs {} corpus rows (dim={}) ...",
+        queries.nrows(),
+        corpus.nrows(),
+        corpus.ncols()
+    );
+    let t0 = Instant::now();
+    let gt = brute_force_top_k(corpus, queries, k);
+    eprintln!("[recall] ground truth in {:.2?}", t0.elapsed());
+    TruthSet {
+        ids: map_indices_to_ids(&gt.indices, corpus_ids),
+        scores: gt.scores,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TruthSet {
+    pub ids: Vec<Vec<i64>>,
+    pub scores: Vec<Vec<f32>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct TruthCacheDescriptor {
+    version: u32,
+    corpus_rows: usize,
+    query_rows: usize,
+    dimensions: usize,
+    k: usize,
+    corpus_hash: String,
+    query_hash: String,
+}
+
+impl TruthCacheDescriptor {
+    fn new(
+        corpus_ids: &[i64],
+        corpus: &Array2<f32>,
+        query_ids: &[i64],
+        queries: &Array2<f32>,
+        k: usize,
+    ) -> Self {
+        Self {
+            version: 1,
+            corpus_rows: corpus.nrows(),
+            query_rows: queries.nrows(),
+            dimensions: corpus.ncols(),
+            k,
+            corpus_hash: source_fingerprint(corpus_ids, corpus),
+            query_hash: source_fingerprint(query_ids, queries),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TruthCacheFile {
+    descriptor: TruthCacheDescriptor,
+    truth: TruthSet,
+}
+
+fn truth_cache_path(cache_dir: &Path, descriptor: &TruthCacheDescriptor) -> PathBuf {
+    let mut hasher = Sha256::new();
+    hasher.update(b"ecaz-cli-recall-truth-cache-v1");
+    hasher.update(descriptor.version.to_le_bytes());
+    hasher.update((descriptor.corpus_rows as u64).to_le_bytes());
+    hasher.update((descriptor.query_rows as u64).to_le_bytes());
+    hasher.update((descriptor.dimensions as u64).to_le_bytes());
+    hasher.update((descriptor.k as u64).to_le_bytes());
+    hasher.update(descriptor.corpus_hash.as_bytes());
+    hasher.update(descriptor.query_hash.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    cache_dir.join(format!(
+        "truth-v{}-rows{}-queries{}-dim{}-k{}-{}.json",
+        descriptor.version,
+        descriptor.corpus_rows,
+        descriptor.query_rows,
+        descriptor.dimensions,
+        descriptor.k,
+        &digest[..16]
+    ))
+}
+
+fn source_fingerprint(ids: &[i64], values: &Array2<f32>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"ecaz-cli-source-fingerprint-v1");
+    hasher.update((ids.len() as u64).to_le_bytes());
+    hasher.update((values.nrows() as u64).to_le_bytes());
+    hasher.update((values.ncols() as u64).to_le_bytes());
+    for id in ids {
+        hasher.update(id.to_le_bytes());
+    }
+    for value in values.iter() {
+        hasher.update(value.to_bits().to_le_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 fn validate_rerank_width_arg(
@@ -403,6 +559,61 @@ pub fn ndcg_at_k(
     sum / pred_ids.len() as f64
 }
 
+/// NDCG@k variant for cached exact truth. The cache stores only exact top-k
+/// ids and scores; predicted relevance is recovered by scoring the small
+/// returned id set against the original source vectors.
+pub fn ndcg_at_k_from_sources(
+    true_scores: &[Vec<f32>],
+    pred_ids: &[Vec<i64>],
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    queries: &Array2<f32>,
+    k: usize,
+) -> f64 {
+    if pred_ids.is_empty() || k == 0 {
+        return 0.0;
+    }
+    let id_to_pos: std::collections::HashMap<i64, usize> = corpus_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i))
+        .collect();
+    let log2 = |x: f64| x.log2();
+    let mut sum = 0.0f64;
+    for (q, pred) in pred_ids.iter().enumerate() {
+        let mut dcg = 0.0f64;
+        for (rank, pid) in pred.iter().take(k).enumerate() {
+            let Some(&pos) = id_to_pos.get(pid) else {
+                continue;
+            };
+            let rel = inner_product_rows(queries, q, corpus, pos).max(0.0) as f64;
+            dcg += rel / log2((rank + 2) as f64);
+        }
+        let mut idcg = 0.0f64;
+        for (rank, score) in true_scores[q].iter().take(k).enumerate() {
+            let rel = (*score).max(0.0) as f64;
+            idcg += rel / log2((rank + 2) as f64);
+        }
+        let denom = idcg.max(1e-10);
+        sum += dcg / denom;
+    }
+    sum / pred_ids.len() as f64
+}
+
+fn inner_product_rows(
+    queries: &Array2<f32>,
+    query_row: usize,
+    corpus: &Array2<f32>,
+    corpus_row: usize,
+) -> f32 {
+    queries
+        .row(query_row)
+        .iter()
+        .zip(corpus.row(corpus_row).iter())
+        .map(|(a, b)| a * b)
+        .sum()
+}
+
 /// KNN SQL template used for recall. Encoded profiles bind
 /// `($1::real[], $2::integer, $3::bigint, $4::bigint)` = (query_source, bits,
 /// seed, k). Raw-query profiles bind `($1::real[], $2::bigint)` =
@@ -588,6 +799,52 @@ mod tests {
         let pred = vec![vec![1_i64, 2]];
         let n = ndcg_at_k(&ts, &pred, &ids, &sc, 2);
         assert!(n.is_finite(), "got {n}");
+    }
+
+    #[test]
+    fn ndcg_from_sources_matches_matrix_backed_ndcg() {
+        let corpus = arr2(&[[1.0_f32, 0.0], [0.0, 1.0], [1.0, 1.0]]);
+        let queries = arr2(&[[1.0_f32, 0.0], [0.5, 0.5]]);
+        let ids = vec![10_i64, 20, 30];
+        let gt = brute_force_top_k(&corpus, &queries, 2);
+        let pred = vec![vec![30_i64, 10], vec![20_i64, 30]];
+
+        let matrix = ndcg_at_k(&gt.scores, &pred, &ids, &gt.all_scores, 2);
+        let sourced = ndcg_at_k_from_sources(&gt.scores, &pred, &ids, &corpus, &queries, 2);
+        assert!(
+            (matrix - sourced).abs() < 1e-6,
+            "matrix={matrix} sourced={sourced}"
+        );
+    }
+
+    // --- truth cache helpers ---
+
+    #[test]
+    fn source_fingerprint_changes_with_ids_and_values() {
+        let ids = vec![1_i64, 2];
+        let values = arr2(&[[1.0_f32, 2.0], [3.0, 4.0]]);
+        let same = source_fingerprint(&ids, &values);
+
+        let changed_ids = source_fingerprint(&[2_i64, 1], &values);
+        assert_ne!(same, changed_ids);
+
+        let changed_values = arr2(&[[1.0_f32, 2.0], [3.0, 4.5]]);
+        assert_ne!(same, source_fingerprint(&ids, &changed_values));
+    }
+
+    #[test]
+    fn truth_cache_path_changes_with_k() {
+        let corpus = arr2(&[[1.0_f32, 0.0], [0.0, 1.0]]);
+        let queries = arr2(&[[1.0_f32, 0.0]]);
+        let corpus_ids = vec![1_i64, 2];
+        let query_ids = vec![100_i64];
+        let d1 = TruthCacheDescriptor::new(&corpus_ids, &corpus, &query_ids, &queries, 10);
+        let d2 = TruthCacheDescriptor::new(&corpus_ids, &corpus, &query_ids, &queries, 100);
+
+        assert_ne!(
+            truth_cache_path(Path::new("cache"), &d1),
+            truth_cache_path(Path::new("cache"), &d2)
+        );
     }
 
     // --- build_knn_sql ---
