@@ -16,3 +16,12 @@ Key result:
 ```text
 23 passed; 0 failed; 0 ignored
 ```
+
+The same validation command was re-run after replacing the per-query full sort
+with partial top-k selection.
+
+Key result:
+
+```text
+23 passed; 0 failed; 0 ignored
+```

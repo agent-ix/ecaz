@@ -14,6 +14,8 @@ This is a harness-only change:
   query-by-corpus score matrix
 - NDCG keeps the prior semantics by recomputing predicted-id relevance from
   the original source vectors
+- exact-truth top-k now uses partial selection plus a final top-k sort instead
+  of sorting every corpus score for every query
 
 ## Why
 
@@ -22,9 +24,33 @@ across quantizer, nprobe, and rerank surfaces. Reusing exact top-k truth removes
 that repeated setup cost while keeping the benchmark surface explicit through a
 CLI flag instead of ambient configuration.
 
+The partial top-k selection reduces first-run exact-truth setup work for large
+corpora because the harness no longer performs an O(corpus_rows log corpus_rows)
+full sort per query when only the top `k` ids are needed.
+
 ## Validation
 
 Command:
+
+```text
+cargo test -p ecaz-cli recall -- --nocapture
+```
+
+Result:
+
+```text
+23 passed; 0 failed; 0 ignored
+```
+
+Also run:
+
+```text
+git diff --check
+```
+
+Result: clean.
+
+The same validation was re-run after the partial top-k selection change:
 
 ```text
 cargo test -p ecaz-cli recall -- --nocapture
