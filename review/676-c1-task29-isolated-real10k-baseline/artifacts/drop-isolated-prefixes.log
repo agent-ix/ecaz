@@ -1,0 +1,8 @@
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task29_diskann_real10k_corpus" does not exist, skipping
+NOTICE:  table "task29_diskann_real10k_queries" does not exist, skipping
+NOTICE:  table "task29_hnsw_real10k_corpus" does not exist, skipping
+NOTICE:  table "task29_hnsw_real10k_queries" does not exist, skipping
