@@ -474,16 +474,17 @@ fn top_k_desc(row: &[f32], k: usize) -> (Vec<usize>, Vec<f32>) {
         return (Vec::new(), Vec::new());
     }
     let mut idx: Vec<usize> = (0..row.len()).collect();
-    // Partial sort would be nice, but for ground-truth correctness over
-    // corpus sizes up to ~1M this full sort is fine in practice (single-
-    // digit seconds, dominated by the matmul anyway).
-    idx.sort_by(|&a, &b| {
+    let cmp = |&a: &usize, &b: &usize| {
         row[b]
             .partial_cmp(&row[a])
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(a.cmp(&b))
-    });
+    };
+    if k < idx.len() {
+        idx.select_nth_unstable_by(k, cmp);
+    }
     idx.truncate(k);
+    idx.sort_by(cmp);
     let scores: Vec<f32> = idx.iter().map(|&i| row[i]).collect();
     (idx, scores)
 }
