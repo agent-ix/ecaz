@@ -1,0 +1,16 @@
+   pid   | state  | wait_event_type | wait_event |       age       |                                                          query
+---------+--------+-----------------+------------+-----------------+--------------------------------------------------------------------------------------------------------------------------
+ 3058423 | active |                 |            | 00:08:09.717902 | DO $$                                                                                                                   +
+         |        |                 |            |                 | DECLARE                                                                                                                 +
+         |        |                 |            |                 |   started_at timestamptz;                                                                                               +
+         |        |                 |            |                 |   elapsed_ms numeric;                                                                                                   +
+         |        |                 |            |                 | BEGIN                                                                                                                   +
+         |        |                 |            |                 |   started_at := clock_timestamp();                                                                                      +
+         |        |                 |            |                 |   CREATE INDEX ta
+ 3059733 | active |                 |            | 00:00:00        | SELECT pid, state, wait_event_type, wait_event, now() - query_start AS age, left(query, 120) AS query FROM pg_stat_activ
+(2 rows)
+
+ hnsw_idx
+----------
+
+(1 row)

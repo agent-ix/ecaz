@@ -1,0 +1,6 @@
+DROP INDEX
+psql:review/30146-task28-ivf-a9-100k-hnsw-reference/artifacts/build_hnsw_100k.sql:1: NOTICE:  index "task28_a9_100k_hnsw_idx" does not exist, skipping
+psql:review/30146-task28-ivf-a9-100k-hnsw-reference/artifacts/build_hnsw_100k.sql:14: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+psql:review/30146-task28-ivf-a9-100k-hnsw-reference/artifacts/build_hnsw_100k.sql:14: error: connection to server was lost
