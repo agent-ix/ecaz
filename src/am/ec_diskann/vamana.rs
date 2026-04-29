@@ -201,6 +201,42 @@ where
     result
 }
 
+fn candidate_pool_for_prune<D>(
+    pivot: u32,
+    visited: impl IntoIterator<Item = u32>,
+    existing_neighbors: impl IntoIterator<Item = u32>,
+    node_count: usize,
+    dist: D,
+) -> Vec<Candidate>
+where
+    D: Fn(u32, u32) -> f32,
+{
+    let mut seen = vec![false; node_count];
+    let mut candidates = Vec::new();
+
+    for node in visited.into_iter().chain(existing_neighbors) {
+        if node == pivot {
+            continue;
+        }
+        debug_assert!(
+            (node as usize) < node_count,
+            "candidate node id {} outside graph size {}",
+            node,
+            node_count
+        );
+        if (node as usize) >= node_count || seen[node as usize] {
+            continue;
+        }
+        seen[node as usize] = true;
+        candidates.push(Candidate {
+            node,
+            distance: dist(node, pivot),
+        });
+    }
+
+    candidates
+}
+
 /// Approximate medoid via random-sample sum-of-distances. `S = min(cap,
 /// node_count)` indices are drawn uniformly without replacement; the
 /// medoid is the sample with the smallest sum of distances to the
@@ -273,16 +309,18 @@ where
 
         for &i in &permutation {
             // Greedy search from medoid toward i; collect visited set
-            // as the candidate pool.
+            // plus i's existing out-neighbors as the candidate pool.
+            // Vamana's RobustPrune folds the old neighborhood into
+            // the fresh visited set so later passes refine, rather
+            // than replace, prior graph structure.
             let result = greedy_search(&graph, medoid, list_size, |n| dist(n, i));
-            let candidates: Vec<Candidate> = result
-                .visited
-                .into_iter()
-                .map(|n| Candidate {
-                    node: n,
-                    distance: dist(n, i),
-                })
-                .collect();
+            let candidates = candidate_pool_for_prune(
+                i,
+                result.visited,
+                graph.neighbors[i as usize].iter().copied(),
+                node_count,
+                dist,
+            );
 
             let pruned = robust_prune(i, candidates, alpha, max_degree, dist);
             graph.neighbors[i as usize] = pruned.clone();
@@ -410,6 +448,19 @@ mod tests {
         };
         let kept = robust_prune(0, candidates, 1.2, 8, dist);
         assert_eq!(kept, vec![1], "1 should dominate 2 and 3 at α=1.2");
+    }
+
+    #[test]
+    fn candidate_pool_includes_existing_out_neighbors() {
+        let pool = candidate_pool_for_prune(0, vec![1, 2, 2], vec![2, 3, 0], 4, |a, b| {
+            (a as i32 - b as i32).unsigned_abs() as f32
+        });
+        let nodes: Vec<u32> = pool.iter().map(|c| c.node).collect();
+        assert_eq!(nodes, vec![1, 2, 3]);
+        assert_eq!(
+            pool.iter().map(|c| c.distance).collect::<Vec<_>>(),
+            vec![1.0, 2.0, 3.0]
+        );
     }
 
     #[test]
