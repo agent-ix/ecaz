@@ -38,8 +38,11 @@
 #![allow(dead_code)]
 
 #[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::cell::Cell;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use crate::quant::prod::ProdQuantizer;
 use crate::quant::rotation;
@@ -71,20 +74,52 @@ pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
 /// ~95% of the mass and keeps quantization levels well-utilized.
 const RABITQ_QUANT_CLIP: f32 = 2.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct SeededSrhtCacheKey {
+    dimensions: usize,
+    seed: u64,
+    bits_per_dim: u8,
+}
+
+static SEEDED_SRHT_CACHE: OnceLock<Mutex<HashMap<SeededSrhtCacheKey, Arc<RaBitQQuantizer>>>> =
+    OnceLock::new();
+
 #[cfg(test)]
-static SEEDED_SRHT_CONSTRUCTION_COUNT: AtomicUsize = AtomicUsize::new(0);
-#[cfg(test)]
-static SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static SEEDED_SRHT_CONSTRUCTION_COUNT: Cell<usize> = const { Cell::new(0) };
+    static SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS: Cell<usize> = const { Cell::new(0) };
+}
 
 #[cfg(test)]
 pub(crate) fn reset_seeded_srht_construction_count_for_test(dimensions: usize) {
-    SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.store(dimensions, Ordering::Relaxed);
-    SEEDED_SRHT_CONSTRUCTION_COUNT.store(0, Ordering::Relaxed);
+    SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.with(|cell| cell.set(dimensions));
+    SEEDED_SRHT_CONSTRUCTION_COUNT.with(|cell| cell.set(0));
 }
 
 #[cfg(test)]
 pub(crate) fn seeded_srht_construction_count_for_test() -> usize {
-    SEEDED_SRHT_CONSTRUCTION_COUNT.load(Ordering::Relaxed)
+    SEEDED_SRHT_CONSTRUCTION_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn clear_seeded_srht_cache_for_test() {
+    if let Some(cache) = SEEDED_SRHT_CACHE.get() {
+        cache
+            .lock()
+            .expect("RaBitQ seeded SRHT cache mutex should not be poisoned")
+            .clear();
+    }
+}
+
+#[cfg(test)]
+fn note_seeded_srht_construction_for_test(dimensions: usize) {
+    SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.with(|dimension_cell| {
+        if dimension_cell.get() == dimensions {
+            SEEDED_SRHT_CONSTRUCTION_COUNT.with(|count_cell| {
+                count_cell.set(count_cell.get() + 1);
+            });
+        }
+    });
 }
 
 pub fn code_len_for(dimensions: usize, bits_per_dim: u8) -> Result<usize, String> {
@@ -246,6 +281,28 @@ pub struct RaBitQQuantizer {
 }
 
 impl RaBitQQuantizer {
+    pub fn cached_seeded_srht_bits(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+    ) -> Result<Arc<Self>, String> {
+        let key = SeededSrhtCacheKey {
+            dimensions,
+            seed,
+            bits_per_dim: bits,
+        };
+        let cache = SEEDED_SRHT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut cache_guard = cache
+            .lock()
+            .map_err(|_| "RaBitQ seeded SRHT cache mutex poisoned".to_owned())?;
+        if let Some(quantizer) = cache_guard.get(&key) {
+            return Ok(Arc::clone(quantizer));
+        }
+        let quantizer = Arc::new(Self::with_seeded_srht_bits(dimensions, seed, bits)?);
+        cache_guard.insert(key, Arc::clone(&quantizer));
+        Ok(quantizer)
+    }
+
     /// Construct a default 1 bit/dim quantizer (ADR-045 Stage 1
     /// canonical configuration).
     pub fn new(rotation: Arc<dyn Rotation>) -> Self {
@@ -297,9 +354,7 @@ impl RaBitQQuantizer {
     /// index metadata so different indexes get independent rotations.
     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
         #[cfg(test)]
-        if SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.load(Ordering::Relaxed) == dimensions {
-            SEEDED_SRHT_CONSTRUCTION_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
+        note_seeded_srht_construction_for_test(dimensions);
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
         Self::with_bits(rotation, bits)
     }

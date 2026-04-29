@@ -8,6 +8,7 @@ use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::rotation;
 use crate::quant::Quantizer;
 use crate::storage::page::ItemPointer;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
@@ -326,8 +327,8 @@ impl IvfQuantizer {
         matches!(self.profile, IvfQuantizerProfile::PqFastScan { .. })
     }
 
-    fn rabitq_quantizer(self) -> Result<RaBitQQuantizer, String> {
-        RaBitQQuantizer::with_seeded_srht_bits(
+    fn rabitq_quantizer(self) -> Result<Arc<RaBitQQuantizer>, String> {
+        RaBitQQuantizer::cached_seeded_srht_bits(
             self.dimensions,
             crate::DEFAULT_QUANT_SEED,
             crate::DEFAULT_QUANT_BITS,
@@ -648,12 +649,13 @@ mod tests {
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve(StorageFormat::RaBitQ, dimensions).unwrap();
 
+        crate::quant::rabitq::clear_seeded_srht_cache_for_test();
         crate::quant::rabitq::reset_seeded_srht_construction_count_for_test(dimensions);
         let (_, gamma, payload) = dispatch.encode_source(&source).unwrap();
         let prepared = dispatch.prepare_ip_query(&query).unwrap();
         let after_prepare = crate::quant::rabitq::seeded_srht_construction_count_for_test();
 
-        assert_eq!(after_prepare, 2);
+        assert_eq!(after_prepare, 1);
         for _ in 0..8 {
             let _ = dispatch
                 .score_ip_from_parts(&prepared, gamma, &payload)
