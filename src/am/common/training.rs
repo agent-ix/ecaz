@@ -4,6 +4,7 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::quant::{
     grouped_pq::{encode_grouped_pq, nearest_centroid_l2},
+    prod::ProdQuantizer,
     rotation,
 };
 
@@ -101,6 +102,14 @@ pub(crate) fn derive_grouped_pq4_code(source: &[f32], model: &GroupedPq4Model) -
         model.codebooks.iter().map(Vec::as_slice),
         model.group_size,
     )
+}
+
+pub(crate) fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
+    crate::quant::rabitq::persisted_sidecar_word_count(dimensions, bits, seed)
+}
+
+pub(crate) fn derive_persisted_binary_words(quantizer: &ProdQuantizer, code: &[u8]) -> Vec<u64> {
+    crate::quant::rabitq::derive_persisted_sidecar_words(quantizer, code)
 }
 
 fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
