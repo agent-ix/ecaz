@@ -134,6 +134,10 @@ unsafe fn insert_into_trained_index(
     };
     let block_range = live_insert_block_range(&directory)
         .map_err(|e| format!("ec_ivf aminsert found invalid directory: {e}"))?;
+    // Invariant: PostgreSQL calls aminsert with a fresh heap TID for INSERT
+    // and non-HOT UPDATE paths; VACUUM removes any old index entries before
+    // a heap line pointer can be reused. The debug validation helper below
+    // keeps the corruption-check path available without scanning on inserts.
     let posting_tid =
         unsafe { page::append_ivf_posting_to_list_range(index_relation, block_range, &posting) }?;
 

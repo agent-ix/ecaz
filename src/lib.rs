@@ -761,6 +761,7 @@ fn ec_ivf_index_admin_snapshot(
         name!(effective_nprobe, i64),
         name!(effective_nprobe_source, String),
         name!(relation_rerank_width, i32),
+        name!(relation_posting_slack_percent, i32),
         name!(session_rerank_width, Option<i32>),
         name!(effective_rerank_width, i32),
         name!(effective_rerank_width_source, String),
@@ -798,6 +799,7 @@ fn ec_ivf_index_admin_snapshot(
         i64::from(snapshot.effective_nprobe),
         snapshot.effective_nprobe_source.to_owned(),
         snapshot.relation_rerank_width,
+        snapshot.relation_posting_slack_percent,
         snapshot.session_rerank_width,
         snapshot.effective_rerank_width,
         snapshot.effective_rerank_width_source.to_owned(),
@@ -4338,7 +4340,7 @@ mod tests {
         Spi::run(
             "CREATE INDEX ec_ivf_admin_snapshot_idx ON ec_ivf_admin_snapshot USING ec_ivf \
              (embedding ecvector_ip_ops) \
-             WITH (nlists = 4, nprobe = 2, rerank_width = 25, training_sample_rows = 5, seed = 37, storage_format = 'turboquant')",
+             WITH (nlists = 4, nprobe = 2, rerank_width = 25, posting_slack_percent = 25, training_sample_rows = 5, seed = 37, storage_format = 'turboquant')",
         )
         .expect("index creation should succeed");
         Spi::run("INSERT INTO ec_ivf_admin_snapshot VALUES (5, '[1.0,0.2]'::ecvector)")
@@ -4390,6 +4392,14 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("relation rerank width should be non-null"),
+            25
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_posting_slack_percent FROM ec_ivf_index_admin_snapshot('ec_ivf_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation posting slack percent should be non-null"),
             25
         );
         assert!(

@@ -407,6 +407,10 @@ impl BuildState {
                 let slack_pages =
                     posting_slack_pages(posting_pages, self.options.posting_slack_percent)?;
                 if slack_pages > 0 {
+                    // +1 reserves a separator page after the slack range so the
+                    // next list's first insert cannot reuse this list's last
+                    // slack page; the directory tail is the last in-range slack
+                    // block (slack_tail - 1).
                     let (_, slack_tail) = data_pages
                         .append_empty_pages(slack_pages + 1)
                         .expect("positive slack should append pages");

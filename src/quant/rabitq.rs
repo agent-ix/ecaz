@@ -37,6 +37,8 @@
 
 #![allow(dead_code)]
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::quant::prod::ProdQuantizer;
@@ -68,6 +70,32 @@ pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
 /// `√D` puts them roughly in `N(0, 1)`. Clipping at 2σ covers
 /// ~95% of the mass and keeps quantization levels well-utilized.
 const RABITQ_QUANT_CLIP: f32 = 2.0;
+
+#[cfg(test)]
+static SEEDED_SRHT_CONSTRUCTION_COUNT: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+static SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn reset_seeded_srht_construction_count_for_test(dimensions: usize) {
+    SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.store(dimensions, Ordering::Relaxed);
+    SEEDED_SRHT_CONSTRUCTION_COUNT.store(0, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn seeded_srht_construction_count_for_test() -> usize {
+    SEEDED_SRHT_CONSTRUCTION_COUNT.load(Ordering::Relaxed)
+}
+
+pub fn code_len_for(dimensions: usize, bits_per_dim: u8) -> Result<usize, String> {
+    if !RABITQ_SUPPORTED_BITS.contains(&bits_per_dim) {
+        return Err(format!(
+            "RaBitQ bits_per_dim must be one of {:?}, got {}",
+            RABITQ_SUPPORTED_BITS, bits_per_dim,
+        ));
+    }
+    Ok((dimensions * bits_per_dim as usize).div_ceil(8) + RABITQ_SCALAR_LEN)
+}
 
 /// Confidence coefficient on the ε-concentration bound returned in
 /// `DistanceEstimate.bound`. `2.5` ≈ 99% one-sided confidence under
@@ -268,6 +296,10 @@ impl RaBitQQuantizer {
     /// for prod call sites where the seed is recorded in the
     /// index metadata so different indexes get independent rotations.
     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+        #[cfg(test)]
+        if SEEDED_SRHT_CONSTRUCTION_COUNT_DIMENSIONS.load(Ordering::Relaxed) == dimensions {
+            SEEDED_SRHT_CONSTRUCTION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
         Self::with_bits(rotation, bits)
     }
@@ -283,7 +315,9 @@ impl RaBitQQuantizer {
     /// Number of bytes in the packed-levels portion of a code.
     /// At `bits = 1` this is `⌈D/8⌉`; generalizes as `⌈D·bits/8⌉`.
     pub fn packed_bytes(&self) -> usize {
-        (self.dimensions * self.bits_per_dim as usize).div_ceil(8)
+        code_len_for(self.dimensions, self.bits_per_dim)
+            .expect("validated RaBitQ bits should have a code length")
+            - RABITQ_SCALAR_LEN
     }
 
     /// Retained for slice-1 / slice-2 call-site compatibility —
@@ -393,6 +427,7 @@ impl RaBitQQuantizer {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
+            bits_per_dim: self.bits_per_dim,
         }
     }
 
@@ -403,13 +438,9 @@ impl RaBitQQuantizer {
     /// formula remains the q=1 Gaussian-tail form and is
     /// conservative (loose) at q>1.
     pub fn estimate_ip(&self, prepared: &PreparedEstimator, code: &[u8]) -> DistanceEstimate {
-        estimate_ip_impl(
-            &prepared.query_rotated,
-            prepared.query_norm,
-            self.dimensions,
-            self.bits_per_dim,
-            code,
-        )
+        debug_assert_eq!(prepared.dimensions, self.dimensions);
+        debug_assert_eq!(prepared.bits_per_dim, self.bits_per_dim);
+        prepared.estimate_ip(code)
     }
 
     // ---------------------------------------------------------------
@@ -702,6 +733,7 @@ pub struct PreparedEstimator {
     query_rotated: Vec<f32>,
     query_norm: f32,
     dimensions: usize,
+    bits_per_dim: u8,
 }
 
 impl PreparedEstimator {
@@ -710,6 +742,18 @@ impl PreparedEstimator {
     }
     pub fn query_norm(&self) -> f32 {
         self.query_norm
+    }
+    pub fn bits_per_dim(&self) -> u8 {
+        self.bits_per_dim
+    }
+    pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
+        estimate_ip_impl(
+            &self.query_rotated,
+            self.query_norm,
+            self.dimensions,
+            self.bits_per_dim,
+            code,
+        )
     }
 }
 

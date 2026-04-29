@@ -4,7 +4,7 @@ use crate::quant::grouped_pq::{
     build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS,
 };
 use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
-use crate::quant::rabitq::{PreparedEstimator, RaBitQQuantizer};
+use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::rotation;
 use crate::quant::Quantizer;
 use crate::storage::page::ItemPointer;
@@ -243,9 +243,8 @@ impl IvfQuantizer {
                 Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
-                let quantizer = self.rabitq_quantizer()?;
                 let _ = gamma;
-                Ok(quantizer.estimate_ip(prepared_query, payload).estimate)
+                Ok(prepared_query.estimate_ip(payload).estimate)
             }
             (
                 IvfQuantizerProfile::PqFastScan { group_count, .. },
@@ -318,10 +317,8 @@ impl IvfQuantizer {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
             }
             IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
-            IvfQuantizerProfile::RaBitQ => self
-                .rabitq_quantizer()
-                .expect("default RaBitQ configuration should be valid")
-                .code_len(),
+            IvfQuantizerProfile::RaBitQ => code_len_for(self.dimensions, crate::DEFAULT_QUANT_BITS)
+                .expect("default RaBitQ configuration should be valid"),
         }
     }
 
@@ -641,6 +638,30 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.estimate_ip(&direct_prepared, &payload).estimate
+        );
+    }
+
+    #[test]
+    fn rabitq_dispatch_does_not_rebuild_quantizer_while_scoring() {
+        let dimensions = 40;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::RaBitQ, dimensions).unwrap();
+
+        crate::quant::rabitq::reset_seeded_srht_construction_count_for_test(dimensions);
+        let (_, gamma, payload) = dispatch.encode_source(&source).unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+        let after_prepare = crate::quant::rabitq::seeded_srht_construction_count_for_test();
+
+        assert_eq!(after_prepare, 2);
+        for _ in 0..8 {
+            let _ = dispatch
+                .score_ip_from_parts(&prepared, gamma, &payload)
+                .unwrap();
+        }
+        assert_eq!(
+            crate::quant::rabitq::seeded_srht_construction_count_for_test(),
+            after_prepare
         );
     }
 
