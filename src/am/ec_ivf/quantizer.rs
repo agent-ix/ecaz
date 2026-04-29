@@ -325,6 +325,10 @@ impl IvfQuantizer {
         }
     }
 
+    pub(super) fn uses_score_bound_pruning(self) -> bool {
+        matches!(self.profile, IvfQuantizerProfile::PqFastScan { .. })
+    }
+
     fn rabitq_quantizer(self) -> Result<RaBitQQuantizer, String> {
         RaBitQQuantizer::with_seeded_srht_bits(
             self.dimensions,

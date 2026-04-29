@@ -782,7 +782,11 @@ unsafe fn materialize_probe_candidates(
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
-    let mut running_top = pre_rerank_candidate_limit(index_options).map(CandidateTopK::new);
+    let mut running_top = quantizer
+        .uses_score_bound_pruning()
+        .then(|| pre_rerank_candidate_limit(index_options))
+        .flatten()
+        .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
@@ -897,6 +901,8 @@ fn consume_live_tid_budget(
     heap_tid_count: usize,
 ) -> Result<bool, String> {
     if heap_tid_count == 0 {
+        // Empty non-deleted postings are not expected, but do not let one
+        // consume the per-list live-TID budget if a stale page is encountered.
         return Ok(false);
     }
     let remaining = remaining_live_tids_by_list
