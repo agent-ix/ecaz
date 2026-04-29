@@ -245,6 +245,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 .rerank
                 .validate_v1_supported()
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
+            index_options
+                .rerank
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "ec_ivf scan query dimension mismatch: index dim {}, query dim {}",
@@ -778,8 +782,7 @@ unsafe fn materialize_probe_candidates(
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
-    let mut running_top =
-        pre_rerank_candidate_limit(metadata, index_options).map(CandidateTopK::new);
+    let mut running_top = pre_rerank_candidate_limit(index_options).map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
     opaque
@@ -853,19 +856,16 @@ unsafe fn materialize_probe_candidates(
     let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let mut candidates = collect_ranked_probe_candidates(
         best_by_heap_tid.values().copied(),
-        pre_rerank_candidate_limit(metadata, index_options),
+        pre_rerank_candidate_limit(index_options),
     );
-    unsafe { rerank_probe_candidates(scan, metadata, index_options, opaque, &mut candidates) };
+    unsafe { rerank_probe_candidates(scan, index_options, opaque, &mut candidates) };
     Ok(candidates)
 }
 
-fn pre_rerank_candidate_limit(
-    metadata: &super::page::MetadataPage,
-    index_options: &super::options::EcIvfOptions,
-) -> Option<usize> {
+fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> Option<usize> {
     let rerank_width = super::options::resolve_scan_rerank_width(index_options.rerank_width)
         .effective_rerank_width;
-    match metadata.rerank.v1_effective() {
+    match index_options.rerank.v1_effective() {
         super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
@@ -913,12 +913,11 @@ fn consume_live_tid_budget(
 
 unsafe fn rerank_probe_candidates(
     scan: pg_sys::IndexScanDesc,
-    metadata: &super::page::MetadataPage,
     index_options: &super::options::EcIvfOptions,
-    opaque: &EcIvfScanOpaque,
+    opaque: &mut EcIvfScanOpaque,
     candidates: &mut Vec<EcIvfScoredCandidate>,
 ) {
-    match metadata.rerank.v1_effective() {
+    match index_options.rerank.v1_effective() {
         super::options::RerankMode::Auto | super::options::RerankMode::Off => {}
         super::options::RerankMode::HeapF32 => {
             let rerank_width =
@@ -950,7 +949,7 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
 
 unsafe fn rerank_probe_candidates_heap_f32(
     scan: pg_sys::IndexScanDesc,
-    opaque: &EcIvfScanOpaque,
+    opaque: &mut EcIvfScanOpaque,
     candidates: &mut [EcIvfScoredCandidate],
 ) {
     if candidates.is_empty() {
@@ -999,6 +998,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
             scan_query_values(opaque),
             source_vector.as_slice(),
         );
+        opaque.explain_counters.record_rerank_row();
         drop(source_vector);
         unsafe { pg_sys::ExecClearTuple(slot) };
     }

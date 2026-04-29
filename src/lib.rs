@@ -3400,6 +3400,56 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_scan_rerank_uses_current_reloptions() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_altered_rerank (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_altered_rerank VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.7,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-0.7,0.1]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_altered_rerank_idx ON ec_ivf_altered_rerank USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 4,
+                rerank = 'off',
+                rerank_width = 0
+             )",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_altered_rerank_idx");
+        let metadata_rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
+        assert_eq!(metadata_rerank_mode, "off");
+
+        Spi::run(
+            "ALTER INDEX ec_ivf_altered_rerank_idx SET (rerank = 'heap_f32', rerank_width = 2)",
+        )
+        .expect("ALTER INDEX should update relation options");
+
+        let (outputs, _orderby_cleared) =
+            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, vec![1.0, 0.0]) };
+
+        assert_eq!(outputs.len(), 2);
+        let exact_scores = outputs
+            .iter()
+            .map(|(_, _, score)| *score)
+            .collect::<Vec<_>>();
+        assert_eq!(exact_scores, vec![-1.0, -0.7]);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_recall_smoke_compares_exact_hnsw_ivf() {
         let table_name = "ec_ivf_recall_smoke";
         let k = 5;
@@ -5706,7 +5756,13 @@ mod tests {
         Spi::run(
             "CREATE INDEX pg18_explain_ivf_fixture_idx ON pg18_explain_ivf_fixture USING ec_ivf \
              (embedding ecvector_ip_ops) \
-             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4)",
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                rerank = 'heap_f32',
+                rerank_width = 2
+             )",
         )
         .expect("index creation should succeed");
         Spi::run("SET enable_seqscan = off").expect("set should succeed");
@@ -5745,6 +5801,7 @@ mod tests {
             "Heap TIDs Scored",
             "Candidates Scored",
             "Candidates Inserted",
+            "\"Rerank Rows\": 2",
             "Filtered Duplicates",
         ] {
             if !plan.contains(expected) {
