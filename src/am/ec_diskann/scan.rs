@@ -35,6 +35,8 @@ use super::{
     tuple::VamanaNodeTuple,
 };
 use crate::storage::page::ItemPointer;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +80,12 @@ pub struct ScanCandidate {
     pub primary_heaptid: ItemPointer,
     pub score: f32,
     pub emittable: bool,
+}
+
+#[derive(Debug, Clone)]
+struct FrontierEntry {
+    candidate: ScanCandidate,
+    neighbors: Vec<ItemPointer>,
 }
 
 impl PartialEq for ScanCandidate {
@@ -263,33 +271,43 @@ where
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     scratch.clear();
+    scratch.reserve(list_size.saturating_mul(2));
 
     let entry_tuple = reader.read_node(entry_point)?;
     let entry_score = prefilter(&entry_tuple);
-    let mut frontier = vec![ScanCandidate {
+    let entry = ScanCandidate {
         tid: entry_point,
         primary_heaptid: entry_tuple.primary_heaptid,
         score: entry_score,
         emittable: entry_tuple.is_live(),
-    }];
-    scratch.in_frontier.insert(entry_point);
+    };
+
+    let mut frontier: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
+    let mut next_heap: BinaryHeap<Reverse<ScanCandidate>> = BinaryHeap::new();
+    let mut worst_heap: BinaryHeap<ScanCandidate> = BinaryHeap::new();
+    push_frontier_entry(
+        &mut frontier,
+        &mut next_heap,
+        &mut worst_heap,
+        scratch,
+        list_size,
+        entry,
+        neighbors_from_tuple(&entry_tuple),
+    );
 
     loop {
         maybe_check_for_interrupts();
 
-        let next = frontier
-            .iter()
-            .copied()
-            .filter(|c| !scratch.visited.contains(&c.tid))
-            .min_by(|a, b| a.cmp(b));
-        let Some(picked) = next else {
+        let Some(picked) = pop_next_active(&mut next_heap, &frontier, scratch) else {
             break;
         };
         scratch.visited.insert(picked.tid);
 
-        let picked_tuple = reader.read_node(picked.tid)?;
-        let count = picked_tuple.neighbor_count as usize;
-        for &nbr in picked_tuple.neighbors.iter().take(count) {
+        let Some(picked_entry) = frontier.get(&picked.tid) else {
+            continue;
+        };
+        let picked_neighbors = picked_entry.neighbors.clone();
+        for nbr in picked_neighbors {
             if nbr == ItemPointer::INVALID {
                 continue;
             }
@@ -298,26 +316,109 @@ where
             }
             let nbr_tuple = reader.read_node(nbr)?;
             let score = prefilter(&nbr_tuple);
-            frontier.push(ScanCandidate {
+            let candidate = ScanCandidate {
                 tid: nbr,
                 primary_heaptid: nbr_tuple.primary_heaptid,
                 score,
                 emittable: nbr_tuple.is_live(),
-            });
-            scratch.in_frontier.insert(nbr);
-        }
-
-        if frontier.len() > list_size {
-            frontier.sort();
-            for c in &frontier[list_size..] {
-                scratch.in_frontier.remove(&c.tid);
-            }
-            frontier.truncate(list_size);
+            };
+            push_frontier_entry(
+                &mut frontier,
+                &mut next_heap,
+                &mut worst_heap,
+                scratch,
+                list_size,
+                candidate,
+                neighbors_from_tuple(&nbr_tuple),
+            );
         }
     }
 
+    let mut frontier: Vec<ScanCandidate> = frontier
+        .into_values()
+        .map(|entry| entry.candidate)
+        .collect();
     frontier.sort();
     Ok(frontier)
+}
+
+fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
+    tuple
+        .neighbors
+        .iter()
+        .copied()
+        .take(tuple.neighbor_count as usize)
+        .collect()
+}
+
+fn push_frontier_entry(
+    frontier: &mut HashMap<ItemPointer, FrontierEntry>,
+    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
+    worst_heap: &mut BinaryHeap<ScanCandidate>,
+    scratch: &mut VisitedState,
+    list_size: usize,
+    candidate: ScanCandidate,
+    neighbors: Vec<ItemPointer>,
+) {
+    scratch.in_frontier.insert(candidate.tid);
+    frontier.insert(
+        candidate.tid,
+        FrontierEntry {
+            candidate,
+            neighbors,
+        },
+    );
+    next_heap.push(Reverse(candidate));
+    worst_heap.push(candidate);
+
+    while frontier.len() > list_size {
+        let Some(worst) = pop_worst_active(worst_heap, frontier) else {
+            break;
+        };
+        scratch.in_frontier.remove(&worst.tid);
+        frontier.remove(&worst.tid);
+    }
+}
+
+fn pop_next_active(
+    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
+    frontier: &HashMap<ItemPointer, FrontierEntry>,
+    scratch: &VisitedState,
+) -> Option<ScanCandidate> {
+    while let Some(Reverse(candidate)) = next_heap.pop() {
+        if scratch.visited.contains(&candidate.tid) {
+            continue;
+        }
+        if frontier
+            .get(&candidate.tid)
+            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
+        {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn pop_worst_active(
+    worst_heap: &mut BinaryHeap<ScanCandidate>,
+    frontier: &HashMap<ItemPointer, FrontierEntry>,
+) -> Option<ScanCandidate> {
+    while let Some(candidate) = worst_heap.pop() {
+        if frontier
+            .get(&candidate.tid)
+            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
+        {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
+    left.tid == right.tid
+        && left.primary_heaptid == right.primary_heaptid
+        && left.score.to_bits() == right.score.to_bits()
+        && left.emittable == right.emittable
 }
 
 #[cfg(test)]
