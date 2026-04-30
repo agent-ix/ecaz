@@ -74,7 +74,7 @@ pub struct BuildProbeArgs {
     #[arg(long)]
     pub frontier_query_id: Option<i64>,
     /// Prefilter to use for frontier diagnostics.
-    #[arg(long, default_value_t = FrontierPrefilter::GroupedPq)]
+    #[arg(long, default_value = "grouped-pq")]
     pub frontier_prefilter: FrontierPrefilter,
     /// Number of pre-rerank frontier IDs to print.
     #[arg(long, default_value_t = 20)]
