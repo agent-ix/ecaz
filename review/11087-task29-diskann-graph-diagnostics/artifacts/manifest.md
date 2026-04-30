@@ -1,7 +1,7 @@
 # Artifact Manifest: Task 29 DiskANN Graph Diagnostics
 
 Head SHA: `c09ab1674de347216f46aafb4d08df294c3a9285`
-Packet: `679-c1-task29-diskann-graph-diagnostics`
+Packet: `11087-task29-diskann-graph-diagnostics`
 Timestamp: `2026-04-29T17:35:08-07:00`
 
 Lane: Task 29 DiskANN initial tuning
@@ -19,7 +19,7 @@ latency sweeps on the same local cluster.
 Command:
 
 ```text
-cargo run -p ecaz-cli -- --database postgres dev sql --pg 18 --db task29_diskann_baseline --raw --sql "SELECT count(*) FROM pg_proc WHERE proname = 'ec_diskann_index_graph_summary';" --log-output review/679-c1-task29-diskann-graph-diagnostics/artifacts/check-function-before.log
+cargo run -p ecaz-cli -- --database postgres dev sql --pg 18 --db task29_diskann_baseline --raw --sql "SELECT count(*) FROM pg_proc WHERE proname = 'ec_diskann_index_graph_summary';" --log-output review/11087-task29-diskann-graph-diagnostics/artifacts/check-function-before.log
 ```
 
 Key result:
@@ -41,7 +41,7 @@ benchmark database without disturbing loaded corpus tables.
 Command:
 
 ```text
-cargo run -p ecaz-cli -- --database postgres dev sql --pg 18 --db task29_diskann_baseline --raw --file review/679-c1-task29-diskann-graph-diagnostics/artifacts/install-diskann-graph-summary.sql --log-output review/679-c1-task29-diskann-graph-diagnostics/artifacts/install-diskann-graph-summary.log
+cargo run -p ecaz-cli -- --database postgres dev sql --pg 18 --db task29_diskann_baseline --raw --file review/11087-task29-diskann-graph-diagnostics/artifacts/install-diskann-graph-summary.sql --log-output review/11087-task29-diskann-graph-diagnostics/artifacts/install-diskann-graph-summary.log
 ```
 
 Key result:
@@ -55,7 +55,7 @@ CREATE FUNCTION
 Command:
 
 ```text
-cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database task29_diskann_baseline bench diskann-graph --prefix task29_diskann_real10k --log-output review/679-c1-task29-diskann-graph-diagnostics/artifacts/graph-diskann-baseline.log
+cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database task29_diskann_baseline bench diskann-graph --prefix task29_diskann_real10k --log-output review/11087-task29-diskann-graph-diagnostics/artifacts/graph-diskann-baseline.log
 ```
 
 Key result lines:
@@ -81,7 +81,7 @@ in degree: zero=1 min=0 avg=22.782200 p50=21 p95=41 p99=59 max=3800
 Command:
 
 ```text
-cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database task29_diskann_baseline bench diskann-graph --prefix task29_diskann_prior_real10k --log-output review/679-c1-task29-diskann-graph-diagnostics/artifacts/graph-diskann-prior.log
+cargo run -p ecaz-cli -- --host /home/peter/.pgrx --port 28818 --database task29_diskann_baseline bench diskann-graph --prefix task29_diskann_prior_real10k --log-output review/11087-task29-diskann-graph-diagnostics/artifacts/graph-diskann-prior.log
 ```
 
 Key result lines:
