@@ -396,7 +396,7 @@ fn log_ambuild_empty_timing(
     heap_scan_elapsed: Duration,
     total_elapsed: Duration,
 ) {
-    pgrx::log!(
+    pgrx::notice!(
         "ec_diskann_ambuild_timing index={} phase=empty heap_tuples={} scanned_tuples={} heap_scan_ms={} total_ms={}",
         index_name,
         heap_tuples,
@@ -415,7 +415,7 @@ fn log_ambuild_timing(
     flush: &BuildFlushTiming,
     total_elapsed: Duration,
 ) {
-    pgrx::log!(
+    pgrx::notice!(
         "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
         index_name,
         heap_tuples,
