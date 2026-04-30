@@ -1247,6 +1247,7 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
     let BuildOutput {
         mut metadata,
         persisted,
+        ..
     } = build_and_persist_vamana(params, &payloads, |_, _| 0.0)?;
     let mut chain = persisted.chain;
     let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;

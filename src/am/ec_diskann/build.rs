@@ -30,8 +30,11 @@ use crate::am::ec_diskann::page::{
     PAYLOAD_FLAG_GROUPED_SEARCH_CODE, VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
 };
 use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload, PersistedGraph};
-use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph};
+use crate::am::ec_diskann::vamana::{
+    approximate_medoid, build_vamana_graph_with_stats, VamanaBuildStats,
+};
 use crate::storage::page::ItemPointer;
+use std::time::Instant;
 
 /// Capped sample size for the medoid approximation. Mirrors the
 /// pgvectorscale heuristic; large enough to be representative for
@@ -109,6 +112,15 @@ impl BuildParams {
 pub struct BuildOutput {
     pub metadata: VamanaMetadataPage,
     pub persisted: PersistedGraph,
+    pub build_stats: VamanaBuildStats,
+    pub core_timing: BuildCoreTiming,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BuildCoreTiming {
+    pub medoid_ms: u128,
+    pub graph_ms: u128,
+    pub persist_ms: u128,
 }
 
 /// Drive medoid → build → persist → metadata-page assembly.
@@ -148,9 +160,12 @@ where
         return Err("dimensions must be > 0".into());
     }
 
+    let medoid_started = Instant::now();
     let medoid = approximate_medoid(n, MEDOID_SAMPLE_CAP, params.seed, build_dist);
+    let medoid_ms = medoid_started.elapsed().as_millis();
 
-    let graph = build_vamana_graph(
+    let graph_started = Instant::now();
+    let (graph, build_stats) = build_vamana_graph_with_stats(
         n,
         medoid,
         params.graph_degree_r as usize,
@@ -159,10 +174,12 @@ where
         params.seed,
         build_dist,
     );
+    let graph_ms = graph_started.elapsed().as_millis();
 
     let w = params.binary_word_count();
     let c = params.search_code_len();
 
+    let persist_started = Instant::now();
     let persisted = persist_vamana_graph(
         &graph,
         medoid,
@@ -172,6 +189,7 @@ where
         w,
         c,
     )?;
+    let persist_ms = persist_started.elapsed().as_millis();
 
     let metadata = VamanaMetadataPage {
         format_version: INDEX_FORMAT_V3_DISKANN,
@@ -197,6 +215,12 @@ where
     Ok(BuildOutput {
         metadata,
         persisted,
+        build_stats,
+        core_timing: BuildCoreTiming {
+            medoid_ms,
+            graph_ms,
+            persist_ms,
+        },
     })
 }
 

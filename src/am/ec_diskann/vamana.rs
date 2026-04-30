@@ -19,6 +19,7 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::{cell::Cell, time::Instant};
 
 /// In-memory adjacency list. `neighbors[i]` is the out-edge set of node `i`.
 ///
@@ -94,6 +95,15 @@ fn percentile(sorted: &[usize], p: f64) -> usize {
 pub struct VamanaBuildPassStats {
     pub alpha: f32,
     pub pivot_count: usize,
+    pub elapsed_ms: u128,
+    pub greedy_search_ms: u128,
+    pub candidate_pool_ms: u128,
+    pub robust_prune_ms: u128,
+    pub backlink_ms: u128,
+    pub greedy_distance_calls: usize,
+    pub candidate_pool_distance_calls: usize,
+    pub robust_prune_distance_calls: usize,
+    pub backlink_distance_calls: usize,
     pub visited: MetricSummary,
     pub existing_neighbors: MetricSummary,
     pub candidate_pool: MetricSummary,
@@ -449,6 +459,7 @@ where
     let mut passes = Vec::with_capacity(2);
 
     for (pass_index, &alpha) in [1.0f32, alpha_final].iter().enumerate() {
+        let pass_started = Instant::now();
         // Re-shuffle each pass so insertion order is independent.
         for i in (1..permutation.len()).rev() {
             let j = rng.gen_range(0..=i);
@@ -461,6 +472,14 @@ where
         let mut selected_neighbor_counts = Vec::with_capacity(permutation.len());
         let mut backlinks_added = 0usize;
         let mut reprunes = 0usize;
+        let mut greedy_search_ms = 0u128;
+        let mut candidate_pool_ms = 0u128;
+        let mut robust_prune_ms = 0u128;
+        let mut backlink_ms = 0u128;
+        let greedy_distance_calls = Cell::new(0usize);
+        let candidate_pool_distance_calls = Cell::new(0usize);
+        let robust_prune_distance_calls = Cell::new(0usize);
+        let backlink_distance_calls = Cell::new(0usize);
 
         for &i in &permutation {
             // Greedy search from medoid toward i; collect visited set
@@ -468,15 +487,24 @@ where
             // Vamana's RobustPrune folds the old neighborhood into
             // the fresh visited set so later passes refine, rather
             // than replace, prior graph structure.
-            let result = greedy_search(&graph, medoid, list_size, |n| dist(n, i));
+            let greedy_started = Instant::now();
+            let result = greedy_search(&graph, medoid, list_size, |n| {
+                greedy_distance_calls.set(greedy_distance_calls.get() + 1);
+                dist(n, i)
+            });
+            greedy_search_ms += greedy_started.elapsed().as_millis();
             let visited_count = result.visited.len();
             let existing_neighbor_count = graph.neighbors[i as usize].len();
+            let candidate_pool_started = Instant::now();
             let mut candidates = candidate_pool_for_prune(
                 i,
                 result.visited,
                 graph.neighbors[i as usize].iter().copied(),
                 node_count,
-                dist,
+                |node, pivot| {
+                    candidate_pool_distance_calls.set(candidate_pool_distance_calls.get() + 1);
+                    dist(node, pivot)
+                },
             );
             if pass_index == 0 {
                 if let Some(extra) = pass1_extra_candidates.get(i as usize) {
@@ -485,16 +513,27 @@ where
                         &mut candidates,
                         extra.iter().copied(),
                         node_count,
-                        dist,
+                        |node, pivot| {
+                            candidate_pool_distance_calls
+                                .set(candidate_pool_distance_calls.get() + 1);
+                            dist(node, pivot)
+                        },
                     );
                 }
             }
+            candidate_pool_ms += candidate_pool_started.elapsed().as_millis();
             let candidate_count = candidates.len();
 
-            let pruned = robust_prune(i, candidates, alpha, max_degree, dist);
+            let robust_prune_started = Instant::now();
+            let pruned = robust_prune(i, candidates, alpha, max_degree, |left, right| {
+                robust_prune_distance_calls.set(robust_prune_distance_calls.get() + 1);
+                dist(left, right)
+            });
+            robust_prune_ms += robust_prune_started.elapsed().as_millis();
             let selected_count = pruned.len();
             graph.neighbors[i as usize] = pruned.clone();
 
+            let backlink_started = Instant::now();
             for j in pruned {
                 let neighbors_j = &mut graph.neighbors[j as usize];
                 if neighbors_j.contains(&i) {
@@ -511,15 +550,22 @@ where
                         .chain(std::iter::once(i))
                         .map(|n| Candidate {
                             node: n,
-                            distance: dist(j, n),
+                            distance: {
+                                backlink_distance_calls.set(backlink_distance_calls.get() + 1);
+                                dist(j, n)
+                            },
                         })
                         .collect();
                     combined.sort();
-                    let repruned = robust_prune(j, combined, alpha, max_degree, dist);
+                    let repruned = robust_prune(j, combined, alpha, max_degree, |left, right| {
+                        robust_prune_distance_calls.set(robust_prune_distance_calls.get() + 1);
+                        dist(left, right)
+                    });
                     graph.neighbors[j as usize] = repruned;
                     reprunes += 1;
                 }
             }
+            backlink_ms += backlink_started.elapsed().as_millis();
 
             visited_counts.push(visited_count);
             existing_neighbor_counts.push(existing_neighbor_count);
@@ -530,6 +576,15 @@ where
         passes.push(VamanaBuildPassStats {
             alpha,
             pivot_count: permutation.len(),
+            elapsed_ms: pass_started.elapsed().as_millis(),
+            greedy_search_ms,
+            candidate_pool_ms,
+            robust_prune_ms,
+            backlink_ms,
+            greedy_distance_calls: greedy_distance_calls.get(),
+            candidate_pool_distance_calls: candidate_pool_distance_calls.get(),
+            robust_prune_distance_calls: robust_prune_distance_calls.get(),
+            backlink_distance_calls: backlink_distance_calls.get(),
             visited: MetricSummary::from_values(&visited_counts),
             existing_neighbors: MetricSummary::from_values(&existing_neighbor_counts),
             candidate_pool: MetricSummary::from_values(&candidate_pool_counts),

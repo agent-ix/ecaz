@@ -73,6 +73,30 @@ struct BuildFlushTiming {
     metadata_ms: u128,
     total_ms: u128,
     data_pages: usize,
+    core_medoid_ms: u128,
+    core_graph_ms: u128,
+    core_persist_ms: u128,
+    build_passes: Vec<BuildPassTimingSummary>,
+}
+
+#[derive(Debug, Clone)]
+struct BuildPassTimingSummary {
+    pass: usize,
+    alpha: f32,
+    elapsed_ms: u128,
+    greedy_search_ms: u128,
+    candidate_pool_ms: u128,
+    robust_prune_ms: u128,
+    backlink_ms: u128,
+    greedy_distance_calls: usize,
+    candidate_pool_distance_calls: usize,
+    robust_prune_distance_calls: usize,
+    backlink_distance_calls: usize,
+    visited_mean: f64,
+    visited_p95: usize,
+    candidate_pool_mean: f64,
+    candidate_pool_p95: usize,
+    reprunes: usize,
 }
 
 impl BuildState {
@@ -344,7 +368,35 @@ unsafe fn flush_build_state(
     let BuildOutput {
         metadata,
         persisted,
+        build_stats,
+        core_timing,
     } = build_out;
+    timing.core_medoid_ms = core_timing.medoid_ms;
+    timing.core_graph_ms = core_timing.graph_ms;
+    timing.core_persist_ms = core_timing.persist_ms;
+    timing.build_passes = build_stats
+        .passes
+        .iter()
+        .enumerate()
+        .map(|(pass, stats)| BuildPassTimingSummary {
+            pass,
+            alpha: stats.alpha,
+            elapsed_ms: stats.elapsed_ms,
+            greedy_search_ms: stats.greedy_search_ms,
+            candidate_pool_ms: stats.candidate_pool_ms,
+            robust_prune_ms: stats.robust_prune_ms,
+            backlink_ms: stats.backlink_ms,
+            greedy_distance_calls: stats.greedy_distance_calls,
+            candidate_pool_distance_calls: stats.candidate_pool_distance_calls,
+            robust_prune_distance_calls: stats.robust_prune_distance_calls,
+            backlink_distance_calls: stats.backlink_distance_calls,
+            visited_mean: stats.visited.mean,
+            visited_p95: stats.visited.p95,
+            candidate_pool_mean: stats.candidate_pool.mean,
+            candidate_pool_p95: stats.candidate_pool.p95,
+            reprunes: stats.reprunes,
+        })
+        .collect();
     let mut chain = persisted.chain;
     timing.data_pages = chain.pages().len();
     let binary_word_count = params.binary_word_count();
@@ -415,8 +467,30 @@ fn log_ambuild_timing(
     flush: &BuildFlushTiming,
     total_elapsed: Duration,
 ) {
+    for pass in &flush.build_passes {
+        pgrx::notice!(
+            "ec_diskann_vamana_pass_timing index={} pass={} alpha={} elapsed_ms={} greedy_search_ms={} candidate_pool_ms={} robust_prune_ms={} backlink_ms={} greedy_distance_calls={} candidate_pool_distance_calls={} robust_prune_distance_calls={} backlink_distance_calls={} visited_mean={:.2} visited_p95={} candidate_pool_mean={:.2} candidate_pool_p95={} reprunes={}",
+            index_name,
+            pass.pass,
+            pass.alpha,
+            pass.elapsed_ms,
+            pass.greedy_search_ms,
+            pass.candidate_pool_ms,
+            pass.robust_prune_ms,
+            pass.backlink_ms,
+            pass.greedy_distance_calls,
+            pass.candidate_pool_distance_calls,
+            pass.robust_prune_distance_calls,
+            pass.backlink_distance_calls,
+            pass.visited_mean,
+            pass.visited_p95,
+            pass.candidate_pool_mean,
+            pass.candidate_pool_p95,
+            pass.reprunes
+        );
+    }
     pgrx::notice!(
-        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
         index_name,
         heap_tuples,
         scanned_tuples,
@@ -428,6 +502,9 @@ fn log_ambuild_timing(
         flush.sidecar_setup_ms,
         flush.payload_derivation_ms,
         flush.build_persist_ms,
+        flush.core_medoid_ms,
+        flush.core_graph_ms,
+        flush.core_persist_ms,
         flush.overflow_ms,
         flush.codebook_ms,
         flush.write_pages_ms,
