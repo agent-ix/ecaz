@@ -1,7 +1,37 @@
 # Task 29: DiskANN Initial Tuning Lane
 
-Status: planned follow-up after task 28
+Status: **in-progress** — Phase 3 split into 29a/29b/29c follow-ups
 Owner: coder1 / runtime-index track
+
+## Follow-up tasks
+
+- **Task 29a — binary-sidecar prefilter swap** (LANDED on branch).
+  `plan/tasks/29a-diskann-binary-sidecar-prefilter.md`. Closed the
+  scan-path recall ceiling. Recall@10 went from ~0.93 to 0.997 at
+  default reloptions on real-10k. Latency cleanup followed in the
+  same lane via heap-frontier and early-stop scan changes. Packets:
+  `11096`, `11097`, `11098`.
+- **Task 29b — cleanup and vacuum consistency** (planned, blocks
+  merge). `plan/tasks/29b-diskann-cleanup-and-vacuum-consistency.md`.
+  Wires the binary sidecar into vacuum-repair candidate scoring,
+  finalizes the `ec_diskann.prefilter_kind` GUC as a production
+  rollback knob, adds the missing pgrx test, verifies SIMD codegen
+  on `hamming_xor_popcount`, and tightens code shape. Grouped-PQ
+  stays — it is shared infrastructure with `ec_hnsw` / `ec_ivf` and
+  remains the GUC-controlled rollback path.
+- **Task 29c — build performance** (planned, gates landing
+  decision). `plan/tasks/29c-diskann-build-perf.md`. Measurement-
+  first profile of the in-memory-replay vs full-ambuild gap (~73 s
+  vs ~492 s on real-10k), reference comparison vs `ec_hnsw` and
+  pgvectorscale DiskANN, defensible landing recommendation. Stop
+  condition tied to diminishing returns. Task 29d (parallel build)
+  is conditional and only opens if Phase 3 of 29c says single-
+  process is not landable. (Note: Task 26 covers parallel build for
+  `ec_hnsw` only — it does not cover DiskANN.)
+
+The current landing-readiness packet is
+`review/11099-task29-diskann-landing-readiness/` with the merge
+review feedback in `review/11099-.../feedback.md`.
 
 ## Goal
 
