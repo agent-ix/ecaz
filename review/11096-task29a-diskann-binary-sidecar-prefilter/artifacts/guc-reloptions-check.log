@@ -1,0 +1,4 @@
+LOAD
+-1
+auto
+task29_diskann_real10k_idx	{graph_degree=32,build_list_size=100,alpha=1.2}
