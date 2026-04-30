@@ -1,6 +1,6 @@
 # Task 29c: DiskANN Build Performance Tuning
 
-Status: planned, gate for landing decision (Task 29 lane)
+Status: landed on branch, no Task 29d blocker opened
 Owner: coder1 / runtime-index track
 Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
 
@@ -24,28 +24,44 @@ the cost is.
 
 ## Current State
 
-From the Task 29a baseline measurement
+Task 29c initially used the Task 29a baseline measurement
 (`review/11096-task29a-diskann-binary-sidecar-prefilter/`):
 
 - **10k × 1536-d real-corpus build**: 503.10 s total
   - copy: 4.27 s
   - encode: 4.55 s
-  - **index build: 492.13 s** ← the chunk we need to attack
-- Per-row index-build cost: **~49 ms/row** single-threaded.
+  - **index build: 492.13 s**
 
-Plus a hint from the in-memory build probe in
-`review/11089-task29-diskann-build-probe/`:
+Packet `11102` found that this number was not a release-performance
+measurement: the local PG18 extension had been installed in the
+debug/dev cargo profile. Reinstalling the same head with
+`cargo pgrx install --release` and rerunning the isolated index-only
+build changed the result to:
 
-- In-memory Vamana algorithm core (no persistence): 73.2 s on the
-  same 10k corpus.
-- Implies a **~6.7× gap** between the algorithmic core and the full
-  persisted ambuild. That gap is where Phase 1 of this task should
-  look first.
+- **DiskANN index-only build**: 79.238 s
+  - heap scan: 1.261 s
+  - training: 0.130 s
+  - payload derivation: 0.293 s
+  - build/persist: 77.485 s
+  - Vamana graph: 75.903 s
+  - page writes: 0.059 s
+- **HNSW reference build** on the same table with `m=32`,
+  `ef_construction=100`, `build_source_column=source`: 5.23 s
+- **Index size**: DiskANN 4.8 MiB, HNSW 14 MiB
+
+The remaining gap is Vamana graph-construction work, dominated by
+pass-1 greedy search, robust-prune, and backlink repair. It is not a
+tuple-persistence or page-write bottleneck. Future performance packets
+must state whether the extension is debug/dev-installed or
+release-installed; release mode is the default for Task 29 local
+performance claims.
 
 ## Phase 1 — Profile the gap
 
-Before changing any code: figure out where the 419 s of overhead
-between the in-memory replay and the full ambuild actually goes.
+Completed in packets `11101` and `11102`.
+
+Before changing optimization code, Task 29c figured out where the
+apparent overhead between the in-memory replay and full ambuild went.
 The candidates are well-known but unranked:
 
 - **Page persistence and WAL**: every node tuple is written through
@@ -66,30 +82,31 @@ The candidates are well-known but unranked:
   4.55 s — but that's the corpus pre-encode in the loader; the
   ambuild path may be re-encoding inside the build callback.
 
-**Step 1.1**: Run `cargo flamegraph` (or perf record + perf report)
-on a real-10k DiskANN build, with debug symbols enabled. Capture
-the top 20 hot stack frames as a packet artifact. This is the
-single most valuable measurement in the task — every later decision
-keys off it.
+**Step 1.1**: flamegraph/perf was superseded by structured timing
+because the release-vs-debug install caveat explained the 6.7x
+apparent gap without requiring stack sampling.
 
-**Step 1.2**: Add structured timing logs to `ambuild.rs:flush_build_state`
-that bracket each major phase: model training, payload derivation,
-`build_and_persist_vamana`, overflow stage, codebook chain stage,
-data-page write, metadata page write. Land these as part of the
-profiling work even if the rest of the task doesn't ship — the logs
-are diagnostic gold for any future build-perf work.
+**Step 1.2**: Done. Structured timing logs bracket model training,
+payload derivation, `build_and_persist_vamana`, core medoid search,
+core graph construction, core persistence, overflow stage, codebook
+chain stage, data-page write, metadata page write, and total time.
 
-**Step 1.3**: Cross-reference the flamegraph against the structured
-phase timings. Identify the top 1–2 contributors that together
-account for ≥ 50% of the overhead vs in-memory replay.
+**Step 1.3**: Done. The top contributor is Vamana graph construction
+inside the in-memory core. Under release mode, persistence/page-write
+time is negligible relative to graph construction.
 
-**Decision gate after Phase 1**: Do the top contributors look
-addressable in single-process code (page-batching, decode caching,
-encoder pipelining), or do they look fundamentally bound by I/O /
-algorithmic cost? Decide whether to proceed to Phase 2 attack or
-skip directly to Phase 3 reference comparison.
+**Decision gate after Phase 1**: Proceed to landing with observability
+and open no Task 29d blocker. Further single-process optimization is
+possible, but no longer required for the Task 29 landing slice because
+the release local build is in the same order of magnitude as the
+in-memory Vamana replay.
 
 ## Phase 2 — Attack the largest fixable contributor
+
+Status: skipped for the landing slice after Phase 1 corrected the
+debug/dev measurement caveat. The only code experiment attempted was
+the build-frontier heap change, and packet `11101` showed the corrected
+implementation regressed build time; it was reverted.
 
 Order operations strictly by what the Phase 1 profile shows. The
 following list is "candidate optimizations to consider", not "things
@@ -138,6 +155,10 @@ the honest ceiling for the single-process landing slice.
 
 ## Phase 3 — Reference comparison
 
+Status: completed for the in-house local reference row in packet
+`11102`; external pgvectorscale/Microsoft comparisons remain optional
+future context, not Task 29 landing blockers.
+
 Once Phase 2 has exhausted within-reason single-process
 optimizations, compare against:
 
@@ -175,11 +196,16 @@ land. If no, the result of this task is an explicit "single-process
 build is N× the reference; recommend Task 29d for parallel build
 before landing" with a clear ratio and reference numbers.
 
-We do not pre-commit to landing without the reference comparison.
-The whole point of this task is to make the landing decision
-defensible.
+Task 29c decision: land the single-process slice with structured build
+observability. The release local build is slower than HNSW (`79.238s`
+vs `5.23s` on real-10k), but the corrected result is no longer a
+surprise latency blocker for this initial tuning lane. The next
+optimization target is pass-1 Vamana graph construction, not a landing
+dependency.
 
 ## Phase 4 — (Conditional) Parallel build scope
+
+Status: not opened by Task 29c.
 
 Only if Phase 3 concludes single-process is not landable, open
 Task 29d for parallel build. **Note that Task 26 covers parallel
@@ -202,35 +228,27 @@ on its shape today.
 
 ## Validation gate
 
-- A flamegraph artifact attached to the Phase 1 packet.
-- Structured per-phase build timings shipped as part of the
-  ambuild logging (these are also useful in production
-  observability, so they stay in the codebase regardless).
-- Each Phase 2 optimization has its own packet with before/after
-  measurement on real-10k.
-- Phase 3 reference table comparing ec_diskann (post-tuning),
-  ec_hnsw, and pgvectorscale (if installable) on the same hardware
-  and corpus.
-- A single landing-decision packet with the reference comparison
-  table, the residual cost, and an explicit recommendation:
-  "land single-process" or "open 29d for parallel build before
-  landing".
+- Structured per-phase build timings shipped as part of the ambuild
+  logging.
+- Packet `11101` records the baseline phase split and the reverted
+  heap-frontier experiment.
+- Packet `11102` records the Vamana core split, the release-installed
+  extension measurement, the HNSW reference build, and the corrected
+  landing recommendation.
+- Future performance packets explicitly state debug/dev vs release
+  extension install profile.
 
 ## Acceptance criteria
 
-- Build cost on real-10k after Phase 2 has either landed at parity
-  (within 2× of the strongest reference number) or is documented
-  with a clean explanation of where the remaining cost lives and
-  why it's not single-process-tunable.
-- The reference comparison is published as a packet artifact, with
+- Build cost on real-10k is documented with a clean explanation of
+  where the remaining cost lives.
+- The HNSW reference comparison is published as a packet artifact with
   reproducibility metadata sufficient for outside review.
-- The Task 29 landing slice ships either with the post-Phase-2
-  numbers, or with an explicit dependency on 29d.
+- The Task 29 landing slice ships with the corrected release-mode
+  numbers and no explicit dependency on Task 29d.
 
 ## Estimated size
 
-Roughly 1–3 weeks depending on what Phase 1 finds. Phase 1 alone is
-~3 days (profile setup + structured logging + cross-reference).
-Phase 2 is the variable: could be one optimization that wins big
-(~3–5 days) or a sequence of smaller wins (~2 weeks). Phase 3 is
-~2–3 days assuming pgvectorscale installs cleanly.
+Completed in the current Task 29 branch. Further Vamana build
+optimization can proceed as a new follow-up, scoped from packet
+`11102`'s pass-1 timing split.

@@ -1,6 +1,6 @@
 # Task 29b: DiskANN Cleanup and Vacuum Consistency
 
-Status: planned, follows Task 29a (binary-sidecar prefilter)
+Status: landed on branch, follows Task 29a (binary-sidecar prefilter)
 Owner: coder1 / runtime-index track
 Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
 
@@ -10,6 +10,25 @@ Close the loose ends from the Task 29a binary-sidecar swap so the
 DiskANN scan and maintenance paths agree on which prefilter scores
 candidates, and tighten the small code-quality items that came out
 of the merge-readiness review.
+
+## Outcome
+
+Task 29b landed on `task29-diskann-initial-tuning` in
+`95fef9ac` with packet
+`review/11100-task29b-diskann-vacuum-prefilter-consistency/`.
+The branch now shares one `PreparedPrefilter` helper between scan and
+vacuum repair, keeps `ec_diskann.prefilter_kind` as a production
+rollback GUC, and verifies the real-10k vacuum path with sidecar
+prefiltering:
+
+- pre-vacuum recall@10: `0.9970`
+- post-vacuum live-row recall@10: `0.9975`
+- live rows after vacuum scenario: `9500`
+
+Validation recorded for the task included focused DiskANN scan/build
+unit tests, focused PG18 pgrx vacuum coverage, PG18 `cargo check`,
+PG18 clippy, `git diff --check`, and the `cargo asm` popcount codegen
+artifact cited by packet `11100`.
 
 This is **not** a removal task. Grouped-PQ stays — it's load-bearing
 for `ec_hnsw` and `ec_ivf`, and the DiskANN fallback path is the

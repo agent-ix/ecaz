@@ -1,6 +1,6 @@
 # Task 29: DiskANN Initial Tuning Lane
 
-Status: **in-progress** — Phase 3 split into 29a/29b/29c follow-ups
+Status: **landing-ready locally** — Phase 3 split into 29a/29b/29c follow-ups
 Owner: coder1 / runtime-index track
 
 ## Follow-up tasks
@@ -11,27 +11,29 @@ Owner: coder1 / runtime-index track
   default reloptions on real-10k. Latency cleanup followed in the
   same lane via heap-frontier and early-stop scan changes. Packets:
   `11096`, `11097`, `11098`.
-- **Task 29b — cleanup and vacuum consistency** (planned, blocks
-  merge). `plan/tasks/29b-diskann-cleanup-and-vacuum-consistency.md`.
+- **Task 29b — cleanup and vacuum consistency** (LANDED on branch).
+  `plan/tasks/29b-diskann-cleanup-and-vacuum-consistency.md`.
   Wires the binary sidecar into vacuum-repair candidate scoring,
   finalizes the `ec_diskann.prefilter_kind` GUC as a production
   rollback knob, adds the missing pgrx test, verifies SIMD codegen
   on `hamming_xor_popcount`, and tightens code shape. Grouped-PQ
   stays — it is shared infrastructure with `ec_hnsw` / `ec_ivf` and
-  remains the GUC-controlled rollback path.
-- **Task 29c — build performance** (planned, gates landing
-  decision). `plan/tasks/29c-diskann-build-perf.md`. Measurement-
-  first profile of the in-memory-replay vs full-ambuild gap (~73 s
-  vs ~492 s on real-10k), reference comparison vs `ec_hnsw` and
-  pgvectorscale DiskANN, defensible landing recommendation. Stop
-  condition tied to diminishing returns. Task 29d (parallel build)
-  is conditional and only opens if Phase 3 of 29c says single-
-  process is not landable. (Note: Task 26 covers parallel build for
-  `ec_hnsw` only — it does not cover DiskANN.)
+  remains the GUC-controlled rollback path. Packet: `11100`.
+- **Task 29c — build performance** (LANDED on branch; no Task 29d
+  blocker opened). `plan/tasks/29c-diskann-build-perf.md`.
+  Structured build timing showed the apparent ~492 s real-10k build
+  was a debug/dev-installed extension artifact. The same head with a
+  release-installed extension built the isolated real-10k DiskANN
+  index in `79.238s`; the remaining cost is Vamana graph
+  construction, not tuple persistence or page writes. Reference
+  `ec_hnsw` on the same table with `m=32`, `ef_construction=100`
+  built in `5.23s`. Packets: `11101`, `11102`.
 
-The current landing-readiness packet is
-`review/11099-task29-diskann-landing-readiness/` with the merge
-review feedback in `review/11099-.../feedback.md`.
+The current landing-readiness packets are
+`review/11099-task29-diskann-landing-readiness/`,
+`review/11100-task29b-diskann-vacuum-prefilter-consistency/`, and
+`review/11102-task29c-vamana-core-profile/`. Merge-readiness feedback
+is in `review/11099-.../feedback.md`.
 
 ## Goal
 
