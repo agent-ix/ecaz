@@ -264,15 +264,35 @@ where
     candidates.sort();
 
     let mut result: Vec<u32> = Vec::with_capacity(max_degree);
-    while !candidates.is_empty() && result.len() < max_degree {
-        let pivot_star = candidates.remove(0);
+    let mut active = vec![true; candidates.len()];
+    let mut remaining = candidates.len();
+    let mut cursor = 0usize;
+    while remaining > 0 && result.len() < max_degree {
+        while cursor < active.len() && !active[cursor] {
+            cursor += 1;
+        }
+        if cursor == active.len() {
+            break;
+        }
+
+        let pivot_star = candidates[cursor];
+        active[cursor] = false;
+        remaining -= 1;
         result.push(pivot_star.node);
-        candidates.retain(|v| {
+
+        for idx in cursor + 1..candidates.len() {
+            if !active[idx] {
+                continue;
+            }
+            let v = candidates[idx];
             // Keep v iff α · d(p*, v) > d(p, v) — i.e. v is not
             // α-dominated by p*. Using <= for the drop side so that
             // exact ties prune, matching pgvectorscale behavior.
-            alpha * dist(pivot_star.node, v.node) > v.distance
-        });
+            if alpha * dist(pivot_star.node, v.node) <= v.distance {
+                active[idx] = false;
+                remaining -= 1;
+            }
+        }
     }
     result
 }
