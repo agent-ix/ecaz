@@ -1,0 +1,88 @@
+Script started on 2026-04-30 10:08:29-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/tqvector/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features" "test_ec_diskann_"
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.25s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-3d11a5718d3f4774)
+
+running 19 tests
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.22s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m376[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m373[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.37s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_noop_stats_on_empty_index ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_empty_index_remains_planner_gated ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_unique_insert_is_scan_reachable ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_after_append_binds_existing_node ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_insert_binds_first_overflow_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_session_list_size_override_changes_scan_width ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_empty_index_bootstrap_insert_executes ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_bind_grows_second_overflow_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_sql_ordered_index_scan_executes ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_sql_limit_can_exceed_reloption_top_k ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_planner_prefers_seqscan_for_small_tables ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_promotes_duplicate_overflow_primary ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_unlinks_and_tombstones_dead_node ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_build_coalesces_duplicate_vectors ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_sets_medoid_refresh_flag ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_refills_broken_neighbor_slot ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_full_backlink_rewrite_keeps_insert_reachable ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_replans_on_stale_repair_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_planner_chooses_index_scan_for_large_table ... [32mok(B[m
+
+test result: [32mok(B[m. 19 passed; 0 failed; 0 ignored; 0 measured; 860 filtered out; finished in 53.45s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-cfb31e03a6ead0fb)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-0359b21cdc889c57)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-ef8a971c55b1680e)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-83e2a09f4a49dd36)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-73f76295c242f749)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-69c7b01acb137d8f)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-51dca918a1c95fd4)
+
+running 0 tests
+
+test result: [32mok(B[m. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+Script done on 2026-04-30 10:10:08-07:00 [COMMAND_EXIT_CODE="0"]

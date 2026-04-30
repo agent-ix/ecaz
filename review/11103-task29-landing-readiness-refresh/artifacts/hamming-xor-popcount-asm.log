@@ -1,0 +1,99 @@
+Script started on 2026-04-30 11:36:58-07:00 [<not executed on terminal>]
+	.section	.text._ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E,"ax",@progbits
+	.hidden	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E
+	.globl	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E
+	.p2align	4
+	.type	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E,@function
+_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E:
+	.cfi_startproc
+	cmpq	%rsi, %rcx
+	cmovbq	%rcx, %rsi
+	testq	%rsi, %rsi
+	je	.LBB4436_1
+	cmpq	$8, %rsi
+	jae	.LBB4436_5
+	xorl	%eax, %eax
+	xorl	%ecx, %ecx
+	jmp	.LBB4436_9
+.LBB4436_1:
+	xorl	%eax, %eax
+	jmp	.LBB4436_2
+.LBB4436_5:
+	movabsq	$1152921504606846968, %rcx
+	andq	%rsi, %rcx
+	leaq	(,%rsi,8), %rax
+	andq	$-64, %rax
+	vpxor	%xmm0, %xmm0, %xmm0
+	xorl	%r8d, %r8d
+	vpbroadcastd	.LCPI4436_3(%rip), %ymm1
+	vbroadcasti128	.LCPI4436_4(%rip), %ymm2
+	vpxor	%xmm3, %xmm3, %xmm3
+	vmovdqa	.LCPI4436_2(%rip), %ymm4
+	vpxor	%xmm5, %xmm5, %xmm5
+	.p2align	4
+.LBB4436_6:
+	vmovdqu	(%rdx,%r8), %ymm6
+	vmovdqu	32(%rdx,%r8), %ymm7
+	vpxor	(%rdi,%r8), %ymm6, %ymm6
+	vpxor	32(%rdi,%r8), %ymm7, %ymm7
+	vpand	%ymm1, %ymm6, %ymm8
+	vpshufb	%ymm8, %ymm2, %ymm8
+	vpsrlw	$4, %ymm6, %ymm6
+	vpand	%ymm1, %ymm6, %ymm6
+	vpshufb	%ymm6, %ymm2, %ymm6
+	vpaddb	%ymm6, %ymm8, %ymm6
+	vpsadbw	%ymm3, %ymm6, %ymm6
+	vpand	%ymm1, %ymm7, %ymm8
+	vpshufb	%ymm8, %ymm2, %ymm8
+	vpsrlw	$4, %ymm7, %ymm7
+	vpand	%ymm1, %ymm7, %ymm7
+	vpshufb	%ymm7, %ymm2, %ymm7
+	vpaddb	%ymm7, %ymm8, %ymm7
+	vpsadbw	%ymm3, %ymm7, %ymm7
+	vpermd	%ymm6, %ymm4, %ymm6
+	vpermd	%ymm7, %ymm4, %ymm7
+	vpaddd	%xmm6, %xmm0, %xmm0
+	vpaddd	%xmm7, %xmm5, %xmm5
+	addq	$64, %r8
+	cmpq	%r8, %rax
+	jne	.LBB4436_6
+	vpaddd	%xmm0, %xmm5, %xmm0
+	vpshufd	$238, %xmm0, %xmm1
+	vpaddd	%xmm1, %xmm0, %xmm0
+	vpshufd	$85, %xmm0, %xmm1
+	vpaddd	%xmm1, %xmm0, %xmm0
+	vmovd	%xmm0, %eax
+	jmp	.LBB4436_8
+.LBB4436_2:
+	vzeroupper
+	retq
+.LBB4436_8:
+	cmpq	%rcx, %rsi
+	je	.LBB4436_2
+.LBB4436_9:
+	movq	(%rdx,%rcx,8), %r8
+	xorq	(%rdi,%rcx,8), %r8
+	incq	%rcx
+	popcntq	%r8, %r8
+	addl	%r8d, %eax
+	jmp	.LBB4436_8
+.Lfunc_end4436:
+	.size	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E, .Lfunc_end4436-_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount17ha444e38db06d2194E
+	.cfi_endproc
+
+	.section	".text._ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E","ax",@progbits
+	.hidden	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E
+	.globl	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E
+	.p2align	4
+	.type	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E,@function
+_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E:
+	.cfi_startproc
+	movq	(%rdx), %rax
+	xorq	(%rsi), %rax
+	popcntq	%rax, %rax
+	retq
+.Lfunc_end4437:
+	.size	_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E, .Lfunc_end4437-_ZN4ecaz2am10ec_diskann10scan_query20hamming_xor_popcount28_$u7b$$u7b$closure$u7d$$u7d$17h086b750001996a31E
+	.cfi_endproc
+
+Script done on 2026-04-30 11:36:58-07:00 [COMMAND_EXIT_CODE="0"]
