@@ -282,28 +282,33 @@ where
         emittable: entry_tuple.is_live(),
     };
 
-    let mut frontier: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
+    let mut entries: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
     let mut next_heap: BinaryHeap<Reverse<ScanCandidate>> = BinaryHeap::new();
-    let mut worst_heap: BinaryHeap<ScanCandidate> = BinaryHeap::new();
     push_frontier_entry(
-        &mut frontier,
+        &mut entries,
         &mut next_heap,
-        &mut worst_heap,
         scratch,
-        list_size,
         entry,
         neighbors_from_tuple(&entry_tuple),
     );
 
+    let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
     loop {
         maybe_check_for_interrupts();
 
-        let Some(picked) = pop_next_active(&mut next_heap, &frontier, scratch) else {
+        let Some(next) = peek_next_active(&mut next_heap, &entries, scratch) else {
             break;
         };
-        scratch.visited.insert(picked.tid);
+        if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
+            break;
+        }
 
-        let Some(picked_entry) = frontier.get(&picked.tid) else {
+        let picked = pop_next_active(&mut next_heap, &entries, scratch)
+            .expect("peek_next_active returned an active candidate");
+        scratch.visited.insert(picked.tid);
+        insert_visited_sorted(&mut visited_best, picked);
+
+        let Some(picked_entry) = entries.get(&picked.tid) else {
             continue;
         };
         let picked_neighbors = picked_entry.neighbors.clone();
@@ -323,23 +328,17 @@ where
                 emittable: nbr_tuple.is_live(),
             };
             push_frontier_entry(
-                &mut frontier,
+                &mut entries,
                 &mut next_heap,
-                &mut worst_heap,
                 scratch,
-                list_size,
                 candidate,
                 neighbors_from_tuple(&nbr_tuple),
             );
         }
     }
 
-    let mut frontier: Vec<ScanCandidate> = frontier
-        .into_values()
-        .map(|entry| entry.candidate)
-        .collect();
-    frontier.sort();
-    Ok(frontier)
+    visited_best.truncate(list_size);
+    Ok(visited_best)
 }
 
 fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
@@ -352,16 +351,14 @@ fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
 }
 
 fn push_frontier_entry(
-    frontier: &mut HashMap<ItemPointer, FrontierEntry>,
+    entries: &mut HashMap<ItemPointer, FrontierEntry>,
     next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    worst_heap: &mut BinaryHeap<ScanCandidate>,
     scratch: &mut VisitedState,
-    list_size: usize,
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
 ) {
     scratch.in_frontier.insert(candidate.tid);
-    frontier.insert(
+    entries.insert(
         candidate.tid,
         FrontierEntry {
             candidate,
@@ -369,49 +366,42 @@ fn push_frontier_entry(
         },
     );
     next_heap.push(Reverse(candidate));
-    worst_heap.push(candidate);
+}
 
-    while frontier.len() > list_size {
-        let Some(worst) = pop_worst_active(worst_heap, frontier) else {
-            break;
-        };
-        scratch.in_frontier.remove(&worst.tid);
-        frontier.remove(&worst.tid);
+fn peek_next_active(
+    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
+    entries: &HashMap<ItemPointer, FrontierEntry>,
+    scratch: &VisitedState,
+) -> Option<ScanCandidate> {
+    while let Some(Reverse(candidate)) = next_heap.peek().copied() {
+        if scratch.visited.contains(&candidate.tid) {
+            next_heap.pop();
+            continue;
+        }
+        if entries
+            .get(&candidate.tid)
+            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
+        {
+            return Some(candidate);
+        }
+        next_heap.pop();
     }
+    None
 }
 
 fn pop_next_active(
     next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    frontier: &HashMap<ItemPointer, FrontierEntry>,
+    entries: &HashMap<ItemPointer, FrontierEntry>,
     scratch: &VisitedState,
 ) -> Option<ScanCandidate> {
-    while let Some(Reverse(candidate)) = next_heap.pop() {
-        if scratch.visited.contains(&candidate.tid) {
-            continue;
-        }
-        if frontier
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
-    }
-    None
+    let active = peek_next_active(next_heap, entries, scratch)?;
+    next_heap.pop();
+    Some(active)
 }
 
-fn pop_worst_active(
-    worst_heap: &mut BinaryHeap<ScanCandidate>,
-    frontier: &HashMap<ItemPointer, FrontierEntry>,
-) -> Option<ScanCandidate> {
-    while let Some(candidate) = worst_heap.pop() {
-        if frontier
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
-    }
-    None
+fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {
+    let idx = visited_best.partition_point(|existing| *existing < candidate);
+    visited_best.insert(idx, candidate);
 }
 
 fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
