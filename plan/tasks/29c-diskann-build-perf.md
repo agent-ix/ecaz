@@ -38,13 +38,14 @@ debug/dev cargo profile. Reinstalling the same head with
 `cargo pgrx install --release` and rerunning the isolated index-only
 build changed the result to:
 
-- **DiskANN index-only build**: 79.238 s
+- **DiskANN index-only build**: 79.238 s before the active-mask prune cleanup,
+  then 70.678 s after packet `11104`
   - heap scan: 1.261 s
   - training: 0.130 s
   - payload derivation: 0.293 s
-  - build/persist: 77.485 s
-  - Vamana graph: 75.903 s
-  - page writes: 0.059 s
+  - active-mask build/persist: 69.000 s
+  - active-mask Vamana graph: 67.571 s
+  - active-mask page writes: 0.040 s
 - **HNSW reference build** on the same table with `m=32`,
   `ef_construction=100`, `build_source_column=source`: 5.23 s
 - **Index size**: DiskANN 4.8 MiB, HNSW 14 MiB
@@ -58,7 +59,7 @@ performance claims.
 
 ## Phase 1 — Profile the gap
 
-Completed in packets `11101` and `11102`.
+Completed in packets `11101`, `11102`, and `11104`.
 
 Before changing optimization code, Task 29c figured out where the
 apparent overhead between the in-memory replay and full ambuild went.
@@ -104,9 +105,12 @@ in-memory Vamana replay.
 ## Phase 2 — Attack the largest fixable contributor
 
 Status: skipped for the landing slice after Phase 1 corrected the
-debug/dev measurement caveat. The only code experiment attempted was
-the build-frontier heap change, and packet `11101` showed the corrected
-implementation regressed build time; it was reverted.
+debug/dev measurement caveat, except for one narrow
+semantics-preserving prune cleanup. The build-frontier heap change
+regressed and was reverted in packet `11101`; the active-mask
+`robust_prune` cleanup landed in packet `11104` and reduced
+release-mode real-10k index-only build from `79.238s` to `70.678s`
+without changing isolated L=200 recall@10 (`0.9970`).
 
 Order operations strictly by what the Phase 1 profile shows. The
 following list is "candidate optimizations to consider", not "things
@@ -156,8 +160,10 @@ the honest ceiling for the single-process landing slice.
 ## Phase 3 — Reference comparison
 
 Status: completed for the in-house local reference row in packet
-`11102`; external pgvectorscale/Microsoft comparisons remain optional
-future context, not Task 29 landing blockers.
+`11102`; packet `11104` supersedes the DiskANN build row after the
+active-mask prune cleanup. External pgvectorscale/Microsoft
+comparisons remain optional future context, not Task 29 landing
+blockers.
 
 Once Phase 2 has exhausted within-reason single-process
 optimizations, compare against:
@@ -197,7 +203,7 @@ build is N× the reference; recommend Task 29d for parallel build
 before landing" with a clear ratio and reference numbers.
 
 Task 29c decision: land the single-process slice with structured build
-observability. The release local build is slower than HNSW (`79.238s`
+observability. The release local build is slower than HNSW (`70.678s`
 vs `5.23s` on real-10k), but the corrected result is no longer a
 surprise latency blocker for this initial tuning lane. The next
 optimization target is pass-1 Vamana graph construction, not a landing
@@ -234,7 +240,9 @@ on its shape today.
   heap-frontier experiment.
 - Packet `11102` records the Vamana core split, the release-installed
   extension measurement, the HNSW reference build, and the corrected
-  landing recommendation.
+  debug/release measurement caveat.
+- Packet `11104` records the active-mask prune cleanup, the improved
+  `70.678s` release build, and the isolated recall check.
 - Future performance packets explicitly state debug/dev vs release
   extension install profile.
 
@@ -251,4 +259,4 @@ on its shape today.
 
 Completed in the current Task 29 branch. Further Vamana build
 optimization can proceed as a new follow-up, scoped from packet
-`11102`'s pass-1 timing split.
+`11104`'s pass-1 timing split.

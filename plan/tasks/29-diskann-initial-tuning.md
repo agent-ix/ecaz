@@ -23,17 +23,19 @@ Owner: coder1 / runtime-index track
   blocker opened). `plan/tasks/29c-diskann-build-perf.md`.
   Structured build timing showed the apparent ~492 s real-10k build
   was a debug/dev-installed extension artifact. The same head with a
-  release-installed extension built the isolated real-10k DiskANN
-  index in `79.238s`; the remaining cost is Vamana graph
+  release-installed extension initially built the isolated real-10k
+  DiskANN index in `79.238s`; the active-mask prune cleanup then
+  improved that to `70.678s`. The remaining cost is Vamana graph
   construction, not tuple persistence or page writes. Reference
   `ec_hnsw` on the same table with `m=32`, `ef_construction=100`
-  built in `5.23s`. Packets: `11101`, `11102`.
+  built in `5.23s`. Packets: `11101`, `11102`, `11104`.
 
 The current landing-readiness packets are
 `review/11099-task29-diskann-landing-readiness/`,
 `review/11100-task29b-diskann-vacuum-prefilter-consistency/`, and
-`review/11102-task29c-vamana-core-profile/`. Merge-readiness feedback
-is in `review/11099-.../feedback.md`.
+`review/11104-task29c-prune-active-mask-profile/`. Merge-readiness
+feedback is in `review/11099-.../feedback.md`; packet `11103` is the
+landing refresh before the final active-mask prune improvement.
 
 ## Goal
 
