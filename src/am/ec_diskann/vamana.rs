@@ -295,8 +295,9 @@ pub fn build_vamana_graph<D>(
 where
     D: Fn(u32, u32) -> f32 + Copy,
 {
+    let mut graph = VamanaGraph::empty(node_count, max_degree);
+
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut graph = seed_random_graph(node_count, max_degree, &mut rng);
     let mut permutation: Vec<u32> = (0..node_count as u32).collect();
 
     for &alpha in &[1.0f32, alpha_final] {
@@ -348,38 +349,6 @@ where
                 }
             }
         }
-    }
-
-    graph
-}
-
-fn seed_random_graph(node_count: usize, max_degree: usize, rng: &mut ChaCha8Rng) -> VamanaGraph {
-    let mut graph = VamanaGraph::empty(node_count, max_degree);
-    if node_count <= 1 || max_degree == 0 {
-        return graph;
-    }
-
-    let target_degree = max_degree.min(node_count - 1);
-    for node in 0..node_count {
-        if target_degree == node_count - 1 {
-            graph.neighbors[node] = (0..node_count as u32)
-                .filter(|candidate| *candidate != node as u32)
-                .collect();
-            continue;
-        }
-
-        let mut selected = vec![false; node_count];
-        selected[node] = true;
-        let mut neighbors = Vec::with_capacity(target_degree);
-        while neighbors.len() < target_degree {
-            let candidate = rng.gen_range(0..node_count) as u32;
-            if selected[candidate as usize] {
-                continue;
-            }
-            selected[candidate as usize] = true;
-            neighbors.push(candidate);
-        }
-        graph.neighbors[node] = neighbors;
     }
 
     graph
@@ -492,21 +461,6 @@ mod tests {
             pool.iter().map(|c| c.distance).collect::<Vec<_>>(),
             vec![1.0, 2.0, 3.0]
         );
-    }
-
-    #[test]
-    fn seed_random_graph_uses_unique_non_self_neighbors() {
-        let mut rng = ChaCha8Rng::seed_from_u64(7);
-        let graph = seed_random_graph(64, 8, &mut rng);
-        assert_eq!(graph.node_count(), 64);
-        for (node, neighbors) in graph.neighbors.iter().enumerate() {
-            assert_eq!(neighbors.len(), 8);
-            let mut seen = std::collections::HashSet::new();
-            for &neighbor in neighbors {
-                assert_ne!(neighbor, node as u32);
-                assert!(seen.insert(neighbor), "duplicate neighbor {neighbor}");
-            }
-        }
     }
 
     #[test]
