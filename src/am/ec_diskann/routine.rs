@@ -17,11 +17,12 @@ use crate::{
 
 use super::{
     ambuild, cost, insert, maybe_check_for_interrupts, options,
-    page::VamanaMetadataPage,
+    page::{VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR},
     reader::{PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
     scan_query::{
-        build_grouped_pq_lut_from_persisted, encode_query_srht, read_grouped_codebook_chain,
+        build_grouped_pq_lut_from_persisted, encode_query_srht, hamming_xor_popcount,
+        pack_query_sign_bits, read_grouped_codebook_chain,
     },
     scan_state::{self, DiskannScanOpaque},
     tuple::VamanaNodeTuple,
@@ -574,6 +575,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             opaque.flat_codebooks.clear();
             opaque.query_rotated.clear();
             opaque.query_lut.clear();
+            opaque.query_binary_words.clear();
             opaque.visited.clear();
             opaque.result_buf.clear();
             opaque.result_cursor = 0;
@@ -593,34 +595,60 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 );
             }
 
-            let (helper_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
-                &opaque.chain,
-                opaque.metadata.grouped_codebook_head,
-                group_count,
-                group_size,
-                opaque.metadata.dimensions as usize,
-                opaque.metadata.seed,
-                &raw_query,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan query LUT build failed: {e}"));
-            opaque.flat_codebooks = read_grouped_codebook_chain(
-                &opaque.chain,
-                opaque.metadata.grouped_codebook_head,
-                group_count,
-                GROUPED_PQ_CENTROIDS * group_size,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan codebook load failed: {e}"));
+            let prefilter_kind = options::current_prefilter_kind();
+            let has_binary_sidecar =
+                opaque.metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
+            let use_binary_sidecar = match prefilter_kind {
+                options::PrefilterKind::Auto => has_binary_sidecar,
+                options::PrefilterKind::BinarySidecar => {
+                    if !has_binary_sidecar {
+                        pgrx::error!(
+                            "ec_diskann.prefilter_kind=binary_sidecar requested but index has no binary sidecar"
+                        );
+                    }
+                    true
+                }
+                options::PrefilterKind::GroupedPq => false,
+            };
+
             opaque.query_rotated = encode_query_srht(
                 &raw_query,
                 opaque.metadata.dimensions as usize,
                 opaque.metadata.seed,
             );
-            opaque.query_lut =
-                build_grouped_pq_lut_f32(&opaque.query_rotated, &opaque.flat_codebooks, group_size);
-            if helper_group_count != group_count || helper_lut != opaque.query_lut {
-                pgrx::error!(
-                    "ec_diskann scan LUT reconstruction drifted from the persisted helper path"
+            if use_binary_sidecar {
+                opaque.query_binary_words = pack_query_sign_bits(
+                    &opaque.query_rotated,
+                    opaque.metadata.dimensions as usize,
                 );
+            } else {
+                let (helper_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+                    &opaque.chain,
+                    opaque.metadata.grouped_codebook_head,
+                    group_count,
+                    group_size,
+                    opaque.metadata.dimensions as usize,
+                    opaque.metadata.seed,
+                    &raw_query,
+                )
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan query LUT build failed: {e}"));
+                opaque.flat_codebooks = read_grouped_codebook_chain(
+                    &opaque.chain,
+                    opaque.metadata.grouped_codebook_head,
+                    group_count,
+                    GROUPED_PQ_CENTROIDS * group_size,
+                )
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan codebook load failed: {e}"));
+                opaque.query_lut = build_grouped_pq_lut_f32(
+                    &opaque.query_rotated,
+                    &opaque.flat_codebooks,
+                    group_size,
+                );
+                if helper_group_count != group_count || helper_lut != opaque.query_lut {
+                    pgrx::error!(
+                        "ec_diskann scan LUT reconstruction drifted from the persisted helper path"
+                    );
+                }
             }
 
             let reader = PersistedGraphReader::new(
@@ -652,33 +680,63 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 });
             let rerank_error = RefCell::new(None::<String>);
             let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
-            let results = scan::vamana_scan_with(
-                &reader,
-                &mut opaque.visited,
-                ScanParams {
-                    entry_point,
-                    list_size: opaque.list_size,
-                    rerank_budget: opaque.rerank_budget,
-                    top_k: sql_result_cap,
-                },
-                |tuple| -grouped_pq_score_f32(&opaque.query_lut, group_count, &tuple.search_code),
-                |heap_tid| match exact_heap_rerank_distance(
-                    heap_relation_state.0,
-                    snapshot_state.0,
-                    slot,
-                    source_attnum,
-                    &raw_query,
-                    heap_tid,
-                ) {
-                    Ok(distance) => distance,
-                    Err(error) => {
-                        if rerank_error.borrow().is_none() {
-                            *rerank_error.borrow_mut() = Some(error);
+            let scan_params = ScanParams {
+                entry_point,
+                list_size: opaque.list_size,
+                rerank_budget: opaque.rerank_budget,
+                top_k: sql_result_cap,
+            };
+            let results = if use_binary_sidecar {
+                scan::vamana_scan_with(
+                    &reader,
+                    &mut opaque.visited,
+                    scan_params,
+                    |tuple| {
+                        hamming_xor_popcount(&opaque.query_binary_words, &tuple.binary_words) as f32
+                    },
+                    |heap_tid| match exact_heap_rerank_distance(
+                        heap_relation_state.0,
+                        snapshot_state.0,
+                        slot,
+                        source_attnum,
+                        &raw_query,
+                        heap_tid,
+                    ) {
+                        Ok(distance) => distance,
+                        Err(error) => {
+                            if rerank_error.borrow().is_none() {
+                                *rerank_error.borrow_mut() = Some(error);
+                            }
+                            f32::INFINITY
                         }
-                        f32::INFINITY
-                    }
-                },
-            );
+                    },
+                )
+            } else {
+                scan::vamana_scan_with(
+                    &reader,
+                    &mut opaque.visited,
+                    scan_params,
+                    |tuple| {
+                        -grouped_pq_score_f32(&opaque.query_lut, group_count, &tuple.search_code)
+                    },
+                    |heap_tid| match exact_heap_rerank_distance(
+                        heap_relation_state.0,
+                        snapshot_state.0,
+                        slot,
+                        source_attnum,
+                        &raw_query,
+                        heap_tid,
+                    ) {
+                        Ok(distance) => distance,
+                        Err(error) => {
+                            if rerank_error.borrow().is_none() {
+                                *rerank_error.borrow_mut() = Some(error);
+                            }
+                            f32::INFINITY
+                        }
+                    },
+                )
+            };
             scan_state::release_owned_scan_heap_state(
                 heap_relation_state.0,
                 heap_relation_state.1,

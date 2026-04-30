@@ -9,14 +9,15 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use ecaz::bench_api::{
     approximate_medoid, bfs_reachable, build_grouped_pq_lut_f32,
     build_vamana_graph_with_pass1_extra_candidates, build_vamana_graph_with_stats,
     derive_grouped_pq4_code, effective_transform_dim, greedy_search, grouped_pq_score_f32,
-    pad_input, srht, train_grouped_pq4_model, MetricSummary, VamanaBuildStats, VamanaGraph,
+    pad_input, srht, train_grouped_pq4_model, MetricSummary, ProdQuantizer, VamanaBuildStats,
+    VamanaGraph,
 };
 use ndarray::Array2;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -69,18 +70,36 @@ pub struct BuildProbeArgs {
     /// Emit exact/in-memory/SQL result IDs for this many query rows.
     #[arg(long, default_value_t = 0)]
     pub compare_queries: usize,
-    /// Emit grouped-PQ traversal frontier diagnostics for this query id.
+    /// Emit traversal frontier diagnostics for this query id.
     #[arg(long)]
     pub frontier_query_id: Option<i64>,
-    /// Number of pre-rerank grouped-PQ frontier IDs to print.
+    /// Prefilter to use for frontier diagnostics.
+    #[arg(long, default_value_t = FrontierPrefilter::GroupedPq)]
+    pub frontier_prefilter: FrontierPrefilter,
+    /// Number of pre-rerank frontier IDs to print.
     #[arg(long, default_value_t = 20)]
     pub frontier_top: usize,
-    /// Number of grouped-PQ frontier candidates that exact rerank can inspect.
+    /// Number of frontier candidates that exact rerank can inspect.
     #[arg(long)]
     pub frontier_rerank_budget: Option<usize>,
     /// Write the rendered diagnostics to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FrontierPrefilter {
+    GroupedPq,
+    BinarySidecar,
+}
+
+impl std::fmt::Display for FrontierPrefilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GroupedPq => f.write_str("grouped_pq"),
+            Self::BinarySidecar => f.write_str("binary_sidecar"),
+        }
+    }
 }
 
 pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
@@ -334,6 +353,7 @@ async fn compare_query_results(
 #[derive(Debug, Clone, PartialEq)]
 struct FrontierDiagnosis {
     query_id: i64,
+    prefilter: FrontierPrefilter,
     list_size: usize,
     rerank_budget: usize,
     top_frontier_ids: Vec<i64>,
@@ -392,39 +412,63 @@ fn diagnose_grouped_frontier(
         .ok_or_else(|| eyre!("query id {query_id} not found in fetched query set"))?;
     let rerank_budget = args.frontier_rerank_budget.unwrap_or(args.scan_list_size);
 
-    let corpus_slice = corpus
-        .as_slice()
-        .expect("fetched corpus matrix should be contiguous");
-    let source_refs = corpus_slice
-        .chunks_exact(corpus.ncols())
-        .collect::<Vec<_>>();
-    let group_size = diskann_default_group_size(corpus.ncols());
-    let train_size = corpus.nrows().min(1024);
-    let model = train_grouped_pq4_model(
-        &source_refs,
-        corpus.ncols(),
-        args.seed,
-        group_size,
-        train_size,
-        8,
-    )
-    .map_err(|e| eyre!("training grouped-PQ model for frontier diagnostic failed: {e}"))?;
-    let codes = source_refs
-        .iter()
-        .map(|source| derive_grouped_pq4_code(source, &model))
-        .collect::<Vec<_>>();
-    let padded_query = pad_input(&queries.row(query_row).to_vec(), model.signs.len());
-    let rotated = srht(&padded_query, &model.signs);
-    let flat_codebooks = model
-        .codebooks
-        .iter()
-        .flatten()
-        .copied()
-        .collect::<Vec<_>>();
-    let query_lut = build_grouped_pq_lut_f32(&rotated, &flat_codebooks, model.group_size);
-    let frontier = grouped_pq_frontier(graph, medoid, args.scan_list_size, |node| {
-        -grouped_pq_score_f32(&query_lut, model.group_count, &codes[node as usize])
-    });
+    let frontier = match args.frontier_prefilter {
+        FrontierPrefilter::GroupedPq => {
+            let corpus_slice = corpus
+                .as_slice()
+                .expect("fetched corpus matrix should be contiguous");
+            let source_refs = corpus_slice
+                .chunks_exact(corpus.ncols())
+                .collect::<Vec<_>>();
+            let group_size = diskann_default_group_size(corpus.ncols());
+            let train_size = corpus.nrows().min(1024);
+            let model = train_grouped_pq4_model(
+                &source_refs,
+                corpus.ncols(),
+                args.seed,
+                group_size,
+                train_size,
+                8,
+            )
+            .map_err(|e| eyre!("training grouped-PQ model for frontier diagnostic failed: {e}"))?;
+            let codes = source_refs
+                .iter()
+                .map(|source| derive_grouped_pq4_code(source, &model))
+                .collect::<Vec<_>>();
+            let padded_query = pad_input(&queries.row(query_row).to_vec(), model.signs.len());
+            let rotated = srht(&padded_query, &model.signs);
+            let flat_codebooks = model
+                .codebooks
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>();
+            let query_lut = build_grouped_pq_lut_f32(&rotated, &flat_codebooks, model.group_size);
+            scored_frontier(graph, medoid, args.scan_list_size, |node| {
+                -grouped_pq_score_f32(&query_lut, model.group_count, &codes[node as usize])
+            })
+        }
+        FrontierPrefilter::BinarySidecar => {
+            let quantizer = ProdQuantizer::cached(corpus.ncols(), 4, args.seed);
+            if !quantizer.binary_sign_no_qjl_4bit_supported() {
+                return Err(eyre!(
+                    "binary-sidecar frontier prefilter requires no-QJL 4-bit quantizer support"
+                ));
+            }
+            let query_source = queries.row(query_row).to_vec();
+            let query_words = quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(&query_source);
+            let candidate_words = (0..corpus.nrows())
+                .map(|row| {
+                    let source = corpus.row(row).to_vec();
+                    let encoded = quantizer.encode(&source);
+                    quantizer.binary_sign_words_from_packed_no_qjl_4bit(&encoded.mse_packed)
+                })
+                .collect::<Vec<_>>();
+            scored_frontier(graph, medoid, args.scan_list_size, |node| {
+                hamming_distance(&query_words.words, &candidate_words[node as usize]) as f32
+            })
+        }
+    };
     let exact_nodes = exact_top_k(corpus, queries, query_row, args.recall_k);
     let mut reranked = frontier
         .iter()
@@ -468,6 +512,7 @@ fn diagnose_grouped_frontier(
 
     Ok(Some(FrontierDiagnosis {
         query_id,
+        prefilter: args.frontier_prefilter,
         list_size: args.scan_list_size,
         rerank_budget,
         top_frontier_ids: nodes_to_ids(corpus_ids, &top_frontier_nodes),
@@ -476,7 +521,7 @@ fn diagnose_grouped_frontier(
     }))
 }
 
-fn grouped_pq_frontier<F>(
+fn scored_frontier<F>(
     graph: &VamanaGraph,
     medoid: u32,
     list_size: usize,
@@ -527,6 +572,14 @@ where
 
     frontier.sort();
     frontier
+}
+
+fn hamming_distance(query_words: &[u64], candidate_words: &[u64]) -> u32 {
+    query_words
+        .iter()
+        .zip(candidate_words.iter())
+        .map(|(query, candidate)| (query ^ candidate).count_ones())
+        .sum()
 }
 
 fn diskann_default_group_size(dimensions: usize) -> usize {
@@ -834,6 +887,10 @@ fn render_probe(
             Cell::new("frontier_query_id"),
             Cell::new(frontier.query_id),
         ]);
+        summary.add_row(vec![
+            Cell::new("frontier_prefilter"),
+            Cell::new(frontier.prefilter.to_string()),
+        ]);
         summary.add_row(vec![Cell::new("list_size"), Cell::new(frontier.list_size)]);
         summary.add_row(vec![
             Cell::new("rerank_budget"),
@@ -933,6 +990,7 @@ mod tests {
             queries_limit: None,
             compare_queries: 0,
             frontier_query_id: None,
+            frontier_prefilter: FrontierPrefilter::GroupedPq,
             frontier_top: 20,
             frontier_rerank_budget: None,
             log_output: None,
@@ -1007,6 +1065,7 @@ mod tests {
             queries_limit: None,
             compare_queries: 1,
             frontier_query_id: None,
+            frontier_prefilter: FrontierPrefilter::GroupedPq,
             frontier_top: 20,
             frontier_rerank_budget: None,
             log_output: None,
@@ -1063,18 +1122,23 @@ mod tests {
     }
 
     #[test]
-    fn grouped_pq_frontier_prunes_by_best_scores() {
+    fn scored_frontier_prunes_by_best_scores() {
         let graph = VamanaGraph {
             neighbors: vec![vec![1, 2], vec![3], vec![], vec![]],
             max_degree: 2,
         };
         let scores = [3.0_f32, 2.0, 0.5, 0.1];
-        let frontier = grouped_pq_frontier(&graph, 0, 3, |node| scores[node as usize]);
+        let frontier = scored_frontier(&graph, 0, 3, |node| scores[node as usize]);
         let nodes = frontier
             .iter()
             .map(|candidate| candidate.node)
             .collect::<Vec<_>>();
         assert_eq!(nodes, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn hamming_distance_counts_xor_bits() {
+        assert_eq!(hamming_distance(&[0b1010], &[0b0011]), 2);
     }
 
     #[test]

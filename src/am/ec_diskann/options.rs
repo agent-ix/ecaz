@@ -1,7 +1,7 @@
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
-use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting, PostgresGucEnum};
 
 use super::{
     ECDISKANN_DEFAULT_ALPHA, ECDISKANN_DEFAULT_BUILD_LIST_SIZE, ECDISKANN_DEFAULT_GRAPH_DEGREE,
@@ -16,6 +16,18 @@ const ECDISKANN_SESSION_LIST_SIZE_UNSET: i32 = -1;
 
 static ECDISKANN_LIST_SIZE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
+static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
+    GucSetting::<PrefilterKind>::new(PrefilterKind::Auto);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum PrefilterKind {
+    #[name = c"auto"]
+    Auto,
+    #[name = c"binary_sidecar"]
+    BinarySidecar,
+    #[name = c"grouped_pq"]
+    GroupedPq,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -107,10 +119,22 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_diskann.prefilter_kind",
+        c"Session override for ec_diskann traversal prefilter.",
+        c"Diagnostic override used for Task 29a A/B measurement. Values: auto uses binary_sidecar when present and falls back to grouped_pq; binary_sidecar requires persisted binary sidecars; grouped_pq forces the legacy grouped-PQ prefilter.",
+        &ECDISKANN_PREFILTER_KIND_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_list_size() -> i32 {
     ECDISKANN_LIST_SIZE_GUC.get()
+}
+
+pub(super) fn current_prefilter_kind() -> PrefilterKind {
+    ECDISKANN_PREFILTER_KIND_GUC.get()
 }
 
 pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {
@@ -290,8 +314,9 @@ pub(super) fn storage_format_name(fmt: StorageFormat) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_scan_tuning_values, ListSizeSource, ScanTuning, StorageFormat, TqDiskannOptions,
-        ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+        current_prefilter_kind, resolve_scan_tuning_values, ListSizeSource, PrefilterKind,
+        ScanTuning, StorageFormat, TqDiskannOptions, ECDISKANN_DEFAULT_RERANK_BUDGET,
+        ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
         ECDISKANN_SESSION_LIST_SIZE_UNSET,
     };
 
@@ -357,5 +382,10 @@ mod tests {
                 source: ListSizeSource::Session,
             }
         );
+    }
+
+    #[test]
+    fn prefilter_kind_guc_defaults_to_auto() {
+        assert_eq!(current_prefilter_kind(), PrefilterKind::Auto);
     }
 }

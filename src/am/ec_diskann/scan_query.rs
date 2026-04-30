@@ -108,6 +108,30 @@ pub fn encode_query_srht(raw_query: &[f32], dimensions: usize, seed: u64) -> Vec
     transform.apply(raw_query)
 }
 
+/// Pack sign bits from a scan-time rotated query into the same word layout as
+/// the persisted binary sidecar. Bit `i % 64` of word `i / 64` is set when
+/// rotated coordinate `i` is non-negative.
+pub fn pack_query_sign_bits(rotated_query: &[f32], dimensions: usize) -> Vec<u64> {
+    let mut words = vec![0_u64; dimensions.div_ceil(64)];
+    for (index, value) in rotated_query.iter().copied().take(dimensions).enumerate() {
+        if value >= 0.0 {
+            words[index / 64] |= 1_u64 << (index % 64);
+        }
+    }
+    words
+}
+
+/// Hamming distance between scan-time query sign words and a persisted binary
+/// sidecar. Smaller values are better and can be used directly as a Vamana
+/// prefilter score.
+pub fn hamming_xor_popcount(query_words: &[u64], candidate_words: &[u64]) -> u32 {
+    query_words
+        .iter()
+        .zip(candidate_words.iter())
+        .map(|(query, candidate)| (query ^ candidate).count_ones())
+        .sum()
+}
+
 /// One-shot helper: load the codebooks from `chain` at `codebook_head`,
 /// SRHT-encode the query, and build the scoring LUT in one call.
 ///
@@ -183,6 +207,20 @@ mod tests {
             expected.extend_from_slice(&model.codebooks[g]);
         }
         assert_eq!(flat, expected);
+    }
+
+    #[test]
+    fn cr_009_pack_query_sign_bits_matches_manual_word_layout() {
+        let rotated = [-1.0, 0.0, 0.25, -0.5, 1.0];
+        let words = pack_query_sign_bits(&rotated, rotated.len());
+        assert_eq!(words, vec![0b10110]);
+    }
+
+    #[test]
+    fn cr_010_hamming_xor_popcount_scores_word_pairs() {
+        let query = [0b1010_u64, 0b1111];
+        let candidate = [0b0011_u64, 0b0101];
+        assert_eq!(hamming_xor_popcount(&query, &candidate), 4);
     }
 
     // CR-002: single-group codebook reads back cleanly.
