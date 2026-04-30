@@ -64,6 +64,9 @@ pub struct BuildProbeArgs {
     /// Cap query rows fetched from `<prefix>_queries`.
     #[arg(long)]
     pub queries_limit: Option<usize>,
+    /// Emit exact/in-memory/SQL result IDs for this many query rows.
+    #[arg(long, default_value_t = 0)]
+    pub compare_queries: usize,
     /// Write the rendered diagnostics to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -110,9 +113,9 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
     }
 
     let fetch_started = Instant::now();
-    let (_ids, corpus) =
+    let (corpus_ids, corpus) =
         super::recall::fetch_sources_public(&client, &corpus_table, args.rows_limit).await?;
-    let (_query_ids, queries) =
+    let (query_ids, queries) =
         super::recall::fetch_sources_public(&client, &queries_table, args.queries_limit).await?;
     let fetch_elapsed = fetch_started.elapsed();
     if corpus.nrows() == 0 {
@@ -184,6 +187,21 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
     );
     let recall_elapsed = recall_started.elapsed();
 
+    let comparisons = compare_query_results(
+        &client,
+        &corpus_table,
+        &corpus_ids,
+        &corpus,
+        &query_ids,
+        &queries,
+        &graph,
+        medoid,
+        args.scan_list_size,
+        args.recall_k,
+        args.compare_queries,
+    )
+    .await?;
+
     let rendered = render_probe(
         &args,
         &corpus_table,
@@ -198,6 +216,7 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
         recall_elapsed.as_secs_f64(),
         recall,
         &stats,
+        &comparisons,
     );
     crate::ecaz_println!("{rendered}");
     if let Some(path) = args.log_output {
@@ -205,6 +224,91 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
             .wrap_err_with(|| format!("writing DiskANN build probe to {}", path.display()))?;
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueryComparison {
+    query_id: i64,
+    exact_ids: Vec<i64>,
+    memory_ids: Vec<i64>,
+    sql_ids: Vec<i64>,
+    exact_memory_hits: usize,
+    exact_sql_hits: usize,
+    memory_sql_hits: usize,
+}
+
+async fn compare_query_results(
+    client: &tokio_postgres::Client,
+    corpus_table: &str,
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    graph: &VamanaGraph,
+    medoid: u32,
+    scan_list_size: usize,
+    k: usize,
+    compare_queries: usize,
+) -> Result<Vec<QueryComparison>> {
+    if compare_queries == 0 {
+        return Ok(Vec::new());
+    }
+    psql::prefer_ordered_ann_path(client).await?;
+    client
+        .batch_execute(&format!("SET ec_diskann.list_size = {scan_list_size}"))
+        .await
+        .wrap_err_with(|| format!("SET ec_diskann.list_size = {scan_list_size}"))?;
+    let sql = format!("SELECT id FROM {corpus_table} ORDER BY embedding <#> $1::real[] LIMIT $2");
+    let limit = i64::try_from(k).wrap_err("--recall-k exceeds i64")?;
+    let compare_count = compare_queries.min(queries.nrows());
+    let mut comparisons = Vec::with_capacity(compare_count);
+    for query_row in 0..compare_count {
+        let exact_nodes = exact_top_k(corpus, queries, query_row, k);
+        let memory_nodes = greedy_search(graph, medoid, scan_list_size, |node| {
+            query_unit_ip_distance(corpus, queries, query_row, node)
+        })
+        .frontier
+        .into_iter()
+        .take(k)
+        .map(|candidate| candidate.node)
+        .collect::<Vec<_>>();
+        let query_source = queries.row(query_row).to_vec();
+        let sql_rows = client
+            .query(sql.as_str(), &[&query_source, &limit])
+            .await
+            .wrap_err_with(|| format!("running SQL DiskANN query for row {query_row}"))?;
+        let sql_ids = sql_rows
+            .into_iter()
+            .map(|row| row.get::<_, i64>(0))
+            .collect::<Vec<_>>();
+        let exact_ids = nodes_to_ids(corpus_ids, &exact_nodes);
+        let memory_ids = nodes_to_ids(corpus_ids, &memory_nodes);
+        comparisons.push(QueryComparison {
+            query_id: query_ids[query_row],
+            exact_memory_hits: overlap_count(&exact_ids, &memory_ids),
+            exact_sql_hits: overlap_count(&exact_ids, &sql_ids),
+            memory_sql_hits: overlap_count(&memory_ids, &sql_ids),
+            exact_ids,
+            memory_ids,
+            sql_ids,
+        });
+    }
+    Ok(comparisons)
+}
+
+fn nodes_to_ids(corpus_ids: &[i64], nodes: &[u32]) -> Vec<i64> {
+    nodes
+        .iter()
+        .filter_map(|node| corpus_ids.get(*node as usize).copied())
+        .collect()
+}
+
+fn overlap_count(left: &[i64], right: &[i64]) -> usize {
+    let right = right
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    left.iter().filter(|id| right.contains(id)).count()
 }
 
 fn build_pass1_sample_candidates(
@@ -345,6 +449,7 @@ fn render_probe(
     recall_seconds: f64,
     recall: f64,
     stats: &VamanaBuildStats,
+    comparisons: &[QueryComparison],
 ) -> String {
     let mut out = String::new();
     writeln!(
@@ -455,8 +560,40 @@ fn render_probe(
     degree.set_header(vec!["direction", "min", "mean", "p50", "p95", "p99", "max"]);
     add_summary_row(&mut degree, "out", stats.final_out_degree);
     add_summary_row(&mut degree, "in", stats.final_in_degree);
-    write!(out, "{degree}").expect("writing to String should not fail");
+    writeln!(out, "{degree}").expect("writing to String should not fail");
+
+    if !comparisons.is_empty() {
+        let mut compare = Table::new();
+        compare.load_preset(UTF8_FULL);
+        compare.set_header(vec![
+            "query_id",
+            "exact/memory",
+            "exact/sql",
+            "memory/sql",
+            "exact ids",
+            "memory ids",
+            "sql ids",
+        ]);
+        for row in comparisons {
+            compare.add_row(vec![
+                Cell::new(row.query_id),
+                Cell::new(format!("{}/{}", row.exact_memory_hits, args.recall_k)),
+                Cell::new(format!("{}/{}", row.exact_sql_hits, args.recall_k)),
+                Cell::new(format!("{}/{}", row.memory_sql_hits, args.recall_k)),
+                Cell::new(join_ids(&row.exact_ids)),
+                Cell::new(join_ids(&row.memory_ids)),
+                Cell::new(join_ids(&row.sql_ids)),
+            ]);
+        }
+        write!(out, "{compare}").expect("writing to String should not fail");
+    } else {
+        let _ = out.pop();
+    }
     out
+}
+
+fn join_ids(ids: &[i64]) -> String {
+    ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
 }
 
 fn mean_p95(summary: MetricSummary) -> String {
@@ -502,6 +639,7 @@ mod tests {
             recall_k: 10,
             scan_list_size: 100,
             queries_limit: None,
+            compare_queries: 0,
             log_output: None,
         };
         let summary = MetricSummary {
@@ -534,13 +672,94 @@ mod tests {
             final_in_degree: summary,
         };
         let rendered = render_probe(
-            &args, "p_corpus", 2, 3, 1, 2, 0.1, 0.2, 0.0, 0.3, 0.4, 1.0, &stats,
+            &args,
+            "p_corpus",
+            2,
+            3,
+            1,
+            2,
+            0.1,
+            0.2,
+            0.0,
+            0.3,
+            0.4,
+            1.0,
+            &stats,
+            &[],
         );
         assert!(rendered.contains("DiskANN build probe"));
         assert!(rendered.contains("reachable_fraction"));
         assert!(rendered.contains("recall@10"));
         assert!(rendered.contains("visited mean/p95"));
         assert!(rendered.contains("reprunes"));
+    }
+
+    #[test]
+    fn render_probe_includes_optional_query_comparisons() {
+        let args = BuildProbeArgs {
+            prefix: "p".into(),
+            rows_limit: None,
+            graph_degree: 32,
+            build_list_size: 100,
+            alpha: 1.2,
+            seed: 42,
+            medoid_sample_cap: 1024,
+            pass1_sample_candidates: 0,
+            pass1_sample_pool_size: 1024,
+            recall_k: 2,
+            scan_list_size: 100,
+            queries_limit: None,
+            compare_queries: 1,
+            log_output: None,
+        };
+        let summary = MetricSummary {
+            count: 2,
+            min: 1,
+            mean: 2.5,
+            p50: 2,
+            p95: 4,
+            p99: 4,
+            max: 4,
+        };
+        let stats = VamanaBuildStats {
+            node_count: 2,
+            medoid: 1,
+            max_degree: 32,
+            list_size: 100,
+            alpha_final: 1.2,
+            seed: 42,
+            passes: Vec::new(),
+            final_out_degree: summary,
+            final_in_degree: summary,
+        };
+        let comparison = QueryComparison {
+            query_id: 10,
+            exact_ids: vec![1, 2],
+            memory_ids: vec![1, 3],
+            sql_ids: vec![4, 5],
+            exact_memory_hits: 1,
+            exact_sql_hits: 0,
+            memory_sql_hits: 0,
+        };
+        let rendered = render_probe(
+            &args,
+            "p_corpus",
+            2,
+            3,
+            1,
+            2,
+            0.1,
+            0.2,
+            0.0,
+            0.3,
+            0.4,
+            1.0,
+            &stats,
+            &[comparison],
+        );
+        assert!(rendered.contains("query_id"));
+        assert!(rendered.contains("1,2"));
+        assert!(rendered.contains("4,5"));
     }
 
     #[test]
@@ -561,5 +780,10 @@ mod tests {
         };
         let recall = in_memory_recall_at_k(&graph, &corpus, &queries, 1, 3, 1);
         assert_eq!(recall, 1.0);
+    }
+
+    #[test]
+    fn overlap_count_counts_intersection() {
+        assert_eq!(overlap_count(&[1, 2, 3], &[3, 4, 1]), 2);
     }
 }
