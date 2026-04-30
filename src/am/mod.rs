@@ -7,6 +7,7 @@ mod ec_ivf;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
+pub(crate) use self::ec_diskann::diagnostics::DiskannGraphSummary;
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
     graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
@@ -79,6 +80,12 @@ pub(crate) unsafe fn ivf_index_page_ownership(
     index_relation: pgrx::pg_sys::Relation,
 ) -> Vec<IvfIndexPageOwnershipSnapshot> {
     unsafe { ec_ivf::index_page_ownership(index_relation) }
+}
+
+pub(crate) unsafe fn diskann_graph_summary(
+    index_relation: pgrx::pg_sys::Relation,
+) -> Result<DiskannGraphSummary, String> {
+    unsafe { ec_diskann::diagnostics::graph_summary(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

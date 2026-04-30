@@ -191,6 +191,12 @@ fn ec_ivf_access_method_oid() -> pg_sys::Oid {
         .expect("ec_ivf access method should exist")
 }
 
+fn ec_diskann_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_diskann'")
+        .expect("SPI query should succeed")
+        .expect("ec_diskann access method should exist")
+}
+
 unsafe fn open_valid_ec_hnsw_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
@@ -231,6 +237,28 @@ unsafe fn open_valid_ec_ivf_index(
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("{caller_name} requires a ec_ivf index, got relation \"{relation_name}\"");
+    }
+    index_relation
+}
+
+unsafe fn open_valid_ec_diskann_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != ec_diskann_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires a ec_diskann index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -695,6 +723,156 @@ fn ec_hnsw_index_admin_snapshot(
         snapshot.effective_source.to_owned(),
         snapshot.planner_scan_enabled,
     ))
+}
+
+#[pg_extern(stable, strict)]
+fn ec_diskann_index_graph_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<'static, (name!(metric, String), name!(value, String))> {
+    let index_relation =
+        unsafe { open_valid_ec_diskann_index(index_oid, "ec_diskann_index_graph_summary") };
+    let summary = match unsafe { am::diskann_graph_summary(index_relation) } {
+        Ok(summary) => summary,
+        Err(e) => {
+            unsafe {
+                pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            }
+            pgrx::error!("ec_diskann_index_graph_summary failed: {e}");
+        }
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = vec![
+        ("block_count".to_owned(), summary.block_count.to_string()),
+        (
+            "graph_degree_r".to_owned(),
+            summary.graph_degree_r.to_string(),
+        ),
+        (
+            "build_list_size_l".to_owned(),
+            summary.build_list_size_l.to_string(),
+        ),
+        ("alpha".to_owned(), format!("{:.6}", summary.alpha)),
+        ("dimensions".to_owned(), summary.dimensions.to_string()),
+        (
+            "inserted_since_rebuild".to_owned(),
+            summary.inserted_since_rebuild.to_string(),
+        ),
+        (
+            "needs_medoid_refresh".to_owned(),
+            summary.needs_medoid_refresh.to_string(),
+        ),
+        ("node_count".to_owned(), summary.node_count.to_string()),
+        (
+            "live_node_count".to_owned(),
+            summary.live_node_count.to_string(),
+        ),
+        (
+            "non_live_node_count".to_owned(),
+            summary.non_live_node_count.to_string(),
+        ),
+        (
+            "entry_point_live".to_owned(),
+            summary.entry_point_live.to_string(),
+        ),
+        (
+            "reachable_live_node_count".to_owned(),
+            summary.reachable_live_node_count.to_string(),
+        ),
+        (
+            "unreachable_live_node_count".to_owned(),
+            summary.unreachable_live_node_count.to_string(),
+        ),
+        (
+            "reachable_live_fraction".to_owned(),
+            format!("{:.6}", summary.reachable_live_fraction),
+        ),
+        (
+            "neighbor_ref_count".to_owned(),
+            summary.neighbor_ref_count.to_string(),
+        ),
+        (
+            "live_neighbor_ref_count".to_owned(),
+            summary.live_neighbor_ref_count.to_string(),
+        ),
+        (
+            "dead_neighbor_ref_count".to_owned(),
+            summary.dead_neighbor_ref_count.to_string(),
+        ),
+        (
+            "invalid_neighbor_ref_count".to_owned(),
+            summary.invalid_neighbor_ref_count.to_string(),
+        ),
+        (
+            "self_neighbor_ref_count".to_owned(),
+            summary.self_neighbor_ref_count.to_string(),
+        ),
+        (
+            "duplicate_neighbor_ref_count".to_owned(),
+            summary.duplicate_neighbor_ref_count.to_string(),
+        ),
+        (
+            "unresolvable_neighbor_ref_count".to_owned(),
+            summary.unresolvable_neighbor_ref_count.to_string(),
+        ),
+        (
+            "zero_out_degree_count".to_owned(),
+            summary.zero_out_degree_count.to_string(),
+        ),
+        (
+            "min_out_degree".to_owned(),
+            summary.min_out_degree.to_string(),
+        ),
+        (
+            "avg_out_degree".to_owned(),
+            format!("{:.6}", summary.avg_out_degree),
+        ),
+        (
+            "p50_out_degree".to_owned(),
+            summary.p50_out_degree.to_string(),
+        ),
+        (
+            "p95_out_degree".to_owned(),
+            summary.p95_out_degree.to_string(),
+        ),
+        (
+            "p99_out_degree".to_owned(),
+            summary.p99_out_degree.to_string(),
+        ),
+        (
+            "max_out_degree".to_owned(),
+            summary.max_out_degree.to_string(),
+        ),
+        (
+            "zero_in_degree_count".to_owned(),
+            summary.zero_in_degree_count.to_string(),
+        ),
+        (
+            "min_in_degree".to_owned(),
+            summary.min_in_degree.to_string(),
+        ),
+        (
+            "avg_in_degree".to_owned(),
+            format!("{:.6}", summary.avg_in_degree),
+        ),
+        (
+            "p50_in_degree".to_owned(),
+            summary.p50_in_degree.to_string(),
+        ),
+        (
+            "p95_in_degree".to_owned(),
+            summary.p95_in_degree.to_string(),
+        ),
+        (
+            "p99_in_degree".to_owned(),
+            summary.p99_in_degree.to_string(),
+        ),
+        (
+            "max_in_degree".to_owned(),
+            summary.max_in_degree.to_string(),
+        ),
+    ];
+    TableIterator::new(rows)
 }
 
 #[pg_extern(stable, strict)]

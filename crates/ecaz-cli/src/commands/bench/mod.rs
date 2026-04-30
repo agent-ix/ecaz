@@ -9,11 +9,13 @@ use color_eyre::eyre::Result;
 use crate::profiles::IndexProfile;
 use crate::psql::ConnectionOptions;
 
+mod graph;
 pub mod latency;
 mod overhead;
 pub mod recall;
 mod storage;
 
+pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
@@ -38,6 +40,8 @@ pub enum BenchCommand {
     Latency(LatencyArgs),
     /// Storage accounting: corpus table size, per-index size, per-vector datum size.
     Storage(StorageArgs),
+    /// DiskANN persisted graph diagnostics: reachability, degree, and edge counters.
+    DiskannGraph(GraphArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
 }
@@ -48,6 +52,7 @@ impl BenchCommand {
             BenchCommand::Recall(a) => recall::run(conn, a).await,
             BenchCommand::Latency(a) => latency::run(conn, a).await,
             BenchCommand::Storage(a) => storage::run(conn, a).await,
+            BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
         }
     }

@@ -8,6 +8,7 @@
 mod ambuild;
 pub mod build;
 mod cost;
+pub mod diagnostics;
 mod insert;
 mod options;
 pub mod page;
