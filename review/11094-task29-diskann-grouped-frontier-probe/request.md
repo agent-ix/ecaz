@@ -10,6 +10,8 @@ corpus, retrains the same grouped-PQ4 search-code model shape used by
 query `10001`.
 
 The probe used `scan_list_size=200` and a simulated `rerank_budget=200`.
+The local index reloptions were checked afterward and remained at the baseline
+`{graph_degree=32,build_list_size=100,alpha=1.2}`.
 
 ## Result
 

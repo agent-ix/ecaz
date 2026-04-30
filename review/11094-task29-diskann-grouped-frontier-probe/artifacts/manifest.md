@@ -36,3 +36,20 @@ cargo run -p ecaz-cli --release -- --host /home/peter/.pgrx --port 28818 --datab
 - head SHA: `eb826920197a226a0aa6085661020e190eeb2bed`
 - packet/topic: `11094-task29-diskann-grouped-frontier-probe`
 - contents: raw mirrored CLI output for `frontier-q10001-table.log`
+
+## final-reloptions-check.log
+
+- head SHA: `9d5e209f750cc91d877e4e8ab9d4d1deaf785cbd`
+- packet/topic: `11094-task29-diskann-grouped-frontier-probe`
+- lane: Task 29 DiskANN initial tuning
+- fixture: real-10k local PG18 corpus
+- database: `task29_diskann_baseline`
+- prefix: `task29_diskann_real10k`
+- isolated/shared surface: isolated one-index-per-table prefix
+- command:
+
+```text
+cargo run -p ecaz-cli -- --database postgres dev sql --pg 18 --db task29_diskann_baseline --raw --sql "SELECT reloptions FROM pg_class WHERE relname = 'task29_diskann_real10k_idx';" --log-output review/11094-task29-diskann-grouped-frontier-probe/artifacts/final-reloptions-check.log
+```
+
+- key result line: `{graph_degree=32,build_list_size=100,alpha=1.2}`

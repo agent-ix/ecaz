@@ -1,0 +1,5 @@
+                   reloptions                    
+-------------------------------------------------
+ {graph_degree=32,build_list_size=100,alpha=1.2}
+(1 row)
+
