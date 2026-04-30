@@ -30,15 +30,15 @@ impl SrhtForwardTransform {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GroupedPq4Model {
-    pub(crate) codebooks: Vec<Vec<f32>>,
-    pub(crate) group_count: usize,
-    pub(crate) group_size: usize,
-    pub(crate) transform_dim: usize,
-    pub(crate) signs: Vec<f32>,
+pub struct GroupedPq4Model {
+    pub codebooks: Vec<Vec<f32>>,
+    pub group_count: usize,
+    pub group_size: usize,
+    pub transform_dim: usize,
+    pub signs: Vec<f32>,
 }
 
-pub(crate) fn train_grouped_pq4_model(
+pub fn train_grouped_pq4_model(
     source_vectors: &[&[f32]],
     dimensions: usize,
     seed: u64,
@@ -95,7 +95,7 @@ pub(crate) fn train_grouped_pq4_model(
     })
 }
 
-pub(crate) fn derive_grouped_pq4_code(source: &[f32], model: &GroupedPq4Model) -> Vec<u8> {
+pub fn derive_grouped_pq4_code(source: &[f32], model: &GroupedPq4Model) -> Vec<u8> {
     let rotated = rotation::srht_padded(source, &model.signs);
     encode_grouped_pq(
         &rotated,

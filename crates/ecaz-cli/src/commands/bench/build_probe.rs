@@ -13,8 +13,10 @@ use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use ecaz::bench_api::{
-    approximate_medoid, bfs_reachable, build_vamana_graph_with_pass1_extra_candidates,
-    build_vamana_graph_with_stats, greedy_search, MetricSummary, VamanaBuildStats, VamanaGraph,
+    approximate_medoid, bfs_reachable, build_grouped_pq_lut_f32,
+    build_vamana_graph_with_pass1_extra_candidates, build_vamana_graph_with_stats,
+    derive_grouped_pq4_code, effective_transform_dim, greedy_search, grouped_pq_score_f32,
+    pad_input, srht, train_grouped_pq4_model, MetricSummary, VamanaBuildStats, VamanaGraph,
 };
 use ndarray::Array2;
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -67,6 +69,15 @@ pub struct BuildProbeArgs {
     /// Emit exact/in-memory/SQL result IDs for this many query rows.
     #[arg(long, default_value_t = 0)]
     pub compare_queries: usize,
+    /// Emit grouped-PQ traversal frontier diagnostics for this query id.
+    #[arg(long)]
+    pub frontier_query_id: Option<i64>,
+    /// Number of pre-rerank grouped-PQ frontier IDs to print.
+    #[arg(long, default_value_t = 20)]
+    pub frontier_top: usize,
+    /// Number of grouped-PQ frontier candidates that exact rerank can inspect.
+    #[arg(long)]
+    pub frontier_rerank_budget: Option<usize>,
     /// Write the rendered diagnostics to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -97,6 +108,20 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
     }
     if args.scan_list_size == 0 {
         return Err(eyre!("--scan-list-size must be >= 1"));
+    }
+    if args.frontier_top == 0 {
+        return Err(eyre!("--frontier-top must be >= 1"));
+    }
+    if matches!(args.frontier_rerank_budget, Some(0)) {
+        return Err(eyre!("--frontier-rerank-budget must be >= 1"));
+    }
+    if args
+        .frontier_rerank_budget
+        .is_some_and(|budget| budget > args.scan_list_size)
+    {
+        return Err(eyre!(
+            "--frontier-rerank-budget must be <= --scan-list-size"
+        ));
     }
 
     let corpus_table = format!("{}_corpus", args.prefix);
@@ -201,6 +226,15 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
         args.compare_queries,
     )
     .await?;
+    let frontier_diagnosis = diagnose_grouped_frontier(
+        &corpus_ids,
+        &corpus,
+        &query_ids,
+        &queries,
+        &graph,
+        medoid,
+        &args,
+    )?;
 
     let rendered = render_probe(
         &args,
@@ -217,6 +251,7 @@ pub async fn run(conn: &ConnectionOptions, args: BuildProbeArgs) -> Result<()> {
         recall,
         &stats,
         &comparisons,
+        frontier_diagnosis.as_ref(),
     );
     crate::ecaz_println!("{rendered}");
     if let Some(path) = args.log_output {
@@ -294,6 +329,208 @@ async fn compare_query_results(
         });
     }
     Ok(comparisons)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FrontierDiagnosis {
+    query_id: i64,
+    list_size: usize,
+    rerank_budget: usize,
+    top_frontier_ids: Vec<i64>,
+    reranked_ids: Vec<i64>,
+    exact_rows: Vec<FrontierExactRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FrontierExactRow {
+    id: i64,
+    exact_rank: usize,
+    frontier_rank: Option<usize>,
+    in_rerank_budget: bool,
+    approx_score: Option<f32>,
+    exact_distance: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ApproxCandidate {
+    node: u32,
+    score: f32,
+}
+
+impl Eq for ApproxCandidate {}
+
+impl Ord for ApproxCandidate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.score
+            .partial_cmp(&other.score)
+            .unwrap_or(std::cmp::Ordering::Greater)
+            .then_with(|| self.node.cmp(&other.node))
+    }
+}
+
+impl PartialOrd for ApproxCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn diagnose_grouped_frontier(
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+    query_ids: &[i64],
+    queries: &Array2<f32>,
+    graph: &VamanaGraph,
+    medoid: u32,
+    args: &BuildProbeArgs,
+) -> Result<Option<FrontierDiagnosis>> {
+    let Some(query_id) = args.frontier_query_id else {
+        return Ok(None);
+    };
+    let query_row = query_ids
+        .iter()
+        .position(|id| *id == query_id)
+        .ok_or_else(|| eyre!("query id {query_id} not found in fetched query set"))?;
+    let rerank_budget = args.frontier_rerank_budget.unwrap_or(args.scan_list_size);
+
+    let corpus_slice = corpus
+        .as_slice()
+        .expect("fetched corpus matrix should be contiguous");
+    let source_refs = corpus_slice
+        .chunks_exact(corpus.ncols())
+        .collect::<Vec<_>>();
+    let group_size = diskann_default_group_size(corpus.ncols());
+    let train_size = corpus.nrows().min(1024);
+    let model = train_grouped_pq4_model(
+        &source_refs,
+        corpus.ncols(),
+        args.seed,
+        group_size,
+        train_size,
+        8,
+    )
+    .map_err(|e| eyre!("training grouped-PQ model for frontier diagnostic failed: {e}"))?;
+    let codes = source_refs
+        .iter()
+        .map(|source| derive_grouped_pq4_code(source, &model))
+        .collect::<Vec<_>>();
+    let padded_query = pad_input(&queries.row(query_row).to_vec(), model.signs.len());
+    let rotated = srht(&padded_query, &model.signs);
+    let flat_codebooks = model
+        .codebooks
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let query_lut = build_grouped_pq_lut_f32(&rotated, &flat_codebooks, model.group_size);
+    let frontier = grouped_pq_frontier(graph, medoid, args.scan_list_size, |node| {
+        -grouped_pq_score_f32(&query_lut, model.group_count, &codes[node as usize])
+    });
+    let exact_nodes = exact_top_k(corpus, queries, query_row, args.recall_k);
+    let mut reranked = frontier
+        .iter()
+        .take(rerank_budget)
+        .map(|candidate| {
+            (
+                candidate.node,
+                query_unit_ip_distance(corpus, queries, query_row, candidate.node),
+            )
+        })
+        .collect::<Vec<_>>();
+    reranked.sort_by(|(left_node, left_distance), (right_node, right_distance)| {
+        left_distance
+            .partial_cmp(right_distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left_node.cmp(right_node))
+    });
+    reranked.truncate(args.recall_k);
+
+    let top_frontier_nodes = frontier
+        .iter()
+        .take(args.frontier_top)
+        .map(|candidate| candidate.node)
+        .collect::<Vec<_>>();
+    let reranked_nodes = reranked.iter().map(|(node, _)| *node).collect::<Vec<_>>();
+    let exact_rows = exact_nodes
+        .iter()
+        .enumerate()
+        .map(|(idx, &node)| {
+            let frontier_pos = frontier.iter().position(|candidate| candidate.node == node);
+            FrontierExactRow {
+                id: corpus_ids[node as usize],
+                exact_rank: idx + 1,
+                frontier_rank: frontier_pos.map(|pos| pos + 1),
+                in_rerank_budget: frontier_pos.is_some_and(|pos| pos < rerank_budget),
+                approx_score: frontier_pos.map(|pos| frontier[pos].score),
+                exact_distance: query_unit_ip_distance(corpus, queries, query_row, node),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(Some(FrontierDiagnosis {
+        query_id,
+        list_size: args.scan_list_size,
+        rerank_budget,
+        top_frontier_ids: nodes_to_ids(corpus_ids, &top_frontier_nodes),
+        reranked_ids: nodes_to_ids(corpus_ids, &reranked_nodes),
+        exact_rows,
+    }))
+}
+
+fn grouped_pq_frontier<F>(
+    graph: &VamanaGraph,
+    medoid: u32,
+    list_size: usize,
+    score: F,
+) -> Vec<ApproxCandidate>
+where
+    F: Fn(u32) -> f32,
+{
+    let mut frontier = vec![ApproxCandidate {
+        node: medoid,
+        score: score(medoid),
+    }];
+    let mut in_frontier = vec![false; graph.neighbors.len()];
+    let mut visited = vec![false; graph.neighbors.len()];
+    in_frontier[medoid as usize] = true;
+
+    loop {
+        let next = frontier
+            .iter()
+            .copied()
+            .filter(|candidate| !visited[candidate.node as usize])
+            .min();
+        let Some(picked) = next else {
+            break;
+        };
+        visited[picked.node as usize] = true;
+
+        for &neighbor in &graph.neighbors[picked.node as usize] {
+            let neighbor_idx = neighbor as usize;
+            if in_frontier[neighbor_idx] {
+                continue;
+            }
+            frontier.push(ApproxCandidate {
+                node: neighbor,
+                score: score(neighbor),
+            });
+            in_frontier[neighbor_idx] = true;
+        }
+
+        if frontier.len() > list_size {
+            frontier.sort();
+            for candidate in &frontier[list_size..] {
+                in_frontier[candidate.node as usize] = false;
+            }
+            frontier.truncate(list_size);
+        }
+    }
+
+    frontier.sort();
+    frontier
+}
+
+fn diskann_default_group_size(dimensions: usize) -> usize {
+    effective_transform_dim(dimensions).min(16)
 }
 
 fn nodes_to_ids(corpus_ids: &[i64], nodes: &[u32]) -> Vec<i64> {
@@ -450,6 +687,7 @@ fn render_probe(
     recall: f64,
     stats: &VamanaBuildStats,
     comparisons: &[QueryComparison],
+    frontier_diagnosis: Option<&FrontierDiagnosis>,
 ) -> String {
     let mut out = String::new();
     writeln!(
@@ -585,8 +823,62 @@ fn render_probe(
                 Cell::new(join_ids(&row.sql_ids)),
             ]);
         }
-        write!(out, "{compare}").expect("writing to String should not fail");
-    } else {
+        writeln!(out, "{compare}").expect("writing to String should not fail");
+    }
+
+    if let Some(frontier) = frontier_diagnosis {
+        let mut summary = Table::new();
+        summary.load_preset(UTF8_FULL);
+        summary.set_header(vec!["field", "value"]);
+        summary.add_row(vec![
+            Cell::new("frontier_query_id"),
+            Cell::new(frontier.query_id),
+        ]);
+        summary.add_row(vec![Cell::new("list_size"), Cell::new(frontier.list_size)]);
+        summary.add_row(vec![
+            Cell::new("rerank_budget"),
+            Cell::new(frontier.rerank_budget),
+        ]);
+        summary.add_row(vec![
+            Cell::new("top_frontier_ids"),
+            Cell::new(join_ids(&frontier.top_frontier_ids)),
+        ]);
+        summary.add_row(vec![
+            Cell::new("reranked_ids"),
+            Cell::new(join_ids(&frontier.reranked_ids)),
+        ]);
+        writeln!(out, "{summary}").expect("writing to String should not fail");
+
+        let mut exact = Table::new();
+        exact.load_preset(UTF8_FULL);
+        exact.set_header(vec![
+            "id",
+            "exact_rank",
+            "frontier_rank",
+            "in_rerank_budget",
+            "approx_score",
+            "exact_distance",
+        ]);
+        for row in &frontier.exact_rows {
+            exact.add_row(vec![
+                Cell::new(row.id),
+                Cell::new(row.exact_rank),
+                Cell::new(
+                    row.frontier_rank
+                        .map(|rank| rank.to_string())
+                        .unwrap_or_else(|| "missing".to_owned()),
+                ),
+                Cell::new(row.in_rerank_budget),
+                Cell::new(
+                    row.approx_score
+                        .map(|score| format!("{score:.6}"))
+                        .unwrap_or_else(|| "missing".to_owned()),
+                ),
+                Cell::new(format!("{:.6}", row.exact_distance)),
+            ]);
+        }
+        write!(out, "{exact}").expect("writing to String should not fail");
+    } else if comparisons.is_empty() {
         let _ = out.pop();
     }
     out
@@ -640,6 +932,9 @@ mod tests {
             scan_list_size: 100,
             queries_limit: None,
             compare_queries: 0,
+            frontier_query_id: None,
+            frontier_top: 20,
+            frontier_rerank_budget: None,
             log_output: None,
         };
         let summary = MetricSummary {
@@ -686,6 +981,7 @@ mod tests {
             1.0,
             &stats,
             &[],
+            None,
         );
         assert!(rendered.contains("DiskANN build probe"));
         assert!(rendered.contains("reachable_fraction"));
@@ -710,6 +1006,9 @@ mod tests {
             scan_list_size: 100,
             queries_limit: None,
             compare_queries: 1,
+            frontier_query_id: None,
+            frontier_top: 20,
+            frontier_rerank_budget: None,
             log_output: None,
         };
         let summary = MetricSummary {
@@ -756,10 +1055,26 @@ mod tests {
             1.0,
             &stats,
             &[comparison],
+            None,
         );
         assert!(rendered.contains("query_id"));
         assert!(rendered.contains("1,2"));
         assert!(rendered.contains("4,5"));
+    }
+
+    #[test]
+    fn grouped_pq_frontier_prunes_by_best_scores() {
+        let graph = VamanaGraph {
+            neighbors: vec![vec![1, 2], vec![3], vec![], vec![]],
+            max_degree: 2,
+        };
+        let scores = [3.0_f32, 2.0, 0.5, 0.1];
+        let frontier = grouped_pq_frontier(&graph, 0, 3, |node| scores[node as usize]);
+        let nodes = frontier
+            .iter()
+            .map(|candidate| candidate.node)
+            .collect::<Vec<_>>();
+        assert_eq!(nodes, vec![3, 2, 1]);
     }
 
     #[test]

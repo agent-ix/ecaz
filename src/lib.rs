@@ -63,9 +63,14 @@ pub mod bench_api {
     }
 
     // Rotation
-    pub use crate::quant::rotation::{inverse_srht, pad_input, sign_vector, srht, transform_dim};
+    pub use crate::quant::rotation::{
+        effective_transform_dim, inverse_srht, pad_input, sign_vector, srht, transform_dim,
+    };
 
     // Codebook
+    pub use crate::am::common::training::{
+        derive_grouped_pq4_code, train_grouped_pq4_model, GroupedPq4Model,
+    };
     pub use crate::quant::codebook::{beta_pdf, lloyd_max};
     pub use crate::quant::grouped_pq::{
         build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_nibble, grouped_pq_score_f32,
