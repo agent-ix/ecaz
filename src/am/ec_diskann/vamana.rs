@@ -49,6 +49,73 @@ impl VamanaGraph {
     }
 }
 
+/// Aggregate summary for build-time counters captured by
+/// [`build_vamana_graph_with_stats`].
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MetricSummary {
+    pub count: usize,
+    pub min: usize,
+    pub mean: f64,
+    pub p50: usize,
+    pub p95: usize,
+    pub p99: usize,
+    pub max: usize,
+}
+
+impl MetricSummary {
+    fn from_values(values: &[usize]) -> Self {
+        if values.is_empty() {
+            return Self::default();
+        }
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let sum: usize = sorted.iter().sum();
+        Self {
+            count: sorted.len(),
+            min: sorted[0],
+            mean: sum as f64 / sorted.len() as f64,
+            p50: percentile(&sorted, 0.50),
+            p95: percentile(&sorted, 0.95),
+            p99: percentile(&sorted, 0.99),
+            max: *sorted.last().expect("non-empty sorted values"),
+        }
+    }
+}
+
+fn percentile(sorted: &[usize], p: f64) -> usize {
+    debug_assert!(!sorted.is_empty());
+    let idx = ((sorted.len() - 1) as f64 * p).ceil() as usize;
+    sorted[idx.min(sorted.len() - 1)]
+}
+
+/// Per-pass Vamana build diagnostics. The vectors are summarized after
+/// each pass so callers can inspect candidate generation without storing
+/// per-node detail for large corpora.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VamanaBuildPassStats {
+    pub alpha: f32,
+    pub pivot_count: usize,
+    pub visited: MetricSummary,
+    pub existing_neighbors: MetricSummary,
+    pub candidate_pool: MetricSummary,
+    pub selected_neighbors: MetricSummary,
+    pub backlinks_added: usize,
+    pub reprunes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VamanaBuildStats {
+    pub node_count: usize,
+    pub medoid: u32,
+    pub max_degree: usize,
+    pub list_size: usize,
+    pub alpha_final: f32,
+    pub seed: u64,
+    pub passes: Vec<VamanaBuildPassStats>,
+    pub final_out_degree: MetricSummary,
+    pub final_in_degree: MetricSummary,
+}
+
 /// Result of [`greedy_search`]: the final frontier (top-`L` candidates by
 /// distance) and the full visited set.
 #[derive(Debug, Clone)]
@@ -295,10 +362,35 @@ pub fn build_vamana_graph<D>(
 where
     D: Fn(u32, u32) -> f32 + Copy,
 {
+    build_vamana_graph_with_stats(
+        node_count,
+        medoid,
+        max_degree,
+        list_size,
+        alpha_final,
+        seed,
+        dist,
+    )
+    .0
+}
+
+pub fn build_vamana_graph_with_stats<D>(
+    node_count: usize,
+    medoid: u32,
+    max_degree: usize,
+    list_size: usize,
+    alpha_final: f32,
+    seed: u64,
+    dist: D,
+) -> (VamanaGraph, VamanaBuildStats)
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
     let mut graph = VamanaGraph::empty(node_count, max_degree);
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut permutation: Vec<u32> = (0..node_count as u32).collect();
+    let mut passes = Vec::with_capacity(2);
 
     for &alpha in &[1.0f32, alpha_final] {
         // Re-shuffle each pass so insertion order is independent.
@@ -307,6 +399,13 @@ where
             permutation.swap(i, j);
         }
 
+        let mut visited_counts = Vec::with_capacity(permutation.len());
+        let mut existing_neighbor_counts = Vec::with_capacity(permutation.len());
+        let mut candidate_pool_counts = Vec::with_capacity(permutation.len());
+        let mut selected_neighbor_counts = Vec::with_capacity(permutation.len());
+        let mut backlinks_added = 0usize;
+        let mut reprunes = 0usize;
+
         for &i in &permutation {
             // Greedy search from medoid toward i; collect visited set
             // plus i's existing out-neighbors as the candidate pool.
@@ -314,6 +413,8 @@ where
             // the fresh visited set so later passes refine, rather
             // than replace, prior graph structure.
             let result = greedy_search(&graph, medoid, list_size, |n| dist(n, i));
+            let visited_count = result.visited.len();
+            let existing_neighbor_count = graph.neighbors[i as usize].len();
             let candidates = candidate_pool_for_prune(
                 i,
                 result.visited,
@@ -321,8 +422,10 @@ where
                 node_count,
                 dist,
             );
+            let candidate_count = candidates.len();
 
             let pruned = robust_prune(i, candidates, alpha, max_degree, dist);
+            let selected_count = pruned.len();
             graph.neighbors[i as usize] = pruned.clone();
 
             for j in pruned {
@@ -332,6 +435,7 @@ where
                 }
                 if neighbors_j.len() < max_degree {
                     neighbors_j.push(i);
+                    backlinks_added += 1;
                 } else {
                     // Re-prune j's neighborhood including i.
                     let mut combined: Vec<Candidate> = neighbors_j
@@ -346,12 +450,50 @@ where
                     combined.sort();
                     let repruned = robust_prune(j, combined, alpha, max_degree, dist);
                     graph.neighbors[j as usize] = repruned;
+                    reprunes += 1;
                 }
+            }
+
+            visited_counts.push(visited_count);
+            existing_neighbor_counts.push(existing_neighbor_count);
+            candidate_pool_counts.push(candidate_count);
+            selected_neighbor_counts.push(selected_count);
+        }
+
+        passes.push(VamanaBuildPassStats {
+            alpha,
+            pivot_count: permutation.len(),
+            visited: MetricSummary::from_values(&visited_counts),
+            existing_neighbors: MetricSummary::from_values(&existing_neighbor_counts),
+            candidate_pool: MetricSummary::from_values(&candidate_pool_counts),
+            selected_neighbors: MetricSummary::from_values(&selected_neighbor_counts),
+            backlinks_added,
+            reprunes,
+        });
+    }
+
+    let final_out_degrees: Vec<usize> = graph.neighbors.iter().map(Vec::len).collect();
+    let mut final_in_degrees = vec![0usize; graph.node_count()];
+    for neighbors in &graph.neighbors {
+        for &neighbor in neighbors {
+            if let Some(count) = final_in_degrees.get_mut(neighbor as usize) {
+                *count += 1;
             }
         }
     }
+    let stats = VamanaBuildStats {
+        node_count,
+        medoid,
+        max_degree,
+        list_size,
+        alpha_final,
+        seed,
+        passes,
+        final_out_degree: MetricSummary::from_values(&final_out_degrees),
+        final_in_degree: MetricSummary::from_values(&final_in_degrees),
+    };
 
-    graph
+    (graph, stats)
 }
 
 /// BFS from `start`, returning the set of reachable node ids.
@@ -484,7 +626,8 @@ mod tests {
         let points = synth_2d(100, 7);
         let dist = l2(&points);
         let medoid = approximate_medoid(points.len(), 100, 7, dist);
-        let graph = build_vamana_graph(points.len(), medoid, 8, 32, 1.2, 11, dist);
+        let (graph, stats) =
+            build_vamana_graph_with_stats(points.len(), medoid, 8, 32, 1.2, 11, dist);
 
         // Every node has at least one neighbor.
         for (i, neighbors) in graph.neighbors.iter().enumerate() {
@@ -509,6 +652,11 @@ mod tests {
             reachable.len(),
             graph.node_count()
         );
+        assert_eq!(stats.passes.len(), 2);
+        assert_eq!(stats.passes[0].pivot_count, points.len());
+        assert_eq!(stats.passes[1].pivot_count, points.len());
+        assert_eq!(stats.final_out_degree.count, points.len());
+        assert_eq!(stats.final_in_degree.count, points.len());
     }
 
     #[test]

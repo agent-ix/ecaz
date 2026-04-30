@@ -9,12 +9,14 @@ use color_eyre::eyre::Result;
 use crate::profiles::IndexProfile;
 use crate::psql::ConnectionOptions;
 
+mod build_probe;
 mod graph;
 pub mod latency;
 mod overhead;
 pub mod recall;
 mod storage;
 
+pub use build_probe::BuildProbeArgs;
 pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
@@ -42,6 +44,8 @@ pub enum BenchCommand {
     Storage(StorageArgs),
     /// DiskANN persisted graph diagnostics: reachability, degree, and edge counters.
     DiskannGraph(GraphArgs),
+    /// DiskANN in-memory build diagnostics: candidate pools, pruning, and degree shape.
+    DiskannBuildProbe(BuildProbeArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
 }
@@ -53,6 +57,7 @@ impl BenchCommand {
             BenchCommand::Latency(a) => latency::run(conn, a).await,
             BenchCommand::Storage(a) => storage::run(conn, a).await,
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
+            BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
         }
     }

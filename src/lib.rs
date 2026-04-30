@@ -92,6 +92,10 @@ pub mod bench_api {
         neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, MetadataPage,
         TqElementTuple, TqNeighborTuple,
     };
+    pub use crate::am::{
+        approximate_medoid, bfs_reachable, build_vamana_graph_with_stats, MetricSummary,
+        VamanaBuildPassStats, VamanaBuildStats, VamanaGraph,
+    };
     pub use crate::storage::page::{
         DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
         PAGE_HEADER_BYTES,

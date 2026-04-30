@@ -8,6 +8,10 @@ mod ec_ivf;
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
 pub(crate) use self::ec_diskann::diagnostics::DiskannGraphSummary;
+pub use self::ec_diskann::vamana::{
+    approximate_medoid, bfs_reachable, build_vamana_graph_with_stats, MetricSummary,
+    VamanaBuildPassStats, VamanaBuildStats, VamanaGraph,
+};
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
     graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
