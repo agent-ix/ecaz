@@ -19,7 +19,6 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{cmp::Reverse, collections::BinaryHeap};
 
 /// In-memory adjacency list. `neighbors[i]` is the out-edge set of node `i`.
 ///
@@ -175,7 +174,6 @@ where
     let mut in_frontier = vec![false; n];
     let mut visited_flag = vec![false; n];
     let mut visited_order = Vec::new();
-    let mut next_heap: BinaryHeap<Reverse<Candidate>> = BinaryHeap::new();
 
     let start_dist = query_dist(start);
     let mut frontier = vec![Candidate {
@@ -183,10 +181,15 @@ where
         distance: start_dist,
     }];
     in_frontier[start as usize] = true;
-    next_heap.push(Reverse(frontier[0]));
 
     loop {
-        let Some(picked) = pop_next_unvisited(&mut next_heap, &in_frontier, &visited_flag) else {
+        // Find closest unvisited entry in frontier.
+        let next = frontier
+            .iter()
+            .copied()
+            .filter(|c| !visited_flag[c.node as usize])
+            .min_by(|a, b| a.cmp(b));
+        let Some(picked) = next else {
             break;
         };
         visited_flag[picked.node as usize] = true;
@@ -202,14 +205,20 @@ where
                 distance: d,
             });
             in_frontier[neighbor as usize] = true;
-            next_heap.push(Reverse(Candidate {
-                node: neighbor,
-                distance: d,
-            }));
         }
 
-        while frontier.len() > list_size {
-            drop_worst_frontier_candidate(&mut frontier, &mut in_frontier);
+        // Truncate to L, keeping smallest distances. Using a max-heap on
+        // the tail to drop largest is O(F log L) but for the sizes we
+        // care about (L <= 200), a sort suffices.
+        if frontier.len() > list_size {
+            frontier.sort();
+            // Mark any nodes that fell off the end as no longer in
+            // frontier so they cannot be re-added on subsequent
+            // expansions.
+            for c in &frontier[list_size..] {
+                in_frontier[c.node as usize] = false;
+            }
+            frontier.truncate(list_size);
         }
     }
 
@@ -217,36 +226,6 @@ where
     GreedySearchResult {
         frontier,
         visited: visited_order,
-    }
-}
-
-fn pop_next_unvisited(
-    next_heap: &mut BinaryHeap<Reverse<Candidate>>,
-    in_frontier: &[bool],
-    visited_flag: &[bool],
-) -> Option<Candidate> {
-    while let Some(Reverse(candidate)) = next_heap.pop() {
-        let idx = candidate.node as usize;
-        if in_frontier.get(idx).copied().unwrap_or(false)
-            && !visited_flag.get(idx).copied().unwrap_or(true)
-        {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn drop_worst_frontier_candidate(frontier: &mut Vec<Candidate>, in_frontier: &mut [bool]) {
-    let Some((worst_idx, _)) = frontier
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| left.cmp(right))
-    else {
-        return;
-    };
-    let removed = frontier.swap_remove(worst_idx);
-    if let Some(in_frontier) = in_frontier.get_mut(removed.node as usize) {
-        *in_frontier = false;
     }
 }
 
