@@ -1,0 +1,26 @@
+Script started on 2026-04-30 16:31:50-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--release" "--features" "pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/tqvector)
+    Finished `release` profile [optimized] target(s) in 40.69s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+Error: 
+   0: failed writing `/home/peter/dev/tqvector/ecaz.control` to `/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control`
+   1: Read-only file system (os error 30)
+
+Location:
+   /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:269
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   0: cargo_pgrx::command::install::install_extension with pg_version=18.3 profile=Release test=false features=["pg18"]
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:117
+   1: cargo_pgrx::command::install::execute
+      at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cargo-pgrx-0.17.0/src/command/install.rs:65
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-04-30 16:32:31-07:00 [COMMAND_EXIT_CODE="1"]

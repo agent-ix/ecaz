@@ -1,0 +1,7 @@
+Script started on 2026-04-30 16:27:02-07:00 [<not executed on terminal>]
+rm -f vector.so   libvector.a  libvector.pc
+rm -f sql/vector--0.8.2.sql
+rm -f src/bitutils.o src/bitvec.o src/halfutils.o src/halfvec.o src/hnsw.o src/hnswbuild.o src/hnswinsert.o src/hnswscan.o src/hnswutils.o src/hnswvacuum.o src/ivfbuild.o src/ivfflat.o src/ivfinsert.o src/ivfkmeans.o src/ivfscan.o src/ivfutils.o src/ivfvacuum.o src/sparsevec.o src/vector.o src/bitutils.bc src/bitvec.bc src/halfutils.bc src/halfvec.bc src/hnsw.bc src/hnswbuild.bc src/hnswinsert.bc src/hnswscan.bc src/hnswutils.bc src/hnswvacuum.bc src/ivfbuild.bc src/ivfflat.bc src/ivfinsert.bc src/ivfkmeans.bc src/ivfscan.bc src/ivfutils.bc src/ivfvacuum.bc src/sparsevec.bc src/vector.bc
+rm -rf results/ regression.diffs regression.out tmp_check/ tmp_check_iso/ log/ output_iso/
+
+Script done on 2026-04-30 16:27:02-07:00 [COMMAND_EXIT_CODE="0"]
