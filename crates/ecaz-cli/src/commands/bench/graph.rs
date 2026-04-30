@@ -133,7 +133,7 @@ async fn fetch_summary(client: &tokio_postgres::Client, index_name: &str) -> Res
     let rows = client
         .query(
             "SELECT metric, value
-             FROM ec_diskann_index_graph_summary($1::regclass::oid)",
+             FROM ec_diskann_index_graph_summary($1::text::regclass::oid)",
             &[&index_name],
         )
         .await
