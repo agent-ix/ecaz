@@ -208,7 +208,7 @@ where
             }));
         }
 
-        if frontier.len() > list_size {
+        while frontier.len() > list_size {
             drop_worst_frontier_candidate(&mut frontier, &mut in_frontier);
         }
     }
