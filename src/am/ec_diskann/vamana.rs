@@ -304,6 +304,34 @@ where
     candidates
 }
 
+fn append_candidates_for_prune<D>(
+    pivot: u32,
+    candidates: &mut Vec<Candidate>,
+    extra: impl IntoIterator<Item = u32>,
+    node_count: usize,
+    dist: D,
+) where
+    D: Fn(u32, u32) -> f32,
+{
+    let mut seen = vec![false; node_count];
+    for candidate in candidates.iter() {
+        if (candidate.node as usize) < node_count {
+            seen[candidate.node as usize] = true;
+        }
+    }
+
+    for node in extra {
+        if node == pivot || (node as usize) >= node_count || seen[node as usize] {
+            continue;
+        }
+        seen[node as usize] = true;
+        candidates.push(Candidate {
+            node,
+            distance: dist(node, pivot),
+        });
+    }
+}
+
 /// Approximate medoid via random-sample sum-of-distances. `S = min(cap,
 /// node_count)` indices are drawn uniformly without replacement; the
 /// medoid is the sample with the smallest sum of distances to the
@@ -386,13 +414,42 @@ pub fn build_vamana_graph_with_stats<D>(
 where
     D: Fn(u32, u32) -> f32 + Copy,
 {
+    build_vamana_graph_with_pass1_extra_candidates(
+        node_count,
+        medoid,
+        max_degree,
+        list_size,
+        alpha_final,
+        seed,
+        &[],
+        dist,
+    )
+}
+
+pub fn build_vamana_graph_with_pass1_extra_candidates<D>(
+    node_count: usize,
+    medoid: u32,
+    max_degree: usize,
+    list_size: usize,
+    alpha_final: f32,
+    seed: u64,
+    pass1_extra_candidates: &[Vec<u32>],
+    dist: D,
+) -> (VamanaGraph, VamanaBuildStats)
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
+    debug_assert!(
+        pass1_extra_candidates.is_empty() || pass1_extra_candidates.len() == node_count,
+        "pass1 extra candidates must be empty or have one entry per node"
+    );
     let mut graph = VamanaGraph::empty(node_count, max_degree);
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut permutation: Vec<u32> = (0..node_count as u32).collect();
     let mut passes = Vec::with_capacity(2);
 
-    for &alpha in &[1.0f32, alpha_final] {
+    for (pass_index, &alpha) in [1.0f32, alpha_final].iter().enumerate() {
         // Re-shuffle each pass so insertion order is independent.
         for i in (1..permutation.len()).rev() {
             let j = rng.gen_range(0..=i);
@@ -415,13 +472,24 @@ where
             let result = greedy_search(&graph, medoid, list_size, |n| dist(n, i));
             let visited_count = result.visited.len();
             let existing_neighbor_count = graph.neighbors[i as usize].len();
-            let candidates = candidate_pool_for_prune(
+            let mut candidates = candidate_pool_for_prune(
                 i,
                 result.visited,
                 graph.neighbors[i as usize].iter().copied(),
                 node_count,
                 dist,
             );
+            if pass_index == 0 {
+                if let Some(extra) = pass1_extra_candidates.get(i as usize) {
+                    append_candidates_for_prune(
+                        i,
+                        &mut candidates,
+                        extra.iter().copied(),
+                        node_count,
+                        dist,
+                    );
+                }
+            }
             let candidate_count = candidates.len();
 
             let pruned = robust_prune(i, candidates, alpha, max_degree, dist);
@@ -606,6 +674,18 @@ mod tests {
     }
 
     #[test]
+    fn append_candidates_for_prune_deduplicates_extra_nodes() {
+        let mut pool = candidate_pool_for_prune(0, vec![1], Vec::new(), 4, |a, b| {
+            (a as i32 - b as i32).unsigned_abs() as f32
+        });
+        append_candidates_for_prune(0, &mut pool, vec![1, 2, 2, 0, 3], 4, |a, b| {
+            (a as i32 - b as i32).unsigned_abs() as f32
+        });
+        let nodes: Vec<u32> = pool.iter().map(|c| c.node).collect();
+        assert_eq!(nodes, vec![1, 2, 3]);
+    }
+
+    #[test]
     fn greedy_search_finds_nearest() {
         // Linear-chain graph: 0 - 1 - 2 - ... - 19. Distance to node 19
         // is just the index. Search from node 0 should converge to 19.
@@ -657,6 +737,28 @@ mod tests {
         assert_eq!(stats.passes[1].pivot_count, points.len());
         assert_eq!(stats.final_out_degree.count, points.len());
         assert_eq!(stats.final_in_degree.count, points.len());
+    }
+
+    #[test]
+    fn build_stats_include_pass1_extra_candidates() {
+        let points = synth_2d(50, 7);
+        let dist = l2(&points);
+        let medoid = approximate_medoid(points.len(), 50, 7, dist);
+        let extra = vec![vec![1, 2, 3, 4]; points.len()];
+        let (_graph, stats) = build_vamana_graph_with_pass1_extra_candidates(
+            points.len(),
+            medoid,
+            8,
+            16,
+            1.2,
+            11,
+            &extra,
+            dist,
+        );
+        assert!(
+            stats.passes[0].candidate_pool.mean > stats.passes[0].visited.mean,
+            "pass-1 extra candidates should enlarge the candidate pool"
+        );
     }
 
     #[test]
