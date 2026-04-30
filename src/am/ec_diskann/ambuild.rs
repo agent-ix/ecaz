@@ -19,6 +19,7 @@
 
 use std::ffi::{c_void, CStr};
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
@@ -57,6 +58,21 @@ struct BuildState {
     dimensions: Option<u16>,
     heap_tuples: Vec<RawHeapTuple>,
     scanned_tuples: usize,
+}
+
+#[derive(Debug, Default)]
+struct BuildFlushTiming {
+    source_ref_ms: u128,
+    training_ms: u128,
+    sidecar_setup_ms: u128,
+    payload_derivation_ms: u128,
+    build_persist_ms: u128,
+    overflow_ms: u128,
+    codebook_ms: u128,
+    write_pages_ms: u128,
+    metadata_ms: u128,
+    total_ms: u128,
+    data_pages: usize,
 }
 
 impl BuildState {
@@ -121,10 +137,13 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
+            let index_name = relation_name(index_relation);
             validate_single_ecvector_attribute(heap_relation, index_info);
 
             initialize_metadata_page(index_relation, empty_metadata(&state));
 
+            let total_started = Instant::now();
+            let heap_scan_started = Instant::now();
             let heap_tuples = pg_sys::table_index_build_scan(
                 heap_relation,
                 index_relation,
@@ -135,12 +154,29 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
                 (&mut state as *mut BuildState).cast(),
                 ptr::null_mut(),
             );
+            let heap_scan_elapsed = heap_scan_started.elapsed();
 
             let index_tuples = if state.heap_tuples.is_empty() {
+                log_ambuild_empty_timing(
+                    &index_name,
+                    heap_tuples,
+                    state.scanned_tuples,
+                    heap_scan_elapsed,
+                    total_started.elapsed(),
+                );
                 0.0
             } else {
-                flush_build_state(index_relation, &state)
+                let flush_timing = flush_build_state(index_relation, &state)
                     .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
+                log_ambuild_timing(
+                    &index_name,
+                    heap_tuples,
+                    state.scanned_tuples,
+                    state.heap_tuples.len(),
+                    heap_scan_elapsed,
+                    &flush_timing,
+                    total_started.elapsed(),
+                );
                 state.heap_tuples.len() as f64
             };
 
@@ -214,7 +250,9 @@ pub(super) fn default_group_size(dimensions: u16) -> usize {
 unsafe fn flush_build_state(
     index_relation: pg_sys::Relation,
     state: &BuildState,
-) -> Result<(), String> {
+) -> Result<BuildFlushTiming, String> {
+    let total_started = Instant::now();
+    let mut timing = BuildFlushTiming::default();
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -225,6 +263,7 @@ unsafe fn flush_build_state(
         .len()
         .min(PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE);
 
+    let source_ref_started = Instant::now();
     let source_refs: Vec<&[f32]> = state
         .heap_tuples
         .iter()
@@ -235,7 +274,9 @@ unsafe fn flush_build_state(
         ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
         "ambuild",
     );
+    timing.source_ref_ms = elapsed_ms(source_ref_started.elapsed());
 
+    let training_started = Instant::now();
     let model = training::train_grouped_pq4_model(
         &source_refs,
         dimensions as usize,
@@ -244,13 +285,17 @@ unsafe fn flush_build_state(
         train_size,
         PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
     )?;
+    timing.training_ms = elapsed_ms(training_started.elapsed());
 
+    let sidecar_setup_started = Instant::now();
     let sidecar_word_count =
         training::persisted_binary_sidecar_word_count(dimensions, DEFAULT_QUANT_BITS, seed);
     let has_binary_sidecar = sidecar_word_count > 0;
     let persisted_binary_quantizer = has_binary_sidecar
         .then(|| ProdQuantizer::cached(dimensions as usize, DEFAULT_QUANT_BITS, seed));
+    timing.sidecar_setup_ms = elapsed_ms(sidecar_setup_started.elapsed());
 
+    let payload_started = Instant::now();
     let payloads: Vec<NodePayload> = state
         .heap_tuples
         .iter()
@@ -272,6 +317,7 @@ unsafe fn flush_build_state(
             }
         })
         .collect();
+    timing.payload_derivation_ms = elapsed_ms(payload_started.elapsed());
 
     let params = BuildParams {
         graph_degree_r: u16::try_from(state.options.graph_degree)
@@ -289,17 +335,21 @@ unsafe fn flush_build_state(
         has_binary_sidecar,
     };
 
+    let build_persist_started = Instant::now();
     let build_out = build_and_persist_vamana(params, &payloads, |a, b| {
         source_inner_product_distance(source_refs[a as usize], source_refs[b as usize])
     })?;
+    timing.build_persist_ms = elapsed_ms(build_persist_started.elapsed());
 
     let BuildOutput {
         metadata,
         persisted,
     } = build_out;
     let mut chain = persisted.chain;
+    timing.data_pages = chain.pages().len();
     let binary_word_count = params.binary_word_count();
     let search_code_len = params.search_code_len();
+    let overflow_started = Instant::now();
     for (node_index, tuple) in state.heap_tuples.iter().enumerate() {
         insert::stage_overflow_heap_tids_in_chain(
             &mut chain,
@@ -310,13 +360,81 @@ unsafe fn flush_build_state(
             &tuple.overflow_heap_tids,
         )?;
     }
+    timing.overflow_ms = elapsed_ms(overflow_started.elapsed());
+    let codebook_started = Instant::now();
     let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
+    timing.codebook_ms = elapsed_ms(codebook_started.elapsed());
     let mut metadata = metadata;
     metadata.grouped_codebook_head = codebook_head;
 
+    let write_pages_started = Instant::now();
     unsafe { write_data_pages(index_relation, &chain) };
+    timing.write_pages_ms = elapsed_ms(write_pages_started.elapsed());
+    let metadata_started = Instant::now();
     unsafe { overwrite_metadata_page(index_relation, &metadata) };
-    Ok(())
+    timing.metadata_ms = elapsed_ms(metadata_started.elapsed());
+    timing.total_ms = elapsed_ms(total_started.elapsed());
+    Ok(timing)
+}
+
+fn elapsed_ms(duration: Duration) -> u128 {
+    duration.as_millis()
+}
+
+unsafe fn relation_name(relation: pg_sys::Relation) -> String {
+    let rd_rel = unsafe { (*relation).rd_rel.as_ref() }
+        .expect("opened relation should expose pg_class metadata");
+    unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn log_ambuild_empty_timing(
+    index_name: &str,
+    heap_tuples: f64,
+    scanned_tuples: usize,
+    heap_scan_elapsed: Duration,
+    total_elapsed: Duration,
+) {
+    pgrx::log!(
+        "ec_diskann_ambuild_timing index={} phase=empty heap_tuples={} scanned_tuples={} heap_scan_ms={} total_ms={}",
+        index_name,
+        heap_tuples,
+        scanned_tuples,
+        elapsed_ms(heap_scan_elapsed),
+        elapsed_ms(total_elapsed)
+    );
+}
+
+fn log_ambuild_timing(
+    index_name: &str,
+    heap_tuples: f64,
+    scanned_tuples: usize,
+    unique_tuples: usize,
+    heap_scan_elapsed: Duration,
+    flush: &BuildFlushTiming,
+    total_elapsed: Duration,
+) {
+    pgrx::log!(
+        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        index_name,
+        heap_tuples,
+        scanned_tuples,
+        unique_tuples,
+        flush.data_pages,
+        elapsed_ms(heap_scan_elapsed),
+        flush.source_ref_ms,
+        flush.training_ms,
+        flush.sidecar_setup_ms,
+        flush.payload_derivation_ms,
+        flush.build_persist_ms,
+        flush.overflow_ms,
+        flush.codebook_ms,
+        flush.write_pages_ms,
+        flush.metadata_ms,
+        flush.total_ms,
+        elapsed_ms(total_elapsed)
+    );
 }
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
