@@ -394,9 +394,18 @@ fn pop_next_active(
     entries: &HashMap<ItemPointer, FrontierEntry>,
     scratch: &VisitedState,
 ) -> Option<ScanCandidate> {
-    let active = peek_next_active(next_heap, entries, scratch)?;
-    next_heap.pop();
-    Some(active)
+    while let Some(Reverse(candidate)) = next_heap.pop() {
+        if scratch.visited.contains(&candidate.tid) {
+            continue;
+        }
+        if entries
+            .get(&candidate.tid)
+            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
+        {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {

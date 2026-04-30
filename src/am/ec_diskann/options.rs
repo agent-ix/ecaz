@@ -122,7 +122,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_enum_guc(
         c"ec_diskann.prefilter_kind",
         c"Session override for ec_diskann traversal prefilter.",
-        c"Diagnostic override used for Task 29a A/B measurement. Values: auto uses binary_sidecar when present and falls back to grouped_pq; binary_sidecar requires persisted binary sidecars; grouped_pq forces the legacy grouped-PQ prefilter.",
+        c"Per-session DiskANN traversal prefilter override. Values: auto uses binary_sidecar when present and falls back to grouped_pq; binary_sidecar requires persisted binary sidecars; grouped_pq forces the legacy grouped-PQ prefilter for emergency rollback.",
         &ECDISKANN_PREFILTER_KIND_GUC,
         GucContext::Userset,
         GucFlags::default(),

@@ -585,71 +585,14 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 return;
             }
 
-            let group_count = usize::from(opaque.metadata.search_subvector_count);
-            let group_size = usize::from(opaque.metadata.search_subvector_dim);
-            if group_count == 0 || group_size == 0 {
-                pgrx::error!(
-                    "ec_diskann scan metadata is missing grouped-PQ shape: group_count={}, group_size={}",
-                    group_count,
-                    group_size
-                );
-            }
-
-            let prefilter_kind = options::current_prefilter_kind();
-            let has_binary_sidecar =
-                opaque.metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
-            let use_binary_sidecar = match prefilter_kind {
-                options::PrefilterKind::Auto => has_binary_sidecar,
-                options::PrefilterKind::BinarySidecar => {
-                    if !has_binary_sidecar {
-                        pgrx::error!(
-                            "ec_diskann.prefilter_kind=binary_sidecar requested but index has no binary sidecar"
-                        );
-                    }
-                    true
-                }
-                options::PrefilterKind::GroupedPq => false,
-            };
-
-            opaque.query_rotated = encode_query_srht(
+            let prefilter = prepare_prefilter(
+                &opaque.chain,
+                &opaque.metadata,
                 &raw_query,
-                opaque.metadata.dimensions as usize,
-                opaque.metadata.seed,
-            );
-            if use_binary_sidecar {
-                opaque.query_binary_words = pack_query_sign_bits(
-                    &opaque.query_rotated,
-                    opaque.metadata.dimensions as usize,
-                );
-            } else {
-                let (helper_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
-                    &opaque.chain,
-                    opaque.metadata.grouped_codebook_head,
-                    group_count,
-                    group_size,
-                    opaque.metadata.dimensions as usize,
-                    opaque.metadata.seed,
-                    &raw_query,
-                )
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan query LUT build failed: {e}"));
-                opaque.flat_codebooks = read_grouped_codebook_chain(
-                    &opaque.chain,
-                    opaque.metadata.grouped_codebook_head,
-                    group_count,
-                    GROUPED_PQ_CENTROIDS * group_size,
-                )
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan codebook load failed: {e}"));
-                opaque.query_lut = build_grouped_pq_lut_f32(
-                    &opaque.query_rotated,
-                    &opaque.flat_codebooks,
-                    group_size,
-                );
-                if helper_group_count != group_count || helper_lut != opaque.query_lut {
-                    pgrx::error!(
-                        "ec_diskann scan LUT reconstruction drifted from the persisted helper path"
-                    );
-                }
-            }
+                options::current_prefilter_kind(),
+                "scan",
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
 
             let reader = PersistedGraphReader::new(
                 &opaque.chain,
@@ -686,57 +629,29 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 rerank_budget: opaque.rerank_budget,
                 top_k: sql_result_cap,
             };
-            let results = if use_binary_sidecar {
-                scan::vamana_scan_with(
-                    &reader,
-                    &mut opaque.visited,
-                    scan_params,
-                    |tuple| {
-                        hamming_xor_popcount(&opaque.query_binary_words, &tuple.binary_words) as f32
-                    },
-                    |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation_state.0,
-                        snapshot_state.0,
-                        slot,
-                        source_attnum,
-                        &raw_query,
-                        heap_tid,
-                    ) {
-                        Ok(distance) => distance,
-                        Err(error) => {
-                            if rerank_error.borrow().is_none() {
-                                *rerank_error.borrow_mut() = Some(error);
-                            }
-                            f32::INFINITY
+            let results = scan::vamana_scan_with(
+                &reader,
+                &mut opaque.visited,
+                scan_params,
+                |tuple| prefilter.score(tuple),
+                |heap_tid| match exact_heap_rerank_distance(
+                    heap_relation_state.0,
+                    snapshot_state.0,
+                    slot,
+                    source_attnum,
+                    &raw_query,
+                    heap_tid,
+                ) {
+                    Ok(distance) => distance,
+                    Err(error) => {
+                        if rerank_error.borrow().is_none() {
+                            *rerank_error.borrow_mut() = Some(error);
                         }
-                    },
-                )
-            } else {
-                scan::vamana_scan_with(
-                    &reader,
-                    &mut opaque.visited,
-                    scan_params,
-                    |tuple| {
-                        -grouped_pq_score_f32(&opaque.query_lut, group_count, &tuple.search_code)
-                    },
-                    |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation_state.0,
-                        snapshot_state.0,
-                        slot,
-                        source_attnum,
-                        &raw_query,
-                        heap_tid,
-                    ) {
-                        Ok(distance) => distance,
-                        Err(error) => {
-                            if rerank_error.borrow().is_none() {
-                                *rerank_error.borrow_mut() = Some(error);
-                            }
-                            f32::INFINITY
-                        }
-                    },
-                )
-            };
+                        f32::INFINITY
+                    }
+                },
+            );
+            prefilter.load_into_scan_opaque(opaque);
             scan_state::release_owned_scan_heap_state(
                 heap_relation_state.0,
                 heap_relation_state.1,
@@ -1287,6 +1202,116 @@ struct VacuumFillPlanner<'a> {
     dead_set: &'a HashSet<ItemPointer>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum PreparedPrefilter {
+    BinarySidecar {
+        rotated_query: Vec<f32>,
+        query_words: Vec<u64>,
+    },
+    GroupedPq {
+        rotated_query: Vec<f32>,
+        flat_codebooks: Vec<f32>,
+        query_lut: Vec<f32>,
+        group_count: usize,
+    },
+}
+
+impl PreparedPrefilter {
+    fn score(&self, tuple: &VamanaNodeTuple) -> f32 {
+        match self {
+            Self::BinarySidecar { query_words, .. } => {
+                hamming_xor_popcount(query_words, &tuple.binary_words) as f32
+            }
+            Self::GroupedPq {
+                query_lut,
+                group_count,
+                ..
+            } => -grouped_pq_score_f32(query_lut, *group_count, &tuple.search_code),
+        }
+    }
+
+    fn load_into_scan_opaque(self, opaque: &mut DiskannScanOpaque) {
+        match self {
+            Self::BinarySidecar {
+                rotated_query,
+                query_words,
+            } => {
+                opaque.query_rotated = rotated_query;
+                opaque.query_binary_words = query_words;
+            }
+            Self::GroupedPq {
+                rotated_query,
+                flat_codebooks,
+                query_lut,
+                ..
+            } => {
+                opaque.query_rotated = rotated_query;
+                opaque.flat_codebooks = flat_codebooks;
+                opaque.query_lut = query_lut;
+            }
+        }
+    }
+}
+
+fn prepare_prefilter(
+    chain: &DataPageChain,
+    metadata: &VamanaMetadataPage,
+    raw_query: &[f32],
+    prefilter_kind: options::PrefilterKind,
+    context: &str,
+) -> Result<PreparedPrefilter, String> {
+    let has_binary_sidecar = metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
+    let use_binary_sidecar = match prefilter_kind {
+        options::PrefilterKind::Auto => has_binary_sidecar,
+        options::PrefilterKind::BinarySidecar => {
+            if !has_binary_sidecar {
+                return Err(format!(
+                    "ec_diskann.prefilter_kind=binary_sidecar requested but {context} has no binary sidecar"
+                ));
+            }
+            true
+        }
+        options::PrefilterKind::GroupedPq => false,
+    };
+
+    let dimensions = metadata.dimensions as usize;
+    let rotated_query = encode_query_srht(raw_query, dimensions, metadata.seed);
+    if use_binary_sidecar {
+        return Ok(PreparedPrefilter::BinarySidecar {
+            query_words: pack_query_sign_bits(&rotated_query, dimensions),
+            rotated_query,
+        });
+    }
+
+    let group_count = usize::from(metadata.search_subvector_count);
+    let group_size = usize::from(metadata.search_subvector_dim);
+    if group_count == 0 || group_size == 0 {
+        return Err(format!(
+            "ec_diskann {context} requires grouped-PQ metadata: group_count={}, group_size={}",
+            group_count, group_size
+        ));
+    }
+    if rotated_query.len() != group_count * group_size {
+        return Err(format!(
+            "ec_diskann {context} rotated query length {} does not match group_count {group_count} * group_size {group_size}",
+            rotated_query.len()
+        ));
+    }
+    let flat_codebooks = read_grouped_codebook_chain(
+        chain,
+        metadata.grouped_codebook_head,
+        group_count,
+        GROUPED_PQ_CENTROIDS * group_size,
+    )?;
+    let query_lut = build_grouped_pq_lut_f32(&rotated_query, &flat_codebooks, group_size);
+    Ok(PreparedPrefilter::GroupedPq {
+        rotated_query,
+        flat_codebooks,
+        query_lut,
+        group_count,
+    })
+}
+
 unsafe fn plan_vacuum_fill_candidates_for_target(
     planner: &VacuumFillPlanner<'_>,
     target_tid: ItemPointer,
@@ -1360,35 +1385,19 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         });
     }
 
-    let group_count = usize::from(planner.metadata.search_subvector_count);
-    let group_size = usize::from(planner.metadata.search_subvector_dim);
-    if group_count == 0 || group_size == 0 {
-        return Err(format!(
-            "ec_diskann vacuum repair requires grouped-PQ metadata: group_count={}, group_size={}",
-            group_count, group_size
-        ));
-    }
     let build_list_size = usize::from(planner.metadata.build_list_size_l);
     if build_list_size == 0 {
         return Err("ec_diskann vacuum repair requires build_list_size_l > 0".into());
     }
     let repair_scan_budget =
         vacuum_repair_scan_budget(build_list_size, planner.metadata.graph_degree_r as usize);
-    let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+    let prefilter = prepare_prefilter(
         planner.chain,
-        planner.metadata.grouped_codebook_head,
-        group_count,
-        group_size,
-        planner.metadata.dimensions as usize,
-        planner.metadata.seed,
+        planner.metadata,
         &target_source_vector,
+        options::current_prefilter_kind(),
+        "vacuum repair",
     )?;
-    if helper_group_count != group_count {
-        return Err(format!(
-            "ec_diskann vacuum repair grouped-PQ helper returned group_count {}, expected {}",
-            helper_group_count, group_count
-        ));
-    }
 
     let frontier_candidates = {
         let reader = PersistedGraphReader::new(
@@ -1406,9 +1415,7 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
             visited,
             entry_point,
             repair_scan_budget,
-            &|tuple: &VamanaNodeTuple| {
-                -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code)
-            },
+            &|tuple: &VamanaNodeTuple| prefilter.score(tuple),
         )?
     };
 
@@ -2026,6 +2033,91 @@ mod tests {
         Spi::run("RESET ec_diskann.list_size").expect("reset should succeed");
 
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_prefilter_kind_override_switches_prefilter() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_prefilter_kind_override (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_prefilter_kind_override
+             SELECT fixture.id,
+                    encode_to_ecvector(
+                        ARRAY(
+                            SELECT CASE WHEN dim = fixture.hot_dim THEN 1.0::real ELSE 0.0::real END
+                            FROM generate_series(1, 1536) dim
+                        ),
+                        4,
+                        42
+                    )
+             FROM (VALUES (1, 1), (2, 2), (3, 3), (4, 4)) AS fixture(id, hot_dim)",
+        )
+        .expect("fixture rows should insert");
+        Spi::run(
+            "CREATE INDEX ec_diskann_prefilter_kind_override_idx ON ec_diskann_prefilter_kind_override USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_prefilter_kind_override_idx");
+        let mut query = vec![0.0_f32; 1536];
+        query[0] = 1.0;
+
+        Spi::run("RESET ec_diskann.prefilter_kind").expect("reset should succeed");
+        let auto_prefilter = super::prepare_prefilter(
+            &chain,
+            &metadata,
+            &query,
+            super::options::current_prefilter_kind(),
+            "test",
+        )
+        .expect("auto prefilter should prepare");
+        assert!(
+            matches!(
+                auto_prefilter,
+                super::PreparedPrefilter::BinarySidecar { .. }
+            ),
+            "auto should use the persisted binary sidecar when present",
+        );
+
+        Spi::run("SET ec_diskann.prefilter_kind = 'grouped_pq'")
+            .expect("grouped_pq override should succeed");
+        let grouped_prefilter = super::prepare_prefilter(
+            &chain,
+            &metadata,
+            &query,
+            super::options::current_prefilter_kind(),
+            "test",
+        )
+        .expect("grouped-PQ prefilter should prepare");
+        assert!(
+            matches!(
+                grouped_prefilter,
+                super::PreparedPrefilter::GroupedPq { .. }
+            ),
+            "grouped_pq should force the legacy grouped-PQ prefilter",
+        );
+
+        Spi::run("SET ec_diskann.prefilter_kind = 'binary_sidecar'")
+            .expect("binary_sidecar override should succeed");
+        let binary_prefilter = super::prepare_prefilter(
+            &chain,
+            &metadata,
+            &query,
+            super::options::current_prefilter_kind(),
+            "test",
+        )
+        .expect("binary sidecar prefilter should prepare");
+        assert!(
+            matches!(
+                binary_prefilter,
+                super::PreparedPrefilter::BinarySidecar { .. }
+            ),
+            "binary_sidecar should force the sidecar prefilter when persisted",
+        );
+        Spi::run("RESET ec_diskann.prefilter_kind").expect("reset should succeed");
     }
 
     fn explain_text(sql: &str) -> String {
