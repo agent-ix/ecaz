@@ -1,6 +1,6 @@
 # Task 29d: DiskANN Pre-Landing Performance Sweep
 
-Status: planned, blocks merge of `task29-diskann-initial-tuning`
+Status: in progress, blocks merge of `task29-diskann-initial-tuning`
 Owner: coder1 / runtime-index track
 Backstory: `review/11105-task29-release-latency-refresh/feedback.md`
 
@@ -43,6 +43,17 @@ Each sub-task gets its own packet. Land changes one at a time so
 deltas are clean.
 
 ## 29d-1 — Build heap-frontier release-mode A/B (½ day)
+
+Status: complete — do not reland. Packet:
+`review/11106-task29d-build-heap-frontier-ab/`.
+
+Release-mode A/B result on the same isolated real-10k DROP+CREATE surface:
+heap-frontier total build time was `75.492s` versus the active-mask baseline
+`70.678s` from packet `11104` (`+6.8%`). `core_graph_ms` regressed from
+`67,571` to `71,617` (`+6.0%`), with pass 1 growing from `46,832 ms` to
+`49,683 ms`. This crosses the ≥5% loss threshold, so the original debug-mode
+regression replicated in release mode. The scan/build asymmetry is real; leave
+the build-side heap-frontier experiment reverted.
 
 ### Background
 
