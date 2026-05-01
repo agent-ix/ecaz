@@ -94,12 +94,23 @@ WITH (
 );
 ```
 
-`ec_diskann` is an opt-in DiskANN/Vamana-style graph index. Local Task 29
-measurements established its current build/recall/latency baseline; product
-claims still need dedicated benchmark hardware.
+`ec_diskann` is an opt-in DiskANN/Vamana-style graph index. It currently
+expects unit-normalized source vectors. Local Task 29 measurements established
+its current build/recall/latency baseline; product claims still need dedicated
+benchmark hardware.
 
 ```sql
-CREATE INDEX ON memories
+CREATE TABLE unit_memories (
+    id bigint generated always as identity primary key,
+    embedding ecvector(4)
+);
+
+INSERT INTO unit_memories (embedding)
+VALUES
+    (encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::float4[], 4, 42)),
+    (encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0]::float4[], 4, 42));
+
+CREATE INDEX ON unit_memories
 USING ec_diskann (embedding ecvector_diskann_ip_ops)
 WITH (
     graph_degree = 32,
@@ -126,16 +137,19 @@ make pg-test-pg17
 
 ## Performance
 
-Measured on 1536-dimensional OpenAI embeddings ([DBpedia corpus](docs/recall-methodology.md)):
+Measured local results on 1536-dimensional OpenAI embeddings
+([DBpedia corpus](docs/recall-methodology.md)):
 
-| Metric | Value |
+| Surface | Current local result |
 | --- | --- |
 | Compression | 7.85x vs fp32 (783 bytes per 1536-dim vector) |
-| Recall@10 (10K, m=8) | 97.1% – 97.5% |
-| Recall@10 (50K, m=8) | 92.6% – 95.2% |
-| Latency target | p50 < 5ms, p99 < 15ms (top-10 on 50K) |
+| HNSW recall@10 | 97.1% - 97.5% on 10K; 92.6% - 95.2% on 50K |
+| IVF 100K selected point | Recall@10 0.9920, p50 173.4 ms, 19,791,872 B index |
+| DiskANN real-10K selected point | Recall@10 0.9965 - 0.9975, mean 7.80 - 9.34 ms, 4,939,776 B index |
 
-See [Benchmarks](docs/benchmarks.md) for full results and methodology.
+These are local engineering results, not product benchmark claims. See
+[Benchmarks](docs/benchmarks.md) for full results, source packets, and
+methodology.
 
 ## Documentation
 

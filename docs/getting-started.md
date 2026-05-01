@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) stable toolchain
-- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17: `cargo install cargo-pgrx@0.17`
+- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17:
+  `cargo install cargo-pgrx@0.17`
 - PostgreSQL 17 or 18 development headers
 
 ## Setup
@@ -22,36 +23,58 @@ cargo pgrx install --sudo --release
 
 ## First Query
 
-Connect to your local PostgreSQL and try:
+Connect to PostgreSQL and create a small table with the canonical `ecvector`
+row type:
 
 ```sql
 CREATE EXTENSION ecaz;
 
--- Create a table with a tqvector column
 CREATE TABLE items (
-    id serial PRIMARY KEY,
-    embedding tqvector
+    id bigint generated always as identity primary key,
+    embedding ecvector(4)
 );
 
--- Encode and insert a vector
---   encode_to_tqvector(input, codebook_bits, rng_seed)
---     input:          float4[] — the raw embedding
---     codebook_bits:  integer  — quantization depth (e.g. 4)
---     rng_seed:       bigint   — deterministic seed for the random rotation
 INSERT INTO items (embedding)
-VALUES (encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, ...]::float4[], 4, 42));
+VALUES
+    (encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::float4[], 4, 42)),
+    (encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0]::float4[], 4, 42)),
+    (encode_to_ecvector(ARRAY[-1.0, 0.0, 0.0, 0.0]::float4[], 4, 42));
 
--- Create an HNSW index
-CREATE INDEX ON items USING ec_hnsw (embedding) WITH (m=8, ef_construction=64);
+CREATE INDEX items_hnsw_idx
+ON items USING ec_hnsw (embedding ecvector_ip_ops)
+WITH (m = 8, ef_construction = 64);
 
--- Find nearest neighbors
-SELECT id FROM items
-ORDER BY embedding <#> encode_to_tqvector($query::float4[], 4, 42)
-LIMIT 10;
+SELECT id
+FROM items
+ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::float4[]
+LIMIT 2;
+```
+
+`<#>` is negative inner-product distance, so `ORDER BY ... ASC` returns the
+highest inner-product matches first.
+
+## Other Index Types
+
+Ecaz also includes opt-in IVF and DiskANN access methods.
+
+```sql
+CREATE INDEX items_ivf_idx
+ON items USING ec_ivf (embedding ecvector_ip_ops)
+WITH (nlists = 2, nprobe = 1, storage_format = 'turboquant');
+```
+
+The sample rows above are unit-normalized, so they can also be used with
+DiskANN. DiskANN currently validates this contract because its v0 graph
+distance wrapper preserves `<#>` ordering only for unit-normalized vectors:
+
+```sql
+CREATE INDEX items_diskann_idx
+ON items USING ec_diskann (embedding ecvector_diskann_ip_ops)
+WITH (graph_degree = 32, build_list_size = 100, list_size = 100);
 ```
 
 ## Next Steps
 
-- [Usage Guide](usage.md) — encoding parameters, index tuning, query patterns
-- [Benchmarks](benchmarks.md) — performance results and methodology
-- [Contributing](contributing.md) — development workflow, testing, CI
+- [Usage Guide](usage.md) - encoding, index choices, and tuning knobs
+- [Benchmarks](benchmarks.md) - local results and methodology
+- [Contributing](contributing.md) - development workflow, testing, CI
