@@ -102,6 +102,24 @@ is unresolved.
 
 ## 29d-2 — L=64 scan latency parity with pgvectorscale (1–2 days)
 
+Status: complete — no production change. Packet:
+`review/11107-task29d-l64-scan-profile/`.
+
+The valid current-head L=64 baseline after rebuilding the index with the
+non-experimental extension was `7.82 ms` mean, p50/p95/p99
+`7.70/8.46/11.8 ms`, recall@10 `0.9965` from the prior release sweep shape.
+System-wide `perf record` is blocked on this host by
+`perf_event_paranoid=2`, so profiling used `EXPLAIN (ANALYZE, BUFFERS)` plus
+scan-time rerank-window A/B through the existing `rerank_budget` reloption.
+
+The A/B identifies exact heap rerank as the dominant L=64 cost:
+`rerank_budget=10` reached pgvectorscale-like latency (`3.43 ms`) but recall
+collapsed to `0.8600`; `32` reached `5.26 ms` but recall was `0.9880`; `48`
+was `6.58 ms` at `0.9955`; `56` was the first tested setting to meet the
+recall floor (`0.9960`) but still measured `7.16 ms`. This misses the
+sub-6 ms stop target, so the residual is documented instead of changing the
+default. The index reloptions were restored to `rerank_budget=64, top_k=10`.
+
 ### Background
 
 Packet `11105` measured ec_diskann at 9.19 ms / pgvectorscale at
