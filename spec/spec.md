@@ -39,6 +39,9 @@ This specification is the top-level requirements artifact for the current main-b
 - `ec_hnsw`, the default general-purpose graph access method
 - `ec_ivf`, the optional IVF posting-list access method
 - `ec_diskann`, the optional DiskANN/Vamana-style graph access method
+- `ec_spire`, the planned SPIRE partition-object access method for recursive
+  IVF routing, local multi-NVMe partition stores, and future multi-machine
+  placement
 - `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
 
@@ -57,6 +60,9 @@ This specification governs:
 - HNSW build, scan, insert, vacuum, page layout, reloptions, GUCs, planner costing, PG18 ReadStream, EXPLAIN, stats, and parallel build behavior
 - IVF centroid training, posting-list persistence, scan/rerank behavior, insert/vacuum/admin snapshots, reloptions, GUCs, planner costing, and measurement evidence
 - DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
+- SPIRE planning requirements for PID-addressed partition objects, logical
+  `(vec_id, pid)` assignment rows, epoch publication, local multi-NVMe
+  partition stores, and future multi-machine placement
 - WAL safety for index mutations and crash-safe page writes
 - The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
 - Benchmark methodology and review-packet artifact provenance for any performance or recall claim
@@ -68,6 +74,8 @@ This specification does not govern:
 - The TurboQuant, HNSW, IVF, DiskANN, PQ-FastScan, or RaBitQ research papers themselves
 - Application schema design above the extension boundary
 - Query routing, cross-agent fan-out, and shard selection
+- Production distributed SPIRE serving before an accepted implementation ADR,
+  remote consistency model, and controlled multi-machine measurements
 - Product benchmark claims not backed by dedicated controlled hardware
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
@@ -93,6 +101,7 @@ This specification does not govern:
 | `ec_hnsw` | `ecvector_ip_ops`, `tqvector_ip_ops` | Default general-purpose ANN graph index | Implemented |
 | `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
 | `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
+| `ec_spire` | TBD | Planned recursive IVF/SPIRE partition-object index | Draft planning |
 
 All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 
@@ -103,6 +112,12 @@ All current index families expose inner-product ordering through `<#>` as negati
 `ec_ivf` is an opt-in AM for posting-list experiments, high-ingest tradeoffs, and quantizer/storage comparisons. Local Task 28 evidence is landed; product claims require controlled hardware.
 
 `ec_diskann` is an opt-in AM for Vamana/DiskANN research and disk-resident graph comparisons. Local Task 29 evidence is landed; the v0 distance wrapper requires finite unit-normalized source vectors.
+
+`ec_spire` is planned as a SPIRE-inspired access method. Its storage model is
+based on PID-addressed partition objects, not PostgreSQL declarative table
+partitions. The first implementation target is a local single-level foundation;
+the design preserves a path to local multi-NVMe partition stores and later
+multi-machine PID placement.
 
 ## 4. Architecture
 
@@ -116,6 +131,7 @@ graph TD
     H["ec_hnsw"]
     I["ec_ivf"]
     D["ec_diskann"]
+    S["ec_spire<br/>planned"]
     PG18["PG18 Integration<br/>ReadStream, cost callbacks, EXPLAIN, stats"]
     CLI["ecaz CLI<br/>corpus, bench, compare, stress"]
     EVID["Review Packets<br/>benchmark and measurement evidence"]
@@ -128,6 +144,7 @@ graph TD
     AM --> H
     AM --> I
     AM --> D
+    AM --> S
     PG18 --> H
     PG18 --> I
     PG18 --> D
@@ -147,7 +164,8 @@ src/
 │   ├── common/
 │   ├── ec_hnsw/
 │   ├── ec_ivf/
-│   └── ec_diskann/
+│   ├── ec_diskann/
+│   └── ec_spire/   # planned
 ├── quant/
 ├── storage/
 ├── pg18_pgstat_shim.rs
@@ -186,6 +204,9 @@ Each AM owns its persisted index format:
 - `ec_hnsw`: layered HNSW element/neighbor tuples, optional binary sidecars, optional rerank payloads, and storage-format-specific tuple variants
 - `ec_ivf`: metadata, centroid directory, posting-list pages, optional PQ/RaBitQ payloads, slack pages, and admin/drift snapshots
 - `ec_diskann`: Vamana nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, duplicate overflow chains, and vacuum repair metadata
+- `ec_spire`: planned root/control metadata, top graph, PID placement map,
+  epoch metadata, internal partition objects, and leaf assignment/posting
+  objects
 
 Cross-AM page-layout reuse is allowed only through shared helpers with explicit format adapters.
 

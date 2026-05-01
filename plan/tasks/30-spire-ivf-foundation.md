@@ -1,8 +1,9 @@
-# Task 30: SPIRE on a Single-Level IVF Foundation
+# Task 30: SPIRE on a Partition-Object IVF Foundation
 
-Status: proposed — implements ADR-049 in two stages: first a debuggable
-single-level IVF foundation with SPIRE-compatible assignment storage, then the
-recursive SPIRE layer.
+Status: proposed — implements ADR-049 in stages: first a debuggable
+single-level IVF foundation with SPIRE-compatible partition-object storage,
+then recursive SPIRE routing, local multi-NVMe placement, and later
+multi-machine placement.
 
 ## Scope
 
@@ -11,21 +12,31 @@ foundation.
 
 The first phase is not "build another unrelated IVF." It should reuse the
 landed `ec_ivf` primitives wherever they are the right boundary: centroid
-training, posting-list storage, quantizer profiles, candidate scoring, rerank,
-admin snapshots, and local benchmark harnesses. The new SPIRE-specific
-requirement is the assignment model from ADR-049: partition membership must be
-stored as `(vec_id, partition_id)` rows so one vector can later belong to
-multiple boundary partitions without a schema migration.
+training, quantizer profiles, candidate scoring, rerank, admin snapshots, and
+local benchmark harnesses. The new SPIRE-specific requirement is the storage
+model from ADR-049: vector membership must be stored as logical `(vec_id, pid)`
+rows inside SPIRE partition objects so one vector can later belong to multiple
+boundary partitions without a schema migration.
 
 The second phase adds the SPIRE layer: recursive IVF-on-centroids, top-level
-graph lookup, boundary replication, multi-level query routing, and
-level-aware update propagation.
+graph lookup, boundary replication, multi-level query routing, and level-aware
+update propagation. Later phases add placement: first local partition stores
+striped across physical NVMe devices, then multi-machine PID routing.
 
 ## Guiding Decisions
 
 - ADR-049 is the governing design record.
 - Build and validate a single-level foundation before recursion.
-- Preserve one-to-many partition membership from the start.
+- Use "SPIRE partition" only for index-internal clusters/PIDs; do not confuse it
+  with PostgreSQL declarative table partitions.
+- Preserve one-to-many vector-to-PID membership from the start.
+- Treat PID-addressed partition objects as the storage unit; do not design
+  around one monolithic index relation as the only durable shape.
+- Preserve a placement map that starts as `pid -> local_store_id` and can later
+  extend to `pid -> node_id -> local_store_id`.
+- Version partition objects with a published SPIRE epoch so root metadata,
+  hierarchy metadata, placement metadata, and partition objects are compatible
+  during a query.
 - Keep SPIRE inside one Postgres extension with modular internal boundaries;
   do not introduce speculative pluggable index-strategy abstractions.
 - Build SPIRE additions above/adjoining the IVF primitive, not as a replacement
@@ -36,13 +47,25 @@ level-aware update propagation.
 - [ ] **Inventory reusable IVF components.** Identify which `src/am/ec_ivf`
   modules can be consumed as-is by SPIRE and which need extraction into
   `src/am/common` or a SPIRE-owned module.
-- [ ] **Assignment storage design note.** Decide the concrete Postgres storage
-  shape for `(vec_id, partition_id)` rows: catalog table, auxiliary relation,
-  index side table, or AM-owned sidecar. The invariant is one-to-many
-  membership; the implementation must be reviewable and WAL-safe.
+- [ ] **Partition-object storage design note.** Decide the concrete Postgres
+  storage shape for PID-addressed partition objects and their logical
+  `(vec_id, pid)` assignment rows: one control/root relation plus bounded
+  partition-store relations, a single-store prototype format, or another
+  AM-owned sidecar. The invariant is one-to-many membership; the implementation
+  must be reviewable and WAL-safe.
+- [ ] **PID identity note.** Define `pid`, `vec_id`, local heap TID, parent PID,
+  child PID, boundary-replica flags, and how local `vec_id` maps to future
+  global vector IDs.
+- [ ] **Placement note.** Define the initial `pid -> local_store_id -> object`
+  placement map and the extension point for `pid -> node_id -> local_store_id`.
+  State explicitly that SPIRE does not use PostgreSQL table partitions for
+  vector partition selection.
+- [ ] **Epoch/version note.** Decide whether Phase 1 stores immutable
+  `(pid, epoch)` objects directly or stores per-partition versions referenced by
+  an epoch manifest. State old-epoch retention and cleanup expectations.
 - [ ] **Compatibility note.** State whether current `ec_ivf` indexes keep their
-  existing internal format while SPIRE gets a new format, or whether a future
-  `ec_ivf` format bump will adopt the assignment table too.
+  existing internal format while SPIRE gets a partition-object format, or
+  whether a future `ec_ivf` format bump will adopt partition objects too.
 - [ ] **Review packet.** Publish the Phase 0 design note before writing the
   persistence code.
 
@@ -61,17 +84,21 @@ level-aware update propagation.
   exposed as a new `ec_spire` AM immediately or hidden behind internal tooling
   until recursion exists. Prefer exposing only a surface we are willing to
   support.
-- [ ] **Assignment relation.** Implement `(vec_id, partition_id)` persistence
-  with one row per vector in the initial single-level path.
+- [ ] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
+  rows inside leaf partition objects with one row per vector in the initial
+  single-level path.
+- [ ] **Single-store placement.** Persist a PID placement directory even if the
+  first executable path maps every PID to one local store.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
-  encoding where applicable, and write posting-list membership through the
-  assignment relation.
+  encoding where applicable, and write posting-list membership through leaf
+  partition objects.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
-  posting-list row counts, quantizer profile, and build parameters.
+  leaf partition object counts, posting-list row counts, placement map state,
+  quantizer profile, and build parameters.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
-  index, insert-after-build, delete/vacuum cleanup, and assignment-table
+  index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
@@ -89,7 +116,7 @@ level-aware update propagation.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that
   schedules a merge.
 - [ ] **Concurrency validation.** Add a stress harness for insert/delete/scan
-  overlap against the assignment relation and posting-list storage.
+  overlap against leaf assignment rows and partition-object storage.
 
 ## Phase 3 — SPIRE Recursion
 
@@ -104,20 +131,35 @@ level-aware update propagation.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE.
 
-## Phase 4 — Boundary Replication
+## Phase 4 — Local Multi-NVMe Placement
+
+- [ ] **Partition-store relation layout.** Define bounded store relations and
+  how each maps to a PostgreSQL tablespace expected to live on a physical NVMe
+  device.
+- [ ] **Hash placement.** Place leaf and internal partition objects by
+  `hash(pid) % local_store_count`.
+- [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
+  keep scoring close to the partition object bytes.
+- [ ] **Placement diagnostics.** Expose per-store object count, bytes,
+  candidate rows, and scanned PID counts.
+- [ ] **Local placement benchmark.** Measure one-store vs multi-store behavior
+  on a machine with multiple physical NVMe devices before making any product
+  claim.
+
+## Phase 5 — Boundary Replication
 
 - [ ] **Boundary predicate.** Define the threshold/rule for assigning a vector
   to multiple nearby partitions.
 - [ ] **Assignment fanout.** Extend the assignment writer from one row per
-  vector to multiple `(vec_id, partition_id)` rows.
+  vector to multiple `(vec_id, pid)` rows.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
   before final top-k.
 - [ ] **Recall study.** Measure recall delta with boundary replication off/on
   at fixed storage overhead.
-- [ ] **Storage accounting.** Report assignment-table and posting-list growth
+- [ ] **Storage accounting.** Report leaf-assignment and posting-list growth
   from replication.
 
-## Phase 5 — Top-Level Graph
+## Phase 6 — Top-Level Graph
 
 - [ ] **Graph choice.** Decide whether the top-level centroid graph uses HNSW,
   DiskANN, or a build-time-selectable option. Do not introduce a generic graph
@@ -129,7 +171,24 @@ level-aware update propagation.
 - [ ] **Diagnostics.** Expose top-level graph size, degree, recall sanity rows,
   and routing fanout.
 
-## Phase 6 — Product-Scale Measurement Gate
+## Phase 7 — Multi-Machine Placement
+
+- [ ] **Remote node model.** Define node identity, placement-map membership,
+  remote health, and stale-node behavior.
+- [ ] **Remote search API.** Add a SPIRE remote search SQL function on storage
+  nodes that accepts query vector, selected PIDs, requested epoch, and top-k
+  budget, then returns compact candidate rows.
+- [ ] **Coordinator transport.** Use libpq pipeline mode first for
+  coordinator-to-node fanout; do not invent a custom network protocol until the
+  SQL/protocol shape fails measurement.
+- [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
+  only after all nodes can serve the requested epoch or report an explicit
+  stale-node state.
+- [ ] **Merge semantics.** Merge remote candidates by stable `vec_id`, dedupe
+  boundary replicas, and define how local heap row resolution works after
+  remote candidate selection.
+
+## Phase 8 — Product-Scale Measurement Gate
 
 - [ ] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
@@ -142,7 +201,7 @@ level-aware update propagation.
 
 ## Dependencies
 
-- ADR-049 — accepted staging and assignment-storage decision.
+- ADR-049 — accepted staging and partition-object storage decision.
 - Task 28 — landed IVF implementation and local benchmark substrate.
 - Task 10 — benchmark result-capture discipline and packet-local artifacts.
 - Task 19 — PG18 primary target and diagnostics surface.
@@ -152,7 +211,7 @@ level-aware update propagation.
 ## Owns
 
 - Future `ec_spire` access-method planning and implementation.
-- SPIRE assignment storage, hierarchy metadata, and routing.
+- SPIRE partition-object storage, hierarchy metadata, placement, and routing.
 - SPIRE-specific `ecaz` operator workflows once an executable path exists.
 
 ## Out of Scope
@@ -164,11 +223,14 @@ level-aware update propagation.
 
 ## Deliverables
 
-- Phase 0 design packet for assignment storage and IVF reuse boundaries.
+- Phase 0 design packet for partition-object storage, placement, epoch, and IVF
+  reuse boundaries.
 - Single-level SPIRE-IVF foundation with one-to-many-capable assignments.
 - Recursive SPIRE build/query path.
+- Local multi-NVMe partition-store placement.
 - Boundary replication with deduped scans and recall/storage evidence.
 - Top-level graph routing over top centroids.
+- Multi-machine coordinator and remote partition-store prototype.
 - `ecaz` operator support and review-packet benchmark artifacts.
 
 ## Primary Validation
@@ -180,10 +242,14 @@ level-aware update propagation.
 ## Notes
 
 - Keep the first implementation slice small. The highest-risk early decision is
-  the assignment persistence shape, not recursive routing.
-- If Phase 0 discovers that Postgres index AM mechanics make a literal
-  user-visible assignment table inappropriate, write that down explicitly and
-  preserve the same logical model in an auxiliary relation or AM-owned sidecar.
+  the partition-object persistence and placement shape, not recursive routing.
+- If Phase 0 discovers that Postgres index AM mechanics make direct
+  user-visible assignment rows inappropriate, write that down explicitly and
+  expose diagnostics through read-only functions over partition-object storage.
 - Do not let the recursive SPIRE layer absorb bugs from the single-level
   primitive. Any unexpected scan/build behavior should first be reproducible in
   the single-level foundation.
+- Do not use PostgreSQL declarative table partitions for SPIRE vector
+  partitions. If the implementation uses multiple relations for local NVMe
+  placement, they are bounded partition stores, not one relation per PID and not
+  planner-pruned table partitions.
