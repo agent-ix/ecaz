@@ -159,6 +159,28 @@ emergency rollback path.
 | `ec_ivf` | Posting-list experiments, high-ingest tradeoffs, quantizer comparisons | Local v1 lane is landed; product claims need dedicated hardware. |
 | `ec_diskann` | Disk-resident graph research and DiskANN/Vamana comparisons | Local Task 29 baseline is landed; low-L latency work remains future structural work. |
 
+## Operator CLI
+
+Use the `ecaz` CLI for repeatable corpus setup, benchmarks, comparisons, stress
+harnesses, and local development helpers:
+
+```bash
+cargo install --path crates/ecaz-cli
+ecaz corpus list
+ecaz corpus inspect --prefix ec_hnsw_real_10k
+ecaz bench recall --prefix ec_hnsw_real_10k --profile ec_hnsw
+ecaz bench latency --prefix ec_hnsw_real_10k --profile ec_hnsw
+```
+
+The CLI is profile-aware for `ec_hnsw`, `ec_ivf`, and `ec_diskann`, and accepts
+the standard PostgreSQL connection flags (`--database`, `--host`, `--port`,
+`--user`, `--password`) plus libpq environment fallbacks. For review evidence,
+pass `--log-file review/<topic>/artifacts/<run>.log` so command output is stored
+with the packet.
+
+See the [Operator CLI README](../crates/ecaz-cli/README.md) for the full
+command surface.
+
 ## Compression Characteristics
 
 For 1536-dimensional vectors:

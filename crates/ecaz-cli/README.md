@@ -8,9 +8,11 @@ entry point, profile-aware across access methods.
 The CLI is now the supported operator surface for:
 
 - corpus preparation, generation, loading, inspection, and listing
-- recall / latency / storage / overhead benches
-- pgvector comparison
-- vacuum stress validation
+- recall / latency / storage / overhead benchmarks
+- DiskANN graph and build-probe diagnostics
+- pgvector and pgvectorscale comparison
+- quantizer feasibility studies
+- HNSW and IVF stress validation
 - scratch-cluster control and local development/test helpers
 
 Wrapper scripts that only forwarded into one of those surfaces are being
@@ -65,16 +67,30 @@ ecaz
 │   ├── recall      # recall@k sweep against ground truth
 │   ├── latency     # p50/p95/p99 SQL latency under concurrency
 │   ├── storage     # table + index size accounting
-│   └── overhead    # encode / internal scan / residual SQL breakdown
+│   ├── diskann-graph       # persisted graph reachability/degree/edge diagnostics
+│   ├── diskann-build-probe # in-memory candidate pool/pruning/degree diagnostics
+│   └── overhead            # encode / internal scan / residual SQL breakdown
 ├── compare
-│   └── pgvector    # side-by-side recall + latency vs pgvector
+│   ├── pgvector    # side-by-side recall + latency vs pgvector
+│   └── vectorscale # side-by-side DiskANN comparison vs pgvectorscale
 ├── dev
-│   ├── install     # local ecaz/pgvector install helpers
-│   ├── scratch     # pgrx scratch cluster restart/sql/refresh helpers
+│   ├── install
+│   │   ├── ecaz-pg-test # install the ecaz pg_test build into a pgrx tree
+│   │   └── pgvector     # install pgvector into the selected pg_config tree
+│   ├── scratch
+│   │   ├── restart               # restart pgrx with runtime env knobs
+│   │   ├── sql                   # run psql against a pgrx scratch cluster
+│   │   └── refresh-debug-helpers # install ADR-030 debug SQL wrappers
 │   ├── sql         # version-aware pgrx SQL runner with packet-local logging
-│   └── test        # pgrx and preload-aware validation lanes
+│   └── test
+│       ├── pgrx                # run cargo pgrx test
+│       └── pg18-preload-pgstat # validate PG18 preload/custom pgstat visibility
+├── quant
+│   └── feasibility # offline quantizer recall and error-bound calibration
 └── stress
-    └── vacuum      # concurrent insert/delete/VACUUM invariant harness
+    ├── ivf-insert       # IVF live-insert throughput under workers
+    ├── ivf-vacuum-scale # IVF VACUUM wall time, size, and RSS harness
+    └── vacuum           # HNSW concurrent insert/delete/VACUUM invariant harness
 ```
 
 Development SQL can be run through the CLI without shell redirection:
@@ -87,10 +103,11 @@ ecaz dev sql --pg 18 --file review/example/artifacts/run.sql --raw \
 Use repeated `--env NAME=VALUE` flags to pass temporary environment to
 the underlying `psql` process.
 
-Each command accepts `--profile` (e.g. `ec_hnsw`, `ec_ivf`, `ec_diskann`) so a
-single corpus can be measured against multiple access methods without
-re-loading data. Today `ec_hnsw`, `ec_ivf`, and `ec_diskann` all use `ecvector` as
-the embedding column type, so one `<prefix>_corpus` table supports multiple
+Corpus, benchmark, compare, and stress commands accept `--profile` where the
+selected workflow is access-method specific. Current profiles are `ec_hnsw`,
+`ec_ivf`, and `ec_diskann`, so a single corpus can be measured against multiple
+access methods without re-loading data. Today all three profiles use `ecvector`
+as the embedding column type, so one `<prefix>_corpus` table supports multiple
 indexes side-by-side.
 
 For the real-corpus path, the intended flow is now:
@@ -141,7 +158,7 @@ Profiles live in `src/profiles.rs` and describe:
 The CLI currently hand-mirrors the extension's opclass and reloption
 surface (`src/am/ec_hnsw/options.rs`, `src/am/ec_ivf/options.rs`,
 `src/am/ec_diskann/options.rs`).
-That's fine for two access methods and a small handful of knobs, but
+That's fine for three access methods and a small handful of knobs, but
 won't stay fine as the surface grows.
 
 The planned fix — deferred to a follow-up PR — is to extract a
@@ -170,7 +187,7 @@ ecaz corpus load --prefix cohere_100k   --corpus-file cohere_100k_corpus.tsv   .
 ecaz corpus load --prefix dbpedia_10k --profile ec_diskann   ...  # adds a second index on the same corpus
 ```
 
-`ecaz corpus list` shows what's loaded; `ecaz corpus inspect <prefix>`
+`ecaz corpus list` shows what's loaded; `ecaz corpus inspect --prefix <prefix>`
 shows the indexes built on it.
 
 ## Performance notes

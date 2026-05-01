@@ -13,6 +13,8 @@ approximate nearest neighbor search.
 - **`ec_diskann` index** — DiskANN/Vamana-style graph index for disk-resident
   experiments
 - **`encode_to_ecvector()`** — encode fp32 arrays into the canonical row type
+- **`ecaz` CLI** — operator surface for corpus loading, benchmarks,
+  comparisons, stress harnesses, and local development helpers
 
 ## Quick Start
 
@@ -151,6 +153,18 @@ These are local engineering results, not product benchmark claims. See
 [Benchmarks](docs/benchmarks.md) for full results, source packets, and
 methodology.
 
+The supported operator workflow uses the `ecaz` CLI:
+
+```bash
+cargo install --path crates/ecaz-cli
+ecaz corpus prepare --profile ec_hnsw_real_10k --parquet /path/to/parquet --output-dir /path/to/staged
+ecaz corpus load --prefix ec_hnsw_real_10k --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv --profile ec_hnsw
+ecaz bench recall --prefix ec_hnsw_real_10k --profile ec_hnsw
+```
+
+Use `--log-file review/<topic>/artifacts/<run>.log` when producing review
+packet evidence.
+
 ## Documentation
 
 | Document | Description |
@@ -158,6 +172,7 @@ methodology.
 | [Getting Started](docs/getting-started.md) | Prerequisites, installation, first query |
 | [Usage Guide](docs/usage.md) | Encoding parameters, index tuning, query patterns |
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
+| [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |
 | [Contributing](docs/contributing.md) | Makefile targets, CI, testing, fuzzing |

@@ -39,6 +39,7 @@ This specification is the top-level requirements artifact for the current main-b
 - `ec_hnsw`, the default general-purpose graph access method
 - `ec_ivf`, the optional IVF posting-list access method
 - `ec_diskann`, the optional DiskANN/Vamana-style graph access method
+- `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
 
 ## 2. Scope
@@ -57,6 +58,7 @@ This specification governs:
 - IVF centroid training, posting-list persistence, scan/rerank behavior, insert/vacuum/admin snapshots, reloptions, GUCs, planner costing, and measurement evidence
 - DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
 - WAL safety for index mutations and crash-safe page writes
+- The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
 - Benchmark methodology and review-packet artifact provenance for any performance or recall claim
 
 ### 2.2 Out of Scope
@@ -115,6 +117,7 @@ graph TD
     I["ec_ivf"]
     D["ec_diskann"]
     PG18["PG18 Integration<br/>ReadStream, cost callbacks, EXPLAIN, stats"]
+    CLI["ecaz CLI<br/>corpus, bench, compare, stress"]
     EVID["Review Packets<br/>benchmark and measurement evidence"]
 
     SQL --> EC
@@ -128,6 +131,8 @@ graph TD
     PG18 --> H
     PG18 --> I
     PG18 --> D
+    CLI --> SQL
+    CLI --> EVID
     EVID --> SQL
 ```
 
@@ -211,6 +216,8 @@ Local landed evidence currently includes:
 - IVF Task 28 local v1 results at 10K, 25K, 100K, and directional 990K
 - DiskANN Task 29 local readiness results against pgvectorscale and HNSW references
 
+The supported operator surface for repeatable corpus setup, benchmarking, comparison, diagnostics, stress harnesses, and packet-local logs is `ecaz` from `crates/ecaz-cli`.
+
 Product benchmark claims require controlled cache state, hardware, storage, PostgreSQL settings, command provenance, and packet-local raw logs.
 
 ## 8. Requirement Architecture
@@ -263,6 +270,7 @@ Requirement and ADR statuses use:
 - README: `README.md`
 - Usage docs: `docs/usage.md`
 - Benchmarks: `docs/benchmarks.md`
+- Operator CLI: `crates/ecaz-cli/README.md`
 - Architecture docs: `docs/architecture.md`
 - ADR index: `spec/adr/index.md`
 - TurboQuant paper: <https://arxiv.org/abs/2504.19874>

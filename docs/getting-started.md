@@ -77,4 +77,5 @@ WITH (graph_degree = 32, build_list_size = 100, list_size = 100);
 
 - [Usage Guide](usage.md) - encoding, index choices, and tuning knobs
 - [Benchmarks](benchmarks.md) - local results and methodology
+- [Operator CLI](../crates/ecaz-cli/README.md) - corpus loading, benchmarks, comparisons, and dev helpers
 - [Contributing](contributing.md) - development workflow, testing, CI
