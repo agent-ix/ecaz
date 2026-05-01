@@ -516,16 +516,79 @@ fn log_ambuild_timing(
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
     debug_assert_eq!(left.len(), right.len());
-    let mut ip = 0.0_f32;
-    for (l, r) in left.iter().zip(right.iter()) {
-        ip += *l * *r;
-    }
+    let ip = source_inner_product(left, right);
     let d = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ip;
     if d < 0.0 {
         0.0
     } else {
         d
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
+        unsafe { source_inner_product_avx2_fma(left, right) }
+    } else {
+        source_inner_product_scalar(left, right)
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    source_inner_product_scalar(left, right)
+}
+
+fn source_inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
+    let mut ip = 0.0_f32;
+    for (l, r) in left.iter().zip(right.iter()) {
+        ip += *l * *r;
+    }
+    ip
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
+    use std::arch::x86_64::{
+        _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+    };
+
+    let len = left.len().min(right.len());
+    let mut i = 0usize;
+    let mut acc0 = _mm256_setzero_ps();
+    let mut acc1 = _mm256_setzero_ps();
+    let mut acc2 = _mm256_setzero_ps();
+    let mut acc3 = _mm256_setzero_ps();
+
+    while i + 32 <= len {
+        let l0 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i)) };
+        let r0 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i)) };
+        let l1 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 8)) };
+        let r1 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 8)) };
+        let l2 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 16)) };
+        let r2 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 16)) };
+        let l3 = unsafe { _mm256_loadu_ps(left.as_ptr().add(i + 24)) };
+        let r3 = unsafe { _mm256_loadu_ps(right.as_ptr().add(i + 24)) };
+
+        acc0 = _mm256_fmadd_ps(l0, r0, acc0);
+        acc1 = _mm256_fmadd_ps(l1, r1, acc1);
+        acc2 = _mm256_fmadd_ps(l2, r2, acc2);
+        acc3 = _mm256_fmadd_ps(l3, r3, acc3);
+        i += 32;
+    }
+
+    let total = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
+    let mut lanes = [0.0_f32; 8];
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), total) };
+    let mut ip = lanes.iter().sum::<f32>();
+
+    while i < len {
+        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        i += 1;
+    }
+
+    ip
 }
 
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
@@ -732,7 +795,7 @@ pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::source_inner_product_distance;
+    use super::{source_inner_product, source_inner_product_distance, source_inner_product_scalar};
 
     #[test]
     fn source_inner_product_distance_keeps_positive_ip_pairs_distinct() {
@@ -743,5 +806,22 @@ mod tests {
         assert_eq!(identical, 0.0);
         assert!(merely_similar > identical);
         assert!(orthogonal > merely_similar);
+    }
+
+    #[test]
+    fn source_inner_product_dispatch_matches_scalar() {
+        let left = (0..1536)
+            .map(|i| ((i as f32) * 0.013).sin())
+            .collect::<Vec<_>>();
+        let right = (0..1536)
+            .map(|i| ((i as f32) * 0.017).cos())
+            .collect::<Vec<_>>();
+
+        let scalar = source_inner_product_scalar(&left, &right);
+        let dispatched = source_inner_product(&left, &right);
+        assert!(
+            (scalar - dispatched).abs() <= 0.0001,
+            "scalar={scalar} dispatched={dispatched}"
+        );
     }
 }
