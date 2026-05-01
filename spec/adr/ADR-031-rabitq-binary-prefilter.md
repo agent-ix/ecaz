@@ -1,11 +1,28 @@
 ---
 id: ADR-031
 title: "RaBitQ Binary Pre-Filter for Beam Search Candidate Scoring"
-status: PROPOSED
+status: SUPERSEDED
 impact: Affects NFR-001, FR-014, ADR-029, ADR-030
 date: 2026-04-12
 ---
 # ADR-031: RaBitQ Binary Pre-Filter for Beam Search Candidate Scoring
+
+## 2026-05-01 Status Update: Superseded By Landed RaBitQ Quantizer
+
+This ADR's narrow "binary prefilter for beam search" framing is superseded.
+The useful RaBitQ work landed as a first-class quantizer instead:
+
+- `src/quant/rabitq.rs` owns the reusable quantizer, estimator, error-bound,
+  and trait implementation.
+- `ec_ivf` supports RaBitQ through `storage_format = 'rabitq'` and
+  `quantizer = 'rabitq'`.
+- `ecaz quant feasibility` provides the offline recall/error-bound study
+  surface.
+- Local benchmark docs include IVF RaBitQ rows.
+
+The older HNSW prefilter design remains historical context only. Future RaBitQ
+work should build on the landed quantizer/profile surface, not revive this ADR
+as a standalone HNSW prefilter plan.
 
 ## Context
 
@@ -135,13 +152,14 @@ Store a 192-byte optimized binary code alongside the existing 768-byte 4-bit cod
 
 ## Decision
 
-**Open.** The sign-derived rank correlation study (validation step 1) is the cheapest first
-experiment. If sign-based codes correlate adequately, proceed to runtime integration. If not,
-evaluate full RaBitQ before abandoning the direction.
+**Superseded.** The sign-derived HNSW prefilter investigation was overtaken by
+the first-class RaBitQ quantizer and IVF integration. Treat this ADR as
+background for the scoring-kernel lineage, not an active decision.
 
 Packet 280 changed the sequencing around ADR-030: grouped FastScan remains interesting, but
-only as a larger index-v2 effort with a new grouped encoding. That makes ADR-031 the active
-near-term path on the current index format until its runtime seams have been fully explored.
+only as a larger index-v2 effort with a new grouped encoding. RaBitQ has since
+landed through the quantizer/profile seam rather than through the prefilter-only
+runtime path described here.
 
 ## Consequences
 

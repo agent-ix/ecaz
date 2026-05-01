@@ -1,10 +1,23 @@
-# Task 25: RaBitQ Quantizer — Symphony Stage 1
+# Task 25: RaBitQ Quantizer
 
-Status: proposed — **research gate for ADR-045**. Ship standalone, publish a recall
-study, decide on Symphony Stages 2–3 from data.
+Status: landed on `main` for the first-class RaBitQ quantizer and IVF
+integration. Symphony is shelved and is no longer the active consumer for this
+task.
 
-Executes **ADR-045 Stage 1**. Supersedes ADR-031 in scope (RaBitQ graduates from
-prefilter to standalone distance).
+Current landed surface:
+
+- `src/quant/rabitq.rs` implements RaBitQ as a first-class quantizer with the
+  absolute-path `Quantizer` / `QueryScorer` trait surface.
+- `ec_ivf` supports `storage_format = 'rabitq'` and the `quantizer = 'rabitq'`
+  alias, with build/scan/insert/vacuum coverage.
+- `ecaz quant feasibility` owns the offline RaBitQ recall/error-bound study
+  surface.
+- Benchmark docs include local IVF RaBitQ rows at 10K and 25K.
+- The centered API that was built for possible Symphony work remains in
+  `RaBitQQuantizer`, but there is no active Symphony AM lane.
+
+This task superseded ADR-031's narrow prefilter framing by graduating RaBitQ
+from a beam-search prefilter into a reusable quantizer/profile option.
 
 ## Scope
 
@@ -33,23 +46,19 @@ module and runs the Stage-1 recall gate on it. It does **not** redo the
 sidecar plumbing, the cache path, or the scalar/SIMD scoring kernel —
 those are inputs.
 
-This is the **only research risk that can kill SymphonyQG.** If RaBitQ cannot
-hold recall within 1pp of exact at the bit budget that matches PQ4 storage,
-Stage 2 (quantized-graph build) and Stage 3 (no-rerank query path) do not
-start. The task is scoped so that shelving after Stage 1 is a clean outcome
-with no stranded code in the graph/build path.
+This task originally served as the **research gate for SymphonyQG**. That gate
+is now historical: Symphony is shelved, while the reusable RaBitQ quantizer and
+IVF integration remain landed.
 
-## Why now
+## Why this landed
 
-- SymphonyQG (ADR-045) is the single largest latency-per-recall win on the
-  roadmap, but it is gated on RaBitQ as primary distance. We cannot design
-  Stages 2–3 without first knowing whether the recall budget exists.
 - RaBitQ standalone is independently useful: it fits as a first-class
   quantizer under ADR-032's coexisting formats, and the scoring kernel
-  (~8 ns/candidate) composes with DiskANN and SPANN downstream.
-- Cheap to ship, cheap to shelve. The quantizer module is self-contained and
-  can be exercised entirely through the existing offline feasibility harness
-  (same pattern as task 22) before any AM wiring exists.
+  composes with IVF and possible future DiskANN in-memory-tier work.
+- It gives IVF a compact alternative to TurboQuant/PQ-FastScan for local
+  quantizer/storage comparisons.
+- The quantizer module is self-contained and can be exercised through the
+  offline feasibility harness before any new AM work exists.
 
 ## Design outline
 
@@ -73,7 +82,11 @@ from the prefilter design. Summary:
   so the quantizer is drop-in for offline eval; no AM integration required
   for Stage 1.
 
-## Subtasks
+## Historical Subtasks
+
+The checklist below records the original execution plan. The authoritative
+current state is the landed-surface summary at the top of this file; not every
+landed slice maps one-to-one to the original checkbox wording.
 
 ### Phase 1 — graduate to a first-class quantizer module
 
@@ -139,34 +152,34 @@ Actual outcomes recorded in review packets:
   for exposing the centered API primitives (slice 15); the recall
   gate itself is Stage-2 / Stage-3 territory.
 
-Decision:
+Historical decision record:
 
-- Task 27 (Symphony Stages 2, 3) is **unblocked** by task 25 closing.
-  The centered API (slice 15) is the actual Stage-2 prerequisite; it
-  landed and is covered by unit tests. Do not re-run the absolute-
-  encoding 1pp gate as a task-27 pre-start condition.
+- Task 27 (Symphony Stages 2, 3) was technically unblocked by the centered API,
+  but is now shelved by roadmap decision.
 - `src/quant/rabitq.rs` ships and remains usable by non-Symphony
   consumers via the absolute-path traits and the `--rerank-k` flag.
 - Higher-bit quantization (Extended RaBitQ) stays parked per ADR-045
-  "Open follow-ups"; Symphony does not need it.
+  "Open follow-ups"; no current consumer requires it.
 
-### Phase 3 — quantizer-seam integration (gated on pass)
+### Phase 3 — quantizer-seam integration
 
-- [ ] **Register under `Quantizer` trait.** Becomes selectable via the
+- [x] **Register under `Quantizer` trait.** Becomes selectable via the
   same reloption seam that ADR-032 defines for PQ4 vs. grouped PQ.
-- [ ] **Benchmark packet.** Scan kernel, memory footprint, build time
-  against task 15 PqFastScan baseline on the 50k and 1M real seams.
-- [ ] **Handoff contract.** Document the RaBitQ API surface that
-  Symphony Stage 2 (quantized-graph build) will consume — rotation, scorer,
-  error bound — and freeze it before Stage 2 starts.
+- [x] **IVF integration.** `ec_ivf` accepts `storage_format = 'rabitq'` /
+  `quantizer = 'rabitq'`, persists RaBitQ posting-list payloads, and scans
+  through the RaBitQ estimator path.
+- [x] **Benchmark packet.** Local IVF RaBitQ benchmark rows are recorded in
+  the benchmark docs for 10K and 25K.
+- [x] **Handoff contract.** The RaBitQ API surface was documented for the
+  now-shelved Symphony lane; it remains useful as code documentation, not as
+  an active dependency.
 
 ## Owns
 
-- ADR-045 Stage 1 (this task is the gate)
-- `src/quant/rabitq.rs` (new)
-- `src/bin/rabitq_feasibility.rs` (new)
-- Supersedes the ADR-031 prefilter design in scope; ADR-031 remains as a
-  fallback posture if the gate fails
+- `src/quant/rabitq.rs`
+- `ec_ivf` RaBitQ quantizer/profile support
+- `ecaz quant feasibility`
+- Supersedes the ADR-031 prefilter-only design in scope
 
 ## Dependencies
 
@@ -176,20 +189,19 @@ Decision:
 - 50k and 1M real-corpus seams (tasks 10054 / 12) — needed for the
   recall study. Not blocked on them being *complete*, only *queryable*.
 
-## Unblocks
+## Follow-ups
 
-- If the gate passes: Symphony Stage 2 (quantized-graph build under
-  `src/am/symphony/`), which unblocks Stage 3 (no-rerank query path) and
-  the headline 2–4× QPS win over `ec_hnsw` at equal recall.
-- If the gate fails cleanly: a first-class binary quantizer module for
-  ADR-031-style prefiltering, usable under `ec_hnsw` without any of the
-  graph-layout risk. Not the headline win, but not wasted work.
+- Product-class RaBitQ claims remain gated on controlled benchmark hardware.
+- Extended RaBitQ remains parked unless a non-Symphony consumer needs better
+  recall at PQ4-parity storage.
+- DiskANN integration is optional future work, not an active blocker.
+- Symphony is shelved; do not treat this task as unblocking Task 27.
 
 ## Out of scope
 
-- Symphony AM (`src/am/symphony/`) — Stage 2, separate task.
-- Quantization-aware edge selection — Stage 2.
-- No-rerank query path — Stage 3.
+- Symphony AM (`src/am/symphony/`) — shelved.
+- Quantization-aware edge selection — shelved with Symphony.
+- No-rerank query path — shelved with Symphony.
 - Learned rotation (OPQ) — task 20; the RaBitQ rotation seam is
   pluggable so OPQ slots in later.
 - DiskANN integration of RaBitQ — ADR-034 notes RaBitQ is a candidate for

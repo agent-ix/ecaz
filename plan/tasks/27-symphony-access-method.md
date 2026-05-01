@@ -1,6 +1,13 @@
 # Task 27: SymphonyQG Access Method — ADR-045 Stages 2 and 3
 
-Status: proposed — **unblocked by task 25**. Start now.
+Status: shelved indefinitely. The team decided not to pursue Symphony as the
+next scaling lane; do not start this task unless a new accepted ADR reopens the
+direction.
+
+Task 25 landed the reusable RaBitQ quantizer and IVF integration. That result
+survives independently. It does not imply this Symphony AM should be built.
+
+## Historical Context
 
 The original 1pp-of-exact absolute-encoding gate has been superseded;
 see `plan/tasks/25-rabitq-quantizer.md` under "Decision gate" for the
@@ -12,7 +19,8 @@ score API, which landed in task 25 slice 15
 at the end of Phase 2 of this task — an end-to-end test, not a
 quantizer-module test.
 
-Executes **ADR-045 Stages 2 and 3**. Sibling to task 25 (which executes Stage 1).
+This file records the historical ADR-045 Stages 2 and 3 plan. It is retained
+for reference, not as active implementation work.
 
 ## Scope
 
@@ -41,7 +49,7 @@ Flip off rerank. Top-k returned directly from RaBitQ estimates, using the
 error bound (from task 25) to size the candidate pool conservatively. Gated
 by recall@10 holding at the Stage 1 baseline on full benches.
 
-## Why now (after task 25)
+## Historical Why Now (after task 25)
 
 - SymphonyQG is the largest latency-per-recall win on the roadmap:
   2–4× QPS over `ec_hnsw` at equal recall per the paper, and a simpler

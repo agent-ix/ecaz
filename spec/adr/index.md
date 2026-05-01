@@ -32,7 +32,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | DiskANN second AM | `ADR-034-diskann-second-access-method.md` | IMPLEMENTED | Local v1 has landed; larger product-scale claims are deferred. |
 | `ecvector` storage policy | `ADR-044-ecvector-rerank-source-location-and-storage-policy.md` | PROPOSED | Deferred measurement decision. |
 | Graph page-layout discipline | `ADR-045-page-layout-discipline-for-graph-access-methods.md` | PROPOSED | Still useful design guidance. |
-| SymphonyQG | `ADR-045-symphonyqg-quantized-graph-access-method.md` | PROPOSED | Historical duplicate ID; not active implementation work. |
+| SymphonyQG | `ADR-045-symphonyqg-quantized-graph-access-method.md` | SHELVED | Historical duplicate ID; RaBitQ survived independently, but the Symphony AM is not active roadmap work. |
 | GPU offline trainer | `ADR-046-gpu-accelerated-offline-build-trainer.md` | PROPOSED | Future/offline optimization lane. |
 | Vamana insert lock ordering | `ADR-046-vamana-insert-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
 | Vamana vacuum lock ordering | `ADR-047-vamana-vacuum-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
@@ -49,6 +49,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | `ADR-005-turbocode-serialization.md` | ADR-006 and ADR-007 |
 | `ADR-011-planner-cost-override-until-ordered-scan.md` | Live cost model and planner selection |
 | `ADR-017-pg18-module-identity-and-upgrade-direction.md` | ADR-047 extension identity rename |
+| `ADR-031-rabitq-binary-prefilter.md` | Landed first-class RaBitQ quantizer plus IVF `rabitq` storage/profile support |
 
 ## Numbering Policy
 

@@ -69,7 +69,7 @@ This specification does not govern:
 - Application schema design above the extension boundary
 - Query routing, cross-agent fan-out, and shard selection
 - Product benchmark claims not backed by dedicated controlled hardware
-- GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and parallel index scan unless reactivated by a later accepted ADR
+- GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
 
 ## 3. Current Product Surface
@@ -260,6 +260,7 @@ Requirement and ADR statuses use:
 ## 10. Known Deferrals
 
 - Parallel index scan is shelved indefinitely; it is not the current scaling frontier.
+- Symphony is shelved indefinitely; RaBitQ remains landed as a reusable quantizer and IVF storage/profile option.
 - HNSW insert-throughput decontention remains future work.
 - Larger HNSW parallel build and product benchmark runs are deferred to AWS/RDS-class hardware.
 - IVF and DiskANN local evidence is landed, but larger product claims require controlled benchmark hardware.

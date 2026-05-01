@@ -1,11 +1,26 @@
 ---
 id: ADR-045
 title: "SymphonyQG: Quantized-Graph Access Method with No-Rerank Query Path"
-status: PROPOSED
+status: SHELVED
 impact: Affects ADR-018, ADR-022, ADR-030, ADR-031, ADR-032, ADR-033, ADR-034, ADR-036, ADR-041
 date: 2026-04-19
 ---
 # ADR-045: SymphonyQG Quantized-Graph Access Method
+
+## 2026-05-01 Status Update: Shelved
+
+SymphonyQG is shelved indefinitely and is not active roadmap work.
+
+The reusable part of the ADR landed through Task 25: RaBitQ is implemented as
+a first-class quantizer, wired into IVF as `storage_format = 'rabitq'` /
+`quantizer = 'rabitq'`, and exposed through `ecaz quant feasibility` for
+offline recall/error-bound studies.
+
+The proposed `symphony` access method, quantization-aware graph build,
+out-degree padding, and no-rerank query path did not land. Reopening this
+direction requires a new accepted ADR. Until then, keep RaBitQ as an IVF
+quantizer and optional future component for other AMs, not as a commitment to
+build Symphony.
 
 ## Context
 
@@ -26,7 +41,7 @@ recall, 8× faster build than NGT-QG. The authors are the RaBitQ /
 FastScan lineage, so the paper composes cleanly with the techniques
 already proposed in ADR-030 (FastScan) and ADR-031 (RaBitQ).
 
-ecaz's current state leaves this on the table:
+At proposal time, ecaz's state left this on the table:
 
 - ADR-031 treats RaBitQ as a **prefilter**, with exact rerank as
   the final stage. SymphonyQG eliminates rerank.
@@ -40,7 +55,7 @@ ecaz's current state leaves this on the table:
   with a shared graph lifecycle" pattern that a third AM variant
   would slot into.
 
-## Decision
+## Historical Proposal
 
 Adopt SymphonyQG as a **third access-method variant** alongside
 `ec_hnsw` (ADR-032) and DiskANN (ADR-034), named `symphony` and
@@ -165,7 +180,7 @@ Stage 3 collapses the three-stage pipeline sketched in ADR-031
 in ADR-031's "if both succeed" section becomes moot once
 SymphonyQG lands: the graph *is* the filter.
 
-## Alternatives considered
+## Historical Alternatives Considered
 
 ### Keep ADR-031 as prefilter, never graduate
 
