@@ -1,7 +1,7 @@
 ---
 id: ADR-041
 title: "Module Structure for Multi-AM, Multi-Quantizer Growth"
-status: PROPOSED
+status: IMPLEMENTED
 impact: Affects ADR-032, ADR-033, ADR-034, ADR-035, ADR-036, ADR-037, ADR-038, ADR-039, ADR-040, ADR-048
 date: 2026-04-18
 ---

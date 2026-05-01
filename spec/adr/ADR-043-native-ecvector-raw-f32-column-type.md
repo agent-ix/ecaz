@@ -1,7 +1,7 @@
 ---
 id: ADR-043
 title: "`ecvector` Raw-f32 Column Type"
-status: ACCEPTED
+status: IMPLEMENTED
 impact: Affects FR-001 (type surface), FR-008 (index build), ADR-032, ADR-033, ADR-041
 date: 2026-04-18
 ---

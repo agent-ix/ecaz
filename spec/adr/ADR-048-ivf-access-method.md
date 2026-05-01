@@ -1,7 +1,7 @@
 ---
 id: ADR-048
 title: "IVF as Optional Access Method"
-status: PROPOSED
+status: IMPLEMENTED
 impact: Affects ADR-017, ADR-032, ADR-035, ADR-041, FR-008, FR-009, FR-010, FR-016, FR-020, NFR-001, NFR-002, NFR-003
 date: 2026-04-25
 ---

@@ -1,7 +1,7 @@
 ---
 id: ADR-034
 title: "DiskANN as Second Access Method for Medium-Large Scale"
-status: PROPOSED
+status: IMPLEMENTED
 impact: Affects FR-014, NFR-001, ADR-026, ADR-027, ADR-032
 date: 2026-04-18
 ---

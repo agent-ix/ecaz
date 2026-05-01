@@ -1,11 +1,17 @@
 ---
 id: ADR-040
 title: "Parallel Index Scan via amcanparallel"
-status: PROPOSED
+status: SHELVED
 impact: Affects FR-014, NFR-001, ADR-014, ADR-016, ADR-026, ADR-027
 date: 2026-04-18
 ---
 # ADR-040: Parallel Index Scan
+
+> **SHELVED (2026-05-01):** Parallel index scan is not an active implementation
+> lane. The investigation remains useful background, but the team decided to
+> shelve this indefinitely because it was not working well and is not the
+> current scaling-research frontier. HNSW parallel build and controlled
+> AWS/RDS-class measurements are the active scale follow-ups.
 
 ## Context
 
@@ -39,11 +45,12 @@ btree ordered scans, subtle for graph ANN where the work is
 inherently interdependent (each hop depends on previous hops'
 scored candidates).
 
-## Decision
+## Shelved Direction
 
-tqvector will enable **`amcanparallel = true`** for `ec_hnsw` and
-future `ec_diskann` / `tqspann` access methods. The parallel scan
-model is:
+The following design is historical and SHALL NOT be treated as an active
+requirement unless a new accepted ADR reopens the lane. The investigated model
+was to enable **`amcanparallel = true`** for `ec_hnsw` and future graph access
+methods:
 
 ### Shared coordinator, independent beams
 
@@ -138,10 +145,10 @@ rejects).
 
 ### Planner and cost model
 
-Parallel-scan path cost must be computed correctly. Currently
-ADR-011 uses an `f64::MAX` cost gate as a hack. That work is
-already slated for removal; parallel path costing is a natural
-extension:
+Parallel-scan path cost would have to be computed correctly. At
+the time this ADR was written, ADR-011 used a blanket prohibitive
+cost gate. That gate has since been superseded; any future
+parallel path would need to extend the live cost model instead:
 
 - **Startup cost:** worker launch overhead (~100–500 µs on
   Linux).

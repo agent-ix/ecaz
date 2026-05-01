@@ -7,11 +7,13 @@ tags:
   - postgres
   - vector-search
   - hnsw
+  - ivf
+  - diskann
   - turboquant
+  - pq-fastscan
   - rust
   - simd
 implementation_language: rust
-depends_on: []
 relationships:
   - target: "crate://pgrx"
     type: "requires"
@@ -19,466 +21,250 @@ relationships:
   - target: "ix://agent-ix/agent-memory-context"
     type: "implements"
     cardinality: "1:1"
-
 standards_alignment:
   - iso-iec-ieee-29148
   - ieee-828
 ---
 # Master Requirements Specification
-## Ecaz — PostgreSQL Extension for TurboQuant Vector Search
-
----
+## Ecaz - PostgreSQL Extension for Compressed Vector Search
 
 ## 1. Purpose
 
-This document defines the **scope, intent, and governing requirements framework** for Ecaz, a PostgreSQL extension written in Rust (pgrx) that registers a native `tqvector` data type and HNSW index access method over TurboQuant-compressed vectors.
+Ecaz is a PostgreSQL extension, written in Rust with pgrx, that provides native vector storage, compressed vector artifacts, and multiple ANN index access methods inside PostgreSQL.
 
-It establishes:
-- The problem space: native approximate nearest neighbor (ANN) search in PostgreSQL using TurboQuant quantization for 8x storage compression with provably unbiased inner product estimation
-- The boundaries of responsibility: type system, quantizer core, distance computation, index access method, SQL bootstrap — nothing above the Postgres extension boundary
-- The authoritative structure for requirements, verification, and change control
-- The relationship between the TurboQuant algorithm (arXiv:2504.19874), the native Ecaz HNSW graph implementation, and the Postgres extension interface (pgrx)
+This specification is the top-level requirements artifact for the current main-branch implementation. It defines the product surface, scope boundaries, requirement structure, verification policy, and known deferrals for:
 
-This document is the **top-level requirements artifact** for Ecaz.
-
----
+- `ecvector(dim)`, the canonical exact/raw row type
+- `tqvector`, the explicit TurboQuant artifact/debugging type
+- `ec_hnsw`, the default general-purpose graph access method
+- `ec_ivf`, the optional IVF posting-list access method
+- `ec_diskann`, the optional DiskANN/Vamana-style graph access method
+- Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
 
 ## 2. Scope
 
 ### 2.1 In Scope
 
 This specification governs:
-- The `tqvector` PostgreSQL data type: wire format, text I/O, binary I/O, storage
-- **Quantizer core**: two-stage vector compression (MSE + QJL) implementing the TurboQuant algorithm — SRHT rotation, Lloyd-Max codebook generation, scalar quantization, Gaussian projection residual correction
-- **SIMD acceleration**: AVX2+FMA on x86_64 and NEON on aarch64 for FWHT, scoring, and bit operations, with scalar fallback
-- Encoding: compression of fp32 vectors into TurboQuant bytecodes via the quantizer core
-- Distance functions: LUT-based raw-query-to-code scoring and lower-fidelity code-to-code scoring
-- SQL operators: `<#>` overloads for code-to-code comparison and raw-query search
-- Operator classes for HNSW index integration
-- HNSW index access method (AM): all IndexAmRoutine callbacks — build, insert, scan, vacuum
-- Page layout: metadata page, element tuples, neighbor tuples (modeled on pgvector)
-- WAL safety: GenericXLog usage for crash-safe page writes
-- SQL bootstrap: CREATE TYPE, CREATE OPERATOR, CREATE OPERATOR CLASS, CREATE ACCESS METHOD
-- Extension lifecycle: CREATE EXTENSION / DROP EXTENSION / ALTER EXTENSION UPDATE
+
+- PostgreSQL extension lifecycle: `CREATE EXTENSION ecaz`, upgrade packaging, and drop behavior
+- SQL bootstrap for types, operators, functions, casts, access methods, and operator classes
+- `ecvector(dim)` text I/O, binary I/O, typmod validation, casts, and exact/raw row storage
+- `tqvector` TurboQuant artifact encoding, text I/O, binary I/O, and debug/operator surfaces
+- TurboQuant-family quantization: SRHT rotation, Lloyd-Max MSE quantization, QJL residual correction, deterministic seeding, and prepared-query scoring
+- Shared quantizer profiles used by index access methods: TurboQuant, PQ-FastScan, and RaBitQ where enabled by each AM
+- HNSW build, scan, insert, vacuum, page layout, reloptions, GUCs, planner costing, PG18 ReadStream, EXPLAIN, stats, and parallel build behavior
+- IVF centroid training, posting-list persistence, scan/rerank behavior, insert/vacuum/admin snapshots, reloptions, GUCs, planner costing, and measurement evidence
+- DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
+- WAL safety for index mutations and crash-safe page writes
+- Benchmark methodology and review-packet artifact provenance for any performance or recall claim
 
 ### 2.2 Out of Scope
 
 This specification does not govern:
-- The TurboQuant research algorithm itself (owned by the paper: Zandieh et al., ICLR 2026)
-- The HNSW literature itself; Ecaz owns the concrete build/runtime implementation in this repo
-- Application-level schema design (e.g., `agent_memories` table — owned by the agent memory system)
-- Query routing or application-level orchestration (owned by upstream system components)
-- Cosine similarity or L2 distance metrics (inner product only in v0.1)
 
----
+- The TurboQuant, HNSW, IVF, DiskANN, PQ-FastScan, or RaBitQ research papers themselves
+- Application schema design above the extension boundary
+- Query routing, cross-agent fan-out, and shard selection
+- Product benchmark claims not backed by dedicated controlled hardware
+- GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and parallel index scan unless reactivated by a later accepted ADR
+- Cosine and L2 operator families in the current v0 inner-product surface
 
-## 3. System Overview
+## 3. Current Product Surface
 
-### 3.1 System Description
+### 3.1 SQL Types
 
-Ecaz is a PostgreSQL extension that brings TurboQuant-compressed vector storage and HNSW approximate nearest neighbor search directly into the database engine. It is the central component of the agent vector memory system architecture.
+| Type | Role | Status |
+| --- | --- | --- |
+| `ecvector(dim)` | Canonical exact/raw row type for normal user tables | Implemented |
+| `ecvector` | Typmod-less exact/raw row type for flexible internal/test surfaces | Implemented |
+| `tqvector` | TurboQuant-family persisted artifact and debugging type | Implemented, non-canonical for new applications |
 
-**Why build this instead of using existing extensions:**
-- **pgvecto.rs**: deprecated, superseded by VectorChord
-- **VectorChord**: AGPLv3 / ELv2 licensing — problematic for product use
-- **pgvector HNSW**: MIT licensed (reference for page layout), but stores fp32 vectors — no compression, 8x larger storage
+`encode_to_ecvector(real[], bits, seed)` is the canonical ingest helper. Current main accepts only the canonical quantizer defaults `(4, 42)` and stores raw fp32 payloads as `ecvector`; other bit/seed pairs are rejected.
 
-Ecaz combines:
-1. An **own quantizer core** implementing the TurboQuant two-stage algorithm (MSE + QJL) with AVX2+FMA and NEON SIMD acceleration
-2. An Ecaz-owned native HNSW build/runtime implementation
-3. pgvector's page layout as the direct reference for Postgres storage integration
-4. pgrx for safe Rust ↔ Postgres FFI
+`encode_to_tqvector(real[], bits, seed)` remains available for explicit TurboQuant artifact generation.
 
-**Compression characteristics** (1536-dim, 4-bit):
-- Raw fp32: 6,144 bytes per vector
-- tqvector quantized payload: 772 bytes per vector (4-byte gamma + 768 bytes code bytes)
-- tqvector total datum size: 783 bytes per vector including the 11-byte datum prefix (`dim`, `bits`, `seed`)
-- ~9 element tuples per 8KB Postgres page vs ~1 for pgvector
-- Significantly reduced I/O during graph traversal
+### 3.2 SQL Operators and Access Methods
 
-### 3.2 Query Strategy: HNSW vs Sequential Scan
+| Access Method | Opclasses | Primary Role | Status |
+| --- | --- | --- | --- |
+| `ec_hnsw` | `ecvector_ip_ops`, `tqvector_ip_ops` | Default general-purpose ANN graph index | Implemented |
+| `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
+| `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
 
-Not all queries require HNSW. TurboQuant sequential scan over compressed codes is fast enough for small agents:
+All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 
-| Agent Size | Strategy | Latency | Recall |
-|---|---|---|---|
-| Small partitions / planner chooses seqscan | Sequential scan over tqvector codes | Throughput-bound, benchmarked separately | Approximate |
-| >= 500K memories | HNSW index scan | < 5ms p99 | ~94–99% (depends on m) |
+### 3.3 Access Method Positioning
 
-Sequential scan can have **higher recall than HNSW** because it scores every row and avoids graph traversal approximation, but it is still bounded by estimator error. The extension must support both paths: code-to-code comparison uses `tqvector_inner_product`, while high-quality search uses a raw-query prepared scorer over `(tqvector, float4[])`. Query-router thresholds are owned by upstream components and SHALL be calibrated from measured throughput, not hard-coded in this specification.
+`ec_hnsw` remains the default user-facing AM. It has the broadest operational coverage and supports multiple storage formats behind a stable SQL surface.
 
-### 3.3 HNSW m Parameter Decision Rules
+`ec_ivf` is an opt-in AM for posting-list experiments, high-ingest tradeoffs, and quantizer/storage comparisons. Local Task 28 evidence is landed; product claims require controlled hardware.
 
-| m | Index Size/Agent | Recall@10 | Use Case |
-|---|---|---|---|
-| 16 | ~88MB | ~99% | Only if recall is critical |
-| 8 | ~34MB | ~97% | **Default choice** |
-| 4 | ~17MB | ~94% | Stub indexes only (always-warm, 20% sample) |
+`ec_diskann` is an opt-in AM for Vamana/DiskANN research and disk-resident graph comparisons. Local Task 29 evidence is landed; the v0 distance wrapper requires finite unit-normalized source vectors.
 
-### 3.4 Scoring Architecture
-
-The extension implements two scoring paths:
-
-**LUT-based scoring (raw query to code)**: For HNSW scan and optional sequential scan acceleration where one side is a raw query embedding. The query vector is rotated/projected once, then compiled into a lookup table (LUT); each candidate is scored via table lookups plus a candidate-side QJL residual correction — O(d) with zero allocation per call. This is the primary hot path for index scans.
-
-**Code-to-code scoring (code-to-code)**: For SQL ad-hoc comparison and HNSW runtime insert/search maintenance where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices. Lower fidelity than the prepared-query path because the QJL correction is omitted in v0.1, but it avoids query preparation and extra state.
-
-Both paths are SIMD-accelerated (AVX2+FMA on x86_64, NEON on aarch64) with scalar fallback.
-
-### 3.5 PG18 Integration Architecture
-
-PostgreSQL 18 introduces several infrastructure improvements that tqvector integrates with:
+## 4. Architecture
 
 ```mermaid
 graph TD
-    subgraph "PG18 Infrastructure"
-        AIO["Async I/O Subsystem<br/>(io_method: sync|worker|io_uring)"]
-        RS["ReadStream API<br/>(read_stream_begin_relation)"]
-        AMH["amgettreeheight<br/>amtranslatestrategy"]
-        EXPLAIN["Custom EXPLAIN Options<br/>(RegisterExtensionExplainOption)"]
-        PGSTAT["Custom Cumulative Stats<br/>(pgstat_register_kind)"]
-        MAGIC["PG_MODULE_MAGIC_EXT"]
-        GINPAR["Parallel Build Infrastructure<br/>(ParallelContext, Sharedsort)"]
-    end
+    SQL["SQL Surface<br/>types, operators, functions"]
+    EC["ecvector(dim)<br/>canonical row type"]
+    TQ["tqvector<br/>TurboQuant artifact"]
+    Q["Quantizer Core<br/>TurboQuant, PQ-FastScan, RaBitQ"]
+    AM["Access Method Layer"]
+    H["ec_hnsw"]
+    I["ec_ivf"]
+    D["ec_diskann"]
+    PG18["PG18 Integration<br/>ReadStream, cost callbacks, EXPLAIN, stats"]
+    EVID["Review Packets<br/>benchmark and measurement evidence"]
 
-    subgraph "ec_hnsw Integration"
-        GS["Graph Stream<br/>(neighbor prefetch)"]
-        LS["Linear Stream<br/>(sequential scan)"]
-        VS["Vacuum Stream<br/>(tuple counting)"]
-        COST["Cost Estimation<br/>(amcostestimate)"]
-        STRAT["Strategy Translation"]
-        DIAG["Scan Diagnostics"]
-        STATS["Operational Metrics"]
-        PBUILD["Parallel Heap Scan<br/>+ Encode"]
-    end
-
-    RS --> GS
-    RS --> LS
-    RS --> VS
-    AIO --> RS
-    AMH --> COST
-    AMH --> STRAT
-    EXPLAIN --> DIAG
-    PGSTAT --> STATS
-    GINPAR --> PBUILD
+    SQL --> EC
+    SQL --> TQ
+    EC --> AM
+    TQ --> AM
+    Q --> AM
+    AM --> H
+    AM --> I
+    AM --> D
+    PG18 --> H
+    PG18 --> I
+    PG18 --> D
+    EVID --> SQL
 ```
 
-**Key integration points:**
-- **Async I/O** (FR-019): Two `ReadStream` instances — random-access for graph traversal, sequential for linear scan — provide 3-4x cold-cache speedup by prefetching pages before the scan blocks on them
-- **Cost estimation** (FR-020): Real cost model replaces `f64::MAX`, enabling planner-driven index selection. `amgettreeheight` reports HNSW `max_level` for refined estimates.
-- **Parallel build** (FR-021): Workers do parallel heap scan + tqvector validation via shared tuplesort; leader builds graph serially
-- **Diagnostics** (FR-024, FR-025): Custom EXPLAIN options show per-query scan stats; custom pgstat tracks aggregate metrics
-- **Strategy translation** (FR-023): `amtranslatestrategy`/`amtranslatecmptype` enable optimizer reasoning about `<#>` ordering semantics
+### 4.1 Module Structure
 
-### 3.6 Scaling Boundary: Cross-Agent Fan-Out
-
-For cross-agent queries, the query router fans out to all shards. This works for the current partition count (16 shards) but flat fan-out degrades beyond ~200-500 shards. The extension itself does not own routing, but the query router must be designed for eventual hierarchical routing (regional aggregators). The extension SHALL NOT assume or enforce any fan-out strategy.
-
-### 3.7 Intended Users
-
-- **Agent memory system**: primary consumer — stores and queries per-agent embedding memories
-- **Platform engineers**: install, configure, and monitor the extension in PostgreSQL clusters
-- **Application developers**: use `tqvector` type and `<#>` operator in SQL queries for ANN search
-
-### 3.8 Design Constraints
-
-- **MIT License**: the extension must be MIT licensed (we own it)
-- **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures compact storage (~783-byte datums at 1536-dim 4-bit), zero-allocation prepared-query scoring, and SIMD acceleration.
-- **Graph quality boundary**: bulk build MAY consume raw fp32 vectors from a caller-supplied source column or expression to construct a higher-quality HNSW graph, but the persisted index stores only `tqvector` codes. Runtime inserts operate on compressed codes unless an explicit raw-vector insert API is added in a later version.
-- **pgvector page layout compatibility**: follow pgvector's page layout patterns exactly for element tuples and neighbor tuples (with `tqvector` code bytes replacing fp32 vector bytes)
-- **pgrx framework**: must compile under the pgrx build system and support pg17–pg18 (pg14–16 dropped per ADR-016)
-- **PG18 primary target**: PostgreSQL 18 is the primary build target and default feature. PG18-specific features (async I/O, custom EXPLAIN, custom pgstat, new AM callbacks) are gated behind `#[cfg(feature = "pg18")]`. PG17 remains supported with feature-flag fallback to synchronous I/O and without the new planner callbacks.
-- **Dual-architecture SIMD**: AVX2+FMA for x86_64 and NEON for aarch64 (AWS Graviton), with runtime feature detection and scalar fallback on both architectures
-
----
-
-## 4. Requirements Architecture
-
-```
-spec/
-├── spec.md                     # This document (master specification)
-├── stakeholder/                # StR-XXX
-├── usecase/                    # US-XXX
-├── functional/                 # FR-XXX
-├── non-functional/             # NFR-XXX
-├── adr/                        # Architecture Decision Records
-├── tests.md                    # Bidirectional requirements ↔ tests mapping
-└── assets/                     # Diagrams, reference material
-```
-
----
-
-## 5. Requirement Classes
-
-### 5.1 Stakeholder Requirements
-
-Stakeholder Requirements capture **authoritative needs and expectations**.
-
-- Format: `StR-XXX`
-- Location: `stakeholder/`
-- Nature: Normative for intent
-- Purpose: Drive system requirements
-
-### 5.2 User Requirements
-
-User Stories describe **intent, expectations, and usage outcomes**.
-
-- Format: `US-XXX`
-- Location: `usecase/`
-- Nature: Informational, non-binding
-- Purpose: Drive functional requirements
-
-### 5.3 Functional Requirements
-
-Functional Requirements define **authoritative, testable system behavior**.
-
-- Format: `FR-XXX`
-- Location: `functional/`
-- Nature: Normative and binding
-- Purpose: Define observable behavior
-
-### 5.4 Non-Functional Requirements
-
-Non-Functional Requirements define **quality constraints**.
-
-- Format: `NFR-XXX`
-- Location: `non-functional/`
-- Nature: Normative and binding
-- Purpose: Constrain system qualities
-
-### 5.5 Acceptance Criteria
-
-- Format: `{FR-XXX}-AC-N`
-- Location: Within each functional requirement file
-- Purpose: Verification anchor
-
----
-
-## 6. Requirement Identification
-
-| Artifact | Format | Example |
-|---|---|---|
-| Stakeholder Requirement | `StR-XXX` | `StR-001` |
-| User Story | `US-XXX` | `US-001` |
-| Functional Requirement | `FR-XXX` | `FR-001` |
-| Non-Functional Requirement | `NFR-XXX` | `NFR-001` |
-| Acceptance Criteria | `{FR}-AC-N` | `FR-001-AC-1` |
-| Test Case | `TC-XXX` | `TC-001` |
-
-Identifiers are immutable once assigned.
-
----
-
-## 7. Requirement Quality Policy
-
-All **functional requirements** SHALL:
-- Define observable behavior
-- Be unambiguous and atomic
-- Avoid implementation details unless required for correctness
-- Be testable through explicit criteria
-
-Functional requirements SHALL NOT:
-- Encode application-specific schema (that belongs to the consuming system)
-- Contain compound behaviors
-- Use subjective language
-
----
-
-## 8. Data Model
-
-### 8.1 tqvector Wire Format
-
-The `tqvector` type is a variable-length Postgres datum (`typlen = -1`) with the following binary layout (little-endian):
-
-```
-Offset  Size    Field       Description
-0       2       dim         Vector dimensionality (u16)
-2       1       bits        Quantization bits (u8, range 2–8)
-3       8       seed        Quantizer seed (u64)
-11      4       gamma       Residual norm scalar
-15      var     codes       Packed quantizer codes
-```
-
-Code bytes layout:
-```
-[mse_packed: ceil(dim * (bits-1) / 8) bytes][qjl_packed: ceil(dim / 8) bytes]
-```
-
-Total code length: `ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes.
-
-At 1536-dim, 4-bit: MSE = 576 bytes, QJL = 192 bytes, gamma = 4 bytes = **772 bytes payload**.
-
-### 8.2 HNSW Page Layout
-
-Modeled on pgvector (reference: `src/hnswinsert.c`, `src/hnswscan.c`).
-
-**Page 0 — Metadata:**
-- M (max neighbors per layer)
-- ef_construction
-- entry_point block number and offset
-- dimensions
-
-**Page 1+ — Interleaved tuples:**
-
-| Tuple Type | Tag | Contents |
-|---|---|---|
-| TqElementTuple | `0x01` | deleted flag, heap TIDs (up to 10), neighbor TID pointer, tqvector code bytes |
-| TqNeighborTuple | `0x02` | count, per-layer neighbor TID arrays (M at layers > 0, 2M at layer 0) |
-
-### 8.3 Quantizer Parameters
-
-The quantizer is **data-oblivious** — fully determined by `(dim, bits, seed)`. No training data, no calibration, no warm-up. A new table's first INSERT produces valid compressed codes immediately.
-
-The seed controls:
-- Diagonal sign vector in the SRHT rotation
-- Gaussian projection matrix in QJL (via ChaCha20 PRNG seeded with `seed`)
-
----
-
-## 9. Events and Signals
-
-### 9.1 Event Model
-
-This extension does not emit domain events. It participates in PostgreSQL's standard signaling:
-- WAL records via GenericXLog for crash recovery
-- VACUUM signaling for dead tuple cleanup
-- Index scan lifecycle callbacks
-
-### 9.2 WAL Guarantees
-
-All page writes SHALL use `GenericXLogStart` / `GenericXLogRegisterBuffer` / `GenericXLogFinish` to ensure crash-safe durability. No page modification may occur outside a GenericXLog transaction.
-
----
-
-## 10. Error and Failure Model
-
-### 10.1 Error Classification
-
-| Category | Examples | Handling |
-|---|---|---|
-| Input validation | Dimension mismatch, invalid bits range, corrupt hex in text I/O | `ereport(ERROR)` with descriptive message |
-| Type mismatch | Comparing tqvectors with different dim/bits | `ereport(ERROR)` |
-| Storage corruption | Invalid page layout, truncated code bytes | `ereport(ERROR)` — do not crash the backend |
-| Resource exhaustion | Out of shared_buffers during index build | Standard Postgres OOM handling |
-
-### 10.2 Failure Handling Guarantees
-
-- The extension SHALL NOT cause a Postgres backend crash under any input
-- Invalid inputs SHALL produce clear `ERROR`-level messages with context
-- Partial index builds SHALL be safely abortable (GenericXLog guarantees atomicity)
-
----
-
-## 11. Traceability
-
-Bidirectional traceability SHALL be maintained between:
-- Stakeholder Requirements -> User Stories / Functional Requirements, either by explicit forward links on the stakeholder artifact or by derivable links from the traced child artifacts
-- User Requirements -> Functional Requirements
-- Functional Requirements -> Acceptance Criteria
-- Acceptance Criteria -> Test Cases
-
----
-
-## 12. Verification Strategy
-
-| Verification Method | Scope |
-|---|---|
-| `cargo test` (unit) | Wire format pack/unpack, text parse/format, code length, codebook generation, FWHT, rotation, MSE encode/decode, QJL encode, SIMD correctness |
-| `cargo pgrx test` (pg_test) | Type I/O round-trips, operator behavior, encode helper, index build/scan/vacuum |
-| Integration tests | HNSW index build, scan, vacuum on realistic data |
-| Recall benchmarks | Recall@10 at 50k x 1536 against known ground truth |
-| SIMD validation | Scalar vs SIMD output equivalence for all accelerated functions |
-| PG18 AIO benchmarks | Cold-cache vs warm-cache latency across io_method and effective_io_concurrency settings |
-| Parallel build benchmarks | Serial vs parallel build time at 1/2/4 workers |
-| EXPLAIN diagnostics | Custom EXPLAIN option output validation |
-
----
-
-## 13. Change Management
-
-All requirements artifacts are configuration-controlled. Changes require impact analysis. Approved changes update affected requirements, tests, and traceability.
-
----
-
-## 14. Lifecycle Status
-
-Requirements declare status: DRAFT -> APPROVED -> IMPLEMENTED -> VERIFIED -> DEPRECATED.
-
----
-
-## 15. Governance Notes
-
-- Functional requirements SHALL precede code changes
-- pgvector source is a reference, not a dependency — we translate page layout patterns, not link against it
-- The quantizer core and native HNSW builder are owned code — changes follow internal review process
-
----
-
-## 16. Module Structure
+The implementation follows the multi-AM module layout established by ADR-041:
 
 ```
 src/
-├── lib.rs                   # pgrx entry, type I/O, encode, operators
+├── lib.rs
 ├── am/
-│   ├── mod.rs               # AM family registration
 │   ├── common/
-│   │   ├── cost.rs          # planner cost / tree height / strategy translation
-│   │   ├── explain.rs       # PG18 EXPLAIN hook plumbing
-│   │   ├── stats.rs         # stats snapshots and pgstat-facing helpers
-│   │   ├── stream.rs        # PG18 ReadStream helpers
-│   │   └── training.rs      # shared training helpers
-│   └── ec_hnsw/
-│       ├── build.rs         # native ambuild / ambuildempty
-│       ├── graph.rs         # graph traversal primitives
-│       ├── insert.rs        # aminsert
-│       ├── options.rs       # reloptions
-│       ├── page.rs          # tuple codec helpers
-│       ├── routine.rs       # IndexAmRoutine wiring
-│       ├── scan.rs          # ambeginscan / amrescan / amgettuple / amendscan
-│       ├── search.rs        # ordered graph search helpers
-│       ├── shared.rs        # metadata and shared AM helpers
-│       └── vacuum.rs        # ambulkdelete / amvacuumcleanup
-├── quant/                   # Quantizer core
-│   ├── mod.rs               # Module definition, CodeIndex type
-│   ├── codebook.rs          # Lloyd-Max optimal scalar quantizer codebook generation
-│   ├── grouped_pq.rs        # grouped-PQ family helpers
-│   ├── hadamard.rs          # Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
-│   ├── mse.rs               # MSE quantizer (SRHT rotation + codebook encoding)
-│   ├── prod.rs              # ProdQuantizer orchestrator
-│   ├── qjl.rs               # QJL quantizer (Gaussian projection, 1-bit, bit-packed)
-│   ├── rotation.rs          # SRHT rotation (diagonal signs + FWHT)
-│   ├── simd.rs              # runtime SIMD dispatch
-│   └── traits.rs            # quantizer / prepared-query traits
+│   ├── ec_hnsw/
+│   ├── ec_ivf/
+│   └── ec_diskann/
+├── quant/
 ├── storage/
-│   ├── mod.rs
-│   ├── page.rs              # packed page primitives
-│   └── wal.rs               # GenericXLog wrappers
-├── pg18_pgstat_shim.rs      # PG18 pgstat shim boundary
+├── pg18_pgstat_shim.rs
 └── standalone_pg_backend_stubs.rs
 ```
 
----
+Shared behavior belongs under `am/common`, `quant`, or `storage`. AM-specific page formats, scan state, insert/vacuum logic, and diagnostics remain under the owning AM.
 
-## 17. References
+## 5. Data Model
 
-- TurboQuant paper: [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) (Zandieh et al., ICLR 2026)
-- pgvector source: https://github.com/pgvector/pgvector
-- pgvector storage layout: https://lantern.dev/blog/pgvector-storage
-- pgrx framework: https://docs.rs/pgrx/latest/pgrx/
-- Agent memory architecture: `~/dev/agent-memory-context.md`
+### 5.1 `ecvector`
 
-### Competitive Landscape and Architecture Decisions
+`ecvector(dim)` stores exact fp32 vectors and enforces dimensionality through PostgreSQL typmod when typmod is present. It is the canonical heap-column type for user tables and the default source for HNSW, IVF, and DiskANN index builds and rerank.
 
-- ADR-017: HNSW over IVF — topology-agnostic indexing for heterogeneous data shapes
-- ADR-018: HNSW graph quality with TurboQuant-compressed distances
-- ADR-019: WAL write amplification mitigation strategy
-- ADR-020: Embedding dimension operating points: 1024 vs 1536 vs 2048
-- ADR-022: Drop scoring LUT in favor of direct codebook multiply
-- ADR-023: SIMD bit-packing for MSE index decode in scoring hot path
-- ADR-048: IVF as optional access method
-- Weaviate Rotational Quantization: https://weaviate.io/blog/8-bit-rotational-quantization
-- VectorChord RaBitQ: https://blog.vectorchord.ai/vectorchord-store-400k-vectors-for-1-in-postgresql
-- DiskANN paper: https://suhasjs.github.io/files/diskann_neurips19.pdf
-- HNSW data ordering effects: https://arxiv.org/html/2405.17813v1
+The typmod-less `ecvector` form is supported for flexible internal surfaces; index metadata then owns dimension consistency for indexed relations.
 
----
+### 5.2 `tqvector`
+
+`tqvector` stores the TurboQuant artifact:
+
+```
+Offset  Size    Field
+0       2       dim
+2       1       bits
+3       8       seed
+11      4       gamma
+15      var     code bytes: mse_packed || qjl_packed
+```
+
+At 1536 dimensions and 4-bit encoding, the artifact is 783 bytes total: 11-byte prefix plus a 772-byte quantized payload.
+
+### 5.3 Index Storage
+
+Each AM owns its persisted index format:
+
+- `ec_hnsw`: layered HNSW element/neighbor tuples, optional binary sidecars, optional rerank payloads, and storage-format-specific tuple variants
+- `ec_ivf`: metadata, centroid directory, posting-list pages, optional PQ/RaBitQ payloads, slack pages, and admin/drift snapshots
+- `ec_diskann`: Vamana nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, duplicate overflow chains, and vacuum repair metadata
+
+Cross-AM page-layout reuse is allowed only through shared helpers with explicit format adapters.
+
+## 6. PG Version and Operational Surface
+
+PostgreSQL 18 is the primary target. PG18-specific features are gated with `#[cfg(feature = "pg18")]` and include:
+
+- ReadStream-backed scan/vacuum paths where implemented
+- `amgettreeheight`, `amtranslatestrategy`, and `amtranslatecmptype`
+- `amconsistentordering`
+- custom `EXPLAIN (ecaz)` option and per-node scan counters
+- custom statistics registration when loaded through `shared_preload_libraries`
+- module identity/version reporting
+
+PostgreSQL 17 remains a compatibility fallback without the PG18-only callback and diagnostics surface.
+
+## 7. Benchmark and Evidence Policy
+
+Measurement claims SHALL distinguish:
+
+- local development evidence
+- review-packet evidence with packet-local raw artifacts
+- product benchmark claims on dedicated controlled hardware
+
+Local landed evidence currently includes:
+
+- HNSW DBpedia recall baseline
+- IVF Task 28 local v1 results at 10K, 25K, 100K, and directional 990K
+- DiskANN Task 29 local readiness results against pgvectorscale and HNSW references
+
+Product benchmark claims require controlled cache state, hardware, storage, PostgreSQL settings, command provenance, and packet-local raw logs.
+
+## 8. Requirement Architecture
+
+```
+spec/
+├── spec.md
+├── stakeholder/
+├── usecase/
+├── functional/
+├── non-functional/
+├── adr/
+├── tests.md
+└── assets/
+```
+
+Requirement identifiers are immutable once assigned:
+
+| Artifact | Format |
+| --- | --- |
+| Stakeholder requirement | `StR-XXX` |
+| User story | `US-XXX` |
+| Functional requirement | `FR-XXX` |
+| Non-functional requirement | `NFR-XXX` |
+| Acceptance criterion | `{PARENT}-AC-N` |
+| Test case | `TC-XXX` |
+
+## 9. Lifecycle Status
+
+Requirement and ADR statuses use:
+
+- `DRAFT`: under active definition
+- `APPROVED`: accepted requirement, not necessarily implemented
+- `IMPLEMENTED`: implemented on main
+- `VERIFIED`: implemented and covered by durable test or measurement evidence
+- `SHELVED`: deliberately inactive until a future decision reopens it
+- `DEPRECATED`: retained for history but no longer part of the current product surface
+- `SUPERSEDED`: replaced by a newer artifact
+
+## 10. Known Deferrals
+
+- Parallel index scan is shelved indefinitely; it is not the current scaling frontier.
+- HNSW insert-throughput decontention remains future work.
+- Larger HNSW parallel build and product benchmark runs are deferred to AWS/RDS-class hardware.
+- IVF and DiskANN local evidence is landed, but larger product claims require controlled benchmark hardware.
+- GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and additional distance metrics remain outside the current implemented surface.
+
+## 11. References
+
+- README: `README.md`
+- Usage docs: `docs/usage.md`
+- Benchmarks: `docs/benchmarks.md`
+- Architecture docs: `docs/architecture.md`
+- ADR index: `spec/adr/index.md`
+- TurboQuant paper: <https://arxiv.org/abs/2504.19874>
+- DiskANN paper: <https://suhasjs.github.io/files/diskann_neurips19.pdf>
+- pgvector source: <https://github.com/pgvector/pgvector>

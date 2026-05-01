@@ -12,8 +12,8 @@ traces:
 
 ### Toolchain
 
-- Rust stable (MSRV: 1.75+)
-- pgrx 0.12+
+- Rust stable
+- pgrx 0.17+
 - Clippy: all warnings are errors (`-D warnings`)
 - rustfmt: enforced in CI
 
@@ -22,12 +22,15 @@ traces:
 1. `cargo fmt --check` — formatting
 2. `cargo clippy --all-targets --all-features -- -D warnings` — lint
 3. `cargo test` — unit tests (no Postgres required)
-4. `cargo pgrx test pg17` — integration tests (Postgres required)
-5. `cargo deny check licenses` — license audit
+4. `cargo pgrx test pg18` — primary integration lane (Postgres required)
+5. `cargo pgrx test pg17` — compatibility integration lane when PG17 coverage is requested
+6. `cargo deny check licenses` — license audit
 
 ### Build Targets
 
 The extension SHALL build for:
+- PostgreSQL 18 as the primary target
+- PostgreSQL 17 as the compatibility fallback
 - `x86_64-unknown-linux-gnu` (primary)
 - `aarch64-unknown-linux-gnu` (ARM64 servers)
 

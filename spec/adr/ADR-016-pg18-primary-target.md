@@ -17,11 +17,11 @@ Ecaz was built targeting PG17. PostgreSQL 18 (released 2025-09-25) introduces:
 5. **GIN parallel build** — Reusable `ParallelContext` + `Sharedsort` infrastructure for parallel index construction.
 6. **`PG_MODULE_MAGIC_EXT`** — Extension name/version reporting.
 
-Ecaz has several production blockers that PG18 features directly address:
-- Cost model is disabled (`f64::MAX`) — planner never selects the index
-- All page reads are synchronous — poor cold-cache performance on network storage
-- Vacuum is a no-op — dead tuples accumulate
-- Index build is serial — doesn't scale for large tables
+At the time this ADR was written, Ecaz had several production blockers that PG18 features directly addressed:
+- The cost model was disabled by a prohibitive-cost gate.
+- Page reads were synchronous, which hurt cold-cache performance on network storage.
+- Vacuum was incomplete for the target index lifecycle.
+- Index build was serial and did not scale for larger tables.
 
 ### PG17 Fallback Complexity
 

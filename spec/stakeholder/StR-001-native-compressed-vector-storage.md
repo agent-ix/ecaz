@@ -30,4 +30,4 @@ A PostgreSQL extension SHALL provide a native data type that stores TurboQuant-c
 
 - 1M vectors at 1536-dim, 4-bit stored in < 1GB of index space
 - ANN queries return results via standard SQL (ORDER BY ... <#> ... LIMIT k)
-- Extension installable via CREATE EXTENSION on PostgreSQL 14–17
+- Extension installable via `CREATE EXTENSION ecaz` on PostgreSQL 18, with PostgreSQL 17 retained as a compatibility fallback

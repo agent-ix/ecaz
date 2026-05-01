@@ -2,7 +2,7 @@
 id: FR-020
 title: Planner Cost Estimation
 type: functional-requirement
-status: DRAFT
+status: IMPLEMENTED
 object_type: process
 traces:
   - US-007
@@ -13,11 +13,11 @@ traces:
 
 ## Requirement
 
-The extension SHALL implement a production-ready `amcostestimate` callback that provides realistic cost estimates to the PostgreSQL query planner, replacing the current `f64::MAX` override (ADR-011). On PG18, the extension SHALL additionally implement `amgettreeheight` to report the HNSW graph height for planner refinement.
+The extension SHALL provide production cost-estimation callbacks that let the PostgreSQL query planner compare Ecaz index scans against sequential scans. ADR-011's former prohibitive-cost override is superseded. On PG18, the extension SHALL additionally implement `amgettreeheight` where the access method has meaningful height metadata.
 
 Current staged behavior:
-- `amcostestimate` now uses the modeled FR-020 cost function instead of ADR-011's prohibitive
-  `f64::MAX` override.
+- `amcostestimate` now uses modeled cost functions instead of ADR-011's former prohibitive
+  override.
 - Read-only planner-cost and planner-integration snapshots still expose both modeled and live
   planner state, but the remaining PG18 blocker they report is preload-time shared pgstat
   activation rather than callback/toolchain bring-up.
@@ -126,7 +126,7 @@ The planner compares index scan cost against sequential scan cost. For ec_hnsw:
 
 | Condition | Behavior |
 |---|---|
-| Empty index (0 data pages) | Return `f64::MAX` startup and total cost — force planner to prefer sequential scan |
+| Empty index (0 data pages) | Return a prohibitive startup and total cost so the planner prefers sequential scan |
 | Metadata page unreadable | `ereport(ERROR)` — index is corrupt, cannot estimate |
 | `max_level = 0` (no graph layers) | Treat as linear-only scan: `startup_cost = 0`, `total_cost = index_pages × seq_page_cost` |
 | `dimensions = 0` in metadata | `ereport(ERROR)` — invalid index metadata |
@@ -147,7 +147,7 @@ The cost model SHALL read `m`, `ef_search`, `dimensions`, and `max_level` from t
 On PG18, `amgettreeheight` SHALL return the `max_level` value from the metadata page.
 
 ### FR-020-AC-5: ADR-011 superseded
-After implementation, the deliberate `f64::MAX` cost override SHALL be removed and ADR-011 SHALL be marked as superseded.
+ADR-011 SHALL remain marked as superseded, and the former blanket prohibitive-cost override SHALL NOT be used for non-empty valid indexes.
 
 ## References
 
