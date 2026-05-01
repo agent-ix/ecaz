@@ -1838,29 +1838,42 @@ unsafe fn exact_heap_rerank_distance(
     raw_query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<f32, String> {
-    let source_vector = unsafe {
-        fetch_heap_source_vector(
+    unsafe {
+        with_heap_source_vector(
             heap_relation,
             snapshot,
             slot,
             source_attnum,
             heap_tid,
             "heap rerank source vector",
-        )?
-    };
-    if source_vector.len() != raw_query.len() {
-        return Err(format!(
-            "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
-            raw_query.len(),
-            source_vector.len()
-        ));
+            |source_vector| {
+                if source_vector.len() != raw_query.len() {
+                    return Err(format!(
+                        "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
+                        raw_query.len(),
+                        source_vector.len()
+                    ));
+                }
+                Ok(-ambuild::source_inner_product(raw_query, source_vector))
+            },
+        )
     }
-    let distance = -raw_query
-        .iter()
-        .zip(source_vector.iter())
-        .map(|(left, right)| left * right)
-        .sum::<f32>();
-    Ok(distance)
+}
+
+unsafe fn with_heap_source_vector<T>(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    heap_tid: ItemPointer,
+    context: &str,
+    f: impl FnOnce(&[f32]) -> Result<T, String>,
+) -> Result<T, String> {
+    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+    let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };
+    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    result
 }
 
 unsafe fn fetch_heap_source_vector(
@@ -1871,11 +1884,17 @@ unsafe fn fetch_heap_source_vector(
     heap_tid: ItemPointer,
     context: &str,
 ) -> Result<Vec<f32>, String> {
-    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
-    let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };
-    let source_vector = unsafe { ambuild::ecvector_datum_to_vec(datum) };
-    unsafe { pg_sys::ExecClearTuple(slot) };
-    Ok(source_vector)
+    unsafe {
+        with_heap_source_vector(
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            heap_tid,
+            context,
+            |source_vector| Ok(source_vector.to_vec()),
+        )
+    }
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {

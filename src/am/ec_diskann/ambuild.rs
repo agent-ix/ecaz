@@ -526,7 +526,7 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
         unsafe { source_inner_product_avx2_fma(left, right) }
     } else {
@@ -535,7 +535,7 @@ fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     source_inner_product_scalar(left, right)
 }
 
@@ -763,7 +763,10 @@ unsafe fn validate_single_ecvector_attribute(
     }
 }
 
-pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+pub(super) unsafe fn with_ecvector_datum_slice<T>(
+    datum: pg_sys::Datum,
+    f: impl FnOnce(&[f32]) -> T,
+) -> T {
     let original = datum
         .cast_mut_ptr::<std::ffi::c_void>()
         .cast::<pg_sys::varlena>();
@@ -786,11 +789,15 @@ pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
         }
         pgrx::error!("ec_diskann indexed ecvector payload is not aligned for float4 access");
     }
-    let vec = body.to_vec();
+    let result = f(body);
     if owned {
         unsafe { pg_sys::pfree(varlena.cast()) };
     }
-    vec
+    result
+}
+
+pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+    unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }
 }
 
 #[cfg(test)]
