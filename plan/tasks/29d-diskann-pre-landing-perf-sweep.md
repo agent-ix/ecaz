@@ -1,6 +1,6 @@
 # Task 29d: DiskANN Pre-Landing Performance Sweep
 
-Status: complete, ready for round-4 review on `task29-diskann-initial-tuning`
+Status: landed on `main` as part of Task 29
 Owner: coder1 / runtime-index track
 Backstory: `review/11105-task29-release-latency-refresh/feedback.md`
 
@@ -19,9 +19,9 @@ Task 29d is complete. Packets:
 - `review/11109-task29d-final-readiness/`: final release-mode local
   sweep across ec_diskann, pgvectorscale, and ec_hnsw.
 
-Landing recommendation: send Task 29 / 29a / 29b / 29c / 29d back for
-review. AWS/product benchmarking remains explicitly out of scope for this
-local landing slice.
+Landing outcome: Task 29 / 29a / 29b / 29c / 29d merged to `main`.
+AWS/product benchmarking remains explicitly out of scope for this local
+landing slice.
 
 ## Goal
 
@@ -370,9 +370,8 @@ After 29d-1, 29d-2, and 29d-3 all land:
 
 ## Out of scope for 29d (deliberate)
 
-- **Parallel DiskANN build.** That's Task 29e if 29d-3's stop
-  condition fires before reaching the reference range. Don't
-  speculate on its scope today.
+- **Parallel DiskANN build.** Shelved unless future product-class benchmark
+  evidence makes it a concrete blocker.
 - **Tuple format changes.** `tuple.search_code` / `binary_words` /
   `grouped_codebook_head` all stay where they are. Any storage
   layout change is a separate task with its own rebuild path.

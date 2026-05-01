@@ -1,6 +1,6 @@
 # Task 29c: DiskANN Build Performance Tuning
 
-Status: landed on branch, no Task 29d blocker opened
+Status: landed on `main`, no Task 29d blocker opened
 Owner: coder1 / runtime-index track
 Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
 

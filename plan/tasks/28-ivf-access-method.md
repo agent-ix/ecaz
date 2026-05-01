@@ -1,8 +1,10 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 8 measurement gates next.
+Status: landed on `main` for the local IVF v1 access-method lane. Phase 8
+local validation and follow-on competitive substrate packets are recorded;
+product-class benchmark claims remain deferred to dedicated hardware.
 
-Working branch: `task28-ivf`
+Former working branch: `task28-ivf`
 
 ## Scope
 
@@ -415,6 +417,12 @@ pg18` extension suite passes, and PG18 clippy is clean with `-D warnings`.
 Packet-local raw logs are stored under
 `review/30033-task28-ivf-pg18-validation/artifacts/`. Recall, latency,
 storage, and WAL measurement gates remain open.
+
+Post-merge status: Task 28's local competitive substrate follow-on closed the
+local landing gates in `review/30151-task28-ivf-local-landing-status/` and
+`review/30153-task28-ivf-h-i-cleanups/`. Larger 990k/exact/HNSW comparison
+fills are intentionally deferred out of the local desktop gate; see
+`review/30150-task28-ivf-local-990k-deferral/`.
 
 ## Owns
 

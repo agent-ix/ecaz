@@ -1,6 +1,8 @@
 # Task 28: IVF Initial Tuning Lane
 
-Status: planned follow-up
+Status: landed on `main` as part of Task 28's IVF access-method and
+competitive-substrate lanes. Local evidence is complete enough for the v1
+landing; product-class benchmarking remains deferred to dedicated hardware.
 Owner: coder1 / runtime-index track
 
 ## Goal
@@ -18,8 +20,8 @@ competitive enough at 990k to justify more threshold tuning before we learn
 what IVF can do. Offline HNSW bulk build stays on the follow-up list, but it
 should not block IVF learning.
 
-IVF goes first. DiskANN remains a separate future work stream in task 29 rather
-than sharing ownership with this task.
+IVF landed first. DiskANN remained separate and has since landed through Task
+29/29a/29b/29c/29d.
 
 ## Hardware Baseline
 
@@ -83,9 +85,10 @@ Future product-claim benchmarks should move to a dedicated Graviton-class host:
 
 ## Acceptance Criteria
 
-- Local initial-tuning review packets with complete reproducibility metadata.
-- A table comparing HNSW and IVF candidates on the same corpus and metric
-  definitions.
-- A clear next-slice recommendation for IVF.
-- A note separating local tuning results from future Graviton-class product
+- [x] Local initial-tuning review packets with complete reproducibility metadata.
+- [x] Local tables comparing HNSW and IVF candidates on the same corpus and
+  metric definitions where feasible.
+- [x] A clear next-slice recommendation for IVF, recorded through the Task 28
+  competitive-substrate packets.
+- [x] A note separating local tuning results from future Graviton-class product
   benchmark requirements.

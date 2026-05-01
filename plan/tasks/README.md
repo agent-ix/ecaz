@@ -29,7 +29,7 @@ These pre-lane task files are retained only for historical context under
 
 ### Agent 2: Planner Integration
 
-11. `11-planner.md` — D1/D2 substantially complete on `main`; remaining follow-ons are measurement and optional parallel-scan callbacks
+11. `11-planner.md` — D1/D2 substantially complete on `main`; remaining follow-on is measurement, with parallel-scan callbacks shelved
 
 ### Agent 3: SIMD / CI
 
@@ -45,18 +45,18 @@ These pre-lane task files are retained only for historical context under
 15. `15-pqfastscan-first-class.md` — executes ADR-032: rename ScalarV1→TurboQuant / GroupedV2→PqFastScan, reloption selector, insert+vacuum parity; blocks merge to `main`
 16. `16-turboquant-iteration.md` — post-task-15 follow-up: port binary prefilter, heap-f32 rerank, and hot/cold payload split from PqFastScan onto TurboQuant
 17. `17-diskann-access-method.md` — second access method for 500M–3B-scale disk-resident indexes (owned by a separate agent; ADR-034)
-18. `18-parallel-index-scan.md` — executes ADR-040: `amcanparallel=true`, shared top-K coordinator, per-worker beams, ef_search split with overlap
-19. `19-pg18-completion.md` — executes ADR-016/017: flip PG18 primary-target, activate amgettreeheight / EXPLAIN hook / pgstat-kind / ReadStream, drop PG14–16
+18. `18-parallel-index-scan.md` — shelved indefinitely; not the current scaling-research frontier
+19. `19-pg18-completion.md` — substantially complete on `main`: PG18 primary-target, amgettreeheight / EXPLAIN hook / pgstat-kind / ReadStream live, PG17 fallback preserved; ReadStream measurement remains
 20. `20-opq-rotation.md` — executes ADR-036: OPQ as alternative transform front-end for PqFastScan, +10–20% recall per byte, zero scan-kernel change
 21. `21-simd-modernization.md` — executes ADR-039 + task-08 hot-path follow-up: AVX-512 specializations and ARM SVE/SVE2 backend under existing runtime dispatch
 22. `22-additive-residual-quantization.md` — executes ADR-037: **evaluate-gated** feasibility study of AQ / RVQ as PqFastScan successor; three decision gates, shelf-on-fail OK
 23. `23-lsq-codebook-refinement.md` — executes ADR-038: drop-in k-means replacement, +2–5% recall, no wire format change, low priority fill-in
 24. `24-post-native-build-storage-and-lever4-followons.md` — post-ADR-042 follow-up: reopen ADR-044 on a stable native builder, carry forward the `EXTENDED` / `MAIN` build-collapse bug, and close the lever-4 `ef_search` matrix before any persisted-default decision
 25. `25-rabitq-quantizer.md` — executes ADR-045 Stage 1: standalone RaBitQ quantizer + offline recall study; **research gate** for SymphonyQG Stages 2–3; shelvable as a clean null result if recall fails
-26. `26-parallel-index-build.md` — parallel `CREATE INDEX` / `REINDEX` for `ec_hnsw` (propagating to `ec_diskann`); shares DSM/slot primitives with task 18, so Phase 2+ is gated on task 18 merge; ADR TBD
+26. `26-parallel-index-build.md` — HNSW parallel build landed for eligible PG18 builds; larger scale curves are deferred to AWS/RDS-class benchmark hardware
 27. `27-symphony-access-method.md` — executes ADR-045 Stages 2–3: `symphony` AM with quantization-aware pruning + out-degree padding (Stage 2), then no-rerank query path (Stage 3); **gated on task 25's RaBitQ recall study passing**
-28. `28-ivf-initial-tuning.md` — IVF-first local benchmark and optimization lane after task 26; compares against HNSW reference rows and records future Graviton-class product-benchmark requirements separately.
-29. `29-diskann-initial-tuning.md` — separate DiskANN local benchmark and optimization lane after IVF; keeps ADR-034 work first-class without coupling it to task 28.
+28. `28-ivf-access-method.md` / `28-ivf-competitive-substrate.md` — IVF access method and local competitive substrate landed on `main`; larger product benchmarks remain deferred to dedicated hardware.
+29. `29-diskann-initial-tuning.md` — DiskANN Task 29/29a/29b/29c/29d landed on `main`; 29e is recorded as follow-up cleanup/evidence, not a current blocker.
 
 ## Coordination rules
 

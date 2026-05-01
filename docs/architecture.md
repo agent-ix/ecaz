@@ -5,7 +5,7 @@
 Ecaz is a PostgreSQL extension (pgrx) with three main subsystems:
 
 1. **Quantizer core** — TurboQuant compression (MSE + QJL two-stage quantization)
-2. **HNSW index** — graph-based approximate nearest neighbor index access method
+2. **Index access methods** — `ec_hnsw`, `ec_ivf`, and `ec_diskann`
 3. **SQL interface** — type system, operators, and bootstrap
 
 ## Compression Pipeline
@@ -28,7 +28,7 @@ tqvector datum (783 bytes)
 
 The quantizer produces unbiased inner product estimates — the expected value of the compressed distance equals the true fp32 distance.
 
-## Index Layout
+## Index Layouts
 
 The `ec_hnsw` index uses a page layout modeled on pgvector's approach:
 
@@ -38,6 +38,15 @@ The `ec_hnsw` index uses a page layout modeled on pgvector's approach:
 
 Graph construction and runtime traversal both use Ecaz-owned HNSW primitives,
 with the build output materialized into PostgreSQL pages for runtime traversal.
+
+The `ec_ivf` index stores trained centroids plus posting lists. Scans score
+centroids, read selected posting-list ranges, score candidates with the selected
+quantizer profile, and optionally rerank from heap/source data.
+
+The `ec_diskann` index stores a Vamana graph with persisted binary sidecars for
+the traversal prefilter and heap rerank for final ordering. It is a separate
+access method from HNSW and IVF so disk-resident behavior can be measured
+without changing the default HNSW path.
 
 ## SIMD Acceleration
 

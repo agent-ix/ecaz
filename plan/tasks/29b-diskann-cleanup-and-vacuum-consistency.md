@@ -1,6 +1,6 @@
 # Task 29b: DiskANN Cleanup and Vacuum Consistency
 
-Status: landed on branch, follows Task 29a (binary-sidecar prefilter)
+Status: landed on `main`, follows Task 29a (binary-sidecar prefilter)
 Owner: coder1 / runtime-index track
 Backstory: `review/11099-task29-diskann-landing-readiness/feedback.md`
 
@@ -16,6 +16,7 @@ of the merge-readiness review.
 Task 29b landed on `task29-diskann-initial-tuning` in
 `95fef9ac` with packet
 `review/11100-task29b-diskann-vacuum-prefilter-consistency/`.
+It has since merged to `main` as part of Task 29.
 The branch now shares one `PreparedPrefilter` helper between scan and
 vacuum repair, keeps `ec_diskann.prefilter_kind` as a production
 rollback GUC, and verifies the real-10k vacuum path with sidecar

@@ -1,7 +1,26 @@
 # Task 28 Follow-On: IVF Competitive Substrate
 
-Status: **active — merge of `task28-ivf` to `main` is gated on completion of A1–A10**
+Status: **landed on `main` for the local IVF competitive-substrate lane**.
+The former A1-A10 merge gate is closed for local v1 landing; larger product
+benchmarks and fresh 990k exact fills are deferred to dedicated benchmark
+hardware.
 Owner: coder1 / runtime-index track
+
+## Post-Merge Summary
+
+Task 28's local landing status is consolidated in
+`review/30151-task28-ivf-local-landing-status/`, with the remaining H/I cleanup
+closed in `review/30153-task28-ivf-h-i-cleanups/`.
+
+- A1-A8 and A10 are done for the local lane.
+- A9 has local 100k/990k IVF evidence, with exact 990k fills and long HNSW
+  reference rebuilds deferred out of the desktop gate by
+  `review/30150-task28-ivf-local-990k-deferral/`.
+- The measured local recommendation keeps `quantizer = 'auto'` unchanged and
+  recommends explicit `storage_format = 'pq_fastscan', pq_group_size = 8` for
+  larger high-dimensional IVF surfaces where speed and index size dominate.
+- Further IVF work should be opened as a new, explicitly scoped follow-up, not
+  treated as unfinished Task 28 merge-gate work.
 
 ## Goal
 
@@ -168,25 +187,18 @@ in review packet 30047 feedback seq 02.
   `077aae1`, where quantized posting scans are modeled below full f32 random
   I/O cost so the normal planner can choose IVF for prepared benchmark queries.
 
-## Next Slice
+## Historical Next Slice
 
-The next slice is the remaining live-insert fixed per-row work: centroid model
-reload is not the measured nlists=16 lever, so prioritize one-posting-per-row
-append shape and list-directory plus metadata counter writes. Keep posting-list
-scoring/layout work on the active backlog:
-packet 30055 shows rerank-width reduction is not the missing high-recall
-latency lever, and packet 30058 only repairs planner selection for prepared IVF
-queries.
+This was the pre-landing next-slice note. The work was superseded by the later
+A1-A10 packets and the landing-status packet above.
 
-## Required Before Merge to `main` — From Reviewer Code Read 2026-04-27
+## Historical Merge Gate — From Reviewer Code Read 2026-04-27
 
-**These items are part of this task.** They came out of the reviewer
+**This section is retained as historical merge-gate context.** The branch has
+landed on `main`; current status is summarized at the top of this file. These
+items came out of the reviewer
 code-read recorded in
 `review/30070-task28-ivf-borrowed-scan-recall/feedback/2026-04-27-02-reviewer.md`.
-**All of them must land before this branch merges to `main`.** They are
-not follow-ups. They are not optional. They are not deferred to a
-later lane. The branch is not merge-ready until A1 through A10 are
-complete and recorded in packets.
 
 Each item is independent of the others in implementation but ordered
 in the sequencing section below for impact and risk.

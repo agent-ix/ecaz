@@ -1,7 +1,9 @@
 # Task 26: Parallel Index Build
 
-Status: **in-progress** — concurrent DSM graph assembly is implemented and
-default-on for eligible PG18 parallel builds; Phase 5 scale curves remain.
+Status: **landed for local PG18 HNSW builds** — concurrent DSM graph assembly
+is implemented and default-on for eligible PG18 parallel builds. Larger scale
+curves and longer-horizon HNSW build work are deferred to AWS/RDS-class
+benchmark hardware.
 
 ## Scope
 
@@ -12,8 +14,9 @@ PostgreSQL parallel workers under a shared coordinator.
 Goal: material build-time reduction on 50k–10M-row corpora at 2/4/8 workers,
 compounding the native-build lane's throughput wins (ADR-042) with parallelism.
 
-Separate from task 18 (parallel scan). Shares worker launch / DSM sizing
-infrastructure in `build_parallel.rs`; does not share coordinator semantics.
+Separate from task 18 (parallel scan). Task 18 is shelved; parallel build uses
+its own worker launch / DSM sizing infrastructure in `build_parallel.rs` and
+does not share coordinator semantics.
 
 ## Architecture Decision
 
@@ -200,11 +203,9 @@ present, entry point is valid, and recall meets the existing gate.
   990k x 1536 (`01:31:57.326`), so do not continue threshold-only tuning on
   this branch.
 - Follow-up: an offline or staged checkpointed HNSW bulk builder plus a shorter
-  PostgreSQL publish step remains a plausible design, but it is deferred behind
-  the IVF and DiskANN benchmark/optimization lane in task 28. The next research
-  unblocker is not more HNSW build tuning; it is establishing real Graviton-class
-  recall/latency/build baselines for IVF and DiskANN candidates, then optimizing
-  on top of the stronger structure.
+  PostgreSQL publish step remains a plausible design, but it is deferred to a
+  future AWS/RDS-class benchmark lane. The next local-repo cleanup unblocker is
+  documentation and task-state alignment, not more HNSW threshold tuning.
 - Longer-horizon target: 10M rows at 2/4/8 workers.
 - Original target remains directionally useful but should be recalibrated after
   the 990k run: ≥2× at 4 workers on 1M, ≥4× at 8 workers on 10M.
@@ -239,8 +240,8 @@ To avoid deadlock during backlink writes:
   DSM sizing helpers, WAL/buffer accounting, parallel scan setup.
 - ADR-042 native build path: landed. Workers use the same scoring kernels and
   layer-search scratch as the serial builder.
-- Task 18 (parallel scan): no longer a hard blocker. The build coordinator
-  does not share `src/am/common/parallel.rs`.
+- Task 18 (parallel scan): shelved indefinitely. The build coordinator does not
+  share `src/am/common/parallel.rs`.
 
 ## Out of Scope
 

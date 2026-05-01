@@ -1,13 +1,17 @@
 # Ecaz
 
 A PostgreSQL extension written in Rust (pgrx) that provides the canonical
-`ecvector(dim)` row type plus the `ec_hnsw` index access method for approximate
-nearest neighbor search.
+`ecvector(dim)` row type plus HNSW, IVF, and DiskANN index access methods for
+approximate nearest neighbor search.
 
 - **`ecvector(dim)`** — canonical exact/raw row type
 - **`tqvector`** — explicit TurboQuant artifact/debugging type
 - **`<#>` operator** — negative inner product distance for ORDER BY ASC
 - **`ec_hnsw` index** — HNSW graph index with per-index storage formats
+- **`ec_ivf` index** — IVF posting-list index for measured local tuning and
+  high-ingest tradeoffs
+- **`ec_diskann` index** — DiskANN/Vamana-style graph index for disk-resident
+  experiments
 - **`encode_to_ecvector()`** — encode fp32 arrays into the canonical row type
 
 ## Quick Start
@@ -47,10 +51,10 @@ artifact surface for explicit tests, tooling, and debugging. Future persisted
 quantized families should add their own family-specific sibling types rather
 than overloading `ecvector`.
 
-## Choosing A Format
+## Choosing An Index
 
-`ec_hnsw` supports two storage formats selected per index with the
-`storage_format` reloption:
+`ec_hnsw` remains the default general-purpose graph index. It supports storage
+formats selected per index with the `storage_format` reloption:
 
 - `turboquant` is the default. Use it for small or medium indexes and for the
   simplest operational path.
@@ -75,6 +79,34 @@ WITH (
 
 Switching an index from one storage format to the other requires `REINDEX`.
 There is no in-place format upgrade.
+
+`ec_ivf` is an opt-in posting-list index. It is useful for comparing sequential
+posting-list scan behavior, quantizer variants, and live-insert tradeoffs.
+
+```sql
+CREATE INDEX ON memories
+USING ec_ivf (embedding ecvector_ip_ops)
+WITH (
+    nlists = 4,
+    nprobe = 2,
+    storage_format = 'turboquant',
+    rerank = 'heap_f32'
+);
+```
+
+`ec_diskann` is an opt-in DiskANN/Vamana-style graph index. Local Task 29
+measurements established its current build/recall/latency baseline; product
+claims still need dedicated benchmark hardware.
+
+```sql
+CREATE INDEX ON memories
+USING ec_diskann (embedding ecvector_diskann_ip_ops)
+WITH (
+    graph_degree = 32,
+    build_list_size = 100,
+    list_size = 128
+);
+```
 
 ## Development
 

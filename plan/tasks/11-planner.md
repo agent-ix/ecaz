@@ -1,7 +1,7 @@
 # Task 11: Planner Integration
 
 Status: substantially complete — the shared PG18 planner/diagnostics/read-stream slice is live on
-`main`; remaining follow-ons are measurement and optional parallel-scan callbacks.
+`main`; remaining follow-on is measurement, with parallel-scan callbacks shelved.
 
 Progress notes:
 - Task 19 has now completed the planned PG18 shared-infrastructure landing on
@@ -23,8 +23,8 @@ Progress notes:
   shared-pgstat gating from the otherwise-live PG18 surfaces, and ReadStream snapshots report the
   active PG18 scan/vacuum wiring.
 - The remaining gap in this task is not callback wiring. The preload-only shared pgstat lane now
-  has a dedicated `ecaz dev` validation command; what remains is later measurement work plus optional
-  parallel-scan callbacks that were always outside the narrow shared-infrastructure landing.
+  has a dedicated `ecaz dev` validation command; what remains is later measurement work. Parallel
+  scan callbacks are shelved with Task 18.
 
 ## Scope
 

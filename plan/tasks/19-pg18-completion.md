@@ -1,6 +1,6 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
-Status: in progress — the shared PG18 infrastructure slice is now wired and validated on `main`; PG17 fallback is preserved, preload-aware shared-pgstat activation coverage now has a dedicated repo lane, and the remaining follow-ons are optional parallel-scan callbacks and post-merge measurement.
+Status: substantially complete on `main` — the shared PG18 infrastructure slice is wired and validated, PG17 fallback is preserved, preload-aware shared-pgstat activation coverage has a dedicated repo lane, parallel-scan callbacks are shelved indefinitely, and the remaining follow-on is ReadStream measurement.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 
@@ -49,8 +49,8 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - [x] **`amgettreeheight`.** Bound in `IndexAmRoutine` and reflected in readiness snapshots.
 - [x] **`amtranslatestrategy` / `amtranslatecmptype`.** Bound in `IndexAmRoutine` and reflected in readiness snapshots.
 - [ ] **`amestimateparallelscan` / `aminitparallelscan` /
-  `amparallelrescan`.** Wire task-18 callbacks if task 18 has landed;
-  otherwise leave `amcanparallel=false` and flip flag in a follow-up.
+  `amparallelrescan`.** Shelved indefinitely with Task 18. Leave
+  `amcanparallel=false`; do not treat this as a PG18 completion blocker.
 
 ### EXPLAIN hook activation
 
@@ -97,8 +97,8 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - **pgrx PG18 support.** External dependency on the pgrx project.
 - Task 11 D2 planner wiring. Much of this task is flipping gates that
   task 11 D1 already prepared.
-- Task 18 (parallel scan) is optional but composes cleanly — wire its
-  callbacks here if it has merged.
+- Task 18 (parallel scan) is shelved indefinitely. Do not wait on it for PG18
+  completion or scaling-research planning.
 
 ## Unblocks
 
@@ -119,6 +119,5 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - Most of the work was flipping pre-built switches, not inventing new design. Task 11 did the
   hard part by making the surface pure and testable before the live PG18 binding work landed.
 - Local PG18 validation now covers both the ordinary fallback lane and the preload-aware shared
-  pgstat lane. The remaining PG18 follow-ons are measurement plus the still-optional parallel-scan
-  callback work.
+  pgstat lane. The remaining PG18 follow-on is ReadStream measurement.
 - Keep the PG17 fallback working until we have at least 3 months of PG18 CI history. Don't rip the `pg17` Cargo feature prematurely.

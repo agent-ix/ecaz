@@ -1,6 +1,6 @@
 # Task 29a: DiskANN Binary-Sidecar Prefilter
 
-Status: planned, follows task 29 initial-tuning probes
+Status: landed on `main` as part of Task 29
 Owner: coder1 / runtime-index track
 Backstory: `review/11095-task29-diskann-pgvectorscale-comparison/`
 (`feedback.md` for the review, `prefilter-detail.md` for the deep
@@ -15,10 +15,10 @@ prefilter with the already-persisted `binary_words` sidecar
 `review/11091/11094` repro and aggregate sweep before considering
 follow-on cleanup.
 
-This is the only Task 29 landing blocker. Latency optimizations
-(`BinaryHeap` frontier, dropping the redundant tuple read) and
-grouped-PQ deletion are explicitly out of scope here — they get a
-separate task once 29a's recall delta is measured cleanly.
+This was the required Task 29 recall fix when opened. The binary-sidecar
+prefilter landed and the follow-on latency cleanup happened in the same Task 29
+lane; grouped-PQ deletion remains out of scope because grouped-PQ is shared
+infrastructure and the DiskANN GUC-controlled fallback path.
 
 ## Why this work
 

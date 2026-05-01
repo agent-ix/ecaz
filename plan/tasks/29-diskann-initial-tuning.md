@@ -1,18 +1,19 @@
 # Task 29: DiskANN Initial Tuning Lane
 
-Status: **ready for round-4 review after Task 29d** - code and local
-PG18 release measurements are ready for merge review
+Status: **landed on `main`** — Task 29/29a/29b/29c/29d are merged with local
+PG18 release measurements recorded. Task 29e is a follow-up cleanup/evidence
+packet, not a current landing blocker.
 Owner: coder1 / runtime-index track
 
 ## Follow-up tasks
 
-- **Task 29a — binary-sidecar prefilter swap** (LANDED on branch).
+- **Task 29a — binary-sidecar prefilter swap** (landed on `main`).
   `plan/tasks/29a-diskann-binary-sidecar-prefilter.md`. Closed the
   scan-path recall ceiling. Recall@10 went from ~0.93 to 0.997 at
   default reloptions on real-10k. Latency cleanup followed in the
   same lane via heap-frontier and early-stop scan changes. Packets:
   `11096`, `11097`, `11098`.
-- **Task 29b — cleanup and vacuum consistency** (LANDED on branch).
+- **Task 29b — cleanup and vacuum consistency** (landed on `main`).
   `plan/tasks/29b-diskann-cleanup-and-vacuum-consistency.md`.
   Wires the binary sidecar into vacuum-repair candidate scoring,
   finalizes the `ec_diskann.prefilter_kind` GUC as a production
@@ -20,7 +21,7 @@ Owner: coder1 / runtime-index track
   on `hamming_xor_popcount`, and tightens code shape. Grouped-PQ
   stays — it is shared infrastructure with `ec_hnsw` / `ec_ivf` and
   remains the GUC-controlled rollback path. Packet: `11100`.
-- **Task 29c — build performance** (LANDED on branch; no Task 29d
+- **Task 29c — build performance** (landed on `main`; no Task 29d
   blocker opened). `plan/tasks/29c-diskann-build-perf.md`.
   Structured build timing showed the apparent ~492 s real-10k build
   was a debug/dev-installed extension artifact. The same head with a
@@ -30,8 +31,8 @@ Owner: coder1 / runtime-index track
   construction, not tuple persistence or page writes. Reference
   `ec_hnsw` on the same table with `m=32`, `ef_construction=100`
   built in `5.23s`. Packets: `11101`, `11102`, `11104`.
-- **Task 29d — pre-landing perf sweep** (COMPLETE; ready for
-  round-4 review). `plan/tasks/29d-diskann-pre-landing-perf-sweep.md`.
+- **Task 29d — pre-landing perf sweep** (landed on `main`).
+  `plan/tasks/29d-diskann-pre-landing-perf-sweep.md`.
   Build heap-frontier release A/B stayed reverted (`11106`), L=64
   scan profiling found no safe default rerank-budget change (`11107`),
   and the build-distance SIMD change landed (`11108`). Final local PG18
@@ -39,7 +40,7 @@ Owner: coder1 / runtime-index track
   build, 4,939,776 B index size, recall@10 `0.9965` to `0.9975`, and
   mean latency `7.80` to `9.34 ms` across L=64/128/200/400/800.
 
-The current landing-readiness packets are
+The landing-readiness packets are
 `review/11099-task29-diskann-landing-readiness/`,
 `review/11100-task29b-diskann-vacuum-prefilter-consistency/`,
 `review/11104-task29c-prune-active-mask-profile/`,
@@ -47,14 +48,18 @@ The current landing-readiness packets are
 `review/11109-task29d-final-readiness/`. Round-3 merge feedback in
 `review/11105-.../feedback.md` has been addressed by Task 29d.
 
+Task 29e is recorded in `review/11110-task29e-rerank-borrowed-simd/`.
+The kept code cleanup is neutral for latency, and the rejected experiments are
+not active follow-up work.
+
 ## Goal
 
 Establish initial, reproducible build/recall/latency baselines for DiskANN on
 the same corpus surfaces used by HNSW and IVF, then identify the first concrete
 optimization and implementation slices for the DiskANN path.
 
-DiskANN is separate from task 28. IVF goes first; DiskANN remains a first-class
-future work stream rather than being collapsed into the IVF tuning task.
+DiskANN stayed separate from task 28. IVF landed first, and DiskANN landed as
+its own first-class lane rather than being collapsed into IVF tuning.
 
 ## Hardware Baseline
 
@@ -102,17 +107,18 @@ Future product-claim benchmarks should move to a dedicated Graviton-class host.
 
 ## Deferred Follow-Ups
 
-- Production `ec_diskann` AM integration after the reference harness or early
-  candidate justifies the build/search shape.
-- Live insert and vacuum semantics for Vamana.
+- Larger structural low-L latency work that reduces heap visits or changes the
+  exact-rerank storage path.
+- Larger graph construction/layout changes if future hardware/product
+  benchmarking requires build parity work.
 - GPU-accelerated offline build/training from ADR-046.
 - SPANN-style routing from ADR-035.
 
 ## Acceptance Criteria
 
-- Local initial-tuning review packets with complete reproducibility metadata.
-- A table comparing HNSW and DiskANN candidates on the same corpus and metric
+- [x] Local initial-tuning review packets with complete reproducibility metadata.
+- [x] A table comparing HNSW and DiskANN candidates on the same corpus and metric
   definitions.
-- A clear next-slice recommendation for DiskANN.
-- A note separating local tuning results from future Graviton-class product
+- [x] A clear next-slice recommendation for DiskANN.
+- [x] A note separating local tuning results from future Graviton-class product
   benchmark requirements.
