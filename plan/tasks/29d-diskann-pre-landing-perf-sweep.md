@@ -199,6 +199,38 @@ land what's measured. The merge discussion can frame this as
 
 ## 29d-3 — Build performance attack (1–3 weeks)
 
+Status: complete - SIMD build distance landed in commit `0cd4baf9`.
+Packet: `review/11108-task29d-build-distance-simd/`.
+
+The first build attack was the source-vector distance helper used by
+ambuild's Vamana graph construction. The scalar release helper measured
+about `1238.8 ns` per 1536-d inner product in `simd_bench`, and the
+structured ambuild counters showed tens of millions of these distance
+calls per real-10k build. Commit `0cd4baf9` adds a runtime-gated
+AVX2+FMA implementation with scalar fallback.
+
+Release-mode real-10k DROP+CREATE results on the same isolated surface:
+
+- Before (`11104` active-mask baseline): `70.678 s` total,
+  `67.571 s` core graph.
+- After SIMD distance (`11108`): `14.493 s` total, `12.639 s`
+  core graph.
+- Build target: within `3x` of the strongest reference (`<=17.5 s`
+  against pgvectorscale's `5.82 s`) is met.
+
+Correctness/scan checks after the SIMD build:
+
+- Recall@10 at L=`64/200/800`: `0.9965/0.9970/0.9975`.
+- NDCG@10 at L=`64/200/800`: `0.9999/0.9999/0.9999`.
+- Latency mean at L=`64/200/800` after PG18 restart:
+  `7.57/7.91/9.33 ms`, p99 `9.81/10.6/13.1 ms`.
+- Index size remained `4,939,776` bytes (`4824 kB`).
+
+This satisfies the 29d build-performance stop condition. Further build
+work should move to the final readiness sweep, then to a separate future
+task only if the merge discussion asks for parallel build or a deeper
+algorithmic change.
+
 ### Background
 
 After `11104`'s active-mask prune cleanup, the release-mode
