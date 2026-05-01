@@ -1,0 +1,18 @@
+SET
+SET
+Limit  (cost=447.43..474.45 rows=10 width=12) (actual time=9.683..10.466 rows=10.00 loops=1)
+  Buffers: shared hit=984 read=1
+  InitPlan 1
+    ->  Limit  (cost=0.14..0.22 rows=1 width=26) (actual time=0.096..0.097 rows=1.00 loops=1)
+          Buffers: shared hit=1 read=1
+          ->  Index Scan using task29c_phase_profile_queries_pkey on task29c_phase_profile_queries  (cost=0.14..16.14 rows=200 width=26) (actual time=0.096..0.096 rows=1.00 loops=1)
+                Index Searches: 1
+                Buffers: shared hit=1 read=1
+  ->  Index Scan using task29c_phase_profile_idx on task29c_phase_profile_corpus  (cost=447.20..27473.72 rows=10000 width=12) (actual time=9.680..10.461 rows=10.00 loops=1)
+        Order By: (embedding <#> (InitPlan 1).col1)
+        Index Searches: 0
+        Buffers: shared hit=984 read=1
+Planning:
+  Buffers: shared hit=128
+Planning Time: 1.974 ms
+Execution Time: 10.937 ms
