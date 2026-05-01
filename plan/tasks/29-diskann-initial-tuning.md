@@ -1,7 +1,7 @@
 # Task 29: DiskANN Initial Tuning Lane
 
-Status: **pre-landing perf sweep in progress (29d)** — code merge-ready,
-final perf items being run down on the same branch before merge
+Status: **ready for round-4 review after Task 29d** - code and local
+PG18 release measurements are ready for merge review
 Owner: coder1 / runtime-index track
 
 ## Follow-up tasks
@@ -30,28 +30,22 @@ Owner: coder1 / runtime-index track
   construction, not tuple persistence or page writes. Reference
   `ec_hnsw` on the same table with `m=32`, `ef_construction=100`
   built in `5.23s`. Packets: `11101`, `11102`, `11104`.
-- **Task 29d — pre-landing perf sweep** (planned, blocks merge).
-  `plan/tasks/29d-diskann-pre-landing-perf-sweep.md`. Three final
-  perf items being run down on this branch before merge:
-  (29d-1) build heap-frontier release-mode A/B to settle the
-  round-2 deferred question — the same data-structure shape was a
-  release-mode win on the scan side and a debug-mode regression on
-  the build side, deserves a definitive release-mode answer;
-  (29d-2) L=64 scan latency parity with pgvectorscale (currently
-  9.19 ms vs 3.56 ms — the cleanest constant-factor signal in the
-  comparison); (29d-3) DiskANN build performance attack against the
-  pgvectorscale (5.82 s) and HNSW (5.23 s) references, stop
-  condition at within 3× of the strongest reference. Each sub-task
-  lands its own packet; final 29d readiness packet refreshes the
-  full sweep before round-4 sign-off.
+- **Task 29d — pre-landing perf sweep** (COMPLETE; ready for
+  round-4 review). `plan/tasks/29d-diskann-pre-landing-perf-sweep.md`.
+  Build heap-frontier release A/B stayed reverted (`11106`), L=64
+  scan profiling found no safe default rerank-budget change (`11107`),
+  and the build-distance SIMD change landed (`11108`). Final local PG18
+  release readiness packet `11109` measured `ec_diskann` at 14.59 s
+  build, 4,939,776 B index size, recall@10 `0.9965` to `0.9975`, and
+  mean latency `7.80` to `9.34 ms` across L=64/128/200/400/800.
 
 The current landing-readiness packets are
 `review/11099-task29-diskann-landing-readiness/`,
 `review/11100-task29b-diskann-vacuum-prefilter-consistency/`,
-`review/11104-task29c-prune-active-mask-profile/`, and
-`review/11105-task29-release-latency-refresh/`. Round-3 merge
-feedback is in `review/11105-.../feedback.md` and tracks the
-remaining pre-merge work as Task 29d.
+`review/11104-task29c-prune-active-mask-profile/`,
+`review/11105-task29-release-latency-refresh/`, and
+`review/11109-task29d-final-readiness/`. Round-3 merge feedback in
+`review/11105-.../feedback.md` has been addressed by Task 29d.
 
 ## Goal
 

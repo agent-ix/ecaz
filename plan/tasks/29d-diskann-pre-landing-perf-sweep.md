@@ -1,8 +1,27 @@
 # Task 29d: DiskANN Pre-Landing Performance Sweep
 
-Status: in progress, blocks merge of `task29-diskann-initial-tuning`
+Status: complete, ready for round-4 review on `task29-diskann-initial-tuning`
 Owner: coder1 / runtime-index track
 Backstory: `review/11105-task29-release-latency-refresh/feedback.md`
+
+## Outcome
+
+Task 29d is complete. Packets:
+
+- `review/11106-task29d-build-heap-frontier-ab/`: release-mode build
+  heap-frontier A/B replicated the regression; leave reverted.
+- `review/11107-task29d-l64-scan-profile/`: L=64 scan profile found
+  exact heap rerank dominates, but lowering default `rerank_budget`
+  below the recall floor is not safe.
+- `review/11108-task29d-build-distance-simd/`: landed runtime-gated
+  AVX2+FMA source distance for ambuild; real-10k build dropped from
+  70.678 s to 14.493 s.
+- `review/11109-task29d-final-readiness/`: final release-mode local
+  sweep across ec_diskann, pgvectorscale, and ec_hnsw.
+
+Landing recommendation: send Task 29 / 29a / 29b / 29c / 29d back for
+review. AWS/product benchmarking remains explicitly out of scope for this
+local landing slice.
 
 ## Goal
 
@@ -334,6 +353,8 @@ landing decision keys off whichever stop fires first.
   (4824 kB).
 
 ## Final 29d landing readiness packet
+
+Status: complete. Packet: `review/11109-task29d-final-readiness/`.
 
 After 29d-1, 29d-2, and 29d-3 all land:
 
