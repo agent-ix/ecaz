@@ -4,7 +4,11 @@ Status: in progress — Phase 0 storage design checkpoint recorded in
 `plan/design/spire-phase0-partition-object-storage.md`; Phase 1 now has
 SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
-draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
+draft publication. Segmented, column-major V2 leaf-object codecs and an
+in-memory local-store V2 write/read path now exist as the first response to the
+pre-persistence architecture gate; build and scan helpers still consume the V1
+row-contiguous leaf object until the migration slices land. Scan helpers can
+now route to top-`nprobe` leaves, collect
 ranked candidates through injected and concrete quantized scorer paths, dedupe
 by `vec_id`, and consume the resolved single-level scan plan through the
 helper-level quantized scoring and exact-rerank path. A cursor-to-scan-output
@@ -131,7 +135,10 @@ Decision record:
   row-contiguous base-leaf format with `LeafPartitionObjectV2`: one metadata
   tuple plus page-sized row segments containing column-major flags,
   fixed-stride `vec_id`s, heap TIDs, gammas, and payload bytes. Keep small
-  deltas row-encoded until compaction rewrites a V2 base object.
+  deltas row-encoded until compaction rewrites a V2 base object. V2
+  metadata/segment codecs plus an in-memory local-store segmented write/read
+  path have landed; build-draft and scan helpers still need to consume V2
+  leaves before this item can be closed.
 - [ ] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
   borrowed row references for row-encoded deltas, one shared assignment
   visibility predicate, and batch assignment scorer entry points before

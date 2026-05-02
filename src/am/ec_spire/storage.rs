@@ -5,7 +5,10 @@ use std::{collections::HashSet, mem::size_of};
 use super::meta::{
     SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID, SPIRE_SINGLE_LOCAL_STORE_ID,
 };
-use crate::storage::page::{DataPageChain, ItemPointer, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES};
+use crate::storage::page::{
+    element_or_neighbor_tuple_fits, usable_page_bytes, DataPageChain, ItemPointer,
+    DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
+};
 
 pub(super) const SPIRE_VEC_ID_MAX_BYTES: usize = 32;
 pub(super) const SPIRE_LOCAL_VEC_ID_DISCRIMINATOR: u8 = 0x01;
@@ -31,11 +34,35 @@ const SPIRE_ASSIGNMENT_KNOWN_FLAGS: u16 = SPIRE_ASSIGNMENT_FLAG_PRIMARY
     | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
 
 const PARTITION_OBJECT_MAGIC: u32 = 0x4f50_5345; // "ESPO" as little-endian bytes.
+const PARTITION_OBJECT_FORMAT_VERSION_V1: u16 = 1;
+const PARTITION_OBJECT_FORMAT_VERSION_V2: u16 = 2;
 const PARTITION_OBJECT_HEADER_BYTES: usize = 46;
 const ASSIGNMENT_ROW_FIXED_PREFIX_BYTES: usize = 3;
 const ASSIGNMENT_ROW_FIXED_TAIL_BYTES: usize = ITEM_POINTER_BYTES + 1 + 4 + 4;
 const ROUTING_OBJECT_BODY_PREFIX_BYTES: usize = 4;
 const ROUTING_CHILD_ENTRY_FIXED_BYTES: usize = 4 + 8;
+const LEAF_V2_META_FLAG: u32 = 0x0000_0001;
+const LEAF_V2_SEGMENT_FLAG: u32 = 0x0000_0002;
+const LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = 16;
+const LEAF_V2_META_BODY_BYTES: usize = 1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8 + 8;
+const LEAF_V2_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + 4 + ITEM_POINTER_BYTES;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireVecIdKind {
+    LocalU64 = 1,
+    GlobalBytes = 2,
+}
+
+impl SpireVecIdKind {
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            1 => Ok(Self::LocalU64),
+            2 => Ok(Self::GlobalBytes),
+            other => Err(format!("ec_spire invalid leaf V2 vec_id kind: {other}")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct SpireVecId {
@@ -161,16 +188,27 @@ pub(super) struct SpirePartitionObjectHeader {
 
 impl SpirePartitionObjectHeader {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V1)
+    }
+
+    fn encode_with_format_version(&self, format_version: u16) -> Result<Vec<u8>, String> {
         if self.pid == 0 {
             return Err("ec_spire partition object pid 0 is invalid".to_owned());
         }
         if self.object_version == 0 {
             return Err("ec_spire partition object version 0 is invalid".to_owned());
         }
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
+        {
+            return Err(format!(
+                "ec_spire unsupported partition object format version: {format_version}"
+            ));
+        }
 
         let mut out = Vec::with_capacity(PARTITION_OBJECT_HEADER_BYTES);
         out.extend_from_slice(&PARTITION_OBJECT_MAGIC.to_le_bytes());
-        out.extend_from_slice(&1_u16.to_le_bytes());
+        out.extend_from_slice(&format_version.to_le_bytes());
         out.push(self.kind as u8);
         out.push(0);
         out.extend_from_slice(&self.pid.to_le_bytes());
@@ -185,6 +223,16 @@ impl SpirePartitionObjectHeader {
     }
 
     pub(super) fn decode_prefix(input: &[u8]) -> Result<(Self, &[u8]), String> {
+        let (header, format_version, tail) = Self::decode_prefix_with_format_version(input)?;
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1 {
+            return Err(format!(
+                "ec_spire unsupported partition object format version: {format_version}"
+            ));
+        }
+        Ok((header, tail))
+    }
+
+    fn decode_prefix_with_format_version(input: &[u8]) -> Result<(Self, u16, &[u8]), String> {
         if input.len() < PARTITION_OBJECT_HEADER_BYTES {
             return Err(format!(
                 "ec_spire partition object header too short: got {}, expected at least {PARTITION_OBJECT_HEADER_BYTES}",
@@ -199,7 +247,9 @@ impl SpirePartitionObjectHeader {
         }
         let format_version =
             u16::from_le_bytes(input[4..6].try_into().expect("format version bytes"));
-        if format_version != 1 {
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
+        {
             return Err(format!(
                 "ec_spire unsupported partition object format version: {format_version}"
             ));
@@ -231,7 +281,11 @@ impl SpirePartitionObjectHeader {
         if header.object_version == 0 {
             return Err("ec_spire partition object version 0 is invalid".to_owned());
         }
-        Ok((header, &input[PARTITION_OBJECT_HEADER_BYTES..]))
+        Ok((
+            header,
+            format_version,
+            &input[PARTITION_OBJECT_HEADER_BYTES..],
+        ))
     }
 }
 
@@ -451,6 +505,507 @@ impl SpireLeafPartitionObject {
             return Err(format!(
                 "ec_spire leaf partition object child_count must be 0, got {}",
                 self.header.child_count
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObjectV2Meta {
+    pub(super) header: SpirePartitionObjectHeader,
+    pub(super) payload_format: u8,
+    pub(super) payload_stride: u32,
+    pub(super) vec_id_kind: SpireVecIdKind,
+    pub(super) vec_id_stride: u16,
+    pub(super) segment_count: u32,
+    pub(super) first_segment_locator: ItemPointer,
+    pub(super) object_bytes_total: u64,
+    pub(super) published_epoch_backref: u64,
+}
+
+impl SpireLeafPartitionObjectV2Meta {
+    fn new(
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignment_count: u32,
+        payload_format: u8,
+        payload_stride: u32,
+        segment_count: u32,
+        first_segment_locator: ItemPointer,
+        object_bytes_total: u64,
+        published_epoch_backref: u64,
+    ) -> Result<Self, String> {
+        let meta = Self {
+            header: SpirePartitionObjectHeader {
+                kind: SpirePartitionObjectKind::Leaf,
+                pid,
+                object_version,
+                level: 0,
+                parent_pid,
+                child_count: 0,
+                assignment_count,
+                flags: LEAF_V2_META_FLAG,
+            },
+            payload_format,
+            payload_stride,
+            vec_id_kind: SpireVecIdKind::LocalU64,
+            vec_id_stride: LEAF_V2_LOCAL_VEC_ID_STRIDE as u16,
+            segment_count,
+            first_segment_locator,
+            object_bytes_total,
+            published_epoch_backref,
+        };
+        meta.validate()?;
+        Ok(meta)
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let mut out = self
+            .header
+            .encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+        out.push(self.payload_format);
+        out.push(self.vec_id_kind as u8);
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.payload_stride.to_le_bytes());
+        out.extend_from_slice(&self.vec_id_stride.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.segment_count.to_le_bytes());
+        self.first_segment_locator.encode_into(&mut out);
+        out.extend_from_slice(&self.object_bytes_total.to_le_bytes());
+        out.extend_from_slice(&self.published_epoch_backref.to_le_bytes());
+        debug_assert_eq!(
+            out.len(),
+            PARTITION_OBJECT_HEADER_BYTES + LEAF_V2_META_BODY_BYTES
+        );
+        Ok(out)
+    }
+
+    fn decode(input: &[u8]) -> Result<Self, String> {
+        let (header, format_version, tail) =
+            SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V2 {
+            return Err(format!(
+                "ec_spire leaf V2 meta format version must be 2, got {format_version}"
+            ));
+        }
+        if tail.len() != LEAF_V2_META_BODY_BYTES {
+            return Err(format!(
+                "ec_spire leaf V2 meta length mismatch: got {}, expected {}",
+                tail.len(),
+                LEAF_V2_META_BODY_BYTES
+            ));
+        }
+        let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("leaf V2 reserved"));
+        if reserved != 0 {
+            return Err(format!(
+                "ec_spire leaf V2 meta reserved bytes must be zero, got {reserved}"
+            ));
+        }
+        let reserved2 = u16::from_le_bytes(tail[10..12].try_into().expect("leaf V2 reserved2"));
+        if reserved2 != 0 {
+            return Err(format!(
+                "ec_spire leaf V2 meta reserved2 bytes must be zero, got {reserved2}"
+            ));
+        }
+        let first_segment_locator = ItemPointer::decode(&tail[16..22])?;
+        let meta = Self {
+            header,
+            payload_format: tail[0],
+            vec_id_kind: SpireVecIdKind::decode(tail[1])?,
+            payload_stride: u32::from_le_bytes(tail[4..8].try_into().expect("payload stride")),
+            vec_id_stride: u16::from_le_bytes(tail[8..10].try_into().expect("vec id stride")),
+            segment_count: u32::from_le_bytes(tail[12..16].try_into().expect("segment count")),
+            first_segment_locator,
+            object_bytes_total: u64::from_le_bytes(
+                tail[22..30].try_into().expect("object bytes total"),
+            ),
+            published_epoch_backref: u64::from_le_bytes(
+                tail[30..38].try_into().expect("published epoch"),
+            ),
+        };
+        meta.validate()?;
+        Ok(meta)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        validate_leaf_v2_header(&self.header, LEAF_V2_META_FLAG)?;
+        validate_assignment_payload_format(self.payload_format)?;
+        validate_leaf_v2_locator(self.first_segment_locator, "first segment")?;
+        if self.published_epoch_backref == 0 {
+            return Err("ec_spire leaf V2 published epoch backref 0 is invalid".to_owned());
+        }
+        if self.object_bytes_total == 0 {
+            return Err("ec_spire leaf V2 object_bytes_total 0 is invalid".to_owned());
+        }
+        if self.vec_id_kind != SpireVecIdKind::LocalU64 {
+            return Err("ec_spire leaf V2 Phase 1 only supports local_u64 vec_ids".to_owned());
+        }
+        if usize::from(self.vec_id_stride) != LEAF_V2_LOCAL_VEC_ID_STRIDE {
+            return Err(format!(
+                "ec_spire leaf V2 local vec_id stride mismatch: got {}, expected {LEAF_V2_LOCAL_VEC_ID_STRIDE}",
+                self.vec_id_stride
+            ));
+        }
+        if self.header.assignment_count == 0 {
+            if self.segment_count != 0 {
+                return Err("ec_spire empty leaf V2 meta cannot reference segments".to_owned());
+            }
+            if self.first_segment_locator != ItemPointer::INVALID {
+                return Err("ec_spire empty leaf V2 meta first segment must be invalid".to_owned());
+            }
+            return Ok(());
+        }
+        if self.segment_count == 0 {
+            return Err("ec_spire non-empty leaf V2 meta requires at least one segment".to_owned());
+        }
+        if self.first_segment_locator == ItemPointer::INVALID {
+            return Err("ec_spire non-empty leaf V2 meta requires a first segment".to_owned());
+        }
+        if self.payload_format == SPIRE_PAYLOAD_FORMAT_NONE {
+            return Err(
+                "ec_spire non-empty leaf V2 meta payload format must not be NONE".to_owned(),
+            );
+        }
+        if self.payload_stride == 0 {
+            return Err("ec_spire non-empty leaf V2 meta payload stride 0 is invalid".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObjectV2Segment {
+    pub(super) header: SpirePartitionObjectHeader,
+    pub(super) segment_no: u32,
+    pub(super) row_base: u32,
+    pub(super) next_segment_locator: ItemPointer,
+    pub(super) flags: Vec<u16>,
+    pub(super) vec_ids: Vec<u8>,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) gammas: Vec<f32>,
+    pub(super) payloads: Vec<u8>,
+}
+
+impl SpireLeafPartitionObjectV2Segment {
+    fn new(
+        meta: &SpireLeafPartitionObjectV2Meta,
+        segment_no: u32,
+        row_base: u32,
+        next_segment_locator: ItemPointer,
+        rows: &[SpireLeafAssignmentRow],
+    ) -> Result<Self, String> {
+        let row_count = u32::try_from(rows.len())
+            .map_err(|_| "ec_spire leaf V2 segment row count exceeds u32".to_owned())?;
+        let mut flags = Vec::with_capacity(rows.len());
+        let mut vec_ids = Vec::with_capacity(usize::from(meta.vec_id_stride) * rows.len());
+        let mut heap_tids = Vec::with_capacity(rows.len());
+        let mut gammas = Vec::with_capacity(rows.len());
+        let mut payloads =
+            Vec::with_capacity(usize::try_from(meta.payload_stride).unwrap_or(0) * rows.len());
+        for row in rows {
+            validate_leaf_assignment(row)?;
+            if row.payload_format != meta.payload_format {
+                return Err(format!(
+                    "ec_spire leaf V2 segment payload format mismatch: got {}, expected {}",
+                    row.payload_format, meta.payload_format
+                ));
+            }
+            if row.encoded_payload.len() != meta.payload_stride as usize {
+                return Err(format!(
+                    "ec_spire leaf V2 segment payload stride mismatch: got {}, expected {}",
+                    row.encoded_payload.len(),
+                    meta.payload_stride
+                ));
+            }
+            encode_leaf_v2_local_vec_id(&row.vec_id, &mut vec_ids)?;
+            flags.push(row.flags);
+            heap_tids.push(row.heap_tid);
+            gammas.push(row.gamma);
+            payloads.extend_from_slice(&row.encoded_payload);
+        }
+
+        let segment = Self {
+            header: SpirePartitionObjectHeader {
+                kind: SpirePartitionObjectKind::Leaf,
+                pid: meta.header.pid,
+                object_version: meta.header.object_version,
+                level: meta.header.level,
+                parent_pid: meta.header.parent_pid,
+                child_count: 0,
+                assignment_count: row_count,
+                flags: LEAF_V2_SEGMENT_FLAG,
+            },
+            segment_no,
+            row_base,
+            next_segment_locator,
+            flags,
+            vec_ids,
+            heap_tids,
+            gammas,
+            payloads,
+        };
+        segment.validate_against_meta(meta)?;
+        Ok(segment)
+    }
+
+    fn encode(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<Vec<u8>, String> {
+        self.validate_against_meta(meta)?;
+        let mut out = self
+            .header
+            .encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+        out.extend_from_slice(&self.segment_no.to_le_bytes());
+        out.extend_from_slice(&self.row_base.to_le_bytes());
+        out.extend_from_slice(&self.header.assignment_count.to_le_bytes());
+        self.next_segment_locator.encode_into(&mut out);
+        for flag in &self.flags {
+            out.extend_from_slice(&flag.to_le_bytes());
+        }
+        out.extend_from_slice(&self.vec_ids);
+        for heap_tid in &self.heap_tids {
+            heap_tid.encode_into(&mut out);
+        }
+        for gamma in &self.gammas {
+            out.extend_from_slice(&gamma.to_le_bytes());
+        }
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    fn decode(input: &[u8], meta: &SpireLeafPartitionObjectV2Meta) -> Result<Self, String> {
+        let (header, format_version, tail) =
+            SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V2 {
+            return Err(format!(
+                "ec_spire leaf V2 segment format version must be 2, got {format_version}"
+            ));
+        }
+        if tail.len() < LEAF_V2_SEGMENT_PREFIX_BYTES {
+            return Err(format!(
+                "ec_spire leaf V2 segment too short: got {}, expected at least {}",
+                tail.len(),
+                LEAF_V2_SEGMENT_PREFIX_BYTES
+            ));
+        }
+        let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
+        let row_base = u32::from_le_bytes(tail[4..8].try_into().expect("row base"));
+        let row_count = u32::from_le_bytes(tail[8..12].try_into().expect("row count"));
+        let next_segment_locator = ItemPointer::decode(&tail[12..18])?;
+        if header.assignment_count != row_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment row count mismatch: header {}, body {row_count}",
+                header.assignment_count
+            ));
+        }
+
+        let row_count_usize = usize::try_from(row_count)
+            .map_err(|_| "ec_spire leaf V2 segment row count exceeds usize".to_owned())?;
+        let flags_bytes = row_count_usize
+            .checked_mul(size_of::<u16>())
+            .ok_or_else(|| "ec_spire leaf V2 flags byte length overflow".to_owned())?;
+        let vec_id_bytes = row_count_usize
+            .checked_mul(usize::from(meta.vec_id_stride))
+            .ok_or_else(|| "ec_spire leaf V2 vec_id byte length overflow".to_owned())?;
+        let heap_tid_bytes = row_count_usize
+            .checked_mul(ITEM_POINTER_BYTES)
+            .ok_or_else(|| "ec_spire leaf V2 heap_tid byte length overflow".to_owned())?;
+        let gamma_bytes = row_count_usize
+            .checked_mul(size_of::<f32>())
+            .ok_or_else(|| "ec_spire leaf V2 gamma byte length overflow".to_owned())?;
+        let payload_bytes = row_count_usize
+            .checked_mul(
+                usize::try_from(meta.payload_stride)
+                    .map_err(|_| "ec_spire leaf V2 payload stride exceeds usize".to_owned())?,
+            )
+            .ok_or_else(|| "ec_spire leaf V2 payload byte length overflow".to_owned())?;
+        let expected_tail_len = LEAF_V2_SEGMENT_PREFIX_BYTES
+            .checked_add(flags_bytes)
+            .and_then(|len| len.checked_add(vec_id_bytes))
+            .and_then(|len| len.checked_add(heap_tid_bytes))
+            .and_then(|len| len.checked_add(gamma_bytes))
+            .and_then(|len| len.checked_add(payload_bytes))
+            .ok_or_else(|| "ec_spire leaf V2 segment length overflow".to_owned())?;
+        if tail.len() != expected_tail_len {
+            return Err(format!(
+                "ec_spire leaf V2 segment length mismatch: got {}, expected {expected_tail_len}",
+                tail.len()
+            ));
+        }
+
+        let mut cursor = LEAF_V2_SEGMENT_PREFIX_BYTES;
+        let mut flags = Vec::with_capacity(row_count_usize);
+        for chunk in tail[cursor..cursor + flags_bytes].chunks_exact(size_of::<u16>()) {
+            flags.push(u16::from_le_bytes(chunk.try_into().expect("flag bytes")));
+        }
+        cursor += flags_bytes;
+        let vec_ids = tail[cursor..cursor + vec_id_bytes].to_vec();
+        cursor += vec_id_bytes;
+        let mut heap_tids = Vec::with_capacity(row_count_usize);
+        for chunk in tail[cursor..cursor + heap_tid_bytes].chunks_exact(ITEM_POINTER_BYTES) {
+            heap_tids.push(ItemPointer::decode(chunk)?);
+        }
+        cursor += heap_tid_bytes;
+        let mut gammas = Vec::with_capacity(row_count_usize);
+        for chunk in tail[cursor..cursor + gamma_bytes].chunks_exact(size_of::<f32>()) {
+            let gamma = f32::from_le_bytes(chunk.try_into().expect("gamma bytes"));
+            if !gamma.is_finite() {
+                return Err("ec_spire leaf V2 segment gamma must be finite".to_owned());
+            }
+            gammas.push(gamma);
+        }
+        cursor += gamma_bytes;
+        let payloads = tail[cursor..cursor + payload_bytes].to_vec();
+
+        let segment = Self {
+            header,
+            segment_no,
+            row_base,
+            next_segment_locator,
+            flags,
+            vec_ids,
+            heap_tids,
+            gammas,
+            payloads,
+        };
+        segment.validate_against_meta(meta)?;
+        Ok(segment)
+    }
+
+    fn validate_against_meta(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<(), String> {
+        validate_leaf_v2_header(&self.header, LEAF_V2_SEGMENT_FLAG)?;
+        if self.header.pid != meta.header.pid
+            || self.header.object_version != meta.header.object_version
+            || self.header.parent_pid != meta.header.parent_pid
+        {
+            return Err("ec_spire leaf V2 segment header does not match meta".to_owned());
+        }
+        validate_leaf_v2_locator(self.next_segment_locator, "next segment")?;
+        let row_count = usize::try_from(self.header.assignment_count)
+            .map_err(|_| "ec_spire leaf V2 segment row count exceeds usize".to_owned())?;
+        if row_count == 0 {
+            return Err("ec_spire leaf V2 segment row count 0 is invalid".to_owned());
+        }
+        if self.flags.len() != row_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment flags length mismatch: got {}, expected {row_count}",
+                self.flags.len()
+            ));
+        }
+        for flags in &self.flags {
+            validate_assignment_flags(*flags)?;
+            if flags & (SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE)
+                != 0
+            {
+                return Err("ec_spire leaf V2 segment rows cannot set delta flags".to_owned());
+            }
+        }
+        let expected_vec_id_bytes = row_count
+            .checked_mul(usize::from(meta.vec_id_stride))
+            .ok_or_else(|| "ec_spire leaf V2 vec_id length overflow".to_owned())?;
+        if self.vec_ids.len() != expected_vec_id_bytes {
+            return Err(format!(
+                "ec_spire leaf V2 segment vec_id length mismatch: got {}, expected {expected_vec_id_bytes}",
+                self.vec_ids.len()
+            ));
+        }
+        for chunk in self.vec_ids.chunks_exact(usize::from(meta.vec_id_stride)) {
+            decode_leaf_v2_local_vec_id(chunk)?;
+        }
+        if self.heap_tids.len() != row_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment heap_tid length mismatch: got {}, expected {row_count}",
+                self.heap_tids.len()
+            ));
+        }
+        if self.heap_tids.contains(&ItemPointer::INVALID) {
+            return Err("ec_spire leaf V2 segment heap_tid must be valid".to_owned());
+        }
+        if self.gammas.len() != row_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment gamma length mismatch: got {}, expected {row_count}",
+                self.gammas.len()
+            ));
+        }
+        if self.gammas.iter().any(|gamma| !gamma.is_finite()) {
+            return Err("ec_spire leaf V2 segment gamma must be finite".to_owned());
+        }
+        let expected_payload_bytes = row_count
+            .checked_mul(
+                usize::try_from(meta.payload_stride)
+                    .map_err(|_| "ec_spire leaf V2 payload stride exceeds usize".to_owned())?,
+            )
+            .ok_or_else(|| "ec_spire leaf V2 payload length overflow".to_owned())?;
+        if self.payloads.len() != expected_payload_bytes {
+            return Err(format!(
+                "ec_spire leaf V2 segment payload length mismatch: got {}, expected {expected_payload_bytes}",
+                self.payloads.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObjectV2 {
+    pub(super) meta: SpireLeafPartitionObjectV2Meta,
+    pub(super) segments: Vec<SpireLeafPartitionObjectV2Segment>,
+}
+
+impl SpireLeafPartitionObjectV2 {
+    fn new(
+        meta: SpireLeafPartitionObjectV2Meta,
+        segments: Vec<SpireLeafPartitionObjectV2Segment>,
+    ) -> Result<Self, String> {
+        let object = Self { meta, segments };
+        object.validate()?;
+        Ok(object)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        let segment_count = u32::try_from(self.segments.len())
+            .map_err(|_| "ec_spire leaf V2 segment count exceeds u32".to_owned())?;
+        if self.meta.segment_count != segment_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment count mismatch: meta {}, segments {segment_count}",
+                self.meta.segment_count
+            ));
+        }
+        let mut expected_row_base = 0_u32;
+        for (expected_segment_no, segment) in self.segments.iter().enumerate() {
+            segment.validate_against_meta(&self.meta)?;
+            let expected_segment_no = u32::try_from(expected_segment_no)
+                .map_err(|_| "ec_spire leaf V2 segment index exceeds u32".to_owned())?;
+            if segment.segment_no != expected_segment_no {
+                return Err(format!(
+                    "ec_spire leaf V2 segment number mismatch: got {}, expected {expected_segment_no}",
+                    segment.segment_no
+                ));
+            }
+            if segment.row_base != expected_row_base {
+                return Err(format!(
+                    "ec_spire leaf V2 segment row_base mismatch: got {}, expected {expected_row_base}",
+                    segment.row_base
+                ));
+            }
+            expected_row_base = expected_row_base
+                .checked_add(segment.header.assignment_count)
+                .ok_or_else(|| "ec_spire leaf V2 assignment count overflow".to_owned())?;
+            if expected_segment_no + 1 == segment_count {
+                if segment.next_segment_locator != ItemPointer::INVALID {
+                    return Err(
+                        "ec_spire leaf V2 final segment next locator must be invalid".to_owned(),
+                    );
+                }
+            } else if segment.next_segment_locator == ItemPointer::INVALID {
+                return Err("ec_spire leaf V2 non-final segment requires next locator".to_owned());
+            }
+        }
+        if self.meta.header.assignment_count != expected_row_base {
+            return Err(format!(
+                "ec_spire leaf V2 assignment count mismatch: meta {}, segments {expected_row_base}",
+                self.meta.header.assignment_count
             ));
         }
         Ok(())
@@ -858,6 +1413,129 @@ impl SpireLocalObjectStore {
         Ok(placement)
     }
 
+    pub(super) fn insert_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire local object store epoch 0 is invalid".to_owned());
+        }
+        validate_leaf_assignments(assignments)?;
+        let assignment_count = u32::try_from(assignments.len())
+            .map_err(|_| "ec_spire leaf V2 assignment count exceeds u32".to_owned())?;
+        let (payload_format, payload_stride) = leaf_v2_payload_layout(assignments)?;
+        let max_segment_rows = leaf_v2_max_segment_rows(
+            self.pages.page_size(),
+            payload_stride,
+            LEAF_V2_LOCAL_VEC_ID_STRIDE,
+        )?;
+        let segment_count = if assignments.is_empty() {
+            0
+        } else {
+            let count = assignments
+                .len()
+                .checked_add(max_segment_rows - 1)
+                .and_then(|value| value.checked_div(max_segment_rows))
+                .ok_or_else(|| "ec_spire leaf V2 segment count overflow".to_owned())?;
+            u32::try_from(count)
+                .map_err(|_| "ec_spire leaf V2 segment count exceeds u32".to_owned())?
+        };
+
+        let provisional_first_segment = if assignments.is_empty() {
+            ItemPointer::INVALID
+        } else {
+            ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            }
+        };
+        let provisional_meta = SpireLeafPartitionObjectV2Meta::new(
+            pid,
+            object_version,
+            parent_pid,
+            assignment_count,
+            payload_format,
+            u32::try_from(payload_stride)
+                .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            segment_count,
+            provisional_first_segment,
+            1,
+            epoch,
+        )?;
+
+        let mut next_segment_locator = ItemPointer::INVALID;
+        let mut segment_bytes_total = 0_u64;
+        for segment_index in (0..usize::try_from(segment_count).unwrap_or(0)).rev() {
+            let row_base = segment_index
+                .checked_mul(max_segment_rows)
+                .ok_or_else(|| "ec_spire leaf V2 row_base overflow".to_owned())?;
+            let rows_end = assignments.len().min(row_base + max_segment_rows);
+            let segment = SpireLeafPartitionObjectV2Segment::new(
+                &provisional_meta,
+                u32::try_from(segment_index)
+                    .map_err(|_| "ec_spire leaf V2 segment index exceeds u32".to_owned())?,
+                u32::try_from(row_base)
+                    .map_err(|_| "ec_spire leaf V2 row_base exceeds u32".to_owned())?,
+                next_segment_locator,
+                &assignments[row_base..rows_end],
+            )?;
+            let encoded_segment = segment.encode(&provisional_meta)?;
+            segment_bytes_total =
+                segment_bytes_total
+                    .checked_add(u64::try_from(encoded_segment.len()).map_err(|_| {
+                        "ec_spire leaf V2 segment byte length exceeds u64".to_owned()
+                    })?)
+                    .ok_or_else(|| "ec_spire leaf V2 object byte length overflow".to_owned())?;
+            next_segment_locator = self.pages.insert_raw_tuple(encoded_segment)?;
+        }
+
+        let first_segment_locator = if assignments.is_empty() {
+            ItemPointer::INVALID
+        } else {
+            next_segment_locator
+        };
+        let meta_bytes_len = PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(LEAF_V2_META_BODY_BYTES)
+            .ok_or_else(|| "ec_spire leaf V2 meta byte length overflow".to_owned())?;
+        let object_bytes_total = segment_bytes_total
+            .checked_add(
+                u64::try_from(meta_bytes_len)
+                    .map_err(|_| "ec_spire leaf V2 meta byte length exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| "ec_spire leaf V2 object byte length overflow".to_owned())?;
+        let object_bytes = u32::try_from(object_bytes_total)
+            .map_err(|_| "ec_spire leaf V2 object length exceeds u32".to_owned())?;
+        let meta = SpireLeafPartitionObjectV2Meta::new(
+            pid,
+            object_version,
+            parent_pid,
+            assignment_count,
+            payload_format,
+            u32::try_from(payload_stride)
+                .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            segment_count,
+            first_segment_locator,
+            object_bytes_total,
+            epoch,
+        )?;
+        let encoded_meta = meta.encode()?;
+        let meta_tid = self.pages.insert_raw_tuple(encoded_meta)?;
+        let placement = SpirePlacementEntry::local_single_store(
+            epoch,
+            pid,
+            self.store_relid,
+            object_version,
+            meta_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) fn insert_delta_object(
         &mut self,
         epoch: u64,
@@ -927,6 +1605,51 @@ impl SpireLocalObjectStore {
         Ok(object)
     }
 
+    pub(super) fn read_leaf_object_v2(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2, String> {
+        self.validate_local_available_placement(placement)?;
+        let raw_meta = self.read_raw_tuple(placement.object_tid)?;
+        let meta = SpireLeafPartitionObjectV2Meta::decode(raw_meta)?;
+        if meta.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match leaf V2 pid {}",
+                placement.pid, meta.header.pid
+            ));
+        }
+        if meta.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match leaf V2 version {}",
+                placement.object_version, meta.header.object_version
+            ));
+        }
+        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+            return Err(format!(
+                "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+                placement.object_bytes, meta.object_bytes_total
+            ));
+        }
+
+        let segment_count = usize::try_from(meta.segment_count)
+            .map_err(|_| "ec_spire leaf V2 segment count exceeds usize".to_owned())?;
+        let mut segments = Vec::with_capacity(segment_count);
+        let mut next_locator = meta.first_segment_locator;
+        for _ in 0..segment_count {
+            if next_locator == ItemPointer::INVALID {
+                return Err("ec_spire leaf V2 segment chain ended early".to_owned());
+            }
+            let raw_segment = self.read_raw_tuple(next_locator)?;
+            let segment = SpireLeafPartitionObjectV2Segment::decode(raw_segment, &meta)?;
+            next_locator = segment.next_segment_locator;
+            segments.push(segment);
+        }
+        if next_locator != ItemPointer::INVALID {
+            return Err("ec_spire leaf V2 segment chain has trailing locator".to_owned());
+        }
+        SpireLeafPartitionObjectV2::new(meta, segments)
+    }
+
     pub(super) fn read_object_header(
         &self,
         placement: &SpirePlacementEntry,
@@ -992,16 +1715,7 @@ impl SpireLocalObjectStore {
 
     fn read_object_bytes(&self, placement: &SpirePlacementEntry) -> Result<&[u8], String> {
         self.validate_local_available_placement(placement)?;
-        let page = self
-            .pages
-            .get_page(placement.object_tid.block_number)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire object block {} not found",
-                    placement.object_tid.block_number
-                )
-            })?;
-        let raw = page.raw_tuple(placement.object_tid)?;
+        let raw = self.read_raw_tuple(placement.object_tid)?;
         let expected_len = usize::try_from(placement.object_bytes)
             .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
         if raw.len() != expected_len {
@@ -1012,6 +1726,14 @@ impl SpireLocalObjectStore {
             ));
         }
         Ok(raw)
+    }
+
+    fn read_raw_tuple(&self, tid: ItemPointer) -> Result<&[u8], String> {
+        let page = self
+            .pages
+            .get_page(tid.block_number)
+            .ok_or_else(|| format!("ec_spire object block {} not found", tid.block_number))?;
+        page.raw_tuple(tid)
     }
 
     fn validate_local_available_placement(
@@ -1044,6 +1766,160 @@ impl SpireLocalObjectStore {
         }
         Ok(())
     }
+}
+
+fn validate_leaf_v2_header(
+    header: &SpirePartitionObjectHeader,
+    expected_flag: u32,
+) -> Result<(), String> {
+    header.encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+    if header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire leaf V2 header kind must be Leaf, got {:?}",
+            header.kind
+        ));
+    }
+    if header.child_count != 0 {
+        return Err(format!(
+            "ec_spire leaf V2 child_count must be 0, got {}",
+            header.child_count
+        ));
+    }
+    if header.flags != expected_flag {
+        return Err(format!(
+            "ec_spire leaf V2 header flags mismatch: got {:#x}, expected {expected_flag:#x}",
+            header.flags
+        ));
+    }
+    Ok(())
+}
+
+fn validate_leaf_v2_locator(locator: ItemPointer, label: &str) -> Result<(), String> {
+    if locator == ItemPointer::INVALID {
+        return Ok(());
+    }
+    if locator.offset_number == 0 {
+        return Err(format!(
+            "ec_spire leaf V2 {label} locator offset 0 is invalid"
+        ));
+    }
+    if locator.block_number == u32::MAX || locator.offset_number == u16::MAX {
+        return Err(format!(
+            "ec_spire leaf V2 {label} locator is partially invalid"
+        ));
+    }
+    Ok(())
+}
+
+fn encode_leaf_v2_local_vec_id(vec_id: &SpireVecId, out: &mut Vec<u8>) -> Result<(), String> {
+    let Some(local_vec_seq) = vec_id.local_sequence() else {
+        return Err("ec_spire leaf V2 Phase 1 requires local vec_id rows".to_owned());
+    };
+    out.push(SPIRE_LOCAL_VEC_ID_DISCRIMINATOR);
+    out.extend_from_slice(&local_vec_seq.to_le_bytes());
+    out.resize(
+        out.len() + (LEAF_V2_LOCAL_VEC_ID_STRIDE - 1 - size_of::<u64>()),
+        0,
+    );
+    Ok(())
+}
+
+fn decode_leaf_v2_local_vec_id(input: &[u8]) -> Result<u64, String> {
+    if input.len() != LEAF_V2_LOCAL_VEC_ID_STRIDE {
+        return Err(format!(
+            "ec_spire leaf V2 local vec_id stride mismatch: got {}, expected {LEAF_V2_LOCAL_VEC_ID_STRIDE}",
+            input.len()
+        ));
+    }
+    if input[0] != SPIRE_LOCAL_VEC_ID_DISCRIMINATOR {
+        return Err(format!(
+            "ec_spire leaf V2 local vec_id discriminator mismatch: got {:#x}",
+            input[0]
+        ));
+    }
+    if input[1 + size_of::<u64>()..].iter().any(|byte| *byte != 0) {
+        return Err("ec_spire leaf V2 local vec_id padding must be zero".to_owned());
+    }
+    let local_vec_seq = u64::from_le_bytes(
+        input[1..1 + size_of::<u64>()]
+            .try_into()
+            .expect("local vec_id bytes"),
+    );
+    if local_vec_seq == 0 {
+        return Err("ec_spire leaf V2 local vec_id sequence 0 is invalid".to_owned());
+    }
+    Ok(local_vec_seq)
+}
+
+fn leaf_v2_payload_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<(u8, usize), String> {
+    let Some(first) = assignments.first() else {
+        return Ok((SPIRE_PAYLOAD_FORMAT_NONE, 0));
+    };
+    validate_leaf_assignment(first)?;
+    if first.payload_format == SPIRE_PAYLOAD_FORMAT_NONE {
+        return Err("ec_spire non-empty leaf V2 payload format must not be NONE".to_owned());
+    }
+    let payload_format = first.payload_format;
+    let payload_stride = first.encoded_payload.len();
+    if payload_stride == 0 {
+        return Err("ec_spire non-empty leaf V2 payload stride 0 is invalid".to_owned());
+    }
+    for assignment in assignments {
+        validate_leaf_assignment(assignment)?;
+        if assignment.payload_format != payload_format {
+            return Err(format!(
+                "ec_spire leaf V2 requires one payload format per object: got {}, expected {payload_format}",
+                assignment.payload_format
+            ));
+        }
+        if assignment.encoded_payload.len() != payload_stride {
+            return Err(format!(
+                "ec_spire leaf V2 requires one payload stride per object: got {}, expected {payload_stride}",
+                assignment.encoded_payload.len()
+            ));
+        }
+        if assignment.vec_id.local_sequence().is_none() {
+            return Err("ec_spire leaf V2 Phase 1 requires local vec_id rows".to_owned());
+        }
+    }
+    Ok((payload_format, payload_stride))
+}
+
+fn leaf_v2_max_segment_rows(
+    page_size: usize,
+    payload_stride: usize,
+    vec_id_stride: usize,
+) -> Result<usize, String> {
+    let row_bytes = size_of::<u16>()
+        .checked_add(vec_id_stride)
+        .and_then(|len| len.checked_add(ITEM_POINTER_BYTES))
+        .and_then(|len| len.checked_add(size_of::<f32>()))
+        .and_then(|len| len.checked_add(payload_stride))
+        .ok_or_else(|| "ec_spire leaf V2 row byte length overflow".to_owned())?;
+    if row_bytes == 0 {
+        return Ok(usize::MAX);
+    }
+    let fixed_bytes = PARTITION_OBJECT_HEADER_BYTES
+        .checked_add(LEAF_V2_SEGMENT_PREFIX_BYTES)
+        .ok_or_else(|| "ec_spire leaf V2 segment fixed byte length overflow".to_owned())?;
+    let usable_bytes = usable_page_bytes(page_size);
+    if fixed_bytes >= usable_bytes {
+        return Err(format!(
+            "ec_spire leaf V2 segment fixed bytes {fixed_bytes} exceed page usable bytes {usable_bytes}"
+        ));
+    }
+    let mut rows = (usable_bytes - fixed_bytes) / row_bytes;
+    while rows > 0
+        && !element_or_neighbor_tuple_fits(fixed_bytes + row_bytes.saturating_mul(rows), page_size)
+    {
+        rows -= 1;
+    }
+    if rows == 0 {
+        return Err(format!(
+            "ec_spire leaf V2 row bytes {row_bytes} do not fit page size {page_size}"
+        ));
+    }
+    Ok(rows)
 }
 
 fn validate_assignment_flags(flags: u16) -> Result<(), String> {
@@ -1173,9 +2049,9 @@ fn validate_delta_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<
 mod tests {
     use super::super::meta::SpirePlacementState;
     use super::{
-        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireLocalObjectStore, SpirePartitionObjectHeader, SpirePartitionObjectKind,
-        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        decode_leaf_v2_local_vec_id, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
+        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -1198,6 +2074,20 @@ mod tests {
                 centroid: vec![-1.0, 0.0],
             },
         ]
+    }
+
+    fn leaf_v2_assignment(local_vec_seq: u64, payload_len: usize) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(local_vec_seq),
+            heap_tid: ItemPointer {
+                block_number: 100 + local_vec_seq as u32,
+                offset_number: local_vec_seq as u16,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: local_vec_seq as f32 / 10.0,
+            encoded_payload: vec![local_vec_seq as u8; payload_len],
+        }
     }
 
     #[test]
@@ -1485,6 +2375,92 @@ mod tests {
         assert_eq!(decoded, object);
         assert_eq!(decoded.header.pid, 17);
         assert_eq!(decoded.header.assignment_count, 2);
+    }
+
+    #[test]
+    fn leaf_partition_object_v2_store_segments_large_leaf() {
+        let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+        let assignments = (1..=13)
+            .map(|local_vec_seq| leaf_v2_assignment(local_vec_seq, 64))
+            .collect::<Vec<_>>();
+
+        let placement = store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+            .unwrap();
+        let decoded = store.read_leaf_object_v2(&placement).unwrap();
+
+        assert_eq!(decoded.meta.header.pid, 17);
+        assert_eq!(decoded.meta.header.object_version, 3);
+        assert_eq!(decoded.meta.header.parent_pid, 5);
+        assert_eq!(
+            decoded.meta.header.assignment_count,
+            assignments.len() as u32
+        );
+        assert_eq!(
+            decoded.meta.object_bytes_total,
+            u64::from(placement.object_bytes)
+        );
+        assert!(decoded.meta.segment_count > 1);
+        assert_ne!(decoded.meta.first_segment_locator, ItemPointer::INVALID);
+        assert!(store.page_count() > 1);
+
+        let mut decoded_row_count = 0_usize;
+        for segment in &decoded.segments {
+            decoded_row_count += segment.flags.len();
+            assert_eq!(segment.flags.len(), segment.heap_tids.len());
+            assert_eq!(segment.flags.len(), segment.gammas.len());
+            assert_eq!(segment.vec_ids.len(), segment.flags.len() * 16);
+            assert_eq!(segment.payloads.len(), segment.flags.len() * 64);
+        }
+        assert_eq!(decoded_row_count, assignments.len());
+
+        let first_vec_id = decode_leaf_v2_local_vec_id(&decoded.segments[0].vec_ids[0..16])
+            .expect("first local vec_id decodes");
+        assert_eq!(first_vec_id, 1);
+        let last = decoded.segments.last().expect("segments are present");
+        let last_vec_id_start = (last.flags.len() - 1) * 16;
+        let last_vec_id =
+            decode_leaf_v2_local_vec_id(&last.vec_ids[last_vec_id_start..last_vec_id_start + 16])
+                .expect("last local vec_id decodes");
+        assert_eq!(last_vec_id, 13);
+        assert_eq!(last.next_segment_locator, ItemPointer::INVALID);
+    }
+
+    #[test]
+    fn leaf_partition_object_v2_store_preserves_empty_leaf_without_segments() {
+        let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+
+        let placement = store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &[])
+            .unwrap();
+        let decoded = store.read_leaf_object_v2(&placement).unwrap();
+
+        assert_eq!(decoded.meta.header.assignment_count, 0);
+        assert_eq!(decoded.meta.segment_count, 0);
+        assert_eq!(decoded.meta.first_segment_locator, ItemPointer::INVALID);
+        assert_eq!(decoded.meta.payload_format, SPIRE_PAYLOAD_FORMAT_NONE);
+        assert!(decoded.segments.is_empty());
+    }
+
+    #[test]
+    fn leaf_partition_object_v2_rejects_mixed_payload_or_global_vec_id() {
+        let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+        let mut mixed_stride = vec![leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 16)];
+        assert!(store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &mixed_stride)
+            .is_err());
+
+        mixed_stride[1] = leaf_v2_assignment(2, 8);
+        mixed_stride[1].payload_format = SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN;
+        assert!(store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &mixed_stride)
+            .is_err());
+
+        let mut global_row = leaf_v2_assignment(1, 8);
+        global_row.vec_id = SpireVecId::global(&[9, 9, 9]).unwrap();
+        assert!(store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &[global_row])
+            .is_err());
     }
 
     #[test]
