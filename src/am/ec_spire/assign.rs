@@ -3,7 +3,56 @@
 use super::storage::{SpireLeafAssignmentRow, SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY};
 use crate::storage::page::ItemPointer;
 
+pub(super) const SPIRE_FIRST_PID: u64 = 1;
 pub(super) const SPIRE_FIRST_LOCAL_VEC_SEQ: u64 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpirePidAllocator {
+    next_pid: u64,
+}
+
+impl Default for SpirePidAllocator {
+    fn default() -> Self {
+        Self {
+            next_pid: SPIRE_FIRST_PID,
+        }
+    }
+}
+
+impl SpirePidAllocator {
+    pub(super) fn new(next_pid: u64) -> Result<Self, String> {
+        if next_pid == 0 {
+            return Err("ec_spire pid sequence 0 is invalid".to_owned());
+        }
+        Ok(Self { next_pid })
+    }
+
+    pub(super) fn next_pid(&self) -> u64 {
+        self.next_pid
+    }
+
+    pub(super) fn allocate(&mut self) -> Result<u64, String> {
+        let pid = self.next_pid;
+        let next = pid
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire pid sequence exhausted".to_owned())?;
+        self.next_pid = next;
+        Ok(pid)
+    }
+
+    pub(super) fn observe(&mut self, pid: u64) -> Result<(), String> {
+        if pid == 0 {
+            return Err("ec_spire observed pid 0 is invalid".to_owned());
+        }
+        let next = pid
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire observed pid sequence is exhausted".to_owned())?;
+        if next > self.next_pid {
+            self.next_pid = next;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpireLocalVecIdAllocator {
@@ -104,7 +153,7 @@ pub(super) fn observe_assignment_vec_ids(
 mod tests {
     use super::{
         build_primary_leaf_assignments, observe_assignment_vec_ids, SpireLeafAssignmentInput,
-        SpireLocalVecIdAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ,
+        SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::storage::{SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY};
     use crate::storage::page::ItemPointer;
@@ -129,6 +178,48 @@ mod tests {
             allocator.next_local_vec_seq(),
             SPIRE_FIRST_LOCAL_VEC_SEQ + 2
         );
+    }
+
+    #[test]
+    fn pid_allocator_starts_at_first_pid() {
+        let mut allocator = SpirePidAllocator::default();
+
+        let first = allocator.allocate().unwrap();
+        let second = allocator.allocate().unwrap();
+
+        assert_eq!(first, SPIRE_FIRST_PID);
+        assert_eq!(second, SPIRE_FIRST_PID + 1);
+        assert_eq!(allocator.next_pid(), SPIRE_FIRST_PID + 2);
+    }
+
+    #[test]
+    fn pid_allocator_rejects_zero_next_pid_and_observed_zero() {
+        assert!(SpirePidAllocator::new(0).is_err());
+
+        let mut allocator = SpirePidAllocator::default();
+        assert!(allocator.observe(0).is_err());
+        assert_eq!(allocator.next_pid(), SPIRE_FIRST_PID);
+    }
+
+    #[test]
+    fn pid_allocator_observes_pids_without_rewinding() {
+        let mut allocator = SpirePidAllocator::new(10).unwrap();
+
+        allocator.observe(20).unwrap();
+        assert_eq!(allocator.next_pid(), 21);
+
+        allocator.observe(5).unwrap();
+        assert_eq!(allocator.next_pid(), 21);
+    }
+
+    #[test]
+    fn pid_allocator_reports_exhaustion_without_advancing() {
+        let mut allocator = SpirePidAllocator::new(u64::MAX).unwrap();
+
+        assert!(allocator.allocate().is_err());
+        assert_eq!(allocator.next_pid(), u64::MAX);
+        assert!(allocator.observe(u64::MAX).is_err());
+        assert_eq!(allocator.next_pid(), u64::MAX);
     }
 
     #[test]

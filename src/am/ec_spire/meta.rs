@@ -1,9 +1,8 @@
 //! Root/control metadata, epoch, and placement-map codecs.
 
-use super::assign::SPIRE_FIRST_LOCAL_VEC_SEQ;
+use super::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
 use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
-pub(super) const SPIRE_FIRST_PID: u64 = 1;
 pub(super) const SPIRE_LOCAL_NODE_ID: u32 = 0;
 pub(super) const SPIRE_SINGLE_LOCAL_STORE_ID: u32 = 0;
 pub(super) const SPIRE_MIN_EPOCH_RETENTION_SECS: u32 = 10 * 60;
@@ -719,10 +718,11 @@ mod tests {
     use super::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_FIRST_LOCAL_VEC_SEQ,
-        SPIRE_FIRST_PID, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
-        SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
+        SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID,
+        SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
+        SPIRE_SINGLE_LOCAL_STORE_ID,
     };
+    use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
     use crate::storage::page::ItemPointer;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
