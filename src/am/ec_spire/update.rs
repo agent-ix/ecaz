@@ -4,9 +4,13 @@ use super::assign::{
     build_delete_delta_assignments, build_insert_delta_assignments, SpireDeleteDeltaInput,
     SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
 };
+use super::build::{
+    SpireEncodedManifestBundle, SpireEncodedPublishBundle, SpirePublishedManifestLocators,
+};
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePublishedEpochSnapshot,
+    SpireRootControlState,
 };
 use super::storage::{SpireDeltaPartitionObject, SpireLocalObjectStore};
 use crate::storage::page::ItemPointer;
@@ -32,6 +36,52 @@ pub(super) struct SpireDeltaEpochDraft {
     pub(super) delta_object: SpireDeltaPartitionObject,
     pub(super) next_pid: u64,
     pub(super) next_local_vec_seq: u64,
+}
+
+impl SpireDeltaEpochDraft {
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        SpirePublishedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )?;
+        Ok(SpireEncodedManifestBundle {
+            epoch_manifest: self.epoch_manifest.encode()?,
+            object_manifest: self.object_manifest.encode()?,
+            placement_directory: self.placement_directory.encode()?,
+        })
+    }
+
+    pub(super) fn root_control_state(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, String> {
+        SpirePublishedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )?;
+        SpireRootControlState::published(
+            self.epoch_manifest.epoch,
+            self.next_pid,
+            self.next_local_vec_seq,
+            locators.epoch_manifest_tid,
+            locators.object_manifest_tid,
+            locators.placement_directory_tid,
+        )
+    }
+
+    pub(super) fn encode_publish_bundle(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireEncodedPublishBundle, String> {
+        let manifests = self.encode_manifest_bundle()?;
+        let root_control_state = self.root_control_state(locators)?.encode()?;
+        Ok(SpireEncodedPublishBundle {
+            manifests,
+            root_control_state,
+        })
+    }
 }
 
 pub(super) fn build_delta_epoch_draft(
@@ -179,9 +229,13 @@ mod tests {
         SpirePidAllocator,
     };
     use crate::am::ec_spire::build::{
-        build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput,
+        build_single_level_leaf_epoch_draft, SpirePublishedManifestLocators,
+        SpireSingleLevelBuildInput,
     };
-    use crate::am::ec_spire::meta::{SpireConsistencyMode, SpirePublishedEpochSnapshot};
+    use crate::am::ec_spire::meta::{
+        SpireConsistencyMode, SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
+        SpirePublishedEpochSnapshot, SpireRootControlState,
+    };
     use crate::am::ec_spire::storage::{
         SpireLocalObjectStore, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -245,6 +299,14 @@ mod tests {
         }
     }
 
+    fn manifest_locators() -> SpirePublishedManifestLocators {
+        SpirePublishedManifestLocators {
+            epoch_manifest_tid: tid(90, 1),
+            object_manifest_tid: tid(90, 2),
+            placement_directory_tid: tid(90, 3),
+        }
+    }
+
     #[test]
     fn delta_epoch_draft_writes_delta_object_and_published_snapshot() {
         let mut pid_allocator = SpirePidAllocator::new(50).unwrap();
@@ -296,6 +358,63 @@ mod tests {
             local_vec_id_allocator.next_local_vec_seq(),
             draft.next_local_vec_seq
         );
+    }
+
+    #[test]
+    fn delta_epoch_draft_encodes_publish_bundle() {
+        let mut pid_allocator = SpirePidAllocator::new(50).unwrap();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_delta_epoch_draft(
+            delta_input(
+                vec![insert_assignment(20, 1)],
+                vec![delete_assignment(99, 21, 1)],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+
+        let encoded = draft.encode_publish_bundle(manifest_locators()).unwrap();
+        let root_control = SpireRootControlState::decode(&encoded.root_control_state).unwrap();
+
+        assert_eq!(
+            SpireEpochManifest::decode(&encoded.manifests.epoch_manifest).unwrap(),
+            draft.epoch_manifest
+        );
+        assert_eq!(
+            SpireObjectManifest::decode(&encoded.manifests.object_manifest).unwrap(),
+            draft.object_manifest
+        );
+        assert_eq!(
+            SpirePlacementDirectory::decode(&encoded.manifests.placement_directory).unwrap(),
+            draft.placement_directory
+        );
+        assert_eq!(root_control.active_epoch, draft.epoch_manifest.epoch);
+        assert_eq!(root_control.next_pid, draft.next_pid);
+        assert_eq!(root_control.next_local_vec_seq, draft.next_local_vec_seq);
+        assert_eq!(root_control.epoch_manifest_tid, tid(90, 1));
+        assert_eq!(root_control.object_manifest_tid, tid(90, 2));
+        assert_eq!(root_control.placement_directory_tid, tid(90, 3));
+    }
+
+    #[test]
+    fn delta_epoch_draft_rejects_invalid_root_control_locator() {
+        let mut pid_allocator = SpirePidAllocator::new(50).unwrap();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_delta_epoch_draft(
+            delta_input(vec![insert_assignment(20, 1)], Vec::new()),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let mut locators = manifest_locators();
+        locators.placement_directory_tid = ItemPointer::INVALID;
+
+        assert!(draft.root_control_state(locators).is_err());
     }
 
     #[test]
