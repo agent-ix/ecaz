@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::ptr;
 
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
-use super::options::SpireSingleLevelScanPlan;
+use super::options::{resolve_single_level_scan_plan, EcSpireOptions, SpireSingleLevelScanPlan};
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
@@ -60,6 +60,12 @@ impl From<&SpireScoredScanCandidate> for SpireScanOutput {
             orderby_score: candidate.score,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpirePreparedScanCandidates {
+    pub(super) scan_plan: SpireSingleLevelScanPlan,
+    pub(super) candidates: Vec<SpireScoredScanCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -365,6 +371,32 @@ where
         scan_plan.rerank_width,
         exact_score_ip,
     )
+}
+
+pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+    exact_score_ip: F,
+) -> Result<SpirePreparedScanCandidates, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+{
+    let leaf_count = count_snapshot_single_level_leaf_pids(snapshot, object_store)?;
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    let candidates = collect_single_level_scan_plan_reranked_candidates(
+        snapshot,
+        object_store,
+        query.values(),
+        scan_plan,
+        exact_score_ip,
+    )?;
+
+    Ok(SpirePreparedScanCandidates {
+        scan_plan,
+        candidates,
+    })
 }
 
 pub(super) fn rerank_scored_candidates_by_ip<F>(
@@ -924,10 +956,10 @@ mod tests {
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
-        count_snapshot_single_level_leaf_pids, rank_routed_leaf_rows_by_ip,
-        rerank_scored_candidates_by_ip, SpireLeafScanRow, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
-        SpireScoredScanCandidate,
+        count_snapshot_single_level_leaf_pids, prepare_single_level_snapshot_scan_candidates,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
+        SpireScanQuery, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -943,7 +975,9 @@ mod tests {
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SpirePublishedEpochSnapshot,
     };
-    use crate::am::ec_spire::options::SpireSingleLevelScanPlan;
+    use crate::am::ec_spire::options::{
+        EcSpireOptions, SpireSingleLevelScanPlan, SpireStorageFormat,
+    };
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
     };
@@ -1775,6 +1809,76 @@ mod tests {
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
         assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn prepare_single_level_snapshot_scan_candidates_resolves_plan_and_candidates() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    quantized_assignment_input(
+                        10,
+                        1,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[1.0, 0.0],
+                    ),
+                    quantized_assignment_input(
+                        10,
+                        2,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[-1.0, 0.0],
+                    ),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        let options = EcSpireOptions {
+            nlists: 2,
+            nprobe: 2,
+            rerank_width: 2,
+            training_sample_rows: 0,
+            seed: 0,
+            pq_group_size: 0,
+            storage_format: SpireStorageFormat::TurboQuant,
+        };
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        let prepared = prepare_single_level_snapshot_scan_candidates(
+            &snapshot,
+            &object_store,
+            &query,
+            options,
+            |candidate| {
+                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                    1 => 1.0,
+                    2 => 10.0,
+                    other => panic!("unexpected rerank candidate {other}"),
+                })
+            },
+        )
+        .unwrap();
+
+        assert_eq!(prepared.scan_plan.leaf_count, 2);
+        assert_eq!(prepared.scan_plan.nprobe, 2);
+        assert_eq!(prepared.scan_plan.nprobe_source, "relation");
+        assert_eq!(prepared.candidates.len(), 2);
+        assert_eq!(prepared.candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(prepared.candidates[0].score, -10.0);
+        assert_eq!(prepared.candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(prepared.candidates[1].score, -1.0);
     }
 
     #[test]
