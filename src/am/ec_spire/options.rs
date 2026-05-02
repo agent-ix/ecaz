@@ -1,0 +1,473 @@
+use std::mem::{offset_of, size_of};
+use std::ptr;
+
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
+
+use super::quantizer::SpireAssignmentPayloadFormat;
+use super::{
+    EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE, EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
+    EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED, EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE, EC_SPIRE_MAX_PQ_GROUP_SIZE,
+    EC_SPIRE_MAX_RERANK_WIDTH, EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE, EC_SPIRE_MIN_PQ_GROUP_SIZE,
+    EC_SPIRE_MIN_RERANK_WIDTH, EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+};
+
+const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
+const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+
+static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
+static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_RERANK_WIDTH_UNSET);
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct EcSpireReloptions {
+    vl_len_: i32,
+    nlists: i32,
+    nprobe: i32,
+    rerank_width: i32,
+    training_sample_rows: i32,
+    seed: i32,
+    pq_group_size: i32,
+    storage_format_offset: i32,
+    quantizer_offset: i32,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireStorageFormat {
+    Auto = 0,
+    TurboQuant = 1,
+    PqFastScan = 2,
+    RaBitQ = 3,
+}
+
+impl SpireStorageFormat {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "turboquant" => Ok(Self::TurboQuant),
+            "pq_fastscan" => Ok(Self::PqFastScan),
+            "rabitq" => Ok(Self::RaBitQ),
+            other => Err(format!(
+                "invalid ec_spire storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', or 'rabitq', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::TurboQuant => "turboquant",
+            Self::PqFastScan => "pq_fastscan",
+            Self::RaBitQ => "rabitq",
+        }
+    }
+
+    pub(super) fn assignment_payload_format(self) -> SpireAssignmentPayloadFormat {
+        match self {
+            Self::Auto | Self::TurboQuant => SpireAssignmentPayloadFormat::TurboQuant,
+            Self::PqFastScan => SpireAssignmentPayloadFormat::PqFastScan,
+            Self::RaBitQ => SpireAssignmentPayloadFormat::RaBitQ,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct EcSpireOptions {
+    pub(super) nlists: i32,
+    pub(super) nprobe: i32,
+    pub(super) rerank_width: i32,
+    pub(super) training_sample_rows: i32,
+    pub(super) seed: i32,
+    pub(super) pq_group_size: i32,
+    pub(super) storage_format: SpireStorageFormat,
+}
+
+impl EcSpireOptions {
+    const DEFAULT: Self = Self {
+        nlists: EC_SPIRE_DEFAULT_NLISTS,
+        nprobe: EC_SPIRE_DEFAULT_NPROBE,
+        rerank_width: EC_SPIRE_DEFAULT_RERANK_WIDTH,
+        training_sample_rows: EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+        seed: EC_SPIRE_DEFAULT_SEED,
+        pq_group_size: EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
+        storage_format: SpireStorageFormat::Auto,
+    };
+
+    pub(super) fn requested_pq_group_size(self) -> Option<usize> {
+        if self.pq_group_size > 0 {
+            Some(self.pq_group_size as usize)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn assignment_payload_format(self) -> SpireAssignmentPayloadFormat {
+        self.storage_format.assignment_payload_format()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireNprobeResolution {
+    pub(super) relation_nprobe: u32,
+    pub(super) session_nprobe: Option<u32>,
+    pub(super) effective_nprobe: u32,
+    pub(super) source: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireRerankWidthResolution {
+    pub(super) relation_rerank_width: i32,
+    pub(super) session_rerank_width: Option<i32>,
+    pub(super) effective_rerank_width: i32,
+    pub(super) source: &'static str,
+}
+
+pub(super) fn register_gucs() {
+    GucRegistry::define_int_guc(
+        c"ec_spire.nprobe",
+        c"Session override for ec_spire leaf PID probe count.",
+        c"Overrides ec_spire index nprobe reloption when set to 1 or higher; -1 uses the relation value.",
+        &EC_SPIRE_NPROBE_GUC,
+        EC_SPIRE_SESSION_NPROBE_UNSET,
+        EC_SPIRE_MAX_NPROBE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.rerank_width",
+        c"Session override for ec_spire exact-rerank frontier width.",
+        c"Overrides ec_spire index rerank_width reloption when set to 0 or higher; -1 uses the relation value.",
+        &EC_SPIRE_RERANK_WIDTH_GUC,
+        EC_SPIRE_SESSION_RERANK_WIDTH_UNSET,
+        EC_SPIRE_MAX_RERANK_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
+
+pub(super) fn current_session_nprobe() -> i32 {
+    EC_SPIRE_NPROBE_GUC.get()
+}
+
+pub(super) fn current_session_rerank_width() -> i32 {
+    EC_SPIRE_RERANK_WIDTH_GUC.get()
+}
+
+pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {
+    resolve_scan_nprobe_values(nlists, relation_nprobe, current_session_nprobe())
+}
+
+pub(super) fn resolve_scan_rerank_width(relation_rerank_width: i32) -> SpireRerankWidthResolution {
+    resolve_scan_rerank_width_values(relation_rerank_width, current_session_rerank_width())
+}
+
+fn resolve_scan_nprobe_values(
+    nlists: u32,
+    relation_nprobe: u32,
+    session_nprobe_value: i32,
+) -> SpireNprobeResolution {
+    let session_nprobe = match session_nprobe_value {
+        value if value > 0 => Some(value as u32),
+        _ => None,
+    };
+    if nlists == 0 {
+        return SpireNprobeResolution {
+            relation_nprobe,
+            session_nprobe,
+            effective_nprobe: 0,
+            source: "none",
+        };
+    }
+
+    let (requested, source) = match session_nprobe {
+        Some(value) => (value, "session"),
+        None if relation_nprobe == 0 => (auto_nprobe(nlists), "auto"),
+        None => (relation_nprobe, "relation"),
+    };
+
+    SpireNprobeResolution {
+        relation_nprobe,
+        session_nprobe,
+        effective_nprobe: requested.clamp(1, nlists),
+        source,
+    }
+}
+
+fn resolve_scan_rerank_width_values(
+    relation_rerank_width: i32,
+    session_rerank_width_value: i32,
+) -> SpireRerankWidthResolution {
+    let session_rerank_width = match session_rerank_width_value {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+    let (effective_rerank_width, source) = match session_rerank_width {
+        Some(value) => (value.clamp(0, EC_SPIRE_MAX_RERANK_WIDTH), "session"),
+        None => (relation_rerank_width, "relation"),
+    };
+
+    SpireRerankWidthResolution {
+        relation_rerank_width,
+        session_rerank_width,
+        effective_rerank_width,
+        source,
+    }
+}
+
+fn auto_nprobe(nlists: u32) -> u32 {
+    if nlists == 0 {
+        return 0;
+    }
+    (nlists as f64).sqrt().ceil() as u32
+}
+
+pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
+    reloptions: pg_sys::Datum,
+    validate: bool,
+) -> *mut pg_sys::bytea {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let mut relopts = pg_sys::local_relopts::default();
+
+            pg_sys::init_local_reloptions(&mut relopts, size_of::<EcSpireReloptions>());
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"nlists".as_ptr(),
+                c"Number of single-level SPIRE-IVF leaf PIDs; 0 chooses an automatic value."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_NLISTS,
+                EC_SPIRE_MIN_NLISTS,
+                EC_SPIRE_MAX_NLISTS,
+                offset_of!(EcSpireReloptions, nlists) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"nprobe".as_ptr(),
+                c"Number of SPIRE leaf PIDs to probe during scan; 0 chooses an automatic value."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_NPROBE,
+                EC_SPIRE_MIN_NPROBE,
+                EC_SPIRE_MAX_NPROBE,
+                offset_of!(EcSpireReloptions, nprobe) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"rerank_width".as_ptr(),
+                c"Number of quantized candidates to exact-rerank; 0 reranks the full candidate frontier."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_RERANK_WIDTH,
+                EC_SPIRE_MIN_RERANK_WIDTH,
+                EC_SPIRE_MAX_RERANK_WIDTH,
+                offset_of!(EcSpireReloptions, rerank_width) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"training_sample_rows".as_ptr(),
+                c"Maximum rows sampled for SPIRE centroid training; 0 chooses an automatic value."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+                EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+                EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
+                offset_of!(EcSpireReloptions, training_sample_rows) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"seed".as_ptr(),
+                c"Deterministic seed for SPIRE centroid training and quantizer defaults.".as_ptr(),
+                EC_SPIRE_DEFAULT_SEED,
+                EC_SPIRE_MIN_SEED,
+                EC_SPIRE_MAX_SEED,
+                offset_of!(EcSpireReloptions, seed) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"pq_group_size".as_ptr(),
+                c"Grouped-PQ subvector size for storage_format = 'pq_fastscan'; 0 chooses the default."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
+                EC_SPIRE_MIN_PQ_GROUP_SIZE,
+                EC_SPIRE_MAX_PQ_GROUP_SIZE,
+                offset_of!(EcSpireReloptions, pq_group_size) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                c"storage_format".as_ptr(),
+                c"SPIRE assignment payload quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcSpireReloptions, storage_format_offset) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                c"quantizer".as_ptr(),
+                c"Alias for storage_format: SPIRE assignment payload quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcSpireReloptions, quantizer_offset) as i32,
+            );
+            pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
+        })
+    }
+}
+
+unsafe fn read_string_reloption(
+    rd_options: *mut pg_sys::varlena,
+    offset: i32,
+    name: &str,
+) -> Option<String> {
+    if offset == 0 {
+        return None;
+    }
+
+    let value_ptr = unsafe {
+        rd_options
+            .cast::<u8>()
+            .add(offset as usize)
+            .cast::<std::ffi::c_char>()
+    };
+    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+        .to_str()
+        .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
+    if value.is_empty() {
+        pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
+    }
+    Some(value.to_owned())
+}
+
+pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+    let rd_options = unsafe { (*index_relation).rd_options };
+    if rd_options.is_null() {
+        return EcSpireOptions::DEFAULT;
+    }
+
+    let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
+    let storage_format_reloption = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.storage_format_offset,
+            "storage_format",
+        )
+    };
+    let quantizer_reloption =
+        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
+    if let (Some(storage_format), Some(quantizer)) =
+        (&storage_format_reloption, &quantizer_reloption)
+    {
+        if storage_format != quantizer {
+            pgrx::error!(
+                "ec_spire storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
+                storage_format,
+                quantizer
+            );
+        }
+    }
+    let storage_format = storage_format_reloption
+        .or(quantizer_reloption)
+        .map(|value| {
+            SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        })
+        .unwrap_or(SpireStorageFormat::Auto);
+
+    EcSpireOptions {
+        nlists: reloptions.nlists,
+        nprobe: reloptions.nprobe,
+        rerank_width: reloptions.rerank_width,
+        training_sample_rows: reloptions.training_sample_rows,
+        seed: reloptions.seed,
+        pq_group_size: reloptions.pq_group_size,
+        storage_format,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values, EcSpireOptions,
+        SpireStorageFormat,
+    };
+    use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
+
+    #[test]
+    fn storage_format_reloption_parses_and_maps_to_assignment_payload_format() {
+        assert_eq!(
+            SpireStorageFormat::parse_reloption("auto").unwrap(),
+            SpireStorageFormat::Auto
+        );
+        assert_eq!(
+            SpireStorageFormat::parse_reloption("turboquant").unwrap(),
+            SpireStorageFormat::TurboQuant
+        );
+        assert_eq!(
+            SpireStorageFormat::parse_reloption("pq_fastscan").unwrap(),
+            SpireStorageFormat::PqFastScan
+        );
+        assert_eq!(
+            SpireStorageFormat::parse_reloption("rabitq").unwrap(),
+            SpireStorageFormat::RaBitQ
+        );
+        assert!(SpireStorageFormat::parse_reloption("bad").is_err());
+
+        assert_eq!(
+            SpireStorageFormat::Auto.assignment_payload_format(),
+            SpireAssignmentPayloadFormat::TurboQuant
+        );
+        assert_eq!(
+            SpireStorageFormat::RaBitQ.assignment_payload_format(),
+            SpireAssignmentPayloadFormat::RaBitQ
+        );
+    }
+
+    #[test]
+    fn scan_nprobe_resolution_uses_session_relation_and_auto_sources() {
+        assert_eq!(resolve_scan_nprobe_values(0, 5, -1).effective_nprobe, 0);
+
+        let auto = resolve_scan_nprobe_values(17, 0, -1);
+        assert_eq!(auto.effective_nprobe, 5);
+        assert_eq!(auto.source, "auto");
+
+        let relation = resolve_scan_nprobe_values(17, 3, -1);
+        assert_eq!(relation.effective_nprobe, 3);
+        assert_eq!(relation.source, "relation");
+
+        let session = resolve_scan_nprobe_values(17, 3, 99);
+        assert_eq!(session.session_nprobe, Some(99));
+        assert_eq!(session.effective_nprobe, 17);
+        assert_eq!(session.source, "session");
+    }
+
+    #[test]
+    fn scan_rerank_width_resolution_uses_session_or_relation() {
+        let relation = resolve_scan_rerank_width_values(128, -1);
+        assert_eq!(relation.effective_rerank_width, 128);
+        assert_eq!(relation.source, "relation");
+
+        let session = resolve_scan_rerank_width_values(128, 0);
+        assert_eq!(session.session_rerank_width, Some(0));
+        assert_eq!(session.effective_rerank_width, 0);
+        assert_eq!(session.source, "session");
+    }
+
+    #[test]
+    fn default_options_match_phase1_config_contract() {
+        let options = EcSpireOptions::DEFAULT;
+
+        assert_eq!(options.nlists, 0);
+        assert_eq!(options.nprobe, 0);
+        assert_eq!(options.rerank_width, 0);
+        assert_eq!(options.training_sample_rows, 0);
+        assert_eq!(options.seed, 42);
+        assert_eq!(options.requested_pq_group_size(), None);
+        assert_eq!(options.storage_format, SpireStorageFormat::Auto);
+        assert_eq!(
+            options.assignment_payload_format(),
+            SpireAssignmentPayloadFormat::TurboQuant
+        );
+    }
+}

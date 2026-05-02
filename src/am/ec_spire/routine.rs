@@ -1,6 +1,6 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::{build, cost, insert, scan, vacuum};
+use super::{build, cost, insert, options, scan, vacuum};
 
 fn build_ec_spire_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -47,7 +47,7 @@ fn build_ec_spire_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     {
         amroutine.amgettreeheight = Some(cost::ec_spire_amgettreeheight);
     }
-    amroutine.amoptions = None;
+    amroutine.amoptions = Some(options::ec_spire_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
     amroutine.amvalidate = Some(ec_spire_amvalidate);
