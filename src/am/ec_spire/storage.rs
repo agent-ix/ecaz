@@ -595,6 +595,30 @@ impl SpireLocalObjectStore {
         Ok(placement)
     }
 
+    pub(super) fn insert_delta_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireDeltaPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire local object store epoch 0 is invalid".to_owned());
+        }
+        let encoded = object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = self.pages.insert_raw_tuple(encoded)?;
+        let placement = SpirePlacementEntry::local_single_store(
+            epoch,
+            object.header.pid,
+            self.store_relid,
+            object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -621,6 +645,47 @@ impl SpireLocalObjectStore {
         }
 
         let object = SpireLeafPartitionObject::decode(raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        Ok(object)
+    }
+
+    pub(super) fn read_delta_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireDeltaPartitionObject, String> {
+        self.validate_local_available_placement(placement)?;
+        let page = self
+            .pages
+            .get_page(placement.object_tid.block_number)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire object block {} not found",
+                    placement.object_tid.block_number
+                )
+            })?;
+        let raw = page.raw_tuple(placement.object_tid)?;
+        let expected_len = usize::try_from(placement.object_bytes)
+            .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+        if raw.len() != expected_len {
+            return Err(format!(
+                "ec_spire object byte length mismatch: placement {}, tuple {}",
+                placement.object_bytes,
+                raw.len()
+            ));
+        }
+
+        let object = SpireDeltaPartitionObject::decode(raw)?;
         if object.header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match object pid {}",
@@ -1093,6 +1158,42 @@ mod tests {
     }
 
     #[test]
+    fn local_object_store_writes_and_reads_delta_object() {
+        let object = SpireDeltaPartitionObject::new(
+            19,
+            4,
+            17,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 10,
+                    offset_number: 1,
+                },
+                payload_format: 1,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2],
+            }],
+        )
+        .unwrap();
+        let expected_bytes = object.encode().unwrap().len() as u32;
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let placement = store.insert_delta_object(7, &object).unwrap();
+        let decoded = store.read_delta_object(&placement).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(placement.epoch, 7);
+        assert_eq!(placement.pid, 19);
+        assert_eq!(placement.object_version, 4);
+        assert_eq!(placement.store_relid, 12345);
+        assert_eq!(placement.node_id, 0);
+        assert_eq!(placement.local_store_id, 0);
+        assert_eq!(placement.object_bytes, expected_bytes);
+        assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
     fn local_object_store_rejects_invalid_store_and_epoch() {
         assert!(SpireLocalObjectStore::with_default_page_size(0).is_err());
         let object = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
@@ -1100,6 +1201,9 @@ mod tests {
 
         assert!(store.insert_leaf_object(0, &object).is_err());
         assert_eq!(store.page_count(), 1);
+
+        let delta = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
+        assert!(store.insert_delta_object(0, &delta).is_err());
     }
 
     #[test]
@@ -1123,5 +1227,32 @@ mod tests {
         let mut wrong_bytes = placement;
         wrong_bytes.object_bytes += 1;
         assert!(store.read_leaf_object(&wrong_bytes).is_err());
+    }
+
+    #[test]
+    fn local_object_store_rejects_mismatched_delta_placement() {
+        let object = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let placement = store.insert_delta_object(7, &object).unwrap();
+
+        let mut wrong_store = placement;
+        wrong_store.store_relid = 54321;
+        assert!(store.read_delta_object(&wrong_store).is_err());
+
+        let mut stale = placement;
+        stale.state = SpirePlacementState::Stale;
+        assert!(store.read_delta_object(&stale).is_err());
+
+        let mut wrong_pid = placement;
+        wrong_pid.pid = 99;
+        assert!(store.read_delta_object(&wrong_pid).is_err());
+
+        let mut wrong_version = placement;
+        wrong_version.object_version = 99;
+        assert!(store.read_delta_object(&wrong_version).is_err());
+
+        let mut wrong_bytes = placement;
+        wrong_bytes.object_bytes += 1;
+        assert!(store.read_delta_object(&wrong_bytes).is_err());
     }
 }
