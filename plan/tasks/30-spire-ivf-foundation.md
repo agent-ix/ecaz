@@ -18,9 +18,11 @@ BY query, stores it in opaque state, and fails at relation-backed snapshot
 loading. Assignment payload scoring now reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
-exists for single-level build and scan parameters. Live PostgreSQL
-relation-backed
-build/scan persistence remains intentionally unwired. Task 30 implements
+exists for single-level build and scan parameters. A pre-persistence
+architecture gate from the first foundation review is now recorded in
+`plan/design/spire-foundation-architecture-feedback-response.md`; live
+PostgreSQL relation-backed build/scan persistence remains intentionally
+unwired until that gate is cleared. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -120,6 +122,41 @@ Decision record:
 - [x] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
   `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` in `spec/spec.md`;
   otherwise keep them explicitly marked as deferred.
+- [x] **Architecture feedback response.** Process the first holistic foundation
+  review before live persistence. The response checkpoint is
+  `plan/design/spire-foundation-architecture-feedback-response.md`; it keeps
+  relation-backed persistence blocked until the pre-persistence hardening
+  items below are implemented or superseded by an accepted design update.
+- [ ] **Segmented column-major leaf objects.** Replace the in-memory
+  row-contiguous base-leaf format with `LeafPartitionObjectV2`: one metadata
+  tuple plus page-sized row segments containing column-major flags,
+  fixed-stride `vec_id`s, heap TIDs, gammas, and payload bytes. Keep small
+  deltas row-encoded until compaction rewrites a V2 base object.
+- [ ] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
+  borrowed row references for row-encoded deltas, one shared assignment
+  visibility predicate, and batch assignment scorer entry points before
+  persisted scan callbacks consume leaf objects.
+- [ ] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
+  wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
+  and diagnostics helpers should consume the wrapper instead of repeatedly
+  rebuilding `SpirePublishedEpochSnapshot`.
+- [ ] **Flat routing object layout.** Replace per-child `Vec<f32>` routing
+  entries with flat `child_pids`, `centroid_ordinals`, and centroid block arrays
+  before root/internal routing objects become relation-backed.
+- [ ] **Bounded routing and candidate heaps.** Replace sort/truncate
+  top-`nprobe` and candidate top-k selection with bounded heaps and a documented
+  deterministic tie-break contract.
+- [ ] **Explicit dedupe mode.** Carry a scan/snapshot dedupe mode so Phase 1's
+  primary-only path skips the `vec_id` HashMap, while boundary replicas and
+  future remote merge re-enable `vec_id` dedupe explicitly.
+- [ ] **Publish coordinator.** Add a typed publication state machine for object
+  writes, placement writes, manifest writes, validation, active-epoch advance,
+  and failed-publish cleanup before live relation-backed writes are enabled.
+- [ ] **Architecture follow-up cleanups.** Add object epoch back-references,
+  a `SpireObjectReader` trait shared by in-memory and buffer-cache readers,
+  byte diagnostics by object kind, allocator near-exhaustion diagnostics,
+  explicit placement constructors, and a single source for primary/replica
+  visibility semantics.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated
@@ -132,8 +169,8 @@ Decision record:
   single-store object placements, exact object-manifest/placement PID-set
   validation, and fail-closed delta publication from non-available base
   placements. Partitioned build drafts now publish root and leaf PID placements
-  into the local object store; live relation-backed writes remain part of the
-  build path.
+  into the local object store; live relation-backed writes remain blocked on
+  the pre-persistence architecture gate.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into
@@ -147,7 +184,9 @@ Decision record:
   RaBitQ row payloads through the existing quantizer implementations and keeps
   PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata. A
   source-vector helper now builds quantized leaf assignment inputs from heap
-  locators plus source vectors for future AM build/insert wiring.
+  locators plus source vectors for future AM build/insert wiring. Live
+  relation-backed build writes remain blocked on the pre-persistence
+  architecture gate.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
@@ -167,7 +206,8 @@ Decision record:
   non-empty, finite, non-zero query object. Live `amrescan` now parses and
   stores the ORDER BY query before stopping at the relation-backed snapshot
   loading boundary. Snapshot/object loading, heap rerank callback
-  implementation, and PQ-FastScan scorer binding remain open.
+  implementation, and PQ-FastScan scorer binding remain open; live snapshot
+  loading remains blocked on the pre-persistence architecture gate.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,

@@ -19,6 +19,9 @@ Phase 0 checklist.
    directly from heap TIDs.
 5. Expose Phase 1 as an opt-in `ec_spire` access method with explicit SPIRE
    opclasses: `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops`.
+6. Before relation-backed persistence, replace the current in-memory
+   row-contiguous leaf object with the segmented, column-major V2 shape in
+   `plan/design/spire-foundation-architecture-feedback-response.md`.
 
 ## Storage Shape
 
@@ -97,6 +100,20 @@ PartitionObjectHeaderV1
 Internal objects store routing metadata and child PIDs. Leaf objects store
 logical assignment rows. Delta objects store epoch-published insert/delete
 changes for one PID until compaction rewrites a replacement leaf object.
+
+The initial in-memory codec uses a row-contiguous V1 leaf object while Phase 1
+helpers are being built. The architecture gate from the first foundation review
+requires the live persisted base-leaf format to be `LeafPartitionObjectV2`: one
+metadata tuple plus one or more row-segment tuples, with column-major arrays for
+flags, fixed-stride `vec_id`s, heap TIDs, gammas, and encoded payload bytes.
+The placement entry still addresses one logical `(pid, object_version)` object;
+the V2 metadata tuple owns the segment chain. Strict-mode availability requires
+every segment in that chain to be durable and readable.
+
+V2 base leaves use one assignment payload format and one payload stride per
+object. Delete and tombstone deltas may remain row-encoded because they are
+small and can carry `payload_format = NONE`; compaction rewrites base plus
+deltas into a replacement V2 leaf object.
 
 The logical assignment row is `(vec_id, pid)`. Physically, the leaf object
 header carries `pid`, so the row may omit a repeated PID field and the decoder

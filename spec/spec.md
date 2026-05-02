@@ -120,9 +120,14 @@ partitions. The first implementation target is a local single-level foundation.
 Phase 1 starts as an opt-in `ec_spire` AM scaffold with explicit
 `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` opclasses; build, scan,
 insert, and vacuum persistence remain unsupported until the single-level local
-path lands. The design preserves a path to PostgreSQL-managed local multi-NVMe
-partition stores, configurable graceful degradation, and later multi-machine
-PID placement over libpq.
+path lands and the pre-persistence architecture gate in
+`plan/design/spire-foundation-architecture-feedback-response.md` is cleared.
+That gate requires segmented column-major leaf partition objects, borrowed
+leaf reads, validated snapshot PID caches, flat routing centroid arrays,
+bounded top-k heaps, explicit dedupe mode, and a typed publish coordinator.
+The design preserves a path to PostgreSQL-managed local multi-NVMe partition
+stores, configurable graceful degradation, and later multi-machine PID
+placement over libpq.
 
 ## 4. Architecture
 

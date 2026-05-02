@@ -7,6 +7,7 @@ date: 2026-05-01
 deciders:
   - TBD
 phase0_design: plan/design/spire-phase0-partition-object-storage.md
+phase1_architecture_gate: plan/design/spire-foundation-architecture-feedback-response.md
 ---
 # ADR-049: Build SPIRE on a Partition-Object IVF Foundation
 
@@ -107,6 +108,14 @@ vector versions, encoded in no more than 32 bytes, and reserve a discriminator
 byte so a local ID can coexist with or be rewritten into a future global ID
 through an epoch transition.
 
+The first architecture review adds a pre-persistence gate: persisted base leaf
+objects must use a segmented, column-major `LeafPartitionObjectV2` rather than
+one row-contiguous tuple. The logical row remains `(vec_id, pid)`, but the
+physical base-leaf payload is stored as fixed-stride `vec_id`, heap-TID, gamma,
+flag, and encoded-payload columns split across page-sized row segments. Small
+delta objects can remain row-encoded until compaction rewrites them into a V2
+base leaf.
+
 ### 3. Use partition objects and a placement map, not one monolithic relation forever
 
 SPIRE persistence is organized around PostgreSQL-managed relation-backed
@@ -148,6 +157,12 @@ SPIRE's partition count into `pg_class` and make catalog overhead the dominant
 storage problem. We also will not use PostgreSQL declarative table partitions
 for SPIRE partition selection. PostgreSQL's planner chooses whether to use the
 SPIRE access path; SPIRE itself chooses PIDs from the query vector and hierarchy.
+
+The placement map addresses one logical partition object by PID and object
+version. A large V2 leaf object may physically span multiple object-store
+tuples; the placement entry points at the V2 metadata tuple, and that metadata
+tuple owns the segment chain. In strict mode, the object is readable only when
+the metadata tuple and all referenced segment tuples are available.
 
 ### 4. Version partition objects with published epochs
 
@@ -284,6 +299,10 @@ index/coordinator.
 
 ### Phase 1: Single-level partition-object IVF
 
+- pre-persistence hardening from the architecture gate: V2 segmented leaf
+  objects, borrowed leaf reads, validated snapshot PID caches, flat routing
+  centroid arrays, bounded heaps, explicit dedupe mode, and a publish
+  coordinator
 - k-means centroid training using a mini-batch sample, parallelizable
 - PQ codebook training and encoding
 - vector-to-centroid assignment, one partition per vector initially
