@@ -135,7 +135,9 @@ Decision record:
   publishes a strict object/placement manifest snapshot before committing
   allocator cursors. The assignment payload seam now encodes TurboQuant and
   RaBitQ row payloads through the existing quantizer implementations and keeps
-  PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata.
+  PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata. A
+  source-vector helper now builds quantized leaf assignment inputs from heap
+  locators plus source vectors for future AM build/insert wiring.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
