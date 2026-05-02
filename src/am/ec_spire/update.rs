@@ -11,8 +11,8 @@ use super::build::{
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePublishedEpochSnapshot,
-    SpireRootControlState,
+    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+    SpirePublishedEpochSnapshot, SpireRootControlState,
 };
 use super::scan::{collect_snapshot_visible_primary_rows, SpireLeafScanRow};
 use super::storage::{
@@ -118,6 +118,7 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
         base_snapshot.object_manifest,
         base_snapshot.placement_directory,
     )?;
+    validate_delta_base_snapshot_placements_available(base_snapshot)?;
     if input.epoch <= base_snapshot.epoch_manifest.epoch {
         return Err(format!(
             "ec_spire delta epoch {} must be newer than base epoch {}",
@@ -255,6 +256,20 @@ fn build_delta_epoch_draft_with_carried_entries(
     Ok(draft)
 }
 
+fn validate_delta_base_snapshot_placements_available(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+) -> Result<(), String> {
+    for placement in &snapshot.placement_directory.entries {
+        if placement.state != SpirePlacementState::Available {
+            return Err(format!(
+                "ec_spire delta epoch base snapshot requires available placement for pid {}: got {:?}",
+                placement.pid, placement.state
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn collect_snapshot_assignment_vec_ids(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
@@ -348,8 +363,8 @@ mod tests {
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-        SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
-        SpireRootControlState,
+        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementState,
+        SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore, SpireVecId,
@@ -991,6 +1006,50 @@ mod tests {
             &mut object_store,
         )
         .is_err());
+        assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_degraded_base_placements() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let mut epoch_manifest = base_draft.epoch_manifest;
+        epoch_manifest.consistency_mode = SpireConsistencyMode::Degraded;
+        let mut placement = *base_draft.placement_directory.get(1).unwrap();
+        placement.state = SpirePlacementState::Skipped;
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(base_draft.epoch_manifest.epoch, vec![placement])
+                .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &base_draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut input = delta_input(vec![insert_assignment(20, 1)], Vec::new());
+        input.base_pid = 1;
+
+        let error = build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("requires available placement"));
         assert_eq!(pid_allocator.next_pid(), 2);
         assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
         assert_eq!(object_store.page_count(), initial_page_count);
