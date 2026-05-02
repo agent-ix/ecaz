@@ -1,11 +1,14 @@
 # Task 30: SPIRE on a Partition-Object IVF Foundation
 
-Status: proposed — Phase 0 storage design checkpoint recorded in
-`plan/design/spire-phase0-partition-object-storage.md`; implementation proceeds
-from that checkpoint before persistence code. Task 30 implements ADR-049 in
-stages: first a debuggable single-level IVF foundation with SPIRE-compatible
-partition-object storage, then recursive SPIRE routing, local multi-NVMe
-placement, and later multi-machine placement.
+Status: in progress — Phase 0 storage design checkpoint recorded in
+`plan/design/spire-phase0-partition-object-storage.md`; Phase 1 now has
+SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
+single-level route maps, root routing objects, and per-centroid leaf-object
+draft publication. Live PostgreSQL relation-backed build/scan persistence
+remains intentionally unwired. Task 30 implements ADR-049 in stages: first a
+debuggable single-level IVF foundation with SPIRE-compatible partition-object
+storage, then recursive SPIRE routing, local multi-NVMe placement, and later
+multi-machine placement.
 
 ## Scope
 
@@ -113,13 +116,19 @@ Decision record:
   now includes placement-entry and placement-directory codecs, local
   single-store object placements, exact object-manifest/placement PID-set
   validation, and fail-closed delta publication from non-available base
-  placements; live relation-backed writes remain part of the build path.
+  placements. Partitioned build drafts now publish root and leaf PID placements
+  into the local object store; live relation-backed writes remain part of the
+  build path.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into
   `src/am/common/training.rs` with `ec_ivf` compatibility wrappers so SPIRE can
   consume the centroid training boundary without importing private `ec_ivf`
-  modules.
+  modules. The in-memory build draft now validates a single-level centroid plan,
+  allocates one root PID plus one leaf PID per centroid, writes a root routing
+  object, writes per-centroid leaf partition objects including empty leaves, and
+  publishes a strict object/placement manifest snapshot before committing
+  allocator cursors.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
