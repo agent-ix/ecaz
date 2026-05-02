@@ -4,11 +4,13 @@ Status: in progress — Phase 0 storage design checkpoint recorded in
 `plan/design/spire-phase0-partition-object-storage.md`; Phase 1 now has
 SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
-draft publication. Live PostgreSQL relation-backed build/scan persistence
-remains intentionally unwired. Task 30 implements ADR-049 in stages: first a
-debuggable single-level IVF foundation with SPIRE-compatible partition-object
-storage, then recursive SPIRE routing, local multi-NVMe placement, and later
-multi-machine placement.
+draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
+ranked candidates through an injected scorer, dedupe by `vec_id`, and run an
+injected exact-rerank seam. Live PostgreSQL relation-backed build/scan
+persistence remains intentionally unwired. Task 30 implements ADR-049 in
+stages: first a debuggable single-level IVF foundation with SPIRE-compatible
+partition-object storage, then recursive SPIRE routing, local multi-NVMe
+placement, and later multi-machine placement.
 
 ## Scope
 
@@ -133,8 +135,10 @@ Decision record:
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
   placement handling for routed leaves, single-route query-to-leaf collection,
-  and top-`nprobe` leaf selection over root child centroids. Candidate scoring,
-  rerank, and AM callback execution remain open.
+  top-`nprobe` leaf selection over root child centroids, visible-primary
+  candidate scoring through an injected scorer, `vec_id` dedupe, deterministic
+  score ordering, and an injected exact-rerank seam. Quantizer binding, heap
+  rerank callback integration, and AM callback execution remain open.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters.
