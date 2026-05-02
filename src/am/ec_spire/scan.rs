@@ -7,7 +7,6 @@ use super::storage::{
     SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
     SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
-use crate::am::common::training as common_training;
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,15 +83,32 @@ pub(super) fn collect_snapshot_routed_leaf_rows(
     object_store: &SpireLocalObjectStore,
     query_vector: &[f32],
 ) -> Result<SpireRoutedLeafScanRows, String> {
-    let (root_pid, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
-    let leaf_pid = route_root_object_to_leaf_pid(&root_object, query_vector)?;
-    let rows = collect_snapshot_leaf_rows_for_pid(snapshot, object_store, leaf_pid, root_pid)?;
+    let mut routed =
+        collect_snapshot_routed_probe_leaf_rows(snapshot, object_store, query_vector, 1)?;
+    routed
+        .pop()
+        .ok_or_else(|| "ec_spire routed scan found no leaf route".to_owned())
+}
 
-    Ok(SpireRoutedLeafScanRows {
-        root_pid,
-        leaf_pid,
-        rows,
-    })
+pub(super) fn collect_snapshot_routed_probe_leaf_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+    nprobe: u32,
+) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
+    let (root_pid, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
+    let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
+
+    let mut routed = Vec::with_capacity(leaf_pids.len());
+    for leaf_pid in leaf_pids {
+        let rows = collect_snapshot_leaf_rows_for_pid(snapshot, object_store, leaf_pid, root_pid)?;
+        routed.push(SpireRoutedLeafScanRows {
+            root_pid,
+            leaf_pid,
+            rows,
+        });
+    }
+    Ok(routed)
 }
 
 pub(super) fn collect_snapshot_delta_rows(
@@ -230,30 +246,71 @@ fn load_snapshot_root_routing_object(
     root.ok_or_else(|| "ec_spire scan snapshot has no available root routing object".to_owned())
 }
 
-fn route_root_object_to_leaf_pid(
+fn route_root_object_to_leaf_pids(
     root_object: &SpireRoutingPartitionObject,
     query_vector: &[f32],
-) -> Result<u64, String> {
+    nprobe: u32,
+) -> Result<Vec<u64>, String> {
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire scan routing requires a root routing object".to_owned());
     }
-    let model = common_training::SphericalKMeansModel {
-        dimensions: usize::from(root_object.dimensions),
-        centroids: root_object
-            .children
-            .iter()
-            .map(|child| child.centroid.clone())
-            .collect(),
-    };
-    let centroid_index =
-        common_training::assign_vector_to_centroid("ec_spire", query_vector, &model)?;
-    root_object
+    if nprobe == 0 {
+        return Err("ec_spire routed scan requires nprobe > 0".to_owned());
+    }
+    validate_routing_query_vector(query_vector, usize::from(root_object.dimensions))?;
+
+    let mut scored_children = root_object
         .children
-        .get(centroid_index)
-        .map(|child| child.child_pid)
-        .ok_or_else(|| {
-            format!("ec_spire scan route centroid index {centroid_index} has no child pid")
+        .iter()
+        .map(|child| {
+            (
+                child.centroid_index,
+                child.child_pid,
+                inner_product(query_vector, &child.centroid),
+            )
         })
+        .collect::<Vec<_>>();
+    scored_children.sort_by(|left, right| {
+        right
+            .2
+            .total_cmp(&left.2)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    let requested = usize::try_from(nprobe)
+        .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
+    Ok(scored_children
+        .into_iter()
+        .take(requested)
+        .map(|(_, child_pid, _)| child_pid)
+        .collect())
+}
+
+fn validate_routing_query_vector(query_vector: &[f32], dimensions: usize) -> Result<(), String> {
+    if query_vector.len() != dimensions {
+        return Err(format!(
+            "ec_spire vector dimensions mismatch: got {}, expected {dimensions}",
+            query_vector.len()
+        ));
+    }
+    if query_vector.iter().any(|value| !value.is_finite()) {
+        return Err("ec_spire vector contains a non-finite value".to_owned());
+    }
+    let norm_sq = query_vector
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>();
+    if norm_sq <= f64::EPSILON {
+        return Err("ec_spire spherical routing requires non-zero vectors".to_owned());
+    }
+    Ok(())
+}
+
+fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right.iter())
+        .map(|(left, right)| left * right)
+        .sum()
 }
 
 fn collect_snapshot_leaf_rows_for_pid(
@@ -370,7 +427,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 mod tests {
     use super::{
         collect_snapshot_delta_rows, collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
-        collect_snapshot_visible_primary_rows,
+        collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -814,6 +871,78 @@ mod tests {
         assert_eq!(negative_rows.leaf_pid, SPIRE_FIRST_PID + 2);
         assert_eq!(negative_rows.rows.len(), 1);
         assert_eq!(negative_rows.rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn collect_snapshot_routed_probe_leaf_rows_routes_top_nprobe_leaf_pids() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let routed =
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[1.0, 0.0], 2)
+                .unwrap();
+
+        assert_eq!(routed.len(), 2);
+        assert_eq!(routed[0].leaf_pid, SPIRE_FIRST_PID + 1);
+        assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 1));
+        assert_eq!(routed[1].leaf_pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(routed[1].rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn collect_snapshot_routed_probe_leaf_rows_rejects_invalid_nprobe_and_query() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        assert!(
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[1.0, 0.0], 0)
+                .unwrap_err()
+                .contains("nprobe > 0")
+        );
+        assert!(
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[1.0], 1)
+                .unwrap_err()
+                .contains("dimensions mismatch")
+        );
+        assert!(
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[0.0, 0.0], 1)
+                .unwrap_err()
+                .contains("non-zero")
+        );
     }
 
     #[test]
