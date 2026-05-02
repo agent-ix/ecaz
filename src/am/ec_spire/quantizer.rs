@@ -145,6 +145,67 @@ impl SpirePreparedAssignmentScorer {
             }
         }
     }
+
+    pub(super) fn score_batch_ip(
+        &self,
+        payload_stride: usize,
+        payloads: &[u8],
+        gammas: &[f32],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if gammas.len() != out_scores.len() {
+            return Err(format!(
+                "ec_spire batch scorer gamma count {} does not match output count {}",
+                gammas.len(),
+                out_scores.len()
+            ));
+        }
+        let payload_count = out_scores.len();
+        let expected_payload_bytes = payload_stride
+            .checked_mul(payload_count)
+            .ok_or_else(|| "ec_spire batch scorer payload byte count overflow".to_owned())?;
+        if payloads.len() != expected_payload_bytes {
+            return Err(format!(
+                "ec_spire batch scorer payload bytes mismatch: got {}, expected {expected_payload_bytes}",
+                payloads.len()
+            ));
+        }
+
+        let payload_format = self.payload_format();
+        validate_payload_stride(self.dimensions(), payload_format, payload_stride)?;
+        match self {
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+                ..
+            } => {
+                for ((payload, gamma), out_score) in payloads
+                    .chunks_exact(payload_stride)
+                    .zip(gammas.iter())
+                    .zip(out_scores.iter_mut())
+                {
+                    *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
+                }
+            }
+            Self::RaBitQ {
+                quantizer,
+                prepared,
+                ..
+            } => {
+                for ((payload, gamma), out_score) in payloads
+                    .chunks_exact(payload_stride)
+                    .zip(gammas.iter())
+                    .zip(out_scores.iter_mut())
+                {
+                    if *gamma != 0.0 {
+                        return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
+                    }
+                    *out_score = quantizer.estimate_ip(prepared, payload).estimate;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub(super) fn encode_assignment_payload(
@@ -229,7 +290,37 @@ fn validate_payload_len(
     payload_format: SpireAssignmentPayloadFormat,
     payload: &[u8],
 ) -> Result<(), String> {
-    let expected_len = match payload_format {
+    let expected_len = expected_payload_len(dimensions, payload_format)?;
+    if payload.len() != expected_len {
+        return Err(format!(
+            "ec_spire {:?} assignment payload length mismatch: got {}, expected {expected_len}",
+            payload_format,
+            payload.len()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_payload_stride(
+    dimensions: usize,
+    payload_format: SpireAssignmentPayloadFormat,
+    payload_stride: usize,
+) -> Result<(), String> {
+    let expected_len = expected_payload_len(dimensions, payload_format)?;
+    if payload_stride != expected_len {
+        return Err(format!(
+            "ec_spire {:?} assignment payload stride mismatch: got {payload_stride}, expected {expected_len}",
+            payload_format
+        ));
+    }
+    Ok(())
+}
+
+fn expected_payload_len(
+    dimensions: usize,
+    payload_format: SpireAssignmentPayloadFormat,
+) -> Result<usize, String> {
+    Ok(match payload_format {
         SpireAssignmentPayloadFormat::TurboQuant => {
             payload_len(dimensions, crate::DEFAULT_QUANT_BITS) - size_of::<f32>()
         }
@@ -241,15 +332,7 @@ fn validate_payload_len(
                     .to_owned(),
             );
         }
-    };
-    if payload.len() != expected_len {
-        return Err(format!(
-            "ec_spire {:?} assignment payload length mismatch: got {}, expected {expected_len}",
-            payload_format,
-            payload.len()
-        ));
-    }
-    Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -351,6 +434,51 @@ mod tests {
     }
 
     #[test]
+    fn assignment_scorer_batch_matches_scalar_scores() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
+
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let mut payload_stride = None;
+            let mut payloads = Vec::new();
+            let mut gammas = Vec::new();
+            let mut scalar_scores = Vec::new();
+
+            for source in &sources {
+                let (_, gamma, payload) =
+                    encode_assignment_payload(payload_format, source).unwrap();
+                let assignment = assignment_row(payload_format, gamma, payload.clone());
+                scalar_scores.push(scorer.score_assignment_ip(&assignment).unwrap());
+                payload_stride = Some(payload_stride.unwrap_or(payload.len()));
+                assert_eq!(payload_stride, Some(payload.len()));
+                gammas.push(gamma);
+                payloads.extend_from_slice(&payload);
+            }
+
+            let mut batch_scores = vec![0.0; sources.len()];
+            scorer
+                .score_batch_ip(
+                    payload_stride.unwrap(),
+                    &payloads,
+                    &gammas,
+                    &mut batch_scores,
+                )
+                .unwrap();
+
+            assert_eq!(batch_scores.len(), scalar_scores.len());
+            for (batch_score, scalar_score) in batch_scores.iter().zip(scalar_scores.iter()) {
+                assert!((batch_score - scalar_score).abs() <= f32::EPSILON);
+            }
+        }
+    }
+
+    #[test]
     fn assignment_scorer_rejects_mismatched_format_and_bad_lengths() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
@@ -375,6 +503,40 @@ mod tests {
         payload.pop();
         assignment.encoded_payload = payload;
         assert!(scorer.score_assignment_ip(&assignment).is_err());
+    }
+
+    #[test]
+    fn assignment_scorer_batch_rejects_bad_shapes() {
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let (_, gamma, payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            source.len(),
+            &query,
+        )
+        .unwrap();
+        let mut out = [0.0];
+
+        assert!(scorer
+            .score_batch_ip(payload.len() + 1, &payload, &[gamma], &mut out)
+            .is_err());
+        assert!(scorer
+            .score_batch_ip(payload.len(), &payload, &[], &mut out)
+            .is_err());
+
+        let (_, _, rabitq_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &source).unwrap();
+        let rabitq_scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            source.len(),
+            &query,
+        )
+        .unwrap();
+        assert!(rabitq_scorer
+            .score_batch_ip(rabitq_payload.len(), &rabitq_payload, &[1.0], &mut out)
+            .is_err());
     }
 
     #[test]

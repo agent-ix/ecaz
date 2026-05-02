@@ -149,6 +149,11 @@ score_batch_ip(payload_stride, payloads, gammas, out_scores)
 The visibility predicate for primary, replica, and tombstone flags should live
 in one helper shared by V1 row references and V2 columns.
 
+Implementation checkpoint: `SpirePreparedAssignmentScorer::score_batch_ip`
+now validates payload stride/counts and scores TurboQuant/RaBitQ payload chunks
+into caller-provided output storage. The scan path still uses row-at-a-time
+scoring until V2 column views are wired into leaf reads.
+
 ## Snapshot Lookup and Validation
 
 `SpirePublishedEpochSnapshot::new` remains the construction-time validation
