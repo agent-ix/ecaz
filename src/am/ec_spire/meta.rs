@@ -703,6 +703,90 @@ impl SpireObjectManifest {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpirePublishedEpochSnapshot<'a> {
+    pub(super) epoch_manifest: &'a SpireEpochManifest,
+    pub(super) object_manifest: &'a SpireObjectManifest,
+    pub(super) placement_directory: &'a SpirePlacementDirectory,
+}
+
+impl<'a> SpirePublishedEpochSnapshot<'a> {
+    pub(super) fn new(
+        epoch_manifest: &'a SpireEpochManifest,
+        object_manifest: &'a SpireObjectManifest,
+        placement_directory: &'a SpirePlacementDirectory,
+    ) -> Result<Self, String> {
+        let snapshot = Self {
+            epoch_manifest,
+            object_manifest,
+            placement_directory,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        self.epoch_manifest.validate()?;
+        self.object_manifest.validate()?;
+        self.placement_directory.validate()?;
+
+        if self.epoch_manifest.state != SpireEpochState::Published {
+            return Err("ec_spire published snapshot requires a published epoch".to_owned());
+        }
+
+        let epoch = self.epoch_manifest.epoch;
+        if self.object_manifest.epoch != epoch {
+            return Err(format!(
+                "ec_spire published snapshot object manifest epoch mismatch: epoch {}, manifest {}",
+                epoch, self.object_manifest.epoch
+            ));
+        }
+        if self.placement_directory.epoch != epoch {
+            return Err(format!(
+                "ec_spire published snapshot placement directory epoch mismatch: epoch {}, directory {}",
+                epoch, self.placement_directory.epoch
+            ));
+        }
+
+        for entry in &self.object_manifest.entries {
+            let placement = self.placement_directory.get(entry.pid).ok_or_else(|| {
+                format!(
+                    "ec_spire published snapshot missing placement for pid {}",
+                    entry.pid
+                )
+            })?;
+
+            if placement.object_version != entry.object_version {
+                return Err(format!(
+                    "ec_spire published snapshot object_version mismatch for pid {}: manifest {}, placement {}",
+                    entry.pid, entry.object_version, placement.object_version
+                ));
+            }
+
+            match (self.epoch_manifest.consistency_mode, placement.state) {
+                (SpireConsistencyMode::Strict, SpirePlacementState::Available)
+                | (SpireConsistencyMode::Degraded, SpirePlacementState::Available)
+                | (SpireConsistencyMode::Degraded, SpirePlacementState::Unavailable)
+                | (SpireConsistencyMode::Degraded, SpirePlacementState::Skipped) => {}
+                (SpireConsistencyMode::Strict, state) => {
+                    return Err(format!(
+                        "ec_spire strict published snapshot requires available placement for pid {}: got {:?}",
+                        entry.pid, state
+                    ));
+                }
+                (SpireConsistencyMode::Degraded, SpirePlacementState::Stale) => {
+                    return Err(format!(
+                        "ec_spire degraded published snapshot cannot use stale placement for pid {}",
+                        entry.pid
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 fn validate_format_version(input: &[u8]) -> Result<(), String> {
     let format_version = u16::from_le_bytes(input.try_into().expect("format version bytes"));
     if format_version != META_FORMAT_VERSION {
@@ -718,8 +802,8 @@ mod tests {
     use super::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID,
-        SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
+        SpirePublishedEpochSnapshot, SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS,
+        SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
         SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
@@ -730,6 +814,48 @@ mod tests {
             block_number,
             offset_number,
         }
+    }
+
+    fn published_epoch(epoch: u64, consistency_mode: SpireConsistencyMode) -> SpireEpochManifest {
+        SpireEpochManifest {
+            epoch,
+            state: SpireEpochState::Published,
+            consistency_mode,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        }
+    }
+
+    fn object_manifest(epoch: u64, pid: u64, object_version: u64) -> SpireObjectManifest {
+        SpireObjectManifest::from_entries(
+            epoch,
+            vec![SpireManifestEntry {
+                epoch,
+                pid,
+                object_version,
+                placement_tid: tid(55, 4),
+            }],
+        )
+        .unwrap()
+    }
+
+    fn placement_directory(
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        state: SpirePlacementState,
+    ) -> SpirePlacementDirectory {
+        let mut placement = SpirePlacementEntry::local_single_store(
+            epoch,
+            pid,
+            12345,
+            object_version,
+            tid(44, 2),
+            4096,
+        );
+        placement.state = state;
+        SpirePlacementDirectory::from_entries(epoch, vec![placement]).unwrap()
     }
 
     #[test]
@@ -1145,5 +1271,93 @@ mod tests {
         encoded = manifest.encode().unwrap();
         encoded.push(99);
         assert!(SpireObjectManifest::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn published_epoch_snapshot_accepts_strict_available_placement() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        let manifest = object_manifest(7, 11, 3);
+        let directory = placement_directory(7, 11, 3, SpirePlacementState::Available);
+
+        let snapshot = SpirePublishedEpochSnapshot::new(&epoch, &manifest, &directory).unwrap();
+
+        assert_eq!(snapshot.epoch_manifest.epoch, 7);
+        assert_eq!(snapshot.object_manifest.get(11).unwrap().object_version, 3);
+        assert_eq!(
+            snapshot.placement_directory.get(11).unwrap().state,
+            SpirePlacementState::Available
+        );
+    }
+
+    #[test]
+    fn published_epoch_snapshot_rejects_non_published_epoch() {
+        let mut epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        epoch.state = SpireEpochState::Building;
+        epoch.published_at_micros = 0;
+        let manifest = object_manifest(7, 11, 3);
+        let directory = placement_directory(7, 11, 3, SpirePlacementState::Available);
+
+        assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &directory).is_err());
+    }
+
+    #[test]
+    fn published_epoch_snapshot_rejects_epoch_mismatch() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        let wrong_manifest = object_manifest(8, 11, 3);
+        let directory = placement_directory(7, 11, 3, SpirePlacementState::Available);
+
+        assert!(SpirePublishedEpochSnapshot::new(&epoch, &wrong_manifest, &directory).is_err());
+
+        let manifest = object_manifest(7, 11, 3);
+        let wrong_directory = placement_directory(8, 11, 3, SpirePlacementState::Available);
+
+        assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &wrong_directory).is_err());
+    }
+
+    #[test]
+    fn published_epoch_snapshot_rejects_missing_or_version_mismatched_placement() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        let manifest = object_manifest(7, 11, 3);
+        let wrong_pid_directory = placement_directory(7, 12, 3, SpirePlacementState::Available);
+
+        assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &wrong_pid_directory).is_err());
+
+        let wrong_version_directory = placement_directory(7, 11, 4, SpirePlacementState::Available);
+
+        assert!(
+            SpirePublishedEpochSnapshot::new(&epoch, &manifest, &wrong_version_directory).is_err()
+        );
+    }
+
+    #[test]
+    fn published_epoch_snapshot_rejects_non_available_placement_in_strict_mode() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        let manifest = object_manifest(7, 11, 3);
+
+        for state in [
+            SpirePlacementState::Stale,
+            SpirePlacementState::Unavailable,
+            SpirePlacementState::Skipped,
+        ] {
+            let directory = placement_directory(7, 11, 3, state);
+            assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &directory).is_err());
+        }
+    }
+
+    #[test]
+    fn published_epoch_snapshot_degraded_mode_allows_unavailable_or_skipped_placement() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Degraded);
+        let manifest = object_manifest(7, 11, 3);
+
+        for state in [
+            SpirePlacementState::Unavailable,
+            SpirePlacementState::Skipped,
+        ] {
+            let directory = placement_directory(7, 11, 3, state);
+            assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &directory).is_ok());
+        }
+
+        let stale_directory = placement_directory(7, 11, 3, SpirePlacementState::Stale);
+        assert!(SpirePublishedEpochSnapshot::new(&epoch, &manifest, &stale_directory).is_err());
     }
 }
