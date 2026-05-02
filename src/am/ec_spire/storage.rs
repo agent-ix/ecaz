@@ -2,7 +2,10 @@
 
 use std::mem::size_of;
 
-use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
+use super::meta::{
+    SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID, SPIRE_SINGLE_LOCAL_STORE_ID,
+};
+use crate::storage::page::{DataPageChain, ItemPointer, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES};
 
 pub(super) const SPIRE_VEC_ID_MAX_BYTES: usize = 32;
 pub(super) const SPIRE_LOCAL_VEC_ID_DISCRIMINATOR: u8 = 0x01;
@@ -434,6 +437,131 @@ impl SpireLeafPartitionObject {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct SpireLocalObjectStore {
+    store_relid: u32,
+    pages: DataPageChain,
+}
+
+impl SpireLocalObjectStore {
+    pub(super) fn with_default_page_size(store_relid: u32) -> Result<Self, String> {
+        Self::new(store_relid, DEFAULT_PAGE_SIZE)
+    }
+
+    pub(super) fn new(store_relid: u32, page_size: usize) -> Result<Self, String> {
+        if store_relid == 0 {
+            return Err("ec_spire local object store relid 0 is invalid".to_owned());
+        }
+        if page_size == 0 {
+            return Err("ec_spire local object store page size 0 is invalid".to_owned());
+        }
+        Ok(Self {
+            store_relid,
+            pages: DataPageChain::new(page_size),
+        })
+    }
+
+    pub(super) fn page_count(&self) -> usize {
+        self.pages.pages().len()
+    }
+
+    pub(super) fn insert_leaf_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireLeafPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire local object store epoch 0 is invalid".to_owned());
+        }
+        let encoded = object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = self.pages.insert_raw_tuple(encoded)?;
+        let placement = SpirePlacementEntry::local_single_store(
+            epoch,
+            object.header.pid,
+            self.store_relid,
+            object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
+    pub(super) fn read_leaf_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObject, String> {
+        self.validate_local_available_placement(placement)?;
+        let page = self
+            .pages
+            .get_page(placement.object_tid.block_number)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire object block {} not found",
+                    placement.object_tid.block_number
+                )
+            })?;
+        let raw = page.raw_tuple(placement.object_tid)?;
+        let expected_len = usize::try_from(placement.object_bytes)
+            .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+        if raw.len() != expected_len {
+            return Err(format!(
+                "ec_spire object byte length mismatch: placement {}, tuple {}",
+                placement.object_bytes,
+                raw.len()
+            ));
+        }
+
+        let object = SpireLeafPartitionObject::decode(raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        Ok(object)
+    }
+
+    fn validate_local_available_placement(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<(), String> {
+        if placement.node_id != SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire local object store cannot read node_id {}",
+                placement.node_id
+            ));
+        }
+        if placement.local_store_id != SPIRE_SINGLE_LOCAL_STORE_ID {
+            return Err(format!(
+                "ec_spire local object store cannot read local_store_id {}",
+                placement.local_store_id
+            ));
+        }
+        if placement.store_relid != self.store_relid {
+            return Err(format!(
+                "ec_spire placement store_relid {} does not match local store relid {}",
+                placement.store_relid, self.store_relid
+            ));
+        }
+        if placement.state != SpirePlacementState::Available {
+            return Err(format!(
+                "ec_spire local object store cannot read {:?} placement",
+                placement.state
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn validate_assignment_flags(flags: u16) -> Result<(), String> {
     let unknown = flags & !SPIRE_ASSIGNMENT_KNOWN_FLAGS;
     if unknown != 0 {
@@ -446,11 +574,13 @@ fn validate_assignment_flags(flags: u16) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::meta::SpirePlacementState;
     use super::{
-        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpirePartitionObjectHeader,
-        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR,
-        SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, SPIRE_VEC_ID_MAX_BYTES,
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
+        SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireVecId,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
+        SPIRE_VEC_ID_MAX_BYTES,
     };
     use crate::storage::page::ItemPointer;
 
@@ -689,5 +819,74 @@ mod tests {
         let mut encoded = object.encode().unwrap();
         encoded.push(99);
         assert!(SpireLeafPartitionObject::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn local_object_store_writes_and_reads_leaf_object() {
+        let object = SpireLeafPartitionObject::new(
+            17,
+            3,
+            0,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 10,
+                    offset_number: 1,
+                },
+                payload_format: 1,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2],
+            }],
+        )
+        .unwrap();
+        let expected_bytes = object.encode().unwrap().len() as u32;
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let placement = store.insert_leaf_object(7, &object).unwrap();
+        let decoded = store.read_leaf_object(&placement).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(placement.epoch, 7);
+        assert_eq!(placement.pid, 17);
+        assert_eq!(placement.object_version, 3);
+        assert_eq!(placement.store_relid, 12345);
+        assert_eq!(placement.node_id, 0);
+        assert_eq!(placement.local_store_id, 0);
+        assert_eq!(placement.object_bytes, expected_bytes);
+        assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
+    fn local_object_store_rejects_invalid_store_and_epoch() {
+        assert!(SpireLocalObjectStore::with_default_page_size(0).is_err());
+        let object = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        assert!(store.insert_leaf_object(0, &object).is_err());
+        assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
+    fn local_object_store_rejects_mismatched_placement() {
+        let object = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let placement = store.insert_leaf_object(7, &object).unwrap();
+
+        let mut wrong_store = placement;
+        wrong_store.store_relid = 54321;
+        assert!(store.read_leaf_object(&wrong_store).is_err());
+
+        let mut stale = placement;
+        stale.state = SpirePlacementState::Stale;
+        assert!(store.read_leaf_object(&stale).is_err());
+
+        let mut wrong_pid = placement;
+        wrong_pid.pid = 99;
+        assert!(store.read_leaf_object(&wrong_pid).is_err());
+
+        let mut wrong_bytes = placement;
+        wrong_bytes.object_bytes += 1;
+        assert!(store.read_leaf_object(&wrong_bytes).is_err());
     }
 }
