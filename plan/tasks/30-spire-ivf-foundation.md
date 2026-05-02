@@ -130,7 +130,11 @@ Decision record:
   publishes a strict object/placement manifest snapshot before committing
   allocator cursors.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
-  candidates, and rerank using the same correctness contract as local IVF.
+  candidates, and rerank using the same correctness contract as local IVF. The
+  foundation now has helper-level root routing object discovery, strict/degraded
+  placement handling for routed leaves, single-route query-to-leaf collection,
+  and top-`nprobe` leaf selection over root child centroids. Candidate scoring,
+  rerank, and AM callback execution remain open.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters.
