@@ -130,6 +130,22 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
             input.base_pid
         ));
     }
+    let base_placement = base_snapshot
+        .placement_directory
+        .get(input.base_pid)
+        .ok_or_else(|| {
+            format!(
+                "ec_spire delta epoch base_pid {} is missing from the placement directory",
+                input.base_pid
+            )
+        })?;
+    let base_header = object_store.read_object_header(base_placement)?;
+    if base_header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire delta epoch base_pid {} must reference a leaf partition object",
+            input.base_pid
+        ));
+    }
     let epoch = input.epoch;
     let carried_manifest_entries = base_snapshot
         .object_manifest
@@ -829,6 +845,58 @@ mod tests {
         .is_err());
         assert_eq!(pid_allocator.next_pid(), 3);
         assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_delta_base_pid() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let mut first_delta_input = delta_input(vec![insert_assignment(20, 1)], Vec::new());
+        first_delta_input.base_pid = 1;
+        let first_delta = build_delta_epoch_draft_from_snapshot(
+            first_delta_input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let delta_snapshot = SpirePublishedEpochSnapshot::new(
+            &first_delta.epoch_manifest,
+            &first_delta.object_manifest,
+            &first_delta.placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut nested_delta_input = delta_input(vec![insert_assignment(30, 1)], Vec::new());
+        nested_delta_input.epoch = 9;
+        nested_delta_input.base_pid = first_delta.delta_object.header.pid;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            nested_delta_input,
+            &delta_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 3);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 3);
         assert_eq!(object_store.page_count(), initial_page_count);
     }
 
