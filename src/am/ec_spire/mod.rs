@@ -6,6 +6,7 @@ mod cost;
 mod diagnostics;
 mod insert;
 mod meta;
+mod quantizer;
 mod routine;
 mod scan;
 mod storage;
