@@ -148,7 +148,9 @@ Decision record:
 - [ ] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly
-  rebuilding `SpirePublishedEpochSnapshot`.
+  rebuilding `SpirePublishedEpochSnapshot`. The wrapper and PID lookup cache
+  have landed for scan/diagnostics helpers; update/publication helpers still
+  need migration before this item can be closed.
 - [ ] **Flat routing object layout.** Replace per-child `Vec<f32>` routing
   entries with flat `child_pids`, `centroid_ordinals`, and centroid block arrays
   before root/internal routing objects become relation-backed.

@@ -2,7 +2,10 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ptr;
 
-use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
+use super::meta::{
+    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot,
+    SpireValidatedEpochSnapshot,
+};
 use super::options::{resolve_single_level_scan_plan, EcSpireOptions, SpireSingleLevelScanPlan};
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
@@ -200,25 +203,14 @@ pub(super) fn collect_snapshot_leaf_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
-    SpirePublishedEpochSnapshot::new(
-        snapshot.epoch_manifest,
-        snapshot.object_manifest,
-        snapshot.placement_directory,
-    )?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
 
     let mut rows = Vec::new();
-    for manifest_entry in &snapshot.object_manifest.entries {
-        let placement = snapshot
-            .placement_directory
-            .get(manifest_entry.pid)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire scan snapshot missing placement for pid {}",
-                    manifest_entry.pid
-                )
-            })?;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "scan leaf row collection")?;
+        let placement = lookup.placement;
 
-        if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
 
@@ -260,12 +252,13 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
-    let (root_pid, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
     let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
 
     let mut routed = Vec::with_capacity(leaf_pids.len());
     for leaf_pid in leaf_pids {
-        let rows = collect_snapshot_leaf_rows_for_pid(snapshot, object_store, leaf_pid, root_pid)?;
+        let rows = collect_snapshot_leaf_rows_for_pid(&snapshot, object_store, leaf_pid, root_pid)?;
         routed.push(SpireRoutedLeafScanRows {
             root_pid,
             leaf_pid,
@@ -279,7 +272,8 @@ pub(super) fn count_snapshot_single_level_leaf_pids(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<u32, String> {
-    let (_, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let (_, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
     u32::try_from(root_object.children.len())
         .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())
 }
@@ -432,25 +426,14 @@ pub(super) fn collect_snapshot_delta_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireDeltaScanRow>, String> {
-    SpirePublishedEpochSnapshot::new(
-        snapshot.epoch_manifest,
-        snapshot.object_manifest,
-        snapshot.placement_directory,
-    )?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
 
     let mut rows = Vec::new();
-    for manifest_entry in &snapshot.object_manifest.entries {
-        let placement = snapshot
-            .placement_directory
-            .get(manifest_entry.pid)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire scan snapshot missing placement for pid {}",
-                    manifest_entry.pid
-                )
-            })?;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "scan delta row collection")?;
+        let placement = lookup.placement;
 
-        if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
 
@@ -592,27 +575,14 @@ fn scored_candidate_cmp(
 }
 
 fn load_snapshot_root_routing_object(
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<(u64, SpireRoutingPartitionObject), String> {
-    SpirePublishedEpochSnapshot::new(
-        snapshot.epoch_manifest,
-        snapshot.object_manifest,
-        snapshot.placement_directory,
-    )?;
-
     let mut root = None;
-    for manifest_entry in &snapshot.object_manifest.entries {
-        let placement = snapshot
-            .placement_directory
-            .get(manifest_entry.pid)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire scan snapshot missing placement for pid {}",
-                    manifest_entry.pid
-                )
-            })?;
-        if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "scan root routing load")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
 
@@ -700,25 +670,15 @@ fn inner_product(left: &[f32], right: &[f32]) -> f32 {
 }
 
 fn collect_snapshot_leaf_rows_for_pid(
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
     leaf_pid: u64,
     root_pid: u64,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
-    SpirePublishedEpochSnapshot::new(
-        snapshot.epoch_manifest,
-        snapshot.object_manifest,
-        snapshot.placement_directory,
-    )?;
-
-    let manifest_entry = snapshot.object_manifest.get(leaf_pid).ok_or_else(|| {
-        format!("ec_spire routed scan missing object manifest entry for leaf pid {leaf_pid}")
-    })?;
-    let placement = snapshot
-        .placement_directory
-        .get(leaf_pid)
-        .ok_or_else(|| format!("ec_spire routed scan missing placement for leaf pid {leaf_pid}"))?;
-    if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+    let lookup = snapshot.require_lookup(leaf_pid, "routed scan leaf")?;
+    let manifest_entry = lookup.manifest_entry;
+    let placement = lookup.placement;
+    if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
         return Ok(Vec::new());
     }
 

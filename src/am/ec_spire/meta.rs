@@ -1,5 +1,7 @@
 //! Root/control metadata, epoch, and placement-map codecs.
 
+use std::collections::HashMap;
+
 use super::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
 use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
@@ -861,6 +863,88 @@ impl<'a> SpirePublishedEpochSnapshot<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireSnapshotPidLookup<'a> {
+    pub(super) manifest_entry: &'a SpireManifestEntry,
+    pub(super) placement: &'a SpirePlacementEntry,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SpireValidatedEpochSnapshot<'a> {
+    snapshot: SpirePublishedEpochSnapshot<'a>,
+    pid_index: HashMap<u64, SpireSnapshotPidLookup<'a>>,
+}
+
+impl<'a> SpireValidatedEpochSnapshot<'a> {
+    pub(super) fn new(
+        epoch_manifest: &'a SpireEpochManifest,
+        object_manifest: &'a SpireObjectManifest,
+        placement_directory: &'a SpirePlacementDirectory,
+    ) -> Result<Self, String> {
+        Self::from_snapshot(SpirePublishedEpochSnapshot::new(
+            epoch_manifest,
+            object_manifest,
+            placement_directory,
+        )?)
+    }
+
+    pub(super) fn from_snapshot(snapshot: SpirePublishedEpochSnapshot<'a>) -> Result<Self, String> {
+        snapshot.validate()?;
+        let mut pid_index = HashMap::with_capacity(snapshot.object_manifest.entries.len());
+        for manifest_entry in &snapshot.object_manifest.entries {
+            let placement = snapshot
+                .placement_directory
+                .get(manifest_entry.pid)
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire validated snapshot missing placement for pid {}",
+                        manifest_entry.pid
+                    )
+                })?;
+            pid_index.insert(
+                manifest_entry.pid,
+                SpireSnapshotPidLookup {
+                    manifest_entry,
+                    placement,
+                },
+            );
+        }
+        Ok(Self {
+            snapshot,
+            pid_index,
+        })
+    }
+
+    pub(super) fn snapshot(&self) -> SpirePublishedEpochSnapshot<'a> {
+        self.snapshot
+    }
+
+    pub(super) fn epoch_manifest(&self) -> &'a SpireEpochManifest {
+        self.snapshot.epoch_manifest
+    }
+
+    pub(super) fn object_manifest(&self) -> &'a SpireObjectManifest {
+        self.snapshot.object_manifest
+    }
+
+    pub(super) fn placement_directory(&self) -> &'a SpirePlacementDirectory {
+        self.snapshot.placement_directory
+    }
+
+    pub(super) fn lookup(&self, pid: u64) -> Option<SpireSnapshotPidLookup<'a>> {
+        self.pid_index.get(&pid).copied()
+    }
+
+    pub(super) fn require_lookup(
+        &self,
+        pid: u64,
+        context: &str,
+    ) -> Result<SpireSnapshotPidLookup<'a>, String> {
+        self.lookup(pid)
+            .ok_or_else(|| format!("ec_spire {context} missing snapshot lookup for pid {pid}"))
+    }
+}
+
 fn validate_format_version(input: &[u8]) -> Result<(), String> {
     let format_version = u16::from_le_bytes(input.try_into().expect("format version bytes"));
     if format_version != META_FORMAT_VERSION {
@@ -877,8 +961,9 @@ mod tests {
         plan_epoch_cleanup, SpireConsistencyMode, SpireEpochManifest, SpireEpochState,
         SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
         SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
-        SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
-        SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
+        SpireValidatedEpochSnapshot, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID,
+        SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
+        SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
     use crate::storage::page::ItemPointer;
@@ -1475,6 +1560,45 @@ mod tests {
             snapshot.placement_directory.get(11).unwrap().state,
             SpirePlacementState::Available
         );
+    }
+
+    #[test]
+    fn validated_epoch_snapshot_builds_pid_lookup_cache() {
+        let epoch = published_epoch(7, SpireConsistencyMode::Strict);
+        let manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 3,
+                    placement_tid: tid(55, 4),
+                },
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 12,
+                    object_version: 4,
+                    placement_tid: tid(56, 4),
+                },
+            ],
+        )
+        .unwrap();
+        let directory = SpirePlacementDirectory::from_entries(
+            7,
+            vec![
+                SpirePlacementEntry::local_single_store(7, 12, 12345, 4, tid(45, 2), 4096),
+                SpirePlacementEntry::local_single_store(7, 11, 12345, 3, tid(44, 2), 2048),
+            ],
+        )
+        .unwrap();
+
+        let snapshot = SpireValidatedEpochSnapshot::new(&epoch, &manifest, &directory).unwrap();
+        let lookup = snapshot.require_lookup(12, "test").unwrap();
+
+        assert_eq!(snapshot.snapshot().epoch_manifest.epoch, 7);
+        assert_eq!(lookup.manifest_entry.object_version, 4);
+        assert_eq!(lookup.placement.object_tid, tid(45, 2));
+        assert!(snapshot.lookup(99).is_none());
     }
 
     #[test]

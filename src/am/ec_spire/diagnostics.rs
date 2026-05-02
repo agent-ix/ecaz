@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
+use super::meta::{
+    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot,
+    SpireValidatedEpochSnapshot,
+};
 use super::storage::{SpireLocalObjectStore, SpirePartitionObjectKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,17 +31,13 @@ pub(super) fn collect_snapshot_diagnostics(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<SpireSnapshotDiagnostics, String> {
-    SpirePublishedEpochSnapshot::new(
-        snapshot.epoch_manifest,
-        snapshot.object_manifest,
-        snapshot.placement_directory,
-    )?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
 
     let mut diagnostics = SpireSnapshotDiagnostics {
-        epoch: snapshot.epoch_manifest.epoch,
-        consistency_mode: snapshot.epoch_manifest.consistency_mode,
-        object_count: snapshot.object_manifest.entries.len(),
-        placement_count: snapshot.placement_directory.entries.len(),
+        epoch: snapshot.epoch_manifest().epoch,
+        consistency_mode: snapshot.epoch_manifest().consistency_mode,
+        object_count: snapshot.object_manifest().entries.len(),
+        placement_count: snapshot.placement_directory().entries.len(),
         local_store_count: 0,
         available_placement_count: 0,
         stale_placement_count: 0,
@@ -55,7 +54,7 @@ pub(super) fn collect_snapshot_diagnostics(
     };
     let mut local_stores = HashSet::new();
 
-    for placement in &snapshot.placement_directory.entries {
+    for placement in &snapshot.placement_directory().entries {
         local_stores.insert((placement.node_id, placement.local_store_id));
         match placement.state {
             SpirePlacementState::Available => {
