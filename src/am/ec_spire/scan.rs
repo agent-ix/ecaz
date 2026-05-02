@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::ptr;
 
 use super::meta::{
@@ -46,6 +46,63 @@ pub(super) struct SpireScoredScanCandidate {
     pub(super) vec_id: SpireVecId,
     pub(super) heap_tid: ItemPointer,
     pub(super) score: f32,
+}
+
+#[derive(Debug, Clone)]
+struct SpireScoredScanCandidateHeapEntry {
+    candidate: SpireScoredScanCandidate,
+}
+
+impl PartialEq for SpireScoredScanCandidateHeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        scored_candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
+    }
+}
+
+impl Eq for SpireScoredScanCandidateHeapEntry {}
+
+impl PartialOrd for SpireScoredScanCandidateHeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SpireScoredScanCandidateHeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        scored_candidate_cmp(&self.candidate, &other.candidate)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpireRouteCandidate {
+    centroid_index: u32,
+    child_pid: u64,
+    ip_score: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpireRouteCandidateHeapEntry {
+    candidate: SpireRouteCandidate,
+}
+
+impl PartialEq for SpireRouteCandidateHeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        route_candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
+    }
+}
+
+impl Eq for SpireRouteCandidateHeapEntry {}
+
+impl PartialOrd for SpireRouteCandidateHeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SpireRouteCandidateHeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        route_candidate_cmp(&self.candidate, &other.candidate)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -550,12 +607,10 @@ where
         }
     }
 
-    let mut candidates = candidates_by_vec_id.into_values().collect::<Vec<_>>();
-    candidates.sort_by(scored_candidate_cmp);
-    if let Some(limit) = limit {
-        candidates.truncate(limit);
-    }
-    Ok(candidates)
+    Ok(rank_bounded_scored_candidates(
+        candidates_by_vec_id.into_values(),
+        limit,
+    ))
 }
 
 fn scored_candidate_cmp(
@@ -572,6 +627,49 @@ fn scored_candidate_cmp(
         })
         .then_with(|| left.pid.cmp(&right.pid))
         .then_with(|| left.row_index.cmp(&right.row_index))
+        .then_with(|| left.vec_id.as_bytes().cmp(right.vec_id.as_bytes()))
+}
+
+fn rank_bounded_scored_candidates<I>(
+    candidates: I,
+    limit: Option<usize>,
+) -> Vec<SpireScoredScanCandidate>
+where
+    I: IntoIterator<Item = SpireScoredScanCandidate>,
+{
+    let Some(limit) = limit else {
+        let mut ranked = candidates.into_iter().collect::<Vec<_>>();
+        ranked.sort_by(scored_candidate_cmp);
+        return ranked;
+    };
+
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let mut heap = BinaryHeap::with_capacity(limit);
+    for candidate in candidates {
+        let entry = SpireScoredScanCandidateHeapEntry { candidate };
+        if heap.len() < limit {
+            heap.push(entry);
+            continue;
+        }
+
+        if heap
+            .peek()
+            .is_some_and(|worst| scored_candidate_cmp(&entry.candidate, &worst.candidate).is_lt())
+        {
+            heap.pop();
+            heap.push(entry);
+        }
+    }
+
+    let mut ranked = heap
+        .into_iter()
+        .map(|entry| entry.candidate)
+        .collect::<Vec<_>>();
+    ranked.sort_by(scored_candidate_cmp);
+    ranked
 }
 
 fn load_snapshot_root_routing_object(
@@ -615,31 +713,50 @@ fn route_root_object_to_leaf_pids(
     }
     validate_routing_query_vector(query_vector, usize::from(root_object.dimensions))?;
 
-    let mut scored_children = root_object
-        .children
-        .iter()
-        .map(|child| {
-            (
-                child.centroid_index,
-                child.child_pid,
-                inner_product(query_vector, &child.centroid),
-            )
-        })
-        .collect::<Vec<_>>();
-    scored_children.sort_by(|left, right| {
-        right
-            .2
-            .total_cmp(&left.2)
-            .then_with(|| left.0.cmp(&right.0))
-    });
-
     let requested = usize::try_from(nprobe)
         .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
+
+    let mut heap = BinaryHeap::with_capacity(requested.min(root_object.children.len()));
+    for child in &root_object.children {
+        let entry = SpireRouteCandidateHeapEntry {
+            candidate: SpireRouteCandidate {
+                centroid_index: child.centroid_index,
+                child_pid: child.child_pid,
+                ip_score: inner_product(query_vector, &child.centroid),
+            },
+        };
+        if heap.len() < requested {
+            heap.push(entry);
+            continue;
+        }
+
+        if heap
+            .peek()
+            .is_some_and(|worst| route_candidate_cmp(&entry.candidate, &worst.candidate).is_lt())
+        {
+            heap.pop();
+            heap.push(entry);
+        }
+    }
+
+    let mut scored_children = heap
+        .into_iter()
+        .map(|entry| entry.candidate)
+        .collect::<Vec<_>>();
+    scored_children.sort_by(route_candidate_cmp);
+
     Ok(scored_children
         .into_iter()
-        .take(requested)
-        .map(|(_, child_pid, _)| child_pid)
+        .map(|candidate| candidate.child_pid)
         .collect())
+}
+
+fn route_candidate_cmp(left: &SpireRouteCandidate, right: &SpireRouteCandidate) -> Ordering {
+    right
+        .ip_score
+        .total_cmp(&left.ip_score)
+        .then_with(|| left.centroid_index.cmp(&right.centroid_index))
+        .then_with(|| left.child_pid.cmp(&right.child_pid))
 }
 
 fn validate_routing_query_vector(query_vector: &[f32], dimensions: usize) -> Result<(), String> {
@@ -903,9 +1020,10 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_single_level_leaf_pids, prepare_single_level_snapshot_scan_candidates,
-        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanQuery, SpireScoredScanCandidate,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
+        route_root_object_to_leaf_pids, SpireLeafScanRow, SpireRoutedLeafScanRows,
+        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
+        SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -929,7 +1047,8 @@ mod tests {
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::am::ec_spire::storage::{
-        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
+        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -1093,6 +1212,18 @@ mod tests {
             vec_id: SpireVecId::local(vec_seq),
             heap_tid: tid(block_number, offset_number),
             score,
+        }
+    }
+
+    fn routing_child(
+        centroid_index: u32,
+        child_pid: u64,
+        centroid: Vec<f32>,
+    ) -> SpireRoutingChildEntry {
+        SpireRoutingChildEntry {
+            centroid_index,
+            child_pid,
+            centroid,
         }
     }
 
@@ -1914,6 +2045,77 @@ mod tests {
     }
 
     #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_candidates() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        1,
+                        10,
+                        1,
+                        vec![3],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 1,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        2,
+                        10,
+                        2,
+                        vec![10],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 2,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        3,
+                        10,
+                        3,
+                        vec![5],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 3,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        4,
+                        10,
+                        4,
+                        vec![7],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            Some(2),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(4));
+        assert_eq!(candidates[1].score, -7.0);
+    }
+
+    #[test]
     fn rank_routed_leaf_rows_by_ip_rejects_non_finite_scores() {
         let routed = vec![SpireRoutedLeafScanRows {
             root_pid: SPIRE_FIRST_PID,
@@ -1929,6 +2131,32 @@ mod tests {
         assert!(rank_routed_leaf_rows_by_ip(routed, |_| Ok(f32::NAN), None)
             .unwrap_err()
             .contains("non-finite"));
+    }
+
+    #[test]
+    fn route_root_object_to_leaf_pids_keeps_bounded_best_routes() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 9, vec![-2.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 1, vec![1.0, 1.0]),
+                routing_child(2, SPIRE_FIRST_PID + 2, vec![1.0, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 4, vec![2.0, 0.0]),
+                routing_child(4, SPIRE_FIRST_PID + 7, vec![0.25, 0.0]),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            route_root_object_to_leaf_pids(&root, &[1.0, 0.0], 3).unwrap(),
+            vec![
+                SPIRE_FIRST_PID + 4,
+                SPIRE_FIRST_PID + 1,
+                SPIRE_FIRST_PID + 2
+            ]
+        );
     }
 
     #[test]

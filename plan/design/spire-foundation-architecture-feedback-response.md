@@ -196,10 +196,14 @@ route_root_object_to_leaf_pids: O(children * log nprobe)
 rank_leaf_candidates:          O(rows * log limit)
 ```
 
-The ordering contract remains deterministic: higher inner-product scores rank
-first; ties break by PID, local row position, heap TID, and then `vec_id` bytes.
-When boundary replicas or remote merge are enabled, the dedupe step applies
-before final limit truncation.
+Implementation checkpoint: the row-encoded routed scan helper now keeps bounded
+max-heaps whose head is the worst retained entry, then sorts only the retained
+entries before returning them. Route selection ranks higher centroid
+inner-product first, then lower centroid index, then lower child PID. Candidate
+selection ranks lower ORDER BY score first (`score = -inner_product`), then
+lower heap TID block/offset, PID, row position, and `vec_id` bytes. When
+boundary replicas or remote merge are enabled, the explicit dedupe step applies
+before final limit selection.
 
 ## Dedup Mode
 
