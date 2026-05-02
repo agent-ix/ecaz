@@ -29,6 +29,8 @@ const PARTITION_OBJECT_MAGIC: u32 = 0x4f50_5345; // "ESPO" as little-endian byte
 const PARTITION_OBJECT_HEADER_BYTES: usize = 46;
 const ASSIGNMENT_ROW_FIXED_PREFIX_BYTES: usize = 3;
 const ASSIGNMENT_ROW_FIXED_TAIL_BYTES: usize = ITEM_POINTER_BYTES + 1 + 4 + 4;
+const ROUTING_OBJECT_BODY_PREFIX_BYTES: usize = 4;
+const ROUTING_CHILD_ENTRY_FIXED_BYTES: usize = 4 + 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct SpireVecId {
@@ -448,6 +450,252 @@ impl SpireLeafPartitionObject {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRoutingChildEntry {
+    pub(super) centroid_index: u32,
+    pub(super) child_pid: u64,
+    pub(super) centroid: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRoutingPartitionObject {
+    pub(super) header: SpirePartitionObjectHeader,
+    pub(super) dimensions: u16,
+    pub(super) children: Vec<SpireRoutingChildEntry>,
+}
+
+impl SpireRoutingPartitionObject {
+    pub(super) fn root(
+        pid: u64,
+        object_version: u64,
+        dimensions: u16,
+        children: Vec<SpireRoutingChildEntry>,
+    ) -> Result<Self, String> {
+        Self::new(
+            SpirePartitionObjectKind::Root,
+            pid,
+            object_version,
+            1,
+            0,
+            dimensions,
+            children,
+        )
+    }
+
+    pub(super) fn internal(
+        pid: u64,
+        object_version: u64,
+        level: u16,
+        parent_pid: u64,
+        dimensions: u16,
+        children: Vec<SpireRoutingChildEntry>,
+    ) -> Result<Self, String> {
+        Self::new(
+            SpirePartitionObjectKind::Internal,
+            pid,
+            object_version,
+            level,
+            parent_pid,
+            dimensions,
+            children,
+        )
+    }
+
+    fn new(
+        kind: SpirePartitionObjectKind,
+        pid: u64,
+        object_version: u64,
+        level: u16,
+        parent_pid: u64,
+        dimensions: u16,
+        children: Vec<SpireRoutingChildEntry>,
+    ) -> Result<Self, String> {
+        let child_count = u32::try_from(children.len())
+            .map_err(|_| "ec_spire routing child count exceeds u32".to_owned())?;
+        let object = Self {
+            header: SpirePartitionObjectHeader {
+                kind,
+                pid,
+                object_version,
+                level,
+                parent_pid,
+                child_count,
+                assignment_count: 0,
+                flags: 0,
+            },
+            dimensions,
+            children,
+        };
+        object.validate()?;
+        Ok(object)
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+
+        let mut out = self.header.encode()?;
+        out.extend_from_slice(&self.dimensions.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        for child in &self.children {
+            out.extend_from_slice(&child.centroid_index.to_le_bytes());
+            out.extend_from_slice(&child.child_pid.to_le_bytes());
+            for component in &child.centroid {
+                out.extend_from_slice(&component.to_le_bytes());
+            }
+        }
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let (header, tail) = SpirePartitionObjectHeader::decode_prefix(input)?;
+        if tail.len() < ROUTING_OBJECT_BODY_PREFIX_BYTES {
+            return Err(format!(
+                "ec_spire routing partition object body too short: got {}, expected at least {ROUTING_OBJECT_BODY_PREFIX_BYTES}",
+                tail.len()
+            ));
+        }
+        let dimensions = u16::from_le_bytes(tail[0..2].try_into().expect("routing dimensions"));
+        let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("routing reserved"));
+        if reserved != 0 {
+            return Err(format!(
+                "ec_spire routing partition object reserved bytes must be zero, got {reserved}"
+            ));
+        }
+
+        let child_count = usize::try_from(header.child_count)
+            .map_err(|_| "ec_spire routing child count exceeds usize".to_owned())?;
+        let centroid_bytes = usize::from(dimensions)
+            .checked_mul(size_of::<f32>())
+            .ok_or_else(|| "ec_spire routing centroid byte length overflow".to_owned())?;
+        let child_bytes = ROUTING_CHILD_ENTRY_FIXED_BYTES
+            .checked_add(centroid_bytes)
+            .ok_or_else(|| "ec_spire routing child byte length overflow".to_owned())?;
+        let expected_tail_len = child_count
+            .checked_mul(child_bytes)
+            .and_then(|children_bytes| children_bytes.checked_add(ROUTING_OBJECT_BODY_PREFIX_BYTES))
+            .ok_or_else(|| "ec_spire routing partition object length overflow".to_owned())?;
+        if tail.len() != expected_tail_len {
+            return Err(format!(
+                "ec_spire routing partition object length mismatch: got {}, expected {}",
+                tail.len(),
+                expected_tail_len
+            ));
+        }
+
+        let mut children = Vec::with_capacity(child_count);
+        let mut cursor = ROUTING_OBJECT_BODY_PREFIX_BYTES;
+        for _ in 0..child_count {
+            let centroid_index =
+                u32::from_le_bytes(tail[cursor..cursor + 4].try_into().expect("centroid index"));
+            cursor += 4;
+            let child_pid =
+                u64::from_le_bytes(tail[cursor..cursor + 8].try_into().expect("child pid"));
+            cursor += 8;
+            let mut centroid = Vec::with_capacity(usize::from(dimensions));
+            for _ in 0..dimensions {
+                centroid.push(f32::from_le_bytes(
+                    tail[cursor..cursor + 4]
+                        .try_into()
+                        .expect("centroid component"),
+                ));
+                cursor += 4;
+            }
+            children.push(SpireRoutingChildEntry {
+                centroid_index,
+                child_pid,
+                centroid,
+            });
+        }
+
+        let object = Self {
+            header,
+            dimensions,
+            children,
+        };
+        object.validate()?;
+        Ok(object)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        self.header.encode()?;
+        match self.header.kind {
+            SpirePartitionObjectKind::Root => {
+                if self.header.parent_pid != 0 {
+                    return Err("ec_spire root routing object parent_pid must be 0".to_owned());
+                }
+            }
+            SpirePartitionObjectKind::Internal => {
+                if self.header.parent_pid == 0 {
+                    return Err(
+                        "ec_spire internal routing object parent_pid 0 is invalid".to_owned()
+                    );
+                }
+            }
+            other => {
+                return Err(format!(
+                    "ec_spire routing partition object kind must be Root or Internal, got {other:?}"
+                ));
+            }
+        }
+        if self.header.level == 0 {
+            return Err("ec_spire routing partition object level 0 is invalid".to_owned());
+        }
+        if self.header.assignment_count != 0 {
+            return Err(format!(
+                "ec_spire routing partition object assignment_count must be 0, got {}",
+                self.header.assignment_count
+            ));
+        }
+        let child_count = u32::try_from(self.children.len())
+            .map_err(|_| "ec_spire routing child count exceeds u32".to_owned())?;
+        if self.header.child_count != child_count {
+            return Err(format!(
+                "ec_spire routing child count mismatch: header {}, children {child_count}",
+                self.header.child_count
+            ));
+        }
+        if self.dimensions == 0 {
+            return Err("ec_spire routing partition object dimensions 0 is invalid".to_owned());
+        }
+        if self.children.is_empty() {
+            return Err("ec_spire routing partition object requires at least one child".to_owned());
+        }
+
+        let dimensions = usize::from(self.dimensions);
+        for (expected_index, child) in self.children.iter().enumerate() {
+            let expected_index = u32::try_from(expected_index)
+                .map_err(|_| "ec_spire routing child centroid index exceeds u32".to_owned())?;
+            if child.centroid_index != expected_index {
+                return Err(format!(
+                    "ec_spire routing child centroid index mismatch: got {}, expected {expected_index}",
+                    child.centroid_index
+                ));
+            }
+            if child.child_pid == 0 {
+                return Err("ec_spire routing child pid 0 is invalid".to_owned());
+            }
+            if child.centroid.len() != dimensions {
+                return Err(format!(
+                    "ec_spire routing child centroid {} dimensions mismatch: got {}, expected {dimensions}",
+                    child.centroid_index,
+                    child.centroid.len()
+                ));
+            }
+            if child
+                .centroid
+                .iter()
+                .any(|component| !component.is_finite())
+            {
+                return Err(format!(
+                    "ec_spire routing child centroid {} must be finite",
+                    child.centroid_index
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireDeltaPartitionObject {
     pub(super) header: SpirePartitionObjectHeader,
     pub(super) assignments: Vec<SpireLeafAssignmentRow>,
@@ -626,6 +874,30 @@ impl SpireLocalObjectStore {
         Ok(placement)
     }
 
+    pub(super) fn insert_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire local object store epoch 0 is invalid".to_owned());
+        }
+        let encoded = object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = self.pages.insert_raw_tuple(encoded)?;
+        let placement = SpirePlacementEntry::local_single_store(
+            epoch,
+            object.header.pid,
+            self.store_relid,
+            object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -666,6 +938,27 @@ impl SpireLocalObjectStore {
             ));
         }
         Ok(header)
+    }
+
+    pub(super) fn read_routing_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireRoutingPartitionObject, String> {
+        let raw = self.read_object_bytes(placement)?;
+        let object = SpireRoutingPartitionObject::decode(raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        Ok(object)
     }
 
     pub(super) fn read_delta_object(
@@ -843,7 +1136,8 @@ mod tests {
     use super::super::meta::SpirePlacementState;
     use super::{
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireLocalObjectStore, SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireVecId,
+        SpireLocalObjectStore, SpirePartitionObjectHeader, SpirePartitionObjectKind,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -851,6 +1145,21 @@ mod tests {
         SPIRE_VEC_ID_MAX_BYTES,
     };
     use crate::storage::page::ItemPointer;
+
+    fn routing_children() -> Vec<SpireRoutingChildEntry> {
+        vec![
+            SpireRoutingChildEntry {
+                centroid_index: 0,
+                child_pid: 17,
+                centroid: vec![1.0, 0.0],
+            },
+            SpireRoutingChildEntry {
+                centroid_index: 1,
+                child_pid: 18,
+                centroid: vec![-1.0, 0.0],
+            },
+        ]
+    }
 
     #[test]
     fn local_vec_id_round_trips_sequence() {
@@ -925,6 +1234,78 @@ mod tests {
         header.pid = 1;
         header.object_version = 0;
         assert!(header.encode().is_err());
+    }
+
+    #[test]
+    fn routing_partition_object_round_trips_root_children() {
+        let object = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+
+        let decoded = SpireRoutingPartitionObject::decode(&object.encode().unwrap()).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(decoded.header.kind, SpirePartitionObjectKind::Root);
+        assert_eq!(decoded.header.level, 1);
+        assert_eq!(decoded.header.parent_pid, 0);
+        assert_eq!(decoded.header.child_count, 2);
+        assert_eq!(decoded.header.assignment_count, 0);
+        assert_eq!(decoded.children[0].child_pid, 17);
+        assert_eq!(decoded.children[1].centroid, vec![-1.0, 0.0]);
+    }
+
+    #[test]
+    fn routing_partition_object_round_trips_internal_children() {
+        let object =
+            SpireRoutingPartitionObject::internal(12, 4, 2, 11, 2, routing_children()).unwrap();
+
+        let decoded = SpireRoutingPartitionObject::decode(&object.encode().unwrap()).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(decoded.header.kind, SpirePartitionObjectKind::Internal);
+        assert_eq!(decoded.header.level, 2);
+        assert_eq!(decoded.header.parent_pid, 11);
+    }
+
+    #[test]
+    fn routing_partition_object_rejects_invalid_shape() {
+        assert!(SpireRoutingPartitionObject::root(11, 3, 0, routing_children()).is_err());
+        assert!(SpireRoutingPartitionObject::root(11, 3, 2, Vec::new()).is_err());
+        assert!(SpireRoutingPartitionObject::internal(12, 4, 2, 0, 2, routing_children()).is_err());
+
+        let mut children = routing_children();
+        children[1].centroid_index = 7;
+        assert!(SpireRoutingPartitionObject::root(11, 3, 2, children).is_err());
+
+        let mut children = routing_children();
+        children[0].child_pid = 0;
+        assert!(SpireRoutingPartitionObject::root(11, 3, 2, children).is_err());
+
+        let mut children = routing_children();
+        children[0].centroid = vec![1.0];
+        assert!(SpireRoutingPartitionObject::root(11, 3, 2, children).is_err());
+
+        let mut children = routing_children();
+        children[0].centroid = vec![f32::NAN, 0.0];
+        assert!(SpireRoutingPartitionObject::root(11, 3, 2, children).is_err());
+    }
+
+    #[test]
+    fn routing_partition_object_rejects_corrupt_header_and_body() {
+        let object = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let mut wrong_count = object.clone();
+        wrong_count.header.child_count = 1;
+        assert!(wrong_count.encode().is_err());
+
+        let mut wrong_kind = object.clone();
+        wrong_kind.header.kind = SpirePartitionObjectKind::Leaf;
+        assert!(wrong_kind.encode().is_err());
+
+        let mut encoded = object.encode().unwrap();
+        encoded.truncate(encoded.len() - 1);
+        assert!(SpireRoutingPartitionObject::decode(&encoded).is_err());
+
+        let mut encoded = object.encode().unwrap();
+        encoded[48] = 1;
+        assert!(SpireRoutingPartitionObject::decode(&encoded).is_err());
     }
 
     #[test]
@@ -1476,15 +1857,38 @@ mod tests {
     }
 
     #[test]
+    fn local_object_store_writes_and_reads_routing_object() {
+        let object = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let expected_bytes = object.encode().unwrap().len() as u32;
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let placement = store.insert_routing_object(7, &object).unwrap();
+        let decoded = store.read_routing_object(&placement).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(placement.epoch, 7);
+        assert_eq!(placement.pid, 11);
+        assert_eq!(placement.object_version, 3);
+        assert_eq!(placement.store_relid, 12345);
+        assert_eq!(placement.node_id, 0);
+        assert_eq!(placement.local_store_id, 0);
+        assert_eq!(placement.object_bytes, expected_bytes);
+        assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
     fn local_object_store_reads_object_headers_for_dispatch() {
         let leaf = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
         let delta = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
+        let root = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
         let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
 
         let leaf_placement = store.insert_leaf_object(7, &leaf).unwrap();
         let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+        let root_placement = store.insert_routing_object(7, &root).unwrap();
         let leaf_header = store.read_object_header(&leaf_placement).unwrap();
         let delta_header = store.read_object_header(&delta_placement).unwrap();
+        let root_header = store.read_object_header(&root_placement).unwrap();
 
         assert_eq!(leaf_header.kind, SpirePartitionObjectKind::Leaf);
         assert_eq!(leaf_header.pid, 17);
@@ -1492,6 +1896,9 @@ mod tests {
         assert_eq!(delta_header.kind, SpirePartitionObjectKind::Delta);
         assert_eq!(delta_header.pid, 19);
         assert_eq!(delta_header.object_version, 4);
+        assert_eq!(root_header.kind, SpirePartitionObjectKind::Root);
+        assert_eq!(root_header.pid, 11);
+        assert_eq!(root_header.object_version, 3);
     }
 
     #[test]
@@ -1505,6 +1912,9 @@ mod tests {
 
         let delta = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
         assert!(store.insert_delta_object(0, &delta).is_err());
+
+        let root = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        assert!(store.insert_routing_object(0, &root).is_err());
     }
 
     #[test]
@@ -1555,5 +1965,28 @@ mod tests {
         let mut wrong_bytes = placement;
         wrong_bytes.object_bytes += 1;
         assert!(store.read_delta_object(&wrong_bytes).is_err());
+    }
+
+    #[test]
+    fn local_object_store_rejects_mismatched_routing_placement() {
+        let object = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let placement = store.insert_routing_object(7, &object).unwrap();
+
+        let mut wrong_store = placement;
+        wrong_store.store_relid = 54321;
+        assert!(store.read_routing_object(&wrong_store).is_err());
+
+        let mut stale = placement;
+        stale.state = SpirePlacementState::Stale;
+        assert!(store.read_routing_object(&stale).is_err());
+
+        let mut wrong_pid = placement;
+        wrong_pid.pid = 99;
+        assert!(store.read_routing_object(&wrong_pid).is_err());
+
+        let mut wrong_bytes = placement;
+        wrong_bytes.object_bytes += 1;
+        assert!(store.read_routing_object(&wrong_bytes).is_err());
     }
 }
