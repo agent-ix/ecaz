@@ -4,7 +4,8 @@ use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpoch
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-    SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
+    SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use pgrx::pg_sys;
 
@@ -156,7 +157,8 @@ pub(super) fn collect_snapshot_visible_primary_rows(
 fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
     let blocked_flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
         | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
-        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
+        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
+        | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
     assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && assignment.flags & blocked_flags == 0
 }
 
@@ -234,7 +236,7 @@ mod tests {
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-        SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+        SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
     };
     use crate::am::ec_spire::update::{
         build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
@@ -422,13 +424,17 @@ mod tests {
                     SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
                     3,
                 ),
+                assignment_row(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
+                    4,
+                ),
                 assignment_row(0, 5),
             ],
         )
         .unwrap();
         let leaf_placement = object_store.insert_leaf_object(7, &object).unwrap();
         let delta_object =
-            SpireDeltaPartitionObject::new(12, 1, 11, vec![delete_assignment_row(4, 10, 4)])
+            SpireDeltaPartitionObject::new(12, 1, 11, vec![delete_assignment_row(6, 10, 6)])
                 .unwrap();
         let delta_placement = object_store.insert_delta_object(7, &delta_object).unwrap();
         let epoch_manifest = SpireEpochManifest {
