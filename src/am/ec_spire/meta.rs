@@ -514,6 +514,16 @@ impl SpireEpochManifest {
         }
         Ok(())
     }
+
+    pub(super) fn cleanup_eligible_at(&self, now_micros: i64) -> bool {
+        match self.state {
+            SpireEpochState::Building | SpireEpochState::Published => false,
+            SpireEpochState::Retired => {
+                self.active_query_count == 0 && now_micros >= self.retain_until_micros
+            }
+            SpireEpochState::Failed => now_micros >= self.retain_until_micros,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1139,6 +1149,56 @@ mod tests {
         manifest.published_at_micros = 2000;
         manifest.retain_until_micros = 1000;
         assert!(manifest.encode().is_err());
+    }
+
+    #[test]
+    fn cleanup_eligibility_keeps_building_and_published_epochs() {
+        let building = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Building,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 0,
+            retain_until_micros: 0,
+            active_query_count: 0,
+        };
+        let published = published_epoch(8, SpireConsistencyMode::Strict);
+
+        assert!(!building.cleanup_eligible_at(i64::MAX));
+        assert!(!published.cleanup_eligible_at(i64::MAX));
+    }
+
+    #[test]
+    fn cleanup_eligibility_keeps_retired_epochs_until_retention_and_queries_clear() {
+        let mut retired = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Retired,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 1,
+        };
+
+        assert!(!retired.cleanup_eligible_at(1999));
+        assert!(!retired.cleanup_eligible_at(2000));
+
+        retired.active_query_count = 0;
+        assert!(!retired.cleanup_eligible_at(1999));
+        assert!(retired.cleanup_eligible_at(2000));
+    }
+
+    #[test]
+    fn cleanup_eligibility_uses_failed_epoch_retain_until() {
+        let failed = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Failed,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 0,
+            retain_until_micros: 2000,
+            active_query_count: 99,
+        };
+
+        assert!(!failed.cleanup_eligible_at(1999));
+        assert!(failed.cleanup_eligible_at(2000));
     }
 
     #[test]
