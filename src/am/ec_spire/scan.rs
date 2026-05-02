@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::ptr;
 
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
 use super::options::SpireSingleLevelScanPlan;
@@ -11,7 +12,7 @@ use super::storage::{
     SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use crate::storage::page::ItemPointer;
-use pgrx::{pg_sys, IntoDatum};
+use pgrx::{pg_sys, IntoDatum, PgBox, PgMemoryContexts};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafScanRow {
@@ -61,6 +62,50 @@ impl From<&SpireScoredScanCandidate> for SpireScanOutput {
     }
 }
 
+#[derive(Debug)]
+struct SpireScanOpaque {
+    rescan_called: bool,
+    query_vector: Vec<f32>,
+    scan_plan: Option<SpireSingleLevelScanPlan>,
+    cursor: SpireScanCandidateCursor,
+}
+
+impl Default for SpireScanOpaque {
+    fn default() -> Self {
+        Self {
+            rescan_called: false,
+            query_vector: Vec::new(),
+            scan_plan: None,
+            cursor: SpireScanCandidateCursor::default(),
+        }
+    }
+}
+
+impl SpireScanOpaque {
+    fn reset_for_candidates(
+        &mut self,
+        query_vector: Vec<f32>,
+        scan_plan: SpireSingleLevelScanPlan,
+        candidates: Vec<SpireScoredScanCandidate>,
+    ) {
+        self.rescan_called = true;
+        self.query_vector = query_vector;
+        self.scan_plan = Some(scan_plan);
+        self.cursor.reset(candidates);
+    }
+
+    fn clear_scan_work(&mut self) {
+        self.rescan_called = false;
+        self.query_vector.clear();
+        self.scan_plan = None;
+        self.cursor.reset(Vec::new());
+    }
+
+    fn next_output(&mut self) -> Option<SpireScanOutput> {
+        self.cursor.next_output()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireScanCandidateCursor {
     candidates: Vec<SpireScoredScanCandidate>,
@@ -101,6 +146,12 @@ impl SpireScanCandidateCursor {
 
     pub(super) fn reset(&mut self, candidates: Vec<SpireScoredScanCandidate>) {
         *self = Self::new(candidates);
+    }
+}
+
+impl Default for SpireScanCandidateCursor {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
 }
 
@@ -687,11 +738,26 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
-    _index_relation: pg_sys::Relation,
-    _nkeys: std::ffi::c_int,
-    _norderbys: std::ffi::c_int,
+    index_relation: pg_sys::Relation,
+    nkeys: std::ffi::c_int,
+    norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("ambeginscan")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+            if scan.is_null() {
+                pgrx::error!("ec_spire failed to allocate scan descriptor");
+            }
+
+            let opaque = PgBox::<SpireScanOpaque>::alloc_in_context(PgMemoryContexts::For(
+                pg_sys::CurrentMemoryContext,
+            ));
+            ptr::write(opaque.as_ptr(), SpireScanOpaque::default());
+            (*scan).parallel_scan = ptr::null_mut();
+            (*scan).opaque = opaque.into_pg().cast();
+            scan
+        })
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
@@ -705,14 +771,58 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
-    _scan: pg_sys::IndexScanDesc,
-    _direction: pg_sys::ScanDirection::Type,
+    scan: pg_sys::IndexScanDesc,
+    direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("amgettuple")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                pgrx::error!("ec_spire amgettuple received a null scan descriptor");
+            }
+            if direction != pg_sys::ScanDirection::ForwardScanDirection {
+                pgrx::error!("ec_spire amgettuple only supports forward scan direction");
+            }
+            let opaque_ptr = (*scan).opaque.cast::<SpireScanOpaque>();
+            if opaque_ptr.is_null() {
+                pgrx::error!("ec_spire amgettuple missing scan opaque state");
+            }
+            let opaque = &mut *opaque_ptr;
+            if !opaque.rescan_called {
+                pgrx::error!("ec_spire amgettuple requires amrescan before scan execution");
+            }
+
+            match opaque.next_output() {
+                Some(output) => {
+                    set_scan_heap_tid(scan, output.heap_tid);
+                    set_scan_orderby_score(scan, output.orderby_score);
+                    (*scan).xs_recheck = false;
+                    (*scan).xs_recheckorderby = false;
+                    true
+                }
+                None => {
+                    clear_scan_orderby_output(scan);
+                    false
+                }
+            }
+        })
+    }
 }
 
-pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexScanDesc) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("amendscan")) }
+pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                return;
+            }
+
+            let opaque_ptr = (*scan).opaque.cast::<SpireScanOpaque>();
+            if !opaque_ptr.is_null() {
+                ptr::drop_in_place(opaque_ptr);
+                pg_sys::pfree(opaque_ptr.cast());
+                (*scan).opaque = ptr::null_mut();
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -724,7 +834,7 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOutput,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
         SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
@@ -1755,6 +1865,64 @@ mod tests {
             })
         );
         assert!(cursor.next_output().is_none());
+    }
+
+    #[test]
+    fn scan_opaque_reset_stores_query_plan_and_candidate_cursor() {
+        let mut opaque = SpireScanOpaque::default();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 1,
+            nprobe: 1,
+            nprobe_source: "relation",
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 1,
+            rerank_width_source: "relation",
+            candidate_limit: Some(1),
+        };
+
+        opaque.reset_for_candidates(
+            vec![1.0, 0.0],
+            scan_plan,
+            vec![scored_candidate(9, 50, 4, -9.0)],
+        );
+
+        assert!(opaque.rescan_called);
+        assert_eq!(opaque.query_vector, vec![1.0, 0.0]);
+        assert_eq!(opaque.scan_plan, Some(scan_plan));
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(50, 4),
+                orderby_score: -9.0,
+            })
+        );
+        assert!(opaque.next_output().is_none());
+    }
+
+    #[test]
+    fn scan_opaque_clear_scan_work_drops_rescan_state() {
+        let mut opaque = SpireScanOpaque::default();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 1,
+            nprobe: 1,
+            nprobe_source: "relation",
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 1,
+            rerank_width_source: "relation",
+            candidate_limit: Some(1),
+        };
+        opaque.reset_for_candidates(
+            vec![1.0, 0.0],
+            scan_plan,
+            vec![scored_candidate(9, 50, 4, -9.0)],
+        );
+
+        opaque.clear_scan_work();
+
+        assert!(!opaque.rescan_called);
+        assert!(opaque.query_vector.is_empty());
+        assert_eq!(opaque.scan_plan, None);
+        assert!(opaque.next_output().is_none());
     }
 
     #[test]
