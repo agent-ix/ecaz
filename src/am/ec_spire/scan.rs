@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
@@ -118,10 +120,37 @@ pub(super) fn collect_snapshot_visible_primary_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
-    Ok(collect_snapshot_leaf_rows(snapshot, object_store)?
-        .into_iter()
-        .filter(|row| is_visible_primary_assignment(&row.assignment))
-        .collect())
+    let delta_rows = collect_snapshot_delta_rows(snapshot, object_store)?;
+    let deleted_vec_ids: HashSet<_> = delta_rows
+        .iter()
+        .filter(|row| is_delete_delta_assignment(&row.assignment))
+        .map(|row| row.assignment.vec_id.clone())
+        .collect();
+
+    let mut visible_rows = Vec::new();
+    visible_rows.extend(
+        collect_snapshot_leaf_rows(snapshot, object_store)?
+            .into_iter()
+            .filter(|row| {
+                is_visible_primary_assignment(&row.assignment)
+                    && !deleted_vec_ids.contains(&row.assignment.vec_id)
+            }),
+    );
+    visible_rows.extend(delta_rows.into_iter().filter_map(|row| {
+        if is_visible_primary_assignment(&row.assignment)
+            && !deleted_vec_ids.contains(&row.assignment.vec_id)
+        {
+            Some(SpireLeafScanRow {
+                pid: row.pid,
+                object_version: row.object_version,
+                row_index: row.row_index,
+                assignment: row.assignment,
+            })
+        } else {
+            None
+        }
+    }));
+    Ok(visible_rows)
 }
 
 fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
@@ -129,6 +158,10 @@ fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
         | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
         | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
     assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && assignment.flags & blocked_flags == 0
+}
+
+fn is_delete_delta_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
+    assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE != 0
 }
 
 fn should_skip_placement(
@@ -452,6 +485,7 @@ mod tests {
 
         let leaf_rows = collect_snapshot_leaf_rows(&snapshot, &object_store).unwrap();
         let delta_rows = collect_snapshot_delta_rows(&snapshot, &object_store).unwrap();
+        let visible_rows = collect_snapshot_visible_primary_rows(&snapshot, &object_store).unwrap();
 
         assert_eq!(leaf_rows.len(), 1);
         assert_eq!(leaf_rows[0].pid, SPIRE_FIRST_PID);
@@ -466,5 +500,9 @@ mod tests {
             delta_rows[1].assignment.flags,
             SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
         );
+        assert_eq!(visible_rows.len(), 1);
+        assert_eq!(visible_rows[0].pid, SPIRE_FIRST_PID + 1);
+        assert_eq!(visible_rows[0].assignment.heap_tid, tid(20, 1));
+        assert_eq!(visible_rows[0].assignment.vec_id.local_sequence(), Some(2));
     }
 }
