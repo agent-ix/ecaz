@@ -9,7 +9,8 @@ ranked candidates through injected and concrete quantized scorer paths, dedupe
 by `vec_id`, and compose quantized candidate collection with the exact-rerank
 seam. Assignment payload scoring now reuses the existing TurboQuant and RaBitQ
 quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains deferred
-until grouped-PQ model metadata is persisted. Live PostgreSQL relation-backed
+until grouped-PQ model metadata is persisted. AM option/GUC plumbing exists for
+single-level build and scan parameters. Live PostgreSQL relation-backed
 build/scan persistence remains intentionally unwired. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
@@ -151,6 +152,13 @@ Decision record:
   dedupe, candidate limiting, and exact-rerank callback application. Heap rerank
   callback implementation, AM callback execution, and PQ-FastScan scorer
   binding remain open.
+- [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
+  session GUCs for the single-level foundation before AM callbacks consume
+  them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
+  `rerank_width`, `training_sample_rows`, `seed`, `pq_group_size`,
+  `storage_format`, and `quantizer`; session overrides exist for
+  `ec_spire.nprobe` and `ec_spire.rerank_width`. Option consumption by live
+  build/scan callbacks remains part of those open tasks.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
