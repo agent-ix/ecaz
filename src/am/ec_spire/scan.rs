@@ -139,6 +139,37 @@ where
     rank_routed_leaf_rows_by_ip(routed_rows, score_ip, limit)
 }
 
+pub(super) fn rerank_scored_candidates_by_ip<F>(
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    rerank_width: usize,
+    mut exact_score_ip: F,
+) -> Result<(), String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+{
+    let rerank_len = if rerank_width == 0 {
+        candidates.len()
+    } else {
+        rerank_width.min(candidates.len())
+    };
+
+    for candidate in candidates.iter_mut().take(rerank_len) {
+        let ip = exact_score_ip(candidate)?;
+        if !ip.is_finite() {
+            return Err(
+                "ec_spire routed candidate reranker returned a non-finite score".to_owned(),
+            );
+        }
+        candidate.score = -ip;
+    }
+
+    candidates[..rerank_len].sort_by(scored_candidate_cmp);
+    if rerank_width > 0 {
+        candidates.truncate(rerank_len);
+    }
+    Ok(())
+}
+
 pub(super) fn collect_snapshot_delta_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
@@ -526,7 +557,8 @@ mod tests {
         collect_ranked_routed_probe_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
-        rank_routed_leaf_rows_by_ip, SpireLeafScanRow, SpireRoutedLeafScanRows,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
+        SpireRoutedLeafScanRows, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -678,6 +710,22 @@ mod tests {
             payload_format: 0,
             gamma: 0.0,
             encoded_payload: Vec::new(),
+        }
+    }
+
+    fn scored_candidate(
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+        score: f32,
+    ) -> SpireScoredScanCandidate {
+        SpireScoredScanCandidate {
+            pid: SPIRE_FIRST_PID + vec_seq,
+            object_version: 1,
+            row_index: u32::from(offset_number),
+            vec_id: SpireVecId::local(vec_seq),
+            heap_tid: tid(block_number, offset_number),
+            score,
         }
     }
 
@@ -1138,6 +1186,63 @@ mod tests {
         assert!(rank_routed_leaf_rows_by_ip(routed, |_| Ok(f32::NAN), None)
             .unwrap_err()
             .contains("non-finite"));
+    }
+
+    #[test]
+    fn rerank_scored_candidates_by_ip_rescores_prefix_and_truncates() {
+        let mut candidates = vec![
+            scored_candidate(1, 10, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 10, 3, -3.0),
+        ];
+
+        rerank_scored_candidates_by_ip(&mut candidates, 2, |candidate| {
+            Ok(match candidate.vec_id.local_sequence().unwrap() {
+                1 => 1.0,
+                2 => 10.0,
+                other => panic!("unexpected rerank candidate {other}"),
+            })
+        })
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn rerank_scored_candidates_by_ip_zero_width_rescores_all() {
+        let mut candidates = vec![
+            scored_candidate(1, 10, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 10, 3, -3.0),
+        ];
+
+        rerank_scored_candidates_by_ip(&mut candidates, 0, |candidate| {
+            Ok(candidate.heap_tid.offset_number as f32)
+        })
+        .unwrap();
+
+        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates[0].heap_tid, tid(10, 3));
+        assert_eq!(candidates[0].score, -3.0);
+        assert_eq!(candidates[1].heap_tid, tid(10, 2));
+        assert_eq!(candidates[1].score, -2.0);
+        assert_eq!(candidates[2].heap_tid, tid(10, 1));
+        assert_eq!(candidates[2].score, -1.0);
+    }
+
+    #[test]
+    fn rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
+        let mut candidates = vec![scored_candidate(1, 10, 1, -5.0)];
+
+        assert!(
+            rerank_scored_candidates_by_ip(&mut candidates, 0, |_| Ok(f32::INFINITY))
+                .unwrap_err()
+                .contains("non-finite")
+        );
     }
 
     #[test]
