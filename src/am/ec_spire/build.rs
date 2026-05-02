@@ -32,6 +32,13 @@ pub(super) struct SpireSingleLevelBuildDraft {
     pub(super) next_local_vec_seq: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireEncodedManifestBundle {
+    pub(super) epoch_manifest: Vec<u8>,
+    pub(super) object_manifest: Vec<u8>,
+    pub(super) placement_directory: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpirePublishedManifestLocators {
     pub(super) epoch_manifest_tid: ItemPointer,
@@ -40,6 +47,19 @@ pub(super) struct SpirePublishedManifestLocators {
 }
 
 impl SpireSingleLevelBuildDraft {
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        SpirePublishedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )?;
+        Ok(SpireEncodedManifestBundle {
+            epoch_manifest: self.epoch_manifest.encode()?,
+            object_manifest: self.object_manifest.encode()?,
+            placement_directory: self.placement_directory.encode()?,
+        })
+    }
+
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
@@ -133,6 +153,9 @@ mod tests {
         SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::meta::{SpireConsistencyMode, SpirePublishedEpochSnapshot};
+    use crate::am::ec_spire::meta::{
+        SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
+    };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::storage::page::ItemPointer;
 
@@ -247,6 +270,26 @@ mod tests {
         locators.object_manifest_tid = ItemPointer::INVALID;
 
         assert!(draft.root_control_state(locators).is_err());
+    }
+
+    #[test]
+    fn single_level_draft_encodes_manifest_bundle() {
+        let (draft, _, _, _) = build_valid_draft();
+
+        let encoded = draft.encode_manifest_bundle().unwrap();
+
+        assert_eq!(
+            SpireEpochManifest::decode(&encoded.epoch_manifest).unwrap(),
+            draft.epoch_manifest
+        );
+        assert_eq!(
+            SpireObjectManifest::decode(&encoded.object_manifest).unwrap(),
+            draft.object_manifest
+        );
+        assert_eq!(
+            SpirePlacementDirectory::decode(&encoded.placement_directory).unwrap(),
+            draft.placement_directory
+        );
     }
 
     #[test]
