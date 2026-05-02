@@ -11,6 +11,8 @@ pub(super) const SPIRE_MAX_RETAINED_RETIRED_EPOCHS: u16 = 2;
 const META_FORMAT_VERSION: u16 = 1;
 const PLACEMENT_DIRECTORY_MAGIC: u32 = 0x4450_5345; // "ESPD" as little-endian bytes.
 const PLACEMENT_DIRECTORY_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
+const OBJECT_MANIFEST_MAGIC: u32 = 0x4d4f_5345; // "ESOM" as little-endian bytes.
+const OBJECT_MANIFEST_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const PLACEMENT_ENTRY_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 4 + 4 + 4 + 8 + ITEM_POINTER_BYTES + 4;
 const EPOCH_MANIFEST_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 8 + 8;
 const MANIFEST_ENTRY_BYTES: usize = 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES;
@@ -450,6 +452,126 @@ impl SpireManifestEntry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireObjectManifest {
+    pub(super) epoch: u64,
+    pub(super) entries: Vec<SpireManifestEntry>,
+}
+
+impl SpireObjectManifest {
+    pub(super) fn from_entries(
+        epoch: u64,
+        mut entries: Vec<SpireManifestEntry>,
+    ) -> Result<Self, String> {
+        if epoch == 0 {
+            return Err("ec_spire object manifest epoch 0 is invalid".to_owned());
+        }
+        entries.sort_by_key(|entry| entry.pid);
+        let manifest = Self { epoch, entries };
+        manifest.validate()?;
+        Ok(manifest)
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let entry_count = u32::try_from(self.entries.len())
+            .map_err(|_| "ec_spire object manifest entry count exceeds u32".to_owned())?;
+
+        let mut out = Vec::with_capacity(
+            OBJECT_MANIFEST_HEADER_BYTES + self.entries.len() * MANIFEST_ENTRY_BYTES,
+        );
+        out.extend_from_slice(&OBJECT_MANIFEST_MAGIC.to_le_bytes());
+        out.extend_from_slice(&META_FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.epoch.to_le_bytes());
+        out.extend_from_slice(&entry_count.to_le_bytes());
+        for entry in &self.entries {
+            out.extend_from_slice(&entry.encode()?);
+        }
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < OBJECT_MANIFEST_HEADER_BYTES {
+            return Err(format!(
+                "ec_spire object manifest too short: got {}, expected at least {OBJECT_MANIFEST_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        let magic = u32::from_le_bytes(input[0..4].try_into().expect("manifest magic bytes"));
+        if magic != OBJECT_MANIFEST_MAGIC {
+            return Err(format!(
+                "ec_spire invalid object manifest magic: {magic:#x}"
+            ));
+        }
+        validate_format_version(&input[4..6])?;
+        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+        if reserved != 0 {
+            return Err(format!(
+                "ec_spire object manifest reserved bytes must be zero, got {reserved}"
+            ));
+        }
+        let epoch = u64::from_le_bytes(input[8..16].try_into().expect("manifest epoch bytes"));
+        let entry_count =
+            u32::from_le_bytes(input[16..20].try_into().expect("manifest count bytes")) as usize;
+        let expected_len = entry_count
+            .checked_mul(MANIFEST_ENTRY_BYTES)
+            .and_then(|entry_bytes| entry_bytes.checked_add(OBJECT_MANIFEST_HEADER_BYTES))
+            .ok_or_else(|| "ec_spire object manifest length overflow".to_owned())?;
+        if input.len() != expected_len {
+            return Err(format!(
+                "ec_spire object manifest length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+
+        let mut entries = Vec::with_capacity(entry_count);
+        let mut cursor = OBJECT_MANIFEST_HEADER_BYTES;
+        for _ in 0..entry_count {
+            let entry = SpireManifestEntry::decode(&input[cursor..cursor + MANIFEST_ENTRY_BYTES])?;
+            entries.push(entry);
+            cursor += MANIFEST_ENTRY_BYTES;
+        }
+        Self::from_entries(epoch, entries)
+    }
+
+    pub(super) fn get(&self, pid: u64) -> Option<&SpireManifestEntry> {
+        self.entries
+            .binary_search_by_key(&pid, |entry| entry.pid)
+            .ok()
+            .map(|index| &self.entries[index])
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.epoch == 0 {
+            return Err("ec_spire object manifest epoch 0 is invalid".to_owned());
+        }
+        let mut previous_pid = None;
+        for entry in &self.entries {
+            entry.validate()?;
+            if entry.epoch != self.epoch {
+                return Err(format!(
+                    "ec_spire object manifest epoch mismatch: manifest {}, entry {}",
+                    self.epoch, entry.epoch
+                ));
+            }
+            if let Some(previous_pid) = previous_pid {
+                if entry.pid == previous_pid {
+                    return Err(format!(
+                        "ec_spire object manifest duplicate pid: {}",
+                        entry.pid
+                    ));
+                }
+                if entry.pid < previous_pid {
+                    return Err("ec_spire object manifest entries must be sorted".to_owned());
+                }
+            }
+            previous_pid = Some(entry.pid);
+        }
+        Ok(())
+    }
+}
+
 fn validate_format_version(input: &[u8]) -> Result<(), String> {
     let format_version = u16::from_le_bytes(input.try_into().expect("format version bytes"));
     if format_version != META_FORMAT_VERSION {
@@ -464,7 +586,7 @@ fn validate_format_version(input: &[u8]) -> Result<(), String> {
 mod tests {
     use super::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-        SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
         SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
     };
@@ -738,5 +860,94 @@ mod tests {
         let mut encoded = entry.encode().unwrap();
         encoded[2] = 1;
         assert!(SpireManifestEntry::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn object_manifest_sorts_and_round_trips_entries() {
+        let manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 21,
+                    object_version: 4,
+                    placement_tid: tid(45, 2),
+                },
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 3,
+                    placement_tid: tid(44, 2),
+                },
+            ],
+        )
+        .unwrap();
+
+        let decoded = SpireObjectManifest::decode(&manifest.encode().unwrap()).unwrap();
+
+        assert_eq!(decoded, manifest);
+        assert_eq!(decoded.entries[0].pid, 11);
+        assert_eq!(decoded.entries[1].pid, 21);
+        assert_eq!(decoded.get(21).unwrap().object_version, 4);
+        assert!(decoded.get(99).is_none());
+    }
+
+    #[test]
+    fn object_manifest_rejects_duplicate_pid_and_epoch_mismatch() {
+        assert!(SpireObjectManifest::from_entries(
+            7,
+            vec![
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 3,
+                    placement_tid: tid(44, 2),
+                },
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 4,
+                    placement_tid: tid(45, 2),
+                },
+            ],
+        )
+        .is_err());
+
+        assert!(SpireObjectManifest::from_entries(
+            7,
+            vec![SpireManifestEntry {
+                epoch: 8,
+                pid: 11,
+                object_version: 3,
+                placement_tid: tid(44, 2),
+            }],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn object_manifest_rejects_corrupt_header_and_length() {
+        let manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![SpireManifestEntry {
+                epoch: 7,
+                pid: 11,
+                object_version: 3,
+                placement_tid: tid(44, 2),
+            }],
+        )
+        .unwrap();
+        let mut encoded = manifest.encode().unwrap();
+
+        encoded[0] = 0;
+        assert!(SpireObjectManifest::decode(&encoded).is_err());
+
+        encoded = manifest.encode().unwrap();
+        encoded[6] = 1;
+        assert!(SpireObjectManifest::decode(&encoded).is_err());
+
+        encoded = manifest.encode().unwrap();
+        encoded.push(99);
+        assert!(SpireObjectManifest::decode(&encoded).is_err());
     }
 }
