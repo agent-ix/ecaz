@@ -5,14 +5,15 @@ Status: in progress — Phase 0 storage design checkpoint recorded in
 SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
 draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
-ranked candidates through an injected scorer, dedupe by `vec_id`, and run an
-injected exact-rerank seam. Assignment payload scoring now reuses the existing
-TurboQuant and RaBitQ quantizers behind a SPIRE-owned row scorer, while
-PQ-FastScan remains deferred until grouped-PQ model metadata is persisted. Live
-PostgreSQL relation-backed build/scan persistence remains intentionally
-unwired. Task 30 implements ADR-049 in stages: first a debuggable single-level
-IVF foundation with SPIRE-compatible partition-object storage, then recursive
-SPIRE routing, local multi-NVMe placement, and later multi-machine placement.
+ranked candidates through injected and concrete quantized scorer paths, dedupe
+by `vec_id`, and run an injected exact-rerank seam. Assignment payload scoring
+now reuses the existing TurboQuant and RaBitQ quantizers behind a SPIRE-owned
+row scorer, while PQ-FastScan remains deferred until grouped-PQ model metadata
+is persisted. Live PostgreSQL relation-backed build/scan persistence remains
+intentionally unwired. Task 30 implements ADR-049 in stages: first a debuggable
+single-level IVF foundation with SPIRE-compatible partition-object storage,
+then recursive SPIRE routing, local multi-NVMe placement, and later
+multi-machine placement.
 
 ## Scope
 
@@ -142,9 +143,10 @@ Decision record:
   top-`nprobe` leaf selection over root child centroids, visible-primary
   candidate scoring through an injected scorer, `vec_id` dedupe, deterministic
   score ordering, and an injected exact-rerank seam. Stored assignment payload
-  scoring now has TurboQuant and RaBitQ prepared-scorer support; heap rerank
-  callback integration, AM callback execution, and PQ-FastScan scorer binding
-  remain open.
+  scoring now has TurboQuant and RaBitQ prepared-scorer support, and the routed
+  scan helper can prepare that scorer directly for real encoded assignment rows.
+  Heap rerank callback integration, AM callback execution, and PQ-FastScan
+  scorer binding remain open.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
