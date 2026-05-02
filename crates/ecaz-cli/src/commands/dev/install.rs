@@ -93,7 +93,7 @@ async fn run_ecaz_pg_test(args: InstallEcazPgTestArgs) -> Result<()> {
     let installed_backend =
         pg_config_value(&install.pg_config, "--pkglibdir")?.join(ecaz_installed_library_name());
     assert_matching_backend(&release_artifact, &installed_backend)?;
-    crate::ecaz_println!("[install] backend .so assertion passed");
+    crate::ecaz_println!("[install] backend artifact assertion passed");
     crate::ecaz_println!(
         "[install] installed_backend={}",
         installed_backend.display()
