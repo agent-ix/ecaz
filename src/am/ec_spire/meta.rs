@@ -526,6 +526,61 @@ impl SpireEpochManifest {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireEpochCleanupPlan {
+    pub(super) cleanup_epochs: Vec<u64>,
+    pub(super) retained_retired_epochs: Vec<u64>,
+}
+
+pub(super) fn plan_epoch_cleanup(
+    manifests: &[SpireEpochManifest],
+    active_epoch: u64,
+    now_micros: i64,
+) -> Result<SpireEpochCleanupPlan, String> {
+    let mut epochs = Vec::with_capacity(manifests.len());
+    for manifest in manifests {
+        manifest.validate()?;
+        if epochs.contains(&manifest.epoch) {
+            return Err(format!(
+                "ec_spire cleanup plan duplicate epoch: {}",
+                manifest.epoch
+            ));
+        }
+        epochs.push(manifest.epoch);
+    }
+
+    let mut retained_retired_epochs: Vec<u64> = manifests
+        .iter()
+        .filter(|manifest| manifest.state == SpireEpochState::Retired)
+        .map(|manifest| manifest.epoch)
+        .collect();
+    retained_retired_epochs.sort_unstable_by(|left, right| right.cmp(left));
+    retained_retired_epochs.truncate(usize::from(SPIRE_MAX_RETAINED_RETIRED_EPOCHS));
+    retained_retired_epochs.sort_unstable();
+
+    let mut cleanup_epochs = Vec::new();
+    for manifest in manifests {
+        if manifest.epoch == active_epoch {
+            continue;
+        }
+        if !manifest.cleanup_eligible_at(now_micros) {
+            continue;
+        }
+        if manifest.state == SpireEpochState::Retired
+            && retained_retired_epochs.contains(&manifest.epoch)
+        {
+            continue;
+        }
+        cleanup_epochs.push(manifest.epoch);
+    }
+    cleanup_epochs.sort_unstable();
+
+    Ok(SpireEpochCleanupPlan {
+        cleanup_epochs,
+        retained_retired_epochs,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpireManifestEntry {
     pub(super) epoch: u64,
@@ -810,11 +865,11 @@ fn validate_format_version(input: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpirePublishedEpochSnapshot, SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS,
-        SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
-        SPIRE_SINGLE_LOCAL_STORE_ID,
+        plan_epoch_cleanup, SpireConsistencyMode, SpireEpochManifest, SpireEpochState,
+        SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
+        SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
+        SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
+        SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
     use crate::storage::page::ItemPointer;
@@ -833,6 +888,32 @@ mod tests {
             consistency_mode,
             published_at_micros: 1000,
             retain_until_micros: 2000,
+            active_query_count: 0,
+        }
+    }
+
+    fn retired_epoch(
+        epoch: u64,
+        retain_until_micros: i64,
+        active_query_count: u64,
+    ) -> SpireEpochManifest {
+        SpireEpochManifest {
+            epoch,
+            state: SpireEpochState::Retired,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros,
+            active_query_count,
+        }
+    }
+
+    fn failed_epoch(epoch: u64, retain_until_micros: i64) -> SpireEpochManifest {
+        SpireEpochManifest {
+            epoch,
+            state: SpireEpochState::Failed,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 0,
+            retain_until_micros,
             active_query_count: 0,
         }
     }
@@ -1199,6 +1280,44 @@ mod tests {
 
         assert!(!failed.cleanup_eligible_at(1999));
         assert!(failed.cleanup_eligible_at(2000));
+    }
+
+    #[test]
+    fn cleanup_plan_keeps_active_epoch_and_newest_retired_epochs() {
+        let manifests = vec![
+            published_epoch(10, SpireConsistencyMode::Strict),
+            retired_epoch(9, 1000, 0),
+            retired_epoch(8, 1000, 0),
+            retired_epoch(7, 1000, 0),
+            failed_epoch(6, 1000),
+        ];
+
+        let plan = plan_epoch_cleanup(&manifests, 10, 2000).unwrap();
+
+        assert_eq!(plan.retained_retired_epochs, vec![8, 9]);
+        assert_eq!(plan.cleanup_epochs, vec![6, 7]);
+    }
+
+    #[test]
+    fn cleanup_plan_waits_for_retention_and_active_queries() {
+        let manifests = vec![
+            retired_epoch(9, 3000, 0),
+            retired_epoch(8, 1000, 1),
+            retired_epoch(7, 1000, 0),
+            failed_epoch(6, 3000),
+        ];
+
+        let plan = plan_epoch_cleanup(&manifests, 0, 2000).unwrap();
+
+        assert_eq!(plan.retained_retired_epochs, vec![8, 9]);
+        assert_eq!(plan.cleanup_epochs, vec![7]);
+    }
+
+    #[test]
+    fn cleanup_plan_rejects_duplicate_epochs() {
+        let manifests = vec![retired_epoch(7, 1000, 0), failed_epoch(7, 1000)];
+
+        assert!(plan_epoch_cleanup(&manifests, 0, 2000).is_err());
     }
 
     #[test]
