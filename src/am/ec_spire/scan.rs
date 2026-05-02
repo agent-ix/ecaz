@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
+use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
     SpireRoutingPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
@@ -176,6 +177,26 @@ where
     let routed_rows =
         collect_snapshot_routed_probe_leaf_rows(snapshot, object_store, query_vector, nprobe)?;
     rank_routed_leaf_rows_by_ip(routed_rows, score_ip, limit)
+}
+
+pub(super) fn collect_quantized_routed_probe_candidates(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+    nprobe: u32,
+    payload_format: SpireAssignmentPayloadFormat,
+    limit: Option<usize>,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    collect_ranked_routed_probe_candidates(
+        snapshot,
+        object_store,
+        query_vector,
+        nprobe,
+        |row| scorer.score_assignment_ip(row),
+        limit,
+    )
 }
 
 pub(super) fn rerank_scored_candidates_by_ip<F>(
@@ -593,8 +614,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_ranked_routed_probe_candidates, collect_snapshot_delta_rows,
-        collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
+        collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
+        collect_snapshot_delta_rows, collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
         SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScoredScanCandidate,
@@ -612,6 +633,9 @@ mod tests {
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SpirePublishedEpochSnapshot,
+    };
+    use crate::am::ec_spire::quantizer::{
+        encode_assignment_payload, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::am::ec_spire::storage::{
@@ -634,6 +658,23 @@ mod tests {
 
     fn assignment_input(block_number: u32, offset_number: u16) -> SpireLeafAssignmentInput {
         assignment_input_with_payload(block_number, offset_number, vec![1, 2, 3])
+    }
+
+    fn quantized_assignment_input(
+        block_number: u32,
+        offset_number: u16,
+        payload_format: SpireAssignmentPayloadFormat,
+        source_vector: &[f32],
+    ) -> SpireLeafAssignmentInput {
+        let (dimensions, gamma, encoded_payload) =
+            encode_assignment_payload(payload_format, source_vector).unwrap();
+        assert_eq!(usize::from(dimensions), source_vector.len());
+        SpireLeafAssignmentInput {
+            heap_tid: tid(block_number, offset_number),
+            payload_format: payload_format.tag(),
+            gamma,
+            encoded_payload,
+        }
     }
 
     fn assignment_input_with_payload(
@@ -1158,6 +1199,110 @@ mod tests {
         assert_eq!(candidates[0].heap_tid, tid(10, 2));
         assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
         assert_eq!(candidates[0].score, -9.0);
+    }
+
+    #[test]
+    fn collect_quantized_routed_probe_candidates_matches_prepared_assignment_scorer() {
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let mut pid_allocator = SpirePidAllocator::default();
+            let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+            let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+            let query = [1.0, 0.0];
+            let draft = build_partitioned_single_level_leaf_epoch_draft(
+                partitioned_build_input(
+                    vec![
+                        quantized_assignment_input(10, 1, payload_format, &[1.0, 0.0]),
+                        quantized_assignment_input(10, 2, payload_format, &[-1.0, 0.0]),
+                    ],
+                    vec![0, 1],
+                ),
+                &mut pid_allocator,
+                &mut local_vec_id_allocator,
+                &mut object_store,
+            )
+            .unwrap();
+            let snapshot = SpirePublishedEpochSnapshot::new(
+                &draft.epoch_manifest,
+                &draft.object_manifest,
+                &draft.placement_directory,
+            )
+            .unwrap();
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let expected = collect_ranked_routed_probe_candidates(
+                &snapshot,
+                &object_store,
+                &query,
+                2,
+                |row| scorer.score_assignment_ip(row),
+                Some(2),
+            )
+            .unwrap();
+
+            let observed = collect_quantized_routed_probe_candidates(
+                &snapshot,
+                &object_store,
+                &query,
+                2,
+                payload_format,
+                Some(2),
+            )
+            .unwrap();
+
+            assert_eq!(observed, expected);
+            assert_eq!(observed.len(), 2);
+        }
+    }
+
+    #[test]
+    fn collect_quantized_routed_probe_candidates_rejects_deferred_and_bad_payloads() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    assignment_input_with_payload(10, 1, vec![1]),
+                    assignment_input_with_payload(10, 2, vec![2]),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        assert!(collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            SpireAssignmentPayloadFormat::PqFastScan,
+            Some(2),
+        )
+        .unwrap_err()
+        .contains("PQ-FastScan"));
+        assert!(collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            SpireAssignmentPayloadFormat::TurboQuant,
+            Some(2),
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
     }
 
     #[test]
