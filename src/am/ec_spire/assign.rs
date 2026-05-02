@@ -1,6 +1,7 @@
 //! Leaf PID and vector-identity assignment helpers.
 
-use super::storage::SpireVecId;
+use super::storage::{SpireLeafAssignmentRow, SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY};
+use crate::storage::page::ItemPointer;
 
 pub(super) const SPIRE_FIRST_LOCAL_VEC_SEQ: u64 = 1;
 
@@ -52,10 +53,68 @@ impl SpireLocalVecIdAllocator {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafAssignmentInput {
+    pub(super) heap_tid: ItemPointer,
+    pub(super) payload_format: u8,
+    pub(super) gamma: f32,
+    pub(super) encoded_payload: Vec<u8>,
+}
+
+pub(super) fn build_primary_leaf_assignments(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireLeafAssignmentInput>,
+) -> Result<Vec<SpireLeafAssignmentRow>, String> {
+    let mut rows = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        if input.heap_tid == ItemPointer::INVALID {
+            return Err("ec_spire assignment input heap_tid must be valid".to_owned());
+        }
+        if !input.gamma.is_finite() {
+            return Err("ec_spire assignment input gamma must be finite".to_owned());
+        }
+        u32::try_from(input.encoded_payload.len())
+            .map_err(|_| "ec_spire assignment input payload length exceeds u32".to_owned())?;
+
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: allocator.allocate()?,
+            heap_tid: input.heap_tid,
+            payload_format: input.payload_format,
+            gamma: input.gamma,
+            encoded_payload: input.encoded_payload,
+        };
+        row.encode()?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+pub(super) fn observe_assignment_vec_ids(
+    allocator: &mut SpireLocalVecIdAllocator,
+    rows: &[SpireLeafAssignmentRow],
+) -> Result<(), String> {
+    for row in rows {
+        allocator.observe(&row.vec_id)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SpireLocalVecIdAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ};
-    use crate::am::ec_spire::storage::SpireVecId;
+    use super::{
+        build_primary_leaf_assignments, observe_assignment_vec_ids, SpireLeafAssignmentInput,
+        SpireLocalVecIdAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ,
+    };
+    use crate::am::ec_spire::storage::{SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY};
+    use crate::storage::page::ItemPointer;
+
+    fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
+        ItemPointer {
+            block_number,
+            offset_number,
+        }
+    }
 
     #[test]
     fn allocator_starts_at_first_local_sequence() {
@@ -107,5 +166,94 @@ mod tests {
         assert_eq!(allocator.next_local_vec_seq(), u64::MAX);
         assert!(allocator.observe(&SpireVecId::local(u64::MAX)).is_err());
         assert_eq!(allocator.next_local_vec_seq(), u64::MAX);
+    }
+
+    #[test]
+    fn build_primary_leaf_assignments_allocates_rows_in_order() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+
+        let rows = build_primary_leaf_assignments(
+            &mut allocator,
+            vec![
+                SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 1),
+                    payload_format: 1,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2],
+                },
+                SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 2),
+                    payload_format: 1,
+                    gamma: 0.75,
+                    encoded_payload: vec![3, 4],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        assert_eq!(rows[0].vec_id.local_sequence(), Some(1));
+        assert_eq!(rows[1].vec_id.local_sequence(), Some(2));
+        assert_eq!(rows[0].heap_tid, tid(10, 1));
+        assert_eq!(rows[1].encoded_payload, vec![3, 4]);
+        assert_eq!(allocator.next_local_vec_seq(), 3);
+    }
+
+    #[test]
+    fn build_primary_leaf_assignments_rejects_invalid_locator_and_gamma() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+
+        assert!(build_primary_leaf_assignments(
+            &mut allocator,
+            vec![SpireLeafAssignmentInput {
+                heap_tid: ItemPointer::INVALID,
+                payload_format: 1,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2],
+            }],
+        )
+        .is_err());
+        assert_eq!(allocator.next_local_vec_seq(), SPIRE_FIRST_LOCAL_VEC_SEQ);
+
+        assert!(build_primary_leaf_assignments(
+            &mut allocator,
+            vec![SpireLeafAssignmentInput {
+                heap_tid: tid(10, 1),
+                payload_format: 1,
+                gamma: f32::NAN,
+                encoded_payload: vec![1, 2],
+            }],
+        )
+        .is_err());
+        assert_eq!(allocator.next_local_vec_seq(), SPIRE_FIRST_LOCAL_VEC_SEQ);
+    }
+
+    #[test]
+    fn observe_assignment_vec_ids_advances_allocator() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+        let rows = build_primary_leaf_assignments(
+            &mut allocator,
+            vec![
+                SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 1),
+                    payload_format: 1,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2],
+                },
+                SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 2),
+                    payload_format: 1,
+                    gamma: 0.75,
+                    encoded_payload: vec![3, 4],
+                },
+            ],
+        )
+        .unwrap();
+
+        let mut rebuilt = SpireLocalVecIdAllocator::default();
+        observe_assignment_vec_ids(&mut rebuilt, &rows).unwrap();
+
+        assert_eq!(rebuilt.next_local_vec_seq(), 3);
     }
 }
