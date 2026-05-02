@@ -1,20 +1,18 @@
 # Ecaz
 
-A PostgreSQL extension written in Rust (pgrx) that provides the canonical
-`ecvector(dim)` row type plus HNSW, IVF, and DiskANN index access methods for
-approximate nearest neighbor search.
+Ecaz is a PostgreSQL extension written in Rust with a focus on performant,
+highly scalable vector storage and retrieval. It provides the canonical
+`ecvector(dim)` row type and aims to support a broad range of quantization and
+index options rather than a single fixed architecture. Current index families
+include HNSW (`ec_hnsw`), IVF (`ec_ivf`), and DiskANN/Vamana-style graphs
+(`ec_diskann`).
 
-- **`ecvector(dim)`** — canonical exact/raw row type
-- **`tqvector`** — explicit TurboQuant artifact/debugging type
-- **`<#>` operator** — negative inner product distance for ORDER BY ASC
-- **`ec_hnsw` index** — HNSW graph index with per-index storage formats
-- **`ec_ivf` index** — IVF posting-list index for measured local tuning and
-  high-ingest tradeoffs
-- **`ec_diskann` index** — DiskANN/Vamana-style graph index for disk-resident
-  experiments
-- **`encode_to_ecvector()`** — encode fp32 arrays into the canonical row type
-- **`ecaz` CLI** — operator surface for corpus loading, benchmarks,
-  comparisons, stress harnesses, and local development helpers
+Ecaz is also an Agentic Engineer experiment: an attempt to develop a complex
+database system solely with AI. Having reached that bar for well-known index
+families, the project now aims to build proof-of-concept implementations for
+frontier vector database research. The ethos is to pursue quality, testing,
+and benchmarking rigorously, but the project should not yet be considered
+production-ready.
 
 ## Quick Start
 
