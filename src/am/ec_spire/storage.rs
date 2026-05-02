@@ -95,39 +95,7 @@ impl SpireVecId {
     }
 
     pub(super) fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.is_empty() {
-            return Err("ec_spire vec_id must not be empty".to_owned());
-        }
-        if bytes.len() > SPIRE_VEC_ID_MAX_BYTES {
-            return Err(format!(
-                "ec_spire vec_id length {} exceeds max {SPIRE_VEC_ID_MAX_BYTES}",
-                bytes.len()
-            ));
-        }
-        match bytes[0] {
-            SPIRE_LOCAL_VEC_ID_DISCRIMINATOR => {
-                if bytes.len() != 1 + size_of::<u64>() {
-                    return Err(format!(
-                        "ec_spire local vec_id length mismatch: got {}, expected {}",
-                        bytes.len(),
-                        1 + size_of::<u64>()
-                    ));
-                }
-                let local_vec_seq =
-                    u64::from_le_bytes(bytes[1..].try_into().expect("local vec_id sequence bytes"));
-                if local_vec_seq == 0 {
-                    return Err("ec_spire local vec_id sequence 0 is invalid".to_owned());
-                }
-            }
-            SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR => {
-                if bytes.len() == 1 {
-                    return Err("ec_spire global vec_id payload must not be empty".to_owned());
-                }
-            }
-            other => {
-                return Err(format!("ec_spire unknown vec_id discriminator: {other:#x}"));
-            }
-        }
+        validate_vec_id_bytes(bytes)?;
         Ok(Self {
             bytes: bytes.to_vec(),
         })
@@ -150,6 +118,43 @@ impl SpireVecId {
                 .try_into()
                 .expect("local vec_id length is validated"),
         ))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct SpireVecIdRef<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> SpireVecIdRef<'a> {
+    fn from_bytes(bytes: &'a [u8]) -> Result<Self, String> {
+        validate_vec_id_bytes(bytes)?;
+        Ok(Self { bytes })
+    }
+
+    pub(super) fn as_bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+
+    pub(super) fn discriminator(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    pub(super) fn local_sequence(&self) -> Option<u64> {
+        if self.discriminator() != SPIRE_LOCAL_VEC_ID_DISCRIMINATOR {
+            return None;
+        }
+        Some(u64::from_le_bytes(
+            self.bytes[1..]
+                .try_into()
+                .expect("local vec_id length is validated"),
+        ))
+    }
+
+    pub(super) fn to_owned(self) -> SpireVecId {
+        SpireVecId {
+            bytes: self.bytes.to_vec(),
+        }
     }
 }
 
@@ -299,6 +304,29 @@ pub(super) struct SpireLeafAssignmentRow {
     pub(super) encoded_payload: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireLeafAssignmentRowRef<'a> {
+    pub(super) flags: u16,
+    pub(super) vec_id: SpireVecIdRef<'a>,
+    pub(super) heap_tid: ItemPointer,
+    pub(super) payload_format: u8,
+    pub(super) gamma: f32,
+    pub(super) encoded_payload: &'a [u8],
+}
+
+impl<'a> SpireLeafAssignmentRowRef<'a> {
+    pub(super) fn to_owned(self) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: self.flags,
+            vec_id: self.vec_id.to_owned(),
+            heap_tid: self.heap_tid,
+            payload_format: self.payload_format,
+            gamma: self.gamma,
+            encoded_payload: self.encoded_payload.to_vec(),
+        }
+    }
+}
+
 impl SpireLeafAssignmentRow {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         validate_assignment_flags(self.flags)?;
@@ -344,6 +372,13 @@ impl SpireLeafAssignmentRow {
     }
 
     fn decode_prefix(input: &[u8]) -> Result<(Self, &[u8]), String> {
+        let (row_ref, tail) = Self::decode_prefix_ref(input)?;
+        Ok((row_ref.to_owned(), tail))
+    }
+
+    pub(super) fn decode_prefix_ref(
+        input: &[u8],
+    ) -> Result<(SpireLeafAssignmentRowRef<'_>, &[u8]), String> {
         if input.len() < ASSIGNMENT_ROW_FIXED_PREFIX_BYTES + ASSIGNMENT_ROW_FIXED_TAIL_BYTES {
             return Err(format!(
                 "ec_spire assignment row too short: got {}, expected at least {}",
@@ -402,13 +437,13 @@ impl SpireLeafAssignmentRow {
         }
 
         Ok((
-            Self {
+            SpireLeafAssignmentRowRef {
                 flags,
-                vec_id: SpireVecId::from_bytes(&input[vec_id_start..vec_id_end])?,
+                vec_id: SpireVecIdRef::from_bytes(&input[vec_id_start..vec_id_end])?,
                 heap_tid,
                 payload_format,
                 gamma,
-                encoded_payload: input[payload_len_end..expected_len].to_vec(),
+                encoded_payload: &input[payload_len_end..expected_len],
             },
             &input[expected_len..],
         ))
@@ -1768,6 +1803,69 @@ impl SpireLocalObjectStore {
     }
 }
 
+fn validate_vec_id_bytes(bytes: &[u8]) -> Result<(), String> {
+    if bytes.is_empty() {
+        return Err("ec_spire vec_id must not be empty".to_owned());
+    }
+    if bytes.len() > SPIRE_VEC_ID_MAX_BYTES {
+        return Err(format!(
+            "ec_spire vec_id length {} exceeds max {SPIRE_VEC_ID_MAX_BYTES}",
+            bytes.len()
+        ));
+    }
+    match bytes[0] {
+        SPIRE_LOCAL_VEC_ID_DISCRIMINATOR => {
+            if bytes.len() != 1 + size_of::<u64>() {
+                return Err(format!(
+                    "ec_spire local vec_id length mismatch: got {}, expected {}",
+                    bytes.len(),
+                    1 + size_of::<u64>()
+                ));
+            }
+            let local_vec_seq =
+                u64::from_le_bytes(bytes[1..].try_into().expect("local vec_id sequence bytes"));
+            if local_vec_seq == 0 {
+                return Err("ec_spire local vec_id sequence 0 is invalid".to_owned());
+            }
+        }
+        SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR => {
+            if bytes.len() == 1 {
+                return Err("ec_spire global vec_id payload must not be empty".to_owned());
+            }
+        }
+        other => {
+            return Err(format!("ec_spire unknown vec_id discriminator: {other:#x}"));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn is_visible_primary_assignment_flags(flags: u16) -> bool {
+    let blocked_flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+        | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
+        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
+        | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
+    flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && flags & blocked_flags == 0
+}
+
+pub(super) fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
+    is_visible_primary_assignment_flags(assignment.flags)
+}
+
+pub(super) fn is_visible_primary_assignment_ref(
+    assignment: &SpireLeafAssignmentRowRef<'_>,
+) -> bool {
+    is_visible_primary_assignment_flags(assignment.flags)
+}
+
+pub(super) fn is_delete_delta_assignment_flags(flags: u16) -> bool {
+    flags & SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE != 0
+}
+
+pub(super) fn is_delete_delta_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
+    is_delete_delta_assignment_flags(assignment.flags)
+}
+
 fn validate_leaf_v2_header(
     header: &SpirePartitionObjectHeader,
     expected_flag: u32,
@@ -2049,7 +2147,8 @@ fn validate_delta_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<
 mod tests {
     use super::super::meta::SpirePlacementState;
     use super::{
-        decode_leaf_v2_local_vec_id, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+        decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
+        is_visible_primary_assignment_ref, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
         SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
         SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
@@ -2277,6 +2376,58 @@ mod tests {
         assert_eq!(decoded, row);
         assert_eq!(tail, &[9, 8]);
         assert!(SpireLeafAssignmentRow::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn assignment_row_ref_prefix_decoder_borrows_payload() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(123),
+            heap_tid: ItemPointer {
+                block_number: 44,
+                offset_number: 7,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
+            gamma: 1.25,
+            encoded_payload: vec![4, 5, 6],
+        };
+        let mut encoded = row.encode().unwrap();
+        encoded.extend_from_slice(&[9, 8]);
+
+        let (row_ref, tail) = SpireLeafAssignmentRow::decode_prefix_ref(&encoded).unwrap();
+
+        assert_eq!(row_ref.flags, row.flags);
+        assert_eq!(row_ref.vec_id.local_sequence(), Some(123));
+        assert_eq!(row_ref.heap_tid, row.heap_tid);
+        assert_eq!(row_ref.payload_format, row.payload_format);
+        assert_eq!(row_ref.gamma, row.gamma);
+        assert_eq!(row_ref.encoded_payload, row.encoded_payload.as_slice());
+        assert_eq!(row_ref.to_owned(), row);
+        assert_eq!(tail, &[9, 8]);
+    }
+
+    #[test]
+    fn assignment_visibility_helpers_match_primary_and_delta_semantics() {
+        let mut row = leaf_v2_assignment(1, 8);
+        assert!(is_visible_primary_assignment(&row));
+        let encoded = row.encode().unwrap();
+        let (row_ref, _) =
+            SpireLeafAssignmentRow::decode_prefix_ref(&encoded).expect("row ref decodes");
+        assert!(is_visible_primary_assignment_ref(&row_ref));
+
+        row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        assert!(!is_visible_primary_assignment(&row));
+        row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE;
+        assert!(!is_visible_primary_assignment(&row));
+        row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
+        assert!(!is_visible_primary_assignment(&row));
+
+        row.flags = SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
+        row.payload_format = SPIRE_PAYLOAD_FORMAT_NONE;
+        row.gamma = 0.0;
+        row.encoded_payload.clear();
+        assert!(is_delete_delta_assignment(&row));
+        assert!(!is_visible_primary_assignment(&row));
     }
 
     #[test]

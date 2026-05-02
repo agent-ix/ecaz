@@ -6,10 +6,8 @@ use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpoch
 use super::options::{resolve_single_level_scan_plan, EcSpireOptions, SpireSingleLevelScanPlan};
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
-    SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
-    SpireRoutingPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-    SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-    SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    is_delete_delta_assignment, is_visible_primary_assignment, SpireLeafAssignmentRow,
+    SpireLocalObjectStore, SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
 };
 use crate::storage::page::ItemPointer;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
@@ -750,18 +748,6 @@ fn collect_snapshot_leaf_rows_for_pid(
         });
     }
     Ok(rows)
-}
-
-fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
-    let blocked_flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
-        | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
-        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
-        | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
-    assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && assignment.flags & blocked_flags == 0
-}
-
-fn is_delete_delta_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
-    assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE != 0
 }
 
 fn should_skip_placement(

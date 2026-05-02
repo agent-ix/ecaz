@@ -142,7 +142,9 @@ Decision record:
 - [ ] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
   borrowed row references for row-encoded deltas, one shared assignment
   visibility predicate, and batch assignment scorer entry points before
-  persisted scan callbacks consume leaf objects.
+  persisted scan callbacks consume leaf objects. Borrowed V1 row references and
+  shared visibility predicates have landed; V2 column views, scan migration,
+  and batch scorer APIs remain open.
 - [ ] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly
