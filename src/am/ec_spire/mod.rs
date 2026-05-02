@@ -3,6 +3,7 @@
 mod assign;
 mod build;
 mod cost;
+mod diagnostics;
 mod insert;
 mod meta;
 mod routine;
