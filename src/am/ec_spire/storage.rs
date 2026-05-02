@@ -79,6 +79,11 @@ impl SpireVecId {
                         1 + size_of::<u64>()
                     ));
                 }
+                let local_vec_seq =
+                    u64::from_le_bytes(bytes[1..].try_into().expect("local vec_id sequence bytes"));
+                if local_vec_seq == 0 {
+                    return Err("ec_spire local vec_id sequence 0 is invalid".to_owned());
+                }
             }
             SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR => {
                 if bytes.len() == 1 {
@@ -236,6 +241,7 @@ pub(super) struct SpireLeafAssignmentRow {
 impl SpireLeafAssignmentRow {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         validate_assignment_flags(self.flags)?;
+        SpireVecId::from_bytes(self.vec_id.as_bytes())?;
         if self.heap_tid == ItemPointer::INVALID {
             return Err("ec_spire assignment row heap_tid must be valid".to_owned());
         }
@@ -802,6 +808,7 @@ mod tests {
         assert!(SpireVecId::from_bytes(&[]).is_err());
         assert!(SpireVecId::from_bytes(&[0xff, 1, 2]).is_err());
         assert!(SpireVecId::from_bytes(&[SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, 1]).is_err());
+        assert!(SpireVecId::from_bytes(SpireVecId::local(0).as_bytes()).is_err());
         assert!(SpireVecId::from_bytes(&[SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR]).is_err());
         assert!(SpireVecId::global(&vec![7; SPIRE_VEC_ID_MAX_BYTES]).is_err());
     }

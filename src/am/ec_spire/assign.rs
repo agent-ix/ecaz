@@ -96,6 +96,9 @@ impl SpireLocalVecIdAllocator {
         let Some(local_vec_seq) = vec_id.local_sequence() else {
             return Ok(());
         };
+        if local_vec_seq == 0 {
+            return Err("ec_spire observed local vec_id sequence 0 is invalid".to_owned());
+        }
         let next = local_vec_seq
             .checked_add(1)
             .ok_or_else(|| "ec_spire observed local vec_id sequence is exhausted".to_owned())?;
@@ -297,6 +300,14 @@ mod tests {
     }
 
     #[test]
+    fn allocator_rejects_observed_local_zero() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+
+        assert!(allocator.observe(&SpireVecId::local(0)).is_err());
+        assert_eq!(allocator.next_local_vec_seq(), SPIRE_FIRST_LOCAL_VEC_SEQ);
+    }
+
+    #[test]
     fn allocator_ignores_global_ids() {
         let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
 
@@ -456,6 +467,12 @@ mod tests {
         assert!(build_delete_delta_assignments(vec![SpireDeleteDeltaInput {
             vec_id: SpireVecId::local(99),
             heap_tid: ItemPointer::INVALID,
+        }])
+        .is_err());
+
+        assert!(build_delete_delta_assignments(vec![SpireDeleteDeltaInput {
+            vec_id: SpireVecId::local(0),
+            heap_tid: tid(10, 1),
         }])
         .is_err());
     }
