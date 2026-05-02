@@ -7,11 +7,13 @@ single-level route maps, root routing objects, and per-centroid leaf-object
 draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
 ranked candidates through injected and concrete quantized scorer paths, dedupe
 by `vec_id`, and consume the resolved single-level scan plan through the
-helper-level quantized scoring and exact-rerank path. Assignment payload scoring
-now reuses the existing TurboQuant and RaBitQ quantizers behind a SPIRE-owned
-row scorer, while PQ-FastScan remains deferred until grouped-PQ model metadata
-is persisted. AM option/GUC plumbing exists for single-level build and scan
-parameters. Live PostgreSQL relation-backed
+helper-level quantized scoring and exact-rerank path. A cursor-to-scan-output
+bridge now maps ranked candidates to heap TID plus ORDER BY score output for
+future `amgettuple` wiring. Assignment payload scoring now reuses the existing
+TurboQuant and RaBitQ quantizers behind a SPIRE-owned row scorer, while
+PQ-FastScan remains deferred until grouped-PQ model metadata is persisted. AM
+option/GUC plumbing exists for single-level build and scan parameters. Live
+PostgreSQL relation-backed
 build/scan persistence remains intentionally unwired. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
@@ -151,8 +153,9 @@ Decision record:
   scan helper can prepare that scorer directly for real encoded assignment rows.
   The helper-level scan path can now consume a resolved single-level scan plan
   and compose route, quantized score, `vec_id` dedupe, candidate limiting, and
-  exact-rerank callback application. Heap rerank callback implementation, AM
-  callback execution, and PQ-FastScan scorer binding remain open.
+  exact-rerank callback application. It also has a cursor-to-output bridge for
+  heap TID plus ORDER BY score emission. Heap rerank callback implementation,
+  AM callback execution, and PQ-FastScan scorer binding remain open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
