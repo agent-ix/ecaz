@@ -234,6 +234,15 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     Ok(routed)
 }
 
+pub(super) fn count_snapshot_single_level_leaf_pids(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<u32, String> {
+    let (_, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
+    u32::try_from(root_object.children.len())
+        .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())
+}
+
 pub(super) fn collect_ranked_routed_probe_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
@@ -833,9 +842,9 @@ mod tests {
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
-        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScoredScanCandidate,
+        count_snapshot_single_level_leaf_pids, rank_routed_leaf_rows_by_ip,
+        rerank_scored_candidates_by_ip, SpireLeafScanRow, SpireRoutedLeafScanRows,
+        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1370,6 +1379,45 @@ mod tests {
         assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 1));
         assert_eq!(routed[1].leaf_pid, SPIRE_FIRST_PID + 2);
         assert_eq!(routed[1].rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn count_snapshot_single_level_leaf_pids_uses_root_routing_children() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            SpirePartitionedSingleLevelBuildInput {
+                epoch: 7,
+                object_version: 1,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                root_placement_tid: tid(60, 3),
+                placement_tids: vec![tid(60, 1), tid(60, 2), tid(60, 4)],
+                assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                centroid_plan: SpireSingleLevelCentroidPlan {
+                    dimensions: 2,
+                    centroids: vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![-1.0, 0.0]],
+                    assignment_indexes: vec![0, 2],
+                },
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        assert_eq!(
+            count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap(),
+            3
+        );
     }
 
     #[test]
