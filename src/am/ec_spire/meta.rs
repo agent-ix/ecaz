@@ -1,7 +1,9 @@
 //! Root/control metadata, epoch, and placement-map codecs.
 
+use super::assign::SPIRE_FIRST_LOCAL_VEC_SEQ;
 use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
+pub(super) const SPIRE_FIRST_PID: u64 = 1;
 pub(super) const SPIRE_LOCAL_NODE_ID: u32 = 0;
 pub(super) const SPIRE_SINGLE_LOCAL_STORE_ID: u32 = 0;
 pub(super) const SPIRE_MIN_EPOCH_RETENTION_SECS: u32 = 10 * 60;
@@ -9,6 +11,8 @@ pub(super) const SPIRE_FAILED_EPOCH_RETENTION_SECS: u32 = 60 * 60;
 pub(super) const SPIRE_MAX_RETAINED_RETIRED_EPOCHS: u16 = 2;
 
 const META_FORMAT_VERSION: u16 = 1;
+const ROOT_CONTROL_MAGIC: u32 = 0x4352_5345; // "ESRC" as little-endian bytes.
+const ROOT_CONTROL_STATE_BYTES: usize = 4 + 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES * 3;
 const PLACEMENT_DIRECTORY_MAGIC: u32 = 0x4450_5345; // "ESPD" as little-endian bytes.
 const PLACEMENT_DIRECTORY_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const OBJECT_MANIFEST_MAGIC: u32 = 0x4d4f_5345; // "ESOM" as little-endian bytes.
@@ -16,6 +20,134 @@ const OBJECT_MANIFEST_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const PLACEMENT_ENTRY_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 4 + 4 + 4 + 8 + ITEM_POINTER_BYTES + 4;
 const EPOCH_MANIFEST_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 8 + 8;
 const MANIFEST_ENTRY_BYTES: usize = 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireRootControlState {
+    pub(super) active_epoch: u64,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+    pub(super) epoch_manifest_tid: ItemPointer,
+    pub(super) object_manifest_tid: ItemPointer,
+    pub(super) placement_directory_tid: ItemPointer,
+}
+
+impl SpireRootControlState {
+    pub(super) fn empty() -> Self {
+        Self {
+            active_epoch: 0,
+            next_pid: SPIRE_FIRST_PID,
+            next_local_vec_seq: SPIRE_FIRST_LOCAL_VEC_SEQ,
+            epoch_manifest_tid: ItemPointer::INVALID,
+            object_manifest_tid: ItemPointer::INVALID,
+            placement_directory_tid: ItemPointer::INVALID,
+        }
+    }
+
+    pub(super) fn published(
+        active_epoch: u64,
+        next_pid: u64,
+        next_local_vec_seq: u64,
+        epoch_manifest_tid: ItemPointer,
+        object_manifest_tid: ItemPointer,
+        placement_directory_tid: ItemPointer,
+    ) -> Result<Self, String> {
+        let state = Self {
+            active_epoch,
+            next_pid,
+            next_local_vec_seq,
+            epoch_manifest_tid,
+            object_manifest_tid,
+            placement_directory_tid,
+        };
+        state.validate()?;
+        Ok(state)
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+
+        let mut out = Vec::with_capacity(ROOT_CONTROL_STATE_BYTES);
+        out.extend_from_slice(&ROOT_CONTROL_MAGIC.to_le_bytes());
+        out.extend_from_slice(&META_FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.active_epoch.to_le_bytes());
+        out.extend_from_slice(&self.next_pid.to_le_bytes());
+        out.extend_from_slice(&self.next_local_vec_seq.to_le_bytes());
+        self.epoch_manifest_tid.encode_into(&mut out);
+        self.object_manifest_tid.encode_into(&mut out);
+        self.placement_directory_tid.encode_into(&mut out);
+        debug_assert_eq!(out.len(), ROOT_CONTROL_STATE_BYTES);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() != ROOT_CONTROL_STATE_BYTES {
+            return Err(format!(
+                "ec_spire root/control state length mismatch: got {}, expected {ROOT_CONTROL_STATE_BYTES}",
+                input.len()
+            ));
+        }
+        let magic = u32::from_le_bytes(input[0..4].try_into().expect("root magic bytes"));
+        if magic != ROOT_CONTROL_MAGIC {
+            return Err(format!(
+                "ec_spire invalid root/control state magic: {magic:#x}"
+            ));
+        }
+        validate_format_version(&input[4..6])?;
+        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+        if reserved != 0 {
+            return Err(format!(
+                "ec_spire root/control state reserved bytes must be zero, got {reserved}"
+            ));
+        }
+
+        let state = Self {
+            active_epoch: u64::from_le_bytes(input[8..16].try_into().expect("active epoch bytes")),
+            next_pid: u64::from_le_bytes(input[16..24].try_into().expect("next pid bytes")),
+            next_local_vec_seq: u64::from_le_bytes(
+                input[24..32].try_into().expect("next local vec seq bytes"),
+            ),
+            epoch_manifest_tid: ItemPointer::decode(&input[32..38])?,
+            object_manifest_tid: ItemPointer::decode(&input[38..44])?,
+            placement_directory_tid: ItemPointer::decode(&input[44..50])?,
+        };
+        state.validate()?;
+        Ok(state)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.next_pid == 0 {
+            return Err("ec_spire root/control next_pid 0 is invalid".to_owned());
+        }
+        if self.next_local_vec_seq == 0 {
+            return Err("ec_spire root/control next_local_vec_seq 0 is invalid".to_owned());
+        }
+        if self.active_epoch == 0 {
+            if self.epoch_manifest_tid != ItemPointer::INVALID
+                || self.object_manifest_tid != ItemPointer::INVALID
+                || self.placement_directory_tid != ItemPointer::INVALID
+            {
+                return Err(
+                    "ec_spire empty root/control state must not reference active manifests"
+                        .to_owned(),
+                );
+            }
+            return Ok(());
+        }
+        if self.epoch_manifest_tid == ItemPointer::INVALID {
+            return Err("ec_spire active root/control state needs an epoch manifest".to_owned());
+        }
+        if self.object_manifest_tid == ItemPointer::INVALID {
+            return Err("ec_spire active root/control state needs an object manifest".to_owned());
+        }
+        if self.placement_directory_tid == ItemPointer::INVALID {
+            return Err(
+                "ec_spire active root/control state needs a placement directory".to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -587,7 +719,8 @@ mod tests {
     use super::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
+        SpireRootControlState, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_FIRST_LOCAL_VEC_SEQ,
+        SPIRE_FIRST_PID, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
         SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::storage::page::ItemPointer;
@@ -604,6 +737,69 @@ mod tests {
         assert_eq!(SPIRE_MIN_EPOCH_RETENTION_SECS, 600);
         assert_eq!(SPIRE_FAILED_EPOCH_RETENTION_SECS, 3600);
         assert_eq!(SPIRE_MAX_RETAINED_RETIRED_EPOCHS, 2);
+    }
+
+    #[test]
+    fn root_control_empty_state_round_trips() {
+        let state = SpireRootControlState::empty();
+
+        assert_eq!(state.active_epoch, 0);
+        assert_eq!(state.next_pid, SPIRE_FIRST_PID);
+        assert_eq!(state.next_local_vec_seq, SPIRE_FIRST_LOCAL_VEC_SEQ);
+        assert_eq!(state.epoch_manifest_tid, ItemPointer::INVALID);
+        assert_eq!(
+            SpireRootControlState::decode(&state.encode().unwrap()).unwrap(),
+            state
+        );
+    }
+
+    #[test]
+    fn root_control_published_state_round_trips() {
+        let state =
+            SpireRootControlState::published(7, 12, 100, tid(50, 1), tid(50, 2), tid(50, 3))
+                .unwrap();
+
+        assert_eq!(
+            SpireRootControlState::decode(&state.encode().unwrap()).unwrap(),
+            state
+        );
+    }
+
+    #[test]
+    fn root_control_rejects_invalid_cursors_and_manifest_refs() {
+        assert!(
+            SpireRootControlState::published(7, 0, 100, tid(50, 1), tid(50, 2), tid(50, 3))
+                .is_err()
+        );
+        assert!(
+            SpireRootControlState::published(7, 12, 0, tid(50, 1), tid(50, 2), tid(50, 3)).is_err()
+        );
+        assert!(SpireRootControlState::published(
+            7,
+            12,
+            100,
+            ItemPointer::INVALID,
+            tid(50, 2),
+            tid(50, 3),
+        )
+        .is_err());
+
+        let mut empty = SpireRootControlState::empty();
+        empty.epoch_manifest_tid = tid(50, 1);
+        assert!(empty.encode().is_err());
+    }
+
+    #[test]
+    fn root_control_rejects_corrupt_header() {
+        let state = SpireRootControlState::empty();
+        let mut encoded = state.encode().unwrap();
+
+        encoded[0] = 0;
+        assert!(SpireRootControlState::decode(&encoded).is_err());
+
+        encoded = state.encode().unwrap();
+        encoded[6] = 1;
+        assert!(SpireRootControlState::decode(&encoded).is_err());
     }
 
     #[test]
