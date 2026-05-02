@@ -151,6 +151,17 @@ pub(super) fn collect_snapshot_visible_primary_rows(
             None
         }
     }));
+
+    let mut visible_vec_ids = HashSet::new();
+    for row in &visible_rows {
+        if !visible_vec_ids.insert(row.assignment.vec_id.clone()) {
+            return Err(
+                "ec_spire visible snapshot contains duplicate primary vec_id assignments"
+                    .to_owned(),
+            );
+        }
+    }
+
     Ok(visible_rows)
 }
 
@@ -474,6 +485,74 @@ mod tests {
         assert_eq!(rows[0].pid, 11);
         assert_eq!(rows[0].row_index, 0);
         assert_eq!(rows[0].assignment.heap_tid, tid(10, 1));
+    }
+
+    #[test]
+    fn collect_snapshot_visible_primary_rows_rejects_duplicate_primary_vec_ids() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let first = SpireLeafPartitionObject::new(
+            11,
+            1,
+            0,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: tid(10, 1),
+                payload_format: 1,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2, 3],
+            }],
+        )
+        .unwrap();
+        let second = SpireLeafPartitionObject::new(
+            12,
+            1,
+            0,
+            vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: tid(20, 1),
+                payload_format: 1,
+                gamma: 0.75,
+                encoded_payload: vec![4, 5, 6],
+            }],
+        )
+        .unwrap();
+        let first_placement = object_store.insert_leaf_object(7, &first).unwrap();
+        let second_placement = object_store.insert_leaf_object(7, &second).unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 1,
+                    placement_tid: tid(60, 1),
+                },
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 12,
+                    object_version: 1,
+                    placement_tid: tid(60, 2),
+                },
+            ],
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![first_placement, second_placement])
+                .unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+
+        assert!(collect_snapshot_visible_primary_rows(&snapshot, &object_store).is_err());
     }
 
     #[test]
