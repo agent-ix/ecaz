@@ -347,12 +347,14 @@ mod tests {
         SpireSingleLevelBuildInput,
     };
     use crate::am::ec_spire::meta::{
-        SpireConsistencyMode, SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
-        SpirePublishedEpochSnapshot, SpireRootControlState,
+        SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
+        SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
+        SpireRootControlState,
     };
     use crate::am::ec_spire::storage::{
-        SpireLocalObjectStore, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-        SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore, SpireVecId,
+        SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
         SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
     };
     use crate::storage::page::ItemPointer;
@@ -743,6 +745,64 @@ mod tests {
         .unwrap();
         let initial_page_count = object_store.page_count();
         let mut input = delta_input(Vec::new(), vec![delete_assignment(1, 10, 2)]);
+        input.base_pid = 1;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_stale_delete_target() {
+        let mut pid_allocator = SpirePidAllocator::new(2).unwrap();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::new(2).unwrap();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let stale_assignment = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
+            vec_id: SpireVecId::local(1),
+            heap_tid: tid(10, 1),
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2, 3],
+        };
+        let leaf_object = SpireLeafPartitionObject::new(1, 1, 0, vec![stale_assignment]).unwrap();
+        let placement = object_store.insert_leaf_object(7, &leaf_object).unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 900,
+            retain_until_micros: 1900,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![SpireManifestEntry {
+                epoch: 7,
+                pid: 1,
+                object_version: 1,
+                placement_tid: placement.object_tid,
+            }],
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![placement]).unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut input = delta_input(Vec::new(), vec![delete_assignment(1, 10, 1)]);
         input.base_pid = 1;
 
         assert!(build_delta_epoch_draft_from_snapshot(
