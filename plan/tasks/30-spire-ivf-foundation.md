@@ -12,10 +12,12 @@ bridge now maps ranked candidates to heap TID plus ORDER BY score output for
 future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
 metadata can now provide the single-level leaf count that scan option resolution
-needs. Assignment payload scoring now reuses the existing TurboQuant and RaBitQ
-quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains deferred
-until grouped-PQ model metadata is persisted. AM option/GUC plumbing exists for
-single-level build and scan parameters. Live PostgreSQL relation-backed
+needs, and scan opaque state now carries a validated query object for future
+`ScanKey` parsing. Assignment payload scoring now reuses the existing
+TurboQuant and RaBitQ quantizers behind a SPIRE-owned row scorer, while
+PQ-FastScan remains deferred until grouped-PQ model metadata is persisted. AM
+option/GUC plumbing exists for single-level build and scan parameters. Live
+PostgreSQL relation-backed
 build/scan persistence remains intentionally unwired. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
@@ -159,9 +161,10 @@ Decision record:
   heap TID plus ORDER BY score emission, plus scan opaque lifecycle allocation
   and cursor-drain `amgettuple` behavior for future populated scans. `amrescan`
   can now derive the scan-plan leaf count from root routing metadata once a
-  published snapshot is loaded. Query parsing, relation-backed snapshot/object
-  loading, heap rerank callback implementation, and PQ-FastScan scorer binding
-  remain open.
+  published snapshot is loaded, and scan state now stores a validated
+  non-empty, finite, non-zero query object. Live `ScanKey` parsing,
+  relation-backed snapshot/object loading, heap rerank callback implementation,
+  and PQ-FastScan scorer binding remain open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
