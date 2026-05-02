@@ -54,20 +54,76 @@ pub(crate) fn find_pgrx_install(major: u16, pgrx_home: &Path) -> Result<PgrxInst
         }
     }
     candidates.sort_by(|a, b| compare_version_labels(&a.0, &b.0));
-    let Some((version_label, root, pg_config)) = candidates.pop() else {
-        bail!(
-            "could not find a PG{} pgrx install under {}",
-            major,
-            pgrx_home.display()
-        );
+    if let Some((version_label, root, pg_config)) = candidates.pop() {
+        let bin_dir = root.join("bin");
+        return Ok(PgrxInstall {
+            version_label,
+            root,
+            bin_dir,
+            pg_config,
+        });
+    }
+
+    if let Some(config_install) = find_pgrx_config_install(major, pgrx_home)? {
+        return Ok(config_install);
+    }
+
+    bail!(
+        "could not find a PG{} pgrx install under {} or in {}/config.toml",
+        major,
+        pgrx_home.display(),
+        pgrx_home.display()
+    );
+}
+
+fn find_pgrx_config_install(major: u16, pgrx_home: &Path) -> Result<Option<PgrxInstall>> {
+    let config_path = pgrx_home.join("config.toml");
+    if !config_path.is_file() {
+        return Ok(None);
+    }
+    let config = fs::read_to_string(&config_path)
+        .wrap_err_with(|| format!("reading {}", config_path.display()))?;
+    let key = format!("pg{major}");
+    let Some(pg_config) = read_pgrx_config_pg_config(&config, &key) else {
+        return Ok(None);
     };
+    let pg_config = PathBuf::from(pg_config);
+    if !pg_config.is_file() {
+        bail!(
+            "{} points to missing pg_config: {}",
+            config_path.display(),
+            pg_config.display()
+        );
+    }
+    let root = pg_config
+        .parent()
+        .and_then(Path::parent)
+        .map(PathBuf::from)
+        .ok_or_else(|| eyre!("could not infer install root from {}", pg_config.display()))?;
     let bin_dir = root.join("bin");
-    Ok(PgrxInstall {
-        version_label,
+    Ok(Some(PgrxInstall {
+        version_label: key,
         root,
         bin_dir,
         pg_config,
-    })
+    }))
+}
+
+fn read_pgrx_config_pg_config(config: &str, key: &str) -> Option<String> {
+    for line in config.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with('[') {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if name.trim() != key {
+            continue;
+        }
+        return Some(value.trim().trim_matches('"').to_string());
+    }
+    None
 }
 
 pub(crate) fn default_pgrx_port(major: u16) -> u16 {
@@ -131,4 +187,30 @@ pub(crate) fn refresh_debug_helpers_sql() -> Result<PathBuf> {
         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
         .canonicalize()
         .wrap_err("resolving bundled scratch debug-helper SQL")?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_pg_config_from_pgrx_config() {
+        let config = r#"
+            [configs]
+            pg18 = "/opt/homebrew/opt/postgresql@18/bin/pg_config"
+        "#;
+        assert_eq!(
+            read_pgrx_config_pg_config(config, "pg18").as_deref(),
+            Some("/opt/homebrew/opt/postgresql@18/bin/pg_config")
+        );
+    }
+
+    #[test]
+    fn ignores_other_pgrx_config_entries() {
+        let config = r#"
+            [configs]
+            pg17 = "/opt/homebrew/opt/postgresql@17/bin/pg_config"
+        "#;
+        assert!(read_pgrx_config_pg_config(config, "pg18").is_none());
+    }
 }

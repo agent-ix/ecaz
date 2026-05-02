@@ -3,6 +3,7 @@ use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command as StdCommand;
 use tokio::process::Command;
 
 use super::support::{
@@ -86,8 +87,11 @@ async fn run_ecaz_pg_test(args: InstallEcazPgTestArgs) -> Result<()> {
         .env("PGRX_HOME", &pgrx_home);
     run_status(command).await?;
 
-    let release_artifact = repo_root.join("target/release/libecaz.so");
-    let installed_backend = install.root.join("lib/postgresql/ecaz.so");
+    let release_artifact = repo_root
+        .join("target/release")
+        .join(ecaz_built_library_name());
+    let installed_backend =
+        pg_config_value(&install.pg_config, "--pkglibdir")?.join(ecaz_installed_library_name());
     assert_matching_backend(&release_artifact, &installed_backend)?;
     crate::ecaz_println!("[install] backend .so assertion passed");
     crate::ecaz_println!(
@@ -177,4 +181,37 @@ fn sha256_hex(path: &PathBuf) -> Result<String> {
     let mut digest = Sha256::new();
     digest.update(bytes);
     Ok(format!("{:x}", digest.finalize()))
+}
+
+fn ecaz_built_library_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "libecaz.dylib"
+    } else {
+        "libecaz.so"
+    }
+}
+
+fn ecaz_installed_library_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "ecaz.dylib"
+    } else {
+        "ecaz.so"
+    }
+}
+
+fn pg_config_value(pg_config: &PathBuf, flag: &str) -> Result<PathBuf> {
+    let output = StdCommand::new(pg_config)
+        .arg(flag)
+        .output()
+        .wrap_err_with(|| format!("running {} {flag}", pg_config.display()))?;
+    if !output.status.success() {
+        bail!(
+            "{} {flag} failed with status {}",
+            pg_config.display(),
+            output.status
+        );
+    }
+    let value = String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("decoding {} {flag} output", pg_config.display()))?;
+    Ok(PathBuf::from(value.trim()))
 }
