@@ -1,5 +1,9 @@
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
-use super::storage::{SpireLeafAssignmentRow, SpireLocalObjectStore};
+use super::storage::{
+    SpireLeafAssignmentRow, SpireLocalObjectStore, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+    SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+};
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +55,23 @@ pub(super) fn collect_snapshot_leaf_rows(
     Ok(rows)
 }
 
+pub(super) fn collect_snapshot_visible_primary_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireLeafScanRow>, String> {
+    Ok(collect_snapshot_leaf_rows(snapshot, object_store)?
+        .into_iter()
+        .filter(|row| is_visible_primary_assignment(&row.assignment))
+        .collect())
+}
+
+fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
+    let blocked_flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+        | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
+        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
+    assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && assignment.flags & blocked_flags == 0
+}
+
 fn should_skip_placement(
     consistency_mode: SpireConsistencyMode,
     state: SpirePlacementState,
@@ -100,7 +121,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 
 #[cfg(test)]
 mod tests {
-    use super::collect_snapshot_leaf_rows;
+    use super::{collect_snapshot_leaf_rows, collect_snapshot_visible_primary_rows};
     use crate::am::ec_spire::assign::{
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_PID,
     };
@@ -113,6 +134,11 @@ mod tests {
         SpirePublishedEpochSnapshot,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
+    use crate::am::ec_spire::storage::{
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    };
     use crate::storage::page::ItemPointer;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -141,6 +167,26 @@ mod tests {
             placement_tid: tid(60, 1),
             assignments,
         }
+    }
+
+    fn assignment_row(flags: u16, offset_number: u16) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags,
+            vec_id: SpireVecId::local(u64::from(offset_number)),
+            heap_tid: tid(10, offset_number),
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2, 3],
+        }
+    }
+
+    fn snapshot_for_placement<'a>(
+        epoch_manifest: &'a SpireEpochManifest,
+        object_manifest: &'a SpireObjectManifest,
+        placement_directory: &'a SpirePlacementDirectory,
+    ) -> SpirePublishedEpochSnapshot<'a> {
+        SpirePublishedEpochSnapshot::new(epoch_manifest, object_manifest, placement_directory)
+            .unwrap()
     }
 
     #[test]
@@ -214,5 +260,62 @@ mod tests {
                 .unwrap()
                 .is_empty());
         }
+    }
+
+    #[test]
+    fn collect_snapshot_visible_primary_rows_filters_non_output_assignments() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let object = SpireLeafPartitionObject::new(
+            11,
+            1,
+            0,
+            vec![
+                assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 1),
+                assignment_row(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                    2,
+                ),
+                assignment_row(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+                    3,
+                ),
+                assignment_row(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+                    4,
+                ),
+                assignment_row(0, 5),
+            ],
+        )
+        .unwrap();
+        let placement = object_store.insert_leaf_object(7, &object).unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            vec![SpireManifestEntry {
+                epoch: 7,
+                pid: 11,
+                object_version: 1,
+                placement_tid: tid(60, 1),
+            }],
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![placement]).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+
+        let rows = collect_snapshot_visible_primary_rows(&snapshot, &object_store).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].pid, 11);
+        assert_eq!(rows[0].row_index, 0);
+        assert_eq!(rows[0].assignment.heap_tid, tid(10, 1));
     }
 }
