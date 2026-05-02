@@ -1,6 +1,6 @@
 //! PID-addressed partition-object storage codecs.
 
-use std::mem::size_of;
+use std::{collections::HashSet, mem::size_of};
 
 use super::meta::{
     SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID, SPIRE_SINGLE_LOCAL_STORE_ID,
@@ -483,7 +483,6 @@ impl SpireDeltaPartitionObject {
 
         let mut out = self.header.encode()?;
         for assignment in &self.assignments {
-            validate_delta_assignment(assignment)?;
             out.extend_from_slice(&assignment.encode()?);
         }
         Ok(out)
@@ -523,9 +522,7 @@ impl SpireDeltaPartitionObject {
             ));
         }
         self.validate_header_without_assignment_len()?;
-        for assignment in &self.assignments {
-            validate_delta_assignment(assignment)?;
-        }
+        validate_delta_assignments(&self.assignments)?;
         Ok(())
     }
 
@@ -773,6 +770,19 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
         return Err("ec_spire delete delta assignment must be tombstoned".to_owned());
     }
     assignment.encode()?;
+    Ok(())
+}
+
+fn validate_delta_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<(), String> {
+    let mut seen_vec_ids = HashSet::new();
+    for assignment in assignments {
+        validate_delta_assignment(assignment)?;
+        if !seen_vec_ids.insert(assignment.vec_id.clone()) {
+            return Err(
+                "ec_spire delta partition object contains duplicate vec_id assignments".to_owned(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -1131,6 +1141,56 @@ mod tests {
         row = valid_row;
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+    }
+
+    #[test]
+    fn delta_partition_object_rejects_duplicate_vec_ids() {
+        let insert_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+        let delete_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 0,
+            gamma: 0.0,
+            encoded_payload: Vec::new(),
+        };
+
+        assert!(SpireDeltaPartitionObject::new(
+            19,
+            4,
+            17,
+            vec![insert_row.clone(), delete_row.clone()],
+        )
+        .is_err());
+
+        let header = SpirePartitionObjectHeader {
+            kind: SpirePartitionObjectKind::Delta,
+            pid: 19,
+            object_version: 4,
+            level: 0,
+            parent_pid: 17,
+            child_count: 0,
+            assignment_count: 2,
+            flags: 0,
+        };
+        let mut encoded = header.encode().unwrap();
+        encoded.extend_from_slice(&insert_row.encode().unwrap());
+        encoded.extend_from_slice(&delete_row.encode().unwrap());
+
+        assert!(SpireDeltaPartitionObject::decode(&encoded).is_err());
     }
 
     #[test]
