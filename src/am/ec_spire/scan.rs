@@ -3,10 +3,11 @@ use std::collections::HashSet;
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
-    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-    SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
-    SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    SpireRoutingPartitionObject, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+    SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
+use crate::am::common::training as common_training;
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +24,13 @@ pub(super) struct SpireDeltaScanRow {
     pub(super) object_version: u64,
     pub(super) row_index: u32,
     pub(super) assignment: SpireLeafAssignmentRow,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRoutedLeafScanRows {
+    pub(super) root_pid: u64,
+    pub(super) leaf_pid: u64,
+    pub(super) rows: Vec<SpireLeafScanRow>,
 }
 
 pub(super) fn collect_snapshot_leaf_rows(
@@ -69,6 +77,22 @@ pub(super) fn collect_snapshot_leaf_rows(
         }
     }
     Ok(rows)
+}
+
+pub(super) fn collect_snapshot_routed_leaf_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+) -> Result<SpireRoutedLeafScanRows, String> {
+    let (root_pid, root_object) = load_snapshot_root_routing_object(snapshot, object_store)?;
+    let leaf_pid = route_root_object_to_leaf_pid(&root_object, query_vector)?;
+    let rows = collect_snapshot_leaf_rows_for_pid(snapshot, object_store, leaf_pid, root_pid)?;
+
+    Ok(SpireRoutedLeafScanRows {
+        root_pid,
+        leaf_pid,
+        rows,
+    })
 }
 
 pub(super) fn collect_snapshot_delta_rows(
@@ -165,6 +189,124 @@ pub(super) fn collect_snapshot_visible_primary_rows(
     Ok(visible_rows)
 }
 
+fn load_snapshot_root_routing_object(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<(u64, SpireRoutingPartitionObject), String> {
+    SpirePublishedEpochSnapshot::new(
+        snapshot.epoch_manifest,
+        snapshot.object_manifest,
+        snapshot.placement_directory,
+    )?;
+
+    let mut root = None;
+    for manifest_entry in &snapshot.object_manifest.entries {
+        let placement = snapshot
+            .placement_directory
+            .get(manifest_entry.pid)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire scan snapshot missing placement for pid {}",
+                    manifest_entry.pid
+                )
+            })?;
+        if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Root {
+            continue;
+        }
+        if root.is_some() {
+            return Err("ec_spire scan snapshot contains multiple root routing objects".to_owned());
+        }
+        root = Some((
+            manifest_entry.pid,
+            object_store.read_routing_object(placement)?,
+        ));
+    }
+
+    root.ok_or_else(|| "ec_spire scan snapshot has no available root routing object".to_owned())
+}
+
+fn route_root_object_to_leaf_pid(
+    root_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+) -> Result<u64, String> {
+    if root_object.header.kind != SpirePartitionObjectKind::Root {
+        return Err("ec_spire scan routing requires a root routing object".to_owned());
+    }
+    let model = common_training::SphericalKMeansModel {
+        dimensions: usize::from(root_object.dimensions),
+        centroids: root_object
+            .children
+            .iter()
+            .map(|child| child.centroid.clone())
+            .collect(),
+    };
+    let centroid_index =
+        common_training::assign_vector_to_centroid("ec_spire", query_vector, &model)?;
+    root_object
+        .children
+        .get(centroid_index)
+        .map(|child| child.child_pid)
+        .ok_or_else(|| {
+            format!("ec_spire scan route centroid index {centroid_index} has no child pid")
+        })
+}
+
+fn collect_snapshot_leaf_rows_for_pid(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    leaf_pid: u64,
+    root_pid: u64,
+) -> Result<Vec<SpireLeafScanRow>, String> {
+    SpirePublishedEpochSnapshot::new(
+        snapshot.epoch_manifest,
+        snapshot.object_manifest,
+        snapshot.placement_directory,
+    )?;
+
+    let manifest_entry = snapshot.object_manifest.get(leaf_pid).ok_or_else(|| {
+        format!("ec_spire routed scan missing object manifest entry for leaf pid {leaf_pid}")
+    })?;
+    let placement = snapshot
+        .placement_directory
+        .get(leaf_pid)
+        .ok_or_else(|| format!("ec_spire routed scan missing placement for leaf pid {leaf_pid}"))?;
+    if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+        return Ok(Vec::new());
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire routed scan pid {leaf_pid} is not a leaf object"
+        ));
+    }
+    let leaf_object = object_store.read_leaf_object(placement)?;
+    if leaf_object.header.parent_pid != root_pid {
+        return Err(format!(
+            "ec_spire routed scan leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
+            leaf_object.header.parent_pid
+        ));
+    }
+
+    let mut rows = Vec::with_capacity(leaf_object.assignments.len());
+    for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
+        let row_index = u32::try_from(row_index)
+            .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+        rows.push(SpireLeafScanRow {
+            pid: leaf_pid,
+            object_version: manifest_entry.object_version,
+            row_index,
+            assignment,
+        });
+    }
+    Ok(rows)
+}
+
 fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
     let blocked_flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
         | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
@@ -227,7 +369,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_snapshot_delta_rows, collect_snapshot_leaf_rows,
+        collect_snapshot_delta_rows, collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_visible_primary_rows,
     };
     use crate::am::ec_spire::assign::{
@@ -235,7 +377,9 @@ mod tests {
         SpirePidAllocator, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::build::{
-        build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput,
+        build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
+        SpirePartitionedSingleLevelBuildInput, SpireSingleLevelBuildInput,
+        SpireSingleLevelCentroidPlan,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
@@ -279,6 +423,27 @@ mod tests {
             consistency_mode: SpireConsistencyMode::Strict,
             placement_tid: tid(60, 1),
             assignments,
+        }
+    }
+
+    fn partitioned_build_input(
+        assignments: Vec<SpireLeafAssignmentInput>,
+        assignment_indexes: Vec<u32>,
+    ) -> SpirePartitionedSingleLevelBuildInput {
+        SpirePartitionedSingleLevelBuildInput {
+            epoch: 7,
+            object_version: 1,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            consistency_mode: SpireConsistencyMode::Strict,
+            root_placement_tid: tid(60, 3),
+            placement_tids: vec![tid(60, 1), tid(60, 2)],
+            assignments,
+            centroid_plan: SpireSingleLevelCentroidPlan {
+                dimensions: 2,
+                centroids: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
+                assignment_indexes,
+            },
         }
     }
 
@@ -612,5 +777,114 @@ mod tests {
         assert_eq!(visible_rows[0].pid, SPIRE_FIRST_PID + 1);
         assert_eq!(visible_rows[0].assignment.heap_tid, tid(20, 1));
         assert_eq!(visible_rows[0].assignment.vec_id.local_sequence(), Some(2));
+    }
+
+    #[test]
+    fn collect_snapshot_routed_leaf_rows_routes_query_to_leaf_pid() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let positive_rows =
+            collect_snapshot_routed_leaf_rows(&snapshot, &object_store, &[1.0, 0.0]).unwrap();
+        let negative_rows =
+            collect_snapshot_routed_leaf_rows(&snapshot, &object_store, &[-1.0, 0.0]).unwrap();
+
+        assert_eq!(positive_rows.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(positive_rows.leaf_pid, SPIRE_FIRST_PID + 1);
+        assert_eq!(positive_rows.rows.len(), 1);
+        assert_eq!(positive_rows.rows[0].assignment.heap_tid, tid(10, 1));
+        assert_eq!(negative_rows.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(negative_rows.leaf_pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(negative_rows.rows.len(), 1);
+        assert_eq!(negative_rows.rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn collect_snapshot_routed_leaf_rows_rejects_missing_root() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_single_level_leaf_epoch_draft(
+            build_input(vec![assignment_input(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        assert!(
+            collect_snapshot_routed_leaf_rows(&snapshot, &object_store, &[1.0, 0.0])
+                .unwrap_err()
+                .contains("no available root")
+        );
+    }
+
+    #[test]
+    fn collect_snapshot_routed_leaf_rows_skips_degraded_unavailable_leaf() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: draft.epoch_manifest.epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Degraded,
+            published_at_micros: draft.epoch_manifest.published_at_micros,
+            retain_until_micros: draft.epoch_manifest.retain_until_micros,
+            active_query_count: 0,
+        };
+        let mut placements = draft.placement_directory.entries.clone();
+        placements
+            .iter_mut()
+            .find(|placement| placement.pid == SPIRE_FIRST_PID + 1)
+            .unwrap()
+            .state = SpirePlacementState::Unavailable;
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(draft.epoch_manifest.epoch, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let routed =
+            collect_snapshot_routed_leaf_rows(&snapshot, &object_store, &[1.0, 0.0]).unwrap();
+
+        assert_eq!(routed.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(routed.leaf_pid, SPIRE_FIRST_PID + 1);
+        assert!(routed.rows.is_empty());
     }
 }
