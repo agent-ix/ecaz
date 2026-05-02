@@ -36,7 +36,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | GPU offline trainer | `ADR-046-gpu-accelerated-offline-build-trainer.md` | PROPOSED | Future/offline optimization lane. |
 | Vamana insert lock ordering | `ADR-046-vamana-insert-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
 | Vamana vacuum lock ordering | `ADR-047-vamana-vacuum-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
-| SPIRE partition-object IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Build and validate single-level partition-object IVF first; preserve boundary replication through logical `(vec_id, pid)` rows, local multi-NVMe stores, future node placement, and epoch publication. |
+| SPIRE partition-object IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Phase 0 chooses relation-backed PID objects, epoch manifests, index-local `vec_id`s, and Phase 1 `ec_spire`; preserve boundary replication, local multi-NVMe stores, future node placement, and epoch publication. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 

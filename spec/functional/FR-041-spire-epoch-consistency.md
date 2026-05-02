@@ -37,10 +37,12 @@ relationships:
 5. Local single-store deployments SHALL default to strict mode.
 6. Graceful degradation SHALL be the preferred operational posture for large remote deployments when explicitly configured.
 7. A failed or partial epoch publication SHALL remain in `failed` or `building` state and SHALL NOT become the active epoch.
-8. The first baseline MAY use a simpler epoch path, such as immutable offline-built epochs, before live delta/manifest optimization.
-9. Old epochs SHOULD retain for a configurable minimum wall-clock interval and until no active query is registered against them.
-10. The initial suggested default retention policy is `min_epoch_retention = 10 minutes`, `max_retained_epochs = 2`, and cleanup only when no active backend reports the old epoch.
-11. Operators SHALL be able to inspect active epoch, retained epochs, pending epochs, stale placements, and cleanup eligibility through SQL diagnostics.
+8. SPIRE SHALL use immutable per-partition object versions referenced by epoch manifests; unchanged objects MAY be shared by successive epochs.
+9. The first update path SHALL publish insert/delete delta objects or replacement partition-object versions through an epoch manifest rather than mutating published objects in place.
+10. Old epochs SHOULD retain for a configurable minimum wall-clock interval and until no active query is registered against them.
+11. The initial suggested default retention policy is `min_epoch_retention = 10 minutes`, `max_retained_epochs = 2`, and cleanup only when no active backend reports the old epoch.
+12. Failed or abandoned build/update epochs SHOULD retain for a bounded diagnostic window, initially `failed_epoch_retention = 60 minutes`, unless an operator cleans them earlier.
+13. Operators SHALL be able to inspect active epoch, retained epochs, pending epochs, failed epochs, stale placements, and cleanup eligibility through SQL diagnostics.
 
 ## Epoch Schema
 

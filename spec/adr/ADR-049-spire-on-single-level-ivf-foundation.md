@@ -6,6 +6,7 @@ impact: Affects ADR-048, future SPIRE planning, distributed storage planning; su
 date: 2026-05-01
 deciders:
   - TBD
+phase0_design: plan/design/spire-phase0-partition-object-storage.md
 ---
 # ADR-049: Build SPIRE on a Partition-Object IVF Foundation
 
@@ -98,23 +99,27 @@ and distributed path:
 - encoded payload and scoring metadata.
 - flags such as primary assignment, boundary replica, tombstone, or delta row.
 
-For the first local single-table implementation, `vec_id` may be derived from or
-mirror the heap TID. It must be unique within an index OID, encoded in no more
-than 32 bytes, and reserve a discriminator byte so a local heap-derived identity
-can coexist with or be rewritten into a future global identity through an epoch
-transition.
+For the first local implementation, `vec_id` is not derived from or mirrored
+from the heap TID. Phase 0 chooses an index-local monotonically allocated ID
+encoded as `0x01 || local_vec_seq:u64`. The heap TID remains a local row
+locator only. `vec_id` must be unique within an index OID for live logical
+vector versions, encoded in no more than 32 bytes, and reserve a discriminator
+byte so a local ID can coexist with or be rewritten into a future global ID
+through an epoch transition.
 
 ### 3. Use partition objects and a placement map, not one monolithic relation forever
 
-SPIRE persistence is organized around partition objects:
+SPIRE persistence is organized around PostgreSQL-managed relation-backed
+partition objects:
 
 ```text
-(pid, epoch_or_version) -> partition object bytes
+(pid, object_version) -> partition object bytes
 ```
 
 Internal partition objects store routing metadata and child PIDs. Leaf partition
 objects store vector assignment/posting rows. Root/control metadata stores the
-top graph, hierarchy metadata, active epoch, and PID placement map.
+top graph, hierarchy metadata, active epoch, PID allocation state, local
+`vec_id` allocation state, and PID placement map.
 
 The single-node implementation may start with one partition store, but the
 format must model physical placement explicitly:
@@ -123,8 +128,10 @@ format must model physical placement explicitly:
 pid -> local_store_id -> object location
 ```
 
-Local multi-NVMe operation uses a bounded number of partition-store relations,
-each placed in a tablespace backed by a different NVMe device:
+Phase 1 uses the `ec_spire` index relation as the root/control relation and the
+single `local_store_id = 0` object store. Local multi-NVMe operation extends
+that shape to a bounded number of partition-store relations, each placed in a
+tablespace backed by a different NVMe device:
 
 ```text
 store_id = hash(pid) % local_store_count
@@ -150,18 +157,20 @@ MVCC handles local heap visibility, but it does not coordinate remote machines
 or independently rewritten partition objects.
 
 Each query should choose an active SPIRE epoch at start. Reads then target
-objects compatible with that epoch:
+object versions compatible with that epoch:
 
 ```text
 active_epoch = 42
-read (pid, epoch 42)
+manifest[42] maps pid -> object_version -> placement
 ```
 
-The first distributed-compatible design should use immutable partition objects
-per published epoch or per-partition versions referenced by an epoch manifest.
-Writers prepare new objects or deltas, then atomically publish a new root/control
-epoch after all required objects are present. Old epochs remain readable until
-in-flight queries finish.
+Phase 0 chooses immutable per-partition object versions referenced by an epoch
+manifest, not full `(pid, epoch)` object duplication. Writers prepare
+replacement or delta objects, then atomically publish a new root/control epoch
+after all required objects are present. Old epochs remain readable until the
+retention window passes and in-flight queries finish. The initial defaults are a
+10 minute minimum retention window, current plus two published/retired epochs,
+and cleanup only when no backend reports the old epoch.
 
 ### 5. Keep SPIRE modular inside one Postgres extension
 
@@ -198,6 +207,10 @@ When we add SPIRE on top of working IVF:
   existing wire protocol through libpq/pipeline mode before considering a custom
   network protocol.
 
+Phase 1 should expose the single-level local foundation as an opt-in
+`ec_spire` access method once executable. The planned operator classes are
+`ecvector_spire_ip_ops` and `tqvector_spire_ip_ops`.
+
 ## Consequences
 
 ### Positive
@@ -227,7 +240,8 @@ When we add SPIRE on top of working IVF:
   work before a fully distributed implementation exists.
 - Epoch/version management adds complexity to update, split, merge, and cleanup
   paths. The first executable path should start with offline-built immutable
-  epochs before online deltas.
+  epochs, then add epoch-published insert/delete delta objects before broader
+  split/merge mechanics.
 
 ## Alternatives Considered
 

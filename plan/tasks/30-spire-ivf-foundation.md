@@ -1,9 +1,11 @@
 # Task 30: SPIRE on a Partition-Object IVF Foundation
 
-Status: proposed — implements ADR-049 in stages: first a debuggable
-single-level IVF foundation with SPIRE-compatible partition-object storage,
-then recursive SPIRE routing, local multi-NVMe placement, and later
-multi-machine placement.
+Status: proposed — Phase 0 storage design checkpoint recorded in
+`plan/design/spire-phase0-partition-object-storage.md`; implementation proceeds
+from that checkpoint before persistence code. Task 30 implements ADR-049 in
+stages: first a debuggable single-level IVF foundation with SPIRE-compatible
+partition-object storage, then recursive SPIRE routing, local multi-NVMe
+placement, and later multi-machine placement.
 
 ## Scope
 
@@ -44,38 +46,43 @@ striped across physical NVMe devices, then multi-machine PID routing.
 
 ## Phase 0 — Reconcile Landed IVF With ADR-049
 
-- [ ] **Inventory reusable IVF components.** Identify which `src/am/ec_ivf`
+Decision record:
+`plan/design/spire-phase0-partition-object-storage.md`.
+
+- [x] **Inventory reusable IVF components.** Identify which `src/am/ec_ivf`
   modules can be consumed as-is by SPIRE and which need extraction into
   `src/am/common` or a SPIRE-owned module.
-- [ ] **Partition-object storage design note.** Decide the concrete Postgres
+- [x] **Partition-object storage design note.** Decide the concrete Postgres
   storage shape for PID-addressed partition objects and their logical
   `(vec_id, pid)` assignment rows: one control/root relation plus bounded
   partition-store relations, a single-store prototype format, or another
   AM-owned sidecar. The invariant is one-to-many membership; the implementation
   must be reviewable and WAL-safe.
-- [ ] **PID identity note.** Define `pid`, `vec_id`, local heap TID, parent PID,
+- [x] **PID identity note.** Define `pid`, `vec_id`, local heap TID, parent PID,
   child PID, boundary-replica flags, and how local `vec_id` maps to future
   global vector IDs. The note must bound encoded `vec_id` width, state
   uniqueness scope, and reserve or justify the local/global discriminator.
-- [ ] **Heap locator update note.** Decide how stored local heap TIDs interact
+- [x] **Heap locator update note.** Decide how stored local heap TIDs interact
   with PostgreSQL UPDATE/HOT movement and vacuum: repair in place, tombstone and
   reinsert through an epoch-safe path, resolve by `vec_id`, or suppress stale
   candidates with diagnostics.
-- [ ] **Placement note.** Define the initial `pid -> local_store_id -> object`
+- [x] **Placement note.** Define the initial `pid -> local_store_id -> object`
   placement map and the extension point for `pid -> node_id -> local_store_id`.
   State explicitly that SPIRE does not use PostgreSQL table partitions for
   vector partition selection.
-- [ ] **Epoch/version note.** Decide whether Phase 1 stores immutable
+- [x] **Epoch/version note.** Decide whether Phase 1 stores immutable
   `(pid, epoch)` objects directly or stores per-partition versions referenced by
   an epoch manifest. State old-epoch retention and cleanup expectations.
-- [ ] **Insert/delete lifecycle note.** Document whether the first local path
+- [x] **Insert/delete lifecycle note.** Document whether the first local path
   uses live deltas, mutable partition objects, or replacement epochs, and map
   that choice to strict-mode visibility/failure behavior.
-- [ ] **Compatibility note.** State whether current `ec_ivf` indexes keep their
+- [x] **Compatibility note.** State whether current `ec_ivf` indexes keep their
   existing internal format while SPIRE gets a partition-object format, or
   whether a future `ec_ivf` format bump will adopt partition objects too.
-- [ ] **Review packet.** Publish the Phase 0 design note before writing the
-  persistence code.
+- [x] **Phase 1 surface note.** Decide whether Phase 1 exposes `ec_spire` and
+  document the planned opclass names.
+- [x] **Review packet.** Publish the Phase 0 design note before writing the
+  persistence code. Packet target: `review/30162-spire-phase0-partition-object-storage/`.
 
 ## Phase 1 — Single-Level SPIRE-IVF Foundation
 
@@ -90,11 +97,10 @@ striped across physical NVMe devices, then multi-machine PID routing.
   - `src/am/spire/meta.rs`
 - [ ] **SQL surface decision.** Decide whether the single-level foundation is
   exposed as a new `ec_spire` AM immediately or hidden behind internal tooling
-  until recursion exists. Prefer exposing only a surface we are willing to
-  support.
+  until recursion exists. Phase 0 chooses an opt-in `ec_spire` AM for Phase 1.
 - [ ] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
-  the supported opclass names in `spec/spec.md`; otherwise keep them explicitly
-  marked as deferred.
+  `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` in `spec/spec.md`;
+  otherwise keep them explicitly marked as deferred.
 - [ ] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path.
@@ -263,6 +269,11 @@ striped across physical NVMe devices, then multi-machine PID routing.
 - If Phase 0 discovers that Postgres index AM mechanics make direct
   user-visible assignment rows inappropriate, write that down explicitly and
   expose diagnostics through read-only functions over partition-object storage.
+- Phase 0 chose index-local `vec_id` allocation rather than heap-TID-derived
+  `vec_id`s. Heap TIDs remain local row locators only.
+- Phase 0 chose per-partition object versions referenced by epoch manifests,
+  with immutable published objects and epoch-published delta/replacement objects
+  for inserts, vacuum cleanup, split, merge, and rebalance.
 - Do not let the recursive SPIRE layer absorb bugs from the single-level
   primitive. Any unexpected scan/build behavior should first be reproducible in
   the single-level foundation.

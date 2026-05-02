@@ -22,8 +22,8 @@ relationships:
 ## Behavior
 
 1. Local store configuration SHALL be represented in PostgreSQL-managed SQL state where possible: tablespaces, extension-owned catalog tables, or extension SQL functions.
-2. The preferred storage investigation path SHALL start with table/relation-backed stores because they inherit PostgreSQL durability, backup, permissions, and operational tooling.
-3. Phase 0 SHALL compare candidate physical layouts before implementation commits to one hot-path storage form.
+2. Phase 0 chooses table/relation-backed stores because they inherit PostgreSQL durability, backup, permissions, and operational tooling.
+3. Phase 1 single-store SHALL use the `ec_spire` index relation as `local_store_id = 0`; Phase 4 may add a bounded set of auxiliary partition-store relations.
 4. Operators SHALL be able to add, disable, drain, and inspect stores live, subject to documented locks and epoch-publish boundaries.
 5. Placement SHALL map each PID to one primary local store in v1.
 6. Graceful degradation SHALL be the default failure posture when degraded recall is configured: unavailable stores are skipped or downweighted with explicit diagnostics.

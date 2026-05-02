@@ -28,17 +28,18 @@ relationships:
 
 1. `ec_spire` SHALL keep SPIRE partition selection inside the SPIRE access method or coordinator; PostgreSQL planner partition pruning SHALL NOT choose SPIRE PIDs.
 2. Root/control metadata SHALL record the active epoch, hierarchy metadata, root graph metadata, and PID placement map.
-3. Internal partition objects SHALL record level, PID, parent PID where applicable, routing metadata, and child PIDs.
-4. Leaf partition objects SHALL record level, PID, parent PID where applicable, and assignment/posting rows.
-5. Assignment/posting rows SHALL include stable `vec_id`, local heap TID or row locator, PID, encoded scoring payload, and flags for primary assignment, boundary replica, tombstone, or delta state where applicable.
-6. `vec_id` SHALL be unique within an index OID and encoded in no more than 32 bytes. The format SHALL reserve a discriminator byte so a local heap-derived ID and a future global ID can coexist or be rewritten through a published epoch.
-7. If a persisted local heap TID becomes stale because UPDATE/HOT movement changes the live tuple locator, SPIRE SHALL either repair the assignment row during update/vacuum or fail the affected candidate explicitly; it SHALL NOT silently return an unrelated heap row.
-8. The first local implementation MAY map all PIDs to one partition store, but the on-disk metadata SHALL preserve the `pid -> local_store_id -> object location` abstraction.
-9. Local multi-NVMe placement SHALL map PIDs across a bounded set of local partition stores, normally by `hash(pid) % local_store_count`.
-10. Multi-machine placement SHALL extend the map to `pid -> node_id -> local_store_id -> object location` and SHALL require stable `vec_id` values suitable for remote candidate merge.
-11. Partition objects SHALL be versioned directly by epoch or referenced by an epoch manifest so a query reads a consistent object set.
-12. Old epochs SHALL remain readable until in-flight queries using them can finish or fail with an explicit stale-epoch error.
-13. Diagnostics SHALL expose read-only SQL functions or views for partition counts, placement map state, per-store object bytes, assignment cardinality, active epoch, and stale/unavailable placement entries.
+3. Root/control metadata SHALL record PID allocation state and local `vec_id` allocation state.
+4. Internal partition objects SHALL record level, PID, parent PID where applicable, routing metadata, and child PIDs.
+5. Leaf partition objects SHALL record level, PID, parent PID where applicable, and assignment/posting rows.
+6. Assignment/posting rows SHALL include stable `vec_id`, local heap TID or row locator, PID, encoded scoring payload, and flags for primary assignment, boundary replica, tombstone, stale locator, or delta state where applicable.
+7. `vec_id` SHALL be unique within an index OID for live logical vector versions and encoded in no more than 32 bytes. Phase 1 local IDs SHALL use a discriminator byte plus a root/control allocated local sequence, not a heap-TID-derived identity. Future global IDs SHALL use a distinct discriminator and MAY be introduced by an epoch rewrite.
+8. If a persisted local heap TID becomes stale because UPDATE/HOT movement changes the live tuple locator, SPIRE SHALL either repair the assignment row during update/vacuum or fail the affected candidate explicitly; it SHALL NOT silently return an unrelated heap row.
+9. The first local implementation SHALL use PostgreSQL-managed relation-backed storage and MAY map all PIDs to one partition store, but the on-disk metadata SHALL preserve the `pid -> local_store_id -> object location` abstraction.
+10. Local multi-NVMe placement SHALL map PIDs across a bounded set of local partition-store relations, normally by `hash(pid) % local_store_count`.
+11. Multi-machine placement SHALL extend the map to `pid -> node_id -> local_store_id -> object location` and SHALL require stable `vec_id` values suitable for remote candidate merge.
+12. Partition objects SHALL use immutable per-partition object versions referenced by an epoch manifest so a query reads a consistent object set.
+13. Old epochs SHALL remain readable until in-flight queries using them can finish or fail with an explicit stale-epoch error.
+14. Diagnostics SHALL expose read-only SQL functions or views for partition counts, placement map state, per-store object bytes, assignment cardinality, active epoch, and stale/unavailable placement entries.
 
 ## Data Schema
 
@@ -50,6 +51,8 @@ erDiagram
         oid heap_relid
         text consistency_mode
         int root_graph_pid
+        bigint next_pid
+        bigint next_local_vec_seq
     }
     EPOCH_MANIFEST {
         bigint epoch
@@ -62,6 +65,8 @@ erDiagram
         bigint pid
         int node_id
         int local_store_id
+        oid store_relid
+        bigint object_version
         text object_locator
         text state
     }
@@ -87,10 +92,10 @@ erDiagram
     PARTITION_OBJECT ||--o{ ASSIGNMENT_ROW : contains
 ```
 
-`object_locator` is intentionally abstract in this requirement. Phase 0 SHALL
-compare table/relation-backed layouts first and may choose another AM-owned
-layout only if measurement or PostgreSQL mechanics show tables are the wrong
-hot-path container.
+`object_locator` records the relation-backed object location for the selected
+store. Phase 1 may encode it as block/offset metadata in the root/control
+relation; Phase 4 may point at a bounded auxiliary store relation in a
+tablespace-backed local store.
 
 ## Architecture
 

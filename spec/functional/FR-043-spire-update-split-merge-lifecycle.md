@@ -28,14 +28,15 @@ relationships:
 ## Behavior
 
 1. The first baseline MAY prioritize the easiest path that proves functionality, including offline build plus simple insert/delete support.
-2. Inserts SHALL assign new vectors to one or more leaf PIDs according to the current router and boundary-replication policy.
-3. Deletes SHALL remove or tombstone assignment rows without breaking active epoch reads.
-4. Updates SHALL be represented as delete-old plus insert-new unless a narrower optimization is accepted later.
-5. Split and merge operations SHALL create replacement partition objects and publish hierarchy/placement changes through an epoch transition.
-6. Vacuum SHALL compact tombstones and reclaim obsolete partition-object versions only after retention and active-query checks pass.
-7. Rebalance SHALL copy or rewrite partition objects to target stores or nodes, then publish a placement epoch.
-8. Update and vacuum paths SHALL keep stored heap TIDs aligned with live tuple locators, including HOT/UPDATE movement, or mark affected assignment rows stale until repair.
-9. Failed split, merge, rebalance, or compaction jobs SHALL leave the active epoch unchanged and expose failed-job state for retry or cleanup.
+2. Phase 1 SHALL treat published partition objects as immutable and represent local inserts/deletes through epoch-published delta objects or replacement object versions.
+3. Inserts SHALL assign new vectors to one or more leaf PIDs according to the current router and boundary-replication policy.
+4. Deletes SHALL remove or tombstone assignment rows without breaking active epoch reads.
+5. Updates SHALL be represented as delete-old plus insert-new unless a narrower optimization is accepted later.
+6. Split and merge operations SHALL create replacement partition objects and publish hierarchy/placement changes through an epoch transition.
+7. Vacuum SHALL compact tombstones and reclaim obsolete partition-object versions only after retention and active-query checks pass.
+8. Rebalance SHALL copy or rewrite partition objects to target stores or nodes, then publish a placement epoch.
+9. Update and vacuum paths SHALL keep stored heap TIDs aligned with live tuple locators, including HOT/UPDATE movement, or mark affected assignment rows stale until repair.
+10. Failed split, merge, rebalance, or compaction jobs SHALL leave the active epoch unchanged and expose failed-job state for retry or cleanup.
 
 ## Delta Schema
 
