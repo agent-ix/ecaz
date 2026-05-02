@@ -428,7 +428,6 @@ mod tests {
                     SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
                     4,
                 ),
-                assignment_row(0, 5),
             ],
         )
         .unwrap();
