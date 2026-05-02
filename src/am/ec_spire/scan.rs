@@ -264,7 +264,13 @@ pub(super) fn collect_snapshot_leaf_rows(
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    collect_validated_snapshot_leaf_rows(&snapshot, object_store)
+}
 
+fn collect_validated_snapshot_leaf_rows(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireLeafScanRow>, String> {
     let mut rows = Vec::new();
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "scan leaf row collection")?;
@@ -493,7 +499,13 @@ pub(super) fn collect_snapshot_delta_rows(
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireDeltaScanRow>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    collect_validated_snapshot_delta_rows(&snapshot, object_store)
+}
 
+fn collect_validated_snapshot_delta_rows(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireDeltaScanRow>, String> {
     let mut rows = Vec::new();
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "scan delta row collection")?;
@@ -527,7 +539,15 @@ pub(super) fn collect_snapshot_visible_primary_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
-    let delta_rows = collect_snapshot_delta_rows(snapshot, object_store)?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    collect_validated_snapshot_visible_primary_rows(&snapshot, object_store)
+}
+
+pub(super) fn collect_validated_snapshot_visible_primary_rows(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireLeafScanRow>, String> {
+    let delta_rows = collect_validated_snapshot_delta_rows(snapshot, object_store)?;
     let deleted_vec_ids: HashSet<_> = delta_rows
         .iter()
         .filter(|row| is_delete_delta_assignment(&row.assignment))
@@ -536,7 +556,7 @@ pub(super) fn collect_snapshot_visible_primary_rows(
 
     let mut visible_rows = Vec::new();
     visible_rows.extend(
-        collect_snapshot_leaf_rows(snapshot, object_store)?
+        collect_validated_snapshot_leaf_rows(snapshot, object_store)?
             .into_iter()
             .filter(|row| {
                 is_visible_primary_assignment(&row.assignment)

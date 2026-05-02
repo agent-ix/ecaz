@@ -15,7 +15,9 @@ helper-level quantized scoring and exact-rerank path. Routed top-`nprobe`
 selection and final candidate limiting now use bounded heaps with deterministic
 tie-breaks, and the scan plan carries an explicit dedupe mode so the Phase 1
 primary-only path skips the `vec_id` map until boundary replicas or remote
-merge require it. A cursor-to-scan-output
+merge require it. Build/update publication helpers and delta-from-snapshot
+logic now consume the validated snapshot wrapper rather than rebuilding
+published snapshots internally. A cursor-to-scan-output
 bridge now maps ranked candidates to heap TID plus ORDER BY score output for
 future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
@@ -149,12 +151,13 @@ Decision record:
   persisted scan callbacks consume leaf objects. Borrowed V1 row references and
   shared visibility predicates have landed; V2 column views, scan migration,
   and batch scorer APIs remain open.
-- [ ] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
+- [x] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly
-  rebuilding `SpirePublishedEpochSnapshot`. The wrapper and PID lookup cache
-  have landed for scan/diagnostics helpers; update/publication helpers still
-  need migration before this item can be closed.
+  rebuilding `SpirePublishedEpochSnapshot`. Scan, diagnostics, build
+  publication, and delta-update publication helpers now use
+  `SpireValidatedEpochSnapshot`; delta-from-snapshot helper logic uses cached
+  PID lookup for base placement and assignment-ID collection.
 - [ ] **Flat routing object layout.** Replace per-child `Vec<f32>` routing
   entries with flat `child_pids`, `centroid_ordinals`, and centroid block arrays
   before root/internal routing objects become relation-backed.

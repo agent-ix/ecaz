@@ -169,6 +169,11 @@ wrapper should validate object header, format version, segment chain, and slice
 lengths. Expensive row-level uniqueness checks belong on write/publish paths,
 not every scan read.
 
+Implementation checkpoint: scan and diagnostics helpers use the validated
+snapshot wrapper, build and delta publication helpers validate through the same
+wrapper, and `build_delta_epoch_draft_from_snapshot` keeps the wrapper through
+base PID lookup, assignment-ID collection, and visible-row validation.
+
 ## Routing Object V2
 
 Root and internal routing objects must move from one allocated centroid vector

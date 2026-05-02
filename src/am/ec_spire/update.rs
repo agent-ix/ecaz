@@ -12,9 +12,9 @@ use super::build::{
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-    SpirePublishedEpochSnapshot, SpireRootControlState,
+    SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
 };
-use super::scan::{collect_snapshot_visible_primary_rows, SpireLeafScanRow};
+use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScanRow};
 use super::storage::{
     SpireDeltaPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind, SpireVecId,
 };
@@ -44,12 +44,18 @@ pub(super) struct SpireDeltaEpochDraft {
 }
 
 impl SpireDeltaEpochDraft {
-    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        SpirePublishedEpochSnapshot::new(
+    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
+        SpireValidatedEpochSnapshot::new(
             &self.epoch_manifest,
             &self.object_manifest,
             &self.placement_directory,
-        )?;
+        )
+    }
+
+    fn encode_manifest_bundle_from_validated(
+        &self,
+        _snapshot: &SpireValidatedEpochSnapshot<'_>,
+    ) -> Result<SpireEncodedManifestBundle, String> {
         Ok(SpireEncodedManifestBundle {
             epoch_manifest: self.epoch_manifest.encode()?,
             object_manifest: self.object_manifest.encode()?,
@@ -57,15 +63,11 @@ impl SpireDeltaEpochDraft {
         })
     }
 
-    pub(super) fn root_control_state(
+    fn root_control_state_from_validated(
         &self,
         locators: SpirePublishedManifestLocators,
+        _snapshot: &SpireValidatedEpochSnapshot<'_>,
     ) -> Result<SpireRootControlState, String> {
-        SpirePublishedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )?;
         SpireRootControlState::published(
             self.epoch_manifest.epoch,
             self.next_pid,
@@ -76,12 +78,28 @@ impl SpireDeltaEpochDraft {
         )
     }
 
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        let snapshot = self.validated_snapshot()?;
+        self.encode_manifest_bundle_from_validated(&snapshot)
+    }
+
+    pub(super) fn root_control_state(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, String> {
+        let snapshot = self.validated_snapshot()?;
+        self.root_control_state_from_validated(locators, &snapshot)
+    }
+
     pub(super) fn encode_publish_bundle(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let manifests = self.encode_manifest_bundle()?;
-        let root_control_state = self.root_control_state(locators)?.encode()?;
+        let snapshot = self.validated_snapshot()?;
+        let manifests = self.encode_manifest_bundle_from_validated(&snapshot)?;
+        let root_control_state = self
+            .root_control_state_from_validated(locators, &snapshot)?
+            .encode()?;
         Ok(SpireEncodedPublishBundle {
             manifests,
             root_control_state,
@@ -113,34 +131,17 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
     local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireDeltaEpochDraft, String> {
-    SpirePublishedEpochSnapshot::new(
-        base_snapshot.epoch_manifest,
-        base_snapshot.object_manifest,
-        base_snapshot.placement_directory,
-    )?;
-    validate_delta_base_snapshot_placements_available(base_snapshot)?;
-    if input.epoch <= base_snapshot.epoch_manifest.epoch {
+    let base_snapshot = SpireValidatedEpochSnapshot::from_snapshot(*base_snapshot)?;
+    validate_delta_base_snapshot_placements_available(&base_snapshot)?;
+    if input.epoch <= base_snapshot.epoch_manifest().epoch {
         return Err(format!(
             "ec_spire delta epoch {} must be newer than base epoch {}",
-            input.epoch, base_snapshot.epoch_manifest.epoch
+            input.epoch,
+            base_snapshot.epoch_manifest().epoch
         ));
     }
-    if base_snapshot.object_manifest.get(input.base_pid).is_none() {
-        return Err(format!(
-            "ec_spire delta epoch base_pid {} is not present in the base snapshot",
-            input.base_pid
-        ));
-    }
-    let base_placement = base_snapshot
-        .placement_directory
-        .get(input.base_pid)
-        .ok_or_else(|| {
-            format!(
-                "ec_spire delta epoch base_pid {} is missing from the placement directory",
-                input.base_pid
-            )
-        })?;
-    let base_header = object_store.read_object_header(base_placement)?;
+    let base_lookup = base_snapshot.require_lookup(input.base_pid, "delta epoch base pid")?;
+    let base_header = object_store.read_object_header(base_lookup.placement)?;
     if base_header.kind != SpirePartitionObjectKind::Leaf {
         return Err(format!(
             "ec_spire delta epoch base_pid {} must reference a leaf partition object",
@@ -149,7 +150,7 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
     }
     let epoch = input.epoch;
     let carried_manifest_entries = base_snapshot
-        .object_manifest
+        .object_manifest()
         .entries
         .iter()
         .cloned()
@@ -159,7 +160,7 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
         })
         .collect();
     let carried_placement_entries = base_snapshot
-        .placement_directory
+        .placement_directory()
         .entries
         .iter()
         .cloned()
@@ -168,8 +169,9 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
             entry
         })
         .collect();
-    let observed_vec_ids = collect_snapshot_assignment_vec_ids(base_snapshot, object_store)?;
-    let visible_rows = collect_snapshot_visible_primary_rows(base_snapshot, object_store)?;
+    let observed_vec_ids = collect_snapshot_assignment_vec_ids(&base_snapshot, object_store)?;
+    let visible_rows =
+        collect_validated_snapshot_visible_primary_rows(&base_snapshot, object_store)?;
     validate_delete_delta_targets(&input.delete_assignments, &visible_rows)?;
 
     build_delta_epoch_draft_with_carried_entries(
@@ -245,7 +247,7 @@ fn build_delta_epoch_draft_with_carried_entries(
         next_pid: pid_cursor.next_pid(),
         next_local_vec_seq: local_vec_id_cursor.next_local_vec_seq(),
     };
-    SpirePublishedEpochSnapshot::new(
+    SpireValidatedEpochSnapshot::new(
         &draft.epoch_manifest,
         &draft.object_manifest,
         &draft.placement_directory,
@@ -257,9 +259,9 @@ fn build_delta_epoch_draft_with_carried_entries(
 }
 
 fn validate_delta_base_snapshot_placements_available(
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
 ) -> Result<(), String> {
-    for placement in &snapshot.placement_directory.entries {
+    for placement in &snapshot.placement_directory().entries {
         if placement.state != SpirePlacementState::Available {
             return Err(format!(
                 "ec_spire delta epoch base snapshot requires available placement for pid {}: got {:?}",
@@ -271,20 +273,17 @@ fn validate_delta_base_snapshot_placements_available(
 }
 
 fn collect_snapshot_assignment_vec_ids(
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
 ) -> Result<Vec<SpireVecId>, String> {
     let mut vec_ids = Vec::new();
-    for manifest_entry in &snapshot.object_manifest.entries {
+    for manifest_entry in &snapshot.object_manifest().entries {
         let placement = snapshot
-            .placement_directory
-            .get(manifest_entry.pid)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire delta draft base snapshot missing placement for pid {}",
-                    manifest_entry.pid
-                )
-            })?;
+            .require_lookup(
+                manifest_entry.pid,
+                "delta draft assignment vec_id collection",
+            )?
+            .placement;
         let header = object_store.read_object_header(placement)?;
         match header.kind {
             SpirePartitionObjectKind::Leaf => {

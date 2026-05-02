@@ -4,8 +4,8 @@ use super::assign::{
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-    SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
-    SpireRootControlState,
+    SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
+    SpireValidatedEpochSnapshot,
 };
 use super::storage::{
     SpireLeafPartitionObject, SpireLocalObjectStore, SpireRoutingChildEntry,
@@ -83,6 +83,32 @@ pub(super) struct SpirePublishedManifestLocators {
     pub(super) epoch_manifest_tid: ItemPointer,
     pub(super) object_manifest_tid: ItemPointer,
     pub(super) placement_directory_tid: ItemPointer,
+}
+
+fn encode_manifest_bundle_from_validated(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+) -> Result<SpireEncodedManifestBundle, String> {
+    Ok(SpireEncodedManifestBundle {
+        epoch_manifest: snapshot.epoch_manifest().encode()?,
+        object_manifest: snapshot.object_manifest().encode()?,
+        placement_directory: snapshot.placement_directory().encode()?,
+    })
+}
+
+fn root_control_state_from_validated(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    next_pid: u64,
+    next_local_vec_seq: u64,
+    locators: SpirePublishedManifestLocators,
+) -> Result<SpireRootControlState, String> {
+    SpireRootControlState::published(
+        snapshot.epoch_manifest().epoch,
+        next_pid,
+        next_local_vec_seq,
+        locators.epoch_manifest_tid,
+        locators.object_manifest_tid,
+        locators.placement_directory_tid,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -244,35 +270,29 @@ impl SpireSingleLevelRouteMap {
 }
 
 impl SpireSingleLevelBuildDraft {
-    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        SpirePublishedEpochSnapshot::new(
+    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
+        SpireValidatedEpochSnapshot::new(
             &self.epoch_manifest,
             &self.object_manifest,
             &self.placement_directory,
-        )?;
-        Ok(SpireEncodedManifestBundle {
-            epoch_manifest: self.epoch_manifest.encode()?,
-            object_manifest: self.object_manifest.encode()?,
-            placement_directory: self.placement_directory.encode()?,
-        })
+        )
+    }
+
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        let snapshot = self.validated_snapshot()?;
+        encode_manifest_bundle_from_validated(&snapshot)
     }
 
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, String> {
-        SpirePublishedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )?;
-        SpireRootControlState::published(
-            self.epoch_manifest.epoch,
+        let snapshot = self.validated_snapshot()?;
+        root_control_state_from_validated(
+            &snapshot,
             self.next_pid,
             self.next_local_vec_seq,
-            locators.epoch_manifest_tid,
-            locators.object_manifest_tid,
-            locators.placement_directory_tid,
+            locators,
         )
     }
 
@@ -280,8 +300,15 @@ impl SpireSingleLevelBuildDraft {
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let manifests = self.encode_manifest_bundle()?;
-        let root_control_state = self.root_control_state(locators)?.encode()?;
+        let snapshot = self.validated_snapshot()?;
+        let manifests = encode_manifest_bundle_from_validated(&snapshot)?;
+        let root_control_state = root_control_state_from_validated(
+            &snapshot,
+            self.next_pid,
+            self.next_local_vec_seq,
+            locators,
+        )?
+        .encode()?;
         Ok(SpireEncodedPublishBundle {
             manifests,
             root_control_state,
@@ -290,35 +317,29 @@ impl SpireSingleLevelBuildDraft {
 }
 
 impl SpirePartitionedSingleLevelBuildDraft {
-    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        SpirePublishedEpochSnapshot::new(
+    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
+        SpireValidatedEpochSnapshot::new(
             &self.epoch_manifest,
             &self.object_manifest,
             &self.placement_directory,
-        )?;
-        Ok(SpireEncodedManifestBundle {
-            epoch_manifest: self.epoch_manifest.encode()?,
-            object_manifest: self.object_manifest.encode()?,
-            placement_directory: self.placement_directory.encode()?,
-        })
+        )
+    }
+
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        let snapshot = self.validated_snapshot()?;
+        encode_manifest_bundle_from_validated(&snapshot)
     }
 
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, String> {
-        SpirePublishedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )?;
-        SpireRootControlState::published(
-            self.epoch_manifest.epoch,
+        let snapshot = self.validated_snapshot()?;
+        root_control_state_from_validated(
+            &snapshot,
             self.next_pid,
             self.next_local_vec_seq,
-            locators.epoch_manifest_tid,
-            locators.object_manifest_tid,
-            locators.placement_directory_tid,
+            locators,
         )
     }
 
@@ -326,8 +347,15 @@ impl SpirePartitionedSingleLevelBuildDraft {
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let manifests = self.encode_manifest_bundle()?;
-        let root_control_state = self.root_control_state(locators)?.encode()?;
+        let snapshot = self.validated_snapshot()?;
+        let manifests = encode_manifest_bundle_from_validated(&snapshot)?;
+        let root_control_state = root_control_state_from_validated(
+            &snapshot,
+            self.next_pid,
+            self.next_local_vec_seq,
+            locators,
+        )?
+        .encode()?;
         Ok(SpireEncodedPublishBundle {
             manifests,
             root_control_state,
@@ -412,7 +440,7 @@ pub(super) fn build_single_level_leaf_epoch_draft(
         next_pid: pid_cursor.next_pid(),
         next_local_vec_seq: local_vec_id_cursor.next_local_vec_seq(),
     };
-    SpirePublishedEpochSnapshot::new(
+    SpireValidatedEpochSnapshot::new(
         &draft.epoch_manifest,
         &draft.object_manifest,
         &draft.placement_directory,
@@ -543,7 +571,7 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
         next_pid: pid_cursor.next_pid(),
         next_local_vec_seq: local_vec_id_cursor.next_local_vec_seq(),
     };
-    SpirePublishedEpochSnapshot::new(
+    SpireValidatedEpochSnapshot::new(
         &draft.epoch_manifest,
         &draft.object_manifest,
         &draft.placement_directory,
