@@ -62,10 +62,47 @@ impl From<&SpireScoredScanCandidate> for SpireScanOutput {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScanQuery {
+    pub(super) dimensions: u16,
+    values: Vec<f32>,
+}
+
+impl SpireScanQuery {
+    pub(super) fn new(values: Vec<f32>) -> Result<Self, String> {
+        if values.is_empty() {
+            return Err("ec_spire scan query must not be empty".to_owned());
+        }
+        let dimensions = u16::try_from(values.len()).map_err(|_| {
+            format!(
+                "ec_spire scan query dimension {} exceeds maximum {}",
+                values.len(),
+                u16::MAX
+            )
+        })?;
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err("ec_spire scan query contains a non-finite value".to_owned());
+        }
+        let norm_sq = values
+            .iter()
+            .map(|value| (*value as f64) * (*value as f64))
+            .sum::<f64>();
+        if norm_sq <= f64::EPSILON {
+            return Err("ec_spire scan query requires a non-zero vector".to_owned());
+        }
+
+        Ok(Self { dimensions, values })
+    }
+
+    pub(super) fn values(&self) -> &[f32] {
+        &self.values
+    }
+}
+
 #[derive(Debug)]
 struct SpireScanOpaque {
     rescan_called: bool,
-    query_vector: Vec<f32>,
+    query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
     cursor: SpireScanCandidateCursor,
 }
@@ -74,7 +111,7 @@ impl Default for SpireScanOpaque {
     fn default() -> Self {
         Self {
             rescan_called: false,
-            query_vector: Vec::new(),
+            query: None,
             scan_plan: None,
             cursor: SpireScanCandidateCursor::default(),
         }
@@ -84,19 +121,19 @@ impl Default for SpireScanOpaque {
 impl SpireScanOpaque {
     fn reset_for_candidates(
         &mut self,
-        query_vector: Vec<f32>,
+        query: SpireScanQuery,
         scan_plan: SpireSingleLevelScanPlan,
         candidates: Vec<SpireScoredScanCandidate>,
     ) {
         self.rescan_called = true;
-        self.query_vector = query_vector;
+        self.query = Some(query);
         self.scan_plan = Some(scan_plan);
         self.cursor.reset(candidates);
     }
 
     fn clear_scan_work(&mut self) {
         self.rescan_called = false;
-        self.query_vector.clear();
+        self.query = None;
         self.scan_plan = None;
         self.cursor.reset(Vec::new());
     }
@@ -844,7 +881,8 @@ mod tests {
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_single_level_leaf_pids, rank_routed_leaf_rows_by_ip,
         rerank_scored_candidates_by_ip, SpireLeafScanRow, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScoredScanCandidate,
+        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
+        SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1916,6 +1954,27 @@ mod tests {
     }
 
     #[test]
+    fn scan_query_accepts_nonzero_finite_vectors() {
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        assert_eq!(query.dimensions, 2);
+        assert_eq!(query.values(), &[1.0, 0.0]);
+    }
+
+    #[test]
+    fn scan_query_rejects_empty_zero_and_non_finite_vectors() {
+        assert!(SpireScanQuery::new(Vec::new())
+            .unwrap_err()
+            .contains("must not be empty"));
+        assert!(SpireScanQuery::new(vec![0.0, 0.0])
+            .unwrap_err()
+            .contains("non-zero"));
+        assert!(SpireScanQuery::new(vec![1.0, f32::NAN])
+            .unwrap_err()
+            .contains("non-finite"));
+    }
+
+    #[test]
     fn scan_opaque_reset_stores_query_plan_and_candidate_cursor() {
         let mut opaque = SpireScanOpaque::default();
         let scan_plan = SpireSingleLevelScanPlan {
@@ -1929,13 +1988,13 @@ mod tests {
         };
 
         opaque.reset_for_candidates(
-            vec![1.0, 0.0],
+            SpireScanQuery::new(vec![1.0, 0.0]).unwrap(),
             scan_plan,
             vec![scored_candidate(9, 50, 4, -9.0)],
         );
 
         assert!(opaque.rescan_called);
-        assert_eq!(opaque.query_vector, vec![1.0, 0.0]);
+        assert_eq!(opaque.query.as_ref().unwrap().values(), &[1.0, 0.0]);
         assert_eq!(opaque.scan_plan, Some(scan_plan));
         assert_eq!(
             opaque.next_output(),
@@ -1960,7 +2019,7 @@ mod tests {
             candidate_limit: Some(1),
         };
         opaque.reset_for_candidates(
-            vec![1.0, 0.0],
+            SpireScanQuery::new(vec![1.0, 0.0]).unwrap(),
             scan_plan,
             vec![scored_candidate(9, 50, 4, -9.0)],
         );
@@ -1968,7 +2027,7 @@ mod tests {
         opaque.clear_scan_work();
 
         assert!(!opaque.rescan_called);
-        assert!(opaque.query_vector.is_empty());
+        assert_eq!(opaque.query, None);
         assert_eq!(opaque.scan_plan, None);
         assert!(opaque.next_output().is_none());
     }
