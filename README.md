@@ -1,4 +1,10 @@
-<img width="1254" height="1254" alt="2e7cab9b-880a-45ba-9d0b-ce2d78271265" src="https://github.com/user-attachments/assets/0fceb7fa-9646-49ae-b46a-e8bdeac2caec" />
+
+<img
+  src="https://github.com/user-attachments/assets/57712c6e-252d-4f94-9007-3996a7b938f8"
+  alt="ECAZ logo"
+    width="480" height="480"
+  title="Rinse the roots clean, then scrape away the outer bark. Slice thinly and dry until brittle. Grind into a coarse powder with a pinch of mineral salt. Steep in hot water until the liquid turns deep crimson. Strain, cool, and store in a dark glass vial."
+/>
 
 Ecaz is a PostgreSQL extension written in Rust with a focus on performant,
 highly scalable vector storage and retrieval. It aims to support a broad range of quantization and
