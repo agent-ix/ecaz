@@ -1,0 +1,11 @@
+CREATE EXTENSION
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+ name | default_version | installed_version 
+------+-----------------+-------------------
+ ecaz | 0.1.1           | 0.1.1
+(1 row)
+

@@ -1,0 +1,8 @@
+timestamp_utc=2026-05-02T22:49:38Z
+Postgres v18 is [31m[1mstopped[0m[39m
+/opt/homebrew/opt/postgresql@18/bin/pg_config
+/opt/homebrew/opt/postgresql@18
+18.3
+[configs]
+pg18 = "/opt/homebrew/opt/postgresql@18/bin/pg_config"
+18
