@@ -44,6 +44,45 @@ pub(super) struct SpireScoredScanCandidate {
     pub(super) score: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScanCandidateCursor {
+    candidates: Vec<SpireScoredScanCandidate>,
+    next_index: usize,
+}
+
+impl SpireScanCandidateCursor {
+    pub(super) fn new(candidates: Vec<SpireScoredScanCandidate>) -> Self {
+        debug_assert!(candidates
+            .windows(2)
+            .all(|window| scored_candidate_cmp(&window[0], &window[1]) != Ordering::Greater));
+        Self {
+            candidates,
+            next_index: 0,
+        }
+    }
+
+    pub(super) fn remaining(&self) -> usize {
+        self.candidates.len().saturating_sub(self.next_index)
+    }
+
+    pub(super) fn is_exhausted(&self) -> bool {
+        self.remaining() == 0
+    }
+
+    pub(super) fn next_candidate(&mut self) -> Option<&SpireScoredScanCandidate> {
+        if self.next_index >= self.candidates.len() {
+            return None;
+        }
+        let candidate_index = self.next_index;
+        self.next_index += 1;
+        self.candidates.get(candidate_index)
+    }
+
+    pub(super) fn reset(&mut self, candidates: Vec<SpireScoredScanCandidate>) {
+        *self = Self::new(candidates);
+    }
+}
+
 pub(super) fn collect_snapshot_leaf_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &SpireLocalObjectStore,
@@ -558,7 +597,7 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScoredScanCandidate,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1243,6 +1282,52 @@ mod tests {
                 .unwrap_err()
                 .contains("non-finite")
         );
+    }
+
+    #[test]
+    fn scan_candidate_cursor_emits_ranked_candidates_once() {
+        let mut cursor = SpireScanCandidateCursor::new(vec![
+            scored_candidate(2, 10, 2, -10.0),
+            scored_candidate(1, 10, 1, -1.0),
+        ]);
+
+        assert_eq!(cursor.remaining(), 2);
+        assert!(!cursor.is_exhausted());
+        let first = cursor.next_candidate().unwrap();
+        assert_eq!(first.vec_id.local_sequence(), Some(2));
+        assert_eq!(first.heap_tid, tid(10, 2));
+        assert_eq!(first.score, -10.0);
+
+        assert_eq!(cursor.remaining(), 1);
+        let second = cursor.next_candidate().unwrap();
+        assert_eq!(second.vec_id.local_sequence(), Some(1));
+        assert_eq!(second.heap_tid, tid(10, 1));
+        assert_eq!(second.score, -1.0);
+
+        assert_eq!(cursor.remaining(), 0);
+        assert!(cursor.is_exhausted());
+        assert!(cursor.next_candidate().is_none());
+        assert!(cursor.next_candidate().is_none());
+    }
+
+    #[test]
+    fn scan_candidate_cursor_reset_replaces_candidate_set() {
+        let mut cursor = SpireScanCandidateCursor::new(vec![
+            scored_candidate(2, 10, 2, -10.0),
+            scored_candidate(1, 10, 1, -1.0),
+        ]);
+        assert_eq!(
+            cursor.next_candidate().unwrap().vec_id.local_sequence(),
+            Some(2)
+        );
+
+        cursor.reset(vec![scored_candidate(3, 20, 3, -3.0)]);
+
+        assert_eq!(cursor.remaining(), 1);
+        let candidate = cursor.next_candidate().unwrap();
+        assert_eq!(candidate.vec_id.local_sequence(), Some(3));
+        assert_eq!(candidate.heap_tid, tid(20, 3));
+        assert!(cursor.is_exhausted());
     }
 
     #[test]
