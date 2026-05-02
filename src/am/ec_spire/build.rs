@@ -7,7 +7,10 @@ use super::meta::{
     SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
     SpireRootControlState,
 };
-use super::storage::{SpireLeafPartitionObject, SpireLocalObjectStore};
+use super::storage::{
+    SpireLeafPartitionObject, SpireLocalObjectStore, SpireRoutingChildEntry,
+    SpireRoutingPartitionObject,
+};
 use crate::am::common::training as common_training;
 use crate::storage::page::ItemPointer;
 use pgrx::pg_sys;
@@ -42,6 +45,7 @@ pub(super) struct SpirePartitionedSingleLevelBuildInput {
     pub(super) published_at_micros: i64,
     pub(super) retain_until_micros: i64,
     pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) root_placement_tid: ItemPointer,
     pub(super) placement_tids: Vec<ItemPointer>,
     pub(super) assignments: Vec<SpireLeafAssignmentInput>,
     pub(super) centroid_plan: SpireSingleLevelCentroidPlan,
@@ -53,6 +57,8 @@ pub(super) struct SpirePartitionedSingleLevelBuildDraft {
     pub(super) object_manifest: SpireObjectManifest,
     pub(super) placement_directory: SpirePlacementDirectory,
     pub(super) route_map: SpireSingleLevelRouteMap,
+    pub(super) root_pid: u64,
+    pub(super) routing_object: SpireRoutingPartitionObject,
     pub(super) centroid_pids: Vec<u64>,
     pub(super) leaf_objects: Vec<SpireLeafPartitionObject>,
     pub(super) next_pid: u64,
@@ -467,6 +473,7 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
 
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
+    let root_pid = pid_cursor.allocate()?;
     let mut centroid_pids = Vec::with_capacity(centroid_count);
     for _ in 0..centroid_count {
         centroid_pids.push(pid_cursor.allocate()?);
@@ -474,19 +481,37 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     let route_map =
         SpireSingleLevelRouteMap::from_centroid_plan(&input.centroid_plan, &centroid_pids)?;
 
-    let object_manifest = SpireObjectManifest::from_entries(
-        input.epoch,
-        centroid_pids
+    let routing_object = SpireRoutingPartitionObject::root(
+        root_pid,
+        input.object_version,
+        input.centroid_plan.dimensions,
+        route_map
+            .entries
             .iter()
-            .zip(input.placement_tids.iter())
-            .map(|(&pid, &placement_tid)| SpireManifestEntry {
-                epoch: input.epoch,
-                pid,
-                object_version: input.object_version,
-                placement_tid,
+            .map(|entry| SpireRoutingChildEntry {
+                centroid_index: entry.centroid_index,
+                child_pid: entry.pid,
+                centroid: entry.centroid.clone(),
             })
             .collect(),
     )?;
+
+    let mut manifest_entries = Vec::with_capacity(centroid_count + 1);
+    manifest_entries.push(SpireManifestEntry {
+        epoch: input.epoch,
+        pid: root_pid,
+        object_version: input.object_version,
+        placement_tid: input.root_placement_tid,
+    });
+    manifest_entries.extend(centroid_pids.iter().zip(input.placement_tids.iter()).map(
+        |(&pid, &placement_tid)| SpireManifestEntry {
+            epoch: input.epoch,
+            pid,
+            object_version: input.object_version,
+            placement_tid,
+        },
+    ));
+    let object_manifest = SpireObjectManifest::from_entries(input.epoch, manifest_entries)?;
 
     let mut leaf_objects = Vec::with_capacity(centroid_count);
     for (pid, assignments) in centroid_pids
@@ -495,10 +520,12 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
         .zip(assignments_by_centroid.into_iter())
     {
         let assignments = build_primary_leaf_assignments(&mut local_vec_id_cursor, assignments)?;
-        let leaf_object = SpireLeafPartitionObject::new(pid, input.object_version, 0, assignments)?;
+        let leaf_object =
+            SpireLeafPartitionObject::new(pid, input.object_version, root_pid, assignments)?;
         leaf_objects.push(leaf_object);
     }
-    let mut placements = Vec::with_capacity(centroid_count);
+    let mut placements = Vec::with_capacity(centroid_count + 1);
+    placements.push(object_store.insert_routing_object(input.epoch, &routing_object)?);
     for leaf_object in &leaf_objects {
         placements.push(object_store.insert_leaf_object(input.epoch, leaf_object)?);
     }
@@ -509,6 +536,8 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
         object_manifest,
         placement_directory,
         route_map,
+        root_pid,
+        routing_object,
         centroid_pids,
         leaf_objects,
         next_pid: pid_cursor.next_pid(),
@@ -594,6 +623,7 @@ mod tests {
             published_at_micros: 1000,
             retain_until_micros: 2000,
             consistency_mode: SpireConsistencyMode::Strict,
+            root_placement_tid: tid(60, 3),
             placement_tids: vec![tid(60, 1), tid(60, 2)],
             assignments,
             centroid_plan,
@@ -868,16 +898,25 @@ mod tests {
 
         assert_eq!(
             draft.centroid_pids,
-            vec![SPIRE_FIRST_PID, SPIRE_FIRST_PID + 1]
+            vec![SPIRE_FIRST_PID + 1, SPIRE_FIRST_PID + 2]
         );
+        assert_eq!(draft.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(draft.routing_object.header.pid, SPIRE_FIRST_PID);
+        assert_eq!(draft.routing_object.header.child_count, 2);
         assert_eq!(draft.leaf_objects.len(), 2);
         assert_eq!(draft.route_map.entries.len(), 2);
-        assert_eq!(draft.object_manifest.entries.len(), 2);
-        assert_eq!(draft.placement_directory.entries.len(), 2);
+        assert_eq!(draft.object_manifest.entries.len(), 3);
+        assert_eq!(draft.placement_directory.entries.len(), 3);
+        let root_placement = draft.placement_directory.get(draft.root_pid).unwrap();
+        assert_eq!(
+            object_store.read_routing_object(root_placement).unwrap(),
+            draft.routing_object
+        );
         for &pid in &draft.centroid_pids {
             assert!(draft.route_map.entries.iter().any(|entry| entry.pid == pid));
         }
         for leaf_object in &draft.leaf_objects {
+            assert_eq!(leaf_object.header.parent_pid, draft.root_pid);
             assert!(draft.object_manifest.get(leaf_object.header.pid).is_some());
             let placement = draft
                 .placement_directory
@@ -902,7 +941,7 @@ mod tests {
             &draft.placement_directory,
         )
         .unwrap();
-        assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 3);
         assert_eq!(draft.next_local_vec_seq, SPIRE_FIRST_LOCAL_VEC_SEQ + 2);
         assert_eq!(pid_allocator.next_pid(), draft.next_pid);
         assert_eq!(
@@ -933,11 +972,11 @@ mod tests {
         assert_eq!(draft.leaf_objects.len(), 2);
         assert_eq!(draft.leaf_objects[0].assignments.len(), 1);
         assert!(draft.leaf_objects[1].assignments.is_empty());
-        assert_eq!(draft.leaf_objects[1].header.pid, SPIRE_FIRST_PID + 1);
-        assert_eq!(draft.route_map.get(1).unwrap().pid, SPIRE_FIRST_PID + 1);
-        assert!(draft.object_manifest.get(SPIRE_FIRST_PID + 1).is_some());
-        assert!(draft.placement_directory.get(SPIRE_FIRST_PID + 1).is_some());
-        assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(draft.leaf_objects[1].header.pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(draft.route_map.get(1).unwrap().pid, SPIRE_FIRST_PID + 2);
+        assert!(draft.object_manifest.get(SPIRE_FIRST_PID + 2).is_some());
+        assert!(draft.placement_directory.get(SPIRE_FIRST_PID + 2).is_some());
+        assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 3);
         assert_eq!(draft.next_local_vec_seq, SPIRE_FIRST_LOCAL_VEC_SEQ + 1);
     }
 
