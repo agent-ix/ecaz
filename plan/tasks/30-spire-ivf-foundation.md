@@ -102,9 +102,12 @@ Decision record:
 - [x] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
   `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` in `spec/spec.md`;
   otherwise keep them explicitly marked as deferred.
-- [ ] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
+- [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
-  single-level path.
+  single-level path. Foundation codecs and draft builders now store validated
+  row identity, heap locators, payload/scoring metadata, and role flags inside
+  PID-addressed leaf objects; live AM callback wiring remains covered by the
+  build and scan path tasks below.
 - [ ] **Single-store placement.** Persist a PID placement directory even if the
   first executable path maps every PID to one local store.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
