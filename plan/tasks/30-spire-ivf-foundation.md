@@ -157,8 +157,10 @@ Decision record:
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
   `rerank_width`, `training_sample_rows`, `seed`, `pq_group_size`,
   `storage_format`, and `quantizer`; session overrides exist for
-  `ec_spire.nprobe` and `ec_spire.rerank_width`. Option consumption by live
-  build/scan callbacks remains part of those open tasks.
+  `ec_spire.nprobe` and `ec_spire.rerank_width`. These settings now resolve to
+  a helper-level single-level scan plan carrying effective `nprobe`, assignment
+  payload format, rerank width, and pre-rerank candidate limit. Option
+  consumption by live build/scan callbacks remains part of those open tasks.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
