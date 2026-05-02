@@ -12,7 +12,7 @@ use super::storage::{
     SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use crate::storage::page::ItemPointer;
-use pgrx::{pg_sys, IntoDatum, PgBox, PgMemoryContexts};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafScanRow {
@@ -783,6 +783,22 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
     }
 }
 
+unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireScanQuery, String> {
+    if orderbys.is_null() {
+        return Err("ec_spire amrescan received null order-by scan keys".to_owned());
+    }
+
+    let orderby = unsafe { &*orderbys };
+    if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+        return Err("ec_spire scan query must not be NULL".to_owned());
+    }
+
+    let values =
+        Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
+            .ok_or_else(|| "ec_spire scan requires a real[] ORDER BY query".to_owned())?;
+    SpireScanQuery::new(values)
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
@@ -807,13 +823,42 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
-    _scan: pg_sys::IndexScanDesc,
+    scan: pg_sys::IndexScanDesc,
     _keys: pg_sys::ScanKey,
-    _nkeys: std::ffi::c_int,
-    _orderbys: pg_sys::ScanKey,
-    _norderbys: std::ffi::c_int,
+    nkeys: std::ffi::c_int,
+    orderbys: pg_sys::ScanKey,
+    norderbys: std::ffi::c_int,
 ) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("amrescan")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                pgrx::error!("ec_spire amrescan received a null scan descriptor");
+            }
+            if nkeys != 0 {
+                pgrx::error!("ec_spire scan does not support index quals yet");
+            }
+            if norderbys != 1 {
+                pgrx::error!("ec_spire scan currently requires exactly one ORDER BY query");
+            }
+
+            let opaque_ptr = (*scan).opaque.cast::<SpireScanOpaque>();
+            if opaque_ptr.is_null() {
+                pgrx::error!("ec_spire amrescan missing scan opaque state");
+            }
+            let opaque = &mut *opaque_ptr;
+            opaque.clear_scan_work();
+            opaque.query =
+                Some(decode_scan_orderby_query(orderbys).unwrap_or_else(|e| pgrx::error!("{e}")));
+            (*scan).xs_recheck = false;
+            (*scan).xs_recheckorderby = false;
+            (*scan).xs_orderbyvals = ptr::null_mut();
+            (*scan).xs_orderbynulls = ptr::null_mut();
+
+            pgrx::error!(
+                "ec_spire amrescan relation-backed snapshot loading is not implemented yet"
+            )
+        })
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_amgettuple(
