@@ -125,6 +125,17 @@ pub(super) struct SpireRerankWidthResolution {
     pub(super) source: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireSingleLevelScanPlan {
+    pub(super) leaf_count: u32,
+    pub(super) nprobe: u32,
+    pub(super) nprobe_source: &'static str,
+    pub(super) payload_format: SpireAssignmentPayloadFormat,
+    pub(super) rerank_width: usize,
+    pub(super) rerank_width_source: &'static str,
+    pub(super) candidate_limit: Option<usize>,
+}
+
 pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_spire.nprobe",
@@ -162,6 +173,52 @@ pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNpr
 
 pub(super) fn resolve_scan_rerank_width(relation_rerank_width: i32) -> SpireRerankWidthResolution {
     resolve_scan_rerank_width_values(relation_rerank_width, current_session_rerank_width())
+}
+
+pub(super) fn resolve_single_level_scan_plan(
+    leaf_count: u32,
+    options: EcSpireOptions,
+) -> Result<SpireSingleLevelScanPlan, String> {
+    resolve_single_level_scan_plan_values(
+        leaf_count,
+        options,
+        current_session_nprobe(),
+        current_session_rerank_width(),
+    )
+}
+
+fn resolve_single_level_scan_plan_values(
+    leaf_count: u32,
+    options: EcSpireOptions,
+    session_nprobe_value: i32,
+    session_rerank_width_value: i32,
+) -> Result<SpireSingleLevelScanPlan, String> {
+    let relation_nprobe = u32::try_from(options.nprobe)
+        .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
+    if options.rerank_width < 0 {
+        return Err("ec_spire rerank_width reloption must be non-negative".to_owned());
+    }
+
+    let nprobe = resolve_scan_nprobe_values(leaf_count, relation_nprobe, session_nprobe_value);
+    let rerank_width =
+        resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
+    let rerank_width_usize = usize::try_from(rerank_width.effective_rerank_width)
+        .map_err(|_| "ec_spire rerank_width exceeds usize".to_owned())?;
+    let candidate_limit = if rerank_width_usize > 0 {
+        Some(rerank_width_usize)
+    } else {
+        None
+    };
+
+    Ok(SpireSingleLevelScanPlan {
+        leaf_count,
+        nprobe: nprobe.effective_nprobe,
+        nprobe_source: nprobe.source,
+        payload_format: options.assignment_payload_format(),
+        rerank_width: rerank_width_usize,
+        rerank_width_source: rerank_width.source,
+        candidate_limit,
+    })
 }
 
 fn resolve_scan_nprobe_values(
@@ -389,8 +446,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_scan_nprobe_values, resolve_scan_rerank_width_values, EcSpireOptions,
-        SpireStorageFormat,
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
+        resolve_single_level_scan_plan_values, EcSpireOptions, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -469,5 +526,74 @@ mod tests {
             options.assignment_payload_format(),
             SpireAssignmentPayloadFormat::TurboQuant
         );
+    }
+
+    #[test]
+    fn single_level_scan_plan_resolves_runtime_knobs() {
+        let options = EcSpireOptions {
+            nlists: 17,
+            nprobe: 3,
+            rerank_width: 128,
+            training_sample_rows: 1000,
+            seed: 7,
+            pq_group_size: 0,
+            storage_format: SpireStorageFormat::RaBitQ,
+        };
+
+        let plan = resolve_single_level_scan_plan_values(17, options, -1, -1).unwrap();
+
+        assert_eq!(plan.leaf_count, 17);
+        assert_eq!(plan.nprobe, 3);
+        assert_eq!(plan.nprobe_source, "relation");
+        assert_eq!(plan.payload_format, SpireAssignmentPayloadFormat::RaBitQ);
+        assert_eq!(plan.rerank_width, 128);
+        assert_eq!(plan.rerank_width_source, "relation");
+        assert_eq!(plan.candidate_limit, Some(128));
+    }
+
+    #[test]
+    fn single_level_scan_plan_uses_session_overrides_and_full_rerank() {
+        let options = EcSpireOptions {
+            nlists: 17,
+            nprobe: 0,
+            rerank_width: 128,
+            training_sample_rows: 0,
+            seed: 42,
+            pq_group_size: 0,
+            storage_format: SpireStorageFormat::Auto,
+        };
+
+        let plan = resolve_single_level_scan_plan_values(17, options, 99, 0).unwrap();
+
+        assert_eq!(plan.nprobe, 17);
+        assert_eq!(plan.nprobe_source, "session");
+        assert_eq!(
+            plan.payload_format,
+            SpireAssignmentPayloadFormat::TurboQuant
+        );
+        assert_eq!(plan.rerank_width, 0);
+        assert_eq!(plan.rerank_width_source, "session");
+        assert_eq!(plan.candidate_limit, None);
+    }
+
+    #[test]
+    fn single_level_scan_plan_rejects_invalid_manual_options() {
+        let invalid = EcSpireOptions {
+            nlists: 0,
+            nprobe: -1,
+            rerank_width: 0,
+            training_sample_rows: 0,
+            seed: 42,
+            pq_group_size: 0,
+            storage_format: SpireStorageFormat::Auto,
+        };
+        assert!(resolve_single_level_scan_plan_values(1, invalid, -1, -1).is_err());
+
+        let invalid = EcSpireOptions {
+            nprobe: 0,
+            rerank_width: -1,
+            ..invalid
+        };
+        assert!(resolve_single_level_scan_plan_values(1, invalid, -1, -1).is_err());
     }
 }
