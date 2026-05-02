@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::assign::SpireLeafAssignmentInput;
 use super::storage::{
     SpireLeafAssignmentRow, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_RABITQ,
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
@@ -7,6 +8,7 @@ use super::storage::{
 use crate::quant::prod::{payload_len, PreparedQuery, ProdQuantizer};
 use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::Quantizer;
+use crate::storage::page::ItemPointer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpireAssignmentPayloadFormat {
@@ -187,6 +189,23 @@ pub(super) fn encode_assignment_payload(
     }
 }
 
+pub(super) fn encode_assignment_input(
+    payload_format: SpireAssignmentPayloadFormat,
+    heap_tid: ItemPointer,
+    source_vector: &[f32],
+) -> Result<SpireLeafAssignmentInput, String> {
+    if heap_tid == ItemPointer::INVALID {
+        return Err("ec_spire assignment input heap_tid must be valid".to_owned());
+    }
+    let (_, gamma, encoded_payload) = encode_assignment_payload(payload_format, source_vector)?;
+    Ok(SpireLeafAssignmentInput {
+        heap_tid,
+        payload_format: payload_format.tag(),
+        gamma,
+        encoded_payload,
+    })
+}
+
 fn validate_vector_shape(label: &str, dimensions: usize, vector: &[f32]) -> Result<(), String> {
     if dimensions == 0 {
         return Err(format!("ec_spire {label} vector dimensions must be > 0"));
@@ -236,7 +255,8 @@ fn validate_payload_len(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_assignment_payload, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
+        encode_assignment_input, encode_assignment_payload, SpireAssignmentPayloadFormat,
+        SpirePreparedAssignmentScorer,
     };
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_PAYLOAD_FORMAT_NONE,
@@ -391,6 +411,35 @@ mod tests {
             SpireAssignmentPayloadFormat::TurboQuant,
             2,
             &[1.0, f32::INFINITY],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn encode_assignment_input_builds_leaf_assignment_input() {
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let (_, gamma, payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
+
+        let input = encode_assignment_input(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            tid(10, 2),
+            &source,
+        )
+        .unwrap();
+
+        assert_eq!(input.heap_tid, tid(10, 2));
+        assert_eq!(input.payload_format, SPIRE_PAYLOAD_FORMAT_TURBOQUANT);
+        assert_eq!(input.gamma, gamma);
+        assert_eq!(input.encoded_payload, payload);
+    }
+
+    #[test]
+    fn encode_assignment_input_rejects_invalid_locator() {
+        assert!(encode_assignment_input(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            ItemPointer::INVALID,
+            &[0.25, -0.5, 0.75, 1.0],
         )
         .is_err());
     }

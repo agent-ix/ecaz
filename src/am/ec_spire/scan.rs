@@ -635,7 +635,7 @@ mod tests {
         SpirePublishedEpochSnapshot,
     };
     use crate::am::ec_spire::quantizer::{
-        encode_assignment_payload, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
+        encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::am::ec_spire::storage::{
@@ -666,15 +666,12 @@ mod tests {
         payload_format: SpireAssignmentPayloadFormat,
         source_vector: &[f32],
     ) -> SpireLeafAssignmentInput {
-        let (dimensions, gamma, encoded_payload) =
-            encode_assignment_payload(payload_format, source_vector).unwrap();
-        assert_eq!(usize::from(dimensions), source_vector.len());
-        SpireLeafAssignmentInput {
-            heap_tid: tid(block_number, offset_number),
-            payload_format: payload_format.tag(),
-            gamma,
-            encoded_payload,
-        }
+        encode_assignment_input(
+            payload_format,
+            tid(block_number, offset_number),
+            source_vector,
+        )
+        .unwrap()
     }
 
     fn assignment_input_with_payload(
