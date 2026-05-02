@@ -141,7 +141,12 @@ Decision record:
   rerank callback integration, and AM callback execution remain open.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
-  quantizer profile, and build parameters.
+  quantizer profile, and build parameters. The foundation now has an internal
+  snapshot diagnostics helper that reports epoch/consistency mode, object and
+  placement counts, local-store count, placement-state counts, object-kind
+  counts, routing-child count, assignment counts, and available object bytes
+  for available local placements. SQL exposure, quantizer/build-parameter
+  reporting, and relation-backed admin reads remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality.
