@@ -767,6 +767,9 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     if assignment.flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
         return Err("ec_spire delta assignment cannot be a boundary replica in Phase 1".to_owned());
     }
+    if assignment.flags & SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR != 0 {
+        return Err("ec_spire delta assignment cannot be a stale locator".to_owned());
+    }
     if is_insert && assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY == 0 {
         return Err("ec_spire insert delta assignment must be primary".to_owned());
     }
@@ -836,8 +839,9 @@ mod tests {
         SpireLocalObjectStore, SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-        SPIRE_ASSIGNMENT_FLAG_TOMBSTONE, SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR,
-        SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, SPIRE_VEC_ID_MAX_BYTES,
+        SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+        SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
+        SPIRE_VEC_ID_MAX_BYTES,
     };
     use crate::storage::page::ItemPointer;
 
@@ -1272,8 +1276,14 @@ mod tests {
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
 
-        row = valid_row;
+        row = valid_row.clone();
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_row;
+        row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY
+            | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+            | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
     }
 
