@@ -184,9 +184,15 @@ striped across physical NVMe devices, then multi-machine PID routing.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
+- [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
+  recall modes for unavailable or stale nodes/stores, with degraded mode
+  reporting skipped placements explicitly.
 - [ ] **Merge semantics.** Merge remote candidates by stable `vec_id`, dedupe
   boundary replicas, and define how local heap row resolution works after
   remote candidate selection.
+- [ ] **Replica deferral.** Record replicated partition objects as future work
+  for read throughput and availability; v1 assumes one primary placement per
+  PID.
 
 ## Phase 8 — Product-Scale Measurement Gate
 

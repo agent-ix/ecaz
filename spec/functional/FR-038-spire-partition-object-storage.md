@@ -38,6 +38,76 @@ relationships:
 10. Old epochs SHALL remain readable until in-flight queries using them can finish or fail with an explicit stale-epoch error.
 11. Diagnostics SHALL expose read-only SQL functions or views for partition counts, placement map state, per-store object bytes, assignment cardinality, active epoch, and stale/unavailable placement entries.
 
+## Data Schema
+
+```mermaid
+erDiagram
+    SPIRE_ROOT {
+        oid index_oid
+        bigint active_epoch
+        oid heap_relid
+        text consistency_mode
+        int root_graph_pid
+    }
+    EPOCH_MANIFEST {
+        bigint epoch
+        text state
+        timestamptz published_at
+        timestamptz retain_until
+    }
+    PLACEMENT_ENTRY {
+        bigint epoch
+        bigint pid
+        int node_id
+        int local_store_id
+        text object_locator
+        text state
+    }
+    PARTITION_OBJECT {
+        bigint pid
+        bigint object_version
+        int level
+        bigint parent_pid
+        text kind
+        bytea payload
+    }
+    ASSIGNMENT_ROW {
+        bigint pid
+        bytea vec_id
+        tid heap_tid
+        bytea encoded_payload
+        int flags
+    }
+
+    SPIRE_ROOT ||--o{ EPOCH_MANIFEST : publishes
+    EPOCH_MANIFEST ||--o{ PLACEMENT_ENTRY : maps
+    PLACEMENT_ENTRY ||--|| PARTITION_OBJECT : locates
+    PARTITION_OBJECT ||--o{ ASSIGNMENT_ROW : contains
+```
+
+`object_locator` is intentionally abstract in this requirement. Phase 0 SHALL
+compare table/relation-backed layouts first and may choose another AM-owned
+layout only if measurement or PostgreSQL mechanics show tables are the wrong
+hot-path container.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Planner["PostgreSQL planner\nchooses ec_spire path"]
+    Root["SPIRE root/control metadata\nactive epoch, root graph, placement map"]
+    Router["SPIRE router\nquery vector -> selected PIDs"]
+    Stores["Partition stores\nPostgres-managed where viable"]
+    Leaf["Leaf partition objects\nassignment/posting rows"]
+    Exec["PostgreSQL executor\nheap visibility and result rows"]
+
+    Planner --> Root
+    Root --> Router
+    Router --> Stores
+    Stores --> Leaf
+    Leaf --> Exec
+```
+
 ## Acceptance Criteria
 
 ### FR-038-AC-1

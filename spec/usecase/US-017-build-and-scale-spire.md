@@ -1,6 +1,6 @@
 ---
 id: US-017
-title: Build and Scale SPIRE Indexes
+title: Operate a Local SPIRE Index Lifecycle
 type: user-story
 artifact_type: US
 status: DRAFT
@@ -11,12 +11,21 @@ relationships:
   - target: "ix://agent-ix/tqvector/FR-038"
     type: "derives_into"
     cardinality: "1:N"
+  - target: "ix://agent-ix/tqvector/FR-040"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/tqvector/FR-041"
+    type: "derives_into"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/tqvector/FR-043"
+    type: "derives_into"
+    cardinality: "1:N"
 ---
-# US-017: Build and Scale SPIRE Indexes
+# US-017: Operate a Local SPIRE Index Lifecycle
 
 **As** a platform engineer,
-**I want** to build a SPIRE index whose partition objects can be placed across local NVMe devices and later across machines,
-**So that** I can scale ANN search beyond a single monolithic PostgreSQL index file while preserving query-vector routing and boundary-replica deduplication.
+**I want** to build, query, update, vacuum, reindex, and inspect a local SPIRE index,
+**So that** I can prove the partition-object foundation before adding local multi-NVMe and multi-instance placement.
 
 ## Acceptance Criteria
 
@@ -26,16 +35,16 @@ relationships:
 
 ### US-017-AC-2
 
-SPIRE partition selection happens inside the SPIRE index/coordinator from the query vector, root graph, hierarchy metadata, and centroids; it does not rely on PostgreSQL declarative table partition pruning.
+SPIRE partition selection happens inside the SPIRE index from the query vector, root graph or centroid router, hierarchy metadata, and centroids; it does not rely on PostgreSQL declarative table partition pruning.
 
 ### US-017-AC-3
 
-The storage model can place partition objects across bounded local partition stores, each eligible to live in a different tablespace backed by a physical NVMe device.
+Local build publishes an initial epoch that records compatible root metadata, hierarchy metadata, placement metadata, and partition objects.
 
 ### US-017-AC-4
 
-The placement model can later extend from `pid -> local_store_id` to `pid -> node_id -> local_store_id` without changing the logical assignment row shape.
+Local insert/delete/update paths either mutate a live delta layer or publish a replacement epoch, according to the configured consistency mode.
 
 ### US-017-AC-5
 
-Queries run against a published SPIRE epoch or manifest so root metadata, hierarchy metadata, placement metadata, and partition objects are mutually compatible for the duration of the search.
+Vacuum and cleanup can retire dead rows, compact partition objects, and remove old epochs according to a configured retention policy.

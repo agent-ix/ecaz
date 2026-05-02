@@ -62,7 +62,8 @@ This specification governs:
 - DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
 - SPIRE planning requirements for PID-addressed partition objects, logical
   `(vec_id, pid)` assignment rows, epoch publication, local multi-NVMe
-  partition stores, and future multi-machine placement
+  partition stores, configurable graceful degradation, and future
+  multi-machine placement over libpq
 - WAL safety for index mutations and crash-safe page writes
 - The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
 - Benchmark methodology and review-packet artifact provenance for any performance or recall claim
@@ -115,9 +116,10 @@ All current index families expose inner-product ordering through `<#>` as negati
 
 `ec_spire` is planned as a SPIRE-inspired access method. Its storage model is
 based on PID-addressed partition objects, not PostgreSQL declarative table
-partitions. The first implementation target is a local single-level foundation;
-the design preserves a path to local multi-NVMe partition stores and later
-multi-machine PID placement.
+partitions. The first implementation target is a local single-level foundation.
+The design preserves a path to PostgreSQL-managed local multi-NVMe partition
+stores, configurable graceful degradation, and later multi-machine PID
+placement over libpq.
 
 ## 4. Architecture
 
@@ -205,8 +207,8 @@ Each AM owns its persisted index format:
 - `ec_ivf`: metadata, centroid directory, posting-list pages, optional PQ/RaBitQ payloads, slack pages, and admin/drift snapshots
 - `ec_diskann`: Vamana nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, duplicate overflow chains, and vacuum repair metadata
 - `ec_spire`: planned root/control metadata, top graph, PID placement map,
-  epoch metadata, internal partition objects, and leaf assignment/posting
-  objects
+  epoch metadata, internal partition objects, leaf assignment/posting objects,
+  local store configuration, and remote-node placement metadata
 
 Cross-AM page-layout reuse is allowed only through shared helpers with explicit format adapters.
 
