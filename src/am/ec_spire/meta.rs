@@ -494,7 +494,7 @@ impl SpireEpochManifest {
         Ok(manifest)
     }
 
-    fn validate(&self) -> Result<(), String> {
+    pub(super) fn validate(&self) -> Result<(), String> {
         if self.epoch == 0 {
             return Err("ec_spire epoch manifest epoch 0 is invalid".to_owned());
         }
