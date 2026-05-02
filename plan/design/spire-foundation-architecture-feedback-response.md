@@ -192,6 +192,11 @@ This keeps child PID lookup and centroid scoring contiguous. The route map can
 borrow slices from the decoded object and score centroid rows with chunked or
 SIMD-friendly loops.
 
+Implementation checkpoint: `SpireRoutingPartitionObject` now stores
+`child_pids`, `centroid_ordinals`, and a flat `centroids` block. Constructors
+still accept `SpireRoutingChildEntry` for build compatibility, while scan and
+diagnostics consume borrowed child views from the flat arrays.
+
 ## Top-K Selection
 
 Top-`nprobe` routing and candidate ranking should use bounded heaps:

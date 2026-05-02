@@ -82,12 +82,12 @@ pub(super) fn collect_snapshot_diagnostics(
             SpirePartitionObjectKind::Root => {
                 diagnostics.root_object_count += 1;
                 let object = object_store.read_routing_object(placement)?;
-                diagnostics.routing_child_count += object.children.len();
+                diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Internal => {
                 diagnostics.internal_object_count += 1;
                 let object = object_store.read_routing_object(placement)?;
-                diagnostics.routing_child_count += object.children.len();
+                diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Leaf => {
                 diagnostics.leaf_object_count += 1;

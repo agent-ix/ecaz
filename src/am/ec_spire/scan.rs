@@ -340,7 +340,7 @@ pub(super) fn count_snapshot_single_level_leaf_pids(
 ) -> Result<u32, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let (_, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
-    u32::try_from(root_object.children.len())
+    u32::try_from(root_object.child_count())
         .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())
 }
 
@@ -755,13 +755,13 @@ fn route_root_object_to_leaf_pids(
     let requested = usize::try_from(nprobe)
         .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
 
-    let mut heap = BinaryHeap::with_capacity(requested.min(root_object.children.len()));
-    for child in &root_object.children {
+    let mut heap = BinaryHeap::with_capacity(requested.min(root_object.child_count()));
+    for child in root_object.children() {
         let entry = SpireRouteCandidateHeapEntry {
             candidate: SpireRouteCandidate {
                 centroid_index: child.centroid_index,
                 child_pid: child.child_pid,
-                ip_score: inner_product(query_vector, &child.centroid),
+                ip_score: inner_product(query_vector, child.centroid),
             },
         };
         if heap.len() < requested {

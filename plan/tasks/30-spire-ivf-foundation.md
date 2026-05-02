@@ -17,7 +17,9 @@ tie-breaks, and the scan plan carries an explicit dedupe mode so the Phase 1
 primary-only path skips the `vec_id` map until boundary replicas or remote
 merge require it. Build/update publication helpers and delta-from-snapshot
 logic now consume the validated snapshot wrapper rather than rebuilding
-published snapshots internally. A cursor-to-scan-output
+published snapshots internally. Routing partition objects now store child PIDs,
+centroid ordinals, and centroid values in flat arrays instead of one owned
+centroid vector per child. A cursor-to-scan-output
 bridge now maps ranked candidates to heap TID plus ORDER BY score output for
 future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
@@ -158,9 +160,12 @@ Decision record:
   publication, and delta-update publication helpers now use
   `SpireValidatedEpochSnapshot`; delta-from-snapshot helper logic uses cached
   PID lookup for base placement and assignment-ID collection.
-- [ ] **Flat routing object layout.** Replace per-child `Vec<f32>` routing
+- [x] **Flat routing object layout.** Replace per-child `Vec<f32>` routing
   entries with flat `child_pids`, `centroid_ordinals`, and centroid block arrays
-  before root/internal routing objects become relation-backed.
+  before root/internal routing objects become relation-backed. Constructors
+  still accept `SpireRoutingChildEntry`, but `SpireRoutingPartitionObject`
+  stores parallel `child_pids`, `centroid_ordinals`, and one flat centroid block
+  with borrowed child views for scan iteration.
 - [x] **Bounded routing and candidate heaps.** Replace sort/truncate
   top-`nprobe` and candidate top-k selection with bounded heaps and a documented
   deterministic tie-break contract. The routed scan helper now keeps a bounded

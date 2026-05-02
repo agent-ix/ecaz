@@ -1054,11 +1054,20 @@ pub(super) struct SpireRoutingChildEntry {
     pub(super) centroid: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireRoutingChildView<'a> {
+    pub(super) centroid_index: u32,
+    pub(super) child_pid: u64,
+    pub(super) centroid: &'a [f32],
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingPartitionObject {
     pub(super) header: SpirePartitionObjectHeader,
     pub(super) dimensions: u16,
-    pub(super) children: Vec<SpireRoutingChildEntry>,
+    pub(super) centroid_ordinals: Vec<u32>,
+    pub(super) child_pids: Vec<u64>,
+    pub(super) centroids: Vec<f32>,
 }
 
 impl SpireRoutingPartitionObject {
@@ -1109,6 +1118,19 @@ impl SpireRoutingPartitionObject {
     ) -> Result<Self, String> {
         let child_count = u32::try_from(children.len())
             .map_err(|_| "ec_spire routing child count exceeds u32".to_owned())?;
+        let dimensions_usize = usize::from(dimensions);
+        let centroid_capacity = children
+            .len()
+            .checked_mul(dimensions_usize)
+            .ok_or_else(|| "ec_spire routing centroid component count overflow".to_owned())?;
+        let mut centroid_ordinals = Vec::with_capacity(children.len());
+        let mut child_pids = Vec::with_capacity(children.len());
+        let mut centroids = Vec::with_capacity(centroid_capacity);
+        for child in children {
+            centroid_ordinals.push(child.centroid_index);
+            child_pids.push(child.child_pid);
+            centroids.extend_from_slice(&child.centroid);
+        }
         let object = Self {
             header: SpirePartitionObjectHeader {
                 kind,
@@ -1121,10 +1143,39 @@ impl SpireRoutingPartitionObject {
                 flags: 0,
             },
             dimensions,
-            children,
+            centroid_ordinals,
+            child_pids,
+            centroids,
         };
         object.validate()?;
         Ok(object)
+    }
+
+    pub(super) fn child_count(&self) -> usize {
+        self.child_pids.len()
+    }
+
+    pub(super) fn child_centroid(&self, child_index: usize) -> Option<&[f32]> {
+        let dimensions = usize::from(self.dimensions);
+        let start = child_index.checked_mul(dimensions)?;
+        let end = start.checked_add(dimensions)?;
+        self.centroids.get(start..end)
+    }
+
+    pub(super) fn children(&self) -> impl Iterator<Item = SpireRoutingChildView<'_>> + '_ {
+        let dimensions = usize::from(self.dimensions);
+        self.centroid_ordinals
+            .iter()
+            .copied()
+            .zip(self.child_pids.iter().copied())
+            .zip(self.centroids.chunks_exact(dimensions))
+            .map(
+                |((centroid_index, child_pid), centroid)| SpireRoutingChildView {
+                    centroid_index,
+                    child_pid,
+                    centroid,
+                },
+            )
     }
 
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
@@ -1133,10 +1184,10 @@ impl SpireRoutingPartitionObject {
         let mut out = self.header.encode()?;
         out.extend_from_slice(&self.dimensions.to_le_bytes());
         out.extend_from_slice(&0_u16.to_le_bytes());
-        for child in &self.children {
+        for child in self.children() {
             out.extend_from_slice(&child.centroid_index.to_le_bytes());
             out.extend_from_slice(&child.child_pid.to_le_bytes());
-            for component in &child.centroid {
+            for component in child.centroid {
                 out.extend_from_slice(&component.to_le_bytes());
             }
         }
@@ -1179,7 +1230,12 @@ impl SpireRoutingPartitionObject {
             ));
         }
 
-        let mut children = Vec::with_capacity(child_count);
+        let centroid_capacity = child_count
+            .checked_mul(usize::from(dimensions))
+            .ok_or_else(|| "ec_spire routing centroid component count overflow".to_owned())?;
+        let mut centroid_ordinals = Vec::with_capacity(child_count);
+        let mut child_pids = Vec::with_capacity(child_count);
+        let mut centroids = Vec::with_capacity(centroid_capacity);
         let mut cursor = ROUTING_OBJECT_BODY_PREFIX_BYTES;
         for _ in 0..child_count {
             let centroid_index =
@@ -1188,26 +1244,24 @@ impl SpireRoutingPartitionObject {
             let child_pid =
                 u64::from_le_bytes(tail[cursor..cursor + 8].try_into().expect("child pid"));
             cursor += 8;
-            let mut centroid = Vec::with_capacity(usize::from(dimensions));
+            centroid_ordinals.push(centroid_index);
+            child_pids.push(child_pid);
             for _ in 0..dimensions {
-                centroid.push(f32::from_le_bytes(
+                centroids.push(f32::from_le_bytes(
                     tail[cursor..cursor + 4]
                         .try_into()
                         .expect("centroid component"),
                 ));
                 cursor += 4;
             }
-            children.push(SpireRoutingChildEntry {
-                centroid_index,
-                child_pid,
-                centroid,
-            });
         }
 
         let object = Self {
             header,
             dimensions,
-            children,
+            centroid_ordinals,
+            child_pids,
+            centroids,
         };
         object.validate()?;
         Ok(object)
@@ -1243,7 +1297,7 @@ impl SpireRoutingPartitionObject {
                 self.header.assignment_count
             ));
         }
-        let child_count = u32::try_from(self.children.len())
+        let child_count = u32::try_from(self.child_count())
             .map_err(|_| "ec_spire routing child count exceeds u32".to_owned())?;
         if self.header.child_count != child_count {
             return Err(format!(
@@ -1254,12 +1308,31 @@ impl SpireRoutingPartitionObject {
         if self.dimensions == 0 {
             return Err("ec_spire routing partition object dimensions 0 is invalid".to_owned());
         }
-        if self.children.is_empty() {
+        if self.child_pids.is_empty() {
             return Err("ec_spire routing partition object requires at least one child".to_owned());
         }
 
         let dimensions = usize::from(self.dimensions);
-        for (expected_index, child) in self.children.iter().enumerate() {
+        if self.centroid_ordinals.len() != self.child_pids.len() {
+            return Err(format!(
+                "ec_spire routing centroid ordinal count {} does not match child pid count {}",
+                self.centroid_ordinals.len(),
+                self.child_pids.len()
+            ));
+        }
+        let expected_centroid_components = self
+            .child_pids
+            .len()
+            .checked_mul(dimensions)
+            .ok_or_else(|| "ec_spire routing centroid component count overflow".to_owned())?;
+        if self.centroids.len() != expected_centroid_components {
+            return Err(format!(
+                "ec_spire routing centroid component count mismatch: got {}, expected {expected_centroid_components}",
+                self.centroids.len()
+            ));
+        }
+
+        for (expected_index, child) in self.children().enumerate() {
             let expected_index = u32::try_from(expected_index)
                 .map_err(|_| "ec_spire routing child centroid index exceeds u32".to_owned())?;
             if child.centroid_index != expected_index {
@@ -1270,13 +1343,6 @@ impl SpireRoutingPartitionObject {
             }
             if child.child_pid == 0 {
                 return Err("ec_spire routing child pid 0 is invalid".to_owned());
-            }
-            if child.centroid.len() != dimensions {
-                return Err(format!(
-                    "ec_spire routing child centroid {} dimensions mismatch: got {}, expected {dimensions}",
-                    child.centroid_index,
-                    child.centroid.len()
-                ));
             }
             if child
                 .centroid
@@ -2276,8 +2342,8 @@ mod tests {
         assert_eq!(decoded.header.parent_pid, 0);
         assert_eq!(decoded.header.child_count, 2);
         assert_eq!(decoded.header.assignment_count, 0);
-        assert_eq!(decoded.children[0].child_pid, 17);
-        assert_eq!(decoded.children[1].centroid, vec![-1.0, 0.0]);
+        assert_eq!(decoded.child_pids[0], 17);
+        assert_eq!(decoded.child_centroid(1).unwrap(), &[-1.0, 0.0]);
     }
 
     #[test]
