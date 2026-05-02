@@ -6,11 +6,13 @@ SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
 draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
 ranked candidates through an injected scorer, dedupe by `vec_id`, and run an
-injected exact-rerank seam. Live PostgreSQL relation-backed build/scan
-persistence remains intentionally unwired. Task 30 implements ADR-049 in
-stages: first a debuggable single-level IVF foundation with SPIRE-compatible
-partition-object storage, then recursive SPIRE routing, local multi-NVMe
-placement, and later multi-machine placement.
+injected exact-rerank seam. Assignment payload scoring now reuses the existing
+TurboQuant and RaBitQ quantizers behind a SPIRE-owned row scorer, while
+PQ-FastScan remains deferred until grouped-PQ model metadata is persisted. Live
+PostgreSQL relation-backed build/scan persistence remains intentionally
+unwired. Task 30 implements ADR-049 in stages: first a debuggable single-level
+IVF foundation with SPIRE-compatible partition-object storage, then recursive
+SPIRE routing, local multi-NVMe placement, and later multi-machine placement.
 
 ## Scope
 
@@ -130,15 +132,19 @@ Decision record:
   allocates one root PID plus one leaf PID per centroid, writes a root routing
   object, writes per-centroid leaf partition objects including empty leaves, and
   publishes a strict object/placement manifest snapshot before committing
-  allocator cursors.
+  allocator cursors. The assignment payload seam now encodes TurboQuant and
+  RaBitQ row payloads through the existing quantizer implementations and keeps
+  PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
   placement handling for routed leaves, single-route query-to-leaf collection,
   top-`nprobe` leaf selection over root child centroids, visible-primary
   candidate scoring through an injected scorer, `vec_id` dedupe, deterministic
-  score ordering, and an injected exact-rerank seam. Quantizer binding, heap
-  rerank callback integration, and AM callback execution remain open.
+  score ordering, and an injected exact-rerank seam. Stored assignment payload
+  scoring now has TurboQuant and RaBitQ prepared-scorer support; heap rerank
+  callback integration, AM callback execution, and PQ-FastScan scorer binding
+  remain open.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
