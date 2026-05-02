@@ -39,6 +39,12 @@ pub(super) struct SpireEncodedManifestBundle {
     pub(super) placement_directory: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireEncodedPublishBundle {
+    pub(super) manifests: SpireEncodedManifestBundle,
+    pub(super) root_control_state: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpirePublishedManifestLocators {
     pub(super) epoch_manifest_tid: ItemPointer,
@@ -77,6 +83,18 @@ impl SpireSingleLevelBuildDraft {
             locators.object_manifest_tid,
             locators.placement_directory_tid,
         )
+    }
+
+    pub(super) fn encode_publish_bundle(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireEncodedPublishBundle, String> {
+        let manifests = self.encode_manifest_bundle()?;
+        let root_control_state = self.root_control_state(locators)?.encode()?;
+        Ok(SpireEncodedPublishBundle {
+            manifests,
+            root_control_state,
+        })
     }
 }
 
@@ -154,7 +172,7 @@ mod tests {
     };
     use crate::am::ec_spire::meta::{SpireConsistencyMode, SpirePublishedEpochSnapshot};
     use crate::am::ec_spire::meta::{
-        SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
+        SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::storage::page::ItemPointer;
@@ -290,6 +308,25 @@ mod tests {
             SpirePlacementDirectory::decode(&encoded.placement_directory).unwrap(),
             draft.placement_directory
         );
+    }
+
+    #[test]
+    fn single_level_draft_encodes_publish_bundle() {
+        let (draft, _, _, _) = build_valid_draft();
+
+        let encoded = draft.encode_publish_bundle(manifest_locators()).unwrap();
+        let root_control = SpireRootControlState::decode(&encoded.root_control_state).unwrap();
+
+        assert_eq!(
+            SpireEpochManifest::decode(&encoded.manifests.epoch_manifest).unwrap(),
+            draft.epoch_manifest
+        );
+        assert_eq!(root_control.active_epoch, draft.epoch_manifest.epoch);
+        assert_eq!(root_control.next_pid, draft.next_pid);
+        assert_eq!(root_control.next_local_vec_seq, draft.next_local_vec_seq);
+        assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
+        assert_eq!(root_control.object_manifest_tid, tid(70, 2));
+        assert_eq!(root_control.placement_directory_tid, tid(70, 3));
     }
 
     #[test]
