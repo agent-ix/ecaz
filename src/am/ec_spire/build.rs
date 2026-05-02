@@ -8,8 +8,11 @@ use super::meta::{
     SpireRootControlState,
 };
 use super::storage::{SpireLeafPartitionObject, SpireLocalObjectStore};
+use crate::am::common::training as common_training;
 use crate::storage::page::ItemPointer;
 use pgrx::pg_sys;
+
+const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireSingleLevelBuildInput {
@@ -50,6 +53,19 @@ pub(super) struct SpirePublishedManifestLocators {
     pub(super) epoch_manifest_tid: ItemPointer,
     pub(super) object_manifest_tid: ItemPointer,
     pub(super) placement_directory_tid: ItemPointer,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireSingleLevelCentroidPlan {
+    pub(super) dimensions: u16,
+    pub(super) centroids: Vec<Vec<f32>>,
+    pub(super) assignment_indexes: Vec<u32>,
+}
+
+impl SpireSingleLevelCentroidPlan {
+    pub(super) fn centroid_count(&self) -> usize {
+        self.centroids.len()
+    }
 }
 
 impl SpireSingleLevelBuildDraft {
@@ -96,6 +112,42 @@ impl SpireSingleLevelBuildDraft {
             root_control_state,
         })
     }
+}
+
+pub(super) fn train_single_level_centroid_plan(
+    dimensions: u16,
+    source_vectors: &[Vec<f32>],
+    requested_nlists: u32,
+    seed: u64,
+) -> Result<SpireSingleLevelCentroidPlan, String> {
+    if dimensions == 0 {
+        return Err("ec_spire centroid plan requires dimensions > 0".to_owned());
+    }
+    let nlists = common_training::resolve_auto_nlists(requested_nlists, source_vectors.len());
+    let source_refs = source_vectors.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let model = common_training::train_spherical_kmeans(
+        "ec_spire",
+        &source_refs,
+        usize::from(dimensions),
+        nlists,
+        seed,
+        SPIRE_DEFAULT_KMEANS_ITERATIONS,
+    )?;
+    let mut assignment_indexes = Vec::with_capacity(source_vectors.len());
+    for source in source_vectors {
+        let assignment_index =
+            common_training::assign_vector_to_centroid("ec_spire", source, &model)?;
+        assignment_indexes.push(
+            u32::try_from(assignment_index)
+                .map_err(|_| "ec_spire centroid assignment index exceeds u32".to_owned())?,
+        );
+    }
+
+    Ok(SpireSingleLevelCentroidPlan {
+        dimensions,
+        centroids: model.centroids,
+        assignment_indexes,
+    })
 }
 
 pub(super) fn build_single_level_leaf_epoch_draft(
@@ -164,7 +216,10 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg
 
 #[cfg(test)]
 mod tests {
-    use super::{build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput};
+    use super::{
+        build_single_level_leaf_epoch_draft, train_single_level_centroid_plan,
+        SpireSingleLevelBuildInput,
+    };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
@@ -231,6 +286,35 @@ mod tests {
             object_manifest_tid: tid(70, 2),
             placement_directory_tid: tid(70, 3),
         }
+    }
+
+    #[test]
+    fn single_level_centroid_plan_routes_vectors_with_common_training() {
+        let source_vectors = vec![vec![1.0, 0.0], vec![-1.0, 0.0]];
+
+        let plan = train_single_level_centroid_plan(2, &source_vectors, 2, 42).unwrap();
+
+        assert_eq!(plan.dimensions, 2);
+        assert_eq!(plan.centroid_count(), 2);
+        assert_eq!(plan.assignment_indexes.len(), source_vectors.len());
+        assert_ne!(plan.assignment_indexes[0], plan.assignment_indexes[1]);
+    }
+
+    #[test]
+    fn single_level_centroid_plan_resolves_auto_nlists_and_rejects_bad_vectors() {
+        let source_vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let plan = train_single_level_centroid_plan(2, &source_vectors, 0, 42).unwrap();
+
+        assert_eq!(plan.centroid_count(), 2);
+
+        assert!(train_single_level_centroid_plan(2, &[vec![1.0]], 1, 42)
+            .unwrap_err()
+            .contains("dimensions mismatch"));
+        assert!(
+            train_single_level_centroid_plan(2, &[vec![0.0, 0.0]], 1, 42)
+                .unwrap_err()
+                .contains("non-zero")
+        );
     }
 
     #[test]
