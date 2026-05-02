@@ -4,7 +4,7 @@ title: SPIRE Partition Object Design
 agent: coder1
 status: open
 created: 2026-05-01
-checkpoint_commit: 8c32a192
+checkpoint_commit: 12536e87
 ---
 # Review Request: SPIRE Partition Object Design
 
@@ -24,14 +24,28 @@ The checkpoint:
   `pid -> local_store_id` to `pid -> node_id -> local_store_id`
 - adds epoch/version requirements for compatible root metadata, hierarchy
   metadata, placement metadata, and partition objects
-- starts formal requirements coverage with `US-017` and `FR-038`
+- expands formal requirements coverage into local lifecycle, local multi-NVMe,
+  distributed libpq query, epoch/rebalance, routing/search, update/split/merge,
+  and storage/placement specs
+- records graceful degradation as the preferred failure posture, with strict
+  fail-closed available as a consistency mode
+- records replicated partition objects as future work for read throughput and
+  availability, not part of v1
 
 ## Files To Review
 
 - `spec/adr/ADR-049-spire-on-single-level-ivf-foundation.md`
 - `plan/tasks/30-spire-ivf-foundation.md`
 - `spec/usecase/US-017-build-and-scale-spire.md`
+- `spec/usecase/US-018-operate-spire-local-nvme-stores.md`
+- `spec/usecase/US-019-query-distributed-spire.md`
+- `spec/usecase/US-020-manage-spire-epochs-and-rebalance.md`
 - `spec/functional/FR-038-spire-partition-object-storage.md`
+- `spec/functional/FR-039-spire-local-nvme-placement.md`
+- `spec/functional/FR-040-spire-routing-and-search.md`
+- `spec/functional/FR-041-spire-epoch-consistency.md`
+- `spec/functional/FR-042-spire-distributed-libpq-coordinator.md`
+- `spec/functional/FR-043-spire-update-split-merge-lifecycle.md`
 - `spec/spec.md`
 - `spec/adr/index.md`
 - `plan/tasks/README.md`
@@ -50,5 +64,8 @@ The checkpoint:
    multi-machine placement stage?
 3. Are `vec_id`, local heap TID, PID, placement, and epoch/version concerns
    captured at the right level of specificity?
-4. Does `FR-038` provide enough initial functional coverage without
-   overcommitting implementation details before Phase 0?
+4. Do the US files cover the standard local and remote lifecycle states clearly
+   enough for planning implementation slices?
+5. Do the FR files include the right schemas, diagrams, and process boundaries
+   without overcommitting the exact physical table/relation layout before Phase
+   0 measurement?
