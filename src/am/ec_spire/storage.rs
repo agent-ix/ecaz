@@ -18,6 +18,11 @@ pub(super) const SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT: u16 = 0x0008;
 pub(super) const SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE: u16 = 0x0010;
 pub(super) const SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR: u16 = 0x0020;
 
+pub(super) const SPIRE_PAYLOAD_FORMAT_NONE: u8 = 0;
+pub(super) const SPIRE_PAYLOAD_FORMAT_TURBOQUANT: u8 = 1;
+pub(super) const SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN: u8 = 2;
+pub(super) const SPIRE_PAYLOAD_FORMAT_RABITQ: u8 = 3;
+
 const SPIRE_ASSIGNMENT_KNOWN_FLAGS: u16 = SPIRE_ASSIGNMENT_FLAG_PRIMARY
     | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
     | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
@@ -243,6 +248,7 @@ pub(super) struct SpireLeafAssignmentRow {
 impl SpireLeafAssignmentRow {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         validate_assignment_flags(self.flags)?;
+        validate_assignment_payload_format(self.payload_format)?;
         SpireVecId::from_bytes(self.vec_id.as_bytes())?;
         if self.heap_tid == ItemPointer::INVALID {
             return Err("ec_spire assignment row heap_tid must be valid".to_owned());
@@ -322,6 +328,8 @@ impl SpireLeafAssignmentRow {
         if heap_tid == ItemPointer::INVALID {
             return Err("ec_spire assignment row heap_tid must be valid".to_owned());
         }
+        let payload_format = input[payload_format_offset];
+        validate_assignment_payload_format(payload_format)?;
         let gamma = f32::from_le_bytes(input[gamma_start..gamma_end].try_into().expect("gamma"));
         if !gamma.is_finite() {
             return Err("ec_spire assignment row gamma must be finite".to_owned());
@@ -344,7 +352,7 @@ impl SpireLeafAssignmentRow {
                 flags,
                 vec_id: SpireVecId::from_bytes(&input[vec_id_start..vec_id_end])?,
                 heap_tid,
-                payload_format: input[payload_format_offset],
+                payload_format,
                 gamma,
                 encoded_payload: input[payload_len_end..expected_len].to_vec(),
             },
@@ -1048,6 +1056,28 @@ fn validate_assignment_flags(flags: u16) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_assignment_payload_format(payload_format: u8) -> Result<(), String> {
+    match payload_format {
+        SPIRE_PAYLOAD_FORMAT_NONE
+        | SPIRE_PAYLOAD_FORMAT_TURBOQUANT
+        | SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN
+        | SPIRE_PAYLOAD_FORMAT_RABITQ => Ok(()),
+        other => Err(format!(
+            "ec_spire unknown assignment payload_format: {other}"
+        )),
+    }
+}
+
+fn validate_scored_assignment_payload(assignment: &SpireLeafAssignmentRow) -> Result<(), String> {
+    if assignment.payload_format == SPIRE_PAYLOAD_FORMAT_NONE {
+        return Err("ec_spire scored assignment payload_format must not be 0".to_owned());
+    }
+    if assignment.encoded_payload.is_empty() {
+        return Err("ec_spire scored assignment payload must not be empty".to_owned());
+    }
+    Ok(())
+}
+
 fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), String> {
     validate_assignment_flags(assignment.flags)?;
     let is_insert = assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0;
@@ -1069,13 +1099,16 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     if is_insert && assignment.flags & SPIRE_ASSIGNMENT_FLAG_TOMBSTONE != 0 {
         return Err("ec_spire insert delta assignment cannot be tombstoned".to_owned());
     }
+    if is_insert {
+        validate_scored_assignment_payload(assignment)?;
+    }
     if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
         return Err("ec_spire delete delta assignment cannot be primary".to_owned());
     }
     if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_TOMBSTONE == 0 {
         return Err("ec_spire delete delta assignment must be tombstoned".to_owned());
     }
-    if is_delete && assignment.payload_format != 0 {
+    if is_delete && assignment.payload_format != SPIRE_PAYLOAD_FORMAT_NONE {
         return Err("ec_spire delete delta assignment payload format must be 0".to_owned());
     }
     if is_delete && assignment.gamma != 0.0 {
@@ -1115,6 +1148,11 @@ fn validate_leaf_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), S
     if assignment.flags & role_flags == 0 {
         return Err("ec_spire leaf partition object assignment must set a role flag".to_owned());
     }
+    if assignment.flags & (SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA)
+        != 0
+    {
+        validate_scored_assignment_payload(assignment)?;
+    }
     Ok(())
 }
 
@@ -1142,9 +1180,10 @@ mod tests {
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
         SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
-        SPIRE_VEC_ID_MAX_BYTES,
+        SPIRE_PAYLOAD_FORMAT_NONE, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT, SPIRE_VEC_ID_MAX_BYTES,
     };
-    use crate::storage::page::ItemPointer;
+    use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
     fn routing_children() -> Vec<SpireRoutingChildEntry> {
         vec![
@@ -1317,7 +1356,7 @@ mod tests {
                 block_number: 44,
                 offset_number: 7,
             },
-            payload_format: 2,
+            payload_format: SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
             gamma: 1.25,
             encoded_payload: vec![4, 5, 6],
         };
@@ -1336,7 +1375,7 @@ mod tests {
                 block_number: 44,
                 offset_number: 7,
             },
-            payload_format: 2,
+            payload_format: SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN,
             gamma: 1.25,
             encoded_payload: vec![4, 5, 6],
         };
@@ -1359,7 +1398,7 @@ mod tests {
                 block_number: 1,
                 offset_number: 1,
             },
-            payload_format: 0,
+            payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
             gamma: 0.0,
             encoded_payload: Vec::new(),
         };
@@ -1371,6 +1410,30 @@ mod tests {
     }
 
     #[test]
+    fn assignment_row_rejects_unknown_payload_format() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2, 3],
+        };
+
+        let mut invalid = row.clone();
+        invalid.payload_format = 99;
+        assert!(invalid.encode().is_err());
+
+        let mut encoded = row.encode().unwrap();
+        let payload_format_offset = 3 + row.vec_id.as_bytes().len() + ITEM_POINTER_BYTES;
+        encoded[payload_format_offset] = 99;
+        assert!(SpireLeafAssignmentRow::decode(&encoded).is_err());
+    }
+
+    #[test]
     fn assignment_row_rejects_length_mismatch() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -1379,7 +1442,7 @@ mod tests {
                 block_number: 1,
                 offset_number: 1,
             },
-            payload_format: 0,
+            payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
             gamma: 0.0,
             encoded_payload: vec![1, 2, 3],
         };
@@ -1512,6 +1575,29 @@ mod tests {
     }
 
     #[test]
+    fn leaf_partition_object_rejects_scored_assignments_without_payload() {
+        let valid_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+
+        let mut row = valid_row.clone();
+        row.payload_format = SPIRE_PAYLOAD_FORMAT_NONE;
+        assert!(SpireLeafPartitionObject::new(17, 3, 0, vec![row]).is_err());
+
+        row = valid_row;
+        row.encoded_payload.clear();
+        assert!(SpireLeafPartitionObject::new(17, 3, 0, vec![row]).is_err());
+    }
+
+    #[test]
     fn leaf_partition_object_rejects_count_mismatch_and_trailing_bytes() {
         let row = SpireLeafAssignmentRow {
             flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
@@ -1610,7 +1696,7 @@ mod tests {
                         block_number: 10,
                         offset_number: 2,
                     },
-                    payload_format: 0,
+                    payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
                     gamma: 0.0,
                     encoded_payload: Vec::new(),
                 },
@@ -1700,10 +1786,18 @@ mod tests {
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
 
-        row = valid_row;
+        row = valid_row.clone();
         row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY
             | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
             | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_row.clone();
+        row.payload_format = SPIRE_PAYLOAD_FORMAT_NONE;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_row;
+        row.encoded_payload.clear();
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
     }
 
@@ -1716,7 +1810,7 @@ mod tests {
                 block_number: 10,
                 offset_number: 1,
             },
-            payload_format: 0,
+            payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
             gamma: 0.0,
             encoded_payload: Vec::new(),
         };
@@ -1754,7 +1848,7 @@ mod tests {
                 block_number: 10,
                 offset_number: 1,
             },
-            payload_format: 0,
+            payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
             gamma: 0.0,
             encoded_payload: Vec::new(),
         };

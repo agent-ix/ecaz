@@ -114,6 +114,19 @@ LeafAssignmentRowV1
   encoded_payload bytea
 ```
 
+`payload_format` values are explicit storage-format tags:
+
+```text
+NONE        0  -- delete/tombstone rows without scored payload bytes
+TURBOQUANT  1  -- TurboQuant MSE/QJL payload bytes
+PQ_FASTSCAN 2  -- grouped-PQ/PQ-FastScan payload bytes
+RABITQ      3  -- RaBitQ payload bytes
+```
+
+Rows that participate in scoring (`PRIMARY` or `BOUNDARY_REPLICA`) must use a
+non-`NONE` known payload format and carry non-empty `encoded_payload` bytes.
+Delete delta rows must use `NONE`, zero `gamma`, and an empty payload.
+
 Assignment flags:
 
 ```text
