@@ -262,6 +262,17 @@ impl SpireLeafAssignmentRow {
     }
 
     pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let (row, tail) = Self::decode_prefix(input)?;
+        if !tail.is_empty() {
+            return Err(format!(
+                "ec_spire assignment row length mismatch: got trailing {} bytes",
+                tail.len()
+            ));
+        }
+        Ok(row)
+    }
+
+    fn decode_prefix(input: &[u8]) -> Result<(Self, &[u8]), String> {
         if input.len() < ASSIGNMENT_ROW_FIXED_PREFIX_BYTES + ASSIGNMENT_ROW_FIXED_TAIL_BYTES {
             return Err(format!(
                 "ec_spire assignment row too short: got {}, expected at least {}",
@@ -310,21 +321,116 @@ impl SpireLeafAssignmentRow {
                 .expect("payload len"),
         ) as usize;
         let expected_len = payload_len_end + payload_len;
-        if input.len() != expected_len {
+        if input.len() < expected_len {
             return Err(format!(
-                "ec_spire assignment row length mismatch: got {}, expected {expected_len}",
+                "ec_spire assignment row length {} is too short for payload length {payload_len}",
                 input.len()
             ));
         }
 
+        Ok((
+            Self {
+                flags,
+                vec_id: SpireVecId::from_bytes(&input[vec_id_start..vec_id_end])?,
+                heap_tid,
+                payload_format: input[payload_format_offset],
+                gamma,
+                encoded_payload: input[payload_len_end..expected_len].to_vec(),
+            },
+            &input[expected_len..],
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObject {
+    pub(super) header: SpirePartitionObjectHeader,
+    pub(super) assignments: Vec<SpireLeafAssignmentRow>,
+}
+
+impl SpireLeafPartitionObject {
+    pub(super) fn new(
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: Vec<SpireLeafAssignmentRow>,
+    ) -> Result<Self, String> {
+        let assignment_count = u32::try_from(assignments.len())
+            .map_err(|_| "ec_spire leaf assignment count exceeds u32".to_owned())?;
         Ok(Self {
-            flags,
-            vec_id: SpireVecId::from_bytes(&input[vec_id_start..vec_id_end])?,
-            heap_tid,
-            payload_format: input[payload_format_offset],
-            gamma,
-            encoded_payload: input[payload_len_end..].to_vec(),
+            header: SpirePartitionObjectHeader {
+                kind: SpirePartitionObjectKind::Leaf,
+                pid,
+                object_version,
+                level: 0,
+                parent_pid,
+                child_count: 0,
+                assignment_count,
+                flags: 0,
+            },
+            assignments,
         })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate_header()?;
+
+        let mut out = self.header.encode()?;
+        for assignment in &self.assignments {
+            out.extend_from_slice(&assignment.encode()?);
+        }
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let (header, mut tail) = SpirePartitionObjectHeader::decode_prefix(input)?;
+        let mut object = Self {
+            header,
+            assignments: Vec::with_capacity(header.assignment_count as usize),
+        };
+        object.validate_header_without_assignment_len()?;
+
+        for _ in 0..header.assignment_count {
+            let (assignment, next_tail) = SpireLeafAssignmentRow::decode_prefix(tail)?;
+            object.assignments.push(assignment);
+            tail = next_tail;
+        }
+        if !tail.is_empty() {
+            return Err(format!(
+                "ec_spire leaf partition object has {} trailing bytes",
+                tail.len()
+            ));
+        }
+        object.validate_header()?;
+        Ok(object)
+    }
+
+    fn validate_header(&self) -> Result<(), String> {
+        let assignment_count = u32::try_from(self.assignments.len())
+            .map_err(|_| "ec_spire leaf assignment count exceeds u32".to_owned())?;
+        if self.header.assignment_count != assignment_count {
+            return Err(format!(
+                "ec_spire leaf assignment count mismatch: header {}, rows {assignment_count}",
+                self.header.assignment_count
+            ));
+        }
+        self.validate_header_without_assignment_len()
+    }
+
+    fn validate_header_without_assignment_len(&self) -> Result<(), String> {
+        if self.header.kind != SpirePartitionObjectKind::Leaf {
+            return Err(format!(
+                "ec_spire leaf partition object header kind must be Leaf, got {:?}",
+                self.header.kind
+            ));
+        }
+        if self.header.child_count != 0 {
+            return Err(format!(
+                "ec_spire leaf partition object child_count must be 0, got {}",
+                self.header.child_count
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -341,10 +447,10 @@ fn validate_assignment_flags(flags: u16) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SpireLeafAssignmentRow, SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireVecId,
-        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-        SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
-        SPIRE_VEC_ID_MAX_BYTES,
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpirePartitionObjectHeader,
+        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR,
+        SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, SPIRE_VEC_ID_MAX_BYTES,
     };
     use crate::storage::page::ItemPointer;
 
@@ -442,6 +548,29 @@ mod tests {
     }
 
     #[test]
+    fn assignment_row_prefix_decoder_returns_tail() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(123),
+            heap_tid: ItemPointer {
+                block_number: 44,
+                offset_number: 7,
+            },
+            payload_format: 2,
+            gamma: 1.25,
+            encoded_payload: vec![4, 5, 6],
+        };
+        let mut encoded = row.encode().unwrap();
+        encoded.extend_from_slice(&[9, 8]);
+
+        let (decoded, tail) = SpireLeafAssignmentRow::decode_prefix(&encoded).unwrap();
+
+        assert_eq!(decoded, row);
+        assert_eq!(tail, &[9, 8]);
+        assert!(SpireLeafAssignmentRow::decode(&encoded).is_err());
+    }
+
+    #[test]
     fn assignment_row_rejects_unknown_flags_and_invalid_locator() {
         let mut row = SpireLeafAssignmentRow {
             flags: 0x8000,
@@ -478,5 +607,87 @@ mod tests {
         encoded.pop();
 
         assert!(SpireLeafAssignmentRow::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn leaf_partition_object_round_trips_assignments() {
+        let assignments = vec![
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(1),
+                heap_tid: ItemPointer {
+                    block_number: 10,
+                    offset_number: 1,
+                },
+                payload_format: 1,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2],
+            },
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                vec_id: SpireVecId::local(2),
+                heap_tid: ItemPointer {
+                    block_number: 10,
+                    offset_number: 2,
+                },
+                payload_format: 1,
+                gamma: 0.75,
+                encoded_payload: vec![3, 4],
+            },
+        ];
+        let object = SpireLeafPartitionObject::new(17, 3, 5, assignments).unwrap();
+
+        let decoded = SpireLeafPartitionObject::decode(&object.encode().unwrap()).unwrap();
+
+        assert_eq!(decoded, object);
+        assert_eq!(decoded.header.pid, 17);
+        assert_eq!(decoded.header.assignment_count, 2);
+    }
+
+    #[test]
+    fn leaf_partition_object_rejects_non_leaf_header_and_children() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+        let mut object = SpireLeafPartitionObject::new(17, 3, 0, vec![row]).unwrap();
+
+        object.header.kind = SpirePartitionObjectKind::Internal;
+        assert!(object.encode().is_err());
+
+        object.header.kind = SpirePartitionObjectKind::Leaf;
+        object.header.child_count = 1;
+        assert!(object.encode().is_err());
+    }
+
+    #[test]
+    fn leaf_partition_object_rejects_count_mismatch_and_trailing_bytes() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+        let mut object = SpireLeafPartitionObject::new(17, 3, 0, vec![row]).unwrap();
+
+        object.header.assignment_count = 2;
+        assert!(object.encode().is_err());
+
+        object.header.assignment_count = 1;
+        let mut encoded = object.encode().unwrap();
+        encoded.push(99);
+        assert!(SpireLeafPartitionObject::decode(&encoded).is_err());
     }
 }
