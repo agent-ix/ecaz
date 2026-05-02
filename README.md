@@ -1,18 +1,25 @@
-# Ecaz
+<img width="1254" height="1254" alt="2e7cab9b-880a-45ba-9d0b-ce2d78271265" src="https://github.com/user-attachments/assets/0fceb7fa-9646-49ae-b46a-e8bdeac2caec" />
 
 Ecaz is a PostgreSQL extension written in Rust with a focus on performant,
-highly scalable vector storage and retrieval. It provides the canonical
-`ecvector(dim)` row type and aims to support a broad range of quantization and
+highly scalable vector storage and retrieval. It aims to support a broad range of quantization and
 index options rather than a single fixed architecture. Current index families
 include HNSW (`ec_hnsw`), IVF (`ec_ivf`), and DiskANN/Vamana-style graphs
 (`ec_diskann`).
 
-Ecaz is also an Agentic Engineer experiment: an attempt to develop a complex
-database system solely with AI. Having reached that bar for well-known index
-families, the project now aims to build proof-of-concept implementations for
-frontier vector database research. The ethos is to pursue quality, testing,
+## This software was written 100% by AI
+
+Ecaz is an Agentic Engineering experiment: an attempt to develop a complex
+database system written solely by AI. A human worked with AI to design the
+architecture and navigate the many design decisions, but 100% of the code was 
+written by GPT >=5.4 and Claude Opus >=4.6.
+
+**The ethos is to pursue quality, testing,
 and benchmarking rigorously, but the project should not yet be considered
-production-ready.
+production-ready.**
+
+Having achieved the initial goal of support for well-known index
+families, the project now aims to build proof-of-concept implementations for
+frontier vector database research.
 
 ## Quick Start
 
