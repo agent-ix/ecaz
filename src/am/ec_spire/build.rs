@@ -5,6 +5,7 @@ use super::assign::{
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
+    SpireRootControlState,
 };
 use super::storage::{SpireLeafPartitionObject, SpireLocalObjectStore};
 use crate::storage::page::ItemPointer;
@@ -29,6 +30,34 @@ pub(super) struct SpireSingleLevelBuildDraft {
     pub(super) leaf_object: SpireLeafPartitionObject,
     pub(super) next_pid: u64,
     pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpirePublishedManifestLocators {
+    pub(super) epoch_manifest_tid: ItemPointer,
+    pub(super) object_manifest_tid: ItemPointer,
+    pub(super) placement_directory_tid: ItemPointer,
+}
+
+impl SpireSingleLevelBuildDraft {
+    pub(super) fn root_control_state(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, String> {
+        SpirePublishedEpochSnapshot::new(
+            &self.epoch_manifest,
+            &self.object_manifest,
+            &self.placement_directory,
+        )?;
+        SpireRootControlState::published(
+            self.epoch_manifest.epoch,
+            self.next_pid,
+            self.next_local_vec_seq,
+            locators.epoch_manifest_tid,
+            locators.object_manifest_tid,
+            locators.placement_directory_tid,
+        )
+    }
 }
 
 pub(super) fn build_single_level_leaf_epoch_draft(
@@ -98,6 +127,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg
 #[cfg(test)]
 mod tests {
     use super::{build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput};
+    use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
         SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
@@ -134,12 +164,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn single_level_draft_builds_leaf_object_and_published_snapshot() {
+    fn build_valid_draft() -> (
+        SpireSingleLevelBuildDraft,
+        SpirePidAllocator,
+        SpireLocalVecIdAllocator,
+        SpireLocalObjectStore,
+    ) {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
-
         let draft = build_single_level_leaf_epoch_draft(
             build_input(vec![assignment_input(10, 1), assignment_input(10, 2)]),
             &mut pid_allocator,
@@ -147,6 +180,21 @@ mod tests {
             &mut object_store,
         )
         .unwrap();
+
+        (draft, pid_allocator, local_vec_id_allocator, object_store)
+    }
+
+    fn manifest_locators() -> SpirePublishedManifestLocators {
+        SpirePublishedManifestLocators {
+            epoch_manifest_tid: tid(70, 1),
+            object_manifest_tid: tid(70, 2),
+            placement_directory_tid: tid(70, 3),
+        }
+    }
+
+    #[test]
+    fn single_level_draft_builds_leaf_object_and_published_snapshot() {
+        let (draft, pid_allocator, local_vec_id_allocator, object_store) = build_valid_draft();
 
         let placement = draft.placement_directory.get(SPIRE_FIRST_PID).unwrap();
         let stored_leaf = object_store.read_leaf_object(placement).unwrap();
@@ -177,6 +225,28 @@ mod tests {
             local_vec_id_allocator.next_local_vec_seq(),
             draft.next_local_vec_seq
         );
+    }
+
+    #[test]
+    fn single_level_draft_builds_root_control_state_from_manifest_locators() {
+        let (draft, _, _, _) = build_valid_draft();
+        let root_control = draft.root_control_state(manifest_locators()).unwrap();
+
+        assert_eq!(root_control.active_epoch, draft.epoch_manifest.epoch);
+        assert_eq!(root_control.next_pid, draft.next_pid);
+        assert_eq!(root_control.next_local_vec_seq, draft.next_local_vec_seq);
+        assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
+        assert_eq!(root_control.object_manifest_tid, tid(70, 2));
+        assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+    }
+
+    #[test]
+    fn single_level_draft_rejects_invalid_root_control_manifest_locator() {
+        let (draft, _, _, _) = build_valid_draft();
+        let mut locators = manifest_locators();
+        locators.object_manifest_tid = ItemPointer::INVALID;
+
+        assert!(draft.root_control_state(locators).is_err());
     }
 
     #[test]
