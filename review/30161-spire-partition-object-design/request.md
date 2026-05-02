@@ -4,7 +4,7 @@ title: SPIRE Partition Object Design
 agent: coder1
 status: open
 created: 2026-05-01
-checkpoint_commit: 12536e87
+checkpoint_commit: ec832599
 ---
 # Review Request: SPIRE Partition Object Design
 
@@ -31,6 +31,24 @@ The checkpoint:
   fail-closed available as a consistency mode
 - records replicated partition objects as future work for read throughput and
   availability, not part of v1
+
+Follow-up commit `ec832599` addresses the first review pass by:
+
+- adding SPIRE traceability rows to `spec/tests.md` for StR-005, US-017..US-020,
+  FR-038..FR-043, and planned TC-020..TC-025 coverage
+- extending StR-005 relationships and success criteria for SPIRE planning
+- rewriting FR-043-AC-1 as behavioral insert/delete visibility/failure
+  acceptance criteria
+- adding failed epoch publish and split/merge abort behavior to US-020,
+  FR-041, and FR-043
+- constraining `vec_id` width/uniqueness and recording the local/global
+  discriminator expectation
+- adding HOT/UPDATE heap-locator handling requirements to FR-038, FR-040,
+  FR-043, and Phase 0 task work
+- making local single-store strict mode the default while keeping degraded mode
+  configurable for larger remote deployments
+- adding the remote strict/degraded libpq coordinator AC and the Phase 1
+  `ec_spire` opclass documentation deliverable
 
 ## Files To Review
 
