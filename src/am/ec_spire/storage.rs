@@ -623,27 +623,7 @@ impl SpireLocalObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObject, String> {
-        self.validate_local_available_placement(placement)?;
-        let page = self
-            .pages
-            .get_page(placement.object_tid.block_number)
-            .ok_or_else(|| {
-                format!(
-                    "ec_spire object block {} not found",
-                    placement.object_tid.block_number
-                )
-            })?;
-        let raw = page.raw_tuple(placement.object_tid)?;
-        let expected_len = usize::try_from(placement.object_bytes)
-            .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
-        if raw.len() != expected_len {
-            return Err(format!(
-                "ec_spire object byte length mismatch: placement {}, tuple {}",
-                placement.object_bytes,
-                raw.len()
-            ));
-        }
-
+        let raw = self.read_object_bytes(placement)?;
         let object = SpireLeafPartitionObject::decode(raw)?;
         if object.header.pid != placement.pid {
             return Err(format!(
@@ -660,10 +640,49 @@ impl SpireLocalObjectStore {
         Ok(object)
     }
 
+    pub(super) fn read_object_header(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpirePartitionObjectHeader, String> {
+        let raw = self.read_object_bytes(placement)?;
+        let (header, _) = SpirePartitionObjectHeader::decode_prefix(raw)?;
+        if header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, header.pid
+            ));
+        }
+        if header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, header.object_version
+            ));
+        }
+        Ok(header)
+    }
+
     pub(super) fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
+        let raw = self.read_object_bytes(placement)?;
+        let object = SpireDeltaPartitionObject::decode(raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        Ok(object)
+    }
+
+    fn read_object_bytes(&self, placement: &SpirePlacementEntry) -> Result<&[u8], String> {
         self.validate_local_available_placement(placement)?;
         let page = self
             .pages
@@ -684,21 +703,7 @@ impl SpireLocalObjectStore {
                 raw.len()
             ));
         }
-
-        let object = SpireDeltaPartitionObject::decode(raw)?;
-        if object.header.pid != placement.pid {
-            return Err(format!(
-                "ec_spire placement pid {} does not match object pid {}",
-                placement.pid, object.header.pid
-            ));
-        }
-        if object.header.object_version != placement.object_version {
-            return Err(format!(
-                "ec_spire placement object_version {} does not match object version {}",
-                placement.object_version, object.header.object_version
-            ));
-        }
-        Ok(object)
+        Ok(raw)
     }
 
     fn validate_local_available_placement(
@@ -1191,6 +1196,25 @@ mod tests {
         assert_eq!(placement.local_store_id, 0);
         assert_eq!(placement.object_bytes, expected_bytes);
         assert_eq!(store.page_count(), 1);
+    }
+
+    #[test]
+    fn local_object_store_reads_object_headers_for_dispatch() {
+        let leaf = SpireLeafPartitionObject::new(17, 3, 0, Vec::new()).unwrap();
+        let delta = SpireDeltaPartitionObject::new(19, 4, 17, Vec::new()).unwrap();
+        let mut store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let leaf_placement = store.insert_leaf_object(7, &leaf).unwrap();
+        let delta_placement = store.insert_delta_object(7, &delta).unwrap();
+        let leaf_header = store.read_object_header(&leaf_placement).unwrap();
+        let delta_header = store.read_object_header(&delta_placement).unwrap();
+
+        assert_eq!(leaf_header.kind, SpirePartitionObjectKind::Leaf);
+        assert_eq!(leaf_header.pid, 17);
+        assert_eq!(leaf_header.object_version, 3);
+        assert_eq!(delta_header.kind, SpirePartitionObjectKind::Delta);
+        assert_eq!(delta_header.pid, 19);
+        assert_eq!(delta_header.object_version, 4);
     }
 
     #[test]

@@ -1,13 +1,21 @@
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
 use super::storage::{
-    SpireLeafAssignmentRow, SpireLocalObjectStore, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-    SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-    SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
+    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+    SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafScanRow {
+    pub(super) pid: u64,
+    pub(super) object_version: u64,
+    pub(super) row_index: u32,
+    pub(super) assignment: SpireLeafAssignmentRow,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireDeltaScanRow {
     pub(super) pid: u64,
     pub(super) object_version: u64,
     pub(super) row_index: u32,
@@ -40,11 +48,62 @@ pub(super) fn collect_snapshot_leaf_rows(
             continue;
         }
 
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Leaf {
+            continue;
+        }
+
         let leaf_object = object_store.read_leaf_object(placement)?;
         for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
             let row_index = u32::try_from(row_index)
                 .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
             rows.push(SpireLeafScanRow {
+                pid: manifest_entry.pid,
+                object_version: manifest_entry.object_version,
+                row_index,
+                assignment,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+pub(super) fn collect_snapshot_delta_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireDeltaScanRow>, String> {
+    SpirePublishedEpochSnapshot::new(
+        snapshot.epoch_manifest,
+        snapshot.object_manifest,
+        snapshot.placement_directory,
+    )?;
+
+    let mut rows = Vec::new();
+    for manifest_entry in &snapshot.object_manifest.entries {
+        let placement = snapshot
+            .placement_directory
+            .get(manifest_entry.pid)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire scan snapshot missing placement for pid {}",
+                    manifest_entry.pid
+                )
+            })?;
+
+        if should_skip_placement(snapshot.epoch_manifest.consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Delta {
+            continue;
+        }
+
+        let delta_object = object_store.read_delta_object(placement)?;
+        for (row_index, assignment) in delta_object.assignments.into_iter().enumerate() {
+            let row_index = u32::try_from(row_index)
+                .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+            rows.push(SpireDeltaScanRow {
                 pid: manifest_entry.pid,
                 object_version: manifest_entry.object_version,
                 row_index,
@@ -121,9 +180,13 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_snapshot_leaf_rows, collect_snapshot_visible_primary_rows};
+    use super::{
+        collect_snapshot_delta_rows, collect_snapshot_leaf_rows,
+        collect_snapshot_visible_primary_rows,
+    };
     use crate::am::ec_spire::assign::{
-        SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_PID,
+        SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
+        SpirePidAllocator, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::build::{
         build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput,
@@ -137,7 +200,11 @@ mod tests {
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+        SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    };
+    use crate::am::ec_spire::update::{
+        build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
     };
     use crate::storage::page::ItemPointer;
 
@@ -166,6 +233,34 @@ mod tests {
             consistency_mode: SpireConsistencyMode::Strict,
             placement_tid: tid(60, 1),
             assignments,
+        }
+    }
+
+    fn delta_input(
+        insert_assignments: Vec<SpireLeafAssignmentInput>,
+        delete_assignments: Vec<SpireDeleteDeltaInput>,
+    ) -> SpireDeltaEpochInput {
+        SpireDeltaEpochInput {
+            epoch: 8,
+            object_version: 3,
+            published_at_micros: 2000,
+            retain_until_micros: 3000,
+            consistency_mode: SpireConsistencyMode::Strict,
+            base_pid: SPIRE_FIRST_PID,
+            placement_tid: tid(80, 1),
+            insert_assignments,
+            delete_assignments,
+        }
+    }
+
+    fn delete_delta_input(
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireDeleteDeltaInput {
+        SpireDeleteDeltaInput {
+            vec_id: SpireVecId::local(vec_seq),
+            heap_tid: tid(block_number, offset_number),
         }
     }
 
@@ -317,5 +412,59 @@ mod tests {
         assert_eq!(rows[0].pid, 11);
         assert_eq!(rows[0].row_index, 0);
         assert_eq!(rows[0].assignment.heap_tid, tid(10, 1));
+    }
+
+    #[test]
+    fn collect_snapshot_rows_dispatches_leaf_and_delta_objects() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            build_input(vec![assignment_input(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let delta_draft = build_delta_epoch_draft_from_snapshot(
+            delta_input(
+                vec![assignment_input(20, 1)],
+                vec![delete_delta_input(1, 10, 1)],
+            ),
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &delta_draft.epoch_manifest,
+            &delta_draft.object_manifest,
+            &delta_draft.placement_directory,
+        )
+        .unwrap();
+
+        let leaf_rows = collect_snapshot_leaf_rows(&snapshot, &object_store).unwrap();
+        let delta_rows = collect_snapshot_delta_rows(&snapshot, &object_store).unwrap();
+
+        assert_eq!(leaf_rows.len(), 1);
+        assert_eq!(leaf_rows[0].pid, SPIRE_FIRST_PID);
+        assert_eq!(leaf_rows[0].assignment.heap_tid, tid(10, 1));
+        assert_eq!(delta_rows.len(), 2);
+        assert_eq!(delta_rows[0].pid, SPIRE_FIRST_PID + 1);
+        assert_eq!(
+            delta_rows[0].assignment.flags,
+            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+        );
+        assert_eq!(
+            delta_rows[1].assignment.flags,
+            SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
+        );
     }
 }
