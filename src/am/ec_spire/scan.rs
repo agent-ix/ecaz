@@ -308,6 +308,21 @@ mod tests {
         }
     }
 
+    fn delete_assignment_row(
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+            vec_id: SpireVecId::local(vec_seq),
+            heap_tid: tid(block_number, offset_number),
+            payload_format: 0,
+            gamma: 0.0,
+            encoded_payload: Vec::new(),
+        }
+    }
+
     fn snapshot_for_placement<'a>(
         epoch_manifest: &'a SpireEpochManifest,
         object_manifest: &'a SpireObjectManifest,
@@ -412,16 +427,9 @@ mod tests {
         )
         .unwrap();
         let leaf_placement = object_store.insert_leaf_object(7, &object).unwrap();
-        let delta_object = SpireDeltaPartitionObject::new(
-            12,
-            1,
-            11,
-            vec![assignment_row(
-                SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-                4,
-            )],
-        )
-        .unwrap();
+        let delta_object =
+            SpireDeltaPartitionObject::new(12, 1, 11, vec![delete_assignment_row(4, 10, 4)])
+                .unwrap();
         let delta_placement = object_store.insert_delta_object(7, &delta_object).unwrap();
         let epoch_manifest = SpireEpochManifest {
             epoch: 7,

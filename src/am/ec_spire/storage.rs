@@ -779,6 +779,15 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_TOMBSTONE == 0 {
         return Err("ec_spire delete delta assignment must be tombstoned".to_owned());
     }
+    if is_delete && assignment.payload_format != 0 {
+        return Err("ec_spire delete delta assignment payload format must be 0".to_owned());
+    }
+    if is_delete && assignment.gamma != 0.0 {
+        return Err("ec_spire delete delta assignment gamma must be 0".to_owned());
+    }
+    if is_delete && !assignment.encoded_payload.is_empty() {
+        return Err("ec_spire delete delta assignment payload must be empty".to_owned());
+    }
     assignment.encode()?;
     Ok(())
 }
@@ -1177,8 +1186,8 @@ mod tests {
                         block_number: 10,
                         offset_number: 2,
                     },
-                    payload_format: 1,
-                    gamma: 0.75,
+                    payload_format: 0,
+                    gamma: 0.0,
                     encoded_payload: Vec::new(),
                 },
             ],
@@ -1265,6 +1274,33 @@ mod tests {
 
         row = valid_row;
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+    }
+
+    #[test]
+    fn delta_partition_object_rejects_delete_payloads() {
+        let valid_delete_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 0,
+            gamma: 0.0,
+            encoded_payload: Vec::new(),
+        };
+
+        let mut row = valid_delete_row.clone();
+        row.payload_format = 1;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_delete_row.clone();
+        row.gamma = 0.5;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_delete_row;
+        row.encoded_payload = vec![1, 2];
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
     }
 
