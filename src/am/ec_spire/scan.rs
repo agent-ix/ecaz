@@ -199,6 +199,31 @@ pub(super) fn collect_quantized_routed_probe_candidates(
     )
 }
 
+pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+    nprobe: u32,
+    payload_format: SpireAssignmentPayloadFormat,
+    limit: Option<usize>,
+    rerank_width: usize,
+    exact_score_ip: F,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+{
+    let mut candidates = collect_quantized_routed_probe_candidates(
+        snapshot,
+        object_store,
+        query_vector,
+        nprobe,
+        payload_format,
+        limit,
+    )?;
+    rerank_scored_candidates_by_ip(&mut candidates, rerank_width, exact_score_ip)?;
+    Ok(candidates)
+}
+
 pub(super) fn rerank_scored_candidates_by_ip<F>(
     candidates: &mut Vec<SpireScoredScanCandidate>,
     rerank_width: usize,
@@ -615,7 +640,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 mod tests {
     use super::{
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
-        collect_snapshot_delta_rows, collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
+        collect_reranked_quantized_routed_probe_candidates, collect_snapshot_delta_rows,
+        collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
         SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScoredScanCandidate,
@@ -1300,6 +1326,66 @@ mod tests {
         )
         .unwrap_err()
         .contains("payload length mismatch"));
+    }
+
+    #[test]
+    fn collect_reranked_quantized_routed_probe_candidates_rescores_prefix() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    quantized_assignment_input(
+                        10,
+                        1,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[1.0, 0.0],
+                    ),
+                    quantized_assignment_input(
+                        10,
+                        2,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[-1.0, 0.0],
+                    ),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let candidates = collect_reranked_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            SpireAssignmentPayloadFormat::TurboQuant,
+            Some(2),
+            2,
+            |candidate| {
+                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                    1 => 1.0,
+                    2 => 10.0,
+                    other => panic!("unexpected rerank candidate {other}"),
+                })
+            },
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
     }
 
     #[test]
