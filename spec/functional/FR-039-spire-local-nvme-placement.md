@@ -9,6 +9,9 @@ relationships:
   - target: "ix://agent-ix/tqvector/US-018"
     type: "implements"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-038"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-039: SPIRE Local NVMe Store Placement
 
@@ -92,7 +95,7 @@ sequenceDiagram
 
 ### FR-039-AC-1
 
-At least one local store can be configured through SQL and inspected through SQL diagnostics.
+The single-store path exposes the same SQL configuration and diagnostics surface that the later multi-store path will use.
 
 ### FR-039-AC-2
 

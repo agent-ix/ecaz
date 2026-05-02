@@ -9,6 +9,12 @@ relationships:
   - target: "ix://agent-ix/tqvector/US-019"
     type: "implements"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-038"
+    type: "depends_on"
+    cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-041"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-042: SPIRE Distributed libpq Coordinator
 
@@ -110,3 +116,7 @@ Remote responses include served epoch and stale/unavailable diagnostics.
 ### FR-042-AC-3
 
 The coordinator can return one ordered candidate stream with node identity and row locator sufficient for final row delivery.
+
+### FR-042-AC-4
+
+In strict mode, an unavailable or stale remote node causes the coordinator query to fail explicitly; in degraded mode, the coordinator may continue only if the skipped node is reported in diagnostics.

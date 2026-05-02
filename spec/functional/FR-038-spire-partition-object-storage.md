@@ -31,12 +31,14 @@ relationships:
 3. Internal partition objects SHALL record level, PID, parent PID where applicable, routing metadata, and child PIDs.
 4. Leaf partition objects SHALL record level, PID, parent PID where applicable, and assignment/posting rows.
 5. Assignment/posting rows SHALL include stable `vec_id`, local heap TID or row locator, PID, encoded scoring payload, and flags for primary assignment, boundary replica, tombstone, or delta state where applicable.
-6. The first local implementation MAY map all PIDs to one partition store, but the on-disk metadata SHALL preserve the `pid -> local_store_id -> object location` abstraction.
-7. Local multi-NVMe placement SHALL map PIDs across a bounded set of local partition stores, normally by `hash(pid) % local_store_count`.
-8. Multi-machine placement SHALL extend the map to `pid -> node_id -> local_store_id -> object location` and SHALL require stable `vec_id` values suitable for remote candidate merge.
-9. Partition objects SHALL be versioned directly by epoch or referenced by an epoch manifest so a query reads a consistent object set.
-10. Old epochs SHALL remain readable until in-flight queries using them can finish or fail with an explicit stale-epoch error.
-11. Diagnostics SHALL expose read-only SQL functions or views for partition counts, placement map state, per-store object bytes, assignment cardinality, active epoch, and stale/unavailable placement entries.
+6. `vec_id` SHALL be unique within an index OID and encoded in no more than 32 bytes. The format SHALL reserve a discriminator byte so a local heap-derived ID and a future global ID can coexist or be rewritten through a published epoch.
+7. If a persisted local heap TID becomes stale because UPDATE/HOT movement changes the live tuple locator, SPIRE SHALL either repair the assignment row during update/vacuum or fail the affected candidate explicitly; it SHALL NOT silently return an unrelated heap row.
+8. The first local implementation MAY map all PIDs to one partition store, but the on-disk metadata SHALL preserve the `pid -> local_store_id -> object location` abstraction.
+9. Local multi-NVMe placement SHALL map PIDs across a bounded set of local partition stores, normally by `hash(pid) % local_store_count`.
+10. Multi-machine placement SHALL extend the map to `pid -> node_id -> local_store_id -> object location` and SHALL require stable `vec_id` values suitable for remote candidate merge.
+11. Partition objects SHALL be versioned directly by epoch or referenced by an epoch manifest so a query reads a consistent object set.
+12. Old epochs SHALL remain readable until in-flight queries using them can finish or fail with an explicit stale-epoch error.
+13. Diagnostics SHALL expose read-only SQL functions or views for partition counts, placement map state, per-store object bytes, assignment cardinality, active epoch, and stale/unavailable placement entries.
 
 ## Data Schema
 
@@ -73,7 +75,7 @@ erDiagram
     }
     ASSIGNMENT_ROW {
         bigint pid
-        bytea vec_id
+        bytea vec_id "discriminator + local/global id, <=32 bytes"
         tid heap_tid
         bytea encoded_payload
         int flags
@@ -129,3 +131,11 @@ The local multi-store path can place partition objects across at least two store
 ### FR-038-AC-5
 
 A query that requests an unavailable or stale epoch fails explicitly rather than silently mixing partition objects from incompatible epochs.
+
+### FR-038-AC-6
+
+The persisted `vec_id` format enforces per-index uniqueness, a bounded encoded width, and a reserved local/global discriminator.
+
+### FR-038-AC-7
+
+When update or vacuum detects an invalid stored heap TID, SPIRE either repairs the row locator through an epoch-safe path or suppresses the candidate with diagnostics.

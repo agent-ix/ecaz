@@ -18,6 +18,9 @@ relationships:
   - target: "ix://agent-ix/tqvector/US-020"
     type: "implements"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-038"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-041: SPIRE Epoch Consistency and Retention
 
@@ -31,11 +34,13 @@ relationships:
 2. Queries SHALL acquire an epoch at search start.
 3. Strict mode SHALL fail if any required local store or remote node cannot serve the requested epoch.
 4. Degraded mode SHALL continue when configured by skipping or downweighting stale/unavailable placements with explicit diagnostics.
-5. Graceful degradation SHALL be the preferred operational posture for large remote deployments.
-6. The first baseline MAY use a simpler epoch path, such as immutable offline-built epochs, before live delta/manifest optimization.
-7. Old epochs SHOULD retain for a configurable minimum wall-clock interval and until no active query is registered against them.
-8. The initial suggested default retention policy is `min_epoch_retention = 10 minutes`, `max_retained_epochs = 2`, and cleanup only when no active backend reports the old epoch.
-9. Operators SHALL be able to inspect active epoch, retained epochs, pending epochs, stale placements, and cleanup eligibility through SQL diagnostics.
+5. Local single-store deployments SHALL default to strict mode.
+6. Graceful degradation SHALL be the preferred operational posture for large remote deployments when explicitly configured.
+7. A failed or partial epoch publication SHALL remain in `failed` or `building` state and SHALL NOT become the active epoch.
+8. The first baseline MAY use a simpler epoch path, such as immutable offline-built epochs, before live delta/manifest optimization.
+9. Old epochs SHOULD retain for a configurable minimum wall-clock interval and until no active query is registered against them.
+10. The initial suggested default retention policy is `min_epoch_retention = 10 minutes`, `max_retained_epochs = 2`, and cleanup only when no active backend reports the old epoch.
+11. Operators SHALL be able to inspect active epoch, retained epochs, pending epochs, stale placements, and cleanup eligibility through SQL diagnostics.
 
 ## Epoch Schema
 
@@ -113,3 +118,7 @@ Degraded mode reports skipped or stale stores/nodes and surfaces that the result
 ### FR-041-AC-4
 
 Epoch cleanup does not remove an epoch still held by an active query.
+
+### FR-041-AC-5
+
+A failed or partial epoch publication does not replace the active epoch and remains visible through diagnostics for retry or cleanup.

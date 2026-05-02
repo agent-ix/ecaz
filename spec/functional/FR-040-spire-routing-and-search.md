@@ -9,6 +9,9 @@ relationships:
   - target: "ix://agent-ix/tqvector/US-017"
     type: "implements"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-038"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-040: SPIRE Routing and Search Execution
 
@@ -25,6 +28,7 @@ relationships:
 5. Leaf scoring SHALL use the selected quantizer/profile payload stored in assignment/posting rows.
 6. Boundary replicas SHALL be deduplicated by stable `vec_id` before final top-k emission.
 7. Local heap visibility SHALL remain PostgreSQL executor responsibility for local rows.
+8. If a candidate carries a heap TID that no longer identifies the indexed row version, the scan SHALL suppress or repair that candidate through the update/vacuum policy instead of emitting a wrong tuple.
 
 ## Search Sequence
 
@@ -71,7 +75,7 @@ flowchart TD
 
 ### FR-040-AC-1
 
-Single-level SPIRE can route to leaf PIDs, score candidates, dedupe by `vec_id`, and return ordered local heap TIDs.
+Single-level SPIRE can route to leaf PIDs, score candidates, and return ordered local heap TIDs.
 
 ### FR-040-AC-2
 

@@ -12,6 +12,12 @@ relationships:
   - target: "ix://agent-ix/tqvector/US-020"
     type: "implements"
     cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-038"
+    type: "depends_on"
+    cardinality: "N:1"
+  - target: "ix://agent-ix/tqvector/FR-041"
+    type: "depends_on"
+    cardinality: "N:1"
 ---
 # FR-043: SPIRE Update, Split, Merge, and Cleanup Lifecycle
 
@@ -28,6 +34,8 @@ relationships:
 5. Split and merge operations SHALL create replacement partition objects and publish hierarchy/placement changes through an epoch transition.
 6. Vacuum SHALL compact tombstones and reclaim obsolete partition-object versions only after retention and active-query checks pass.
 7. Rebalance SHALL copy or rewrite partition objects to target stores or nodes, then publish a placement epoch.
+8. Update and vacuum paths SHALL keep stored heap TIDs aligned with live tuple locators, including HOT/UPDATE movement, or mark affected assignment rows stale until repair.
+9. Failed split, merge, rebalance, or compaction jobs SHALL leave the active epoch unchanged and expose failed-job state for retry or cleanup.
 
 ## Delta Schema
 
@@ -90,7 +98,7 @@ sequenceDiagram
 
 ### FR-043-AC-1
 
-The first local implementation documents whether inserts/deletes use live deltas, mutable partition objects, or replacement epochs.
+Inserts and deletes against an active strict-mode epoch either become visible to subsequent searches through a published epoch-safe path or fail explicitly.
 
 ### FR-043-AC-2
 
@@ -99,3 +107,11 @@ Split and merge never silently change PID child/leaf meaning for active strict-e
 ### FR-043-AC-3
 
 Vacuum and cleanup can prove an old epoch or partition-object version is no longer needed before reclaiming it.
+
+### FR-043-AC-4
+
+A failed split, merge, rebalance, or compaction job does not change the active epoch and remains diagnosable for retry or cleanup.
+
+### FR-043-AC-5
+
+Update and vacuum processing handles heap-TID invalidation by repairing the assignment row locator, tombstoning the stale assignment, or suppressing the candidate with diagnostics.

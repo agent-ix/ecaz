@@ -55,7 +55,12 @@ striped across physical NVMe devices, then multi-machine PID routing.
   must be reviewable and WAL-safe.
 - [ ] **PID identity note.** Define `pid`, `vec_id`, local heap TID, parent PID,
   child PID, boundary-replica flags, and how local `vec_id` maps to future
-  global vector IDs.
+  global vector IDs. The note must bound encoded `vec_id` width, state
+  uniqueness scope, and reserve or justify the local/global discriminator.
+- [ ] **Heap locator update note.** Decide how stored local heap TIDs interact
+  with PostgreSQL UPDATE/HOT movement and vacuum: repair in place, tombstone and
+  reinsert through an epoch-safe path, resolve by `vec_id`, or suppress stale
+  candidates with diagnostics.
 - [ ] **Placement note.** Define the initial `pid -> local_store_id -> object`
   placement map and the extension point for `pid -> node_id -> local_store_id`.
   State explicitly that SPIRE does not use PostgreSQL table partitions for
@@ -63,6 +68,9 @@ striped across physical NVMe devices, then multi-machine PID routing.
 - [ ] **Epoch/version note.** Decide whether Phase 1 stores immutable
   `(pid, epoch)` objects directly or stores per-partition versions referenced by
   an epoch manifest. State old-epoch retention and cleanup expectations.
+- [ ] **Insert/delete lifecycle note.** Document whether the first local path
+  uses live deltas, mutable partition objects, or replacement epochs, and map
+  that choice to strict-mode visibility/failure behavior.
 - [ ] **Compatibility note.** State whether current `ec_ivf` indexes keep their
   existing internal format while SPIRE gets a partition-object format, or
   whether a future `ec_ivf` format bump will adopt partition objects too.
@@ -84,6 +92,9 @@ striped across physical NVMe devices, then multi-machine PID routing.
   exposed as a new `ec_spire` AM immediately or hidden behind internal tooling
   until recursion exists. Prefer exposing only a surface we are willing to
   support.
+- [ ] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
+  the supported opclass names in `spec/spec.md`; otherwise keep them explicitly
+  marked as deferred.
 - [ ] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path.

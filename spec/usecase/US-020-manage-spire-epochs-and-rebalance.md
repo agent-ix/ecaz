@@ -42,3 +42,7 @@ Split, merge, and rebalance operations publish new placement/hierarchy metadata 
 ### US-020-AC-5
 
 Operators can inspect active epoch, retained epochs, pending epoch publication, stale nodes/stores, and cleanup eligibility through SQL diagnostics.
+
+### US-020-AC-6
+
+A failed or partial epoch publish does not poison the active epoch and is recoverable through diagnostics, retry, or cleanup.

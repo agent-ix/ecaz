@@ -2,7 +2,7 @@
 id: ADR-049
 title: "Build SPIRE on a Partition-Object IVF Foundation"
 status: PROPOSED
-impact: Affects ADR-035, ADR-048, future SPIRE planning, distributed storage planning
+impact: Affects ADR-048, future SPIRE planning, distributed storage planning; supersedes the dropped SPANN direction
 date: 2026-05-01
 deciders:
   - TBD
@@ -99,8 +99,10 @@ and distributed path:
 - flags such as primary assignment, boundary replica, tombstone, or delta row.
 
 For the first local single-table implementation, `vec_id` may be derived from or
-mirror the heap TID. The format must keep room for a stable global ID before
-multi-machine routing lands.
+mirror the heap TID. It must be unique within an index OID, encoded in no more
+than 32 bytes, and reserve a discriminator byte so a local heap-derived identity
+can coexist with or be rewritten into a future global identity through an epoch
+transition.
 
 ### 3. Use partition objects and a placement map, not one monolithic relation forever
 
