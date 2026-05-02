@@ -109,10 +109,17 @@ Decision record:
   PID-addressed leaf objects; live AM callback wiring remains covered by the
   build and scan path tasks below.
 - [ ] **Single-store placement.** Persist a PID placement directory even if the
-  first executable path maps every PID to one local store.
+  first executable path maps every PID to one local store. Foundation metadata
+  now includes placement-entry and placement-directory codecs, local
+  single-store object placements, exact object-manifest/placement PID-set
+  validation, and fail-closed delta publication from non-available base
+  placements; live relation-backed writes remain part of the build path.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
-  partition objects.
+  partition objects. The spherical k-means training helper is now factored into
+  `src/am/common/training.rs` with `ec_ivf` compatibility wrappers so SPIRE can
+  consume the centroid training boundary without importing private `ec_ivf`
+  modules.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
