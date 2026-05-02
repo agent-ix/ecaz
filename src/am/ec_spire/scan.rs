@@ -231,7 +231,7 @@ mod tests {
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::am::ec_spire::storage::{
-        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
+        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -407,15 +407,22 @@ mod tests {
                     SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
                     3,
                 ),
-                assignment_row(
-                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-                    4,
-                ),
                 assignment_row(0, 5),
             ],
         )
         .unwrap();
-        let placement = object_store.insert_leaf_object(7, &object).unwrap();
+        let leaf_placement = object_store.insert_leaf_object(7, &object).unwrap();
+        let delta_object = SpireDeltaPartitionObject::new(
+            12,
+            1,
+            11,
+            vec![assignment_row(
+                SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+                4,
+            )],
+        )
+        .unwrap();
+        let delta_placement = object_store.insert_delta_object(7, &delta_object).unwrap();
         let epoch_manifest = SpireEpochManifest {
             epoch: 7,
             state: SpireEpochState::Published,
@@ -426,16 +433,25 @@ mod tests {
         };
         let object_manifest = SpireObjectManifest::from_entries(
             7,
-            vec![SpireManifestEntry {
-                epoch: 7,
-                pid: 11,
-                object_version: 1,
-                placement_tid: tid(60, 1),
-            }],
+            vec![
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 11,
+                    object_version: 1,
+                    placement_tid: tid(60, 1),
+                },
+                SpireManifestEntry {
+                    epoch: 7,
+                    pid: 12,
+                    object_version: 1,
+                    placement_tid: tid(60, 2),
+                },
+            ],
         )
         .unwrap();
         let placement_directory =
-            SpirePlacementDirectory::from_entries(7, vec![placement]).unwrap();
+            SpirePlacementDirectory::from_entries(7, vec![leaf_placement, delta_placement])
+                .unwrap();
         let snapshot =
             snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
 

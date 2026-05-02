@@ -780,11 +780,22 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
 fn validate_leaf_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<(), String> {
     let mut seen_vec_ids = HashSet::new();
     for assignment in assignments {
+        validate_leaf_assignment(assignment)?;
         if !seen_vec_ids.insert(assignment.vec_id.clone()) {
             return Err(
                 "ec_spire leaf partition object contains duplicate vec_id assignments".to_owned(),
             );
         }
+    }
+    Ok(())
+}
+
+fn validate_leaf_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), String> {
+    assignment.encode()?;
+    if assignment.flags & (SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE)
+        != 0
+    {
+        return Err("ec_spire leaf partition object assignment cannot set delta flags".to_owned());
     }
     Ok(())
 }
@@ -1027,6 +1038,38 @@ mod tests {
         object.header.kind = SpirePartitionObjectKind::Leaf;
         object.header.child_count = 1;
         assert!(object.encode().is_err());
+    }
+
+    #[test]
+    fn leaf_partition_object_rejects_delta_flags() {
+        let row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+
+        assert!(SpireLeafPartitionObject::new(17, 3, 0, vec![row.clone()]).is_err());
+
+        let header = SpirePartitionObjectHeader {
+            kind: SpirePartitionObjectKind::Leaf,
+            pid: 17,
+            object_version: 3,
+            level: 0,
+            parent_pid: 0,
+            child_count: 0,
+            assignment_count: 1,
+            flags: 0,
+        };
+        let mut encoded = header.encode().unwrap();
+        encoded.extend_from_slice(&row.encode().unwrap());
+
+        assert!(SpireLeafPartitionObject::decode(&encoded).is_err());
     }
 
     #[test]
