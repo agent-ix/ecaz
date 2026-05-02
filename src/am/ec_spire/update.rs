@@ -6,7 +6,7 @@ use super::assign::{
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-    SpireObjectManifest, SpirePlacementDirectory, SpirePublishedEpochSnapshot,
+    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePublishedEpochSnapshot,
 };
 use super::storage::{SpireDeltaPartitionObject, SpireLocalObjectStore};
 use crate::storage::page::ItemPointer;
@@ -40,6 +40,74 @@ pub(super) fn build_delta_epoch_draft(
     local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireDeltaEpochDraft, String> {
+    build_delta_epoch_draft_with_carried_entries(
+        input,
+        Vec::new(),
+        Vec::new(),
+        pid_allocator,
+        local_vec_id_allocator,
+        object_store,
+    )
+}
+
+pub(super) fn build_delta_epoch_draft_from_snapshot(
+    input: SpireDeltaEpochInput,
+    base_snapshot: &SpirePublishedEpochSnapshot<'_>,
+    pid_allocator: &mut SpirePidAllocator,
+    local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireDeltaEpochDraft, String> {
+    SpirePublishedEpochSnapshot::new(
+        base_snapshot.epoch_manifest,
+        base_snapshot.object_manifest,
+        base_snapshot.placement_directory,
+    )?;
+    if base_snapshot.object_manifest.get(input.base_pid).is_none() {
+        return Err(format!(
+            "ec_spire delta epoch base_pid {} is not present in the base snapshot",
+            input.base_pid
+        ));
+    }
+    let epoch = input.epoch;
+    let carried_manifest_entries = base_snapshot
+        .object_manifest
+        .entries
+        .iter()
+        .cloned()
+        .map(|mut entry| {
+            entry.epoch = epoch;
+            entry
+        })
+        .collect();
+    let carried_placement_entries = base_snapshot
+        .placement_directory
+        .entries
+        .iter()
+        .cloned()
+        .map(|mut entry| {
+            entry.epoch = epoch;
+            entry
+        })
+        .collect();
+
+    build_delta_epoch_draft_with_carried_entries(
+        input,
+        carried_manifest_entries,
+        carried_placement_entries,
+        pid_allocator,
+        local_vec_id_allocator,
+        object_store,
+    )
+}
+
+fn build_delta_epoch_draft_with_carried_entries(
+    input: SpireDeltaEpochInput,
+    mut object_entries: Vec<SpireManifestEntry>,
+    mut placement_entries: Vec<SpirePlacementEntry>,
+    pid_allocator: &mut SpirePidAllocator,
+    local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireDeltaEpochDraft, String> {
     if input.insert_assignments.is_empty() && input.delete_assignments.is_empty() {
         return Err("ec_spire delta epoch draft must contain at least one assignment".to_owned());
     }
@@ -56,16 +124,17 @@ pub(super) fn build_delta_epoch_draft(
 
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
+    for entry in &object_entries {
+        pid_cursor.observe(entry.pid)?;
+    }
     let delta_pid = pid_cursor.allocate()?;
-    let object_manifest = SpireObjectManifest::from_entries(
-        input.epoch,
-        vec![SpireManifestEntry {
-            epoch: input.epoch,
-            pid: delta_pid,
-            object_version: input.object_version,
-            placement_tid: input.placement_tid,
-        }],
-    )?;
+    object_entries.push(SpireManifestEntry {
+        epoch: input.epoch,
+        pid: delta_pid,
+        object_version: input.object_version,
+        placement_tid: input.placement_tid,
+    });
+    let object_manifest = SpireObjectManifest::from_entries(input.epoch, object_entries)?;
 
     let mut assignments =
         build_insert_delta_assignments(&mut local_vec_id_cursor, input.insert_assignments)?;
@@ -77,7 +146,9 @@ pub(super) fn build_delta_epoch_draft(
         assignments,
     )?;
     let placement = object_store.insert_delta_object(input.epoch, &delta_object)?;
-    let placement_directory = SpirePlacementDirectory::from_entries(input.epoch, vec![placement])?;
+    placement_entries.push(placement);
+    let placement_directory =
+        SpirePlacementDirectory::from_entries(input.epoch, placement_entries)?;
 
     let draft = SpireDeltaEpochDraft {
         epoch_manifest,
@@ -100,10 +171,15 @@ pub(super) fn build_delta_epoch_draft(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_delta_epoch_draft, SpireDeltaEpochInput};
+    use super::{
+        build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
+    };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
         SpirePidAllocator,
+    };
+    use crate::am::ec_spire::build::{
+        build_single_level_leaf_epoch_draft, SpireSingleLevelBuildInput,
     };
     use crate::am::ec_spire::meta::{SpireConsistencyMode, SpirePublishedEpochSnapshot};
     use crate::am::ec_spire::storage::{
@@ -154,6 +230,18 @@ mod tests {
             placement_tid: tid(80, 1),
             insert_assignments,
             delete_assignments,
+        }
+    }
+
+    fn base_build_input(assignments: Vec<SpireLeafAssignmentInput>) -> SpireSingleLevelBuildInput {
+        SpireSingleLevelBuildInput {
+            epoch: 7,
+            object_version: 1,
+            published_at_micros: 900,
+            retain_until_micros: 1900,
+            consistency_mode: SpireConsistencyMode::Strict,
+            placement_tid: tid(70, 1),
+            assignments,
         }
     }
 
@@ -208,6 +296,117 @@ mod tests {
             local_vec_id_allocator.next_local_vec_seq(),
             draft.next_local_vec_seq
         );
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_carries_base_entries() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+
+        let mut input = delta_input(
+            vec![insert_assignment(20, 1)],
+            vec![delete_assignment(1, 10, 1)],
+        );
+        input.base_pid = 1;
+        let draft = build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+
+        let base_entry = draft.object_manifest.get(1).unwrap();
+        let delta_entry = draft.object_manifest.get(2).unwrap();
+        let base_placement = draft.placement_directory.get(1).unwrap();
+        let delta_placement = draft.placement_directory.get(2).unwrap();
+
+        assert_eq!(draft.object_manifest.entries.len(), 2);
+        assert_eq!(draft.placement_directory.entries.len(), 2);
+        assert_eq!(base_entry.epoch, 8);
+        assert_eq!(base_entry.object_version, 1);
+        assert_eq!(base_entry.placement_tid, tid(70, 1));
+        assert_eq!(delta_entry.object_version, 3);
+        assert_eq!(base_placement.epoch, 8);
+        assert_eq!(base_placement.object_version, 1);
+        assert_eq!(delta_placement.epoch, 8);
+        assert_eq!(delta_placement.object_version, 3);
+        assert_eq!(
+            object_store
+                .read_leaf_object(base_placement)
+                .unwrap()
+                .header
+                .pid,
+            1
+        );
+        assert_eq!(
+            object_store
+                .read_delta_object(delta_placement)
+                .unwrap()
+                .header
+                .pid,
+            2
+        );
+        SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        assert_eq!(draft.next_pid, 3);
+        assert_eq!(draft.next_local_vec_seq, 3);
+        assert_eq!(pid_allocator.next_pid(), 3);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 3);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_missing_base_pid() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut input = delta_input(vec![insert_assignment(20, 1)], Vec::new());
+        input.base_pid = 99;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
     }
 
     #[test]
