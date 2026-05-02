@@ -6,7 +6,10 @@ use super::meta::{
     SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot,
     SpireValidatedEpochSnapshot,
 };
-use super::options::{resolve_single_level_scan_plan, EcSpireOptions, SpireSingleLevelScanPlan};
+use super::options::{
+    resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
+    SpireSingleLevelScanPlan,
+};
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireLeafAssignmentRow,
@@ -341,6 +344,7 @@ pub(super) fn collect_ranked_routed_probe_candidates<F>(
     query_vector: &[f32],
     nprobe: u32,
     score_ip: F,
+    dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String>
 where
@@ -348,7 +352,7 @@ where
 {
     let routed_rows =
         collect_snapshot_routed_probe_leaf_rows(snapshot, object_store, query_vector, nprobe)?;
-    rank_routed_leaf_rows_by_ip(routed_rows, score_ip, limit)
+    rank_routed_leaf_rows_by_ip(routed_rows, score_ip, dedupe_mode, limit)
 }
 
 pub(super) fn collect_quantized_routed_probe_candidates(
@@ -357,6 +361,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
     query_vector: &[f32],
     nprobe: u32,
     payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
@@ -367,6 +372,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
         query_vector,
         nprobe,
         |row| scorer.score_assignment_ip(row),
+        dedupe_mode,
         limit,
     )
 }
@@ -377,6 +383,7 @@ pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
     query_vector: &[f32],
     nprobe: u32,
     payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
     rerank_width: usize,
     exact_score_ip: F,
@@ -390,6 +397,7 @@ where
         query_vector,
         nprobe,
         payload_format,
+        dedupe_mode,
         limit,
     )?;
     rerank_scored_candidates_by_ip(&mut candidates, rerank_width, exact_score_ip)?;
@@ -416,6 +424,7 @@ where
         query_vector,
         scan_plan.nprobe,
         scan_plan.payload_format,
+        scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
         scan_plan.rerank_width,
         exact_score_ip,
@@ -565,6 +574,7 @@ pub(super) fn collect_snapshot_visible_primary_rows(
 fn rank_routed_leaf_rows_by_ip<F>(
     routed_rows: Vec<SpireRoutedLeafScanRows>,
     mut score_ip: F,
+    dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String>
 where
@@ -574,7 +584,11 @@ where
         return Ok(Vec::new());
     }
 
-    let mut candidates_by_vec_id = HashMap::new();
+    let mut candidates = Vec::new();
+    let mut candidates_by_vec_id = match dedupe_mode {
+        SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
+        SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
+    };
     for routed in routed_rows {
         for row in routed.rows {
             if !is_visible_primary_assignment(&row.assignment) {
@@ -594,23 +608,28 @@ where
                 heap_tid: row.assignment.heap_tid,
                 score: -ip,
             };
-            match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
-                        *entry.get_mut() = candidate;
+            if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
+                match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
+                            *entry.get_mut() = candidate;
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(candidate);
                     }
                 }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(candidate);
-                }
+            } else {
+                candidates.push(candidate);
             }
         }
     }
 
-    Ok(rank_bounded_scored_candidates(
-        candidates_by_vec_id.into_values(),
-        limit,
-    ))
+    if let Some(candidates_by_vec_id) = candidates_by_vec_id {
+        candidates.extend(candidates_by_vec_id.into_values());
+    }
+
+    Ok(rank_bounded_scored_candidates(candidates, limit))
 }
 
 fn scored_candidate_cmp(
@@ -1040,7 +1059,7 @@ mod tests {
         SpirePublishedEpochSnapshot,
     };
     use crate::am::ec_spire::options::{
-        EcSpireOptions, SpireSingleLevelScanPlan, SpireStorageFormat,
+        EcSpireOptions, SpireCandidateDedupeMode, SpireSingleLevelScanPlan, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
@@ -1645,6 +1664,7 @@ mod tests {
             &[1.0, 0.0],
             2,
             |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
             Some(1),
         )
         .unwrap();
@@ -1696,6 +1716,7 @@ mod tests {
                 &query,
                 2,
                 |row| scorer.score_assignment_ip(row),
+                SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
                 Some(2),
             )
             .unwrap();
@@ -1706,6 +1727,7 @@ mod tests {
                 &query,
                 2,
                 payload_format,
+                SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
                 Some(2),
             )
             .unwrap();
@@ -1746,6 +1768,7 @@ mod tests {
             &[1.0, 0.0],
             2,
             SpireAssignmentPayloadFormat::PqFastScan,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
             Some(2),
         )
         .unwrap_err()
@@ -1756,6 +1779,7 @@ mod tests {
             &[1.0, 0.0],
             2,
             SpireAssignmentPayloadFormat::TurboQuant,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
             Some(2),
         )
         .unwrap_err()
@@ -1803,6 +1827,7 @@ mod tests {
             &[1.0, 0.0],
             2,
             SpireAssignmentPayloadFormat::TurboQuant,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
             Some(2),
             2,
             |candidate| {
@@ -1864,6 +1889,7 @@ mod tests {
             rerank_width: 2,
             rerank_width_source: "relation",
             candidate_limit: Some(2),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
         };
 
         let candidates = collect_single_level_scan_plan_reranked_candidates(
@@ -1981,6 +2007,7 @@ mod tests {
             rerank_width: 0,
             rerank_width_source: "relation",
             candidate_limit: None,
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
         };
 
         let candidates = collect_single_level_scan_plan_reranked_candidates(
@@ -2033,15 +2060,67 @@ mod tests {
             ],
         }];
 
-        let candidates =
-            rank_routed_leaf_rows_by_ip(routed, |row| Ok(f32::from(row.encoded_payload[0])), None)
-                .unwrap();
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
         assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 2);
         assert_eq!(candidates[0].heap_tid, tid(10, 1));
         assert_eq!(candidates[0].score, -9.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_can_skip_vec_id_dedupe() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        7,
+                        20,
+                        2,
+                        vec![1],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 2,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        7,
+                        10,
+                        1,
+                        vec![9],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
+        assert_eq!(candidates[0].score, -9.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(7));
+        assert_eq!(candidates[1].score, -1.0);
     }
 
     #[test]
@@ -2104,6 +2183,7 @@ mod tests {
         let candidates = rank_routed_leaf_rows_by_ip(
             routed,
             |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
             Some(2),
         )
         .unwrap();
@@ -2128,9 +2208,14 @@ mod tests {
             }],
         }];
 
-        assert!(rank_routed_leaf_rows_by_ip(routed, |_| Ok(f32::NAN), None)
-            .unwrap_err()
-            .contains("non-finite"));
+        assert!(rank_routed_leaf_rows_by_ip(
+            routed,
+            |_| Ok(f32::NAN),
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            None
+        )
+        .unwrap_err()
+        .contains("non-finite"));
     }
 
     #[test]
@@ -2308,6 +2393,7 @@ mod tests {
             rerank_width: 1,
             rerank_width_source: "relation",
             candidate_limit: Some(1),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
         };
 
         opaque.reset_for_candidates(
@@ -2340,6 +2426,7 @@ mod tests {
             rerank_width: 1,
             rerank_width_source: "relation",
             candidate_limit: Some(1),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
         };
         opaque.reset_for_candidates(
             SpireScanQuery::new(vec![1.0, 0.0]).unwrap(),

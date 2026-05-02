@@ -126,6 +126,12 @@ pub(super) struct SpireRerankWidthResolution {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireCandidateDedupeMode {
+    NoReplicaDedupeDisabled,
+    VecIdDedupeEnabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpireSingleLevelScanPlan {
     pub(super) leaf_count: u32,
     pub(super) nprobe: u32,
@@ -134,6 +140,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) rerank_width: usize,
     pub(super) rerank_width_source: &'static str,
     pub(super) candidate_limit: Option<usize>,
+    pub(super) dedupe_mode: SpireCandidateDedupeMode,
 }
 
 pub(super) fn register_gucs() {
@@ -218,6 +225,7 @@ fn resolve_single_level_scan_plan_values(
         rerank_width: rerank_width_usize,
         rerank_width_source: rerank_width.source,
         candidate_limit,
+        dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
     })
 }
 
@@ -447,7 +455,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 mod tests {
     use super::{
         resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, EcSpireOptions, SpireStorageFormat,
+        resolve_single_level_scan_plan_values, EcSpireOptions, SpireCandidateDedupeMode,
+        SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -549,6 +558,10 @@ mod tests {
         assert_eq!(plan.rerank_width, 128);
         assert_eq!(plan.rerank_width_source, "relation");
         assert_eq!(plan.candidate_limit, Some(128));
+        assert_eq!(
+            plan.dedupe_mode,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+        );
     }
 
     #[test]
@@ -574,6 +587,10 @@ mod tests {
         assert_eq!(plan.rerank_width, 0);
         assert_eq!(plan.rerank_width_source, "session");
         assert_eq!(plan.candidate_limit, None);
+        assert_eq!(
+            plan.dedupe_mode,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+        );
     }
 
     #[test]

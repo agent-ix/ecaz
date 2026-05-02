@@ -13,7 +13,9 @@ ranked candidates through injected and concrete quantized scorer paths, dedupe
 by `vec_id`, and consume the resolved single-level scan plan through the
 helper-level quantized scoring and exact-rerank path. Routed top-`nprobe`
 selection and final candidate limiting now use bounded heaps with deterministic
-tie-breaks. A cursor-to-scan-output
+tie-breaks, and the scan plan carries an explicit dedupe mode so the Phase 1
+primary-only path skips the `vec_id` map until boundary replicas or remote
+merge require it. A cursor-to-scan-output
 bridge now maps ranked candidates to heap TID plus ORDER BY score output for
 future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
@@ -162,9 +164,11 @@ Decision record:
   route heap ordered by higher inner product, lower centroid index, then lower
   child PID. Candidate ranking dedupes by `vec_id`, then keeps a bounded heap
   ordered by lower ORDER BY score, heap TID, PID, row index, and `vec_id` bytes.
-- [ ] **Explicit dedupe mode.** Carry a scan/snapshot dedupe mode so Phase 1's
+- [x] **Explicit dedupe mode.** Carry a scan/snapshot dedupe mode so Phase 1's
   primary-only path skips the `vec_id` HashMap, while boundary replicas and
-  future remote merge re-enable `vec_id` dedupe explicitly.
+  future remote merge re-enable `vec_id` dedupe explicitly. The single-level
+  scan plan now defaults to `NoReplicaDedupeDisabled`; lower-level helper tests
+  can opt into `VecIdDedupeEnabled` for boundary-replica and merge semantics.
 - [ ] **Publish coordinator.** Add a typed publication state machine for object
   writes, placement writes, manifest writes, validation, active-epoch advance,
   and failed-publish cleanup before live relation-backed writes are enabled.
@@ -208,13 +212,13 @@ Decision record:
   foundation now has helper-level root routing object discovery, strict/degraded
   placement handling for routed leaves, single-route query-to-leaf collection,
   top-`nprobe` leaf selection over root child centroids, visible-primary
-  candidate scoring through an injected scorer, `vec_id` dedupe, bounded
+  candidate scoring through an injected scorer, explicit dedupe mode, bounded
   candidate limiting, deterministic score ordering, and an injected exact-rerank
   seam. Stored assignment payload
   scoring now has TurboQuant and RaBitQ prepared-scorer support, and the routed
   scan helper can prepare that scorer directly for real encoded assignment rows.
   The helper-level scan path can now consume a resolved single-level scan plan
-  and compose route, quantized score, `vec_id` dedupe, candidate limiting, and
+  and compose route, quantized score, dedupe mode, candidate limiting, and
   exact-rerank callback application. It also has a cursor-to-output bridge for
   heap TID plus ORDER BY score emission, plus scan opaque lifecycle allocation
   and cursor-drain `amgettuple` behavior for future populated scans. `amrescan`

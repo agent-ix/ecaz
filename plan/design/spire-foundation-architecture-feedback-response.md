@@ -215,10 +215,13 @@ NoReplicaDedupeDisabled
 VecIdDedupeEnabled
 ```
 
-`NoReplicaDedupeDisabled` skips the per-candidate `HashMap<SpireVecId, ...>`
-entirely and uses the fixed local `u64` ID only for diagnostics and stable tie
-breaks. `VecIdDedupeEnabled` is required when boundary replicas, retained
-mixed-ID epochs, or remote candidate merge are active.
+Implementation checkpoint: `SpireSingleLevelScanPlan` now carries this mode and
+the resolver defaults Phase 1 local scans to `NoReplicaDedupeDisabled`.
+`rank_routed_leaf_rows_by_ip` only allocates the per-candidate
+`HashMap<SpireVecId, ...>` when the caller passes `VecIdDedupeEnabled`;
+otherwise candidates flow directly into the bounded top-k heap. `VecIdDedupeEnabled`
+is still available for boundary replicas, retained mixed-ID epochs, or remote
+candidate merge.
 
 ## Encode and Validate Split
 
