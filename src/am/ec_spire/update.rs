@@ -14,6 +14,7 @@ use super::meta::{
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePublishedEpochSnapshot,
     SpireRootControlState,
 };
+use super::scan::collect_snapshot_visible_primary_rows;
 use super::storage::{
     SpireDeltaPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind, SpireVecId,
 };
@@ -151,7 +152,8 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
         })
         .collect();
     let observed_vec_ids = collect_snapshot_assignment_vec_ids(base_snapshot, object_store)?;
-    validate_delete_delta_targets(&input.delete_assignments, &observed_vec_ids)?;
+    let visible_vec_ids = collect_snapshot_visible_vec_ids(base_snapshot, object_store)?;
+    validate_delete_delta_targets(&input.delete_assignments, &visible_vec_ids)?;
 
     build_delta_epoch_draft_with_carried_entries(
         input,
@@ -280,17 +282,29 @@ fn collect_snapshot_assignment_vec_ids(
 
 fn validate_delete_delta_targets(
     delete_assignments: &[SpireDeleteDeltaInput],
-    observed_vec_ids: &[SpireVecId],
+    visible_vec_ids: &[SpireVecId],
 ) -> Result<(), String> {
-    let observed: HashSet<_> = observed_vec_ids.iter().cloned().collect();
+    let visible: HashSet<_> = visible_vec_ids.iter().cloned().collect();
     for assignment in delete_assignments {
-        if !observed.contains(&assignment.vec_id) {
+        if !visible.contains(&assignment.vec_id) {
             return Err(
                 "ec_spire delete delta vec_id is not present in the base snapshot".to_owned(),
             );
         }
     }
     Ok(())
+}
+
+fn collect_snapshot_visible_vec_ids(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+) -> Result<Vec<SpireVecId>, String> {
+    Ok(
+        collect_snapshot_visible_primary_rows(snapshot, object_store)?
+            .into_iter()
+            .map(|row| row.assignment.vec_id)
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -679,6 +693,58 @@ mod tests {
         )
         .is_err());
         assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_already_deleted_vec_id() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let mut first_delete = delta_input(Vec::new(), vec![delete_assignment(1, 10, 1)]);
+        first_delete.base_pid = 1;
+        let first_delta = build_delta_epoch_draft_from_snapshot(
+            first_delete,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let deleted_snapshot = SpirePublishedEpochSnapshot::new(
+            &first_delta.epoch_manifest,
+            &first_delta.object_manifest,
+            &first_delta.placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut duplicate_delete = delta_input(Vec::new(), vec![delete_assignment(1, 10, 1)]);
+        duplicate_delete.epoch = 9;
+        duplicate_delete.base_pid = 1;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            duplicate_delete,
+            &deleted_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 3);
         assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
         assert_eq!(object_store.page_count(), initial_page_count);
     }
