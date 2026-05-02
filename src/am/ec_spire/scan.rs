@@ -1,12 +1,14 @@
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
-    SpireRoutingPartitionObject, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SpireRoutingPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
     SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
     SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
+use crate::storage::page::ItemPointer;
 use pgrx::pg_sys;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +32,16 @@ pub(super) struct SpireRoutedLeafScanRows {
     pub(super) root_pid: u64,
     pub(super) leaf_pid: u64,
     pub(super) rows: Vec<SpireLeafScanRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScoredScanCandidate {
+    pub(super) pid: u64,
+    pub(super) object_version: u64,
+    pub(super) row_index: u32,
+    pub(super) vec_id: SpireVecId,
+    pub(super) heap_tid: ItemPointer,
+    pub(super) score: f32,
 }
 
 pub(super) fn collect_snapshot_leaf_rows(
@@ -109,6 +121,22 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
         });
     }
     Ok(routed)
+}
+
+pub(super) fn collect_ranked_routed_probe_candidates<F>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+    nprobe: u32,
+    score_ip: F,
+    limit: Option<usize>,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireLeafAssignmentRow) -> Result<f32, String>,
+{
+    let routed_rows =
+        collect_snapshot_routed_probe_leaf_rows(snapshot, object_store, query_vector, nprobe)?;
+    rank_routed_leaf_rows_by_ip(routed_rows, score_ip, limit)
 }
 
 pub(super) fn collect_snapshot_delta_rows(
@@ -203,6 +231,75 @@ pub(super) fn collect_snapshot_visible_primary_rows(
     }
 
     Ok(visible_rows)
+}
+
+fn rank_routed_leaf_rows_by_ip<F>(
+    routed_rows: Vec<SpireRoutedLeafScanRows>,
+    mut score_ip: F,
+    limit: Option<usize>,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireLeafAssignmentRow) -> Result<f32, String>,
+{
+    if limit == Some(0) {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates_by_vec_id = HashMap::new();
+    for routed in routed_rows {
+        for row in routed.rows {
+            if !is_visible_primary_assignment(&row.assignment) {
+                continue;
+            }
+            let ip = score_ip(&row.assignment)?;
+            if !ip.is_finite() {
+                return Err(
+                    "ec_spire routed candidate scorer returned a non-finite score".to_owned(),
+                );
+            }
+            let candidate = SpireScoredScanCandidate {
+                pid: row.pid,
+                object_version: row.object_version,
+                row_index: row.row_index,
+                vec_id: row.assignment.vec_id.clone(),
+                heap_tid: row.assignment.heap_tid,
+                score: -ip,
+            };
+            match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
+                        *entry.get_mut() = candidate;
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(candidate);
+                }
+            }
+        }
+    }
+
+    let mut candidates = candidates_by_vec_id.into_values().collect::<Vec<_>>();
+    candidates.sort_by(scored_candidate_cmp);
+    if let Some(limit) = limit {
+        candidates.truncate(limit);
+    }
+    Ok(candidates)
+}
+
+fn scored_candidate_cmp(
+    left: &SpireScoredScanCandidate,
+    right: &SpireScoredScanCandidate,
+) -> Ordering {
+    left.score
+        .total_cmp(&right.score)
+        .then_with(|| left.heap_tid.block_number.cmp(&right.heap_tid.block_number))
+        .then_with(|| {
+            left.heap_tid
+                .offset_number
+                .cmp(&right.heap_tid.offset_number)
+        })
+        .then_with(|| left.pid.cmp(&right.pid))
+        .then_with(|| left.row_index.cmp(&right.row_index))
 }
 
 fn load_snapshot_root_routing_object(
@@ -426,8 +523,10 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_snapshot_delta_rows, collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
+        collect_ranked_routed_probe_candidates, collect_snapshot_delta_rows,
+        collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
+        rank_routed_leaf_rows_by_ip, SpireLeafScanRow, SpireRoutedLeafScanRows,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -463,11 +562,19 @@ mod tests {
     }
 
     fn assignment_input(block_number: u32, offset_number: u16) -> SpireLeafAssignmentInput {
+        assignment_input_with_payload(block_number, offset_number, vec![1, 2, 3])
+    }
+
+    fn assignment_input_with_payload(
+        block_number: u32,
+        offset_number: u16,
+        encoded_payload: Vec<u8>,
+    ) -> SpireLeafAssignmentInput {
         SpireLeafAssignmentInput {
             heap_tid: tid(block_number, offset_number),
             payload_format: 1,
             gamma: 0.5,
-            encoded_payload: vec![1, 2, 3],
+            encoded_payload,
         }
     }
 
@@ -533,13 +640,29 @@ mod tests {
     }
 
     fn assignment_row(flags: u16, offset_number: u16) -> SpireLeafAssignmentRow {
+        assignment_row_with_payload(
+            flags,
+            u64::from(offset_number),
+            10,
+            offset_number,
+            vec![1, 2, 3],
+        )
+    }
+
+    fn assignment_row_with_payload(
+        flags: u16,
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+        encoded_payload: Vec<u8>,
+    ) -> SpireLeafAssignmentRow {
         SpireLeafAssignmentRow {
             flags,
-            vec_id: SpireVecId::local(u64::from(offset_number)),
-            heap_tid: tid(10, offset_number),
+            vec_id: SpireVecId::local(vec_seq),
+            heap_tid: tid(block_number, offset_number),
             payload_format: 1,
             gamma: 0.5,
-            encoded_payload: vec![1, 2, 3],
+            encoded_payload,
         }
     }
 
@@ -904,6 +1027,117 @@ mod tests {
         assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 1));
         assert_eq!(routed[1].leaf_pid, SPIRE_FIRST_PID + 2);
         assert_eq!(routed[1].rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn collect_ranked_routed_probe_candidates_scores_and_limits() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    assignment_input_with_payload(10, 1, vec![1]),
+                    assignment_input_with_payload(10, 2, vec![9]),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let candidates = collect_ranked_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(candidates[0].object_version, 1);
+        assert_eq!(candidates[0].row_index, 0);
+        assert_eq!(candidates[0].heap_tid, tid(10, 2));
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -9.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_best_visible_vec_id_candidate() {
+        let same_vec_id_low_score =
+            assignment_row_with_payload(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 7, 20, 2, vec![1]);
+        let same_vec_id_high_score =
+            assignment_row_with_payload(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 7, 10, 1, vec![9]);
+        let boundary_replica = assignment_row_with_payload(
+            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+            8,
+            30,
+            3,
+            vec![100],
+        );
+        let routed = vec![SpireRoutedLeafScanRows {
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: same_vec_id_low_score,
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 2,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: same_vec_id_high_score,
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 3,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: boundary_replica,
+                },
+            ],
+        }];
+
+        let candidates =
+            rank_routed_leaf_rows_by_ip(routed, |row| Ok(f32::from(row.encoded_payload[0])), None)
+                .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
+        assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 2);
+        assert_eq!(candidates[0].heap_tid, tid(10, 1));
+        assert_eq!(candidates[0].score, -9.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_rejects_non_finite_scores() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![SpireLeafScanRow {
+                pid: SPIRE_FIRST_PID + 1,
+                object_version: 1,
+                row_index: 0,
+                assignment: assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 1),
+            }],
+        }];
+
+        assert!(rank_routed_leaf_rows_by_ip(routed, |_| Ok(f32::NAN), None)
+            .unwrap_err()
+            .contains("non-finite"));
     }
 
     #[test]
