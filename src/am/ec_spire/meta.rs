@@ -848,6 +848,15 @@ impl<'a> SpirePublishedEpochSnapshot<'a> {
             }
         }
 
+        for placement in &self.placement_directory.entries {
+            if self.object_manifest.get(placement.pid).is_none() {
+                return Err(format!(
+                    "ec_spire published snapshot has placement without object manifest entry for pid {}",
+                    placement.pid
+                ));
+            }
+        }
+
         Ok(())
     }
 }
@@ -1505,6 +1514,20 @@ mod tests {
 
         assert!(
             SpirePublishedEpochSnapshot::new(&epoch, &manifest, &wrong_version_directory).is_err()
+        );
+
+        let orphan_placement_directory = SpirePlacementDirectory::from_entries(
+            7,
+            vec![
+                SpirePlacementEntry::local_single_store(7, 11, 12345, 3, tid(44, 2), 4096),
+                SpirePlacementEntry::local_single_store(7, 12, 12345, 4, tid(45, 2), 4096),
+            ],
+        )
+        .unwrap();
+
+        assert!(
+            SpirePublishedEpochSnapshot::new(&epoch, &manifest, &orphan_placement_directory)
+                .is_err()
         );
     }
 
