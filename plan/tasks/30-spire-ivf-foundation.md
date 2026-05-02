@@ -6,11 +6,12 @@ SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
 draft publication. Scan helpers can now route to top-`nprobe` leaves, collect
 ranked candidates through injected and concrete quantized scorer paths, dedupe
-by `vec_id`, and compose quantized candidate collection with the exact-rerank
-seam. Assignment payload scoring now reuses the existing TurboQuant and RaBitQ
-quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains deferred
-until grouped-PQ model metadata is persisted. AM option/GUC plumbing exists for
-single-level build and scan parameters. Live PostgreSQL relation-backed
+by `vec_id`, and consume the resolved single-level scan plan through the
+helper-level quantized scoring and exact-rerank path. Assignment payload scoring
+now reuses the existing TurboQuant and RaBitQ quantizers behind a SPIRE-owned
+row scorer, while PQ-FastScan remains deferred until grouped-PQ model metadata
+is persisted. AM option/GUC plumbing exists for single-level build and scan
+parameters. Live PostgreSQL relation-backed
 build/scan persistence remains intentionally unwired. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
@@ -148,10 +149,10 @@ Decision record:
   score ordering, and an injected exact-rerank seam. Stored assignment payload
   scoring now has TurboQuant and RaBitQ prepared-scorer support, and the routed
   scan helper can prepare that scorer directly for real encoded assignment rows.
-  The helper-level scan path can now compose route, quantized score, `vec_id`
-  dedupe, candidate limiting, and exact-rerank callback application. Heap rerank
-  callback implementation, AM callback execution, and PQ-FastScan scorer
-  binding remain open.
+  The helper-level scan path can now consume a resolved single-level scan plan
+  and compose route, quantized score, `vec_id` dedupe, candidate limiting, and
+  exact-rerank callback application. Heap rerank callback implementation, AM
+  callback execution, and PQ-FastScan scorer binding remain open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -159,7 +160,8 @@ Decision record:
   `storage_format`, and `quantizer`; session overrides exist for
   `ec_spire.nprobe` and `ec_spire.rerank_width`. These settings now resolve to
   a helper-level single-level scan plan carrying effective `nprobe`, assignment
-  payload format, rerank width, and pre-rerank candidate limit. Option
+  payload format, rerank width, and pre-rerank candidate limit, and the scan
+  helper now consumes that plan before live AM callback wiring. Option
   consumption by live build/scan callbacks remains part of those open tasks.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
