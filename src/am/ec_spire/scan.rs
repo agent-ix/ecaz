@@ -11,7 +11,7 @@ use super::storage::{
     SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use crate::storage::page::ItemPointer;
-use pgrx::pg_sys;
+use pgrx::{pg_sys, IntoDatum};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafScanRow {
@@ -46,6 +46,21 @@ pub(super) struct SpireScoredScanCandidate {
     pub(super) score: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireScanOutput {
+    pub(super) heap_tid: ItemPointer,
+    pub(super) orderby_score: f32,
+}
+
+impl From<&SpireScoredScanCandidate> for SpireScanOutput {
+    fn from(candidate: &SpireScoredScanCandidate) -> Self {
+        Self {
+            heap_tid: candidate.heap_tid,
+            orderby_score: candidate.score,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireScanCandidateCursor {
     candidates: Vec<SpireScoredScanCandidate>,
@@ -78,6 +93,10 @@ impl SpireScanCandidateCursor {
         let candidate_index = self.next_index;
         self.next_index += 1;
         self.candidates.get(candidate_index)
+    }
+
+    pub(super) fn next_output(&mut self) -> Option<SpireScanOutput> {
+        self.next_candidate().map(SpireScanOutput::from)
     }
 
     pub(super) fn reset(&mut self, candidates: Vec<SpireScoredScanCandidate>) {
@@ -634,6 +653,39 @@ fn should_skip_placement(
     }
 }
 
+pub(super) fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut (*scan).xs_heaptid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+    }
+}
+
+pub(super) fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() {
+            (*scan).xs_orderbyvals =
+                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+        }
+        if (*scan).xs_orderbynulls.is_null() {
+            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        }
+
+        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
+        *(*scan).xs_orderbynulls = false;
+    }
+}
+
+pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        if !(*scan).xs_orderbynulls.is_null() {
+            *(*scan).xs_orderbynulls = true;
+        }
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
     _index_relation: pg_sys::Relation,
     _nkeys: std::ffi::c_int,
@@ -672,7 +724,8 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScoredScanCandidate,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOutput,
+        SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1688,6 +1741,20 @@ mod tests {
         assert_eq!(candidate.vec_id.local_sequence(), Some(3));
         assert_eq!(candidate.heap_tid, tid(20, 3));
         assert!(cursor.is_exhausted());
+    }
+
+    #[test]
+    fn scan_candidate_cursor_next_output_returns_amgettuple_shape() {
+        let mut cursor = SpireScanCandidateCursor::new(vec![scored_candidate(7, 40, 3, -7.5)]);
+
+        assert_eq!(
+            cursor.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(40, 3),
+                orderby_score: -7.5,
+            })
+        );
+        assert!(cursor.next_output().is_none());
     }
 
     #[test]
