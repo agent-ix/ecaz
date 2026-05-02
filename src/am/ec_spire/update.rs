@@ -1,6 +1,6 @@
 //! Epoch-published insert/delete, split, merge, and cleanup mechanics live here.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::assign::{
     build_delete_delta_assignments, build_insert_delta_assignments, SpireDeleteDeltaInput,
@@ -14,7 +14,7 @@ use super::meta::{
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePublishedEpochSnapshot,
     SpireRootControlState,
 };
-use super::scan::collect_snapshot_visible_primary_rows;
+use super::scan::{collect_snapshot_visible_primary_rows, SpireLeafScanRow};
 use super::storage::{
     SpireDeltaPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind, SpireVecId,
 };
@@ -152,8 +152,8 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
         })
         .collect();
     let observed_vec_ids = collect_snapshot_assignment_vec_ids(base_snapshot, object_store)?;
-    let visible_vec_ids = collect_snapshot_visible_vec_ids(base_snapshot, object_store)?;
-    validate_delete_delta_targets(&input.delete_assignments, &visible_vec_ids)?;
+    let visible_rows = collect_snapshot_visible_primary_rows(base_snapshot, object_store)?;
+    validate_delete_delta_targets(&input.delete_assignments, &visible_rows)?;
 
     build_delta_epoch_draft_with_carried_entries(
         input,
@@ -282,9 +282,20 @@ fn collect_snapshot_assignment_vec_ids(
 
 fn validate_delete_delta_targets(
     delete_assignments: &[SpireDeleteDeltaInput],
-    visible_vec_ids: &[SpireVecId],
+    visible_rows: &[SpireLeafScanRow],
 ) -> Result<(), String> {
-    let visible: HashSet<_> = visible_vec_ids.iter().cloned().collect();
+    let mut visible_targets = HashMap::new();
+    for row in visible_rows {
+        if visible_targets
+            .insert(row.assignment.vec_id.clone(), row.assignment.heap_tid)
+            .is_some()
+        {
+            return Err(
+                "ec_spire visible snapshot contains duplicate vec_id assignments".to_owned(),
+            );
+        }
+    }
+
     let mut seen_deletes = HashSet::new();
     for assignment in delete_assignments {
         if !seen_deletes.insert(assignment.vec_id.clone()) {
@@ -292,25 +303,18 @@ fn validate_delete_delta_targets(
                 "ec_spire delete delta vec_id appears more than once in the draft".to_owned(),
             );
         }
-        if !visible.contains(&assignment.vec_id) {
+        let Some(heap_tid) = visible_targets.get(&assignment.vec_id) else {
             return Err(
                 "ec_spire delete delta vec_id is not present in the base snapshot".to_owned(),
+            );
+        };
+        if *heap_tid != assignment.heap_tid {
+            return Err(
+                "ec_spire delete delta heap_tid does not match the visible base row".to_owned(),
             );
         }
     }
     Ok(())
-}
-
-fn collect_snapshot_visible_vec_ids(
-    snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
-) -> Result<Vec<SpireVecId>, String> {
-    Ok(
-        collect_snapshot_visible_primary_rows(snapshot, object_store)?
-            .into_iter()
-            .map(|row| row.assignment.vec_id)
-            .collect(),
-    )
 }
 
 #[cfg(test)]
@@ -688,6 +692,41 @@ mod tests {
             vec![insert_assignment(20, 1)],
             vec![delete_assignment(99, 10, 1)],
         );
+        input.base_pid = 1;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_mismatched_delete_heap_tid() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut input = delta_input(Vec::new(), vec![delete_assignment(1, 10, 2)]);
         input.base_pid = 1;
 
         assert!(build_delta_epoch_draft_from_snapshot(
