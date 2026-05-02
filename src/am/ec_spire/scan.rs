@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use super::meta::{SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot};
+use super::options::SpireSingleLevelScanPlan;
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind,
@@ -222,6 +223,32 @@ where
     )?;
     rerank_scored_candidates_by_ip(&mut candidates, rerank_width, exact_score_ip)?;
     Ok(candidates)
+}
+
+pub(super) fn collect_single_level_scan_plan_reranked_candidates<F>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    query_vector: &[f32],
+    scan_plan: SpireSingleLevelScanPlan,
+    exact_score_ip: F,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+{
+    if scan_plan.nprobe == 0 {
+        return Ok(Vec::new());
+    }
+
+    collect_reranked_quantized_routed_probe_candidates(
+        snapshot,
+        object_store,
+        query_vector,
+        scan_plan.nprobe,
+        scan_plan.payload_format,
+        scan_plan.candidate_limit,
+        scan_plan.rerank_width,
+        exact_score_ip,
+    )
 }
 
 pub(super) fn rerank_scored_candidates_by_ip<F>(
@@ -640,7 +667,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(_scan: pg_sys::IndexSc
 mod tests {
     use super::{
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
-        collect_reranked_quantized_routed_probe_candidates, collect_snapshot_delta_rows,
+        collect_reranked_quantized_routed_probe_candidates,
+        collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip, SpireLeafScanRow,
@@ -660,6 +688,7 @@ mod tests {
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SpirePublishedEpochSnapshot,
     };
+    use crate::am::ec_spire::options::SpireSingleLevelScanPlan;
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
     };
@@ -1386,6 +1415,109 @@ mod tests {
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
         assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn collect_single_level_scan_plan_reranked_candidates_uses_plan_knobs() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    quantized_assignment_input(
+                        10,
+                        1,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[1.0, 0.0],
+                    ),
+                    quantized_assignment_input(
+                        10,
+                        2,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[-1.0, 0.0],
+                    ),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 2,
+            nprobe: 2,
+            nprobe_source: "relation",
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 2,
+            rerank_width_source: "relation",
+            candidate_limit: Some(2),
+        };
+
+        let candidates = collect_single_level_scan_plan_reranked_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            scan_plan,
+            |candidate| {
+                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                    1 => 1.0,
+                    2 => 10.0,
+                    other => panic!("unexpected rerank candidate {other}"),
+                })
+            },
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn collect_single_level_scan_plan_reranked_candidates_allows_empty_plan() {
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(7, Vec::new()).unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, Vec::new()).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 0,
+            nprobe: 0,
+            nprobe_source: "none",
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 0,
+            rerank_width_source: "relation",
+            candidate_limit: None,
+        };
+
+        let candidates = collect_single_level_scan_plan_reranked_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            scan_plan,
+            |_| panic!("empty scan plan should not call exact scorer"),
+        )
+        .unwrap();
+
+        assert!(candidates.is_empty());
     }
 
     #[test]
