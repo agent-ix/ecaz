@@ -366,7 +366,7 @@ impl SpireLeafPartitionObject {
     ) -> Result<Self, String> {
         let assignment_count = u32::try_from(assignments.len())
             .map_err(|_| "ec_spire leaf assignment count exceeds u32".to_owned())?;
-        Ok(Self {
+        let object = Self {
             header: SpirePartitionObjectHeader {
                 kind: SpirePartitionObjectKind::Leaf,
                 pid,
@@ -378,7 +378,9 @@ impl SpireLeafPartitionObject {
                 flags: 0,
             },
             assignments,
-        })
+        };
+        object.validate_header()?;
+        Ok(object)
     }
 
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
@@ -423,7 +425,9 @@ impl SpireLeafPartitionObject {
                 self.header.assignment_count
             ));
         }
-        self.validate_header_without_assignment_len()
+        self.validate_header_without_assignment_len()?;
+        validate_leaf_assignments(&self.assignments)?;
+        Ok(())
     }
 
     fn validate_header_without_assignment_len(&self) -> Result<(), String> {
@@ -773,6 +777,18 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     Ok(())
 }
 
+fn validate_leaf_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<(), String> {
+    let mut seen_vec_ids = HashSet::new();
+    for assignment in assignments {
+        if !seen_vec_ids.insert(assignment.vec_id.clone()) {
+            return Err(
+                "ec_spire leaf partition object contains duplicate vec_id assignments".to_owned(),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_delta_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<(), String> {
     let mut seen_vec_ids = HashSet::new();
     for assignment in assignments {
@@ -1034,6 +1050,56 @@ mod tests {
         object.header.assignment_count = 1;
         let mut encoded = object.encode().unwrap();
         encoded.push(99);
+        assert!(SpireLeafPartitionObject::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn leaf_partition_object_rejects_duplicate_vec_ids() {
+        let primary_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2],
+        };
+        let boundary_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+            vec_id: SpireVecId::local(1),
+            heap_tid: ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+            payload_format: 1,
+            gamma: 0.75,
+            encoded_payload: vec![3, 4],
+        };
+
+        assert!(SpireLeafPartitionObject::new(
+            17,
+            3,
+            0,
+            vec![primary_row.clone(), boundary_row.clone()],
+        )
+        .is_err());
+
+        let header = SpirePartitionObjectHeader {
+            kind: SpirePartitionObjectKind::Leaf,
+            pid: 17,
+            object_version: 3,
+            level: 0,
+            parent_pid: 0,
+            child_count: 0,
+            assignment_count: 2,
+            flags: 0,
+        };
+        let mut encoded = header.encode().unwrap();
+        encoded.extend_from_slice(&primary_row.encode().unwrap());
+        encoded.extend_from_slice(&boundary_row.encode().unwrap());
+
         assert!(SpireLeafPartitionObject::decode(&encoded).is_err());
     }
 
