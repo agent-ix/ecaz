@@ -2625,6 +2625,28 @@ mod tests {
         assert_eq!(opclasses, 2);
     }
 
+    #[pg_test]
+    fn test_ec_spire_access_method_is_registered() {
+        let amname =
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'ec_spire'")
+                .expect("SPI query should succeed")
+                .expect("access method should exist");
+        assert_eq!(amname, "ec_spire");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_operator_classes_are_registered() {
+        let opclasses = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_opclass opc \
+             JOIN pg_am am ON am.oid = opc.opcmethod \
+             WHERE am.amname = 'ec_spire' \
+             AND opc.opcname IN ('tqvector_spire_ip_ops', 'ecvector_spire_ip_ops')",
+        )
+        .expect("SPI query should succeed")
+        .expect("operator class count should exist");
+        assert_eq!(opclasses, 2);
+    }
+
     fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")

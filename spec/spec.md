@@ -102,7 +102,7 @@ This specification does not govern:
 | `ec_hnsw` | `ecvector_ip_ops`, `tqvector_ip_ops` | Default general-purpose ANN graph index | Implemented |
 | `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
 | `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
-| `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | Planned recursive IVF/SPIRE partition-object index | Phase 1 planned |
+| `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | Planned recursive IVF/SPIRE partition-object index | Phase 1 scaffold |
 
 All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 
@@ -117,11 +117,12 @@ All current index families expose inner-product ordering through `<#>` as negati
 `ec_spire` is planned as a SPIRE-inspired access method. Its storage model is
 based on PID-addressed partition objects, not PostgreSQL declarative table
 partitions. The first implementation target is a local single-level foundation.
-Phase 1 is planned as an opt-in `ec_spire` AM with explicit
-`ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` opclasses. The design
-preserves a path to PostgreSQL-managed local multi-NVMe partition stores,
-configurable graceful degradation, and later multi-machine PID placement over
-libpq.
+Phase 1 starts as an opt-in `ec_spire` AM scaffold with explicit
+`ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` opclasses; build, scan,
+insert, and vacuum persistence remain unsupported until the single-level local
+path lands. The design preserves a path to PostgreSQL-managed local multi-NVMe
+partition stores, configurable graceful degradation, and later multi-machine
+PID placement over libpq.
 
 ## 4. Architecture
 

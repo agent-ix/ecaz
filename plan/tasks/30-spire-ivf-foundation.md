@@ -86,19 +86,20 @@ Decision record:
 
 ## Phase 1 — Single-Level SPIRE-IVF Foundation
 
-- [ ] **Module skeleton.** Add SPIRE-owned modules using ADR-041 boundaries,
+- [x] **Module skeleton.** Add SPIRE-owned modules using ADR-041 boundaries,
   expected initial shape:
-  - `src/am/spire/mod.rs`
-  - `src/am/spire/build.rs`
-  - `src/am/spire/assign.rs`
-  - `src/am/spire/storage.rs`
-  - `src/am/spire/scan.rs`
-  - `src/am/spire/update.rs`
-  - `src/am/spire/meta.rs`
-- [ ] **SQL surface decision.** Decide whether the single-level foundation is
+  - `src/am/ec_spire/mod.rs`
+  - `src/am/ec_spire/build.rs`
+  - `src/am/ec_spire/assign.rs`
+  - `src/am/ec_spire/storage.rs`
+  - `src/am/ec_spire/scan.rs`
+  - `src/am/ec_spire/update.rs`
+  - `src/am/ec_spire/meta.rs`
+  Initial callbacks are explicit unsupported stubs until persistence lands.
+- [x] **SQL surface decision.** Decide whether the single-level foundation is
   exposed as a new `ec_spire` AM immediately or hidden behind internal tooling
   until recursion exists. Phase 0 chooses an opt-in `ec_spire` AM for Phase 1.
-- [ ] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
+- [x] **Opclass documentation.** If `ec_spire` is exposed in Phase 1, register
   `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops` in `spec/spec.md`;
   otherwise keep them explicitly marked as deferred.
 - [ ] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment

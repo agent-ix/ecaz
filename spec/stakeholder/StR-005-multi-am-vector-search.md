@@ -40,6 +40,6 @@ Ecaz SHALL provide a canonical row type and multiple opt-in ANN access methods u
 ## Success Criteria
 
 1. `ecvector(dim)` works as the canonical indexed column type for HNSW, IVF, and DiskANN.
-2. `ec_hnsw`, `ec_ivf`, and `ec_diskann` are registered by `CREATE EXTENSION ecaz`.
+2. `ec_hnsw`, `ec_ivf`, `ec_diskann`, and the `ec_spire` scaffold are registered by `CREATE EXTENSION ecaz`.
 3. Documentation and benchmarks distinguish default product guidance from local research/measurement lanes.
 4. SPIRE planning defines PID-addressed partition objects, configurable epoch consistency, local multi-store placement, and the future multi-machine routing surface before persistence implementation starts.

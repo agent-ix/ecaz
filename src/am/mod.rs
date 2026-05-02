@@ -4,6 +4,7 @@ pub(crate) mod common;
 mod ec_diskann;
 mod ec_hnsw;
 mod ec_ivf;
+mod ec_spire;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
@@ -26,6 +27,7 @@ pub(crate) fn register_gucs() {
     ec_diskann::register_gucs();
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
+    ec_spire::register_gucs();
 }
 
 #[cfg(any(test, feature = "pg_test"))]

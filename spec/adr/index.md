@@ -18,7 +18,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | HNSW graph quality | `ADR-018-hnsw-quantized-graph-quality.md` | DECIDED | HNSW remains default graph AM. |
 | Live insert lock ordering | `ADR-026-live-insert-backlink-lock-ordering.md` | ACCEPTED | HNSW insert lock ordering. |
 | Vacuum graph repair lock ordering | `ADR-027-vacuum-graph-repair-lock-ordering.md` | ACCEPTED | HNSW vacuum repair ordering. |
-| Module structure | `ADR-041-module-structure-for-multi-am-multi-quantizer-growth.md` | IMPLEMENTED | Current `src/am/{common,ec_hnsw,ec_ivf,ec_diskann}` layout. |
+| Module structure | `ADR-041-module-structure-for-multi-am-multi-quantizer-growth.md` | IMPLEMENTED | Current `src/am/{common,ec_hnsw,ec_ivf,ec_diskann,ec_spire}` layout. |
 | Native HNSW build | `ADR-042-native-hnsw-build-path.md` | DECIDED | Production build path no longer depends on `hnsw_rs`. |
 | Canonical `ecvector` row type | `ADR-043-native-ecvector-raw-f32-column-type.md` | IMPLEMENTED | `ecvector(dim)` is the canonical user row type. |
 | Extension identity rename | `ADR-047-rename-extension-identity-to-ecaz.md` | DECIDED | Supersedes old single `tqvector` extension identity direction. |

@@ -70,7 +70,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-026 | PG18 module identity | TC-005, TC-014 | Complete for PG18 build surface |
 | FR-027 | pgrx PG18 support | TC-014 | Complete for current build configuration |
 | FR-028 | FR-028-AC-1..4 | TC-002, TC-003 | Complete for canonical `ecvector` surface |
-| FR-029 | FR-029-AC-1..3 | TC-003 | Complete for SQL bootstrap surface |
+| FR-029 | FR-029-AC-1..4 | TC-003 | Complete for SQL bootstrap surface, including the `ec_spire` scaffold |
 | FR-030 | FR-030-AC-1..4 | TC-004, TC-005, TC-006 | Partial: large-build measurement deferred |
 | FR-031 | FR-031-AC-1..3 | TC-007 | Complete for local IVF build/storage behavior |
 | FR-032 | FR-032-AC-1..3 | TC-008 | Complete for local IVF scan/rerank/cost behavior |

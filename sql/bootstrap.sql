@@ -191,6 +191,11 @@ RETURNS index_am_handler
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'ec_ivf_handler';
 
+CREATE FUNCTION ec_spire_handler(internal)
+RETURNS index_am_handler
+LANGUAGE c
+AS 'MODULE_PATHNAME', 'ec_spire_handler';
+
 CREATE FUNCTION ec_diskann_handler(internal)
 RETURNS index_am_handler
 LANGUAGE c
@@ -226,6 +231,7 @@ CREATE ACCESS METHOD ec_hnsw TYPE INDEX HANDLER ec_hnsw_handler;
 CREATE ACCESS METHOD ec_diskann TYPE INDEX HANDLER ec_diskann_handler;
 
 CREATE ACCESS METHOD ec_ivf TYPE INDEX HANDLER ec_ivf_handler;
+CREATE ACCESS METHOD ec_spire TYPE INDEX HANDLER ec_spire_handler;
 
 CREATE OPERATOR CLASS tqvector_ip_ops
 DEFAULT FOR TYPE tqvector USING ec_hnsw AS
@@ -244,6 +250,16 @@ DEFAULT FOR TYPE tqvector USING ec_ivf AS
 
 CREATE OPERATOR CLASS ecvector_ip_ops
 DEFAULT FOR TYPE ecvector USING ec_ivf AS
+    OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);
+
+CREATE OPERATOR CLASS tqvector_spire_ip_ops
+DEFAULT FOR TYPE tqvector USING ec_spire AS
+    OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);
+
+CREATE OPERATOR CLASS ecvector_spire_ip_ops
+DEFAULT FOR TYPE ecvector USING ec_spire AS
     OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);
 
