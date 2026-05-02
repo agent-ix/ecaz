@@ -115,6 +115,12 @@ pub(super) fn build_delta_epoch_draft_from_snapshot(
         base_snapshot.object_manifest,
         base_snapshot.placement_directory,
     )?;
+    if input.epoch <= base_snapshot.epoch_manifest.epoch {
+        return Err(format!(
+            "ec_spire delta epoch {} must be newer than base epoch {}",
+            input.epoch, base_snapshot.epoch_manifest.epoch
+        ));
+    }
     if base_snapshot.object_manifest.get(input.base_pid).is_none() {
         return Err(format!(
             "ec_spire delta epoch base_pid {} is not present in the base snapshot",
@@ -607,6 +613,42 @@ mod tests {
         let initial_page_count = object_store.page_count();
         let mut input = delta_input(vec![insert_assignment(20, 1)], Vec::new());
         input.base_pid = 99;
+
+        assert!(build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .is_err());
+        assert_eq!(pid_allocator.next_pid(), 2);
+        assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 2);
+        assert_eq!(object_store.page_count(), initial_page_count);
+    }
+
+    #[test]
+    fn delta_epoch_draft_from_snapshot_rejects_non_newer_epoch() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let initial_page_count = object_store.page_count();
+        let mut input = delta_input(vec![insert_assignment(20, 1)], Vec::new());
+        input.epoch = base_draft.epoch_manifest.epoch;
+        input.base_pid = 1;
 
         assert!(build_delta_epoch_draft_from_snapshot(
             input,
