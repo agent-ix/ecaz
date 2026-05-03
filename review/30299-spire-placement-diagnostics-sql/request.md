@@ -63,3 +63,32 @@ validation, recall/latency summary evidence, or PQ-FastScan scorer binding.
   only.
 - Real SQL `VACUUM` end-to-end validation remains open; psql access to the
   local test sockets is blocked in the current sandbox without escalation.
+
+## Reviewer Follow-up
+
+- Follow-up code commit: `3126e992` (`Cover SPIRE degraded placement diagnostics`)
+- Addressed review feedback by adding unit coverage for degraded-mode
+  `Unavailable` and `Skipped` placements in
+  `collect_store_placement_diagnostics`.
+- The new test verifies that non-Available placements contribute to total
+  placement and placement-byte counts but are not decoded into object-kind,
+  assignment, or available-byte buckets.
+- The routing byte accumulator style was also collapsed for Root/Internal
+  branches while keeping the same overflow message.
+- Stale placement coverage is not added as an active published-snapshot case
+  because validated degraded published snapshots reject `Stale`; the test
+  keeps `stale_placement_count = 0` explicit for that contract.
+
+Follow-up validation:
+
+- `cargo fmt`
+  - Completed; existing stable rustfmt warnings for unstable
+    `imports_granularity` / `group_imports`.
+- `cargo test --lib store_placement_diagnostics_counts_degraded_skipped_objects_without_reading_them --no-default-features --features pg18`
+  - `1 passed; 0 failed; 0 ignored; 0 measured; 1089 filtered out`
+- `cargo test --lib ec_spire --no-default-features --features pg18`
+  - `209 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out`
+- `git diff --check`
+  - clean
+- `git diff --cached --check`
+  - clean
