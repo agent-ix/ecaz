@@ -83,6 +83,24 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) assignment_payload_format: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexHealthSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) healthy: bool,
+    pub(crate) recommendation: &'static str,
+    pub(crate) compaction_recommended: bool,
+    pub(crate) object_count: u64,
+    pub(crate) leaf_assignment_count: u64,
+    pub(crate) delta_assignment_count: u64,
+    pub(crate) delta_object_count: u64,
+    pub(crate) available_placement_count: u64,
+    pub(crate) stale_placement_count: u64,
+    pub(crate) unavailable_placement_count: u64,
+    pub(crate) skipped_placement_count: u64,
+}
+
 impl SpireActiveSnapshotDiagnostics {
     fn empty(root_control: meta::SpireRootControlState) -> Self {
         Self {
@@ -109,6 +127,74 @@ impl SpireActiveSnapshotDiagnostics {
             leaf_object_bytes: 0,
             delta_object_bytes: 0,
         }
+    }
+}
+
+fn health_snapshot_from_diagnostics(
+    diagnostics: &SpireActiveSnapshotDiagnostics,
+) -> SpireIndexHealthSnapshot {
+    let has_no_active_epoch = diagnostics.active_epoch == 0;
+    let (status, healthy, recommendation, compaction_recommended) = if has_no_active_epoch {
+        (
+            "empty",
+            true,
+            "build or insert rows to publish the first SPIRE epoch",
+            false,
+        )
+    } else if diagnostics.unavailable_placement_count > 0 {
+        (
+            "unavailable_placements",
+            false,
+            "restore unavailable local placements before relying on this index",
+            false,
+        )
+    } else if diagnostics.stale_placement_count > 0 {
+        (
+            "stale_placements",
+            false,
+            "publish a cleanup epoch to remove stale placements",
+            false,
+        )
+    } else if diagnostics.skipped_placement_count > 0 {
+        (
+            "skipped_placements",
+            false,
+            "inspect skipped placements before enabling degraded reads",
+            false,
+        )
+    } else if diagnostics.delta_object_count > 0 {
+        (
+            "maintenance_recommended",
+            true,
+            "run VACUUM to compact active delta objects into V2 base leaves",
+            true,
+        )
+    } else if diagnostics.consistency_mode == "degraded" {
+        (
+            "degraded_consistency",
+            true,
+            "verify degraded-read policy before relying on strict local semantics",
+            false,
+        )
+    } else {
+        ("ok", true, "none", false)
+    };
+
+    SpireIndexHealthSnapshot {
+        active_epoch: diagnostics.active_epoch,
+        consistency_mode: diagnostics.consistency_mode,
+        status,
+        healthy,
+        recommendation,
+        compaction_recommended,
+        object_count: diagnostics.object_count,
+        leaf_assignment_count: diagnostics.leaf_assignment_count,
+        delta_assignment_count: diagnostics.delta_assignment_count,
+        delta_object_count: diagnostics.delta_object_count,
+        available_placement_count: diagnostics.available_placement_count,
+        stale_placement_count: diagnostics.stale_placement_count,
+        unavailable_placement_count: diagnostics.unavailable_placement_count,
+        skipped_placement_count: diagnostics.skipped_placement_count,
     }
 }
 
@@ -202,6 +288,13 @@ pub(crate) unsafe fn index_options_snapshot(
             relation_options.assignment_payload_format(),
         ),
     }
+}
+
+pub(crate) unsafe fn index_health_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexHealthSnapshot {
+    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    health_snapshot_from_diagnostics(&diagnostics)
 }
 
 fn not_implemented(callback: &str) -> ! {

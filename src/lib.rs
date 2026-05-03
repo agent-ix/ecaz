@@ -1153,6 +1153,58 @@ fn ec_spire_index_options_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_health_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(consistency_mode, String),
+        name!(status, String),
+        name!(healthy, bool),
+        name!(recommendation, String),
+        name!(compaction_recommended, bool),
+        name!(object_count, i64),
+        name!(leaf_assignment_count, i64),
+        name!(delta_assignment_count, i64),
+        name!(delta_object_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_health_snapshot") };
+    let snapshot = unsafe { am::spire_index_health_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.consistency_mode.to_owned(),
+        snapshot.status.to_owned(),
+        snapshot.healthy,
+        snapshot.recommendation.to_owned(),
+        snapshot.compaction_recommended,
+        i64::try_from(snapshot.object_count).expect("object count should fit in i64"),
+        i64::try_from(snapshot.leaf_assignment_count)
+            .expect("leaf assignment count should fit in i64"),
+        i64::try_from(snapshot.delta_assignment_count)
+            .expect("delta assignment count should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i64::try_from(snapshot.available_placement_count)
+            .expect("available placement count should fit in i64"),
+        i64::try_from(snapshot.stale_placement_count)
+            .expect("stale placement count should fit in i64"),
+        i64::try_from(snapshot.unavailable_placement_count)
+            .expect("unavailable placement count should fit in i64"),
+        i64::try_from(snapshot.skipped_placement_count)
+            .expect("skipped placement count should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -2926,6 +2978,85 @@ mod tests {
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_health_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_health_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_health_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_health_sql_idx ON ec_spire_health_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let healthy = Spi::get_one::<bool>(
+            "SELECT healthy FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let compaction_recommended = Spi::get_one::<bool>(
+            "SELECT compaction_recommended FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+
+        assert_eq!(status, "ok");
+        assert!(healthy);
+        assert!(!compaction_recommended);
+
+        Spi::run(
+            "INSERT INTO ec_spire_health_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("delta insert should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let recommendation = Spi::get_one::<String>(
+            "SELECT recommendation FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let compaction_recommended = Spi::get_one::<bool>(
+            "SELECT compaction_recommended FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+
+        assert_eq!(status, "maintenance_recommended");
+        assert_eq!(
+            recommendation,
+            "run VACUUM to compact active delta objects into V2 base leaves"
+        );
+        assert!(compaction_recommended);
+        assert_eq!(delta_object_count, 1);
     }
 
     #[pg_test]
