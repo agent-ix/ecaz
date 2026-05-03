@@ -112,6 +112,9 @@ pub(super) fn collect_snapshot_diagnostics(
                 diagnostics.available_placement_count += 1;
             }
             SpirePlacementState::Stale => {
+                // Published snapshots reject Stale placements today; this
+                // branch stays defensive for future retained-placement
+                // diagnostics that may expose stale local stores.
                 diagnostics.stale_placement_count += 1;
                 continue;
             }
@@ -231,6 +234,9 @@ pub(super) fn collect_store_placement_diagnostics(
                 entry.available_placement_count += 1;
             }
             SpirePlacementState::Stale => {
+                // Published snapshots reject Stale placements today; this
+                // branch stays defensive for future retained-placement
+                // diagnostics that may expose stale local stores.
                 entry.stale_placement_count += 1;
                 continue;
             }
@@ -608,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn store_placement_diagnostics_counts_degraded_skipped_objects_without_reading_them() {
+    fn store_placement_diagnostics_counts_degraded_unavailable_and_skipped_without_reading_them() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -665,5 +671,47 @@ mod tests {
         assert_eq!(store.available_object_bytes, store.routing_object_bytes);
         assert_eq!(store.leaf_object_bytes, 0);
         assert_eq!(store.delta_object_bytes, 0);
+    }
+
+    #[test]
+    fn store_placement_diagnostics_cannot_collect_stale_published_snapshot() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: draft.epoch_manifest.epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Degraded,
+            published_at_micros: draft.epoch_manifest.published_at_micros,
+            retain_until_micros: draft.epoch_manifest.retain_until_micros,
+            active_query_count: 0,
+        };
+        let mut placements = draft.placement_directory.entries.clone();
+        placements
+            .iter_mut()
+            .find(|placement| placement.pid == SPIRE_FIRST_PID)
+            .unwrap()
+            .state = SpirePlacementState::Stale;
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(draft.epoch_manifest.epoch, placements).unwrap();
+
+        let error = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "ec_spire degraded published snapshot cannot use stale placement for pid 1"
+        );
     }
 }
