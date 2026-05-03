@@ -3864,6 +3864,171 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_no_delta_is_noop() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_no_delta (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_no_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_no_delta_idx ON ec_spire_vacuum_no_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_vacuum_no_delta_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 3);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_no_delta_idx", "leaf_assignment_count"),
+            2
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_no_delta_idx", "delta_object_count"),
+            0
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_compacts_insert_delta() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_insert_delta \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_insert_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_insert_delta_idx ON ec_spire_vacuum_insert_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_insert_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let index_oid = index_oid("ec_spire_vacuum_insert_delta_idx");
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_insert_delta_idx", "delta_object_count"),
+            1
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_insert_delta_idx",
+                "delta_assignment_count"
+            ),
+            1
+        );
+
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_insert_delta_idx",
+                "leaf_assignment_count"
+            ),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_insert_delta_idx", "delta_object_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_vacuum_insert_delta \
+             ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_compacts_mixed_delta_on_leaf() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_mixed_delta \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_mixed_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_mixed_delta_idx ON ec_spire_vacuum_mixed_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_mixed_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should publish an insert-delta epoch");
+
+        let index_oid = index_oid("ec_spire_vacuum_mixed_delta_idx");
+        let deleted_tid = heap_tid_for_row("ec_spire_vacuum_mixed_delta", 1);
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_mixed_delta_idx",
+                "leaf_assignment_count"
+            ),
+            2
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_mixed_delta_idx", "delta_object_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_vacuum_mixed_delta \
+             ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 3);
+    }
+
+    #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
@@ -3949,6 +4114,15 @@ mod tests {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn ec_spire_active_snapshot_i64(index_name: &str, column_name: &str) -> i64 {
+        Spi::get_one::<i64>(&format!(
+            "SELECT {column_name} FROM \
+             ec_spire_index_active_snapshot_diagnostics('{index_name}'::regclass)"
+        ))
+        .expect("SPI query should succeed")
+        .expect("diagnostics row should exist")
     }
 
     fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {

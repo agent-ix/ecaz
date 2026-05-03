@@ -413,8 +413,10 @@ Decision record:
   delete-delta objects, publishes a replacement active epoch, and makes routed
   scans suppress covered `vec_id`s. `amvacuumcleanup` now compacts active delta
   objects into replacement V2 base leaves and removes delta objects from the
-  active placement directory; physical page reclamation/old-epoch cleanup and
-  full SQL VACUUM end-to-end coverage remain open.
+  active placement directory, with focused coverage for no-delta cleanup,
+  insert-only deltas, and mixed insert/delete deltas on one leaf; physical page
+  reclamation/old-epoch cleanup and full SQL VACUUM end-to-end coverage remain
+  open.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that

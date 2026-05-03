@@ -103,9 +103,7 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
     if root_control.active_epoch == 0 {
         return Ok(0);
     }
-    if unsafe { publish_compacted_delta_epoch_if_needed(index_relation, root_control)? } {
-        return collect_live_assignment_count(index_relation);
-    }
+    unsafe { publish_compacted_delta_epoch_if_needed(index_relation, root_control)? };
     collect_live_assignment_count(index_relation)
 }
 
@@ -317,6 +315,7 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
                 let rows = compact_rows_by_base_pid
                     .remove(&header.pid)
                     .unwrap_or_default();
+                // Compaction normalizes rewritten base leaves into the V2 segment format.
                 let object_version =
                     manifest_entry
                         .object_version
