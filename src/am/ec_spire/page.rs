@@ -151,6 +151,17 @@ pub(super) unsafe fn read_object_tuple(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
 ) -> Result<Vec<u8>, String> {
+    unsafe { with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec())) }
+}
+
+pub(super) unsafe fn with_pinned_object_tuple<F, R>(
+    index_relation: pg_sys::Relation,
+    tid: crate::storage::page::ItemPointer,
+    f: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&[u8]) -> Result<R, String>,
+{
     if tid.block_number < FIRST_DATA_BLOCK_NUMBER {
         return Err(format!(
             "ec_spire object tuple cannot use metadata block {}",
@@ -177,7 +188,7 @@ pub(super) unsafe fn read_object_tuple(
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     let page = unsafe { pg_sys::BufferGetPage(buffer) };
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-    let result = unsafe { read_object_tuple_from_locked_page(page, page_size, tid) };
+    let result = unsafe { with_object_tuple_from_locked_page(page, page_size, tid, f) };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     result
 }
@@ -315,11 +326,15 @@ unsafe fn append_object_tuple_to_new_block(
     })
 }
 
-unsafe fn read_object_tuple_from_locked_page(
+unsafe fn with_object_tuple_from_locked_page<F, R>(
     page: pg_sys::Page,
     page_size: usize,
     tid: crate::storage::page::ItemPointer,
-) -> Result<Vec<u8>, String> {
+    f: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&[u8]) -> Result<R, String>,
+{
     let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
     if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
         return Err(format!(
@@ -359,5 +374,6 @@ unsafe fn read_object_tuple_from_locked_page(
             tid.block_number, tid.offset_number
         ));
     }
-    Ok(unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) }.to_vec())
+    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+    f(tuple)
 }

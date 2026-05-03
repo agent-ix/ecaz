@@ -2363,29 +2363,32 @@ impl SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
-        let raw = unsafe { self.read_object_bytes(placement)? };
-        let object = SpireRoutingPartitionObject::decode(&raw)?;
-        if object.header.pid != placement.pid {
-            return Err(format!(
-                "ec_spire placement pid {} does not match object pid {}",
-                placement.pid, object.header.pid
-            ));
+        unsafe {
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                let object = SpireRoutingPartitionObject::decode(raw)?;
+                if object.header.pid != placement.pid {
+                    return Err(format!(
+                        "ec_spire placement pid {} does not match object pid {}",
+                        placement.pid, object.header.pid
+                    ));
+                }
+                if object.header.object_version != placement.object_version {
+                    return Err(format!(
+                        "ec_spire placement object_version {} does not match object version {}",
+                        placement.object_version, object.header.object_version
+                    ));
+                }
+                if object.header.published_epoch_backref == 0
+                    || object.header.published_epoch_backref > placement.epoch
+                {
+                    return Err(format!(
+                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                        object.header.published_epoch_backref, placement.epoch
+                    ));
+                }
+                Ok(object)
+            })
         }
-        if object.header.object_version != placement.object_version {
-            return Err(format!(
-                "ec_spire placement object_version {} does not match object version {}",
-                placement.object_version, object.header.object_version
-            ));
-        }
-        if object.header.published_epoch_backref == 0
-            || object.header.published_epoch_backref > placement.epoch
-        {
-            return Err(format!(
-                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                object.header.published_epoch_backref, placement.epoch
-            ));
-        }
-        Ok(object)
     }
 
     pub(super) unsafe fn read_leaf_object_v2(
@@ -2393,9 +2396,11 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
         self.validate_local_available_placement(placement)?;
-        let raw_meta =
-            unsafe { page::read_object_tuple(self.index_relation, placement.object_tid)? };
-        let meta = SpireLeafPartitionObjectV2Meta::decode(&raw_meta)?;
+        let meta = unsafe {
+            page::with_pinned_object_tuple(self.index_relation, placement.object_tid, |raw| {
+                SpireLeafPartitionObjectV2Meta::decode(raw)
+            })?
+        };
         if meta.header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match leaf V2 pid {}",
@@ -2431,9 +2436,11 @@ impl SpireRelationObjectStore {
             if next_locator == ItemPointer::INVALID {
                 return Err("ec_spire leaf V2 segment chain ended early".to_owned());
             }
-            let raw_segment =
-                unsafe { page::read_object_tuple(self.index_relation, next_locator)? };
-            let segment = SpireLeafPartitionObjectV2Segment::decode(&raw_segment, &meta)?;
+            let segment = unsafe {
+                page::with_pinned_object_tuple(self.index_relation, next_locator, |raw| {
+                    SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
+                })?
+            };
             next_locator = segment.next_segment_locator;
             segments.push(segment);
         }
@@ -2448,37 +2455,43 @@ impl SpireRelationObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
         self.validate_local_available_placement(placement)?;
-        let raw = unsafe { page::read_object_tuple(self.index_relation, placement.object_tid)? };
-        let (mut header, format_version, _) =
-            SpirePartitionObjectHeader::decode_prefix_with_format_version(&raw)?;
-        match format_version {
-            PARTITION_OBJECT_FORMAT_VERSION_V1 => {
-                let expected_len = usize::try_from(placement.object_bytes)
-                    .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
-                if raw.len() != expected_len {
-                    return Err(format!(
-                        "ec_spire object byte length mismatch: placement {}, tuple {}",
-                        placement.object_bytes,
-                        raw.len()
-                    ));
+        let header = unsafe {
+            page::with_pinned_object_tuple(self.index_relation, placement.object_tid, |raw| {
+                let (mut header, format_version, _) =
+                    SpirePartitionObjectHeader::decode_prefix_with_format_version(raw)?;
+                match format_version {
+                    PARTITION_OBJECT_FORMAT_VERSION_V1 => {
+                        let expected_len =
+                            usize::try_from(placement.object_bytes).map_err(|_| {
+                                "ec_spire placement object_bytes exceeds usize".to_owned()
+                            })?;
+                        if raw.len() != expected_len {
+                            return Err(format!(
+                                "ec_spire object byte length mismatch: placement {}, tuple {}",
+                                placement.object_bytes,
+                                raw.len()
+                            ));
+                        }
+                    }
+                    PARTITION_OBJECT_FORMAT_VERSION_V2 => {
+                        let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
+                        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                            return Err(format!(
+                                "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+                                placement.object_bytes, meta.object_bytes_total
+                            ));
+                        }
+                        header = meta.header;
+                    }
+                    other => {
+                        return Err(format!(
+                            "ec_spire unsupported partition object format version: {other}"
+                        ));
+                    }
                 }
-            }
-            PARTITION_OBJECT_FORMAT_VERSION_V2 => {
-                let meta = SpireLeafPartitionObjectV2Meta::decode(&raw)?;
-                if u64::from(placement.object_bytes) != meta.object_bytes_total {
-                    return Err(format!(
-                        "ec_spire placement object_bytes {} does not match leaf V2 total {}",
-                        placement.object_bytes, meta.object_bytes_total
-                    ));
-                }
-                header = meta.header;
-            }
-            other => {
-                return Err(format!(
-                    "ec_spire unsupported partition object format version: {other}"
-                ));
-            }
-        }
+                Ok(header)
+            })?
+        };
         if header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match object pid {}",
@@ -2504,73 +2517,96 @@ impl SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObject, String> {
-        let raw = unsafe { self.read_object_bytes(placement)? };
-        let object = SpireLeafPartitionObject::decode(&raw)?;
-        if object.header.pid != placement.pid {
-            return Err(format!(
-                "ec_spire placement pid {} does not match object pid {}",
-                placement.pid, object.header.pid
-            ));
+        unsafe {
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                let object = SpireLeafPartitionObject::decode(raw)?;
+                if object.header.pid != placement.pid {
+                    return Err(format!(
+                        "ec_spire placement pid {} does not match object pid {}",
+                        placement.pid, object.header.pid
+                    ));
+                }
+                if object.header.object_version != placement.object_version {
+                    return Err(format!(
+                        "ec_spire placement object_version {} does not match object version {}",
+                        placement.object_version, object.header.object_version
+                    ));
+                }
+                if object.header.published_epoch_backref == 0
+                    || object.header.published_epoch_backref > placement.epoch
+                {
+                    return Err(format!(
+                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                        object.header.published_epoch_backref, placement.epoch
+                    ));
+                }
+                Ok(object)
+            })
         }
-        if object.header.object_version != placement.object_version {
-            return Err(format!(
-                "ec_spire placement object_version {} does not match object version {}",
-                placement.object_version, object.header.object_version
-            ));
-        }
-        if object.header.published_epoch_backref == 0
-            || object.header.published_epoch_backref > placement.epoch
-        {
-            return Err(format!(
-                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                object.header.published_epoch_backref, placement.epoch
-            ));
-        }
-        Ok(object)
     }
 
     pub(super) unsafe fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
-        let raw = unsafe { self.read_object_bytes(placement)? };
-        let object = SpireDeltaPartitionObject::decode(&raw)?;
-        if object.header.pid != placement.pid {
-            return Err(format!(
-                "ec_spire placement pid {} does not match object pid {}",
-                placement.pid, object.header.pid
-            ));
+        unsafe {
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                let object = SpireDeltaPartitionObject::decode(raw)?;
+                if object.header.pid != placement.pid {
+                    return Err(format!(
+                        "ec_spire placement pid {} does not match object pid {}",
+                        placement.pid, object.header.pid
+                    ));
+                }
+                if object.header.object_version != placement.object_version {
+                    return Err(format!(
+                        "ec_spire placement object_version {} does not match object version {}",
+                        placement.object_version, object.header.object_version
+                    ));
+                }
+                if object.header.published_epoch_backref == 0
+                    || object.header.published_epoch_backref > placement.epoch
+                {
+                    return Err(format!(
+                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                        object.header.published_epoch_backref, placement.epoch
+                    ));
+                }
+                Ok(object)
+            })
         }
-        if object.header.object_version != placement.object_version {
-            return Err(format!(
-                "ec_spire placement object_version {} does not match object version {}",
-                placement.object_version, object.header.object_version
-            ));
-        }
-        if object.header.published_epoch_backref == 0
-            || object.header.published_epoch_backref > placement.epoch
-        {
-            return Err(format!(
-                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                object.header.published_epoch_backref, placement.epoch
-            ));
-        }
-        Ok(object)
     }
 
-    unsafe fn read_object_bytes(&self, placement: &SpirePlacementEntry) -> Result<Vec<u8>, String> {
+    pub(super) unsafe fn read_object_bytes(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<Vec<u8>, String> {
+        unsafe { self.with_single_tuple_object_bytes(placement, |raw| Ok(raw.to_vec())) }
+    }
+
+    unsafe fn with_single_tuple_object_bytes<F, R>(
+        &self,
+        placement: &SpirePlacementEntry,
+        f: F,
+    ) -> Result<R, String>
+    where
+        F: FnOnce(&[u8]) -> Result<R, String>,
+    {
         self.validate_local_available_placement(placement)?;
-        let raw = unsafe { page::read_object_tuple(self.index_relation, placement.object_tid)? };
-        let expected_len = usize::try_from(placement.object_bytes)
-            .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
-        if raw.len() != expected_len {
-            return Err(format!(
-                "ec_spire object byte length mismatch: placement {}, tuple {}",
-                placement.object_bytes,
-                raw.len()
-            ));
+        unsafe {
+            page::with_pinned_object_tuple(self.index_relation, placement.object_tid, |raw| {
+                let expected_len = usize::try_from(placement.object_bytes)
+                    .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+                if raw.len() != expected_len {
+                    return Err(format!(
+                        "ec_spire object byte length mismatch: placement {}, tuple {}",
+                        placement.object_bytes,
+                        raw.len()
+                    ));
+                }
+                f(raw)
+            })
         }
-        Ok(raw)
     }
 
     fn validate_local_available_placement(
