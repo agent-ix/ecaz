@@ -1,5 +1,8 @@
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
+use std::mem::size_of;
 use std::ptr;
+
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use super::assign::{
     build_primary_leaf_assignments, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -15,11 +18,35 @@ use super::storage::{
     SpireRoutingPartitionObject,
 };
 use super::{options, page};
+use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
 use crate::am::common::training as common_training;
+use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
-use pgrx::{pg_sys, PgBox};
 
 const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
+const SPIRE_DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireIndexedVectorKind {
+    Ecvector,
+    Tqvector,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpireBuildTuple {
+    heap_tid: ItemPointer,
+    dimensions: u16,
+    assignment: SpireLeafAssignmentInput,
+    source_vector: Vec<f32>,
+}
+
+struct SpireBuildState {
+    options: options::EcSpireOptions,
+    indexed_vector_kind: SpireIndexedVectorKind,
+    scanned_tuples: usize,
+    tuples: Vec<SpireBuildTuple>,
+    dimensions: Option<u16>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireSingleLevelBuildInput {
@@ -713,6 +740,90 @@ pub(super) fn train_single_level_centroid_plan(
     })
 }
 
+impl SpireBuildState {
+    fn new(options: options::EcSpireOptions, indexed_vector_kind: SpireIndexedVectorKind) -> Self {
+        Self {
+            options,
+            indexed_vector_kind,
+            scanned_tuples: 0,
+            tuples: Vec::new(),
+            dimensions: None,
+        }
+    }
+
+    fn push(&mut self, tuple: SpireBuildTuple) {
+        self.try_push(tuple)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire ambuild found invalid indexed tuple: {e}"));
+    }
+
+    fn try_push(&mut self, tuple: SpireBuildTuple) -> Result<(), String> {
+        if tuple.heap_tid == ItemPointer::INVALID {
+            return Err("heap tid must be valid".to_owned());
+        }
+        if tuple.assignment.heap_tid != tuple.heap_tid {
+            return Err("assignment heap tid must match build tuple heap tid".to_owned());
+        }
+        if SpireAssignmentPayloadFormat::from_tag(tuple.assignment.payload_format)?
+            != self.options.assignment_payload_format()
+        {
+            return Err("assignment payload format does not match build options".to_owned());
+        }
+        if tuple.source_vector.len() != usize::from(tuple.dimensions) {
+            return Err(format!(
+                "source dimensions mismatch: source dim {} vs indexed dim {}",
+                tuple.source_vector.len(),
+                tuple.dimensions
+            ));
+        }
+        common_training::normalize_vector(
+            "ec_spire",
+            &tuple.source_vector,
+            usize::from(tuple.dimensions),
+        )?;
+
+        match self.dimensions {
+            None => self.dimensions = Some(tuple.dimensions),
+            Some(dimensions) if dimensions == tuple.dimensions => {}
+            Some(dimensions) => {
+                return Err(format!(
+                    "dimension mismatch: saw {} after {}",
+                    tuple.dimensions, dimensions
+                ));
+            }
+        }
+
+        self.scanned_tuples += 1;
+        self.tuples.push(tuple);
+        Ok(())
+    }
+
+    fn training_sample_count(&self) -> usize {
+        resolve_training_sample_count(self.options.training_sample_rows, self.tuples.len())
+    }
+
+    fn training_sample_vectors(&self) -> Vec<&[f32]> {
+        let indices = common_training::deterministic_sample_indices(
+            self.tuples.len(),
+            self.training_sample_count(),
+            self.options.seed as u64,
+        );
+        indices
+            .into_iter()
+            .map(|index| self.tuples[index].source_vector.as_slice())
+            .collect()
+    }
+}
+
+fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
+    if row_count == 0 {
+        return 0;
+    }
+    if requested_sample_rows > 0 {
+        return (requested_sample_rows as usize).min(row_count);
+    }
+    row_count.min(SPIRE_DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
+}
+
 pub(super) fn build_single_level_leaf_epoch_draft(
     input: SpireSingleLevelBuildInput,
     pid_allocator: &mut SpirePidAllocator,
@@ -908,6 +1019,167 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     Ok(draft)
 }
 
+unsafe fn build_spire_index_tuple(
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: ItemPointer,
+    indexed_vector_kind: SpireIndexedVectorKind,
+    payload_format: SpireAssignmentPayloadFormat,
+    context: &str,
+) -> SpireBuildTuple {
+    if values.is_null() || isnull.is_null() {
+        pgrx::error!("ec_spire {context} received null tuple value arrays");
+    }
+    if unsafe { *isnull } {
+        pgrx::error!("ec_spire does not support NULL indexed values");
+    }
+
+    let datum = unsafe { *values };
+    if datum.is_null() {
+        pgrx::error!("ec_spire {context} received a null indexed datum");
+    }
+
+    let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
+    match indexed_vector_kind {
+        SpireIndexedVectorKind::Ecvector => {
+            build_spire_ecvector_tuple(heap_tid, &bytes, payload_format, context)
+        }
+        SpireIndexedVectorKind::Tqvector => {
+            build_spire_tqvector_tuple(heap_tid, &bytes, payload_format, context)
+        }
+    }
+}
+
+fn build_spire_ecvector_tuple(
+    heap_tid: ItemPointer,
+    bytes: &[u8],
+    payload_format: SpireAssignmentPayloadFormat,
+    context: &str,
+) -> SpireBuildTuple {
+    let source_vector = crate::unpack_raw_f32(bytes, "ec_spire indexed ecvector column")
+        .unwrap_or_else(|e| pgrx::error!("ec_spire {context} found invalid indexed ecvector: {e}"));
+    let dimensions = build_dimensions(source_vector.len(), context, "ecvector");
+    let assignment = quantizer::encode_assignment_input(payload_format, heap_tid, &source_vector)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire {context} found invalid indexed ecvector: {e}"));
+    SpireBuildTuple {
+        heap_tid,
+        dimensions,
+        assignment,
+        source_vector,
+    }
+}
+
+fn build_spire_tqvector_tuple(
+    heap_tid: ItemPointer,
+    bytes: &[u8],
+    payload_format: SpireAssignmentPayloadFormat,
+    context: &str,
+) -> SpireBuildTuple {
+    let (dimensions, bits, seed, gamma, code) = crate::unpack(bytes)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire {context} found invalid indexed tqvector: {e}"));
+    let mut full_payload = Vec::with_capacity(size_of::<f32>() + code.len());
+    full_payload.extend_from_slice(&gamma.to_le_bytes());
+    full_payload.extend_from_slice(code);
+    let quantizer = ProdQuantizer::cached(usize::from(dimensions), bits, seed);
+    let source_vector = quantizer.decode_approximate(&full_payload);
+    let assignment = quantizer::encode_assignment_input(payload_format, heap_tid, &source_vector)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire {context} found invalid indexed tqvector: {e}"));
+    SpireBuildTuple {
+        heap_tid,
+        dimensions,
+        assignment,
+        source_vector,
+    }
+}
+
+fn build_dimensions(dimensions: usize, context: &str, label: &str) -> u16 {
+    u16::try_from(dimensions).unwrap_or_else(|_| {
+        pgrx::error!(
+            "ec_spire {context} found invalid indexed {label}: embedding dimension {dimensions} exceeds maximum 65535"
+        )
+    })
+}
+
+unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
+    let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+    if varlena.is_null() {
+        pgrx::error!("ec_spire could not detoast {label}");
+    }
+    let owned = !ptr::eq(varlena, original);
+    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
+    if owned {
+        unsafe { pg_sys::pfree(varlena.cast()) };
+    }
+    bytes
+}
+
+unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+    if tid.is_null() {
+        pgrx::error!("ec_spire {context} received a null heap tid");
+    }
+    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
+    ItemPointer {
+        block_number,
+        offset_number,
+    }
+}
+
+unsafe fn resolve_indexed_vector_kind(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    context: &str,
+) -> SpireIndexedVectorKind {
+    if index_info.is_null() {
+        pgrx::error!("ec_spire {context} received a null IndexInfo");
+    }
+    let index_info = unsafe { &*index_info };
+    if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
+        pgrx::error!("ec_spire currently supports single-column indexes only");
+    }
+    if !index_info.ii_Expressions.is_null() {
+        pgrx::error!("ec_spire does not support expression indexes yet");
+    }
+    if !index_info.ii_Predicate.is_null() {
+        pgrx::error!("ec_spire does not support partial indexes yet");
+    }
+
+    let attnum = i32::from(index_info.ii_IndexAttrNumbers[0]);
+    if attnum <= 0 {
+        pgrx::error!("ec_spire requires a base heap column index key");
+    }
+
+    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let att = tuple_desc
+        .get(attnum as usize - 1)
+        .expect("resolved indexed attribute should exist");
+    if att.attisdropped {
+        pgrx::error!("ec_spire indexed column references a dropped column");
+    }
+    unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }
+        .unwrap_or_else(|| pgrx::error!("ec_spire indexed column must be ecvector or tqvector"))
+}
+
+unsafe fn resolve_indexed_vector_kind_from_type(
+    type_oid: pg_sys::Oid,
+) -> Option<SpireIndexedVectorKind> {
+    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+    if formatted.is_null() {
+        return None;
+    }
+    let name = unsafe { CStr::from_ptr(formatted) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { pg_sys::pfree(formatted.cast()) };
+    let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+    match type_name {
+        "ecvector" => Some(SpireIndexedVectorKind::Ecvector),
+        "tqvector" => Some(SpireIndexedVectorKind::Tqvector),
+        _ => None,
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -915,22 +1187,33 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
 ) -> *mut pg_sys::IndexBuildResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            let _options = options::relation_options(index_relation);
+            let options = options::relation_options(index_relation);
             page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
+            let indexed_vector_kind =
+                resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
+            let mut state = SpireBuildState::new(options, indexed_vector_kind);
             let heap_tuples = pg_sys::table_index_build_scan(
                 heap_relation,
                 index_relation,
                 index_info,
                 false,
                 false,
-                Some(ec_spire_empty_build_callback),
-                ptr::null_mut(),
+                Some(ec_spire_build_callback),
+                (&mut state as *mut SpireBuildState).cast(),
                 ptr::null_mut(),
             );
+            let index_tuples = if state.scanned_tuples == 0 {
+                0.0
+            } else {
+                pgrx::error!(
+                    "ec_spire populated ambuild publish is not implemented yet; collected {} indexed tuples",
+                    state.scanned_tuples
+                )
+            };
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
-            result.index_tuples = 0.0;
+            result.index_tuples = index_tuples;
             result.into_pg()
         })
     }
@@ -944,19 +1227,27 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg
     }
 }
 
-unsafe extern "C-unwind" fn ec_spire_empty_build_callback(
+unsafe extern "C-unwind" fn ec_spire_build_callback(
     _index: pg_sys::Relation,
-    _tid: pg_sys::ItemPointer,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
+    tid: pg_sys::ItemPointer,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
     _tuple_is_alive: bool,
-    _state: *mut c_void,
+    state: *mut c_void,
 ) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!(
-                "ec_spire populated ambuild is not implemented yet; create the index on an empty relation for the current persistence checkpoint"
-            )
+            let state = &mut *state.cast::<SpireBuildState>();
+            let heap_tid = decode_heap_tid(tid, "ambuild");
+            let tuple = build_spire_index_tuple(
+                values,
+                isnull,
+                heap_tid,
+                state.indexed_vector_kind,
+                state.options.assignment_payload_format(),
+                "ambuild",
+            );
+            state.push(tuple);
         })
     }
 }
@@ -966,7 +1257,8 @@ mod tests {
     use super::{
         build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
         object_write_evidence_from_placement_directory,
-        placement_write_evidence_from_object_manifest, train_single_level_centroid_plan,
+        placement_write_evidence_from_object_manifest, resolve_training_sample_count,
+        train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
         SpirePartitionedSingleLevelBuildInput, SpirePublishStage, SpirePublishWritingObjects,
         SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
     };
@@ -979,6 +1271,7 @@ mod tests {
     use crate::am::ec_spire::meta::{
         SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
     };
+    use crate::am::ec_spire::quantizer::{self, SpireAssignmentPayloadFormat};
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::storage::page::ItemPointer;
 
@@ -995,6 +1288,34 @@ mod tests {
             payload_format: 1,
             gamma: 0.5,
             encoded_payload: vec![1, 2, 3],
+        }
+    }
+
+    fn options(training_sample_rows: i32) -> super::options::EcSpireOptions {
+        super::options::EcSpireOptions {
+            nlists: 2,
+            nprobe: 0,
+            rerank_width: 0,
+            training_sample_rows,
+            seed: 7,
+            pq_group_size: 0,
+            storage_format: super::options::SpireStorageFormat::TurboQuant,
+        }
+    }
+
+    fn build_tuple(offset_number: u16, source_vector: Vec<f32>) -> SpireBuildTuple {
+        let heap_tid = tid(10, offset_number);
+        let assignment = quantizer::encode_assignment_input(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            heap_tid,
+            &source_vector,
+        )
+        .unwrap();
+        SpireBuildTuple {
+            heap_tid,
+            dimensions: source_vector.len() as u16,
+            assignment,
+            source_vector,
         }
     }
 
@@ -1099,6 +1420,59 @@ mod tests {
         assert_eq!(route_map.route_pid_for_vector(&[1.0, 0.0]).unwrap(), 11);
         assert_eq!(route_map.route_pid_for_vector(&[-1.0, 0.0]).unwrap(), 12);
         assert!(route_map.route_pid_for_vector(&[1.0]).is_err());
+    }
+
+    #[test]
+    fn build_state_collects_assignments_and_training_sample() {
+        let mut state = SpireBuildState::new(options(1), SpireIndexedVectorKind::Ecvector);
+
+        state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(build_tuple(2, vec![0.0, 1.0])).unwrap();
+
+        assert_eq!(state.scanned_tuples, 2);
+        assert_eq!(state.dimensions, Some(2));
+        assert_eq!(state.tuples.len(), 2);
+        assert_eq!(state.training_sample_count(), 1);
+        assert_eq!(state.training_sample_vectors().len(), 1);
+        assert_eq!(resolve_training_sample_count(0, 12_000), 10_000);
+    }
+
+    #[test]
+    fn build_state_rejects_invalid_tuple_without_advancing() {
+        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
+        let mut bad = build_tuple(2, vec![0.0, 1.0]);
+        bad.dimensions = 3;
+
+        let error = state.try_push(bad).unwrap_err();
+
+        assert!(error.contains("source dimensions mismatch"));
+        assert_eq!(state.scanned_tuples, 1);
+        assert_eq!(state.tuples.len(), 1);
+    }
+
+    #[test]
+    fn build_state_rejects_payload_format_mismatch() {
+        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        let mut bad = build_tuple(1, vec![1.0, 0.0]);
+        bad.assignment.payload_format = SpireAssignmentPayloadFormat::RaBitQ.tag();
+
+        let error = state.try_push(bad).unwrap_err();
+
+        assert!(error.contains("payload format"));
+        assert_eq!(state.scanned_tuples, 0);
+    }
+
+    #[test]
+    fn build_state_rejects_zero_vectors() {
+        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        let mut bad = build_tuple(1, vec![1.0, 0.0]);
+        bad.source_vector = vec![0.0, 0.0];
+
+        let error = state.try_push(bad).unwrap_err();
+
+        assert!(error.contains("non-zero"));
+        assert_eq!(state.scanned_tuples, 0);
     }
 
     #[test]
