@@ -2671,10 +2671,37 @@ mod tests {
         assert_eq!(rows, 0);
     }
 
-    fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
+    #[pg_test]
+    fn test_ec_spire_relation_object_tuple_roundtrip() {
+        Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_tuple_idx ON ec_spire_object_tuple USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_object_tuple_idx");
+        let (block, offset, active_epoch, pid, object_version, child_count, child_pid) =
+            unsafe { am::debug_spire_relation_object_tuple_roundtrip(index_oid) };
+
+        assert!(block >= 1);
+        assert!(offset >= 1);
+        assert_eq!(active_epoch, 0);
+        assert_eq!(pid, 10);
+        assert_eq!(object_version, 1);
+        assert_eq!(child_count, 1);
+        assert_eq!(child_pid, 11);
+    }
+
+    fn index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
+        index_oid(index_name)
     }
 
     fn ec_ivf_index_blocks(index_name: &str) -> i64 {
