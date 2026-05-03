@@ -1400,6 +1400,50 @@ fn ec_spire_index_health_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_relation_storage_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(relation_block_count, i64),
+        name!(relation_object_tuple_count, i64),
+        name!(relation_object_tuple_bytes, i64),
+        name!(active_referenced_tuple_count, i64),
+        name!(active_referenced_tuple_bytes, i64),
+        name!(cleanup_candidate_tuple_count, i64),
+        name!(cleanup_candidate_tuple_bytes, i64),
+        name!(physical_cleanup_supported, bool),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_relation_storage_snapshot") };
+    let snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.relation_block_count).expect("block count should fit in i64"),
+        i64::try_from(snapshot.relation_object_tuple_count)
+            .expect("object tuple count should fit in i64"),
+        i64::try_from(snapshot.relation_object_tuple_bytes)
+            .expect("object tuple bytes should fit in i64"),
+        i64::try_from(snapshot.active_referenced_tuple_count)
+            .expect("active referenced tuple count should fit in i64"),
+        i64::try_from(snapshot.active_referenced_tuple_bytes)
+            .expect("active referenced tuple bytes should fit in i64"),
+        i64::try_from(snapshot.cleanup_candidate_tuple_count)
+            .expect("cleanup candidate tuple count should fit in i64"),
+        i64::try_from(snapshot.cleanup_candidate_tuple_bytes)
+            .expect("cleanup candidate tuple bytes should fit in i64"),
+        snapshot.physical_cleanup_supported,
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3642,6 +3686,114 @@ mod tests {
         );
         assert!(compaction_recommended);
         assert_eq!(delta_object_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_storage_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_storage_debt_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_storage_debt_empty_idx ON ec_spire_storage_debt_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_storage_debt_empty_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        assert_eq!(empty_tuple_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_storage_debt_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_storage_debt_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_storage_debt_sql_idx ON ec_spire_storage_debt_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let build_active_tuple_count = Spi::get_one::<i64>(
+            "SELECT active_referenced_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let build_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let cleanup_supported = Spi::get_one::<bool>(
+            "SELECT physical_cleanup_supported FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert!(build_tuple_count > 0);
+        assert_eq!(build_active_tuple_count, build_tuple_count);
+        assert_eq!(build_cleanup_candidate_count, 0);
+        assert!(!cleanup_supported);
+
+        Spi::run(
+            "INSERT INTO ec_spire_storage_debt_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_cleanup_candidate_bytes = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_bytes FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let recommendation = Spi::get_one::<String>(
+            "SELECT recommendation FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert_eq!(post_insert_active_epoch, 2);
+        assert!(post_insert_tuple_count > build_tuple_count);
+        assert!(post_insert_cleanup_candidate_count > 0);
+        assert!(post_insert_cleanup_candidate_bytes > 0);
+        assert!(recommendation.contains("cleanup candidates"));
     }
 
     #[pg_test]

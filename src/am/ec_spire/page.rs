@@ -193,6 +193,59 @@ where
     result
 }
 
+pub(super) unsafe fn scan_object_tuples<F>(
+    index_relation: pg_sys::Relation,
+    mut visit: F,
+) -> Result<(), String>
+where
+    F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
+{
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_spire failed to open object block {block_number}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page = unsafe { pg_sys::BufferGetPage(buffer) };
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+        let mut result = Ok(());
+        for offset_number in 1..=max_offset {
+            result = unsafe {
+                visit_object_tuple_from_locked_page(
+                    page,
+                    page_size,
+                    crate::storage::page::ItemPointer {
+                        block_number,
+                        offset_number,
+                    },
+                    &mut visit,
+                )
+            };
+            if result.is_err() {
+                break;
+            }
+        }
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        result?;
+    }
+    Ok(())
+}
+
 unsafe fn try_append_object_tuple_to_block(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
@@ -376,4 +429,45 @@ where
     }
     let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
     f(tuple)
+}
+
+unsafe fn visit_object_tuple_from_locked_page<F>(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: crate::storage::page::ItemPointer,
+    visit: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
+{
+    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
+    if item_id.is_null() {
+        return Err(format!(
+            "ec_spire object tuple ({},{}) returned a null item id",
+            tid.block_number, tid.offset_number
+        ));
+    }
+    let item_id_ref = unsafe { &*item_id };
+    if item_id_ref.lp_flags() == 0 {
+        return Ok(());
+    }
+
+    let tuple_offset = item_id_ref.lp_off() as usize;
+    let tuple_len = item_id_ref.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_spire object tuple ({},{}) has invalid bounds",
+            tid.block_number, tid.offset_number
+        ));
+    }
+
+    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
+    if tuple_ptr.is_null() {
+        return Err(format!(
+            "ec_spire object tuple ({},{}) returned a null tuple pointer",
+            tid.block_number, tid.offset_number
+        ));
+    }
+    let tuple = unsafe { std::slice::from_raw_parts(tuple_ptr, tuple_len) };
+    visit(tid, tuple)
 }

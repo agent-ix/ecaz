@@ -1,5 +1,7 @@
 //! ec_spire access-method scaffold.
 
+use std::collections::HashSet;
+
 mod assign;
 mod build;
 mod cost;
@@ -107,6 +109,20 @@ pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) stale_placement_count: u64,
     pub(crate) unavailable_placement_count: u64,
     pub(crate) skipped_placement_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexRelationStorageSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) relation_block_count: u64,
+    pub(crate) relation_object_tuple_count: u64,
+    pub(crate) relation_object_tuple_bytes: u64,
+    pub(crate) active_referenced_tuple_count: u64,
+    pub(crate) active_referenced_tuple_bytes: u64,
+    pub(crate) cleanup_candidate_tuple_count: u64,
+    pub(crate) cleanup_candidate_tuple_bytes: u64,
+    pub(crate) physical_cleanup_supported: bool,
+    pub(crate) recommendation: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,6 +447,94 @@ pub(crate) unsafe fn index_health_snapshot(
 ) -> SpireIndexHealthSnapshot {
     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
     health_snapshot_from_diagnostics(&diagnostics)
+}
+
+pub(crate) unsafe fn index_relation_storage_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexRelationStorageSnapshot {
+    let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let mut active_tids = HashSet::new();
+        if root_control.active_epoch != 0 {
+            active_tids.insert(root_control.epoch_manifest_tid);
+            active_tids.insert(root_control.object_manifest_tid);
+            active_tids.insert(root_control.placement_directory_tid);
+
+            let (_epoch_manifest, object_manifest, placement_directory) =
+                unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+            for entry in &object_manifest.entries {
+                active_tids.insert(entry.placement_tid);
+            }
+
+            let object_store =
+                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            for placement in &placement_directory.entries {
+                for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
+                    active_tids.insert(tid);
+                }
+            }
+        }
+
+        let relation_block_count = unsafe {
+            pg_sys::RelationGetNumberOfBlocksInFork(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            )
+        };
+        let mut relation_object_tuple_count = 0_u64;
+        let mut relation_object_tuple_bytes = 0_u64;
+        let mut active_referenced_tuple_count = 0_u64;
+        let mut active_referenced_tuple_bytes = 0_u64;
+        unsafe {
+            page::scan_object_tuples(index_relation, |tid, tuple| {
+                relation_object_tuple_count = relation_object_tuple_count
+                    .checked_add(1)
+                    .ok_or_else(|| "ec_spire relation object tuple count overflow".to_owned())?;
+                let tuple_bytes = u64::try_from(tuple.len())
+                    .map_err(|_| "ec_spire relation object tuple bytes exceed u64".to_owned())?;
+                relation_object_tuple_bytes = relation_object_tuple_bytes
+                    .checked_add(tuple_bytes)
+                    .ok_or_else(|| "ec_spire relation object tuple bytes overflow".to_owned())?;
+                if active_tids.contains(&tid) {
+                    active_referenced_tuple_count = active_referenced_tuple_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire active referenced tuple count overflow".to_owned()
+                        })?;
+                    active_referenced_tuple_bytes = active_referenced_tuple_bytes
+                        .checked_add(tuple_bytes)
+                        .ok_or_else(|| {
+                            "ec_spire active referenced tuple bytes overflow".to_owned()
+                        })?;
+                }
+                Ok(())
+            })?
+        };
+
+        let cleanup_candidate_tuple_count =
+            relation_object_tuple_count.saturating_sub(active_referenced_tuple_count);
+        let cleanup_candidate_tuple_bytes =
+            relation_object_tuple_bytes.saturating_sub(active_referenced_tuple_bytes);
+        let recommendation = if cleanup_candidate_tuple_count > 0 {
+            "old relation object tuples are cleanup candidates once physical reclamation is implemented"
+        } else {
+            "none"
+        };
+
+        Ok(SpireIndexRelationStorageSnapshot {
+            active_epoch: root_control.active_epoch,
+            relation_block_count: u64::from(relation_block_count),
+            relation_object_tuple_count,
+            relation_object_tuple_bytes,
+            active_referenced_tuple_count,
+            active_referenced_tuple_bytes,
+            cleanup_candidate_tuple_count,
+            cleanup_candidate_tuple_bytes,
+            physical_cleanup_supported: false,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn index_placement_snapshot(

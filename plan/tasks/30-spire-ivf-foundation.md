@@ -66,7 +66,9 @@ conservative status/recommendation rows, including active delta compaction
 recommendations, and the first placement snapshot exposes per-local-store
 active placement/object/byte counts; a query-specific scan placement snapshot
 now exposes per-store routed leaf PID, delta PID, and candidate-row counts; a
-root routing snapshot now exposes active centroid-to-child PID rows.
+root routing snapshot now exposes active centroid-to-child PID rows; relation
+storage diagnostics now quantify active-referenced and cleanup-candidate object
+tuples while physical reclamation remains deferred.
 PQ-FastScan scorer binding, recall/latency summary evidence, physical object
 reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage remain
 open. Task 30 implements
@@ -364,7 +366,11 @@ Decision record:
   delete-delta row counts for the supplied query. SQL function
   `ec_spire_index_root_routing_snapshot(index_oid)` now reports active root
   routing rows with centroid ordinal, child PID, child object kind, child
-  assignment count, child placement state, and child store identity.
+  assignment count, child placement state, and child store identity. SQL
+  function `ec_spire_index_relation_storage_snapshot(index_oid)` now reports
+  relation object tuple counts/bytes, active-referenced tuple counts/bytes, and
+  cleanup-candidate tuple counts/bytes so old-epoch physical debt is visible
+  before tuple reclamation is implemented.
   Recall/latency summary rows and deeper operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment

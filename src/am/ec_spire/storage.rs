@@ -2541,6 +2541,55 @@ impl SpireRelationObjectStore {
         Ok(header)
     }
 
+    pub(super) unsafe fn active_object_tuple_locators(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<Vec<ItemPointer>, String> {
+        self.validate_local_available_placement(placement)?;
+        let header = unsafe { self.read_object_header(placement)? };
+        let mut locators = vec![placement.object_tid];
+        if header.kind != SpirePartitionObjectKind::Leaf || header.flags & LEAF_V2_META_FLAG == 0 {
+            return Ok(locators);
+        }
+
+        let meta = unsafe {
+            page::with_pinned_object_tuple(self.index_relation, placement.object_tid, |raw| {
+                SpireLeafPartitionObjectV2Meta::decode(raw)
+            })?
+        };
+        if meta.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match leaf V2 pid {}",
+                placement.pid, meta.header.pid
+            ));
+        }
+        if meta.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match leaf V2 version {}",
+                placement.object_version, meta.header.object_version
+            ));
+        }
+
+        let mut next_locator = meta.first_segment_locator;
+        for _ in 0..meta.segment_count {
+            if next_locator == ItemPointer::INVALID {
+                return Err("ec_spire leaf V2 segment chain ended early".to_owned());
+            }
+            locators.push(next_locator);
+            let segment = unsafe {
+                page::with_pinned_object_tuple(self.index_relation, next_locator, |raw| {
+                    SpireLeafPartitionObjectV2Segment::decode(raw, &meta)
+                })?
+            };
+            next_locator = segment.next_segment_locator;
+        }
+        if next_locator != ItemPointer::INVALID {
+            return Err("ec_spire leaf V2 segment chain has trailing locator".to_owned());
+        }
+
+        Ok(locators)
+    }
+
     pub(super) unsafe fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
