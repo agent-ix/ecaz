@@ -202,6 +202,7 @@ packet evidence.
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |
 | [Contributing](docs/contributing.md) | Makefile targets, CI, testing, fuzzing |
+| [References](docs/references.md) | Papers and libraries |
 
 ## Project
 
@@ -211,12 +212,6 @@ packet evidence.
 | [Implementation Plan](plan/plan.md) | Task board, sequencing, status |
 | [ADRs](spec/adr/) | Architecture decision records |
 | [Reviews](review/) | Review packets and feedback ([workflow](AGENTS.md)) |
-
-## References
-
-- [TurboQuant paper (arXiv:2504.19874)](https://arxiv.org/abs/2504.19874)
-- [pgvector](https://github.com/pgvector/pgvector) (page layout reference)
-- [pgrx](https://docs.rs/pgrx/latest/pgrx/)
 
 ## License
 
