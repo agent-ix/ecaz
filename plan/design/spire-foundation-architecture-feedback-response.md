@@ -345,6 +345,13 @@ read contract for headers, routing objects, V1/V2 leaf objects, and deltas. The
 in-memory local object store implements the trait, and snapshot diagnostics
 consume the trait instead of the concrete store type.
 
+Implementation checkpoint: partition-object headers now carry
+`published_epoch_backref`. Draft objects keep `0` until durable local-store
+insertion stamps the placement epoch into the encoded header; object readers
+then reject placements whose epoch is older than the header back-reference.
+Later epoch manifests may still reuse older immutable objects. V2 leaf metadata
+and segment headers use the same common header field.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.

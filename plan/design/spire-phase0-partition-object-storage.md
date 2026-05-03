@@ -90,6 +90,7 @@ PartitionObjectHeaderV1
   kind root | internal | leaf | delta
   pid u64
   object_version u64
+  published_epoch_backref u64 -- diagnostic/forensic back-reference
   level u16
   parent_pid u64          -- 0 means no parent/root
   child_count u32
@@ -107,8 +108,12 @@ requires the live persisted base-leaf format to be `LeafPartitionObjectV2`: one
 metadata tuple plus one or more row-segment tuples, with column-major arrays for
 flags, fixed-stride `vec_id`s, heap TIDs, gammas, and encoded payload bytes.
 The placement entry still addresses one logical `(pid, object_version)` object;
-the V2 metadata tuple owns the segment chain. Strict-mode availability requires
-every segment in that chain to be durable and readable.
+the V2 metadata tuple owns the segment chain. The header
+`published_epoch_backref` is stamped when the object is written and is verified
+as nonzero and not newer than the placement epoch on reads for diagnostics and
+crash forensics; the epoch manifest remains the authoritative compatibility
+boundary, and later epochs may reference older immutable objects. Strict-mode
+availability requires every segment in that chain to be durable and readable.
 
 V2 base leaves use one assignment payload format and one payload stride per
 object. Delete and tombstone deltas may remain row-encoded because they are

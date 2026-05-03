@@ -430,8 +430,10 @@ mod tests {
 
         let placement = draft.placement_directory.get(50).unwrap();
         let stored_delta = object_store.read_delta_object(placement).unwrap();
+        let mut expected_delta = draft.delta_object.clone();
+        expected_delta.header.published_epoch_backref = draft.epoch_manifest.epoch;
 
-        assert_eq!(stored_delta, draft.delta_object);
+        assert_eq!(stored_delta, expected_delta);
         assert_eq!(draft.epoch_manifest.epoch, 8);
         assert_eq!(draft.delta_object.header.pid, 50);
         assert_eq!(draft.delta_object.header.object_version, 3);

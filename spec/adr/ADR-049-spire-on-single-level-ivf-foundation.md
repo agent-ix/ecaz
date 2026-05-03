@@ -129,6 +129,9 @@ Internal partition objects store routing metadata and child PIDs. Leaf partition
 objects store vector assignment/posting rows. Root/control metadata stores the
 top graph, hierarchy metadata, active epoch, PID allocation state, local
 `vec_id` allocation state, and PID placement map.
+Partition-object headers may carry a `published_epoch_backref` for diagnostics
+and crash forensics, but epoch manifests remain authoritative for deciding which
+object versions are compatible with a query.
 
 The single-node implementation may start with one partition store, but the
 format must model physical placement explicitly:

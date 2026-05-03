@@ -36,7 +36,7 @@ const SPIRE_ASSIGNMENT_KNOWN_FLAGS: u16 = SPIRE_ASSIGNMENT_FLAG_PRIMARY
 const PARTITION_OBJECT_MAGIC: u32 = 0x4f50_5345; // "ESPO" as little-endian bytes.
 const PARTITION_OBJECT_FORMAT_VERSION_V1: u16 = 1;
 const PARTITION_OBJECT_FORMAT_VERSION_V2: u16 = 2;
-const PARTITION_OBJECT_HEADER_BYTES: usize = 46;
+const PARTITION_OBJECT_HEADER_BYTES: usize = 54;
 const ASSIGNMENT_ROW_FIXED_PREFIX_BYTES: usize = 3;
 const ASSIGNMENT_ROW_FIXED_TAIL_BYTES: usize = ITEM_POINTER_BYTES + 1 + 4 + 4;
 const ROUTING_OBJECT_BODY_PREFIX_BYTES: usize = 4;
@@ -44,7 +44,7 @@ const ROUTING_CHILD_ENTRY_FIXED_BYTES: usize = 4 + 8;
 const LEAF_V2_META_FLAG: u32 = 0x0000_0001;
 const LEAF_V2_SEGMENT_FLAG: u32 = 0x0000_0002;
 const LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = 16;
-const LEAF_V2_META_BODY_BYTES: usize = 1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8 + 8;
+const LEAF_V2_META_BODY_BYTES: usize = 1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
 const LEAF_V2_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + 4 + ITEM_POINTER_BYTES;
 
 #[repr(u8)]
@@ -263,6 +263,7 @@ pub(super) struct SpirePartitionObjectHeader {
     pub(super) kind: SpirePartitionObjectKind,
     pub(super) pid: u64,
     pub(super) object_version: u64,
+    pub(super) published_epoch_backref: u64,
     pub(super) level: u16,
     pub(super) parent_pid: u64,
     pub(super) child_count: u32,
@@ -305,6 +306,7 @@ impl SpirePartitionObjectHeader {
         out.push(0);
         out.extend_from_slice(&self.pid.to_le_bytes());
         out.extend_from_slice(&self.object_version.to_le_bytes());
+        out.extend_from_slice(&self.published_epoch_backref.to_le_bytes());
         out.extend_from_slice(&self.level.to_le_bytes());
         out.extend_from_slice(&self.parent_pid.to_le_bytes());
         out.extend_from_slice(&self.child_count.to_le_bytes());
@@ -359,13 +361,16 @@ impl SpirePartitionObjectHeader {
             object_version: u64::from_le_bytes(
                 input[16..24].try_into().expect("object version bytes"),
             ),
-            level: u16::from_le_bytes(input[24..26].try_into().expect("level bytes")),
-            parent_pid: u64::from_le_bytes(input[26..34].try_into().expect("parent pid bytes")),
-            child_count: u32::from_le_bytes(input[34..38].try_into().expect("child count bytes")),
-            assignment_count: u32::from_le_bytes(
-                input[38..42].try_into().expect("assignment count bytes"),
+            published_epoch_backref: u64::from_le_bytes(
+                input[24..32].try_into().expect("published epoch bytes"),
             ),
-            flags: u32::from_le_bytes(input[42..46].try_into().expect("flags bytes")),
+            level: u16::from_le_bytes(input[32..34].try_into().expect("level bytes")),
+            parent_pid: u64::from_le_bytes(input[34..42].try_into().expect("parent pid bytes")),
+            child_count: u32::from_le_bytes(input[42..46].try_into().expect("child count bytes")),
+            assignment_count: u32::from_le_bytes(
+                input[46..50].try_into().expect("assignment count bytes"),
+            ),
+            flags: u32::from_le_bytes(input[50..54].try_into().expect("flags bytes")),
         };
         if header.pid == 0 {
             return Err("ec_spire partition object pid 0 is invalid".to_owned());
@@ -577,6 +582,7 @@ impl SpireLeafPartitionObject {
                 kind: SpirePartitionObjectKind::Leaf,
                 pid,
                 object_version,
+                published_epoch_backref: 0,
                 level: 0,
                 parent_pid,
                 child_count: 0,
@@ -667,7 +673,6 @@ pub(super) struct SpireLeafPartitionObjectV2Meta {
     pub(super) segment_count: u32,
     pub(super) first_segment_locator: ItemPointer,
     pub(super) object_bytes_total: u64,
-    pub(super) published_epoch_backref: u64,
 }
 
 impl SpireLeafPartitionObjectV2Meta {
@@ -688,6 +693,7 @@ impl SpireLeafPartitionObjectV2Meta {
                 kind: SpirePartitionObjectKind::Leaf,
                 pid,
                 object_version,
+                published_epoch_backref,
                 level: 0,
                 parent_pid,
                 child_count: 0,
@@ -701,7 +707,6 @@ impl SpireLeafPartitionObjectV2Meta {
             segment_count,
             first_segment_locator,
             object_bytes_total,
-            published_epoch_backref,
         };
         meta.validate()?;
         Ok(meta)
@@ -721,7 +726,6 @@ impl SpireLeafPartitionObjectV2Meta {
         out.extend_from_slice(&self.segment_count.to_le_bytes());
         self.first_segment_locator.encode_into(&mut out);
         out.extend_from_slice(&self.object_bytes_total.to_le_bytes());
-        out.extend_from_slice(&self.published_epoch_backref.to_le_bytes());
         debug_assert_eq!(
             out.len(),
             PARTITION_OBJECT_HEADER_BYTES + LEAF_V2_META_BODY_BYTES
@@ -768,9 +772,6 @@ impl SpireLeafPartitionObjectV2Meta {
             object_bytes_total: u64::from_le_bytes(
                 tail[22..30].try_into().expect("object bytes total"),
             ),
-            published_epoch_backref: u64::from_le_bytes(
-                tail[30..38].try_into().expect("published epoch"),
-            ),
         };
         meta.validate()?;
         Ok(meta)
@@ -780,7 +781,7 @@ impl SpireLeafPartitionObjectV2Meta {
         validate_leaf_v2_header(&self.header, LEAF_V2_META_FLAG)?;
         validate_assignment_payload_format(self.payload_format)?;
         validate_leaf_v2_locator(self.first_segment_locator, "first segment")?;
-        if self.published_epoch_backref == 0 {
+        if self.header.published_epoch_backref == 0 {
             return Err("ec_spire leaf V2 published epoch backref 0 is invalid".to_owned());
         }
         if self.object_bytes_total == 0 {
@@ -878,6 +879,7 @@ impl SpireLeafPartitionObjectV2Segment {
                 kind: SpirePartitionObjectKind::Leaf,
                 pid: meta.header.pid,
                 object_version: meta.header.object_version,
+                published_epoch_backref: meta.header.published_epoch_backref,
                 level: meta.header.level,
                 parent_pid: meta.header.parent_pid,
                 child_count: 0,
@@ -1324,6 +1326,7 @@ impl SpireRoutingPartitionObject {
                 kind,
                 pid,
                 object_version,
+                published_epoch_backref: 0,
                 level,
                 parent_pid,
                 child_count,
@@ -1573,6 +1576,7 @@ impl SpireDeltaPartitionObject {
                 kind: SpirePartitionObjectKind::Delta,
                 pid,
                 object_version,
+                published_epoch_backref: 0,
                 level: 0,
                 parent_pid: base_pid,
                 child_count: 0,
@@ -1693,15 +1697,17 @@ impl SpireLocalObjectStore {
         if epoch == 0 {
             return Err("ec_spire local object store epoch 0 is invalid".to_owned());
         }
-        let encoded = object.encode()?;
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
         let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
-            object.header.pid,
+            durable_object.header.pid,
             self.store_relid,
-            object.header.object_version,
+            durable_object.header.object_version,
             object_tid,
             object_bytes,
         );
@@ -1840,15 +1846,17 @@ impl SpireLocalObjectStore {
         if epoch == 0 {
             return Err("ec_spire local object store epoch 0 is invalid".to_owned());
         }
-        let encoded = object.encode()?;
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
         let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
-            object.header.pid,
+            durable_object.header.pid,
             self.store_relid,
-            object.header.object_version,
+            durable_object.header.object_version,
             object_tid,
             object_bytes,
         );
@@ -1864,15 +1872,17 @@ impl SpireLocalObjectStore {
         if epoch == 0 {
             return Err("ec_spire local object store epoch 0 is invalid".to_owned());
         }
-        let encoded = object.encode()?;
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
         let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
-            object.header.pid,
+            durable_object.header.pid,
             self.store_relid,
-            object.header.object_version,
+            durable_object.header.object_version,
             object_tid,
             object_bytes,
         );
@@ -1898,6 +1908,14 @@ impl SpireLocalObjectStore {
                 placement.object_version, object.header.object_version
             ));
         }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
+            ));
+        }
         Ok(object)
     }
 
@@ -1918,6 +1936,14 @@ impl SpireLocalObjectStore {
             return Err(format!(
                 "ec_spire placement object_version {} does not match leaf V2 version {}",
                 placement.object_version, meta.header.object_version
+            ));
+        }
+        if meta.header.published_epoch_backref == 0
+            || meta.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire leaf V2 published epoch backref {} is not valid for placement epoch {}",
+                meta.header.published_epoch_backref, placement.epoch
             ));
         }
         if u64::from(placement.object_bytes) != meta.object_bytes_total {
@@ -1994,6 +2020,12 @@ impl SpireLocalObjectStore {
                 placement.object_version, header.object_version
             ));
         }
+        if header.published_epoch_backref == 0 || header.published_epoch_backref > placement.epoch {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                header.published_epoch_backref, placement.epoch
+            ));
+        }
         Ok(header)
     }
 
@@ -2015,6 +2047,14 @@ impl SpireLocalObjectStore {
                 placement.object_version, object.header.object_version
             ));
         }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
+            ));
+        }
         Ok(object)
     }
 
@@ -2034,6 +2074,14 @@ impl SpireLocalObjectStore {
             return Err(format!(
                 "ec_spire placement object_version {} does not match object version {}",
                 placement.object_version, object.header.object_version
+            ));
+        }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
             ));
         }
         Ok(object)
@@ -2558,6 +2606,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Leaf,
             pid: 17,
             object_version: 3,
+            published_epoch_backref: 7,
             level: 1,
             parent_pid: 5,
             child_count: 0,
@@ -2579,6 +2628,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Internal,
             pid: 0,
             object_version: 1,
+            published_epoch_backref: 7,
             level: 0,
             parent_pid: 0,
             child_count: 1,
@@ -2883,10 +2933,12 @@ mod tests {
         assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
         assert_eq!(header.pid, 17);
         assert_eq!(header.object_version, 3);
+        assert_eq!(header.published_epoch_backref, 7);
         assert_eq!(header.parent_pid, 5);
         assert_eq!(header.assignment_count, assignments.len() as u32);
         assert_eq!(decoded.meta.header.pid, 17);
         assert_eq!(decoded.meta.header.object_version, 3);
+        assert_eq!(decoded.meta.header.published_epoch_backref, 7);
         assert_eq!(decoded.meta.header.parent_pid, 5);
         assert_eq!(
             decoded.meta.header.assignment_count,
@@ -3025,6 +3077,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Leaf,
             pid: 17,
             object_version: 3,
+            published_epoch_backref: 7,
             level: 0,
             parent_pid: 0,
             child_count: 0,
@@ -3057,6 +3110,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Leaf,
             pid: 17,
             object_version: 3,
+            published_epoch_backref: 7,
             level: 0,
             parent_pid: 0,
             child_count: 0,
@@ -3153,6 +3207,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Leaf,
             pid: 17,
             object_version: 3,
+            published_epoch_backref: 7,
             level: 0,
             parent_pid: 0,
             child_count: 0,
@@ -3360,6 +3415,7 @@ mod tests {
             kind: SpirePartitionObjectKind::Delta,
             pid: 19,
             object_version: 4,
+            published_epoch_backref: 7,
             level: 0,
             parent_pid: 17,
             child_count: 0,
@@ -3397,8 +3453,10 @@ mod tests {
 
         let placement = store.insert_leaf_object(7, &object).unwrap();
         let decoded = store.read_leaf_object(&placement).unwrap();
+        let mut expected = object.clone();
+        expected.header.published_epoch_backref = 7;
 
-        assert_eq!(decoded, object);
+        assert_eq!(decoded, expected);
         assert_eq!(placement.epoch, 7);
         assert_eq!(placement.pid, 17);
         assert_eq!(placement.object_version, 3);
@@ -3433,8 +3491,10 @@ mod tests {
 
         let placement = store.insert_delta_object(7, &object).unwrap();
         let decoded = store.read_delta_object(&placement).unwrap();
+        let mut expected = object.clone();
+        expected.header.published_epoch_backref = 7;
 
-        assert_eq!(decoded, object);
+        assert_eq!(decoded, expected);
         assert_eq!(placement.epoch, 7);
         assert_eq!(placement.pid, 19);
         assert_eq!(placement.object_version, 4);
@@ -3453,8 +3513,10 @@ mod tests {
 
         let placement = store.insert_routing_object(7, &object).unwrap();
         let decoded = store.read_routing_object(&placement).unwrap();
+        let mut expected = object.clone();
+        expected.header.published_epoch_backref = 7;
 
-        assert_eq!(decoded, object);
+        assert_eq!(decoded, expected);
         assert_eq!(placement.epoch, 7);
         assert_eq!(placement.pid, 11);
         assert_eq!(placement.object_version, 3);
@@ -3482,12 +3544,15 @@ mod tests {
         assert_eq!(leaf_header.kind, SpirePartitionObjectKind::Leaf);
         assert_eq!(leaf_header.pid, 17);
         assert_eq!(leaf_header.object_version, 3);
+        assert_eq!(leaf_header.published_epoch_backref, 7);
         assert_eq!(delta_header.kind, SpirePartitionObjectKind::Delta);
         assert_eq!(delta_header.pid, 19);
         assert_eq!(delta_header.object_version, 4);
+        assert_eq!(delta_header.published_epoch_backref, 7);
         assert_eq!(root_header.kind, SpirePartitionObjectKind::Root);
         assert_eq!(root_header.pid, 11);
         assert_eq!(root_header.object_version, 3);
+        assert_eq!(root_header.published_epoch_backref, 7);
     }
 
     #[test]
@@ -3527,6 +3592,10 @@ mod tests {
         let mut wrong_bytes = placement;
         wrong_bytes.object_bytes += 1;
         assert!(store.read_leaf_object(&wrong_bytes).is_err());
+
+        let mut wrong_epoch = placement;
+        wrong_epoch.epoch = 6;
+        assert!(store.read_leaf_object(&wrong_epoch).is_err());
     }
 
     #[test]

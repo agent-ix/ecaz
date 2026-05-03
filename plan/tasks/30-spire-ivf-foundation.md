@@ -5,21 +5,20 @@ Status: in progress — Phase 0 storage design checkpoint recorded in
 SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
 draft publication. Segmented, column-major V2 leaf-object codecs and an
-in-memory local-store V2 write/read path now exist as the first response to the
-pre-persistence architecture gate; build and scan helpers still consume the V1
-row-contiguous leaf object until the migration slices land. Scan helpers can
-now route to top-`nprobe` leaves, collect
-ranked candidates through injected and concrete quantized scorer paths, dedupe
-by `vec_id`, and consume the resolved single-level scan plan through the
-helper-level quantized scoring and exact-rerank path. Routed top-`nprobe`
-selection and final candidate limiting now use bounded heaps with deterministic
-tie-breaks, and the scan plan carries an explicit dedupe mode so the Phase 1
-primary-only path skips the `vec_id` map until boundary replicas or remote
-merge require it. Build/update publication helpers and delta-from-snapshot
-logic now consume the validated snapshot wrapper rather than rebuilding
-published snapshots internally. Routing partition objects now store child PIDs,
-centroid ordinals, and centroid values in flat arrays instead of one owned
-centroid vector per child. A cursor-to-scan-output
+in-memory local-store V2 write/read path now back base leaf build output, and
+quantized routed scans batch-score V2 column segments directly while retaining
+V1 row-object helpers for compatibility tests. Scan helpers can now route to
+top-`nprobe` leaves, collect ranked candidates through injected and concrete
+quantized scorer paths, dedupe by `vec_id`, and consume the resolved
+single-level scan plan through the helper-level quantized scoring and
+exact-rerank path. Routed top-`nprobe` selection and final candidate limiting
+now use bounded heaps with deterministic tie-breaks, and the scan plan carries
+an explicit dedupe mode so the Phase 1 primary-only path skips the `vec_id` map
+until boundary replicas or remote merge require it. Build/update publication
+helpers and delta-from-snapshot logic now consume the validated snapshot wrapper
+rather than rebuilding published snapshots internally. Routing partition
+objects now store child PIDs, centroid ordinals, and centroid values in flat
+arrays instead of one owned centroid vector per child. A cursor-to-scan-output
 bridge now maps ranked candidates to heap TID plus ORDER BY score output for
 future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
@@ -190,7 +189,7 @@ Decision record:
   PublishingActiveEpoch` states. Failed transitions return a staged
   `SpirePublishFailed` and cannot construct root/control bytes that would
   advance the active epoch.
-- [ ] **Architecture follow-up cleanups.** Add object epoch back-references,
+- [x] **Architecture follow-up cleanups.** Add object epoch back-references,
   a `SpireObjectReader` trait shared by in-memory and buffer-cache readers,
   byte diagnostics by object kind, allocator near-exhaustion diagnostics,
   explicit placement constructors, and a single source for primary/replica
@@ -205,7 +204,10 @@ Decision record:
   available object bytes into routing, leaf, and delta buckets. A
   `SpireObjectReader` trait now defines the shared object read contract, and
   snapshot diagnostics consume that trait instead of the concrete in-memory
-  store.
+  store. Partition-object headers now carry a `published_epoch_backref` stamped
+  by local-store insertion and verified as not newer than the placement epoch
+  on reads; V2 leaf metadata and segments inherit the same header
+  back-reference.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

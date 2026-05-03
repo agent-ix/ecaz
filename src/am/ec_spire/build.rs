@@ -1110,9 +1110,11 @@ mod tests {
         assert_eq!(draft.object_manifest.entries.len(), 3);
         assert_eq!(draft.placement_directory.entries.len(), 3);
         let root_placement = draft.placement_directory.get(draft.root_pid).unwrap();
+        let mut expected_routing_object = draft.routing_object.clone();
+        expected_routing_object.header.published_epoch_backref = draft.epoch_manifest.epoch;
         assert_eq!(
             object_store.read_routing_object(root_placement).unwrap(),
-            draft.routing_object
+            expected_routing_object
         );
         for &pid in &draft.centroid_pids {
             assert!(draft.route_map.entries.iter().any(|entry| entry.pid == pid));
