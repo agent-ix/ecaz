@@ -5185,6 +5185,65 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_insert_after_build_multi_row_epoch_progression() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_multi_epoch (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_epoch (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_multi_epoch_idx ON ec_spire_insert_multi_epoch \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_epoch (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (5, encode_to_ecvector(ARRAY[-0.9, 0.1], 4, 42)), \
+             (6, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42)), \
+             (7, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("multi-row post-build insert should publish one delta epoch per row");
+
+        let index_oid = index_oid("ec_spire_insert_multi_epoch_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 6);
+        assert_eq!(next_pid, 9);
+        assert_eq!(next_local_vec_seq, 8);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_insert_multi_epoch_idx", "delta_object_count"),
+            5
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_insert_multi_epoch_idx",
+                "delta_assignment_count"
+            ),
+            5
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let inserted_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_insert_multi_epoch \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 7 \
+             ) ranked WHERE id BETWEEN 3 AND 7",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(inserted_rows_returned, 5);
+    }
+
+    #[pg_test]
     #[should_panic(expected = "ec_spire aminsert failed: ec_spire vector dimensions mismatch")]
     fn test_ec_spire_insert_after_build_rejects_dimension_mismatch() {
         Spi::run(

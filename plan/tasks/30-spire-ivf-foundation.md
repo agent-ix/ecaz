@@ -427,11 +427,13 @@ Decision record:
   coverage for first-epoch publication plus a second delta insert. Vacuum
   delete-delta publication and routed scan suppression now have focused PG18
   coverage; post-build insert dimension mismatches now have focused PG18
-  error-path coverage through the `ec_spire aminsert failed` wrapper. The SQL
-  active-snapshot diagnostics surface now has focused PG18 coverage for empty
-  and insert-populated active epochs, allocator SQL diagnostics now have
-  focused PG18 coverage for empty and insert-bootstrapped indexes, and the SQL
-  options snapshot surface has focused PG18 coverage for reloptions, session
+  error-path coverage through the `ec_spire aminsert failed` wrapper, and
+  five-row post-build inserts now have focused PG18 coverage for one epoch per
+  row progression plus per-row query visibility. The SQL active-snapshot
+  diagnostics surface now has focused PG18 coverage for empty and
+  insert-populated active epochs, allocator SQL diagnostics now have focused
+  PG18 coverage for empty and insert-bootstrapped indexes, and the SQL options
+  snapshot surface has focused PG18 coverage for reloptions, session
   overrides, active leaf count, and effective scan option resolution. Vacuum
   cleanup compaction of active delta objects into replacement V2 base leaves
   now has focused PG18 coverage, and the SQL health snapshot surface has
