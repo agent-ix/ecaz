@@ -705,6 +705,18 @@ fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> O
         })
 }
 
+fn candidate_heap_tid_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
+    left.heap_tid
+        .block_number
+        .cmp(&right.heap_tid.block_number)
+        .then_with(|| {
+            left.heap_tid
+                .offset_number
+                .cmp(&right.heap_tid.offset_number)
+        })
+        .then_with(|| left.score.total_cmp(&right.score))
+}
+
 fn probe_list_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) -> Ordering {
     right
         .score
@@ -961,6 +973,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
     if candidates.is_empty() {
         return;
     }
+    candidates.sort_by(candidate_heap_tid_cmp);
     let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
     let snapshot = unsafe { resolve_scan_snapshot(scan) };
     let source_attribute = unsafe {
@@ -1670,8 +1683,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_probe_block_sequence, consume_live_tid_budget, select_probe_lists, CandidateTopK,
-        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
+        build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget,
+        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
+        ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -1737,6 +1751,30 @@ mod tests {
 
         top_k.push(candidate(1, 3, 2.0));
         assert_eq!(top_k.worst_score_if_full(), Some(2.0));
+    }
+
+    #[test]
+    fn candidate_heap_tid_cmp_orders_by_heap_location_before_score() {
+        let mut candidates = vec![
+            candidate(8, 3, 0.5),
+            candidate(7, 9, 9.0),
+            candidate(8, 1, 0.1),
+            candidate(7, 9, 1.0),
+        ];
+
+        candidates.sort_by(candidate_heap_tid_cmp);
+
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| (
+                    candidate.heap_tid.block_number,
+                    candidate.heap_tid.offset_number,
+                    candidate.score
+                ))
+                .collect::<Vec<_>>(),
+            vec![(7, 9, 1.0), (7, 9, 9.0), (8, 1, 0.1), (8, 3, 0.5)]
+        );
     }
 
     #[test]
