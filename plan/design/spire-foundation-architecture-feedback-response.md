@@ -286,6 +286,13 @@ valid for the next state. The active epoch can advance only from
 succeeds. Failures before that transition record failed/building state and leave
 the prior active epoch authoritative.
 
+Implementation checkpoint: build and delta publish-bundle helpers now share a
+typed publish coordinator with the explicit states above. The coordinator
+encodes manifests only after object and placement stages, validates the
+published snapshot before exposing `PublishingActiveEpoch`, and returns a staged
+`SpirePublishFailed` on any error. Active root/control bytes are only produced
+from the `PublishingActiveEpoch` state.
+
 ## Smaller Follow-Ups
 
 - Add `published_epoch_backref` to object headers for diagnostics and forensic

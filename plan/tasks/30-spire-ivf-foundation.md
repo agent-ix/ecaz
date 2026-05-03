@@ -180,9 +180,14 @@ Decision record:
   future remote merge re-enable `vec_id` dedupe explicitly. The single-level
   scan plan now defaults to `NoReplicaDedupeDisabled`; lower-level helper tests
   can opt into `VecIdDedupeEnabled` for boundary-replica and merge semantics.
-- [ ] **Publish coordinator.** Add a typed publication state machine for object
+- [x] **Publish coordinator.** Add a typed publication state machine for object
   writes, placement writes, manifest writes, validation, active-epoch advance,
   and failed-publish cleanup before live relation-backed writes are enabled.
+  Build and delta publish-bundle helpers now run through typed
+  `WritingObjects -> WritingPlacements -> WritingManifest -> Validating ->
+  PublishingActiveEpoch` states. Failed transitions return a staged
+  `SpirePublishFailed` and cannot construct root/control bytes that would
+  advance the active epoch.
 - [ ] **Architecture follow-up cleanups.** Add object epoch back-references,
   a `SpireObjectReader` trait shared by in-memory and buffer-cache readers,
   byte diagnostics by object kind, allocator near-exhaustion diagnostics,

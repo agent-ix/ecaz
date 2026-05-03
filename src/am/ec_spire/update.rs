@@ -7,7 +7,9 @@ use super::assign::{
     SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
 };
 use super::build::{
-    SpireEncodedManifestBundle, SpireEncodedPublishBundle, SpirePublishedManifestLocators,
+    encode_manifest_bundle_for_publish, encode_publish_bundle_for_publish,
+    root_control_state_for_publish, SpireEncodedManifestBundle, SpireEncodedPublishBundle,
+    SpirePublishCoordinatorInput, SpirePublishedManifestLocators,
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
@@ -44,66 +46,32 @@ pub(super) struct SpireDeltaEpochDraft {
 }
 
 impl SpireDeltaEpochDraft {
-    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
-        SpireValidatedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )
-    }
-
-    fn encode_manifest_bundle_from_validated(
-        &self,
-        _snapshot: &SpireValidatedEpochSnapshot<'_>,
-    ) -> Result<SpireEncodedManifestBundle, String> {
-        Ok(SpireEncodedManifestBundle {
-            epoch_manifest: self.epoch_manifest.encode()?,
-            object_manifest: self.object_manifest.encode()?,
-            placement_directory: self.placement_directory.encode()?,
-        })
-    }
-
-    fn root_control_state_from_validated(
-        &self,
-        locators: SpirePublishedManifestLocators,
-        _snapshot: &SpireValidatedEpochSnapshot<'_>,
-    ) -> Result<SpireRootControlState, String> {
-        SpireRootControlState::published(
-            self.epoch_manifest.epoch,
-            self.next_pid,
-            self.next_local_vec_seq,
-            locators.epoch_manifest_tid,
-            locators.object_manifest_tid,
-            locators.placement_directory_tid,
-        )
+    fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest: &self.object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq: self.next_local_vec_seq,
+        }
     }
 
     pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        self.encode_manifest_bundle_from_validated(&snapshot)
+        encode_manifest_bundle_for_publish(self.publish_input())
     }
 
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, String> {
-        let snapshot = self.validated_snapshot()?;
-        self.root_control_state_from_validated(locators, &snapshot)
+        root_control_state_for_publish(self.publish_input(), locators)
     }
 
     pub(super) fn encode_publish_bundle(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        let manifests = self.encode_manifest_bundle_from_validated(&snapshot)?;
-        let root_control_state = self
-            .root_control_state_from_validated(locators, &snapshot)?
-            .encode()?;
-        Ok(SpireEncodedPublishBundle {
-            manifests,
-            root_control_state,
-        })
+        encode_publish_bundle_for_publish(self.publish_input(), locators)
     }
 }
 

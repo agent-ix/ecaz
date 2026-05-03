@@ -85,30 +85,205 @@ pub(super) struct SpirePublishedManifestLocators {
     pub(super) placement_directory_tid: ItemPointer,
 }
 
-fn encode_manifest_bundle_from_validated(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-) -> Result<SpireEncodedManifestBundle, String> {
-    Ok(SpireEncodedManifestBundle {
-        epoch_manifest: snapshot.epoch_manifest().encode()?,
-        object_manifest: snapshot.object_manifest().encode()?,
-        placement_directory: snapshot.placement_directory().encode()?,
-    })
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpirePublishStage {
+    WritingObjects,
+    WritingPlacements,
+    WritingManifest,
+    Validating,
+    PublishingActiveEpoch,
+    Published,
+    Failed,
 }
 
-fn root_control_state_from_validated(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    next_pid: u64,
-    next_local_vec_seq: u64,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpirePublishFailed {
+    pub(super) stage: SpirePublishStage,
+    pub(super) error: String,
+}
+
+impl SpirePublishFailed {
+    fn at(stage: SpirePublishStage, error: String) -> Self {
+        Self { stage, error }
+    }
+
+    fn into_error(self) -> String {
+        format!(
+            "ec_spire publish coordinator {:?} failed: {}",
+            self.stage, self.error
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SpirePublishCoordinatorInput<'a> {
+    pub(super) epoch_manifest: &'a SpireEpochManifest,
+    pub(super) object_manifest: &'a SpireObjectManifest,
+    pub(super) placement_directory: &'a SpirePlacementDirectory,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SpirePublishWritingObjects<'a> {
+    input: SpirePublishCoordinatorInput<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SpirePublishWritingPlacements<'a> {
+    input: SpirePublishCoordinatorInput<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SpirePublishWritingManifest<'a> {
+    input: SpirePublishCoordinatorInput<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SpirePublishValidating<'a> {
+    input: SpirePublishCoordinatorInput<'a>,
+    manifests: SpireEncodedManifestBundle,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SpirePublishPublishingActiveEpoch<'a> {
+    input: SpirePublishCoordinatorInput<'a>,
+    manifests: SpireEncodedManifestBundle,
+    snapshot: SpireValidatedEpochSnapshot<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpirePublishPublished {
+    pub(super) root_control_state: SpireRootControlState,
+    pub(super) bundle: SpireEncodedPublishBundle,
+}
+
+impl<'a> SpirePublishWritingObjects<'a> {
+    pub(super) fn new(input: SpirePublishCoordinatorInput<'a>) -> Self {
+        Self { input }
+    }
+
+    pub(super) fn objects_written(self) -> SpirePublishWritingPlacements<'a> {
+        SpirePublishWritingPlacements { input: self.input }
+    }
+}
+
+impl<'a> SpirePublishWritingPlacements<'a> {
+    pub(super) fn placements_written(self) -> SpirePublishWritingManifest<'a> {
+        SpirePublishWritingManifest { input: self.input }
+    }
+}
+
+impl<'a> SpirePublishWritingManifest<'a> {
+    pub(super) fn write_manifests(self) -> Result<SpirePublishValidating<'a>, SpirePublishFailed> {
+        let manifests = SpireEncodedManifestBundle {
+            epoch_manifest: self.input.epoch_manifest.encode().map_err(|error| {
+                SpirePublishFailed::at(SpirePublishStage::WritingManifest, error)
+            })?,
+            object_manifest: self.input.object_manifest.encode().map_err(|error| {
+                SpirePublishFailed::at(SpirePublishStage::WritingManifest, error)
+            })?,
+            placement_directory: self.input.placement_directory.encode().map_err(|error| {
+                SpirePublishFailed::at(SpirePublishStage::WritingManifest, error)
+            })?,
+        };
+        Ok(SpirePublishValidating {
+            input: self.input,
+            manifests,
+        })
+    }
+}
+
+impl<'a> SpirePublishValidating<'a> {
+    pub(super) fn validate(
+        self,
+    ) -> Result<SpirePublishPublishingActiveEpoch<'a>, SpirePublishFailed> {
+        let snapshot = SpireValidatedEpochSnapshot::new(
+            self.input.epoch_manifest,
+            self.input.object_manifest,
+            self.input.placement_directory,
+        )
+        .map_err(|error| SpirePublishFailed::at(SpirePublishStage::Validating, error))?;
+        Ok(SpirePublishPublishingActiveEpoch {
+            input: self.input,
+            manifests: self.manifests,
+            snapshot,
+        })
+    }
+}
+
+impl SpirePublishPublishingActiveEpoch<'_> {
+    pub(super) fn manifests(&self) -> &SpireEncodedManifestBundle {
+        &self.manifests
+    }
+
+    pub(super) fn root_control_state(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, SpirePublishFailed> {
+        SpireRootControlState::published(
+            self.snapshot.epoch_manifest().epoch,
+            self.input.next_pid,
+            self.input.next_local_vec_seq,
+            locators.epoch_manifest_tid,
+            locators.object_manifest_tid,
+            locators.placement_directory_tid,
+        )
+        .map_err(|error| SpirePublishFailed::at(SpirePublishStage::PublishingActiveEpoch, error))
+    }
+
+    pub(super) fn publish_active_epoch(
+        self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpirePublishPublished, SpirePublishFailed> {
+        let root_control_state = self.root_control_state(locators)?;
+        let root_control_state_bytes = root_control_state.encode().map_err(|error| {
+            SpirePublishFailed::at(SpirePublishStage::PublishingActiveEpoch, error)
+        })?;
+        Ok(SpirePublishPublished {
+            root_control_state,
+            bundle: SpireEncodedPublishBundle {
+                manifests: self.manifests,
+                root_control_state: root_control_state_bytes,
+            },
+        })
+    }
+}
+
+fn publish_through_validation(
+    input: SpirePublishCoordinatorInput<'_>,
+) -> Result<SpirePublishPublishingActiveEpoch<'_>, SpirePublishFailed> {
+    SpirePublishWritingObjects::new(input)
+        .objects_written()
+        .placements_written()
+        .write_manifests()?
+        .validate()
+}
+
+pub(super) fn encode_manifest_bundle_for_publish(
+    input: SpirePublishCoordinatorInput<'_>,
+) -> Result<SpireEncodedManifestBundle, String> {
+    let publish = publish_through_validation(input).map_err(SpirePublishFailed::into_error)?;
+    Ok(publish.manifests().clone())
+}
+
+pub(super) fn root_control_state_for_publish(
+    input: SpirePublishCoordinatorInput<'_>,
     locators: SpirePublishedManifestLocators,
 ) -> Result<SpireRootControlState, String> {
-    SpireRootControlState::published(
-        snapshot.epoch_manifest().epoch,
-        next_pid,
-        next_local_vec_seq,
-        locators.epoch_manifest_tid,
-        locators.object_manifest_tid,
-        locators.placement_directory_tid,
-    )
+    publish_through_validation(input)
+        .and_then(|publish| publish.root_control_state(locators))
+        .map_err(SpirePublishFailed::into_error)
+}
+
+pub(super) fn encode_publish_bundle_for_publish(
+    input: SpirePublishCoordinatorInput<'_>,
+    locators: SpirePublishedManifestLocators,
+) -> Result<SpireEncodedPublishBundle, String> {
+    publish_through_validation(input)
+        .and_then(|publish| publish.publish_active_epoch(locators))
+        .map(|published| published.bundle)
+        .map_err(SpirePublishFailed::into_error)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -270,96 +445,62 @@ impl SpireSingleLevelRouteMap {
 }
 
 impl SpireSingleLevelBuildDraft {
-    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
-        SpireValidatedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )
+    fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest: &self.object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq: self.next_local_vec_seq,
+        }
     }
 
     pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        encode_manifest_bundle_from_validated(&snapshot)
+        encode_manifest_bundle_for_publish(self.publish_input())
     }
 
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, String> {
-        let snapshot = self.validated_snapshot()?;
-        root_control_state_from_validated(
-            &snapshot,
-            self.next_pid,
-            self.next_local_vec_seq,
-            locators,
-        )
+        root_control_state_for_publish(self.publish_input(), locators)
     }
 
     pub(super) fn encode_publish_bundle(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        let manifests = encode_manifest_bundle_from_validated(&snapshot)?;
-        let root_control_state = root_control_state_from_validated(
-            &snapshot,
-            self.next_pid,
-            self.next_local_vec_seq,
-            locators,
-        )?
-        .encode()?;
-        Ok(SpireEncodedPublishBundle {
-            manifests,
-            root_control_state,
-        })
+        encode_publish_bundle_for_publish(self.publish_input(), locators)
     }
 }
 
 impl SpirePartitionedSingleLevelBuildDraft {
-    fn validated_snapshot(&self) -> Result<SpireValidatedEpochSnapshot<'_>, String> {
-        SpireValidatedEpochSnapshot::new(
-            &self.epoch_manifest,
-            &self.object_manifest,
-            &self.placement_directory,
-        )
+    fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest: &self.object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq: self.next_local_vec_seq,
+        }
     }
 
     pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        encode_manifest_bundle_from_validated(&snapshot)
+        encode_manifest_bundle_for_publish(self.publish_input())
     }
 
     pub(super) fn root_control_state(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, String> {
-        let snapshot = self.validated_snapshot()?;
-        root_control_state_from_validated(
-            &snapshot,
-            self.next_pid,
-            self.next_local_vec_seq,
-            locators,
-        )
+        root_control_state_for_publish(self.publish_input(), locators)
     }
 
     pub(super) fn encode_publish_bundle(
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
-        let snapshot = self.validated_snapshot()?;
-        let manifests = encode_manifest_bundle_from_validated(&snapshot)?;
-        let root_control_state = root_control_state_from_validated(
-            &snapshot,
-            self.next_pid,
-            self.next_local_vec_seq,
-            locators,
-        )?
-        .encode()?;
-        Ok(SpireEncodedPublishBundle {
-            manifests,
-            root_control_state,
-        })
+        encode_publish_bundle_for_publish(self.publish_input(), locators)
     }
 }
 
@@ -798,6 +939,19 @@ mod tests {
         locators.object_manifest_tid = ItemPointer::INVALID;
 
         assert!(draft.root_control_state(locators).is_err());
+    }
+
+    #[test]
+    fn publish_coordinator_validates_before_active_epoch_publish() {
+        let (mut draft, _, _, _) = build_valid_draft();
+        draft.placement_directory.entries[0].object_version = 99;
+
+        let error = draft
+            .encode_publish_bundle(manifest_locators())
+            .unwrap_err();
+
+        assert!(error.contains("Validating failed"));
+        assert!(error.contains("object_version mismatch"));
     }
 
     #[test]
