@@ -58,11 +58,12 @@ vacuum cleanup can now compact active delta objects into replacement V2 base
 leaves while removing delta placements from the active directory. The first
 SQL diagnostics surface now exposes active epoch/object/placement cardinality
 through `ec_spire_index_active_snapshot_diagnostics`, and relation build/scan
-options through `ec_spire_index_options_snapshot`; the health snapshot now
-reports conservative status/recommendation rows, including active delta
-compaction recommendations. PQ-FastScan scorer binding, recall/latency
-summary evidence, physical object reclamation/old-epoch cleanup, and full SQL
-VACUUM end-to-end coverage remain open. Task 30 implements
+options plus effective scan option resolution through
+`ec_spire_index_options_snapshot`; the health snapshot now reports
+conservative status/recommendation rows, including active delta compaction
+recommendations. PQ-FastScan scorer binding, recall/latency summary evidence,
+physical object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end
+coverage remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -339,7 +340,8 @@ Decision record:
   active SPIRE epoch. SQL function `ec_spire_index_options_snapshot(index_oid)`
   now exposes relation `nlists`, `nprobe`, `rerank_width`,
   `training_sample_rows`, `seed`, `pq_group_size`, `storage_format`, resolved
-  assignment payload format, and session scan overrides. SQL function
+  assignment payload format, session scan overrides, active leaf count, and
+  effective `nprobe`/`rerank_width` values with source labels. SQL function
   `ec_spire_index_health_snapshot(index_oid)` now reports a conservative
   active-epoch health status, recommendation text, delta compaction
   recommendation flag, placement-state counts, and assignment counts.
@@ -356,12 +358,13 @@ Decision record:
   delete-delta publication and routed scan suppression now have focused PG18
   coverage; the SQL active-snapshot diagnostics surface now has focused PG18
   coverage for empty and insert-populated active epochs, and the SQL options
-  snapshot surface has focused PG18 coverage for reloptions plus session
-  overrides. Vacuum cleanup compaction of active delta objects into replacement
-  V2 base leaves now has focused PG18 coverage, and the SQL health snapshot
-  surface has focused PG18 coverage for clean and delta-pending active epochs;
-  physical page reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end
-  coverage remain open.
+  snapshot surface has focused PG18 coverage for reloptions, session
+  overrides, active leaf count, and effective scan option resolution. Vacuum
+  cleanup compaction of active delta objects into replacement V2 base leaves
+  now has focused PG18 coverage, and the SQL health snapshot surface has
+  focused PG18 coverage for clean and delta-pending active epochs; physical
+  page reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end coverage
+  remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

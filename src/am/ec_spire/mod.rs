@@ -72,10 +72,15 @@ pub(crate) struct SpireActiveSnapshotDiagnostics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) nlists: i32,
+    pub(crate) active_leaf_count: u32,
     pub(crate) relation_nprobe: i32,
     pub(crate) session_nprobe: Option<i32>,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
     pub(crate) relation_rerank_width: i32,
     pub(crate) session_rerank_width: Option<i32>,
+    pub(crate) effective_rerank_width: i32,
+    pub(crate) effective_rerank_width_source: &'static str,
     pub(crate) training_sample_rows: i32,
     pub(crate) seed: i32,
     pub(crate) pq_group_size: i32,
@@ -264,30 +269,51 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
 pub(crate) unsafe fn index_options_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexOptionsSnapshot {
-    let relation_options = unsafe { options::relation_options(index_relation) };
-    let session_nprobe = match options::current_session_nprobe() {
-        value if value >= 0 => Some(value),
-        _ => None,
-    };
-    let session_rerank_width = match options::current_session_rerank_width() {
-        value if value >= 0 => Some(value),
-        _ => None,
-    };
+    let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let active_leaf_count = if root_control.active_epoch == 0 {
+            0
+        } else {
+            let (epoch_manifest, object_manifest, placement_directory) =
+                unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+            let snapshot = meta::SpirePublishedEpochSnapshot::new(
+                &epoch_manifest,
+                &object_manifest,
+                &placement_directory,
+            )?;
+            let object_store =
+                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            scan::count_snapshot_single_level_leaf_pids(&snapshot, &object_store)?
+        };
+        let relation_nprobe = u32::try_from(relation_options.nprobe)
+            .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
+        let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
+        let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
 
-    SpireIndexOptionsSnapshot {
-        nlists: relation_options.nlists,
-        relation_nprobe: relation_options.nprobe,
-        session_nprobe,
-        relation_rerank_width: relation_options.rerank_width,
-        session_rerank_width,
-        training_sample_rows: relation_options.training_sample_rows,
-        seed: relation_options.seed,
-        pq_group_size: relation_options.pq_group_size,
-        storage_format: relation_options.storage_format.reloption_name(),
-        assignment_payload_format: assignment_payload_format_name(
-            relation_options.assignment_payload_format(),
-        ),
-    }
+        Ok(SpireIndexOptionsSnapshot {
+            nlists: relation_options.nlists,
+            active_leaf_count,
+            relation_nprobe: relation_options.nprobe,
+            session_nprobe: nprobe
+                .session_nprobe
+                .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
+            effective_nprobe: nprobe.effective_nprobe,
+            effective_nprobe_source: nprobe.source,
+            relation_rerank_width: relation_options.rerank_width,
+            session_rerank_width: rerank_width.session_rerank_width,
+            effective_rerank_width: rerank_width.effective_rerank_width,
+            effective_rerank_width_source: rerank_width.source,
+            training_sample_rows: relation_options.training_sample_rows,
+            seed: relation_options.seed,
+            pq_group_size: relation_options.pq_group_size,
+            storage_format: relation_options.storage_format.reloption_name(),
+            assignment_payload_format: assignment_payload_format_name(
+                relation_options.assignment_payload_format(),
+            ),
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn index_health_snapshot(

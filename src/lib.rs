@@ -1121,10 +1121,15 @@ fn ec_spire_index_options_snapshot(
     'static,
     (
         name!(nlists, i32),
+        name!(active_leaf_count, i64),
         name!(relation_nprobe, i32),
         name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
         name!(relation_rerank_width, i32),
         name!(session_rerank_width, Option<i32>),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
         name!(training_sample_rows, i32),
         name!(seed, i32),
         name!(pq_group_size, i32),
@@ -1139,10 +1144,15 @@ fn ec_spire_index_options_snapshot(
 
     TableIterator::once((
         snapshot.nlists,
+        i64::from(snapshot.active_leaf_count),
         snapshot.relation_nprobe,
         snapshot.session_nprobe,
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
         snapshot.relation_rerank_width,
         snapshot.session_rerank_width,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
         snapshot.training_sample_rows,
         snapshot.seed,
         snapshot.pq_group_size,
@@ -2934,6 +2944,13 @@ mod tests {
         Spi::run("CREATE TABLE ec_spire_options_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
+            "INSERT INTO ec_spire_options_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
             "CREATE INDEX ec_spire_options_sql_idx ON ec_spire_options_sql USING ec_spire \
              (embedding ecvector_spire_ip_ops) WITH ( \
                  nlists = 3, \
@@ -2978,6 +2995,42 @@ mod tests {
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_rerank_width = Spi::get_one::<i32>(
+            "SELECT effective_rerank_width FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_rerank_width_source = Spi::get_one::<String>(
+            "SELECT effective_rerank_width_source FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+
+        assert_eq!(active_leaf_count, 3);
+        assert_eq!(effective_nprobe, 3);
+        assert_eq!(effective_nprobe_source, "session");
+        assert_eq!(effective_rerank_width, 9);
+        assert_eq!(effective_rerank_width_source, "session");
     }
 
     #[pg_test]
