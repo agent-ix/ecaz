@@ -148,6 +148,28 @@ pub(crate) struct SpireIndexScanPlacementSnapshotRow {
     pub(crate) delete_delta_row_count: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexRootRoutingSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) root_pid: u64,
+    pub(crate) root_object_version: u64,
+    pub(crate) root_level: u16,
+    pub(crate) root_child_count: u64,
+    pub(crate) centroid_dimensions: u16,
+    pub(crate) centroid_index: u32,
+    pub(crate) child_pid: u64,
+    pub(crate) child_kind: &'static str,
+    pub(crate) child_object_version: u64,
+    pub(crate) child_level: u16,
+    pub(crate) child_parent_pid: u64,
+    pub(crate) child_assignment_count: u64,
+    pub(crate) child_node_id: u32,
+    pub(crate) child_local_store_id: u32,
+    pub(crate) child_store_relid: u32,
+    pub(crate) child_placement_state: &'static str,
+    pub(crate) child_object_bytes: u64,
+}
+
 impl SpireActiveSnapshotDiagnostics {
     fn empty(root_control: meta::SpireRootControlState) -> Self {
         Self {
@@ -257,6 +279,24 @@ fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
     match mode {
         meta::SpireConsistencyMode::Strict => "strict",
         meta::SpireConsistencyMode::Degraded => "degraded",
+    }
+}
+
+fn placement_state_name(state: meta::SpirePlacementState) -> &'static str {
+    match state {
+        meta::SpirePlacementState::Available => "available",
+        meta::SpirePlacementState::Stale => "stale",
+        meta::SpirePlacementState::Unavailable => "unavailable",
+        meta::SpirePlacementState::Skipped => "skipped",
+    }
+}
+
+fn partition_object_kind_name(kind: storage::SpirePartitionObjectKind) -> &'static str {
+    match kind {
+        storage::SpirePartitionObjectKind::Root => "root",
+        storage::SpirePartitionObjectKind::Internal => "internal",
+        storage::SpirePartitionObjectKind::Leaf => "leaf",
+        storage::SpirePartitionObjectKind::Delta => "delta",
     }
 }
 
@@ -459,6 +499,78 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
                 delete_delta_row_count: store.delete_delta_row_count as u64,
             })
             .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_root_routing_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexRootRoutingSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexRootRoutingSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let mut root = None;
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "root routing snapshot")?;
+            let header = object_store.read_object_header(lookup.placement)?;
+            if header.kind != storage::SpirePartitionObjectKind::Root {
+                continue;
+            }
+            if root.is_some() {
+                return Err("ec_spire root routing snapshot found multiple root objects".to_owned());
+            }
+            root = Some((
+                manifest_entry.pid,
+                manifest_entry.object_version,
+                object_store.read_routing_object(lookup.placement)?,
+            ));
+        }
+
+        let Some((root_pid, root_object_version, root_object)) = root else {
+            return Err("ec_spire root routing snapshot found no active root object".to_owned());
+        };
+        let root_child_count = root_object.child_count() as u64;
+        let rows = root_object
+            .children()
+            .map(|child| {
+                let child_lookup =
+                    snapshot.require_lookup(child.child_pid, "root routing child")?;
+                let child_header = object_store.read_object_header(child_lookup.placement)?;
+                Ok(SpireIndexRootRoutingSnapshotRow {
+                    active_epoch: snapshot.epoch_manifest().epoch,
+                    root_pid,
+                    root_object_version,
+                    root_level: root_object.header.level,
+                    root_child_count,
+                    centroid_dimensions: root_object.dimensions,
+                    centroid_index: child.centroid_index,
+                    child_pid: child.child_pid,
+                    child_kind: partition_object_kind_name(child_header.kind),
+                    child_object_version: child_header.object_version,
+                    child_level: child_header.level,
+                    child_parent_pid: child_header.parent_pid,
+                    child_assignment_count: u64::from(child_header.assignment_count),
+                    child_node_id: child_lookup.placement.node_id,
+                    child_local_store_id: child_lookup.placement.local_store_id,
+                    child_store_relid: child_lookup.placement.store_relid,
+                    child_placement_state: placement_state_name(child_lookup.placement.state),
+                    child_object_bytes: u64::from(child_lookup.placement.object_bytes),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

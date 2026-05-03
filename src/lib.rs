@@ -1236,6 +1236,64 @@ fn ec_spire_index_scan_placement_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_root_routing_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(root_pid, i64),
+        name!(root_object_version, i64),
+        name!(root_level, i32),
+        name!(root_child_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(centroid_index, i64),
+        name!(child_pid, i64),
+        name!(child_kind, String),
+        name!(child_object_version, i64),
+        name!(child_level, i32),
+        name!(child_parent_pid, i64),
+        name!(child_assignment_count, i64),
+        name!(child_node_id, i64),
+        name!(child_local_store_id, i64),
+        name!(child_store_relid, i64),
+        name!(child_placement_state, String),
+        name!(child_object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_root_routing_snapshot") };
+    let rows = unsafe { am::spire_index_root_routing_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.root_pid).expect("root pid should fit in i64"),
+            i64::try_from(row.root_object_version).expect("root object version should fit in i64"),
+            i32::from(row.root_level),
+            i64::try_from(row.root_child_count).expect("root child count should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            i64::from(row.centroid_index),
+            i64::try_from(row.child_pid).expect("child pid should fit in i64"),
+            row.child_kind.to_owned(),
+            i64::try_from(row.child_object_version)
+                .expect("child object version should fit in i64"),
+            i32::from(row.child_level),
+            i64::try_from(row.child_parent_pid).expect("child parent pid should fit in i64"),
+            i64::try_from(row.child_assignment_count)
+                .expect("child assignment count should fit in i64"),
+            i64::from(row.child_node_id),
+            i64::from(row.child_local_store_id),
+            i64::from(row.child_store_relid),
+            row.child_placement_state.to_owned(),
+            i64::try_from(row.child_object_bytes).expect("child object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_options_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3204,6 +3262,82 @@ mod tests {
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_root_routing_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_route_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_route_empty_idx ON ec_spire_route_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_empty_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_route_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_route_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_route_sql_idx ON ec_spire_route_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT max(root_child_count) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("routing row should exist");
+        let centroid_dimensions = Spi::get_one::<i32>(
+            "SELECT max(centroid_dimensions) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("routing row should exist");
+        let leaf_children = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass) \
+             WHERE child_kind = 'leaf'",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        let assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(child_assignment_count)::bigint, 0) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("sum should exist");
+        let parent_links_match = Spi::get_one::<bool>(
+            "SELECT bool_and(child_parent_pid = root_pid) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("bool aggregate should exist");
+
+        assert_eq!(row_count, 2);
+        assert_eq!(root_child_count, 2);
+        assert_eq!(centroid_dimensions, 2);
+        assert_eq!(leaf_children, 2);
+        assert_eq!(assignment_count, 2);
+        assert!(parent_links_match);
     }
 
     #[pg_test]
