@@ -3,6 +3,8 @@
 ## Checkpoint
 
 - Code commit: `90b207e9` (`Publish SPIRE insert delta epochs`)
+- Feedback response commit: `68102466`
+  (`Cover SPIRE insert delta feedback`)
 - Branch: `task30-spire-partition-object-spec`
 - Task: Task 30 SPIRE IVF foundation
 - Scope: post-build `aminsert` delta publication
@@ -59,3 +61,37 @@ vacuum cleanup, batching, or compaction.
   only.
 - Empty-index insert bootstrap, delete/vacuum cleanup, compaction, PQ-FastScan
   scorer binding, and SQL/admin diagnostics remain open.
+
+## Feedback Response
+
+Reviewer feedback in `feedback.md` flagged the one-epoch-per-insert shape and
+the missing multi-insert / same-leaf delta coverage. Response commit
+`68102466`:
+
+- Added a focused PG18 test for a multi-row post-build insert with `nlists = 1`,
+  forcing three insert-delta epochs onto the same base leaf.
+- Asserted the expected root/control cursor movement: build epoch plus three
+  insert epochs, one delta PID per inserted row, and one local `vec_id` per
+  inserted row.
+- Asserted active diagnostics report three delta objects and three delta
+  assignments.
+- Asserted scan-placement diagnostics for the query touch all three delta PIDs
+  and all three delta candidate rows.
+- Kept insert batching/concurrent publish work explicitly open in the Task 30
+  plan.
+
+Additional validation for `68102466`:
+
+- `cargo fmt`
+  - Completed; existing stable rustfmt warnings for unstable
+    `imports_granularity` / `group_imports`.
+- `cargo test --lib test_ec_spire_insert_after_build_multiple_same_leaf_deltas --no-default-features --features pg18 -- --nocapture`
+  - `1 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out`
+- `cargo test --lib test_ec_spire_insert_after_build_delta_epoch --no-default-features --features pg18 -- --nocapture`
+  - `1 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out`
+- `cargo test --lib ec_spire --no-default-features --features pg18`
+  - `214 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out`
+- `git diff --check`
+  - clean
+- `git diff --cached --check`
+  - clean before response commit
