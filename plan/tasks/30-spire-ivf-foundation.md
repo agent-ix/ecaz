@@ -339,7 +339,10 @@ Decision record:
   Routed scans now also include row-encoded delta insert objects whose parent
   PID is one of the probed leaves, and suppress base or delta-insert candidates
   covered by row-encoded delete deltas for the same base leaf PID. Empty active
-  epochs still return no rows. PQ-FastScan scorer binding remains open.
+  epochs still return no rows, including empty `pq_fastscan` indexes that
+  expose the deferred payload format but have no assignments to score.
+  Populated PQ-FastScan remains build-blocked until SPIRE persists grouped-PQ
+  model metadata.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -428,7 +431,9 @@ Decision record:
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
-  active-epoch ordered scan now have PG18 coverage; the populated-build test
+  active-epoch ordered scan now have PG18 coverage; empty `pq_fastscan` SPIRE
+  indexes now have PG18 coverage proving scans return no rows without invoking
+  the deferred scorer path; the populated-build test
   now exercises relation-backed active snapshot cardinality diagnostics and
   live `ecvector` heap rerank, and a separate populated `tqvector` test covers
   the decoded heap-rerank branch. Insert-after-build delta publication now has

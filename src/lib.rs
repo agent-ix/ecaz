@@ -3491,6 +3491,30 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_empty_pq_fastscan_build_scan_no_rows() {
+        Spi::run("CREATE TABLE ec_spire_empty_pq_scan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_empty_pq_scan_idx ON ec_spire_empty_pq_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("empty pq_fastscan ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                SELECT id FROM ec_spire_empty_pq_scan \
+                ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                LIMIT 1 \
+             ) AS ordered_empty",
+        )
+        .expect("ordered empty pq_fastscan ec_spire query should succeed")
+        .expect("count should not be NULL");
+
+        assert_eq!(rows, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_active_snapshot_diagnostics_sql() {
         Spi::run("CREATE TABLE ec_spire_diag_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
