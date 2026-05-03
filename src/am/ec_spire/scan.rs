@@ -418,6 +418,14 @@ pub(super) fn collect_quantized_routed_probe_candidates(
             &mut candidates,
             &mut candidates_by_vec_id,
         )?;
+        append_quantized_delta_candidates_for_base_pid(
+            &snapshot,
+            object_store,
+            leaf_pid,
+            &scorer,
+            &mut candidates,
+            &mut candidates_by_vec_id,
+        )?;
     }
 
     if let Some(candidates_by_vec_id) = candidates_by_vec_id {
@@ -746,6 +754,58 @@ fn append_quantized_v2_column_candidates(
             score: -ip,
         };
         append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+    }
+    Ok(())
+}
+
+fn append_quantized_delta_candidates_for_base_pid(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    base_pid: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+) -> Result<(), String> {
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "quantized routed scan delta")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
+            continue;
+        }
+
+        let delta_object = object_store.read_delta_object(placement)?;
+        for (row_index, assignment) in delta_object.assignments.into_iter().enumerate() {
+            if is_delete_delta_assignment(&assignment) {
+                continue;
+            }
+            if !is_visible_primary_assignment(&assignment) {
+                continue;
+            }
+            let ip = scorer.score_assignment_ip(&assignment)?;
+            if !ip.is_finite() {
+                return Err(
+                    "ec_spire routed delta candidate scorer returned a non-finite score".to_owned(),
+                );
+            }
+            let row_index = u32::try_from(row_index)
+                .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+            let candidate = SpireScoredScanCandidate {
+                epoch: snapshot.epoch_manifest().epoch,
+                pid: manifest_entry.pid,
+                object_version: manifest_entry.object_version,
+                row_index,
+                assignment_flags: assignment.flags,
+                vec_id: assignment.vec_id,
+                heap_tid: assignment.heap_tid,
+                score: -ip,
+            };
+            append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+        }
     }
     Ok(())
 }

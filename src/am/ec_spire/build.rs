@@ -30,17 +30,17 @@ const SPIRE_INITIAL_OBJECT_VERSION: u64 = 1;
 const MICROS_PER_SECOND: i64 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SpireIndexedVectorKind {
+pub(super) enum SpireIndexedVectorKind {
     Ecvector,
     Tqvector,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct SpireBuildTuple {
-    heap_tid: ItemPointer,
-    dimensions: u16,
-    assignment: SpireLeafAssignmentInput,
-    source_vector: Vec<f32>,
+pub(super) struct SpireBuildTuple {
+    pub(super) heap_tid: ItemPointer,
+    pub(super) dimensions: u16,
+    pub(super) assignment: SpireLeafAssignmentInput,
+    pub(super) source_vector: Vec<f32>,
 }
 
 struct SpireBuildState {
@@ -1261,7 +1261,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     Ok(state.scanned_tuples)
 }
 
-unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
     let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
         .checked_mul(MICROS_PER_SECOND)
@@ -1272,7 +1272,7 @@ unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
     Ok((published_at_micros, retain_until_micros))
 }
 
-unsafe fn build_spire_index_tuple(
+pub(super) unsafe fn build_spire_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: ItemPointer,
@@ -1367,7 +1367,7 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> 
     bytes
 }
 
-unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_spire {context} received a null heap tid");
     }
@@ -1378,7 +1378,7 @@ unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointe
     }
 }
 
-unsafe fn resolve_indexed_vector_kind(
+pub(super) unsafe fn resolve_indexed_vector_kind(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     context: &str,

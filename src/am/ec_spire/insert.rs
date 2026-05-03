@@ -1,14 +1,158 @@
 use pgrx::pg_sys;
 
+use super::assign::{build_insert_delta_assignments, SpireLocalVecIdAllocator, SpirePidAllocator};
+use super::build::{
+    self, encode_manifest_bundle_for_publish, object_manifest_from_placement_writes,
+    root_control_state_for_publish, write_manifest_bundle_to_relation,
+    write_placement_entries_to_relation, SpirePublishCoordinatorInput,
+};
+use super::meta::{SpireEpochManifest, SpireEpochState, SpirePlacementDirectory};
+use super::storage::{SpireDeltaPartitionObject, SpireRelationObjectStore};
+use super::{options, page, scan};
+
+const INSERT_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
+    pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
+
+struct RelationLockGuard {
+    relid: pg_sys::Oid,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+impl Drop for RelationLockGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
-    _index_relation: pg_sys::Relation,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
-    _heap_tid: pg_sys::ItemPointer,
-    _heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
+    heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
-    _index_info: *mut pg_sys::IndexInfo,
+    index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("aminsert")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            publish_insert_delta_epoch(
+                index_relation,
+                values,
+                isnull,
+                heap_tid,
+                heap_relation,
+                index_info,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire aminsert failed: {e}"));
+            true
+        })
+    }
+}
+
+unsafe fn lock_insert_publish_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+    let relid = unsafe { (*index_relation).rd_id };
+    unsafe { pg_sys::LockRelationOid(relid, INSERT_PUBLISH_LOCK_MODE) };
+    RelationLockGuard {
+        relid,
+        lockmode: INSERT_PUBLISH_LOCK_MODE,
+    }
+}
+
+unsafe fn publish_insert_delta_epoch(
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+) -> Result<(), String> {
+    let _guard = unsafe { lock_insert_publish_relation(index_relation) };
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch == 0 {
+        return Err("insert into an empty ec_spire active epoch is not implemented yet".to_owned());
+    }
+
+    let (active_epoch_manifest, object_manifest, placement_directory) =
+        unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+    let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
+        &active_epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let indexed_vector_kind =
+        unsafe { build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert") };
+    let heap_tid = unsafe { build::decode_heap_tid(heap_tid, "aminsert") };
+    let tuple = unsafe {
+        build::build_spire_index_tuple(
+            values,
+            isnull,
+            heap_tid,
+            indexed_vector_kind,
+            relation_options.assignment_payload_format(),
+            "aminsert",
+        )
+    };
+
+    let routed =
+        scan::collect_snapshot_routed_leaf_rows(&active_snapshot, &store, &tuple.source_vector)?;
+    let base_pid = routed.leaf_pid;
+    let new_epoch = root_control
+        .active_epoch
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire insert epoch overflow".to_owned())?;
+    let (published_at_micros, retain_until_micros) =
+        unsafe { build::current_epoch_publish_times()? };
+
+    let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+    let mut local_vec_id_allocator =
+        SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
+    let delta_pid = pid_allocator.allocate()?;
+    let assignments =
+        build_insert_delta_assignments(&mut local_vec_id_allocator, vec![tuple.assignment])?;
+    let delta_object = SpireDeltaPartitionObject::new(delta_pid, new_epoch, base_pid, assignments)?;
+    let delta_placement = unsafe { store.insert_delta_object(new_epoch, &delta_object)? };
+
+    let mut placement_entries = placement_directory
+        .entries
+        .iter()
+        .cloned()
+        .map(|mut entry| {
+            entry.epoch = new_epoch;
+            entry
+        })
+        .collect::<Vec<_>>();
+    placement_entries.push(delta_placement);
+    let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
+    let placement_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+    let object_manifest = object_manifest_from_placement_writes(
+        new_epoch,
+        &placement_directory,
+        &placement_evidence,
+    )?;
+    let epoch_manifest = SpireEpochManifest {
+        epoch: new_epoch,
+        state: SpireEpochState::Published,
+        consistency_mode: active_epoch_manifest.consistency_mode,
+        published_at_micros,
+        retain_until_micros,
+        active_query_count: 0,
+    };
+    epoch_manifest.validate()?;
+
+    let input = SpirePublishCoordinatorInput {
+        epoch_manifest: &epoch_manifest,
+        object_manifest: &object_manifest,
+        placement_directory: &placement_directory,
+        next_pid: pid_allocator.next_pid(),
+        next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
+    };
+    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let root_control = root_control_state_for_publish(input, locators)?;
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    Ok(())
 }

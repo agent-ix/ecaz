@@ -49,7 +49,8 @@ architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
 PostgreSQL relation-backed build, initial quantized scan with heap rerank, and
 active snapshot cardinality diagnostics now have a strict single-store path,
-while insert/delete, cleanup, PQ-FastScan scorer binding, and SQL/admin
+and post-build inserts can publish strict delta epochs, while delete, cleanup,
+empty-index insert bootstrap, PQ-FastScan scorer binding, and SQL/admin
 exposure remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
@@ -296,8 +297,9 @@ Decision record:
   loads active epoch/object/placement manifests, reads relation-backed routing
   and V2 leaf objects, exact-reranks the resolved candidate window from the
   heap indexed column for `ecvector`/`tqvector`, and fills the scan cursor.
-  Empty active epochs still return no rows. PQ-FastScan scorer binding remains
-  open.
+  Routed scans now also include row-encoded delta insert objects whose parent
+  PID is one of the probed leaves. Empty active epochs still return no rows.
+  PQ-FastScan scorer binding remains open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -326,8 +328,8 @@ Decision record:
   active-epoch ordered scan now have PG18 coverage; the populated-build test
   now exercises relation-backed active snapshot cardinality diagnostics and
   live `ecvector` heap rerank, and a separate populated `tqvector` test covers
-  the decoded heap-rerank branch. Insert-after-build and delete/vacuum cleanup
-  remain open.
+  the decoded heap-rerank branch. Insert-after-build delta publication now has
+  focused PG18 coverage. Delete/vacuum cleanup remains open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -337,6 +339,10 @@ Decision record:
   mechanics into SPIRE's Postgres storage model.
 - [ ] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
+  Populated strict local indexes now route post-build inserts to one leaf PID,
+  write a row-encoded `DELTA_INSERT` object, publish a new active epoch, and
+  include routed delta inserts in live scans. Empty-index insert bootstrap,
+  batching, and compaction remain open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that

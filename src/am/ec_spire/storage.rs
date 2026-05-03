@@ -2359,6 +2359,32 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
+    pub(super) unsafe fn insert_delta_object(
+        &self,
+        epoch: u64,
+        object: &SpireDeltaPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire relation object store epoch 0 is invalid".to_owned());
+        }
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = unsafe { page::append_object_tuple(self.index_relation, &encoded)? };
+        let placement = SpirePlacementEntry::local_single_store_available(
+            epoch,
+            durable_object.header.pid,
+            self.store_relid,
+            durable_object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) unsafe fn read_routing_object(
         &self,
         placement: &SpirePlacementEntry,
