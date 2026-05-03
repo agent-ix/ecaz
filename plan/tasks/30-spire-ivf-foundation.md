@@ -74,8 +74,9 @@ rerank; replacement-epoch publishes now write a retired manifest copy for the
 previous active epoch, and epoch diagnostics expose persisted epoch manifest
 rows and cleanup eligibility blockers; leaf diagnostics now expose per-leaf
 base/delta/effective assignment counts plus read-only split/merge threshold
-recommendations for follow-up scheduling, while measured recall/latency
-evidence remains open.
+recommendations for follow-up scheduling; insert-debt diagnostics now expose
+per-leaf delta fanout and batching recommendations while actual insert batching
+remains open. Measured recall/latency evidence remains open.
 PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
 object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
 remain open. Task 30 implements
@@ -390,7 +391,11 @@ Decision record:
   reports active per-leaf base assignment counts, delta object counts,
   delta insert/delete counts, effective assignment counts, split/merge
   assignment thresholds, read-only maintenance recommendation labels, and
-  object-byte totals. Measured recall/latency summary rows and deeper operator
+  object-byte totals. SQL function
+  `ec_spire_index_insert_debt_snapshot(index_oid)` now reports active leaf
+  count, leaf count with deltas, active delta object/insert assignment counts,
+  max delta objects per leaf, and whether insert batching is supported or
+  recommended. Measured recall/latency summary rows and deeper operator
   guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
@@ -422,8 +427,10 @@ Decision record:
   copies and superseded manifest labels. The SQL leaf snapshot surface has
   focused PG18 coverage for empty, populated, and post-insert delta states.
   It now also covers read-only merge recommendations for empty leaves and no
-  split recommendation for tiny populated leaves. Physical page reclamation,
-  old-epoch cleanup, and real SQL VACUUM end-to-end coverage remain open.
+  split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
+  now have focused PG18 coverage for repeated same-leaf post-build inserts.
+  Physical page reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end
+  coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -442,7 +449,9 @@ Decision record:
   inserts that publish multiple deltas on one base leaf. Vacuum cleanup can now
   compact active delta epochs into replacement V2 base leaves. Replacement
   epoch publication now writes a retired manifest copy for the previous active
-  epoch before advancing root/control; insert batching remains open.
+  epoch before advancing root/control. SQL insert-debt diagnostics now expose
+  repeated same-leaf delta fanout and mark batching recommended while
+  `insert_batching_supported = false`; insert batching remains open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,

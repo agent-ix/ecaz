@@ -1594,6 +1594,45 @@ fn ec_spire_index_leaf_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_insert_debt_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(active_leaf_count, i64),
+        name!(leaf_count_with_deltas, i64),
+        name!(delta_object_count, i64),
+        name!(delta_insert_assignment_count, i64),
+        name!(max_delta_objects_per_leaf, i64),
+        name!(insert_batching_supported, bool),
+        name!(batching_recommended, bool),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_insert_debt_snapshot") };
+    let snapshot = unsafe { am::spire_index_insert_debt_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.active_leaf_count).expect("active leaf count should fit in i64"),
+        i64::try_from(snapshot.leaf_count_with_deltas)
+            .expect("leaf count with deltas should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i64::try_from(snapshot.delta_insert_assignment_count)
+            .expect("delta insert assignment count should fit in i64"),
+        i64::try_from(snapshot.max_delta_objects_per_leaf)
+            .expect("max delta objects per leaf should fit in i64"),
+        snapshot.insert_batching_supported,
+        snapshot.batching_recommended,
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -4457,6 +4496,34 @@ mod tests {
         .expect("delta candidate aggregate should exist");
         assert_eq!(delta_pid_count, 3);
         assert_eq!(delta_candidate_row_count, 3);
+        let max_delta_objects_per_leaf = Spi::get_one::<i64>(
+            "SELECT max_delta_objects_per_leaf FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let leaf_count_with_deltas = Spi::get_one::<i64>(
+            "SELECT leaf_count_with_deltas FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let insert_batching_supported = Spi::get_one::<bool>(
+            "SELECT insert_batching_supported FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let batching_recommended = Spi::get_one::<bool>(
+            "SELECT batching_recommended FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        assert_eq!(max_delta_objects_per_leaf, 3);
+        assert_eq!(leaf_count_with_deltas, 1);
+        assert!(!insert_batching_supported);
+        assert!(batching_recommended);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
         let inserted_rows_returned = Spi::get_one::<i64>(

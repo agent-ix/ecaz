@@ -181,6 +181,19 @@ pub(crate) struct SpireIndexLeafSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexInsertDebtSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) active_leaf_count: u64,
+    pub(crate) leaf_count_with_deltas: u64,
+    pub(crate) delta_object_count: u64,
+    pub(crate) delta_insert_assignment_count: u64,
+    pub(crate) max_delta_objects_per_leaf: u64,
+    pub(crate) insert_batching_supported: bool,
+    pub(crate) batching_recommended: bool,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -1040,6 +1053,53 @@ pub(crate) unsafe fn index_leaf_snapshot(
         Ok(rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_insert_debt_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexInsertDebtSnapshot {
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let leaf_rows = unsafe { index_leaf_snapshot(index_relation) };
+    let active_leaf_count = u64::try_from(leaf_rows.len())
+        .unwrap_or_else(|_| pgrx::error!("ec_spire leaf row count exceeds u64"));
+    let leaf_count_with_deltas = leaf_rows
+        .iter()
+        .filter(|row| row.delta_object_count > 0)
+        .count()
+        .try_into()
+        .unwrap_or_else(|_| pgrx::error!("ec_spire leaf delta row count exceeds u64"));
+    let delta_object_count = leaf_rows
+        .iter()
+        .map(|row| row.delta_object_count)
+        .sum::<u64>();
+    let delta_insert_assignment_count = leaf_rows
+        .iter()
+        .map(|row| row.delta_insert_assignment_count)
+        .sum::<u64>();
+    let max_delta_objects_per_leaf = leaf_rows
+        .iter()
+        .map(|row| row.delta_object_count)
+        .max()
+        .unwrap_or(0);
+    let batching_recommended =
+        max_delta_objects_per_leaf > 1 || delta_object_count > active_leaf_count;
+    let recommendation = if batching_recommended {
+        "batch post-build inserts by routed base leaf before publishing replacement epochs"
+    } else {
+        "none"
+    };
+
+    SpireIndexInsertDebtSnapshot {
+        active_epoch: root_control.active_epoch,
+        active_leaf_count,
+        leaf_count_with_deltas,
+        delta_object_count,
+        delta_insert_assignment_count,
+        max_delta_objects_per_leaf,
+        insert_batching_supported: false,
+        batching_recommended,
+        recommendation,
+    }
 }
 
 pub(crate) unsafe fn index_scan_placement_snapshot(
