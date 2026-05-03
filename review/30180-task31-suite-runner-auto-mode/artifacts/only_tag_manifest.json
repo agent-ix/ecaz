@@ -1,0 +1,245 @@
+{
+  "suite": "task31-m5-ivf-100k",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task31-m5-ivf-100k.json",
+  "config_sha256": "358935263aaa261aa15aae75675095dc16b44b81915cd0889c4e240b44ea8261",
+  "dry_run": true,
+  "generated_at_unix_ms": 1777833163108,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-real100k-n128-w500",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "baseline",
+        "100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/load_real100k_pqg8_n128_w500.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall10-nprobe-sweep-w500",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task31_m5_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "40,48,56,64,80,96",
+        "--rerank-width",
+        "500",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k10.json",
+        "--log-output",
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall10_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "recall10",
+        "sweep",
+        "100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall10_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-nprobe-sweep-w500",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "sweep",
+        "100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall100-candidates-w500",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task31_m5_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "100",
+        "--sweep",
+        "80,96",
+        "--rerank-width",
+        "500",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
+        "--log-output",
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "recall100",
+        "candidate",
+        "100k",
+        "n128",
+        "w500"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall100-candidates-w1000",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task31_m5_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "100",
+        "--sweep",
+        "80,96",
+        "--rerank-width",
+        "1000",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "review/30178-task31-suite-runner-dry-run/artifacts/truth_real100k_n128_k100.json",
+        "--log-output",
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "recall100",
+        "candidate",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-candidates-w1000",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "candidate",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-real100k-n128",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "100k",
+        "n128"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/storage_real100k_pqg8_n128.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "explain-quality-candidate",
+      "kind": "explain",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "explain",
+        "candidate",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
+        "review/30178-task31-suite-runner-dry-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "suite": "task31-result-fixture",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task31-m5-ivf-100k.json",
+  "config_sha256": "fixture",
+  "dry_run": false,
+  "generated_at_unix_ms": 1777833000000,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-fixture",
+      "kind": "load",
+      "command": [],
+      "selected": true,
+      "tags": ["load"],
+      "expected_artifacts": [
+        "review/30173-task31-m5-pqg8-100k-n128-w500-baseline/artifacts/load_real100k_pqg8_n128_w500_allow_manifest_mismatch.log"
+      ],
+      "status": "succeeded",
+      "duration_ms": 45760,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-fixture",
+      "kind": "recall",
+      "command": [],
+      "selected": true,
+      "tags": ["recall"],
+      "expected_artifacts": [
+        "review/30176-task31-m5-100k-candidate-repeatability/artifacts/recall10_repeat_real100k_pqg8_n128_p96_w500.log"
+      ],
+      "status": "succeeded",
+      "duration_ms": 11000,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-fixture",
+      "kind": "latency",
+      "command": [],
+      "selected": true,
+      "tags": ["latency"],
+      "expected_artifacts": [
+        "review/30176-task31-m5-100k-candidate-repeatability/artifacts/latency_repeat_real100k_pqg8_n128_p96_w500.log"
+      ],
+      "status": "succeeded",
+      "duration_ms": 10800,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-fixture",
+      "kind": "storage",
+      "command": [],
+      "selected": true,
+      "tags": ["storage"],
+      "expected_artifacts": [
+        "review/30173-task31-m5-pqg8-100k-n128-w500-baseline/artifacts/storage_real100k_pqg8_n128.log"
+      ],
+      "status": "succeeded",
+      "duration_ms": 1000,
+      "exit_code": 0
+    }
+  ]
+}
