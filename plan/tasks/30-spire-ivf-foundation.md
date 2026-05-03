@@ -269,7 +269,7 @@ Decision record:
   row identity, heap locators, payload/scoring metadata, and role flags inside
   PID-addressed leaf objects; live AM callback wiring remains covered by the
   build and scan path tasks below.
-- [ ] **Single-store placement.** Persist a PID placement directory even if the
+- [x] **Single-store placement.** Persist a PID placement directory even if the
   first executable path maps every PID to one local store. Foundation metadata
   now includes placement-entry and placement-directory codecs, local
   single-store object placements, exact object-manifest/placement PID-set
@@ -286,7 +286,11 @@ Decision record:
   evidence, root/control initialization, root/control special-area bounds, and
   FSM reuse. Populated builds now persist one root routing object, one V2 leaf
   object per centroid, durable placement-entry tuples, manifest bundles, and an
-  active root/control state for the initial strict local epoch.
+  active root/control state for the initial strict local epoch. Insert,
+  delete-delta, and vacuum-compaction replacement epochs now carry forward or
+  rewrite relation-backed placement entries under the same strict local
+  single-store shape; physical cleanup of no-longer-active object tuples
+  remains tracked separately under validation/vacuum cleanup.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into
