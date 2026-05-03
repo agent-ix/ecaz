@@ -309,6 +309,10 @@ from the `PublishingActiveEpoch` state.
 - Add placement builders/constructors that make available/stale/unavailable
   state explicit at construction time.
 
+Implementation checkpoint: local single-store placement entries now expose
+explicit constructors for `Available`, `Stale`, `Unavailable`, and `Skipped`
+states. Existing single-store object writes use the available constructor.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.

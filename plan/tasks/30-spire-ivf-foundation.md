@@ -195,7 +195,9 @@ Decision record:
   visibility semantics. Core partition-object codecs now use explicit header
   and assignment wire-shape validation helpers instead of encode-as-validation;
   object validators check header identity directly, and encoders reuse the
-  post-validation encode path.
+  post-validation encode path. Placement entries now have explicit local
+  single-store constructors for available, stale, unavailable, and skipped
+  states.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

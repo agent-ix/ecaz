@@ -231,6 +231,101 @@ impl SpirePlacementEntry {
         object_tid: ItemPointer,
         object_bytes: u32,
     ) -> Self {
+        Self::local_single_store_available(
+            epoch,
+            pid,
+            store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+        )
+    }
+
+    pub(super) fn local_single_store_available(
+        epoch: u64,
+        pid: u64,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
+        Self::local_single_store_with_state(
+            epoch,
+            pid,
+            store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+            SpirePlacementState::Available,
+        )
+    }
+
+    pub(super) fn local_single_store_stale(
+        epoch: u64,
+        pid: u64,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
+        Self::local_single_store_with_state(
+            epoch,
+            pid,
+            store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+            SpirePlacementState::Stale,
+        )
+    }
+
+    pub(super) fn local_single_store_unavailable(
+        epoch: u64,
+        pid: u64,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
+        Self::local_single_store_with_state(
+            epoch,
+            pid,
+            store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+            SpirePlacementState::Unavailable,
+        )
+    }
+
+    pub(super) fn local_single_store_skipped(
+        epoch: u64,
+        pid: u64,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
+        Self::local_single_store_with_state(
+            epoch,
+            pid,
+            store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+            SpirePlacementState::Skipped,
+        )
+    }
+
+    pub(super) fn local_single_store_with_state(
+        epoch: u64,
+        pid: u64,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+        state: SpirePlacementState,
+    ) -> Self {
         Self {
             epoch,
             pid,
@@ -240,7 +335,7 @@ impl SpirePlacementEntry {
             object_version,
             object_tid,
             object_bytes,
-            state: SpirePlacementState::Available,
+            state,
         }
     }
 
@@ -1120,6 +1215,25 @@ mod tests {
         assert_eq!(entry.node_id, SPIRE_LOCAL_NODE_ID);
         assert_eq!(entry.local_store_id, SPIRE_SINGLE_LOCAL_STORE_ID);
         assert_eq!(entry.state, SpirePlacementState::Available);
+    }
+
+    #[test]
+    fn local_single_store_state_constructors_make_state_explicit() {
+        let available =
+            SpirePlacementEntry::local_single_store_available(7, 11, 12345, 3, tid(44, 2), 4096);
+        let stale =
+            SpirePlacementEntry::local_single_store_stale(7, 11, 12345, 3, tid(44, 2), 4096);
+        let unavailable =
+            SpirePlacementEntry::local_single_store_unavailable(7, 11, 12345, 3, tid(44, 2), 4096);
+        let skipped =
+            SpirePlacementEntry::local_single_store_skipped(7, 11, 12345, 3, tid(44, 2), 4096);
+
+        assert_eq!(available.state, SpirePlacementState::Available);
+        assert_eq!(stale.state, SpirePlacementState::Stale);
+        assert_eq!(unavailable.state, SpirePlacementState::Unavailable);
+        assert_eq!(skipped.state, SpirePlacementState::Skipped);
+        assert_eq!(stale.node_id, SPIRE_LOCAL_NODE_ID);
+        assert_eq!(stale.local_store_id, SPIRE_SINGLE_LOCAL_STORE_ID);
     }
 
     #[test]

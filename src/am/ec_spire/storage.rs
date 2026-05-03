@@ -1649,7 +1649,7 @@ impl SpireLocalObjectStore {
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
-        let placement = SpirePlacementEntry::local_single_store(
+        let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
             object.header.pid,
             self.store_relid,
@@ -1772,7 +1772,7 @@ impl SpireLocalObjectStore {
         )?;
         let encoded_meta = meta.encode()?;
         let meta_tid = self.pages.insert_raw_tuple(encoded_meta)?;
-        let placement = SpirePlacementEntry::local_single_store(
+        let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
             pid,
             self.store_relid,
@@ -1796,7 +1796,7 @@ impl SpireLocalObjectStore {
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
-        let placement = SpirePlacementEntry::local_single_store(
+        let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
             object.header.pid,
             self.store_relid,
@@ -1820,7 +1820,7 @@ impl SpireLocalObjectStore {
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
         let object_tid = self.pages.insert_raw_tuple(encoded)?;
-        let placement = SpirePlacementEntry::local_single_store(
+        let placement = SpirePlacementEntry::local_single_store_available(
             epoch,
             object.header.pid,
             self.store_relid,
