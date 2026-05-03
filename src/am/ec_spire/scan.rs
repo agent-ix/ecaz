@@ -286,8 +286,8 @@ struct SpireScanOpaque {
     query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
     cursor: SpireScanCandidateCursor,
-    // Cached for the scan descriptor lifetime. Future snapshot loading can
-    // invalidate this if it observes a newer active_epoch during a rescan.
+    // Cached across rescans, but refreshed when the root/control page reports
+    // a different active epoch.
     root_control: Option<SpireRootControlState>,
 }
 
@@ -327,12 +327,21 @@ impl SpireScanOpaque {
         &mut self,
         index_relation: pg_sys::Relation,
     ) -> SpireRootControlState {
-        if let Some(root_control) = self.root_control {
-            return root_control;
+        let observed = unsafe { page::read_root_control_page(index_relation) };
+        self.observe_root_control_for_rescan(observed)
+    }
+
+    fn observe_root_control_for_rescan(
+        &mut self,
+        observed: SpireRootControlState,
+    ) -> SpireRootControlState {
+        if let Some(cached) = self.root_control {
+            if cached.active_epoch == observed.active_epoch {
+                return cached;
+            }
         }
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        self.root_control = Some(root_control);
-        root_control
+        self.root_control = Some(observed);
+        observed
     }
 
     fn next_output(&mut self) -> Option<SpireScanOutput> {
@@ -3546,6 +3555,27 @@ mod tests {
         assert_eq!(opaque.scan_plan, None);
         assert_eq!(opaque.root_control, Some(SpireRootControlState::empty()));
         assert!(opaque.next_output().is_none());
+    }
+
+    #[test]
+    fn scan_opaque_refreshes_root_control_when_active_epoch_changes() {
+        let mut opaque = SpireScanOpaque::default();
+        let epoch_one =
+            SpireRootControlState::published(1, 4, 3, tid(10, 1), tid(10, 2), tid(10, 3)).unwrap();
+        let same_epoch_newer_cursors =
+            SpireRootControlState::published(1, 5, 4, tid(20, 1), tid(20, 2), tid(20, 3)).unwrap();
+        let epoch_two =
+            SpireRootControlState::published(2, 5, 4, tid(20, 1), tid(20, 2), tid(20, 3)).unwrap();
+
+        assert_eq!(opaque.observe_root_control_for_rescan(epoch_one), epoch_one);
+        assert_eq!(opaque.root_control, Some(epoch_one));
+        assert_eq!(
+            opaque.observe_root_control_for_rescan(same_epoch_newer_cursors),
+            epoch_one
+        );
+        assert_eq!(opaque.root_control, Some(epoch_one));
+        assert_eq!(opaque.observe_root_control_for_rescan(epoch_two), epoch_two);
+        assert_eq!(opaque.root_control, Some(epoch_two));
     }
 
     #[test]
