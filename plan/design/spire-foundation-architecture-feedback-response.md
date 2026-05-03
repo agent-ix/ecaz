@@ -317,6 +317,11 @@ Implementation checkpoint: PID and local vec_id allocators now expose
 non-mutating near-exhaustion diagnostics. The diagnostics module can derive both
 allocator statuses from root/control cursors without advancing either sequence.
 
+Implementation checkpoint: snapshot diagnostics now keep the aggregate
+available-object byte count and also split those bytes into routing, leaf, and
+delta buckets. Future graph/object kinds should add their own buckets instead
+of overloading the aggregate.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.

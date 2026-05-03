@@ -199,7 +199,8 @@ Decision record:
   single-store constructors for available, stale, unavailable, and skipped
   states. PID and local vec_id allocators now expose non-mutating
   near-exhaustion diagnostics, with a root/control helper that reports both
-  cursors from persisted allocator state.
+  cursors from persisted allocator state. Snapshot diagnostics now split
+  available object bytes into routing, leaf, and delta buckets.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

@@ -28,6 +28,9 @@ pub(super) struct SpireSnapshotDiagnostics {
     pub(super) leaf_assignment_count: usize,
     pub(super) delta_assignment_count: usize,
     pub(super) available_object_bytes: u64,
+    pub(super) routing_object_bytes: u64,
+    pub(super) leaf_object_bytes: u64,
+    pub(super) delta_object_bytes: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +75,9 @@ pub(super) fn collect_snapshot_diagnostics(
         leaf_assignment_count: 0,
         delta_assignment_count: 0,
         available_object_bytes: 0,
+        routing_object_bytes: 0,
+        leaf_object_bytes: 0,
+        delta_object_bytes: 0,
     };
     let mut local_stores = HashSet::new();
 
@@ -95,28 +101,45 @@ pub(super) fn collect_snapshot_diagnostics(
             }
         }
 
+        let object_bytes = u64::from(placement.object_bytes);
         diagnostics.available_object_bytes = diagnostics
             .available_object_bytes
-            .checked_add(u64::from(placement.object_bytes))
+            .checked_add(object_bytes)
             .ok_or_else(|| "ec_spire diagnostics object byte count overflow".to_owned())?;
         match object_store.read_object_header(placement)?.kind {
             SpirePartitionObjectKind::Root => {
                 diagnostics.root_object_count += 1;
+                diagnostics.routing_object_bytes = diagnostics
+                    .routing_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| "ec_spire diagnostics routing byte count overflow".to_owned())?;
                 let object = object_store.read_routing_object(placement)?;
                 diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Internal => {
                 diagnostics.internal_object_count += 1;
+                diagnostics.routing_object_bytes = diagnostics
+                    .routing_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| "ec_spire diagnostics routing byte count overflow".to_owned())?;
                 let object = object_store.read_routing_object(placement)?;
                 diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Leaf => {
                 diagnostics.leaf_object_count += 1;
+                diagnostics.leaf_object_bytes = diagnostics
+                    .leaf_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| "ec_spire diagnostics leaf byte count overflow".to_owned())?;
                 let object = object_store.read_leaf_object(placement)?;
                 diagnostics.leaf_assignment_count += object.assignments.len();
             }
             SpirePartitionObjectKind::Delta => {
                 diagnostics.delta_object_count += 1;
+                diagnostics.delta_object_bytes = diagnostics
+                    .delta_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| "ec_spire diagnostics delta byte count overflow".to_owned())?;
                 let object = object_store.read_delta_object(placement)?;
                 diagnostics.delta_assignment_count += object.assignments.len();
             }
@@ -235,6 +258,15 @@ mod tests {
         assert_eq!(diagnostics.leaf_assignment_count, 2);
         assert_eq!(diagnostics.delta_assignment_count, 0);
         assert!(diagnostics.available_object_bytes > 0);
+        assert!(diagnostics.routing_object_bytes > 0);
+        assert!(diagnostics.leaf_object_bytes > 0);
+        assert_eq!(diagnostics.delta_object_bytes, 0);
+        assert_eq!(
+            diagnostics.available_object_bytes,
+            diagnostics.routing_object_bytes
+                + diagnostics.leaf_object_bytes
+                + diagnostics.delta_object_bytes
+        );
     }
 
     #[test]
@@ -282,5 +314,10 @@ mod tests {
         assert_eq!(diagnostics.leaf_object_count, 1);
         assert_eq!(diagnostics.leaf_assignment_count, 1);
         assert_eq!(diagnostics.routing_child_count, 2);
+        assert_eq!(
+            diagnostics.available_object_bytes,
+            diagnostics.routing_object_bytes + diagnostics.leaf_object_bytes
+        );
+        assert_eq!(diagnostics.delta_object_bytes, 0);
     }
 }
