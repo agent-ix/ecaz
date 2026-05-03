@@ -602,9 +602,11 @@ Decision record:
 - [ ] **Merge semantics.** Merge remote candidates by stable `vec_id`, dedupe
   boundary replicas, and define how local heap row resolution works after
   remote candidate selection.
-- [ ] **Replica deferral.** Record replicated partition objects as future work
+- [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
-  PID.
+  PID. Recorded in the Phase 0 storage note as a future
+  boundary-replica/remote availability phase; Phase 1 keeps one primary
+  placement per PID.
 
 ## Phase 8 — Product-Scale Measurement Gate
 

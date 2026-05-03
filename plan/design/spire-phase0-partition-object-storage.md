@@ -19,7 +19,9 @@ Phase 0 checklist.
    directly from heap TIDs.
 5. Expose Phase 1 as an opt-in `ec_spire` access method with explicit SPIRE
    opclasses: `ecvector_spire_ip_ops` and `tqvector_spire_ip_ops`.
-6. Before relation-backed persistence, replace the current in-memory
+6. Defer replicated partition objects to a future boundary-replica/remote
+   availability phase; Phase 1 publishes one primary placement per PID.
+7. Before relation-backed persistence, replace the current in-memory
    row-contiguous leaf object with the segmented, column-major V2 shape in
    `plan/design/spire-foundation-architecture-feedback-response.md`.
 
