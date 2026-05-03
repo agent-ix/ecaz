@@ -29,6 +29,7 @@ pub(crate) use self::ec_spire::{
     index_hierarchy_snapshot as spire_index_hierarchy_snapshot,
     index_insert_debt_snapshot as spire_index_insert_debt_snapshot,
     index_leaf_snapshot as spire_index_leaf_snapshot,
+    index_object_snapshot as spire_index_object_snapshot,
     index_options_snapshot as spire_index_options_snapshot,
     index_placement_snapshot as spire_index_placement_snapshot,
     index_relation_storage_snapshot as spire_index_relation_storage_snapshot,

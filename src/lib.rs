@@ -1350,6 +1350,57 @@ fn ec_spire_index_hierarchy_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_object_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(pid, i64),
+        name!(object_kind, String),
+        name!(object_version, i64),
+        name!(published_epoch_backref, i64),
+        name!(level, i32),
+        name!(parent_pid, i64),
+        name!(child_count, i64),
+        name!(assignment_count, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, i64),
+        name!(placement_state, String),
+        name!(object_bytes, i64),
+        name!(object_readable, bool),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_object_snapshot") };
+    let rows = unsafe { am::spire_index_object_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            row.object_kind.to_owned(),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.published_epoch_backref)
+                .expect("published epoch backref should fit in i64"),
+            i32::from(row.level),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            i64::try_from(row.child_count).expect("child count should fit in i64"),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::from(row.store_relid),
+            row.placement_state.to_owned(),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+            row.object_readable,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_options_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3814,6 +3865,99 @@ mod tests {
         assert_eq!(leaf_parent_count, 1);
         assert!(!recursive_supported);
         assert!(!per_level_nprobe_supported);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_object_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_object_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_empty_idx ON ec_spire_object_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_empty_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_object_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_object_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_sql_idx ON ec_spire_object_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let object_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let root_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'root' AND level = 1 AND parent_pid = 0 AND child_count = 2",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'leaf' AND level = 0 AND assignment_count = 1",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let all_available = Spi::get_one::<bool>(
+            "SELECT bool_and(placement_state = 'available' AND object_readable) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("bool aggregate should exist");
+        let published_backrefs = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE published_epoch_backref = active_epoch",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(object_count, 3);
+        assert_eq!(root_count, 1);
+        assert_eq!(leaf_count, 2);
+        assert!(all_available);
+        assert_eq!(published_backrefs, 3);
+
+        Spi::run(
+            "INSERT INTO ec_spire_object_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+        let delta_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'delta' AND assignment_count = 1",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_count, 1);
+        assert_eq!(active_epoch, 2);
     }
 
     #[pg_test]

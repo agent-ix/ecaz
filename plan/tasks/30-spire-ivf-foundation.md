@@ -401,8 +401,11 @@ Decision record:
   centroid dimensions, root child count, distinct leaf parent count, and
   explicit `recursive_routing_supported = false` /
   `per_level_nprobe_supported = false` flags for the current single-level
-  foundation. Measured recall/latency summary rows and deeper operator guidance
-  remain open.
+  foundation. SQL function `ec_spire_index_object_snapshot(index_oid)` now
+  reports one row per active manifest PID with object kind, object version,
+  published-epoch back-reference, level, parent PID, child/assignment counts,
+  placement state, store identity, object bytes, and a readable flag. Measured
+  recall/latency summary rows and deeper operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -436,8 +439,10 @@ Decision record:
   split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
   now have focused PG18 coverage for repeated same-leaf post-build inserts.
   Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
-  populated local single-store indexes. Physical page reclamation, old-epoch
-  cleanup, and real SQL VACUUM end-to-end coverage remain open.
+  populated local single-store indexes. Object SQL diagnostics now have
+  focused PG18 coverage for empty, populated, and post-insert delta active
+  epochs. Physical page reclamation, old-epoch cleanup, and real SQL VACUUM
+  end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

@@ -215,6 +215,25 @@ pub(crate) struct SpireIndexHierarchySnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexObjectSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) pid: u64,
+    pub(crate) object_kind: &'static str,
+    pub(crate) object_version: u64,
+    pub(crate) published_epoch_backref: u64,
+    pub(crate) level: u16,
+    pub(crate) parent_pid: u64,
+    pub(crate) child_count: u64,
+    pub(crate) assignment_count: u64,
+    pub(crate) node_id: u32,
+    pub(crate) local_store_id: u32,
+    pub(crate) store_relid: u32,
+    pub(crate) placement_state: &'static str,
+    pub(crate) object_bytes: u64,
+    pub(crate) object_readable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -1289,6 +1308,66 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             status,
             recommendation,
         })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_object_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexObjectSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexObjectSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let mut rows = Vec::with_capacity(snapshot.object_manifest().entries.len());
+
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "object snapshot")?;
+            let placement = lookup.placement;
+            let mut row = SpireIndexObjectSnapshotRow {
+                active_epoch: root_control.active_epoch,
+                pid: manifest_entry.pid,
+                object_kind: "unreadable",
+                object_version: manifest_entry.object_version,
+                published_epoch_backref: 0,
+                level: 0,
+                parent_pid: 0,
+                child_count: 0,
+                assignment_count: 0,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                store_relid: placement.store_relid,
+                placement_state: placement_state_name(placement.state),
+                object_bytes: u64::from(placement.object_bytes),
+                object_readable: false,
+            };
+            if placement.state == meta::SpirePlacementState::Available {
+                let header = unsafe { object_store.read_object_header(placement)? };
+                row.object_kind = partition_object_kind_name(header.kind);
+                row.object_version = header.object_version;
+                row.published_epoch_backref = header.published_epoch_backref;
+                row.level = header.level;
+                row.parent_pid = header.parent_pid;
+                row.child_count = u64::from(header.child_count);
+                row.assignment_count = u64::from(header.assignment_count);
+                row.object_readable = true;
+            }
+            rows.push(row);
+        }
+
+        rows.sort_by_key(|row| row.pid);
+        Ok(rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
