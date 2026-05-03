@@ -201,6 +201,12 @@ fn ec_ivf_access_method_oid() -> pg_sys::Oid {
         .expect("ec_ivf access method should exist")
 }
 
+fn ec_spire_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_spire'")
+        .expect("SPI query should succeed")
+        .expect("ec_spire access method should exist")
+}
+
 fn ec_diskann_access_method_oid() -> pg_sys::Oid {
     Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_diskann'")
         .expect("SPI query should succeed")
@@ -247,6 +253,28 @@ unsafe fn open_valid_ec_ivf_index(
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("{caller_name} requires a ec_ivf index, got relation \"{relation_name}\"");
+    }
+    index_relation
+}
+
+unsafe fn open_valid_ec_spire_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != ec_spire_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires a ec_spire index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -1006,6 +1034,82 @@ fn ec_ivf_index_admin_snapshot(
         i64::from(snapshot.empty_lists),
         snapshot.reindex_recommended,
         snapshot.reindex_reason.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_active_snapshot_diagnostics(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(consistency_mode, String),
+        name!(object_count, i64),
+        name!(placement_count, i64),
+        name!(local_store_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(root_object_count, i64),
+        name!(internal_object_count, i64),
+        name!(leaf_object_count, i64),
+        name!(delta_object_count, i64),
+        name!(routing_child_count, i64),
+        name!(leaf_assignment_count, i64),
+        name!(delta_assignment_count, i64),
+        name!(available_object_bytes, i64),
+        name!(routing_object_bytes, i64),
+        name!(leaf_object_bytes, i64),
+        name!(delta_object_bytes, i64),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_active_snapshot_diagnostics")
+    };
+    let diagnostics = unsafe { am::spire_active_snapshot_diagnostics(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(diagnostics.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(diagnostics.next_local_vec_seq)
+            .expect("next local vec sequence should fit in i64"),
+        diagnostics.consistency_mode.to_owned(),
+        i64::try_from(diagnostics.object_count).expect("object count should fit in i64"),
+        i64::try_from(diagnostics.placement_count).expect("placement count should fit in i64"),
+        i64::try_from(diagnostics.local_store_count).expect("local store count should fit in i64"),
+        i64::try_from(diagnostics.available_placement_count)
+            .expect("available placement count should fit in i64"),
+        i64::try_from(diagnostics.stale_placement_count)
+            .expect("stale placement count should fit in i64"),
+        i64::try_from(diagnostics.unavailable_placement_count)
+            .expect("unavailable placement count should fit in i64"),
+        i64::try_from(diagnostics.skipped_placement_count)
+            .expect("skipped placement count should fit in i64"),
+        i64::try_from(diagnostics.root_object_count).expect("root object count should fit in i64"),
+        i64::try_from(diagnostics.internal_object_count)
+            .expect("internal object count should fit in i64"),
+        i64::try_from(diagnostics.leaf_object_count).expect("leaf object count should fit in i64"),
+        i64::try_from(diagnostics.delta_object_count)
+            .expect("delta object count should fit in i64"),
+        i64::try_from(diagnostics.routing_child_count)
+            .expect("routing child count should fit in i64"),
+        i64::try_from(diagnostics.leaf_assignment_count)
+            .expect("leaf assignment count should fit in i64"),
+        i64::try_from(diagnostics.delta_assignment_count)
+            .expect("delta assignment count should fit in i64"),
+        i64::try_from(diagnostics.available_object_bytes)
+            .expect("available object bytes should fit in i64"),
+        i64::try_from(diagnostics.routing_object_bytes)
+            .expect("routing object bytes should fit in i64"),
+        i64::try_from(diagnostics.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
+        i64::try_from(diagnostics.delta_object_bytes)
+            .expect("delta object bytes should fit in i64"),
     ))
 }
 
@@ -2669,6 +2773,70 @@ mod tests {
         .expect("count should not be NULL");
 
         assert_eq!(rows, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_active_snapshot_diagnostics_sql() {
+        Spi::run("CREATE TABLE ec_spire_diag_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_diag_sql_idx ON ec_spire_diag_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let consistency_mode = Spi::get_one::<String>(
+            "SELECT consistency_mode FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let object_count = Spi::get_one::<i64>(
+            "SELECT object_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+
+        assert_eq!(active_epoch, 0);
+        assert_eq!(consistency_mode, "none");
+        assert_eq!(object_count, 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_diag_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let leaf_assignment_count = Spi::get_one::<i64>(
+            "SELECT leaf_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let delta_assignment_count = Spi::get_one::<i64>(
+            "SELECT delta_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+
+        assert_eq!(leaf_assignment_count, 1);
+        assert_eq!(delta_assignment_count, 1);
+        assert_eq!(routing_child_count, 1);
     }
 
     #[pg_test]

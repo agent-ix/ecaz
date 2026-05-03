@@ -15,7 +15,6 @@ mod storage;
 mod update;
 mod vacuum;
 
-#[cfg(any(test, feature = "pg_test"))]
 use pgrx::pg_sys;
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -42,6 +41,116 @@ pub(super) const EC_SPIRE_MAX_PQ_GROUP_SIZE: i32 = 32;
 
 pub(crate) fn register_gucs() {
     options::register_gucs();
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireActiveSnapshotDiagnostics {
+    pub(crate) active_epoch: u64,
+    pub(crate) next_pid: u64,
+    pub(crate) next_local_vec_seq: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) object_count: u64,
+    pub(crate) placement_count: u64,
+    pub(crate) local_store_count: u64,
+    pub(crate) available_placement_count: u64,
+    pub(crate) stale_placement_count: u64,
+    pub(crate) unavailable_placement_count: u64,
+    pub(crate) skipped_placement_count: u64,
+    pub(crate) root_object_count: u64,
+    pub(crate) internal_object_count: u64,
+    pub(crate) leaf_object_count: u64,
+    pub(crate) delta_object_count: u64,
+    pub(crate) routing_child_count: u64,
+    pub(crate) leaf_assignment_count: u64,
+    pub(crate) delta_assignment_count: u64,
+    pub(crate) available_object_bytes: u64,
+    pub(crate) routing_object_bytes: u64,
+    pub(crate) leaf_object_bytes: u64,
+    pub(crate) delta_object_bytes: u64,
+}
+
+impl SpireActiveSnapshotDiagnostics {
+    fn empty(root_control: meta::SpireRootControlState) -> Self {
+        Self {
+            active_epoch: root_control.active_epoch,
+            next_pid: root_control.next_pid,
+            next_local_vec_seq: root_control.next_local_vec_seq,
+            consistency_mode: "none",
+            object_count: 0,
+            placement_count: 0,
+            local_store_count: 0,
+            available_placement_count: 0,
+            stale_placement_count: 0,
+            unavailable_placement_count: 0,
+            skipped_placement_count: 0,
+            root_object_count: 0,
+            internal_object_count: 0,
+            leaf_object_count: 0,
+            delta_object_count: 0,
+            routing_child_count: 0,
+            leaf_assignment_count: 0,
+            delta_assignment_count: 0,
+            available_object_bytes: 0,
+            routing_object_bytes: 0,
+            leaf_object_bytes: 0,
+            delta_object_bytes: 0,
+        }
+    }
+}
+
+fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
+    match mode {
+        meta::SpireConsistencyMode::Strict => "strict",
+        meta::SpireConsistencyMode::Degraded => "degraded",
+    }
+}
+
+pub(crate) unsafe fn active_snapshot_diagnostics(
+    index_relation: pg_sys::Relation,
+) -> SpireActiveSnapshotDiagnostics {
+    let result = (|| -> Result<SpireActiveSnapshotDiagnostics, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
+
+        Ok(SpireActiveSnapshotDiagnostics {
+            active_epoch: root_control.active_epoch,
+            next_pid: root_control.next_pid,
+            next_local_vec_seq: root_control.next_local_vec_seq,
+            consistency_mode: consistency_mode_name(diagnostics.consistency_mode),
+            object_count: diagnostics.object_count as u64,
+            placement_count: diagnostics.placement_count as u64,
+            local_store_count: diagnostics.local_store_count as u64,
+            available_placement_count: diagnostics.available_placement_count as u64,
+            stale_placement_count: diagnostics.stale_placement_count as u64,
+            unavailable_placement_count: diagnostics.unavailable_placement_count as u64,
+            skipped_placement_count: diagnostics.skipped_placement_count as u64,
+            root_object_count: diagnostics.root_object_count as u64,
+            internal_object_count: diagnostics.internal_object_count as u64,
+            leaf_object_count: diagnostics.leaf_object_count as u64,
+            delta_object_count: diagnostics.delta_object_count as u64,
+            routing_child_count: diagnostics.routing_child_count as u64,
+            leaf_assignment_count: diagnostics.leaf_assignment_count as u64,
+            delta_assignment_count: diagnostics.delta_assignment_count as u64,
+            available_object_bytes: diagnostics.available_object_bytes,
+            routing_object_bytes: diagnostics.routing_object_bytes,
+            leaf_object_bytes: diagnostics.leaf_object_bytes,
+            delta_object_bytes: diagnostics.delta_object_bytes,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 fn not_implemented(callback: &str) -> ! {
