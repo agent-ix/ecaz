@@ -510,7 +510,7 @@ Decision record:
   active delta objects, parent leaf PIDs, and insert/delete assignment counts;
   insert batching remains open as a performance/scalability follow-up rather
   than a Phase 1 correctness blocker.
-- [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
+- [x] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
   groups callback-dead heap locators by base leaf PID, writes row-encoded
@@ -521,7 +521,8 @@ Decision record:
   insert-only deltas, and mixed insert/delete deltas on one leaf. Replacement
   vacuum publishes now write a retired manifest copy for the previous active
   epoch before advancing root/control; physical page reclamation/old-epoch
-  cleanup and full SQL VACUUM end-to-end coverage remain open.
+  cleanup and full SQL VACUUM end-to-end coverage remain open as separate
+  validation/reclamation follow-ups.
 - [x] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split. SQL leaf diagnostics now expose per-leaf base, delta, and
   effective assignment counts. The first read-only trigger marks a leaf as a
