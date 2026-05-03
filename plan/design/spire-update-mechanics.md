@@ -34,7 +34,10 @@ The first local rules are:
 - merge candidate: effective assignments are at or below
   `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`
 
-The scheduler should treat those rows as advisory. Before publishing it must
+The scheduler should treat those rows as advisory. The concrete scheduler is
+not decided yet; viable first implementations are a manual
+`ec_spire_maintain(index_oid)` SQL entrypoint, a VACUUM-time cleanup hook, or a
+later background worker. Before publishing, whichever scheduler wins must
 reload the active epoch under the update/vacuum publish lock and re-check that
 the selected leaf PIDs still satisfy the expected state.
 
@@ -57,6 +60,12 @@ than reusing the old PID with a different semantic meaning.
 The old split leaf PID is not reused for a new coverage region. It remains
 referenced only by retained prior epochs.
 
+In the single-level foundation the parent routing object is the root, so the
+routing rewrite cost scales with `nlists`, not with only the affected leaf. The
+flat root object is still expected to be small enough for Phase 1, but split
+rate decisions should treat this as a whole-root rewrite until recursive
+hierarchy lands.
+
 ## Merge
 
 A merge also changes coverage, so it allocates a replacement leaf PID for the
@@ -71,17 +80,20 @@ merged region rather than silently broadening one survivor PID.
 5. Publish the replacement epoch and retire the previous active manifest.
 
 If future recursion introduces internal routing levels, merge is applied within
-one parent first. Cross-parent merge requires a higher-level routing rewrite and
-must be treated as a rebalance, not a leaf-local merge.
+one parent first. Cross-parent merge is not a leaf-local merge: it is a
+multi-parent coverage rewrite that allocates replacement PIDs and rewrites every
+affected parent routing object plus the required higher-level routing objects.
 
 ## Rebalance
 
-Rebalance keeps the logical partition identity when coverage does not change.
-For example, moving a leaf object to another local store or compacting its row
-segments may reuse the PID and increment `object_version`.
+Rebalance keeps the logical partition identity only when coverage does not
+change. For example, moving a leaf object to another local store or compacting
+its row segments may reuse the PID and increment `object_version`.
 
-Rebalance must not change the centroid boundary represented by that PID. If it
-does, it is a split or merge and must allocate replacement PIDs.
+For Phase 1, "coverage does not change" means the centroid stored in the parent
+routing object remains byte-equal. A maintenance step that recomputes or drifts
+that centroid changes routing semantics and is therefore a coverage rewrite:
+split, merge, or split-of-one/merge-of-one style replacement with new PIDs.
 
 ## Deltas and Visibility
 
@@ -100,11 +112,22 @@ Unchanged leaves and routing objects may be carried forward by reference with
 their placement epoch restamped, matching current insert/vacuum replacement
 epochs.
 
+Retained prior epochs remain queryable through their own placement directories.
+After split or merge, old PIDs that disappeared from the new active routing
+object must still be readable for scans pinned to the retired epoch until the
+retention window and active-query rules make those old object tuples cleanup
+candidates.
+
 ## Concurrency
 
 The first implementation should use the same publish lock as insert and vacuum
 cleanup. Concurrent scans keep using the previously active epoch until
 root/control advances. Concurrent writers serialize at the publish boundary.
+
+Replacement PIDs must come from the same root/control PID allocator cursor used
+by insert. This allocator-cursor dependency is the main reason split, merge,
+rebalance, insert, and vacuum cleanup share one publish lock in the first
+implementation: the lock serializes both epoch publication and PID allocation.
 
 Later batching or optimistic publish can relax this, but must preserve the same
 epoch validation contract and deterministic `vec_id` dedupe semantics.

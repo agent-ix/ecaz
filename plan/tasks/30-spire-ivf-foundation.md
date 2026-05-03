@@ -501,9 +501,12 @@ Decision record:
   mechanics into SPIRE's Postgres storage model. Recorded in
   `plan/design/spire-update-mechanics.md`: split/merge allocate replacement
   PIDs when partition coverage changes, rebalance may reuse PID with a new
-  object version only when coverage is unchanged, active deltas are folded into
-  replacement V2 leaves before publication, and root/control advances through
-  the existing epoch publish contract.
+  object version only when the parent-routing centroid remains byte-equal,
+  active deltas are folded into replacement V2 leaves before publication, and
+  root/control advances through the existing epoch publish contract. Review
+  follow-up now also records whole-root rewrite cost for the single-level
+  foundation, old-PID queryability during retention, scheduler choices, and
+  PID allocator cursor serialization under the publish lock.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
