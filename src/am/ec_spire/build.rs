@@ -551,10 +551,9 @@ pub(super) unsafe fn write_manifest_bundle_to_relation(
     })
 }
 
-pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
-    index_relation: pg_sys::Relation,
+fn retired_epoch_manifest_from(
     previous_epoch_manifest: SpireEpochManifest,
-) -> Result<ItemPointer, String> {
+) -> Result<SpireEpochManifest, String> {
     if previous_epoch_manifest.state != SpireEpochState::Published {
         return Err("ec_spire can only retire a previously published epoch manifest".to_owned());
     }
@@ -564,6 +563,14 @@ pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
         ..previous_epoch_manifest
     };
     retired_epoch_manifest.validate()?;
+    Ok(retired_epoch_manifest)
+}
+
+pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
+    index_relation: pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+) -> Result<ItemPointer, String> {
+    let retired_epoch_manifest = retired_epoch_manifest_from(previous_epoch_manifest)?;
     let encoded = retired_epoch_manifest.encode()?;
     // Replacement publishes append this retired copy before the new manifest
     // bundle while holding the publish/extension lock, so its TID orders after
@@ -1539,6 +1546,7 @@ unsafe extern "C-unwind" fn ec_spire_build_callback(
 
 #[cfg(test)]
 mod tests {
+    use super::retired_epoch_manifest_from;
     use super::{
         build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
         object_manifest_from_placement_writes, object_write_evidence_from_placement_directory,
@@ -1553,7 +1561,9 @@ mod tests {
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
         SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
-    use crate::am::ec_spire::meta::{SpireConsistencyMode, SpirePublishedEpochSnapshot};
+    use crate::am::ec_spire::meta::{
+        SpireConsistencyMode, SpireEpochState, SpirePublishedEpochSnapshot,
+    };
     use crate::am::ec_spire::meta::{
         SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
     };
@@ -1989,6 +1999,26 @@ mod tests {
         assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
         assert_eq!(root_control.object_manifest_tid, tid(70, 2));
         assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+    }
+
+    #[test]
+    fn retired_epoch_manifest_requires_published_input() {
+        let retired_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Retired,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+
+        let error = retired_epoch_manifest_from(retired_manifest)
+            .expect_err("retiring an already-retired manifest should fail");
+
+        assert_eq!(
+            error,
+            "ec_spire can only retire a previously published epoch manifest"
+        );
     }
 
     #[test]

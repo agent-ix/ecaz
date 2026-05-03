@@ -546,7 +546,9 @@ Decision record:
   active placement directory, with focused coverage for no-delta cleanup,
   insert-only deltas, and mixed insert/delete deltas on one leaf. Replacement
   vacuum publishes now write a retired manifest copy for the previous active
-  epoch before advancing root/control; real SQL VACUUM end-to-end coverage now
+  epoch before advancing root/control, and the retired manifest helper now has
+  focused unit coverage proving callers cannot retire an already-retired
+  manifest before relation I/O. Real SQL VACUUM end-to-end coverage now
   exercises insert-delta compaction and deleted-row routed scan suppression
   through PostgreSQL's normal callback path. Physical page reclamation and
   old-epoch cleanup remain open as separate reclamation follow-ups.
