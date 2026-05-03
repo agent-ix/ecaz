@@ -437,6 +437,9 @@ fn assignment_payload_format_name(format: quantizer::SpireAssignmentPayloadForma
     }
 }
 
+const SPIRE_ASSIGNMENT_PAYLOAD_STATUS_SUPPORTED: &str = "supported";
+const SPIRE_ASSIGNMENT_PAYLOAD_STATUS_DEFERRED_MODEL_METADATA: &str = "deferred_model_metadata";
+
 fn assignment_payload_scannability(
     format: quantizer::SpireAssignmentPayloadFormat,
 ) -> (bool, &'static str, &'static str) {
@@ -444,12 +447,12 @@ fn assignment_payload_scannability(
         quantizer::SpireAssignmentPayloadFormat::TurboQuant
         | quantizer::SpireAssignmentPayloadFormat::RaBitQ => (
             true,
-            "supported",
+            SPIRE_ASSIGNMENT_PAYLOAD_STATUS_SUPPORTED,
             "format can be used for current SPIRE scans",
         ),
         quantizer::SpireAssignmentPayloadFormat::PqFastScan => (
             false,
-            "deferred_model_metadata",
+            SPIRE_ASSIGNMENT_PAYLOAD_STATUS_DEFERRED_MODEL_METADATA,
             "persist grouped-PQ model metadata before using pq_fastscan with SPIRE",
         ),
     }
