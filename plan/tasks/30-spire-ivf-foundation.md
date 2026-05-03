@@ -31,7 +31,10 @@ populated relation-backed snapshot loading remains blocked. Relation-backed
 object tuple append/read helpers can now store encoded SPIRE object bytes in
 data blocks after the root/control page and round-trip an encoded routing
 object from an `ec_spire` index relation through a relation object store that
-emits local single-store placement entries. Assignment payload scoring now
+emits local single-store placement entries. The same relation object store can
+now write and read segmented V2 leaf metadata plus segment chains for local
+single-store placements, and implements the shared `SpireObjectReader`
+interface for future snapshot scan loading. Assignment payload scoring now
 reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
@@ -234,9 +237,10 @@ Decision record:
   into the local object store. Relation-backed object tuple append/read helpers
   now write and read encoded object bytes from index data blocks after the
   root/control page, and a relation object store can emit/read local
-  single-store routing-object placements from those tuples. Placement-directory
-  persistence, V2 leaf relation-store writes, and populated build integration
-  remain open.
+  single-store routing-object placements plus V2 leaf metadata/segment chains
+  from those tuples. The relation store now implements `SpireObjectReader` for
+  future live snapshot loading. Placement-directory persistence and populated
+  build integration remain open.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into

@@ -48,7 +48,9 @@ pub(crate) use self::ec_ivf::{
 };
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::ec_spire::debug_spire_relation_object_tuple_roundtrip;
+pub(crate) use self::ec_spire::{
+    debug_spire_relation_leaf_v2_roundtrip, debug_spire_relation_object_tuple_roundtrip,
+};
 
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,

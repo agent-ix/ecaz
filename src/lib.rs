@@ -2695,6 +2695,28 @@ mod tests {
         assert_eq!(child_pid, 11);
     }
 
+    #[pg_test]
+    fn test_ec_spire_relation_leaf_v2_roundtrip() {
+        Spi::run("CREATE TABLE ec_spire_leaf_v2_tuple (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_v2_tuple_idx ON ec_spire_leaf_v2_tuple USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_leaf_v2_tuple_idx");
+        let (block, offset, assignment_count, segment_count, first_local_seq, first_heap_block) =
+            unsafe { am::debug_spire_relation_leaf_v2_roundtrip(index_oid) };
+
+        assert!(block >= 1);
+        assert!(offset >= 1);
+        assert_eq!(assignment_count, 2);
+        assert_eq!(segment_count, 1);
+        assert_eq!(first_local_seq, 1);
+        assert_eq!(first_heap_block, 42);
+    }
+
     fn index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")

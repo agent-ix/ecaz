@@ -87,3 +87,61 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
+    index_oid: pg_sys::Oid,
+) -> (u32, u16, u32, u32, u64, u32) {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let result = (|| -> Result<(u32, u16, u32, u32, u64, u32), String> {
+        let store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let assignments = vec![
+            storage::SpireLeafAssignmentRow {
+                flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: storage::SpireVecId::local(1),
+                heap_tid: crate::storage::page::ItemPointer {
+                    block_number: 42,
+                    offset_number: 1,
+                },
+                payload_format: storage::SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.5,
+                encoded_payload: vec![1, 2, 3, 4],
+            },
+            storage::SpireLeafAssignmentRow {
+                flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: storage::SpireVecId::local(2),
+                heap_tid: crate::storage::page::ItemPointer {
+                    block_number: 43,
+                    offset_number: 2,
+                },
+                payload_format: storage::SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+                gamma: 0.75,
+                encoded_payload: vec![5, 6, 7, 8],
+            },
+        ];
+
+        let placement =
+            unsafe { store.insert_leaf_object_v2_from_rows(1, 20, 1, 10, &assignments)? };
+        let leaf = unsafe { store.read_leaf_object_v2(&placement)? };
+        let rows = leaf.assignment_rows()?;
+        let first_row = rows
+            .first()
+            .ok_or_else(|| "ec_spire debug leaf V2 lost its first row".to_owned())?;
+
+        Ok((
+            placement.object_tid.block_number,
+            placement.object_tid.offset_number,
+            leaf.meta.header.assignment_count,
+            leaf.meta.segment_count,
+            first_row
+                .vec_id
+                .local_sequence()
+                .ok_or_else(|| "ec_spire debug leaf V2 first row lost local vec_id".to_owned())?,
+            first_row.heap_tid.block_number,
+        ))
+    })();
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
