@@ -36,7 +36,6 @@ struct EcIvfScanOpaque {
     heap_rerank_snapshot_owned: bool,
     heap_rerank_slot: *mut pg_sys::TupleTableSlot,
     heap_rerank_source_attnum: i16,
-    heap_rerank_source_kind: source::SourceDatumKind,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
 }
@@ -672,7 +671,6 @@ unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
     opaque.heap_rerank_relation = ptr::null_mut();
     opaque.heap_rerank_relation_owned = false;
     opaque.heap_rerank_source_attnum = 0;
-    opaque.heap_rerank_source_kind = source::SourceDatumKind::Unknown;
 }
 
 unsafe fn configure_heap_rerank_state(
@@ -709,7 +707,6 @@ unsafe fn configure_heap_rerank_state(
     opaque.heap_rerank_slot = slot;
     opaque.heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
         .expect("heap rerank source attnum should fit in i16");
-    opaque.heap_rerank_source_kind = source_attribute.kind;
 }
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
@@ -1048,10 +1045,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
     {
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
-    let source_attribute = source::SourceAttribute {
-        attnum: i32::from(opaque.heap_rerank_source_attnum),
-        kind: opaque.heap_rerank_source_kind,
-    };
+    let source_attnum = i32::from(opaque.heap_rerank_source_attnum);
     let query_values =
         unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
 
@@ -1068,13 +1062,9 @@ unsafe fn rerank_probe_candidates_heap_f32(
             )
         };
         let source_vector = unsafe {
-            source::FlatFloat4SourceRef::from_datum(
-                source::required_slot_datum(
-                    opaque.heap_rerank_slot,
-                    source_attribute.attnum,
-                    "ec_ivf heap_f32 rerank source vector",
-                ),
-                source_attribute.kind,
+            source::load_indexed_ecvector_from_slot(
+                opaque.heap_rerank_slot,
+                source_attnum,
                 "ec_ivf heap_f32 rerank source vector",
             )
         };

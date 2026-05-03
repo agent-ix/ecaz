@@ -628,6 +628,15 @@ pub(crate) unsafe fn load_source_from_heap_row(
     unsafe { FlatFloat4SourceRef::from_datum(source_datum, source_attribute.kind, label) }
 }
 
+pub(crate) unsafe fn load_indexed_ecvector_from_slot(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> FlatFloat4VarlenaRef {
+    let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
+    unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) }
+}
+
 pub(crate) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
     if query.len() != source.len() {
         pgrx::error!(
