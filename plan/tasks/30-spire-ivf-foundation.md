@@ -493,7 +493,7 @@ Decision record:
 
 - [ ] **Cluster split-and-merge plan.** Translate the LIRE/SPFresh-style update
   mechanics into SPIRE's Postgres storage model.
-- [ ] **Insert path.** Assign new vectors to one partition in the single-level
+- [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
   write a row-encoded `DELTA_INSERT` object, publish a new active epoch, and
@@ -508,7 +508,8 @@ Decision record:
   repeated same-leaf delta fanout and mark batching recommended while
   `insert_batching_supported = false`. SQL delta diagnostics now expose
   active delta objects, parent leaf PIDs, and insert/delete assignment counts;
-  insert batching remains open.
+  insert batching remains open as a performance/scalability follow-up rather
+  than a Phase 1 correctness blocker.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
