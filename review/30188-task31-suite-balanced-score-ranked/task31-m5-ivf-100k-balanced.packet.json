@@ -1,0 +1,52 @@
+{
+  "name": "task31-m5-ivf-100k-balanced-score-ranked",
+  "schema_version": 1,
+  "artifact_dir": "review/30188-task31-suite-balanced-score-ranked/artifacts",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall100-candidates-w500",
+      "tags": ["recall", "recall100", "candidate", "balanced", "100k", "n128", "w500"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "k": 100,
+      "sweep": [80, 96],
+      "rerank_width": 500,
+      "truth_cache_file": "review/30188-task31-suite-balanced-score-ranked/artifacts/truth_real100k_n128_k100.json",
+      "log_output": "review/30188-task31-suite-balanced-score-ranked/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-candidates-w500",
+      "tags": ["latency", "candidate", "balanced", "100k", "n128", "w500"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "k": 10,
+      "sweep": [80, 96],
+      "rerank_width": 500,
+      "log_output": "review/30188-task31-suite-balanced-score-ranked/artifacts/latency_real100k_pqg8_n128_w500_p80_96.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-balanced-candidate",
+      "tags": ["explain", "candidate", "balanced", "100k", "n128", "w500"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "index_name": "task31_m5_real100k_pqg8_n128_idx",
+      "nprobe": 96,
+      "rerank_width": 500,
+      "sql_file": "review/30188-task31-suite-balanced-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w500.sql",
+      "log_output": "review/30188-task31-suite-balanced-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w500.log"
+    }
+  ]
+}
