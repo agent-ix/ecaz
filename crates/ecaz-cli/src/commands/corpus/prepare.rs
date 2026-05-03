@@ -82,6 +82,16 @@ pub const PROFILES: &[SubsetProfile] = &[
         query_rows: 200,
     },
     SubsetProfile {
+        prefix: "ec_hnsw_real_25k",
+        corpus_rows: 25_000,
+        query_rows: 500,
+    },
+    SubsetProfile {
+        prefix: "ec_hnsw_real_100k",
+        corpus_rows: 100_000,
+        query_rows: 1_000,
+    },
+    SubsetProfile {
         prefix: "ec_hnsw_real_ann_benchmarks_anchor",
         corpus_rows: 990_000,
         query_rows: 10_000,
