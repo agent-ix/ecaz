@@ -35,6 +35,19 @@ Start with:
 | `ec_spire_index_insert_debt_snapshot(index_oid)` | operator | You need active delta fanout and whether insert batching is recommended. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
 
+## Stable Labels
+
+Diagnostic label strings are part of the operator-facing contract. Do not reuse
+an existing label for a new meaning; add a new label instead.
+
+`ec_spire_index_options_snapshot(index_oid)` reports assignment payload
+scannability with these `assignment_payload_status` values:
+
+| Status | Meaning |
+| --- | --- |
+| `supported` | The configured assignment payload format can be scored by current SPIRE scans. Today this covers TurboQuant and RaBitQ. |
+| `deferred_model_metadata` | The configured format is recognized, but SPIRE does not yet persist the additional grouped-PQ model metadata needed to scan it. Today this covers PQ-FastScan. |
+
 ## Reading Notes
 
 - These functions inspect SPIRE partition-object storage, not PostgreSQL

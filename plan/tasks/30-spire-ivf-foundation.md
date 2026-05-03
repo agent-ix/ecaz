@@ -385,7 +385,9 @@ Decision record:
   effective `nprobe`/`rerank_width` values with source labels. It also reports
   assignment-payload scannability, status, and recommendation text so
   `pq_fastscan` indexes surface the grouped-PQ model metadata deferral before
-  scan-time scorer binding is implemented. SQL function
+  scan-time scorer binding is implemented, and `docs/SPIRE_DIAGNOSTICS.md`
+  now records the stable `assignment_payload_status` labels for operator
+  tooling. SQL function
   `ec_spire_index_health_snapshot(index_oid)` now reports a conservative
   active-epoch health status, recommendation text, delta compaction
   recommendation flag, placement-state counts, and assignment counts.
