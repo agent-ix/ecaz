@@ -315,8 +315,9 @@ Decision record:
   report the explicit grouped-PQ model metadata deferral until SPIRE persists
   that model. Active-epoch scan loading and relation-backed snapshot
   diagnostics now consume the persisted epoch.
-- [x] **Scan path.** Route a query to top-`nprobe` partitions, score
-  candidates, and rerank using the same correctness contract as local IVF. The
+- [x] **Scan path (TurboQuant/RaBitQ).** Route a query to top-`nprobe`
+  partitions, score candidates, and rerank using the same correctness contract
+  as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
   placement handling for routed leaves, single-route query-to-leaf collection,
   top-`nprobe` leaf selection over root child centroids, visible-primary
@@ -342,9 +343,11 @@ Decision record:
   covered by row-encoded delete deltas for the same base leaf PID. Empty active
   epochs still return no rows, including empty `pq_fastscan` indexes that
   expose the deferred payload format but have no assignments to score.
-  Populated PQ-FastScan remains build-blocked until SPIRE persists grouped-PQ
-  model metadata, so it is tracked as a future storage/scorer binding rather
-  than a Phase 1 scan-path blocker.
+- [ ] **Scan path (PQ-FastScan populated indexes).** Persist grouped-PQ model
+  metadata for SPIRE assignment payloads, bind the persisted metadata to the
+  PQ-FastScan scorer at scan time, and promote populated `pq_fastscan` SPIRE
+  indexes from build-blocked to scannable. Empty `pq_fastscan` SPIRE indexes
+  already return no rows safely because there are no assignments to score.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
