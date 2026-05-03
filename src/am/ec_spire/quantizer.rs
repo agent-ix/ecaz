@@ -211,9 +211,9 @@ impl SpirePreparedAssignmentScorer {
 pub(super) fn encode_assignment_payload(
     payload_format: SpireAssignmentPayloadFormat,
     source_vector: &[f32],
-) -> Result<(u16, f32, Vec<u8>), String> {
+) -> Result<(f32, Vec<u8>), String> {
     validate_vector_shape("source", source_vector.len(), source_vector)?;
-    let dimensions = u16::try_from(source_vector.len()).map_err(|_| {
+    u16::try_from(source_vector.len()).map_err(|_| {
         format!(
             "ec_spire source vector dimension {} exceeds maximum 65535",
             source_vector.len()
@@ -230,7 +230,7 @@ pub(super) fn encode_assignment_payload(
             let encoded = quantizer.encode(source_vector);
             let mut payload = encoded.mse_packed;
             payload.extend_from_slice(&encoded.qjl_packed);
-            Ok((dimensions, encoded.gamma, payload))
+            Ok((encoded.gamma, payload))
         }
         SpireAssignmentPayloadFormat::RaBitQ => {
             let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
@@ -239,7 +239,6 @@ pub(super) fn encode_assignment_payload(
                 crate::DEFAULT_QUANT_BITS,
             )?;
             Ok((
-                dimensions,
                 0.0,
                 Quantizer::encode_code(&*quantizer, source_vector).into_vec(),
             ))
@@ -258,7 +257,7 @@ pub(super) fn encode_assignment_input(
     if heap_tid == ItemPointer::INVALID {
         return Err("ec_spire assignment input heap_tid must be valid".to_owned());
     }
-    let (_, gamma, encoded_payload) = encode_assignment_payload(payload_format, source_vector)?;
+    let (gamma, encoded_payload) = encode_assignment_payload(payload_format, source_vector)?;
     Ok(SpireLeafAssignmentInput {
         heap_tid,
         payload_format: payload_format.tag(),
@@ -375,7 +374,7 @@ mod tests {
     fn turboquant_assignment_scorer_matches_direct_quantizer_score() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
-        let (dimensions, gamma, payload) =
+        let (gamma, payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
         let assignment = assignment_row(
             SpireAssignmentPayloadFormat::TurboQuant,
@@ -384,7 +383,7 @@ mod tests {
         );
         let scorer = SpirePreparedAssignmentScorer::prepare(
             SpireAssignmentPayloadFormat::TurboQuant,
-            usize::from(dimensions),
+            source.len(),
             &query,
         )
         .unwrap();
@@ -407,13 +406,13 @@ mod tests {
     fn rabitq_assignment_scorer_matches_direct_quantizer_score() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
-        let (dimensions, gamma, payload) =
+        let (gamma, payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &source).unwrap();
         let assignment =
             assignment_row(SpireAssignmentPayloadFormat::RaBitQ, gamma, payload.clone());
         let scorer = SpirePreparedAssignmentScorer::prepare(
             SpireAssignmentPayloadFormat::RaBitQ,
-            usize::from(dimensions),
+            source.len(),
             &query,
         )
         .unwrap();
@@ -451,8 +450,7 @@ mod tests {
             let mut scalar_scores = Vec::new();
 
             for source in &sources {
-                let (_, gamma, payload) =
-                    encode_assignment_payload(payload_format, source).unwrap();
+                let (gamma, payload) = encode_assignment_payload(payload_format, source).unwrap();
                 let assignment = assignment_row(payload_format, gamma, payload.clone());
                 scalar_scores.push(scorer.score_assignment_ip(&assignment).unwrap());
                 payload_stride = Some(payload_stride.unwrap_or(payload.len()));
@@ -482,11 +480,11 @@ mod tests {
     fn assignment_scorer_rejects_mismatched_format_and_bad_lengths() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
-        let (dimensions, gamma, mut payload) =
+        let (gamma, mut payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
         let scorer = SpirePreparedAssignmentScorer::prepare(
             SpireAssignmentPayloadFormat::TurboQuant,
-            usize::from(dimensions),
+            source.len(),
             &query,
         )
         .unwrap();
@@ -509,7 +507,7 @@ mod tests {
     fn assignment_scorer_batch_rejects_bad_shapes() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
-        let (_, gamma, payload) =
+        let (gamma, payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
         let scorer = SpirePreparedAssignmentScorer::prepare(
             SpireAssignmentPayloadFormat::TurboQuant,
@@ -526,7 +524,7 @@ mod tests {
             .score_batch_ip(payload.len(), &payload, &[], &mut out)
             .is_err());
 
-        let (_, _, rabitq_payload) =
+        let (_, rabitq_payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &source).unwrap();
         let rabitq_scorer = SpirePreparedAssignmentScorer::prepare(
             SpireAssignmentPayloadFormat::RaBitQ,
@@ -580,7 +578,7 @@ mod tests {
     #[test]
     fn encode_assignment_input_builds_leaf_assignment_input() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
-        let (_, gamma, payload) =
+        let (gamma, payload) =
             encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source).unwrap();
 
         let input = encode_assignment_input(

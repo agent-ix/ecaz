@@ -207,7 +207,9 @@ Decision record:
   store. Partition-object headers now carry a `published_epoch_backref` stamped
   by local-store insertion and verified as not newer than the placement epoch
   on reads; V2 leaf metadata and segments inherit the same header
-  back-reference.
+  back-reference. Assignment payload encoding no longer returns a discarded
+  dimension value; the helper validates source shape and returns only scoring
+  metadata plus payload bytes.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

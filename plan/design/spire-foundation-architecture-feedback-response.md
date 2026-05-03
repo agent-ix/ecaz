@@ -352,6 +352,11 @@ then reject placements whose epoch is older than the header back-reference.
 Later epoch manifests may still reuse older immutable objects. V2 leaf metadata
 and segment headers use the same common header field.
 
+Implementation checkpoint: `encode_assignment_payload` now returns only
+`(gamma, encoded_payload)`. Source vector shape and maximum dimension are still
+validated at the payload helper boundary, and callers no longer discard a
+returned dimension value.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.
