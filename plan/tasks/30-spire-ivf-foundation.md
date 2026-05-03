@@ -404,8 +404,12 @@ Decision record:
   foundation. SQL function `ec_spire_index_object_snapshot(index_oid)` now
   reports one row per active manifest PID with object kind, object version,
   published-epoch back-reference, level, parent PID, child/assignment counts,
-  placement state, store identity, object bytes, and a readable flag. Measured
-  recall/latency summary rows and deeper operator guidance remain open.
+  placement state, store identity, object bytes, and a readable flag. SQL
+  function `ec_spire_index_delta_snapshot(index_oid)` now reports one row per
+  active readable delta object with parent leaf PID, object version,
+  published-epoch back-reference, store placement, assignment count, and
+  insert/delete assignment counts. Measured recall/latency summary rows and
+  deeper operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -441,8 +445,10 @@ Decision record:
   Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
   populated local single-store indexes. Object SQL diagnostics now have
   focused PG18 coverage for empty, populated, and post-insert delta active
-  epochs. Physical page reclamation, old-epoch cleanup, and real SQL VACUUM
-  end-to-end coverage remain open.
+  epochs. Delta SQL diagnostics now have focused PG18 coverage for empty,
+  populated no-delta, and post-insert delta active epochs. Physical page
+  reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end coverage
+  remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -463,7 +469,9 @@ Decision record:
   epoch publication now writes a retired manifest copy for the previous active
   epoch before advancing root/control. SQL insert-debt diagnostics now expose
   repeated same-leaf delta fanout and mark batching recommended while
-  `insert_batching_supported = false`; insert batching remains open.
+  `insert_batching_supported = false`. SQL delta diagnostics now expose
+  active delta objects, parent leaf PIDs, and insert/delete assignment counts;
+  insert batching remains open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,

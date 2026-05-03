@@ -234,6 +234,23 @@ pub(crate) struct SpireIndexObjectSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexDeltaSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) delta_pid: u64,
+    pub(crate) parent_leaf_pid: u64,
+    pub(crate) object_version: u64,
+    pub(crate) published_epoch_backref: u64,
+    pub(crate) node_id: u32,
+    pub(crate) local_store_id: u32,
+    pub(crate) store_relid: u32,
+    pub(crate) placement_state: &'static str,
+    pub(crate) assignment_count: u64,
+    pub(crate) insert_assignment_count: u64,
+    pub(crate) delete_assignment_count: u64,
+    pub(crate) object_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -1367,6 +1384,75 @@ pub(crate) unsafe fn index_object_snapshot(
         }
 
         rows.sort_by_key(|row| row.pid);
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_delta_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexDeltaSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexDeltaSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let mut rows = Vec::new();
+
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "delta snapshot")?;
+            let placement = lookup.placement;
+            if placement.state != meta::SpirePlacementState::Available {
+                continue;
+            }
+            let header = unsafe { object_store.read_object_header(placement)? };
+            if header.kind != storage::SpirePartitionObjectKind::Delta {
+                continue;
+            }
+            let delta_object = unsafe { object_store.read_delta_object(placement)? };
+            let mut insert_assignment_count = 0_u64;
+            let mut delete_assignment_count = 0_u64;
+            for assignment in &delta_object.assignments {
+                if storage::is_delete_delta_assignment(assignment) {
+                    delete_assignment_count =
+                        delete_assignment_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire delta snapshot delete assignment count overflow".to_owned()
+                        })?;
+                } else if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
+                    insert_assignment_count =
+                        insert_assignment_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire delta snapshot insert assignment count overflow".to_owned()
+                        })?;
+                }
+            }
+            rows.push(SpireIndexDeltaSnapshotRow {
+                active_epoch: root_control.active_epoch,
+                delta_pid: header.pid,
+                parent_leaf_pid: header.parent_pid,
+                object_version: header.object_version,
+                published_epoch_backref: header.published_epoch_backref,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                store_relid: placement.store_relid,
+                placement_state: placement_state_name(placement.state),
+                assignment_count: u64::from(header.assignment_count),
+                insert_assignment_count,
+                delete_assignment_count,
+                object_bytes: u64::from(placement.object_bytes),
+            });
+        }
+
+        rows.sort_by_key(|row| row.delta_pid);
         Ok(rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

@@ -1701,6 +1701,55 @@ fn ec_spire_index_leaf_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_delta_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(delta_pid, i64),
+        name!(parent_leaf_pid, i64),
+        name!(object_version, i64),
+        name!(published_epoch_backref, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, i64),
+        name!(placement_state, String),
+        name!(assignment_count, i64),
+        name!(insert_assignment_count, i64),
+        name!(delete_assignment_count, i64),
+        name!(object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_delta_snapshot") };
+    let rows = unsafe { am::spire_index_delta_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.delta_pid).expect("delta pid should fit in i64"),
+            i64::try_from(row.parent_leaf_pid).expect("parent leaf pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.published_epoch_backref)
+                .expect("published epoch backref should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::from(row.store_relid),
+            row.placement_state.to_owned(),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::try_from(row.insert_assignment_count)
+                .expect("insert assignment count should fit in i64"),
+            i64::try_from(row.delete_assignment_count)
+                .expect("delete assignment count should fit in i64"),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_insert_debt_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3957,6 +4006,88 @@ mod tests {
         .expect("active epoch should exist");
 
         assert_eq!(delta_count, 1);
+        assert_eq!(active_epoch, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_delta_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_delta_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_empty_idx ON ec_spire_delta_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_empty_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_delta_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_delta_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_sql_idx ON ec_spire_delta_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        let initial_delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(initial_delta_rows, 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_delta_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+        let delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        let insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(insert_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let delete_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let parent_leaf_matches = Spi::get_one::<bool>(
+            "SELECT bool_and(parent_leaf_pid = leaf_pid) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass) d \
+             JOIN ec_spire_index_leaf_snapshot('ec_spire_delta_sql_idx'::regclass) l \
+             ON d.parent_leaf_pid = l.leaf_pid",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("join should produce a row");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_rows, 1);
+        assert_eq!(insert_assignment_count, 1);
+        assert_eq!(delete_assignment_count, 0);
+        assert!(parent_leaf_matches);
         assert_eq!(active_epoch, 2);
     }
 
