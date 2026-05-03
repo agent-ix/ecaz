@@ -1294,6 +1294,62 @@ fn ec_spire_index_root_routing_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_hierarchy_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(root_pid, i64),
+        name!(root_level, i32),
+        name!(max_observed_level, i32),
+        name!(hierarchy_depth, i32),
+        name!(routing_object_count, i64),
+        name!(root_routing_object_count, i64),
+        name!(internal_routing_object_count, i64),
+        name!(leaf_object_count, i64),
+        name!(delta_object_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(root_child_count, i64),
+        name!(distinct_leaf_parent_count, i64),
+        name!(recursive_routing_supported, bool),
+        name!(per_level_nprobe_supported, bool),
+        name!(status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_hierarchy_snapshot") };
+    let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.root_pid).expect("root pid should fit in i64"),
+        i32::from(snapshot.root_level),
+        i32::from(snapshot.max_observed_level),
+        i32::from(snapshot.hierarchy_depth),
+        i64::try_from(snapshot.routing_object_count)
+            .expect("routing object count should fit in i64"),
+        i64::try_from(snapshot.root_routing_object_count)
+            .expect("root routing object count should fit in i64"),
+        i64::try_from(snapshot.internal_routing_object_count)
+            .expect("internal routing object count should fit in i64"),
+        i64::try_from(snapshot.leaf_object_count).expect("leaf object count should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i32::from(snapshot.centroid_dimensions),
+        i64::try_from(snapshot.root_child_count).expect("root child count should fit in i64"),
+        i64::try_from(snapshot.distinct_leaf_parent_count)
+            .expect("distinct leaf parent count should fit in i64"),
+        snapshot.recursive_routing_supported,
+        snapshot.per_level_nprobe_supported,
+        snapshot.status.to_owned(),
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_options_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3640,6 +3696,124 @@ mod tests {
         assert_eq!(assignment_count, 2);
         assert!(parent_links_match);
         assert_eq!(child_store_relid_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_hierarchy_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_hierarchy_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_hierarchy_empty_idx ON ec_spire_hierarchy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let empty_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let empty_routing_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+
+        assert_eq!(empty_status, "empty");
+        assert_eq!(empty_depth, 0);
+        assert!(!empty_routing_supported);
+
+        Spi::run("DROP INDEX ec_spire_hierarchy_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_hierarchy_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_hierarchy_sql_idx ON ec_spire_hierarchy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let root_routing_object_count = Spi::get_one::<i64>(
+            "SELECT root_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let internal_routing_object_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let leaf_object_count = Spi::get_one::<i64>(
+            "SELECT leaf_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT root_child_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let centroid_dimensions = Spi::get_one::<i32>(
+            "SELECT centroid_dimensions FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let hierarchy_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let leaf_parent_count = Spi::get_one::<i64>(
+            "SELECT distinct_leaf_parent_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let per_level_nprobe_supported = Spi::get_one::<bool>(
+            "SELECT per_level_nprobe_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+
+        assert_eq!(status, "single_level_foundation");
+        assert_eq!(root_routing_object_count, 1);
+        assert_eq!(internal_routing_object_count, 0);
+        assert_eq!(leaf_object_count, 2);
+        assert_eq!(root_child_count, 2);
+        assert_eq!(centroid_dimensions, 2);
+        assert_eq!(hierarchy_depth, 1);
+        assert_eq!(leaf_parent_count, 1);
+        assert!(!recursive_supported);
+        assert!(!per_level_nprobe_supported);
     }
 
     #[pg_test]

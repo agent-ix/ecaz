@@ -194,6 +194,27 @@ pub(crate) struct SpireIndexInsertDebtSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexHierarchySnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) root_pid: u64,
+    pub(crate) root_level: u16,
+    pub(crate) max_observed_level: u16,
+    pub(crate) hierarchy_depth: u16,
+    pub(crate) routing_object_count: u64,
+    pub(crate) root_routing_object_count: u64,
+    pub(crate) internal_routing_object_count: u64,
+    pub(crate) leaf_object_count: u64,
+    pub(crate) delta_object_count: u64,
+    pub(crate) centroid_dimensions: u16,
+    pub(crate) root_child_count: u64,
+    pub(crate) distinct_leaf_parent_count: u64,
+    pub(crate) recursive_routing_supported: bool,
+    pub(crate) per_level_nprobe_supported: bool,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -507,6 +528,38 @@ fn partition_object_kind_name(kind: storage::SpirePartitionObjectKind) -> &'stat
         storage::SpirePartitionObjectKind::Leaf => "leaf",
         storage::SpirePartitionObjectKind::Delta => "delta",
     }
+}
+
+fn hierarchy_snapshot_status(
+    root_routing_object_count: u64,
+    internal_routing_object_count: u64,
+    leaf_object_count: u64,
+) -> (&'static str, &'static str) {
+    if root_routing_object_count == 0 && leaf_object_count == 0 {
+        return ("empty", "none");
+    }
+    if root_routing_object_count == 0 {
+        return (
+            "no_root_object",
+            "inspect active epoch metadata before enabling recursive routing",
+        );
+    }
+    if root_routing_object_count > 1 {
+        return (
+            "multiple_root_objects",
+            "inspect active epoch metadata before enabling recursive routing",
+        );
+    }
+    if internal_routing_object_count == 0 {
+        return (
+            "single_level_foundation",
+            "recursive build coordinator and level-aware scan routing are not implemented",
+        );
+    }
+    (
+        "hierarchy_metadata_present",
+        "recursive build coordinator and level-aware scan routing are not implemented",
+    )
 }
 
 pub(crate) unsafe fn active_snapshot_diagnostics(
@@ -1100,6 +1153,144 @@ pub(crate) unsafe fn index_insert_debt_snapshot(
         batching_recommended,
         recommendation,
     }
+}
+
+pub(crate) unsafe fn index_hierarchy_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexHierarchySnapshot {
+    let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0);
+            return Ok(SpireIndexHierarchySnapshot {
+                active_epoch: 0,
+                root_pid: 0,
+                root_level: 0,
+                max_observed_level: 0,
+                hierarchy_depth: 0,
+                routing_object_count: 0,
+                root_routing_object_count: 0,
+                internal_routing_object_count: 0,
+                leaf_object_count: 0,
+                delta_object_count: 0,
+                centroid_dimensions: 0,
+                root_child_count: 0,
+                distinct_leaf_parent_count: 0,
+                recursive_routing_supported: false,
+                per_level_nprobe_supported: false,
+                status,
+                recommendation,
+            });
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+
+        let mut root_pid = 0_u64;
+        let mut root_level = 0_u16;
+        let mut max_observed_level = 0_u16;
+        let mut routing_object_count = 0_u64;
+        let mut root_routing_object_count = 0_u64;
+        let mut internal_routing_object_count = 0_u64;
+        let mut leaf_object_count = 0_u64;
+        let mut delta_object_count = 0_u64;
+        let mut centroid_dimensions = 0_u16;
+        let mut root_child_count = 0_u64;
+        let mut leaf_parent_pids = HashSet::new();
+
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "hierarchy snapshot")?;
+            let placement = lookup.placement;
+            if placement.state != meta::SpirePlacementState::Available {
+                continue;
+            }
+            let header = unsafe { object_store.read_object_header(placement)? };
+            max_observed_level = max_observed_level.max(header.level);
+            match header.kind {
+                storage::SpirePartitionObjectKind::Root => {
+                    let routing_object = unsafe { object_store.read_routing_object(placement)? };
+                    routing_object_count =
+                        routing_object_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire hierarchy snapshot routing object count overflow".to_owned()
+                        })?;
+                    root_routing_object_count =
+                        root_routing_object_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire hierarchy snapshot root object count overflow".to_owned()
+                        })?;
+                    root_pid = header.pid;
+                    root_level = header.level;
+                    centroid_dimensions = routing_object.dimensions;
+                    root_child_count =
+                        u64::try_from(routing_object.child_count()).map_err(|_| {
+                            "ec_spire hierarchy snapshot root child count exceeds u64".to_owned()
+                        })?;
+                }
+                storage::SpirePartitionObjectKind::Internal => {
+                    routing_object_count =
+                        routing_object_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire hierarchy snapshot routing object count overflow".to_owned()
+                        })?;
+                    internal_routing_object_count = internal_routing_object_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire hierarchy snapshot internal object count overflow".to_owned()
+                        })?;
+                }
+                storage::SpirePartitionObjectKind::Leaf => {
+                    leaf_object_count = leaf_object_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire hierarchy snapshot leaf object count overflow".to_owned()
+                    })?;
+                    leaf_parent_pids.insert(header.parent_pid);
+                }
+                storage::SpirePartitionObjectKind::Delta => {
+                    delta_object_count = delta_object_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire hierarchy snapshot delta object count overflow".to_owned()
+                    })?;
+                }
+            }
+        }
+
+        let hierarchy_depth = if root_routing_object_count == 0 {
+            0
+        } else {
+            max_observed_level.max(root_level)
+        };
+        let (status, recommendation) = hierarchy_snapshot_status(
+            root_routing_object_count,
+            internal_routing_object_count,
+            leaf_object_count,
+        );
+
+        Ok(SpireIndexHierarchySnapshot {
+            active_epoch: root_control.active_epoch,
+            root_pid,
+            root_level,
+            max_observed_level,
+            hierarchy_depth,
+            routing_object_count,
+            root_routing_object_count,
+            internal_routing_object_count,
+            leaf_object_count,
+            delta_object_count,
+            centroid_dimensions,
+            root_child_count,
+            distinct_leaf_parent_count: u64::try_from(leaf_parent_pids.len()).map_err(|_| {
+                "ec_spire hierarchy snapshot leaf parent count exceeds u64".to_owned()
+            })?,
+            recursive_routing_supported: false,
+            per_level_nprobe_supported: false,
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn index_scan_placement_snapshot(

@@ -395,8 +395,14 @@ Decision record:
   `ec_spire_index_insert_debt_snapshot(index_oid)` now reports active leaf
   count, leaf count with deltas, active delta object/insert assignment counts,
   max delta objects per leaf, and whether insert batching is supported or
-  recommended. Measured recall/latency summary rows and deeper operator
-  guidance remain open.
+  recommended. SQL function `ec_spire_index_hierarchy_snapshot(index_oid)` now
+  reports the active hierarchy shape as one summary row: root PID/level,
+  observed max level/depth, routing/root/internal/leaf/delta object counts,
+  centroid dimensions, root child count, distinct leaf parent count, and
+  explicit `recursive_routing_supported = false` /
+  `per_level_nprobe_supported = false` flags for the current single-level
+  foundation. Measured recall/latency summary rows and deeper operator guidance
+  remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -429,8 +435,9 @@ Decision record:
   It now also covers read-only merge recommendations for empty leaves and no
   split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
   now have focused PG18 coverage for repeated same-leaf post-build inserts.
-  Physical page reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end
-  coverage remain open.
+  Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
+  populated local single-store indexes. Physical page reclamation, old-epoch
+  cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -481,7 +488,12 @@ Decision record:
 ## Phase 3 — SPIRE Recursion
 
 - [ ] **Hierarchy metadata.** Store levels, parent/child partition IDs,
-  centroid dimensions, per-level `nprobe`, and build parameters.
+  centroid dimensions, per-level `nprobe`, and build parameters. The
+  single-level foundation now persists root/leaf levels, parent/child PIDs, and
+  root centroid dimensions, and exposes them through
+  `ec_spire_index_hierarchy_snapshot(index_oid)`. The diagnostic explicitly
+  reports that recursive routing and per-level `nprobe` are unsupported until
+  the recursive build coordinator lands.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
