@@ -562,6 +562,51 @@ fn leaf_maintenance_labels(
     (false, false, "none", "within_distribution_thresholds")
 }
 
+fn apply_leaf_snapshot_base_row(
+    rows_by_leaf_pid: &mut HashMap<u64, SpireIndexLeafSnapshotRow>,
+    active_epoch: u64,
+    header: &storage::SpirePartitionObjectHeader,
+    placement: &meta::SpirePlacementEntry,
+) {
+    let row = rows_by_leaf_pid
+        .entry(header.pid)
+        .or_insert_with(|| SpireIndexLeafSnapshotRow {
+            active_epoch,
+            leaf_pid: header.pid,
+            parent_pid: header.parent_pid,
+            object_version: header.object_version,
+            node_id: placement.node_id,
+            local_store_id: placement.local_store_id,
+            placement_state: placement_state_name(placement.state),
+            base_assignment_count: 0,
+            delta_object_count: 0,
+            delta_insert_assignment_count: 0,
+            delta_delete_assignment_count: 0,
+            effective_assignment_count: 0,
+            split_assignment_threshold: 0,
+            merge_assignment_threshold: 0,
+            split_recommended: false,
+            merge_recommended: false,
+            maintenance_action: "none",
+            maintenance_reason: "not_evaluated",
+            leaf_object_bytes: 0,
+            delta_object_bytes: 0,
+        });
+
+    row.active_epoch = active_epoch;
+    row.leaf_pid = header.pid;
+    row.parent_pid = header.parent_pid;
+    row.object_version = header.object_version;
+    row.node_id = placement.node_id;
+    row.local_store_id = placement.local_store_id;
+    row.placement_state = placement_state_name(placement.state);
+    row.base_assignment_count = u64::from(header.assignment_count);
+    row.effective_assignment_count = u64::from(header.assignment_count);
+    row.maintenance_action = "none";
+    row.maintenance_reason = "not_evaluated";
+    row.leaf_object_bytes = u64::from(placement.object_bytes);
+}
+
 fn placement_state_name(state: meta::SpirePlacementState) -> &'static str {
     match state {
         meta::SpirePlacementState::Available => "available",
@@ -1054,30 +1099,11 @@ pub(crate) unsafe fn index_leaf_snapshot(
             let header = unsafe { object_store.read_object_header(placement)? };
             match header.kind {
                 storage::SpirePartitionObjectKind::Leaf => {
-                    rows_by_leaf_pid.insert(
-                        header.pid,
-                        SpireIndexLeafSnapshotRow {
-                            active_epoch: root_control.active_epoch,
-                            leaf_pid: header.pid,
-                            parent_pid: header.parent_pid,
-                            object_version: header.object_version,
-                            node_id: placement.node_id,
-                            local_store_id: placement.local_store_id,
-                            placement_state: placement_state_name(placement.state),
-                            base_assignment_count: u64::from(header.assignment_count),
-                            delta_object_count: 0,
-                            delta_insert_assignment_count: 0,
-                            delta_delete_assignment_count: 0,
-                            effective_assignment_count: u64::from(header.assignment_count),
-                            split_assignment_threshold: 0,
-                            merge_assignment_threshold: 0,
-                            split_recommended: false,
-                            merge_recommended: false,
-                            maintenance_action: "none",
-                            maintenance_reason: "not_evaluated",
-                            leaf_object_bytes: u64::from(placement.object_bytes),
-                            delta_object_bytes: 0,
-                        },
+                    apply_leaf_snapshot_base_row(
+                        &mut rows_by_leaf_pid,
+                        root_control.active_epoch,
+                        &header,
+                        placement,
                     );
                 }
                 storage::SpirePartitionObjectKind::Delta => {
@@ -1885,6 +1911,72 @@ mod tests {
             }],
         )
         .expect("root routing object should build")
+    }
+
+    #[test]
+    fn leaf_snapshot_base_row_preserves_prior_delta_counts() {
+        let mut rows_by_leaf_pid = HashMap::new();
+        rows_by_leaf_pid.insert(
+            20,
+            SpireIndexLeafSnapshotRow {
+                active_epoch: 7,
+                leaf_pid: 20,
+                parent_pid: 0,
+                object_version: 0,
+                node_id: meta::SPIRE_LOCAL_NODE_ID,
+                local_store_id: meta::SPIRE_SINGLE_LOCAL_STORE_ID,
+                placement_state: "missing_base_leaf",
+                base_assignment_count: 0,
+                delta_object_count: 2,
+                delta_insert_assignment_count: 3,
+                delta_delete_assignment_count: 1,
+                effective_assignment_count: 0,
+                split_assignment_threshold: 0,
+                merge_assignment_threshold: 0,
+                split_recommended: false,
+                merge_recommended: false,
+                maintenance_action: "none",
+                maintenance_reason: "missing_base_leaf",
+                leaf_object_bytes: 0,
+                delta_object_bytes: 44,
+            },
+        );
+        let header = storage::SpirePartitionObjectHeader {
+            kind: storage::SpirePartitionObjectKind::Leaf,
+            pid: 20,
+            object_version: 9,
+            published_epoch_backref: 7,
+            level: 1,
+            parent_pid: 10,
+            child_count: 0,
+            assignment_count: 5,
+            flags: 0,
+        };
+        let placement = meta::SpirePlacementEntry::local_single_store_available(
+            7,
+            20,
+            12345,
+            9,
+            crate::storage::page::ItemPointer {
+                block_number: 30,
+                offset_number: 4,
+            },
+            88,
+        );
+
+        apply_leaf_snapshot_base_row(&mut rows_by_leaf_pid, 7, &header, &placement);
+
+        let row = rows_by_leaf_pid.get(&20).expect("leaf row should exist");
+        assert_eq!(row.parent_pid, 10);
+        assert_eq!(row.object_version, 9);
+        assert_eq!(row.base_assignment_count, 5);
+        assert_eq!(row.leaf_object_bytes, 88);
+        assert_eq!(row.placement_state, "available");
+        assert_eq!(row.maintenance_reason, "not_evaluated");
+        assert_eq!(row.delta_object_count, 2);
+        assert_eq!(row.delta_insert_assignment_count, 3);
+        assert_eq!(row.delta_delete_assignment_count, 1);
+        assert_eq!(row.delta_object_bytes, 44);
     }
 
     #[test]

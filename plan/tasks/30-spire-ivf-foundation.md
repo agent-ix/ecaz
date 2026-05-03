@@ -476,7 +476,8 @@ Decision record:
   populated, and post-insert active-epoch publication states, including
   previous-epoch retired manifest copies and superseded manifest labels. The
   SQL leaf snapshot surface has focused PG18 coverage for empty, populated,
-  and post-insert delta states.
+  and post-insert delta states, and leaf snapshot aggregation now preserves
+  delta counters regardless of manifest iteration order.
   It now also covers read-only merge recommendations for empty leaves and no
   split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
   now have focused PG18 coverage for repeated same-leaf post-build inserts,
