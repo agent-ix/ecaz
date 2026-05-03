@@ -105,6 +105,12 @@ old local-ID epochs until the retention horizon passes. Mixed local/global IDs
 inside the same V2 base leaf are not allowed; mixed identity windows occur
 across retained epochs or in small delta objects.
 
+Implementation checkpoint: single-level and partitioned build drafts now write
+base leaves through the segmented V2 local-store path. Placement entries still
+point at the V2 metadata tuple, while `read_object_header` resolves the logical
+leaf header from that metadata and validates the placement PID, object version,
+and total object byte count.
+
 ## Borrowed Reads and Batch Scoring
 
 The V2 decoder should return a borrowed column view instead of owned rows:
@@ -159,6 +165,11 @@ borrowed column views over flags, fixed-stride vec_id bytes, heap TIDs, gammas,
 and payload chunks, plus bounds-checked row accessors for compatibility code.
 The view currently borrows from the decoded in-memory object; relation-backed
 buffer readers can later construct the same view directly over page bytes.
+
+Implementation checkpoint: scan, delta-update assignment collection, and
+diagnostics can consume build-produced V2 base leaves. The current scan helper
+uses V2 row reconstruction as a compatibility bridge before direct
+column-view-driven batch scoring lands.
 
 ## Snapshot Lookup and Validation
 

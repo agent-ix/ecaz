@@ -255,13 +255,19 @@ fn collect_snapshot_assignment_vec_ids(
         let header = object_store.read_object_header(placement)?;
         match header.kind {
             SpirePartitionObjectKind::Leaf => {
-                let object = object_store.read_leaf_object(placement)?;
-                vec_ids.extend(
-                    object
-                        .assignments
-                        .into_iter()
-                        .map(|assignment| assignment.vec_id),
-                );
+                let assignments = match object_store.read_leaf_object(placement) {
+                    Ok(object) => object.assignments,
+                    Err(v1_error) => object_store
+                        .read_leaf_object_v2(placement)
+                        .map_err(|v2_error| {
+                            format!(
+                                "ec_spire delta draft could not read leaf pid {} as V1 or V2: V1 error: {v1_error}; V2 error: {v2_error}",
+                                placement.pid
+                            )
+                        })?
+                        .assignment_rows()?,
+                };
+                vec_ids.extend(assignments.into_iter().map(|assignment| assignment.vec_id));
             }
             SpirePartitionObjectKind::Delta => {
                 let object = object_store.read_delta_object(placement)?;
@@ -565,8 +571,9 @@ mod tests {
         assert_eq!(delta_placement.object_version, 3);
         assert_eq!(
             object_store
-                .read_leaf_object(base_placement)
+                .read_leaf_object_v2(base_placement)
                 .unwrap()
+                .meta
                 .header
                 .pid,
             1

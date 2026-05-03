@@ -1185,6 +1185,27 @@ impl SpireLeafPartitionObjectV2 {
             .map(|segment| segment.columns(&self.meta))
             .collect()
     }
+
+    pub(super) fn assignment_rows(&self) -> Result<Vec<SpireLeafAssignmentRow>, String> {
+        let column_segments = self.column_segments()?;
+        let row_count = usize::try_from(self.meta.header.assignment_count)
+            .map_err(|_| "ec_spire leaf V2 assignment count exceeds usize".to_owned())?;
+        let mut rows = Vec::with_capacity(row_count);
+        for columns in column_segments {
+            for row_offset in 0..columns.row_count() {
+                let row = columns.row(row_offset)?;
+                rows.push(SpireLeafAssignmentRow {
+                    flags: row.flags,
+                    vec_id: SpireVecId::local(row.local_vec_seq()?),
+                    heap_tid: row.heap_tid,
+                    payload_format: columns.payload_format,
+                    gamma: row.gamma,
+                    encoded_payload: row.encoded_payload.to_vec(),
+                });
+            }
+        }
+        Ok(rows)
+    }
 }
 
 pub(super) trait SpireObjectReader {
@@ -1929,8 +1950,38 @@ impl SpireLocalObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpirePartitionObjectHeader, String> {
-        let raw = self.read_object_bytes(placement)?;
-        let (header, _) = SpirePartitionObjectHeader::decode_prefix(raw)?;
+        self.validate_local_available_placement(placement)?;
+        let raw = self.read_raw_tuple(placement.object_tid)?;
+        let (mut header, format_version, _) =
+            SpirePartitionObjectHeader::decode_prefix_with_format_version(raw)?;
+        match format_version {
+            PARTITION_OBJECT_FORMAT_VERSION_V1 => {
+                let expected_len = usize::try_from(placement.object_bytes)
+                    .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+                if raw.len() != expected_len {
+                    return Err(format!(
+                        "ec_spire object byte length mismatch: placement {}, tuple {}",
+                        placement.object_bytes,
+                        raw.len()
+                    ));
+                }
+            }
+            PARTITION_OBJECT_FORMAT_VERSION_V2 => {
+                let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
+                if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                    return Err(format!(
+                        "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+                        placement.object_bytes, meta.object_bytes_total
+                    ));
+                }
+                header = meta.header;
+            }
+            other => {
+                return Err(format!(
+                    "ec_spire unsupported partition object format version: {other}"
+                ));
+            }
+        }
         if header.pid != placement.pid {
             return Err(format!(
                 "ec_spire placement pid {} does not match object pid {}",
@@ -2827,7 +2878,13 @@ mod tests {
             .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
             .unwrap();
         let decoded = store.read_leaf_object_v2(&placement).unwrap();
+        let header = store.read_object_header(&placement).unwrap();
 
+        assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
+        assert_eq!(header.pid, 17);
+        assert_eq!(header.object_version, 3);
+        assert_eq!(header.parent_pid, 5);
+        assert_eq!(header.assignment_count, assignments.len() as u32);
         assert_eq!(decoded.meta.header.pid, 17);
         assert_eq!(decoded.meta.header.object_version, 3);
         assert_eq!(decoded.meta.header.parent_pid, 5);

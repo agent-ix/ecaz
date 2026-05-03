@@ -139,14 +139,15 @@ Decision record:
   `plan/design/spire-foundation-architecture-feedback-response.md`; it keeps
   relation-backed persistence blocked until the pre-persistence hardening
   items below are implemented or superseded by an accepted design update.
-- [ ] **Segmented column-major leaf objects.** Replace the in-memory
+- [x] **Segmented column-major leaf objects.** Replace the in-memory
   row-contiguous base-leaf format with `LeafPartitionObjectV2`: one metadata
   tuple plus page-sized row segments containing column-major flags,
   fixed-stride `vec_id`s, heap TIDs, gammas, and payload bytes. Keep small
   deltas row-encoded until compaction rewrites a V2 base object. V2
   metadata/segment codecs plus an in-memory local-store segmented write/read
-  path have landed; build-draft and scan helpers still need to consume V2
-  leaves before this item can be closed.
+  path have landed; single-level and partitioned build drafts now write V2 base
+  leaves, object-header dispatch understands V2 metadata placements, and scan
+  helpers can read either V1 compatibility leaves or V2 base leaves.
 - [ ] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
   borrowed row references for row-encoded deltas, one shared assignment
   visibility predicate, and batch assignment scorer entry points before
@@ -155,7 +156,9 @@ Decision record:
   now has a shape-checked batch scoring entry point for TurboQuant and RaBitQ.
   V2 leaf segments now expose borrowed column views plus row accessors over
   flags, fixed-stride vec_ids, heap TIDs, gammas, and payload chunks. Scan
-  migration remains open.
+  dispatch can read V2 leaves, but the candidate scorer still materializes
+  owned row objects before scoring; direct column-view batch scoring remains
+  open.
 - [x] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly

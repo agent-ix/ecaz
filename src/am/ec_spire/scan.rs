@@ -285,17 +285,12 @@ fn collect_validated_snapshot_leaf_rows(
             continue;
         }
 
-        let leaf_object = object_store.read_leaf_object(placement)?;
-        for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
-            let row_index = u32::try_from(row_index)
-                .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
-            rows.push(SpireLeafScanRow {
-                pid: manifest_entry.pid,
-                object_version: manifest_entry.object_version,
-                row_index,
-                assignment,
-            });
-        }
+        rows.extend(read_leaf_scan_rows(
+            object_store,
+            placement,
+            manifest_entry.pid,
+            manifest_entry.object_version,
+        )?);
     }
     Ok(rows)
 }
@@ -844,26 +839,63 @@ fn collect_snapshot_leaf_rows_for_pid(
             "ec_spire routed scan pid {leaf_pid} is not a leaf object"
         ));
     }
-    let leaf_object = object_store.read_leaf_object(placement)?;
-    if leaf_object.header.parent_pid != root_pid {
+    if header.parent_pid != root_pid {
         return Err(format!(
             "ec_spire routed scan leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
-            leaf_object.header.parent_pid
+            header.parent_pid
         ));
     }
 
-    let mut rows = Vec::with_capacity(leaf_object.assignments.len());
-    for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
-        let row_index = u32::try_from(row_index)
-            .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
-        rows.push(SpireLeafScanRow {
-            pid: leaf_pid,
-            object_version: manifest_entry.object_version,
-            row_index,
-            assignment,
-        });
+    read_leaf_scan_rows(
+        object_store,
+        placement,
+        leaf_pid,
+        manifest_entry.object_version,
+    )
+}
+
+fn read_leaf_scan_rows(
+    object_store: &SpireLocalObjectStore,
+    placement: &super::meta::SpirePlacementEntry,
+    pid: u64,
+    object_version: u64,
+) -> Result<Vec<SpireLeafScanRow>, String> {
+    match object_store.read_leaf_object(placement) {
+        Ok(leaf_object) => {
+            let mut rows = Vec::with_capacity(leaf_object.assignments.len());
+            for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
+                let row_index = u32::try_from(row_index)
+                    .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+                rows.push(SpireLeafScanRow {
+                    pid,
+                    object_version,
+                    row_index,
+                    assignment,
+                });
+            }
+            Ok(rows)
+        }
+        Err(v1_error) => {
+            let leaf_object = object_store.read_leaf_object_v2(placement).map_err(|v2_error| {
+                format!(
+                    "ec_spire scan could not read leaf pid {pid} as V1 or V2: V1 error: {v1_error}; V2 error: {v2_error}"
+                )
+            })?;
+            let assignments = leaf_object.assignment_rows()?;
+            let mut rows = Vec::with_capacity(assignments.len());
+            for (row_index, assignment) in assignments.into_iter().enumerate() {
+                let row_index = u32::try_from(row_index)
+                    .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+                rows.push(SpireLeafScanRow {
+                    pid,
+                    object_version,
+                    row_index,
+                    assignment,
+                });
+            }
+            Ok(rows)
+        }
     }
-    Ok(rows)
 }
 
 fn should_skip_placement(

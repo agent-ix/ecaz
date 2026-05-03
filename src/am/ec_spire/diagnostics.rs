@@ -106,7 +106,8 @@ pub(super) fn collect_snapshot_diagnostics(
             .available_object_bytes
             .checked_add(object_bytes)
             .ok_or_else(|| "ec_spire diagnostics object byte count overflow".to_owned())?;
-        match object_reader.read_object_header(placement)?.kind {
+        let header = object_reader.read_object_header(placement)?;
+        match header.kind {
             SpirePartitionObjectKind::Root => {
                 diagnostics.root_object_count += 1;
                 diagnostics.routing_object_bytes = diagnostics
@@ -131,8 +132,15 @@ pub(super) fn collect_snapshot_diagnostics(
                     .leaf_object_bytes
                     .checked_add(object_bytes)
                     .ok_or_else(|| "ec_spire diagnostics leaf byte count overflow".to_owned())?;
-                let object = object_reader.read_leaf_object(placement)?;
-                diagnostics.leaf_assignment_count += object.assignments.len();
+                let assignment_count = usize::try_from(header.assignment_count).map_err(|_| {
+                    "ec_spire diagnostics leaf assignment count exceeds usize".to_owned()
+                })?;
+                diagnostics.leaf_assignment_count = diagnostics
+                    .leaf_assignment_count
+                    .checked_add(assignment_count)
+                    .ok_or_else(|| {
+                        "ec_spire diagnostics leaf assignment count overflow".to_owned()
+                    })?;
             }
             SpirePartitionObjectKind::Delta => {
                 diagnostics.delta_object_count += 1;

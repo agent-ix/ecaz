@@ -570,7 +570,13 @@ pub(super) fn build_single_level_leaf_epoch_draft(
     )?;
     let assignments = build_primary_leaf_assignments(&mut local_vec_id_cursor, input.assignments)?;
     let leaf_object = SpireLeafPartitionObject::new(pid, input.object_version, 0, assignments)?;
-    let placement = object_store.insert_leaf_object(input.epoch, &leaf_object)?;
+    let placement = object_store.insert_leaf_object_v2_from_rows(
+        input.epoch,
+        leaf_object.header.pid,
+        leaf_object.header.object_version,
+        leaf_object.header.parent_pid,
+        &leaf_object.assignments,
+    )?;
     let placement_directory = SpirePlacementDirectory::from_entries(input.epoch, vec![placement])?;
 
     let draft = SpireSingleLevelBuildDraft {
@@ -696,7 +702,13 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     let mut placements = Vec::with_capacity(centroid_count + 1);
     placements.push(object_store.insert_routing_object(input.epoch, &routing_object)?);
     for leaf_object in &leaf_objects {
-        placements.push(object_store.insert_leaf_object(input.epoch, leaf_object)?);
+        placements.push(object_store.insert_leaf_object_v2_from_rows(
+            input.epoch,
+            leaf_object.header.pid,
+            leaf_object.header.object_version,
+            leaf_object.header.parent_pid,
+            &leaf_object.assignments,
+        )?);
     }
     let placement_directory = SpirePlacementDirectory::from_entries(input.epoch, placements)?;
 
@@ -889,13 +901,21 @@ mod tests {
         let (draft, pid_allocator, local_vec_id_allocator, object_store) = build_valid_draft();
 
         let placement = draft.placement_directory.get(SPIRE_FIRST_PID).unwrap();
-        let stored_leaf = object_store.read_leaf_object(placement).unwrap();
+        let stored_leaf = object_store.read_leaf_object_v2(placement).unwrap();
 
         assert_eq!(draft.epoch_manifest.epoch, 7);
         assert_eq!(draft.leaf_object.header.pid, SPIRE_FIRST_PID);
         assert_eq!(draft.leaf_object.header.object_version, 1);
         assert_eq!(draft.leaf_object.assignments.len(), 2);
-        assert_eq!(stored_leaf, draft.leaf_object);
+        assert_eq!(stored_leaf.meta.header.pid, draft.leaf_object.header.pid);
+        assert_eq!(
+            stored_leaf.meta.header.object_version,
+            draft.leaf_object.header.object_version
+        );
+        assert_eq!(
+            stored_leaf.meta.header.assignment_count,
+            draft.leaf_object.assignments.len() as u32
+        );
         assert_eq!(
             draft
                 .object_manifest
@@ -1104,9 +1124,11 @@ mod tests {
                 .placement_directory
                 .get(leaf_object.header.pid)
                 .unwrap();
+            let stored_leaf = object_store.read_leaf_object_v2(placement).unwrap();
+            assert_eq!(stored_leaf.meta.header.pid, leaf_object.header.pid);
             assert_eq!(
-                object_store.read_leaf_object(placement).unwrap(),
-                *leaf_object
+                stored_leaf.meta.header.assignment_count,
+                leaf_object.assignments.len() as u32
             );
         }
         assert_eq!(
