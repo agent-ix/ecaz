@@ -3,7 +3,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::ptr;
 
 use super::meta::{
-    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot,
+    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     SpireValidatedEpochSnapshot,
 };
 use super::options::{
@@ -178,6 +178,9 @@ struct SpireScanOpaque {
     query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
     cursor: SpireScanCandidateCursor,
+    // Cached for the scan descriptor lifetime. Future snapshot loading can
+    // invalidate this if it observes a newer active_epoch during a rescan.
+    root_control: Option<SpireRootControlState>,
 }
 
 impl Default for SpireScanOpaque {
@@ -187,6 +190,7 @@ impl Default for SpireScanOpaque {
             query: None,
             scan_plan: None,
             cursor: SpireScanCandidateCursor::default(),
+            root_control: None,
         }
     }
 }
@@ -209,6 +213,18 @@ impl SpireScanOpaque {
         self.query = None;
         self.scan_plan = None;
         self.cursor.reset(Vec::new());
+    }
+
+    unsafe fn root_control_for_rescan(
+        &mut self,
+        index_relation: pg_sys::Relation,
+    ) -> SpireRootControlState {
+        if let Some(root_control) = self.root_control {
+            return root_control;
+        }
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        self.root_control = Some(root_control);
+        root_control
     }
 
     fn next_output(&mut self) -> Option<SpireScanOutput> {
@@ -1214,7 +1230,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
             (*scan).xs_orderbyvals = ptr::null_mut();
             (*scan).xs_orderbynulls = ptr::null_mut();
 
-            let root_control = page::read_root_control_page((*scan).indexRelation);
+            let root_control = opaque.root_control_for_rescan((*scan).indexRelation);
             if root_control.active_epoch == 0 {
                 let scan_plan =
                     resolve_single_level_scan_plan(0, relation_options((*scan).indexRelation))
@@ -1312,7 +1328,7 @@ mod tests {
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpirePublishedEpochSnapshot,
+        SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::options::{
         EcSpireOptions, SpireCandidateDedupeMode, SpireSingleLevelScanPlan, SpireStorageFormat,
@@ -2715,12 +2731,14 @@ mod tests {
             scan_plan,
             vec![scored_candidate(9, 50, 4, -9.0)],
         );
+        opaque.root_control = Some(SpireRootControlState::empty());
 
         opaque.clear_scan_work();
 
         assert!(!opaque.rescan_called);
         assert_eq!(opaque.query, None);
         assert_eq!(opaque.scan_plan, None);
+        assert_eq!(opaque.root_control, Some(SpireRootControlState::empty()));
         assert!(opaque.next_output().is_none());
     }
 
