@@ -75,35 +75,37 @@ LIMIT 10;
 
 ## Choosing An Index
 
-`ec_hnsw` remains the default general-purpose graph index. It supports storage
-formats selected per index with the `storage_format` reloption:
+Each index family implements a different search algorithm. Quantization
+(`storage_format`) is a separate concern — it controls how vectors are
+compressed inside the index and is independent of the index family. See
+[Benchmarks](docs/benchmarks.md) for measured recall, latency, and index size
+comparisons.
 
-- `turboquant` is the default. Use it for small or medium indexes and for the
-  simplest operational path.
-- `pq_fastscan` stores a grouped hot path plus a colder rerank payload. Use it
-  for latency-critical workloads after measuring it on your corpus.
+### ec_hnsw
+
+HNSW builds a multi-layer proximity graph. It offers the lowest query latency
+but carries a larger index footprint. It is the default general-purpose choice.
+
+Supports `turboquant` (default) and `pq_fastscan`. Switching formats requires
+`REINDEX`; there is no in-place upgrade.
 
 ```sql
--- Default / explicit TurboQuant index
 CREATE INDEX ON memories
 USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (storage_format = 'turboquant', m = 8, ef_construction = 64);
 
--- PqFastScan index on the same canonical row column
 CREATE INDEX ON memories
 USING ec_hnsw (embedding ecvector_ip_ops)
-WITH (
-    storage_format = 'pq_fastscan',
-    m = 8,
-    ef_construction = 64
-);
+WITH (storage_format = 'pq_fastscan', m = 8, ef_construction = 64);
 ```
 
-Switching an index from one storage format to the other requires `REINDEX`.
-There is no in-place format upgrade.
+### ec_ivf
 
-`ec_ivf` is an opt-in posting-list index. It is useful for comparing sequential
-posting-list scan behavior, quantizer variants, and live-insert tradeoffs.
+IVF partitions vectors into posting lists and scans a configurable subset at
+query time via `nprobe`. It scales to larger datasets with a smaller index
+footprint than HNSW, with recall controlled by the `nprobe`/`nlists` ratio.
+
+Supports `turboquant`, `pq_fastscan`, and `rabitq`.
 
 ```sql
 CREATE INDEX ON memories
@@ -116,10 +118,13 @@ WITH (
 );
 ```
 
-`ec_diskann` is an opt-in DiskANN/Vamana-style graph index. It currently
-expects unit-normalized source vectors. Local Task 29 measurements established
-its current build/recall/latency baseline; product claims still need dedicated
-benchmark hardware.
+### ec_diskann
+
+DiskANN/Vamana builds a sparse navigable graph designed for large-scale
+workloads. It delivers near-exact recall with a significantly smaller index
+footprint than HNSW. Requires unit-normalized source vectors.
+
+Supports `pq_fastscan`.
 
 ```sql
 CREATE TABLE unit_memories (
