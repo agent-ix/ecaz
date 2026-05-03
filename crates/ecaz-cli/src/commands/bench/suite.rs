@@ -135,7 +135,29 @@ struct SuiteConfig {
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     defaults: SuiteDefaults,
+    #[serde(default)]
+    thresholds: Vec<ThresholdConfig>,
     steps: Vec<SuiteStep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ThresholdConfig {
+    name: String,
+    step: String,
+    metric: String,
+    field: String,
+    op: ThresholdOp,
+    value: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ThresholdOp {
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Eq,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -314,6 +336,8 @@ struct SuiteManifest {
     generated_at_unix_ms: u128,
     connection: ManifestConnection,
     steps: Vec<StepRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    threshold_results: Vec<ThresholdResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -345,6 +369,20 @@ struct StepRecord {
     duration_ms: Option<u128>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ThresholdResult {
+    name: String,
+    step: String,
+    metric: String,
+    field: String,
+    op: ThresholdOp,
+    expected: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    actual: Option<f64>,
+    passed: bool,
+    message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -484,7 +522,17 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         }
     }
 
-    write_results_if_requested(&args, &config, &manifest).await?;
+    let rows = write_results_if_requested(&args, &config, &manifest).await?;
+    manifest.threshold_results = evaluate_thresholds(&config.thresholds, &rows);
+    write_manifest_if_requested(&args, &config, &manifest).await?;
+    let failures = manifest
+        .threshold_results
+        .iter()
+        .filter(|result| !result.passed)
+        .count();
+    if failures > 0 {
+        bail!("suite thresholds failed: {failures}");
+    }
     Ok(())
 }
 
@@ -618,6 +666,26 @@ async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<(
             );
         }
     }
+    if !manifest.threshold_results.is_empty() {
+        crate::ecaz_println!("");
+        crate::ecaz_println!("## Thresholds");
+        crate::ecaz_println!("");
+        crate::ecaz_println!("| Name | Status | Actual | Expected |");
+        crate::ecaz_println!("| --- | --- | ---: | ---: |");
+        for result in &manifest.threshold_results {
+            crate::ecaz_println!(
+                "| {} | {} | {} | {:?} {} |",
+                result.name,
+                if result.passed { "pass" } else { "fail" },
+                result
+                    .actual
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                result.op,
+                result.expected
+            );
+        }
+    }
     if let Some(path) = results_output {
         write_results_jsonl(path, &rows).await?;
         crate::ecaz_eprintln!("wrote {}", path.display());
@@ -662,6 +730,7 @@ fn build_manifest(
             password_configured: conn.password.is_some(),
         },
         steps: Vec::with_capacity(config.steps.len()),
+        threshold_results: Vec::new(),
     };
 
     for step in &config.steps {
@@ -758,7 +827,8 @@ async fn write_results_if_requested(
     args: &SuiteRunOptions,
     config: &SuiteConfig,
     manifest: &SuiteManifest,
-) -> Result<()> {
+) -> Result<Vec<ResultRow>> {
+    let rows = extract_result_rows(manifest).await?;
     let path = args.results_output.clone().or_else(|| {
         config
             .artifact_dir
@@ -766,11 +836,10 @@ async fn write_results_if_requested(
             .map(|dir| dir.join("results.jsonl"))
     });
     if let Some(path) = path {
-        let rows = extract_result_rows(manifest).await?;
         write_results_jsonl(&path, &rows).await?;
         crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
     }
-    Ok(())
+    Ok(rows)
 }
 
 #[derive(Debug, Serialize)]
@@ -988,6 +1057,63 @@ fn format_metric_values(values: &BTreeMap<String, String>) -> String {
         .map(|(key, value)| format!("`{key}={value}`"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn evaluate_thresholds(thresholds: &[ThresholdConfig], rows: &[ResultRow]) -> Vec<ThresholdResult> {
+    thresholds
+        .iter()
+        .map(|threshold| evaluate_threshold(threshold, rows))
+        .collect()
+}
+
+fn evaluate_threshold(threshold: &ThresholdConfig, rows: &[ResultRow]) -> ThresholdResult {
+    let actual = rows
+        .iter()
+        .filter(|row| row.step == threshold.step && row.metric == threshold.metric)
+        .filter_map(|row| row.values.get(&threshold.field))
+        .filter_map(|value| parse_numeric_prefix(value))
+        .next();
+    let passed = actual
+        .map(|actual| compare_threshold(actual, threshold.op, threshold.value))
+        .unwrap_or(false);
+    ThresholdResult {
+        name: threshold.name.clone(),
+        step: threshold.step.clone(),
+        metric: threshold.metric.clone(),
+        field: threshold.field.clone(),
+        op: threshold.op,
+        expected: threshold.value,
+        actual,
+        passed,
+        message: match actual {
+            Some(actual) => format!(
+                "{} {} {:?} {} -> {}",
+                threshold.field, actual, threshold.op, threshold.value, passed
+            ),
+            None => format!(
+                "no result row for step={}, metric={}, field={}",
+                threshold.step, threshold.metric, threshold.field
+            ),
+        },
+    }
+}
+
+fn compare_threshold(actual: f64, op: ThresholdOp, expected: f64) -> bool {
+    match op {
+        ThresholdOp::Gt => actual > expected,
+        ThresholdOp::Gte => actual >= expected,
+        ThresholdOp::Lt => actual < expected,
+        ThresholdOp::Lte => actual <= expected,
+        ThresholdOp::Eq => (actual - expected).abs() < f64::EPSILON,
+    }
+}
+
+fn parse_numeric_prefix(value: &str) -> Option<f64> {
+    let value = value.trim();
+    let split_at = value
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-'))
+        .unwrap_or(value.len());
+    value[..split_at].parse().ok()
 }
 
 fn validate_config(config: &SuiteConfig) -> Result<()> {
@@ -1691,6 +1817,30 @@ mod tests {
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
         );
+    }
+
+    #[test]
+    fn evaluates_thresholds_against_result_rows() {
+        let rows = vec![ResultRow {
+            suite: "suite".into(),
+            step: "recall".into(),
+            kind: "recall".into(),
+            metric: "recall".into(),
+            artifact: "recall.log".into(),
+            values: BTreeMap::from([("recall@k".into(), "0.9980".into())]),
+        }];
+        let thresholds = vec![ThresholdConfig {
+            name: "recall-floor".into(),
+            step: "recall".into(),
+            metric: "recall".into(),
+            field: "recall@k".into(),
+            op: ThresholdOp::Gte,
+            value: 0.995,
+        }];
+        let results = evaluate_thresholds(&thresholds, &rows);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].passed);
+        assert_eq!(results[0].actual, Some(0.9980));
     }
 
     #[test]

@@ -76,7 +76,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-035 | FR-035-AC-1..3 | TC-011 | Complete for local DiskANN scan/prefilter/rerank behavior |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
-| FR-038 | FR-038-AC-1..5 | TC-020 | Complete for first auto-runner surface; thresholds and resume conflict handling deferred |
+| FR-038 | FR-038-AC-1..6 | TC-020 | Complete for first auto-runner surface; resume conflict handling deferred |
 
 ### Non-Functional Requirement Coverage
 
@@ -133,7 +133,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-019 | `ecaz` command groups | `corpus`, `bench`, `compare`, `dev`, `quant`, `stress` | Help tree, README tree, and dispatch modules stay aligned |
 | TC-019 | `ecaz` AM profiles | `ec_hnsw`, `ec_ivf`, `ec_diskann` | Profile metadata selects AM, opclass, embedding type, scan GUC, sweep axis, and reloption set |
 | TC-019 | `ecaz` logging | terminal output, `--log-file`, dev SQL `--log-output` | Review evidence can be stored under packet-local artifacts |
-| TC-020 | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl` | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection and normalized result rows |
+| TC-020 | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl`, thresholds | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection, normalized result rows, and threshold assertions |
 
 ## Constraint Boundary Tests
 
@@ -183,7 +183,7 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-004 | HNSW insert throughput decontention | Medium | Track as future Task 13 work |
 | GAP-005 | Full requirement-to-individual-test function inventory | Low | Generate from source/test names if a stricter audit packet is needed |
 | GAP-006 | Automated CLI README-vs-Clap tree drift check | Low | Add a generated help snapshot or parser-backed docs check if the CLI surface starts changing frequently |
-| GAP-007 | Suite-level success thresholds | Low | Add threshold assertions after result extraction has real optimization-run coverage |
+| GAP-007 | Resume conflict handling | Low | Compare config hashes and expanded commands before reusing succeeded step records |
 
 ## Test Execution Summary
 

@@ -246,6 +246,16 @@ The first-supported config schema is JSON `schema_version: 1`:
     "pg": 18,
     "socket_dir": "/Users/peter/.pgrx"
   },
+  "thresholds": [
+    {
+      "name": "recall10-floor",
+      "step": "recall10-nprobe-sweep-w500",
+      "metric": "recall",
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.995
+    }
+  ],
   "steps": [
     {
       "kind": "recall",
@@ -323,6 +333,11 @@ in a previous manifest while retaining the current config's expanded commands.
 The runner writes normalized metric rows to `<artifact_dir>/results.jsonl` after
 execution; override with `--results-output <path>` if the packet needs a
 different location.
+
+Optional `thresholds` fail a completed suite when parsed results miss a target.
+Thresholds match by `step`, `metric`, and result `field`; supported operators
+are `gt`, `gte`, `lt`, `lte`, and `eq`. Numeric parsing uses the leading number
+from fields such as `0.9980`, `10.8 ms`, or `202.9 B`.
 
 After or during a run, inspect the manifest:
 

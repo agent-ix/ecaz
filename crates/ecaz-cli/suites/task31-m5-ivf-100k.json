@@ -14,6 +14,24 @@
     "pg": 18,
     "socket_dir": "/Users/peter/.pgrx"
   },
+  "thresholds": [
+    {
+      "name": "quality-candidate-recall100-floor",
+      "step": "recall100-candidates-w1000",
+      "metric": "recall",
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.99
+    },
+    {
+      "name": "quality-candidate-p50-budget-ms",
+      "step": "latency-candidates-w1000",
+      "metric": "latency",
+      "field": "p50",
+      "op": "lte",
+      "value": 15.0
+    }
+  ],
   "steps": [
     {
       "kind": "load",

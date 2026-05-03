@@ -29,10 +29,11 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
 6. `run --resume-from <manifest>` SHALL skip selected steps that already succeeded in the referenced manifest.
 7. `run` SHALL stop after the first failed selected step unless `--continue-on-error` is set.
 8. `run` SHOULD write normalized `results.jsonl` rows from completed recall, latency, storage, and load artifacts.
-9. `audit --config <path>` SHALL validate suite shape and required load input files before a long run.
-10. `status --manifest <path>` SHALL summarize completed, failed, skipped, dry-run, stale, and missing-artifact state.
-11. `report --manifest <path>` SHALL emit a markdown report from manifest metadata and parsed result rows.
-12. The legacy `ecaz bench suite --config <path> --dry-run` form SHALL remain accepted as a compatibility alias for the first dry-run slice.
+9. `run` SHALL evaluate configured thresholds against parsed result rows and fail the suite when any threshold is not satisfied.
+10. `audit --config <path>` SHALL validate suite shape and required load input files before a long run.
+11. `status --manifest <path>` SHALL summarize completed, failed, skipped, dry-run, stale, and missing-artifact state.
+12. `report --manifest <path>` SHALL emit a markdown report from manifest metadata and parsed result rows.
+13. The legacy `ecaz bench suite --config <path> --dry-run` form SHALL remain accepted as a compatibility alias for the first dry-run slice.
 
 ## Acceptance Criteria
 
@@ -55,3 +56,7 @@ The CLI README documents suite commands, schema conventions, dry-run/execution f
 ### FR-038-AC-5
 
 Completed suite runs can produce normalized JSONL rows for recall, latency, storage, and load artifacts.
+
+### FR-038-AC-6
+
+Configured thresholds are recorded in the manifest and can fail an otherwise completed suite.
