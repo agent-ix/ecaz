@@ -40,6 +40,7 @@ This specification is the top-level requirements artifact for the current main-b
 - `ec_ivf`, the optional IVF posting-list access method
 - `ec_diskann`, the optional DiskANN/Vamana-style graph access method
 - `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
+- configured `ecaz bench suite` runs for repeatable long benchmark sequences and packet-local run manifests
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
 
 ## 2. Scope
@@ -59,6 +60,7 @@ This specification governs:
 - DiskANN/Vamana build, persisted graph format, binary sidecar prefilter, grouped-PQ traversal fallback, heap rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs, planner costing, and measurement evidence
 - WAL safety for index mutations and crash-safe page writes
 - The `ecaz` operator CLI command tree, access-method profiles, benchmark/comparison/stress workflows, and review-packet logging behavior
+- The `ecaz bench suite` configuration format, dry-run/execution/status/audit/report behavior, and suite manifest provenance
 - Benchmark methodology and review-packet artifact provenance for any performance or recall claim
 
 ### 2.2 Out of Scope

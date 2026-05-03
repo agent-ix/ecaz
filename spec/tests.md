@@ -27,7 +27,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | StR-003 | US-003, US-005, FR-008..FR-010, FR-030 | TC-004 | Partial: partition-specific evidence should be refreshed when next HNSW benchmark packet is opened |
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
-| StR-006 | US-015, US-016, FR-037, NFR-007..NFR-009 | TC-015, TC-016, TC-019 | Partial: product hardware gates are explicit gaps |
+| StR-006 | US-015, US-016, US-017, FR-037, FR-038, NFR-007..NFR-009 | TC-015, TC-016, TC-019, TC-020 | Partial: product hardware gates are explicit gaps |
 
 ### User Story Coverage
 
@@ -49,6 +49,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Complete for local DiskANN v1; product claims deferred |
 | US-015 | US-015-AC-1..3 | TC-015, TC-016 | Partial: product benchmark claim lane is a planned gate |
 | US-016 | US-016-AC-1..3 | TC-019 | Complete for docs/spec traceability; command execution tests run on demand |
+| US-017 | US-017-AC-1..4 | TC-020 | Partial: first suite runner slice covers dry-run/execution/status/audit/report metadata; normalized metric parsing deferred |
 
 ### Functional Requirement Coverage
 
@@ -75,6 +76,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-035 | FR-035-AC-1..3 | TC-011 | Complete for local DiskANN scan/prefilter/rerank behavior |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
+| FR-038 | FR-038-AC-1..4 | TC-020 | Partial: execution/status/audit/report metadata covered; rich results extraction deferred |
 
 ### Non-Functional Requirement Coverage
 
@@ -113,6 +115,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-017 | ReadStream cold-cache speedup gate | Benchmark | P2 | NFR-006, FR-019 | Gap: deferred |
 | TC-018 | HNSW insert decontention follow-up | Benchmark / implementation | P2 | Future Task 13 | Gap: future work |
 | TC-019 | `ecaz` CLI command tree, profiles, logging, and docs links | Unit / docs audit | P1 | US-016, FR-037, NFR-009 | Implemented for docs traceability; CLI tests run on demand |
+| TC-020 | `ecaz bench suite` dry-run, execution manifest, audit, status, and report | Unit / CLI smoke | P1 | US-017, FR-038, NFR-007, NFR-009 | Implemented for first-runner surface; metric parsing deferred |
 
 ## Option Permutation Matrix
 
@@ -130,6 +133,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-019 | `ecaz` command groups | `corpus`, `bench`, `compare`, `dev`, `quant`, `stress` | Help tree, README tree, and dispatch modules stay aligned |
 | TC-019 | `ecaz` AM profiles | `ec_hnsw`, `ec_ivf`, `ec_diskann` | Profile metadata selects AM, opclass, embedding type, scan GUC, sweep axis, and reloption set |
 | TC-019 | `ecaz` logging | terminal output, `--log-file`, dev SQL `--log-output` | Review evidence can be stored under packet-local artifacts |
+| TC-020 | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection |
 
 ## Constraint Boundary Tests
 
@@ -156,6 +160,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | EC-005 | Dead tuple cleanup during vacuum | FR-022, FR-033, FR-036 | TC-004, TC-009, TC-012 | Deleted rows returned or graph connectivity loss |
 | EC-006 | Product benchmark claim without controlled hardware | NFR-007, NFR-008 | TC-016 | Misleading docs or unsupported roadmap decisions |
 | EC-007 | CLI README command tree drifts from Clap tree | FR-037, NFR-009 | TC-019 | Operators run stale commands or miss supported workflows |
+| EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038, NFR-007, NFR-009 | TC-020 | Operators cannot audit what ran or identify missing artifacts |
 
 ## Integration Test Matrix
 
@@ -178,6 +183,7 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-004 | HNSW insert throughput decontention | Medium | Track as future Task 13 work |
 | GAP-005 | Full requirement-to-individual-test function inventory | Low | Generate from source/test names if a stricter audit packet is needed |
 | GAP-006 | Automated CLI README-vs-Clap tree drift check | Low | Add a generated help snapshot or parser-backed docs check if the CLI surface starts changing frequently |
+| GAP-007 | Normalized suite `results.jsonl` metric extraction | Low | Parse recall/latency/storage logs after execution/status behavior is stable |
 
 ## Test Execution Summary
 

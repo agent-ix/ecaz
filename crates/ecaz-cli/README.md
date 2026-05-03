@@ -9,6 +9,7 @@ The CLI is now the supported operator surface for:
 
 - corpus preparation, generation, loading, inspection, and listing
 - recall / latency / storage / overhead benchmarks
+- configured benchmark suites for long unattended runs
 - DiskANN graph and build-probe diagnostics
 - pgvector and pgvectorscale comparison
 - quantizer feasibility studies
@@ -95,7 +96,12 @@ ecaz
 │   ├── storage     # table + index size accounting
 │   ├── diskann-graph       # persisted graph reachability/degree/edge diagnostics
 │   ├── diskann-build-probe # in-memory candidate pool/pruning/degree diagnostics
-│   └── overhead            # encode / internal scan / residual SQL breakdown
+│   ├── overhead            # encode / internal scan / residual SQL breakdown
+│   └── suite
+│       ├── run             # dry-run or execute a configured benchmark suite
+│       ├── audit           # validate suite shape and required local inputs
+│       ├── status          # summarize a suite manifest
+│       └── report          # emit a minimal markdown manifest report
 ├── compare
 │   ├── pgvector    # side-by-side recall + latency vs pgvector
 │   └── vectorscale # side-by-side DiskANN comparison vs pgvectorscale
@@ -215,6 +221,117 @@ ecaz corpus load --prefix dbpedia_10k --profile ec_diskann   ...  # adds a secon
 
 `ecaz corpus list` shows what's loaded; `ecaz corpus inspect --prefix <prefix>`
 shows the indexes built on it.
+
+## Benchmark suites
+
+`ecaz bench suite` runs longer benchmark plans from JSON config files. The
+suite runner is intended for AM onboarding, tuning sweeps, repeatability
+checks, and future RDS/Graviton runs where manual command sequences are too
+easy to lose or mis-record.
+
+The first-supported config schema is JSON `schema_version: 1`:
+
+```json
+{
+  "name": "task31-m5-ivf-100k",
+  "schema_version": 1,
+  "artifact_dir": "review/30178-task31-suite-runner-dry-run/artifacts",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall10-nprobe-sweep-w500",
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "k": 10,
+      "sweep": [40, 48, 56, 64, 80, 96],
+      "rerank_width": 500,
+      "truth_cache_file": "review/example/artifacts/truth_k10.json",
+      "log_output": "review/example/artifacts/recall10.log"
+    }
+  ]
+}
+```
+
+Supported step kinds are:
+
+- `load`: expands to `ecaz corpus load`, including profile, corpus/query TSVs,
+  optional manifest, reloptions, and `--log-file`.
+- `recall`: expands to `ecaz bench recall`, including `k`, sweep values,
+  truth cache, query limit, rerank width, and `--log-output`.
+- `latency`: expands to `ecaz bench latency`, including sweep values,
+  iterations, concurrency, rerank width, memory sampling, and `--log-output`.
+- `storage`: expands to `ecaz bench storage` with an optional `--log-file`.
+- `explain`: generates the configured SQL file and runs it through
+  `ecaz dev sql --raw --file ... --log-output ...`.
+- `raw`: runs an explicit `args` array for a command not yet modeled by a
+  first-class step kind. Use `expected_artifacts` if status/report should audit
+  output files.
+
+Before a long run, audit and dry-run the suite:
+
+```sh
+ecaz bench suite audit --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json
+
+ecaz --database postgres --host /Users/peter/.pgrx --port 28818 \
+  bench suite run \
+  --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json \
+  --dry-run
+```
+
+To execute the full suite:
+
+```sh
+ecaz --database postgres --host /Users/peter/.pgrx --port 28818 \
+  bench suite run \
+  --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json
+```
+
+The runner writes `suite-manifest.json` under `artifact_dir` unless
+`--manifest-output` is provided. The manifest records the config path and
+SHA256, redacted connection target, selected steps, expanded commands, expected
+artifacts, status, timestamps, duration, and exit code. By default execution
+stops on the first failed selected step; add `--continue-on-error` when a sweep
+should keep going after failures.
+
+During optimization, use `--only` to target a narrow slice while preserving the
+same config:
+
+```sh
+ecaz bench suite run \
+  --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json \
+  --only recall10-nprobe-sweep-w500 \
+  --only latency-nprobe-sweep-w500
+```
+
+After or during a run, inspect the manifest:
+
+```sh
+ecaz bench suite status \
+  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
+
+ecaz bench suite report \
+  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
+```
+
+`status` reports completed, failed, skipped, dry-run, stale, and
+missing-artifact counts. `report` emits a minimal markdown summary from the
+manifest. Normalized recall/latency/storage metric extraction is intentionally
+deferred until the execution and manifest shape settle.
+
+For RDS/Graviton or other remote runs, keep the same suite config shape and set
+connection flags or libpq environment variables at invocation time. Store
+hardware, instance class, storage, PostgreSQL settings, cache state, corpus,
+query set, and command provenance in the review packet before making product
+benchmark claims.
 
 ## Performance notes
 

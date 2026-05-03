@@ -1,37 +1,110 @@
-//! `ecaz bench suite` — configured benchmark plan expansion.
+//! `ecaz bench suite` — configured benchmark suite runner.
 //!
-//! This first slice implements a dry-run runner. It parses a suite JSON file,
-//! expands each step to the ordinary `ecaz` command it represents, and writes a
-//! machine-readable manifest. Later slices can execute the same expanded
-//! commands once review has settled the schema.
+//! Suites are JSON plans that expand into ordinary `ecaz` commands. The runner
+//! keeps the expansion visible in a manifest, then optionally executes each
+//! selected step in sequence.
 
-use clap::Args;
-use color_eyre::eyre::{bail, Context, Result};
+use clap::{Args, Subcommand};
+use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::ExitStatus;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::process::Command;
 
 use crate::psql::ConnectionOptions;
 
 #[derive(Args, Debug)]
 pub struct SuiteArgs {
+    #[command(subcommand)]
+    command: Option<SuiteCommand>,
+
+    /// JSON suite configuration file. Legacy alias for `bench suite run --dry-run`.
+    #[arg(long)]
+    config: Option<PathBuf>,
+
+    /// Print expanded commands without executing suite steps. Legacy alias for
+    /// `bench suite run --dry-run`.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Expand only steps with this name. Repeatable. Legacy alias for
+    /// `bench suite run --only`.
+    #[arg(long = "only")]
+    only: Vec<String>,
+
+    /// Write the suite manifest to this path. Legacy alias for
+    /// `bench suite run --manifest-output`.
+    #[arg(long)]
+    manifest_output: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+enum SuiteCommand {
+    /// Execute or dry-run a configured benchmark suite.
+    Run(RunArgs),
+    /// Validate suite shape and required input files before a long run.
+    Audit(AuditArgs),
+    /// Summarize completion state from a suite manifest.
+    Status(StatusArgs),
+    /// Emit a minimal markdown report from a suite manifest.
+    Report(ReportArgs),
+}
+
+#[derive(Args, Debug)]
+struct RunArgs {
     /// JSON suite configuration file.
     #[arg(long)]
-    pub config: PathBuf,
+    config: PathBuf,
 
     /// Print expanded commands without executing suite steps.
     #[arg(long)]
-    pub dry_run: bool,
+    dry_run: bool,
 
-    /// Expand only steps with this name. Repeatable.
+    /// Execute remaining selected steps after a failure.
+    #[arg(long)]
+    continue_on_error: bool,
+
+    /// Run only steps with this name. Repeatable.
     #[arg(long = "only")]
-    pub only: Vec<String>,
+    only: Vec<String>,
 
     /// Write the suite manifest to this path. Defaults to
     /// `<artifact_dir>/suite-manifest.json` when the config has `artifact_dir`.
     #[arg(long)]
-    pub manifest_output: Option<PathBuf>,
+    manifest_output: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct AuditArgs {
+    /// JSON suite configuration file.
+    #[arg(long)]
+    config: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct StatusArgs {
+    /// Suite manifest produced by `ecaz bench suite run`.
+    #[arg(long)]
+    manifest: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct ReportArgs {
+    /// Suite manifest produced by `ecaz bench suite run`.
+    #[arg(long)]
+    manifest: PathBuf,
+}
+
+#[derive(Debug)]
+struct SuiteRunOptions {
+    config: PathBuf,
+    dry_run: bool,
+    continue_on_error: bool,
+    only: Vec<String>,
+    manifest_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,9 +268,11 @@ struct ExplainStep {
 struct RawStep {
     name: String,
     args: Vec<String>,
+    #[serde(default)]
+    expected_artifacts: Vec<PathBuf>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct SuiteManifest {
     suite: String,
     schema_version: u32,
@@ -209,7 +284,7 @@ struct SuiteManifest {
     steps: Vec<StepRecord>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ManifestConnection {
     database: String,
     host: Option<String>,
@@ -218,26 +293,285 @@ struct ManifestConnection {
     password_configured: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct StepRecord {
     name: String,
     kind: String,
     command: Vec<String>,
     selected: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    expected_artifacts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    status: Option<StepStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    started_at_unix_ms: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finished_at_unix_ms: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u128>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum StepStatus {
+    DryRun,
+    Pending,
+    Skipped,
+    Succeeded,
+    Failed,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
-    if !args.dry_run {
-        bail!("suite execution is not implemented yet; rerun with --dry-run");
+    match args.command {
+        Some(SuiteCommand::Run(run_args)) => run_suite(conn, run_args.into()).await,
+        Some(SuiteCommand::Audit(audit_args)) => audit_suite(&audit_args.config).await,
+        Some(SuiteCommand::Status(status_args)) => status_manifest(&status_args.manifest).await,
+        Some(SuiteCommand::Report(report_args)) => report_manifest(&report_args.manifest).await,
+        None => {
+            let config = args.config.context(
+                "missing --config; use `ecaz bench suite run --config <path>` or the legacy `ecaz bench suite --config <path> --dry-run` alias",
+            )?;
+            if !args.dry_run {
+                bail!(
+                    "legacy `ecaz bench suite --config` only supports --dry-run; use `ecaz bench suite run --config {}` to execute",
+                    config.display()
+                );
+            }
+            run_suite(
+                conn,
+                SuiteRunOptions {
+                    config,
+                    dry_run: true,
+                    continue_on_error: false,
+                    only: args.only,
+                    manifest_output: args.manifest_output,
+                },
+            )
+            .await
+        }
     }
+}
 
-    let raw = tokio::fs::read_to_string(&args.config)
-        .await
-        .wrap_err_with(|| format!("reading {}", args.config.display()))?;
-    let config: SuiteConfig = serde_json::from_str(&raw)
-        .wrap_err_with(|| format!("parsing {}", args.config.display()))?;
+impl From<RunArgs> for SuiteRunOptions {
+    fn from(args: RunArgs) -> Self {
+        Self {
+            config: args.config,
+            dry_run: args.dry_run,
+            continue_on_error: args.continue_on_error,
+            only: args.only,
+            manifest_output: args.manifest_output,
+        }
+    }
+}
+
+async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
+    let (raw, config) = load_config(&args.config).await?;
     validate_config(&config)?;
 
+    let mut manifest = build_manifest(conn, &args, &raw, &config)?;
+    write_manifest_if_requested(&args, &config, &manifest).await?;
+
+    if args.dry_run {
+        for record in &manifest.steps {
+            if record.selected {
+                crate::ecaz_println!(
+                    "[suite:{}] {} -> {}",
+                    config.name,
+                    record.name,
+                    shell_join(&record.command)
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    let exe = std::env::current_exe().context("resolving current ecaz executable")?;
+    for idx in 0..manifest.steps.len() {
+        if !manifest.steps[idx].selected {
+            continue;
+        }
+        prepare_step(&config.steps[idx]).await?;
+        let command = manifest.steps[idx].command.clone();
+        crate::ecaz_println!(
+            "[suite:{}] {} -> {}",
+            config.name,
+            manifest.steps[idx].name,
+            shell_join(&command)
+        );
+        manifest.steps[idx].status = Some(StepStatus::Pending);
+        manifest.steps[idx].started_at_unix_ms = Some(now_ms());
+        write_manifest_if_requested(&args, &config, &manifest).await?;
+
+        let started = Instant::now();
+        let status = spawn_step(&exe, &command, conn).await.wrap_err_with(|| {
+            format!(
+                "running suite step {:?}: {}",
+                manifest.steps[idx].name,
+                shell_join(&command)
+            )
+        })?;
+        manifest.steps[idx].finished_at_unix_ms = Some(now_ms());
+        manifest.steps[idx].duration_ms = Some(started.elapsed().as_millis());
+        manifest.steps[idx].exit_code = status.code();
+        manifest.steps[idx].status = Some(if status.success() {
+            StepStatus::Succeeded
+        } else {
+            StepStatus::Failed
+        });
+        write_manifest_if_requested(&args, &config, &manifest).await?;
+
+        if !status.success() && !args.continue_on_error {
+            bail!(
+                "suite step {:?} failed with {}; rerun with --continue-on-error to keep going",
+                manifest.steps[idx].name,
+                format_exit_status(status)
+            );
+        }
+    }
+
+    Ok(())
+}
+
+async fn audit_suite(config_path: &Path) -> Result<()> {
+    let (_raw, config) = load_config(config_path).await?;
+    let mut findings = Vec::new();
+    if let Err(err) = validate_config(&config) {
+        findings.push(err.to_string());
+    }
+    for step in &config.steps {
+        for input in step.input_paths() {
+            if tokio::fs::metadata(&input).await.is_err() {
+                findings.push(format!(
+                    "step {:?} references missing input {}",
+                    step.name(),
+                    input.display()
+                ));
+            }
+        }
+        if step.expected_artifacts().is_empty() {
+            findings.push(format!(
+                "step {:?} does not declare an artifact path",
+                step.name()
+            ));
+        }
+    }
+
+    if findings.is_empty() {
+        crate::ecaz_println!(
+            "[suite:{}] audit passed: {} steps",
+            config.name,
+            config.steps.len()
+        );
+        Ok(())
+    } else {
+        for finding in &findings {
+            crate::ecaz_eprintln!("[suite:{}] audit: {finding}", config.name);
+        }
+        bail!("suite audit found {} issue(s)", findings.len())
+    }
+}
+
+async fn status_manifest(path: &Path) -> Result<()> {
+    let manifest = load_manifest(path).await?;
+    let summary = summarize_manifest(&manifest).await;
+    crate::ecaz_println!(
+        "[suite:{}] completed={} failed={} skipped={} dry_run={} missing_artifacts={} stale={}",
+        manifest.suite,
+        summary.completed,
+        summary.failed,
+        summary.skipped,
+        summary.dry_run,
+        summary.missing_artifacts,
+        summary.stale
+    );
+    for step in &manifest.steps {
+        let status = step.status.unwrap_or(if step.selected {
+            StepStatus::Pending
+        } else {
+            StepStatus::Skipped
+        });
+        crate::ecaz_println!(
+            "{:<12} {:<36} {}",
+            format!("{status:?}"),
+            step.name,
+            shell_join(&step.command)
+        );
+    }
+    Ok(())
+}
+
+async fn report_manifest(path: &Path) -> Result<()> {
+    let manifest = load_manifest(path).await?;
+    let summary = summarize_manifest(&manifest).await;
+    crate::ecaz_println!("# Suite Report: {}", manifest.suite);
+    crate::ecaz_println!("");
+    crate::ecaz_println!("- config: `{}`", manifest.config);
+    crate::ecaz_println!("- config_sha256: `{}`", manifest.config_sha256);
+    crate::ecaz_println!("- dry_run: `{}`", manifest.dry_run);
+    crate::ecaz_println!(
+        "- steps: completed {}, failed {}, skipped {}, dry-run {}, missing artifacts {}, stale {}",
+        summary.completed,
+        summary.failed,
+        summary.skipped,
+        summary.dry_run,
+        summary.missing_artifacts,
+        summary.stale
+    );
+    crate::ecaz_println!("");
+    crate::ecaz_println!("| Step | Kind | Status | Duration ms | Artifacts |");
+    crate::ecaz_println!("| --- | --- | --- | ---: | --- |");
+    for step in &manifest.steps {
+        let status = step.status.unwrap_or(if step.selected {
+            StepStatus::Pending
+        } else {
+            StepStatus::Skipped
+        });
+        crate::ecaz_println!(
+            "| {} | {} | {:?} | {} | {} |",
+            step.name,
+            step.kind,
+            status,
+            step.duration_ms
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into()),
+            if step.expected_artifacts.is_empty() {
+                "-".into()
+            } else {
+                step.expected_artifacts
+                    .iter()
+                    .map(|path| format!("`{path}`"))
+                    .collect::<Vec<_>>()
+                    .join("<br>")
+            }
+        );
+    }
+    Ok(())
+}
+
+async fn load_config(path: &Path) -> Result<(String, SuiteConfig)> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .wrap_err_with(|| format!("reading {}", path.display()))?;
+    let config: SuiteConfig =
+        serde_json::from_str(&raw).wrap_err_with(|| format!("parsing {}", path.display()))?;
+    Ok((raw, config))
+}
+
+async fn load_manifest(path: &Path) -> Result<SuiteManifest> {
+    let raw = tokio::fs::read_to_string(path)
+        .await
+        .wrap_err_with(|| format!("reading {}", path.display()))?;
+    serde_json::from_str(&raw).wrap_err_with(|| format!("parsing {}", path.display()))
+}
+
+fn build_manifest(
+    conn: &ConnectionOptions,
+    args: &SuiteRunOptions,
+    raw: &str,
+    config: &SuiteConfig,
+) -> Result<SuiteManifest> {
     let mut manifest = SuiteManifest {
         suite: config.name.clone(),
         schema_version: config.schema_version,
@@ -258,39 +592,55 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
     for step in &config.steps {
         let selected = args.only.is_empty() || args.only.iter().any(|only| only == step.name());
         let command = if selected {
-            step.expand(&config.defaults, conn)?
+            child_command_args(conn, step.expand(&config.defaults, conn)?)
         } else {
             Vec::new()
         };
-        if selected {
-            crate::ecaz_println!(
-                "[suite:{}] {} -> {}",
-                config.name,
-                step.name(),
-                shell_join(&command)
-            );
-        }
         manifest.steps.push(StepRecord {
             name: step.name().to_string(),
             kind: step.kind().to_string(),
             command,
             selected,
+            expected_artifacts: step
+                .expected_artifacts()
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+            status: Some(if selected {
+                if args.dry_run {
+                    StepStatus::DryRun
+                } else {
+                    StepStatus::Pending
+                }
+            } else {
+                StepStatus::Skipped
+            }),
+            started_at_unix_ms: None,
+            finished_at_unix_ms: None,
+            duration_ms: None,
+            exit_code: None,
         });
     }
+    Ok(manifest)
+}
 
-    if let Some(path) = manifest_path(&args, &config) {
+async fn write_manifest_if_requested(
+    args: &SuiteRunOptions,
+    config: &SuiteConfig,
+    manifest: &SuiteManifest,
+) -> Result<()> {
+    if let Some(path) = manifest_path(args, config) {
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        let body = serde_json::to_string_pretty(&manifest)?;
+        let body = serde_json::to_string_pretty(manifest)?;
         tokio::fs::write(&path, format!("{body}\n"))
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
         crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
     }
-
     Ok(())
 }
 
@@ -303,6 +653,13 @@ fn validate_config(config: &SuiteConfig) -> Result<()> {
     }
     if config.steps.is_empty() {
         bail!("suite {:?} has no steps", config.name);
+    }
+    let mut names = HashSet::new();
+    for step in &config.steps {
+        if !names.insert(step.name()) {
+            bail!("duplicate suite step name {:?}", step.name());
+        }
+        step.validate()?;
     }
     Ok(())
 }
@@ -330,16 +687,111 @@ impl SuiteStep {
         }
     }
 
+    fn validate(&self) -> Result<()> {
+        match self {
+            SuiteStep::Recall(step) if step.sweep.is_empty() => {
+                bail!(
+                    "recall step {:?} must include at least one sweep value",
+                    step.name
+                )
+            }
+            SuiteStep::Recall(step)
+                if step.truth_cache_file.is_some() && step.truth_cache_dir.is_some() =>
+            {
+                bail!(
+                    "recall step {:?} cannot set both truth_cache_file and truth_cache_dir",
+                    step.name
+                )
+            }
+            SuiteStep::Latency(step) if step.sweep.is_empty() => {
+                bail!(
+                    "latency step {:?} must include at least one sweep value",
+                    step.name
+                )
+            }
+            SuiteStep::Raw(step) if step.args.is_empty() => {
+                bail!("raw step {:?} must include args", step.name)
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn expand(&self, defaults: &SuiteDefaults, conn: &ConnectionOptions) -> Result<Vec<String>> {
         match self {
             SuiteStep::Load(step) => Ok(expand_load(step, defaults)),
-            SuiteStep::Recall(step) => expand_recall(step, defaults),
-            SuiteStep::Latency(step) => expand_latency(step, defaults),
+            SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
+            SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
         }
     }
+
+    fn expected_artifacts(&self) -> Vec<PathBuf> {
+        match self {
+            SuiteStep::Load(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::Recall(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
+            SuiteStep::Raw(step) => step.expected_artifacts.clone(),
+        }
+    }
+
+    fn input_paths(&self) -> Vec<PathBuf> {
+        match self {
+            SuiteStep::Load(step) => {
+                let mut paths = vec![step.corpus_file.clone(), step.queries_file.clone()];
+                if let Some(path) = &step.manifest_file {
+                    paths.push(path.clone());
+                }
+                paths
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
+async fn prepare_step(step: &SuiteStep) -> Result<()> {
+    if let SuiteStep::Explain(step) = step {
+        if let Some(parent) = step.sql_file.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .wrap_err_with(|| format!("creating {}", parent.display()))?;
+        }
+        tokio::fs::write(&step.sql_file, explain_sql(step))
+            .await
+            .wrap_err_with(|| format!("writing {}", step.sql_file.display()))?;
+    }
+    Ok(())
+}
+
+async fn spawn_step(exe: &Path, args: &[String], conn: &ConnectionOptions) -> Result<ExitStatus> {
+    let mut command = Command::new(exe);
+    command.args(args);
+    if let Some(password) = &conn.password {
+        command.env("PGPASSWORD", password);
+    }
+    command
+        .status()
+        .await
+        .wrap_err_with(|| format!("spawning {}", exe.display()))
+}
+
+fn child_command_args(conn: &ConnectionOptions, mut step_args: Vec<String>) -> Vec<String> {
+    let mut args = Vec::new();
+    push_arg(&mut args, "--database", &conn.database);
+    if let Some(host) = &conn.host {
+        push_arg(&mut args, "--host", host);
+    }
+    if let Some(port) = conn.port {
+        push_arg(&mut args, "--port", &port.to_string());
+    }
+    if let Some(user) = &conn.user {
+        push_arg(&mut args, "--user", user);
+    }
+    args.append(&mut step_args);
+    args
 }
 
 fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
@@ -369,20 +821,7 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     args
 }
 
-fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Result<Vec<String>> {
-    if step.sweep.is_empty() {
-        bail!(
-            "recall step {:?} must include at least one sweep value",
-            step.name
-        );
-    }
-    if step.truth_cache_file.is_some() && step.truth_cache_dir.is_some() {
-        bail!(
-            "recall step {:?} cannot set both truth_cache_file and truth_cache_dir",
-            step.name
-        );
-    }
-
+fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
     let mut args = vec!["bench".into(), "recall".into()];
     push_arg(&mut args, "--prefix", &step.prefix);
     push_arg(
@@ -414,17 +853,10 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Result<Vec<Stri
         step.truth_cache_dir.as_deref(),
     );
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
-    Ok(args)
+    args
 }
 
-fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Result<Vec<String>> {
-    if step.sweep.is_empty() {
-        bail!(
-            "latency step {:?} must include at least one sweep value",
-            step.name
-        );
-    }
-
+fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     let mut args = vec!["bench".into(), "latency".into()];
     push_arg(&mut args, "--prefix", &step.prefix);
     push_arg(
@@ -473,7 +905,7 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Result<Vec<St
             .to_string(),
     );
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
-    Ok(args)
+    args
 }
 
 fn expand_storage(step: &StorageStep) -> Vec<String> {
@@ -489,7 +921,6 @@ fn expand_explain(
     defaults: &SuiteDefaults,
     conn: &ConnectionOptions,
 ) -> Vec<String> {
-    let _sql = explain_sql(step);
     let mut args = vec!["dev".into(), "sql".into()];
     push_arg(
         &mut args,
@@ -566,7 +997,7 @@ fn explain_sql(step: &ExplainStep) -> String {
     )
 }
 
-fn manifest_path(args: &SuiteArgs, config: &SuiteConfig) -> Option<PathBuf> {
+fn manifest_path(args: &SuiteRunOptions, config: &SuiteConfig) -> Option<PathBuf> {
     args.manifest_output.clone().or_else(|| {
         config
             .artifact_dir
@@ -640,9 +1071,66 @@ fn shell_join(args: &[String]) -> String {
         .join(" ")
 }
 
+fn format_exit_status(status: ExitStatus) -> String {
+    status
+        .code()
+        .map(|code| format!("exit code {code}"))
+        .unwrap_or_else(|| "signal termination".into())
+}
+
+#[derive(Default)]
+struct ManifestSummary {
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+    dry_run: usize,
+    missing_artifacts: usize,
+    stale: usize,
+}
+
+async fn summarize_manifest(manifest: &SuiteManifest) -> ManifestSummary {
+    let mut summary = ManifestSummary::default();
+    for step in &manifest.steps {
+        match step.status.unwrap_or(if step.selected {
+            StepStatus::Pending
+        } else {
+            StepStatus::Skipped
+        }) {
+            StepStatus::Succeeded => summary.completed += 1,
+            StepStatus::Failed => summary.failed += 1,
+            StepStatus::Skipped => summary.skipped += 1,
+            StepStatus::DryRun => summary.dry_run += 1,
+            StepStatus::Pending => summary.stale += 1,
+        }
+        if step.selected
+            && matches!(step.status, Some(StepStatus::Succeeded))
+            && has_missing_artifact(step).await
+        {
+            summary.missing_artifacts += 1;
+        }
+    }
+    summary
+}
+
+async fn has_missing_artifact(step: &StepRecord) -> bool {
+    for artifact in &step.expected_artifacts {
+        if tokio::fs::metadata(artifact).await.is_err() {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct SuiteOnly {
+        #[command(flatten)]
+        args: SuiteArgs,
+    }
 
     fn conn() -> ConnectionOptions {
         ConnectionOptions {
@@ -652,6 +1140,48 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn parses_nested_run_command() {
+        let cli = SuiteOnly::try_parse_from([
+            "suite",
+            "run",
+            "--config",
+            "suite.json",
+            "--dry-run",
+            "--only",
+            "r10",
+        ])
+        .expect("suite parses");
+        match cli.args.command {
+            Some(SuiteCommand::Run(args)) => {
+                assert_eq!(args.config, PathBuf::from("suite.json"));
+                assert!(args.dry_run);
+                assert_eq!(args.only, vec!["r10"]);
+            }
+            _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn parses_legacy_dry_run_alias() {
+        let cli = SuiteOnly::try_parse_from([
+            "suite",
+            "--config",
+            "suite.json",
+            "--dry-run",
+            "--manifest-output",
+            "manifest.json",
+        ])
+        .expect("suite parses");
+        assert!(cli.args.command.is_none());
+        assert_eq!(cli.args.config, Some(PathBuf::from("suite.json")));
+        assert!(cli.args.dry_run);
+        assert_eq!(
+            cli.args.manifest_output,
+            Some(PathBuf::from("manifest.json"))
+        );
     }
 
     #[test]
@@ -675,6 +1205,26 @@ mod tests {
         assert_eq!(cfg.name, "smoke");
         assert_eq!(cfg.steps.len(), 1);
         assert_eq!(cfg.steps[0].name(), "r10");
+        validate_config(&cfg).unwrap();
+    }
+
+    #[test]
+    fn rejects_duplicate_step_names() {
+        let cfg: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "smoke",
+              "schema_version": 1,
+              "steps": [
+                {"kind": "storage", "name": "same", "prefix": "p"},
+                {"kind": "storage", "name": "same", "prefix": "p"}
+              ]
+            }"#,
+        )
+        .unwrap();
+        assert!(validate_config(&cfg)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate suite step name"));
     }
 
     #[test]
@@ -700,11 +1250,21 @@ mod tests {
             truth_cache_dir: None,
             log_output: Some("recall.log".into()),
         };
-        let args = expand_recall(&step, &defaults).unwrap();
+        let args = expand_recall(&step, &defaults);
         assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "100"]));
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
+    }
+
+    #[test]
+    fn prefixes_child_commands_with_connection_flags() {
+        let args = child_command_args(&conn(), vec!["bench".into(), "storage".into()]);
+        assert!(args.windows(2).any(|w| w == ["--database", "postgres"]));
+        assert!(args.windows(2).any(|w| w == ["--host", "/tmp/pg"]));
+        assert!(args.windows(2).any(|w| w == ["--port", "28818"]));
+        assert!(!args.contains(&"--password".into()));
+        assert!(args.ends_with(&["bench".into(), "storage".into()]));
     }
 
     #[test]
