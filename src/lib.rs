@@ -1545,6 +1545,12 @@ fn ec_spire_index_leaf_snapshot(
         name!(delta_insert_assignment_count, i64),
         name!(delta_delete_assignment_count, i64),
         name!(effective_assignment_count, i64),
+        name!(split_assignment_threshold, i64),
+        name!(merge_assignment_threshold, i64),
+        name!(split_recommended, bool),
+        name!(merge_recommended, bool),
+        name!(maintenance_action, String),
+        name!(maintenance_reason, String),
         name!(leaf_object_bytes, i64),
         name!(delta_object_bytes, i64),
     ),
@@ -1572,6 +1578,14 @@ fn ec_spire_index_leaf_snapshot(
                 .expect("delta delete assignment count should fit in i64"),
             i64::try_from(row.effective_assignment_count)
                 .expect("effective assignment count should fit in i64"),
+            i64::try_from(row.split_assignment_threshold)
+                .expect("split assignment threshold should fit in i64"),
+            i64::try_from(row.merge_assignment_threshold)
+                .expect("merge assignment threshold should fit in i64"),
+            row.split_recommended,
+            row.merge_recommended,
+            row.maintenance_action.to_owned(),
+            row.maintenance_reason.to_owned(),
             i64::try_from(row.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
             i64::try_from(row.delta_object_bytes).expect("delta object bytes should fit in i64"),
         )
@@ -4182,7 +4196,7 @@ mod tests {
         .expect("insert should succeed");
         Spi::run(
             "CREATE INDEX ec_spire_leaf_snapshot_sql_idx ON ec_spire_leaf_snapshot_sql \
-             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
         )
         .expect("populated ec_spire index creation should succeed");
 
@@ -4204,9 +4218,24 @@ mod tests {
         )
         .expect("leaf snapshot query should succeed")
         .expect("sum row should exist");
-        assert_eq!(build_leaf_count, 2);
+        let build_merge_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass) \
+             WHERE merge_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        let build_split_threshold = Spi::get_one::<i64>(
+            "SELECT min(split_assignment_threshold) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("threshold row should exist");
+        assert_eq!(build_leaf_count, 3);
         assert_eq!(build_base_assignments, 2);
         assert_eq!(build_delta_objects, 0);
+        assert_eq!(build_merge_candidates, 1);
+        assert_eq!(build_split_threshold, 32);
 
         Spi::run(
             "INSERT INTO ec_spire_leaf_snapshot_sql (id, embedding) VALUES \
@@ -4232,9 +4261,17 @@ mod tests {
         )
         .expect("leaf snapshot query should succeed")
         .expect("sum row should exist");
+        let post_insert_split_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass) \
+             WHERE split_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
         assert_eq!(post_insert_delta_objects, 1);
         assert_eq!(post_insert_delta_inserts, 1);
         assert_eq!(post_insert_effective_assignments, 3);
+        assert_eq!(post_insert_split_candidates, 0);
     }
 
     #[pg_test]

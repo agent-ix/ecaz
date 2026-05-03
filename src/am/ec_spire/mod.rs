@@ -170,6 +170,12 @@ pub(crate) struct SpireIndexLeafSnapshotRow {
     pub(crate) delta_insert_assignment_count: u64,
     pub(crate) delta_delete_assignment_count: u64,
     pub(crate) effective_assignment_count: u64,
+    pub(crate) split_assignment_threshold: u64,
+    pub(crate) merge_assignment_threshold: u64,
+    pub(crate) split_recommended: bool,
+    pub(crate) merge_recommended: bool,
+    pub(crate) maintenance_action: &'static str,
+    pub(crate) maintenance_reason: &'static str,
     pub(crate) leaf_object_bytes: u64,
     pub(crate) delta_object_bytes: u64,
 }
@@ -436,6 +442,40 @@ fn epoch_cleanup_blocked_reason(
         }
         meta::SpireEpochState::Retired | meta::SpireEpochState::Failed => "cleanup_plan_retained",
     }
+}
+
+fn leaf_maintenance_thresholds(effective_total: u64, leaf_count: u64) -> (u64, u64) {
+    if leaf_count == 0 {
+        return (0, 0);
+    }
+    let average = effective_total.div_ceil(leaf_count);
+    let split_threshold = average.saturating_mul(4).max(32);
+    let merge_threshold = average / 4;
+    (split_threshold, merge_threshold)
+}
+
+fn leaf_maintenance_labels(
+    effective_assignment_count: u64,
+    split_threshold: u64,
+    merge_threshold: u64,
+) -> (bool, bool, &'static str, &'static str) {
+    if effective_assignment_count >= split_threshold && split_threshold > 0 {
+        return (
+            true,
+            false,
+            "split_candidate",
+            "effective_assignments_at_or_above_split_threshold",
+        );
+    }
+    if effective_assignment_count <= merge_threshold {
+        return (
+            false,
+            true,
+            "merge_candidate",
+            "effective_assignments_at_or_below_merge_threshold",
+        );
+    }
+    (false, false, "none", "within_distribution_thresholds")
 }
 
 fn placement_state_name(state: meta::SpirePlacementState) -> &'static str {
@@ -892,6 +932,12 @@ pub(crate) unsafe fn index_leaf_snapshot(
                             delta_insert_assignment_count: 0,
                             delta_delete_assignment_count: 0,
                             effective_assignment_count: u64::from(header.assignment_count),
+                            split_assignment_threshold: 0,
+                            merge_assignment_threshold: 0,
+                            split_recommended: false,
+                            merge_recommended: false,
+                            maintenance_action: "none",
+                            maintenance_reason: "not_evaluated",
                             leaf_object_bytes: u64::from(placement.object_bytes),
                             delta_object_bytes: 0,
                         },
@@ -914,6 +960,12 @@ pub(crate) unsafe fn index_leaf_snapshot(
                             delta_insert_assignment_count: 0,
                             delta_delete_assignment_count: 0,
                             effective_assignment_count: 0,
+                            split_assignment_threshold: 0,
+                            merge_assignment_threshold: 0,
+                            split_recommended: false,
+                            merge_recommended: false,
+                            maintenance_action: "none",
+                            maintenance_reason: "missing_base_leaf",
                             leaf_object_bytes: 0,
                             delta_object_bytes: 0,
                         });
@@ -958,6 +1010,31 @@ pub(crate) unsafe fn index_leaf_snapshot(
                 .base_assignment_count
                 .saturating_add(row.delta_insert_assignment_count)
                 .saturating_sub(row.delta_delete_assignment_count);
+        }
+        let effective_total = rows
+            .iter()
+            .map(|row| row.effective_assignment_count)
+            .try_fold(0_u64, |acc, count| {
+                acc.checked_add(count).ok_or_else(|| {
+                    "ec_spire leaf snapshot effective assignment total overflow".to_owned()
+                })
+            })?;
+        let leaf_count = u64::try_from(rows.len())
+            .map_err(|_| "ec_spire leaf snapshot row count exceeds u64".to_owned())?;
+        let (split_threshold, merge_threshold) =
+            leaf_maintenance_thresholds(effective_total, leaf_count);
+        for row in &mut rows {
+            row.split_assignment_threshold = split_threshold;
+            row.merge_assignment_threshold = merge_threshold;
+            let (split, merge, action, reason) = leaf_maintenance_labels(
+                row.effective_assignment_count,
+                split_threshold,
+                merge_threshold,
+            );
+            row.split_recommended = split;
+            row.merge_recommended = merge;
+            row.maintenance_action = action;
+            row.maintenance_reason = reason;
         }
         rows.sort_by_key(|row| row.leaf_pid);
         Ok(rows)
