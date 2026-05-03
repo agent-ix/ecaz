@@ -404,8 +404,10 @@ Decision record:
   include routed delta inserts in live scans. The first insert into an empty
   active epoch now publishes epoch 1 with a one-child root routing object and a
   V2 base leaf using the inserted vector as the bootstrap centroid; later
-  inserts use the delta epoch path. Vacuum cleanup can now compact active delta
-  epochs into replacement V2 base leaves; insert batching remains open.
+  inserts use the delta epoch path, including focused coverage for multi-row
+  inserts that publish multiple deltas on one base leaf. Vacuum cleanup can now
+  compact active delta epochs into replacement V2 base leaves; insert batching
+  remains open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,

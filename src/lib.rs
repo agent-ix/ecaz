@@ -3761,6 +3761,80 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_insert_after_build_multiple_same_leaf_deltas() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_multi_delta (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_multi_delta_idx ON ec_spire_insert_multi_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, 0.9], 4, 42)), \
+             (5, encode_to_ecvector(ARRAY[0.0, 0.8], 4, 42))",
+        )
+        .expect("multi-row post-build insert should publish delta epochs");
+
+        let index_oid = index_oid("ec_spire_insert_multi_delta_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 6);
+        assert_eq!(next_local_vec_seq, 6);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_insert_multi_delta_idx", "delta_object_count"),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_insert_multi_delta_idx",
+                "delta_assignment_count"
+            ),
+            3
+        );
+
+        let delta_pid_count = Spi::get_one::<i64>(
+            "SELECT sum(delta_pid_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_insert_multi_delta_idx'::regclass, ARRAY[0.0, 1.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("delta pid aggregate should exist");
+        let delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT sum(delta_candidate_row_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_insert_multi_delta_idx'::regclass, ARRAY[0.0, 1.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("delta candidate aggregate should exist");
+        assert_eq!(delta_pid_count, 3);
+        assert_eq!(delta_candidate_row_count, 3);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let inserted_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_insert_multi_delta \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 5 \
+             ) ranked WHERE id IN (3, 4, 5)",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(inserted_rows_returned, 3);
+    }
+
+    #[pg_test]
     fn test_ec_spire_insert_bootstraps_empty_index_epoch() {
         Spi::run("CREATE TABLE ec_spire_insert_empty (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
