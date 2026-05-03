@@ -5325,6 +5325,7 @@ mod tests {
     fn test_pg18_ec_spire_concurrent_same_leaf_inserts() {
         const TABLE_NAME: &str = "ec_spire_concurrent_same_leaf_insert";
         const INDEX_NAME: &str = "ec_spire_concurrent_same_leaf_insert_idx";
+        // Test-unique advisory-lock id; conventionally `<review-packet>0`.
         const BARRIER_KEY: i64 = 303_360;
 
         let connection = pg_test_psql_connection();
@@ -5372,7 +5373,7 @@ mod tests {
                 ),
             ),
         ];
-        std::thread::sleep(Duration::from_millis(750));
+        wait_for_advisory_lock_waiters(BARRIER_KEY, 2);
         Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
             .expect("barrier lock should be released");
 
@@ -6113,6 +6114,33 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"))
+    }
+
+    fn wait_for_advisory_lock_waiters(barrier_key: i64, expected_waiters: i64) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let waiters = Spi::get_one::<i64>(&format!(
+                "SELECT count(*)::bigint FROM pg_locks
+                 WHERE locktype = 'advisory'
+                   AND mode = 'ShareLock'
+                   AND classid = 0
+                   AND objid = {barrier_key}
+                   AND objsubid = 1
+                   AND NOT granted"
+            ))
+            .expect("pg_locks waiter query should succeed")
+            .expect("pg_locks waiter count should exist");
+            if waiters >= expected_waiters {
+                return;
+            }
+            if Instant::now() >= deadline {
+                panic!(
+                    "timed out waiting for {expected_waiters} advisory-lock waiters on key \
+                     {barrier_key}; observed {waiters}"
+                );
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn ec_ivf_insert_values(start_id: i64, count: usize, vector: &str) -> String {
