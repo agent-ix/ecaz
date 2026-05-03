@@ -4724,6 +4724,41 @@ mod tests {
         assert!(post_insert_cleanup_candidate_count > 0);
         assert!(post_insert_cleanup_candidate_bytes > 0);
         assert!(recommendation.contains("cleanup candidates"));
+
+        let index_oid = index_oid("ec_spire_storage_debt_sql_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+
+        let post_compaction_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_cleanup_candidate_bytes = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_bytes FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert_eq!(post_compaction_active_epoch, 3);
+        assert!(post_compaction_tuple_count > post_insert_tuple_count);
+        assert!(post_compaction_cleanup_candidate_count > post_insert_cleanup_candidate_count);
+        assert!(post_compaction_cleanup_candidate_bytes > post_insert_cleanup_candidate_bytes);
     }
 
     #[pg_test]

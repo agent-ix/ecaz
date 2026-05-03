@@ -69,7 +69,8 @@ now exposes per-store routed leaf PID, delta PID, and candidate-row counts; a
 root routing snapshot now exposes active centroid-to-child PID rows and has
 unit coverage for malformed active manifests with zero or multiple root
 objects; relation storage diagnostics now quantify active-referenced and
-cleanup-candidate object tuples while physical reclamation remains deferred;
+cleanup-candidate object tuples after insert-delta and vacuum-compaction
+replacement epochs while physical reclamation remains deferred;
 scan sanity diagnostics now expose resolved scan preconditions for exact leaf
 coverage and full-frontier rerank; replacement-epoch publishes now write a
 retired manifest copy for the previous active epoch, and epoch diagnostics
