@@ -341,6 +341,68 @@ pub(super) fn placement_write_evidence_from_object_manifest(
         .collect()
 }
 
+pub(super) fn object_manifest_from_placement_writes(
+    epoch: u64,
+    placement_directory: &SpirePlacementDirectory,
+    evidence: &[SpirePublishPlacementWriteEvidence],
+) -> Result<SpireObjectManifest, String> {
+    if epoch == 0 {
+        return Err("ec_spire object manifest epoch 0 is invalid".to_owned());
+    }
+    if placement_directory.epoch != epoch {
+        return Err(format!(
+            "ec_spire object manifest placement directory epoch mismatch: got {}, expected {epoch}",
+            placement_directory.epoch
+        ));
+    }
+    if evidence.len() != placement_directory.entries.len() {
+        return Err(format!(
+            "ec_spire placement write evidence count mismatch: got {}, expected {}",
+            evidence.len(),
+            placement_directory.entries.len()
+        ));
+    }
+
+    let mut sorted = evidence.to_vec();
+    sorted.sort_by_key(|entry| entry.pid);
+    let mut previous_pid = None;
+    for entry in &sorted {
+        if entry.pid == 0 {
+            return Err("ec_spire placement write evidence pid 0 is invalid".to_owned());
+        }
+        if entry.placement_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_spire placement write evidence for pid {} has invalid placement_tid",
+                entry.pid
+            ));
+        }
+        if Some(entry.pid) == previous_pid {
+            return Err(format!(
+                "ec_spire placement write evidence duplicate pid {}",
+                entry.pid
+            ));
+        }
+        previous_pid = Some(entry.pid);
+    }
+
+    let mut entries = Vec::with_capacity(placement_directory.entries.len());
+    for (placement, write) in placement_directory.entries.iter().zip(sorted.iter()) {
+        if placement.pid != write.pid {
+            return Err(format!(
+                "ec_spire placement write evidence pid mismatch: got {}, expected {}",
+                write.pid, placement.pid
+            ));
+        }
+        entries.push(SpireManifestEntry {
+            epoch,
+            pid: placement.pid,
+            object_version: placement.object_version,
+            placement_tid: write.placement_tid,
+        });
+    }
+    SpireObjectManifest::from_entries(epoch, entries)
+}
+
 fn validate_object_write_evidence(
     placement_directory: &SpirePlacementDirectory,
     evidence: &[SpirePublishObjectWriteEvidence],
@@ -484,6 +546,22 @@ pub(super) unsafe fn write_manifest_bundle_to_relation(
         object_manifest_tid,
         placement_directory_tid,
     })
+}
+
+pub(super) unsafe fn write_placement_entries_to_relation(
+    index_relation: pg_sys::Relation,
+    placement_directory: &SpirePlacementDirectory,
+) -> Result<Vec<SpirePublishPlacementWriteEvidence>, String> {
+    let mut evidence = Vec::with_capacity(placement_directory.entries.len());
+    for entry in &placement_directory.entries {
+        let encoded = entry.encode()?;
+        let placement_tid = unsafe { page::append_object_tuple(index_relation, &encoded)? };
+        evidence.push(SpirePublishPlacementWriteEvidence {
+            pid: entry.pid,
+            placement_tid,
+        });
+    }
+    Ok(evidence)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1256,11 +1334,12 @@ unsafe extern "C-unwind" fn ec_spire_build_callback(
 mod tests {
     use super::{
         build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
-        object_write_evidence_from_placement_directory,
+        object_manifest_from_placement_writes, object_write_evidence_from_placement_directory,
         placement_write_evidence_from_object_manifest, resolve_training_sample_count,
         train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
-        SpirePartitionedSingleLevelBuildInput, SpirePublishStage, SpirePublishWritingObjects,
-        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
+        SpirePartitionedSingleLevelBuildInput, SpirePublishPlacementWriteEvidence,
+        SpirePublishStage, SpirePublishWritingObjects, SpireSingleLevelBuildInput,
+        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -1592,6 +1671,64 @@ mod tests {
 
         assert_eq!(error.stage, SpirePublishStage::WritingPlacements);
         assert!(error.error.contains("placement_tid mismatch"));
+    }
+
+    #[test]
+    fn object_manifest_from_placement_writes_uses_durable_placement_tids() {
+        let (draft, _, _, _) = build_valid_draft();
+        let evidence = vec![SpirePublishPlacementWriteEvidence {
+            pid: SPIRE_FIRST_PID,
+            placement_tid: tid(90, 7),
+        }];
+
+        let manifest = object_manifest_from_placement_writes(
+            draft.epoch_manifest.epoch,
+            &draft.placement_directory,
+            &evidence,
+        )
+        .unwrap();
+
+        let entry = manifest.get(SPIRE_FIRST_PID).unwrap();
+        assert_eq!(
+            entry.object_version,
+            draft.leaf_object.header.object_version
+        );
+        assert_eq!(entry.placement_tid, tid(90, 7));
+    }
+
+    #[test]
+    fn object_manifest_from_placement_writes_rejects_missing_or_duplicate_evidence() {
+        let (draft, _, _, _) = build_valid_draft();
+
+        assert!(object_manifest_from_placement_writes(
+            draft.epoch_manifest.epoch,
+            &draft.placement_directory,
+            &[],
+        )
+        .unwrap_err()
+        .contains("count mismatch"));
+
+        let duplicate = vec![
+            SpirePublishPlacementWriteEvidence {
+                pid: SPIRE_FIRST_PID,
+                placement_tid: tid(90, 7),
+            },
+            SpirePublishPlacementWriteEvidence {
+                pid: SPIRE_FIRST_PID,
+                placement_tid: tid(90, 8),
+            },
+        ];
+        let mut duplicate_directory = draft.placement_directory.clone();
+        duplicate_directory
+            .entries
+            .push(duplicate_directory.entries[0]);
+        assert!(object_manifest_from_placement_writes(
+            draft.epoch_manifest.epoch,
+            &duplicate_directory,
+            &duplicate,
+        )
+        .unwrap_err()
+        .contains("duplicate pid"));
     }
 
     #[test]
