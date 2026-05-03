@@ -157,6 +157,24 @@ pub(crate) struct SpireIndexEpochSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexLeafSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) leaf_pid: u64,
+    pub(crate) parent_pid: u64,
+    pub(crate) object_version: u64,
+    pub(crate) node_id: u32,
+    pub(crate) local_store_id: u32,
+    pub(crate) placement_state: &'static str,
+    pub(crate) base_assignment_count: u64,
+    pub(crate) delta_object_count: u64,
+    pub(crate) delta_insert_assignment_count: u64,
+    pub(crate) delta_delete_assignment_count: u64,
+    pub(crate) effective_assignment_count: u64,
+    pub(crate) leaf_object_bytes: u64,
+    pub(crate) delta_object_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -825,6 +843,123 @@ pub(crate) unsafe fn index_placement_snapshot(
                 delta_object_bytes: row.delta_object_bytes,
             })
             .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_leaf_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexLeafSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let mut rows_by_leaf_pid: HashMap<u64, SpireIndexLeafSnapshotRow> = HashMap::new();
+
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "leaf snapshot")?;
+            let placement = lookup.placement;
+            if placement.state != meta::SpirePlacementState::Available {
+                continue;
+            }
+            let header = unsafe { object_store.read_object_header(placement)? };
+            match header.kind {
+                storage::SpirePartitionObjectKind::Leaf => {
+                    rows_by_leaf_pid.insert(
+                        header.pid,
+                        SpireIndexLeafSnapshotRow {
+                            active_epoch: root_control.active_epoch,
+                            leaf_pid: header.pid,
+                            parent_pid: header.parent_pid,
+                            object_version: header.object_version,
+                            node_id: placement.node_id,
+                            local_store_id: placement.local_store_id,
+                            placement_state: placement_state_name(placement.state),
+                            base_assignment_count: u64::from(header.assignment_count),
+                            delta_object_count: 0,
+                            delta_insert_assignment_count: 0,
+                            delta_delete_assignment_count: 0,
+                            effective_assignment_count: u64::from(header.assignment_count),
+                            leaf_object_bytes: u64::from(placement.object_bytes),
+                            delta_object_bytes: 0,
+                        },
+                    );
+                }
+                storage::SpirePartitionObjectKind::Delta => {
+                    let delta_object = unsafe { object_store.read_delta_object(placement)? };
+                    let row = rows_by_leaf_pid
+                        .entry(header.parent_pid)
+                        .or_insert_with(|| SpireIndexLeafSnapshotRow {
+                            active_epoch: root_control.active_epoch,
+                            leaf_pid: header.parent_pid,
+                            parent_pid: 0,
+                            object_version: 0,
+                            node_id: placement.node_id,
+                            local_store_id: placement.local_store_id,
+                            placement_state: "missing_base_leaf",
+                            base_assignment_count: 0,
+                            delta_object_count: 0,
+                            delta_insert_assignment_count: 0,
+                            delta_delete_assignment_count: 0,
+                            effective_assignment_count: 0,
+                            leaf_object_bytes: 0,
+                            delta_object_bytes: 0,
+                        });
+                    row.delta_object_count =
+                        row.delta_object_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire leaf snapshot delta object count overflow".to_owned()
+                        })?;
+                    row.delta_object_bytes = row
+                        .delta_object_bytes
+                        .checked_add(u64::from(placement.object_bytes))
+                        .ok_or_else(|| {
+                            "ec_spire leaf snapshot delta object bytes overflow".to_owned()
+                        })?;
+                    for assignment in &delta_object.assignments {
+                        if storage::is_delete_delta_assignment(assignment) {
+                            row.delta_delete_assignment_count = row
+                                .delta_delete_assignment_count
+                                .checked_add(1)
+                                .ok_or_else(|| {
+                                    "ec_spire leaf snapshot delta delete count overflow".to_owned()
+                                })?;
+                        } else if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+                            != 0
+                        {
+                            row.delta_insert_assignment_count = row
+                                .delta_insert_assignment_count
+                                .checked_add(1)
+                                .ok_or_else(|| {
+                                    "ec_spire leaf snapshot delta insert count overflow".to_owned()
+                                })?;
+                        }
+                    }
+                }
+                storage::SpirePartitionObjectKind::Root
+                | storage::SpirePartitionObjectKind::Internal => {}
+            }
+        }
+
+        let mut rows = rows_by_leaf_pid.into_values().collect::<Vec<_>>();
+        for row in &mut rows {
+            row.effective_assignment_count = row
+                .base_assignment_count
+                .saturating_add(row.delta_insert_assignment_count)
+                .saturating_sub(row.delta_delete_assignment_count);
+        }
+        rows.sort_by_key(|row| row.leaf_pid);
         Ok(rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

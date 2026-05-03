@@ -1528,6 +1528,58 @@ fn ec_spire_index_epoch_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_leaf_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(leaf_pid, i64),
+        name!(parent_pid, i64),
+        name!(object_version, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(placement_state, String),
+        name!(base_assignment_count, i64),
+        name!(delta_object_count, i64),
+        name!(delta_insert_assignment_count, i64),
+        name!(delta_delete_assignment_count, i64),
+        name!(effective_assignment_count, i64),
+        name!(leaf_object_bytes, i64),
+        name!(delta_object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_leaf_snapshot") };
+    let rows = unsafe { am::spire_index_leaf_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.leaf_pid).expect("leaf pid should fit in i64"),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            row.placement_state.to_owned(),
+            i64::try_from(row.base_assignment_count)
+                .expect("base assignment count should fit in i64"),
+            i64::try_from(row.delta_object_count).expect("delta object count should fit in i64"),
+            i64::try_from(row.delta_insert_assignment_count)
+                .expect("delta insert assignment count should fit in i64"),
+            i64::try_from(row.delta_delete_assignment_count)
+                .expect("delta delete assignment count should fit in i64"),
+            i64::try_from(row.effective_assignment_count)
+                .expect("effective assignment count should fit in i64"),
+            i64::try_from(row.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
+            i64::try_from(row.delta_object_bytes).expect("delta object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -4099,6 +4151,90 @@ mod tests {
         assert_eq!(active_epoch, 2);
         assert_eq!(active_root_epoch, 2);
         assert_eq!(cleanup_eligible_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_leaf_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_leaf_snapshot_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_snapshot_empty_idx ON ec_spire_leaf_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_empty_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(empty_leaf_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_leaf_snapshot_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_leaf_snapshot_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_snapshot_sql_idx ON ec_spire_leaf_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        let build_base_assignments = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(base_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let build_delta_objects = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_object_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        assert_eq!(build_leaf_count, 2);
+        assert_eq!(build_base_assignments, 2);
+        assert_eq!(build_delta_objects, 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_leaf_snapshot_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_delta_objects = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_object_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let post_insert_delta_inserts = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_insert_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let post_insert_effective_assignments = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(effective_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        assert_eq!(post_insert_delta_objects, 1);
+        assert_eq!(post_insert_delta_inserts, 1);
+        assert_eq!(post_insert_effective_assignments, 3);
     }
 
     #[pg_test]

@@ -72,8 +72,9 @@ tuples while physical reclamation remains deferred; scan sanity diagnostics now
 expose resolved scan preconditions for exact leaf coverage and full-frontier
 rerank; replacement-epoch publishes now write a retired manifest copy for the
 previous active epoch, and epoch diagnostics expose persisted epoch manifest
-rows and cleanup eligibility blockers, while measured recall/latency evidence
-remains open.
+rows and cleanup eligibility blockers; leaf diagnostics now expose per-leaf
+base/delta/effective assignment counts for split/merge trigger follow-up, while
+measured recall/latency evidence remains open.
 PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
 object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
 remain open. Task 30 implements
@@ -384,8 +385,11 @@ Decision record:
   persisted epoch manifest rows, active-root-manifest status, and cleanup
   eligibility/blocker labels, including superseded manifest rows after an epoch
   state transition, so retention state is visible before old-epoch reclamation
-  is implemented. Measured recall/latency summary rows and deeper operator
-  guidance remain open.
+  is implemented. SQL function `ec_spire_index_leaf_snapshot(index_oid)` now
+  reports active per-leaf base assignment counts, delta object counts,
+  delta insert/delete counts, effective assignment counts, and object-byte
+  totals. Measured recall/latency summary rows and deeper operator guidance
+  remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -413,8 +417,10 @@ Decision record:
   exact-leaf/full-frontier-rerank configurations; the SQL epoch snapshot
   surface has focused PG18 coverage for empty, populated, and post-insert
   active-epoch publication states, including previous-epoch retired manifest
-  copies and superseded manifest labels. Physical page reclamation, old-epoch
-  cleanup, and real SQL VACUUM end-to-end coverage remain open.
+  copies and superseded manifest labels. The SQL leaf snapshot surface has
+  focused PG18 coverage for empty, populated, and post-insert delta states.
+  Physical page reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end
+  coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -447,9 +453,12 @@ Decision record:
   epoch before advancing root/control; physical page reclamation/old-epoch
   cleanup and full SQL VACUUM end-to-end coverage remain open.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that
-  schedules a split.
+  schedules a split. SQL leaf diagnostics now expose per-leaf base, delta, and
+  effective assignment counts; the actual split threshold and scheduler remain
+  open.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that
-  schedules a merge.
+  schedules a merge. SQL leaf diagnostics now expose sparse-leaf inputs; the
+  actual merge threshold and scheduler remain open.
 - [ ] **Concurrency validation.** Add a stress harness for insert/delete/scan
   overlap against leaf assignment rows and partition-object storage.
 
