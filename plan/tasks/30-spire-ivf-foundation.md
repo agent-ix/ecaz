@@ -356,7 +356,7 @@ Decision record:
   consumes `nlists`, `training_sample_rows`, `seed`, and assignment
   `storage_format` for populated index publication; live scan option
   consumption remains part of the scan path task.
-- [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
+- [x] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
   snapshot diagnostics helper that reports epoch/consistency mode, object and
@@ -428,7 +428,8 @@ Decision record:
   active readable delta object with parent leaf PID, object version,
   published-epoch back-reference, store placement, assignment count, and
   insert/delete assignment counts. Measured recall/latency summary rows and
-  deeper operator guidance remain open.
+  deeper operator guidance remain open under the review/measurement gate rather
+  than the Phase 1 admin diagnostic surface.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
