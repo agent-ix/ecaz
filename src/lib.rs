@@ -1484,6 +1484,50 @@ fn ec_spire_index_relation_storage_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_epoch_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(epoch, i64),
+        name!(state, String),
+        name!(consistency_mode, String),
+        name!(published_at_micros, i64),
+        name!(retain_until_micros, i64),
+        name!(active_query_count, i64),
+        name!(manifest_block, i64),
+        name!(manifest_offset, i32),
+        name!(is_active_root_manifest, bool),
+        name!(cleanup_eligible_now, bool),
+        name!(cleanup_blocked_reason, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_snapshot") };
+    let rows = unsafe { am::spire_index_epoch_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.epoch).expect("epoch should fit in i64"),
+            row.state.to_owned(),
+            row.consistency_mode.to_owned(),
+            row.published_at_micros,
+            row.retain_until_micros,
+            i64::try_from(row.active_query_count).expect("active query count should fit in i64"),
+            i64::from(row.manifest_block),
+            i32::from(row.manifest_offset),
+            row.is_active_root_manifest,
+            row.cleanup_eligible_now,
+            row.cleanup_blocked_reason.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3929,6 +3973,109 @@ mod tests {
         assert!(post_insert_cleanup_candidate_count > 0);
         assert!(post_insert_cleanup_candidate_bytes > 0);
         assert!(recommendation.contains("cleanup candidates"));
+    }
+
+    #[pg_test]
+    fn test_ec_spire_epoch_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_epoch_snapshot_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_epoch_snapshot_empty_idx ON ec_spire_epoch_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_empty_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(empty_epoch_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_epoch_snapshot_empty_idx")
+            .expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_epoch_snapshot_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_epoch_snapshot_sql_idx ON ec_spire_epoch_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let build_active_root_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let build_state = Spi::get_one::<String>(
+            "SELECT state FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("epoch row should exist");
+        let build_cleanup_reason = Spi::get_one::<String>(
+            "SELECT cleanup_blocked_reason FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("epoch row should exist");
+        assert_eq!(build_epoch_count, 1);
+        assert_eq!(build_active_root_count, 1);
+        assert_eq!(build_state, "published");
+        assert_eq!(build_cleanup_reason, "active_root_manifest");
+
+        Spi::run(
+            "INSERT INTO ec_spire_epoch_snapshot_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("max row should exist");
+        let active_root_epoch = Spi::get_one::<i64>(
+            "SELECT epoch FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("active root row should exist");
+        let cleanup_eligible_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_eligible_now",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(post_insert_epoch_count, 2);
+        assert_eq!(active_epoch, 2);
+        assert_eq!(active_root_epoch, 2);
+        assert_eq!(cleanup_eligible_count, 0);
     }
 
     #[pg_test]

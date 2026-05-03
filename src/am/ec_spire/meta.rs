@@ -553,6 +553,10 @@ pub(super) struct SpireEpochManifest {
 }
 
 impl SpireEpochManifest {
+    pub(super) fn encoded_len() -> usize {
+        EPOCH_MANIFEST_BYTES
+    }
+
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
 

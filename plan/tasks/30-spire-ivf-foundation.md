@@ -70,7 +70,8 @@ root routing snapshot now exposes active centroid-to-child PID rows; relation
 storage diagnostics now quantify active-referenced and cleanup-candidate object
 tuples while physical reclamation remains deferred; scan sanity diagnostics now
 expose resolved scan preconditions for exact leaf coverage and full-frontier
-rerank, while measured recall/latency evidence remains open.
+rerank; epoch diagnostics now expose persisted epoch manifest rows and cleanup
+eligibility blockers, while measured recall/latency evidence remains open.
 PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
 object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
 remain open. Task 30 implements
@@ -376,8 +377,12 @@ Decision record:
   `ec_spire_index_scan_sanity_snapshot(index_oid)` now reports resolved scan
   option labels, exact-leaf-coverage status, full-frontier-rerank status, and
   conservative recall-sanity/latency-risk labels. This is a deterministic
-  precondition diagnostic, not measured recall or latency evidence. Measured
-  recall/latency summary rows and deeper operator guidance remain open.
+  precondition diagnostic, not measured recall or latency evidence. SQL
+  function `ec_spire_index_epoch_snapshot(index_oid)` now reports detected
+  persisted epoch manifest rows, active-root-manifest status, and cleanup
+  eligibility/blocker labels so retention state is visible before old-epoch
+  reclamation is implemented. Measured recall/latency summary rows and deeper
+  operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -402,8 +407,10 @@ Decision record:
   The SQL root routing snapshot surface has focused PG18 coverage for empty
   and populated local single-store indexes; the SQL scan sanity snapshot
   surface has focused PG18 coverage for empty, approximate bounded-leaf, and
-  exact-leaf/full-frontier-rerank configurations. Physical page reclamation,
-  old-epoch cleanup, and real SQL VACUUM end-to-end coverage remain open.
+  exact-leaf/full-frontier-rerank configurations; the SQL epoch snapshot
+  surface has focused PG18 coverage for empty, populated, and post-insert
+  active-epoch publication states. Physical page reclamation, old-epoch
+  cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

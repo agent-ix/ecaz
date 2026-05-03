@@ -141,6 +141,22 @@ pub(crate) struct SpireIndexScanSanitySnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexEpochSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) epoch: u64,
+    pub(crate) state: &'static str,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) published_at_micros: i64,
+    pub(crate) retain_until_micros: i64,
+    pub(crate) active_query_count: u64,
+    pub(crate) manifest_block: u32,
+    pub(crate) manifest_offset: u16,
+    pub(crate) is_active_root_manifest: bool,
+    pub(crate) cleanup_eligible_now: bool,
+    pub(crate) cleanup_blocked_reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -364,6 +380,43 @@ fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
     match mode {
         meta::SpireConsistencyMode::Strict => "strict",
         meta::SpireConsistencyMode::Degraded => "degraded",
+    }
+}
+
+fn epoch_state_name(state: meta::SpireEpochState) -> &'static str {
+    match state {
+        meta::SpireEpochState::Building => "building",
+        meta::SpireEpochState::Published => "published",
+        meta::SpireEpochState::Retired => "retired",
+        meta::SpireEpochState::Failed => "failed",
+    }
+}
+
+fn epoch_cleanup_blocked_reason(
+    manifest: &meta::SpireEpochManifest,
+    now_micros: i64,
+    is_active_root_manifest: bool,
+    retained_retired: bool,
+    cleanup_eligible_now: bool,
+) -> &'static str {
+    if cleanup_eligible_now {
+        return "cleanup_eligible";
+    }
+    if is_active_root_manifest {
+        return "active_root_manifest";
+    }
+    match manifest.state {
+        meta::SpireEpochState::Building | meta::SpireEpochState::Published => {
+            "state_not_cleanup_eligible"
+        }
+        meta::SpireEpochState::Retired if manifest.active_query_count > 0 => "active_queries",
+        meta::SpireEpochState::Retired if retained_retired => "retained_retired_epoch",
+        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed
+            if now_micros < manifest.retain_until_micros =>
+        {
+            "retention_window"
+        }
+        meta::SpireEpochState::Retired | meta::SpireEpochState::Failed => "cleanup_plan_retained",
     }
 }
 
@@ -632,6 +685,72 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             physical_cleanup_supported: false,
             recommendation,
         })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_epoch_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexEpochSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let mut manifests = Vec::new();
+        unsafe {
+            page::scan_object_tuples(index_relation, |tid, tuple| {
+                if tuple.len() != meta::SpireEpochManifest::encoded_len() {
+                    return Ok(());
+                }
+                if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {
+                    manifests.push((tid, manifest));
+                }
+                Ok(())
+            })?
+        };
+        manifests
+            .sort_by_key(|(tid, manifest)| (manifest.epoch, tid.block_number, tid.offset_number));
+
+        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+        let cleanup_plan = meta::plan_epoch_cleanup(
+            &manifests
+                .iter()
+                .map(|(_, manifest)| *manifest)
+                .collect::<Vec<_>>(),
+            root_control.active_epoch,
+            now_micros,
+        )?;
+        let cleanup_epochs: HashSet<u64> = cleanup_plan.cleanup_epochs.into_iter().collect();
+        let retained_retired_epochs: HashSet<u64> =
+            cleanup_plan.retained_retired_epochs.into_iter().collect();
+
+        Ok(manifests
+            .into_iter()
+            .map(|(tid, manifest)| {
+                let is_active_root_manifest = root_control.active_epoch == manifest.epoch
+                    && root_control.epoch_manifest_tid == tid;
+                let cleanup_eligible_now = cleanup_epochs.contains(&manifest.epoch);
+                let retained_retired = retained_retired_epochs.contains(&manifest.epoch);
+                SpireIndexEpochSnapshotRow {
+                    active_epoch: root_control.active_epoch,
+                    epoch: manifest.epoch,
+                    state: epoch_state_name(manifest.state),
+                    consistency_mode: consistency_mode_name(manifest.consistency_mode),
+                    published_at_micros: manifest.published_at_micros,
+                    retain_until_micros: manifest.retain_until_micros,
+                    active_query_count: manifest.active_query_count,
+                    manifest_block: tid.block_number,
+                    manifest_offset: tid.offset_number,
+                    is_active_root_manifest,
+                    cleanup_eligible_now,
+                    cleanup_blocked_reason: epoch_cleanup_blocked_reason(
+                        &manifest,
+                        now_micros,
+                        is_active_root_manifest,
+                        retained_retired,
+                        cleanup_eligible_now,
+                    ),
+                }
+            })
+            .collect())
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
