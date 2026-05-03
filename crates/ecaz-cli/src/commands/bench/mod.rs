@@ -15,6 +15,7 @@ pub mod latency;
 mod overhead;
 pub mod recall;
 mod storage;
+mod suite;
 
 pub use build_probe::BuildProbeArgs;
 pub use graph::GraphArgs;
@@ -22,6 +23,7 @@ pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
 pub use storage::StorageArgs;
+pub use suite::SuiteArgs;
 
 pub(crate) fn missing_am_error(profile: &IndexProfile, am: &str) -> String {
     format!(
@@ -48,6 +50,8 @@ pub enum BenchCommand {
     DiskannBuildProbe(BuildProbeArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
+    /// Expand a configured benchmark suite into packet-style ecaz commands.
+    Suite(SuiteArgs),
 }
 
 impl BenchCommand {
@@ -59,6 +63,7 @@ impl BenchCommand {
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
+            BenchCommand::Suite(a) => suite::run(conn, a).await,
         }
     }
 }
