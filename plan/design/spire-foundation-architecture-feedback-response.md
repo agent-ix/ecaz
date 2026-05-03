@@ -260,6 +260,12 @@ Write paths call `validate_fields()` and uniqueness checks before publication.
 Read paths validate only structural invariants that protect memory safety and
 object compatibility.
 
+Implementation checkpoint: partition-object headers and assignment rows now
+have explicit validation helpers and private post-validation encode paths.
+Leaf, delta, routing, and V2 metadata/segment object validation no longer calls
+`encode()` only to prove shape, and constructors validate header identity before
+objects reach object-store writes.
+
 ## Publish Coordinator
 
 Before relation-backed persistence, publication should move through a typed

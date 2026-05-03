@@ -276,6 +276,11 @@ impl SpirePartitionObjectHeader {
     }
 
     fn encode_with_format_version(&self, format_version: u16) -> Result<Vec<u8>, String> {
+        self.validate_for_format_version(format_version)?;
+        Ok(self.encode_after_validation(format_version))
+    }
+
+    fn validate_for_format_version(&self, format_version: u16) -> Result<(), String> {
         if self.pid == 0 {
             return Err("ec_spire partition object pid 0 is invalid".to_owned());
         }
@@ -289,7 +294,10 @@ impl SpirePartitionObjectHeader {
                 "ec_spire unsupported partition object format version: {format_version}"
             ));
         }
+        Ok(())
+    }
 
+    fn encode_after_validation(&self, format_version: u16) -> Vec<u8> {
         let mut out = Vec::with_capacity(PARTITION_OBJECT_HEADER_BYTES);
         out.extend_from_slice(&PARTITION_OBJECT_MAGIC.to_le_bytes());
         out.extend_from_slice(&format_version.to_le_bytes());
@@ -303,7 +311,7 @@ impl SpirePartitionObjectHeader {
         out.extend_from_slice(&self.assignment_count.to_le_bytes());
         out.extend_from_slice(&self.flags.to_le_bytes());
         debug_assert_eq!(out.len(), PARTITION_OBJECT_HEADER_BYTES);
-        Ok(out)
+        out
     }
 
     pub(super) fn decode_prefix(input: &[u8]) -> Result<(Self, &[u8]), String> {
@@ -408,26 +416,46 @@ impl<'a> SpireLeafAssignmentRowRef<'a> {
 
 impl SpireLeafAssignmentRow {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate_wire_shape()?;
+        Ok(self.encode_after_validation())
+    }
+
+    fn validate_wire_shape(&self) -> Result<(), String> {
         validate_assignment_flags(self.flags)?;
         validate_assignment_payload_format(self.payload_format)?;
-        SpireVecId::from_bytes(self.vec_id.as_bytes())?;
+        validate_vec_id_bytes(self.vec_id.as_bytes())?;
         if self.heap_tid == ItemPointer::INVALID {
             return Err("ec_spire assignment row heap_tid must be valid".to_owned());
         }
         if !self.gamma.is_finite() {
             return Err("ec_spire assignment row gamma must be finite".to_owned());
         }
-        let vec_id_len = u8::try_from(self.vec_id.as_bytes().len())
+        u8::try_from(self.vec_id.as_bytes().len())
             .map_err(|_| "ec_spire vec_id length exceeds u8".to_owned())?;
-        let payload_len = u32::try_from(self.encoded_payload.len())
+        u32::try_from(self.encoded_payload.len())
             .map_err(|_| "ec_spire assignment payload length exceeds u32".to_owned())?;
+        self.encoded_len_after_validation()?;
+        Ok(())
+    }
 
-        let mut out = Vec::with_capacity(
-            ASSIGNMENT_ROW_FIXED_PREFIX_BYTES
-                + usize::from(vec_id_len)
-                + ASSIGNMENT_ROW_FIXED_TAIL_BYTES
-                + self.encoded_payload.len(),
-        );
+    fn encoded_len_after_validation(&self) -> Result<usize, String> {
+        ASSIGNMENT_ROW_FIXED_PREFIX_BYTES
+            .checked_add(self.vec_id.as_bytes().len())
+            .and_then(|len| len.checked_add(ASSIGNMENT_ROW_FIXED_TAIL_BYTES))
+            .and_then(|len| len.checked_add(self.encoded_payload.len()))
+            .ok_or_else(|| "ec_spire assignment row encoded length overflow".to_owned())
+    }
+
+    fn encode_after_validation(&self) -> Vec<u8> {
+        let encoded_len = self
+            .encoded_len_after_validation()
+            .expect("assignment row was validated before encoding");
+        let vec_id_len = u8::try_from(self.vec_id.as_bytes().len())
+            .expect("assignment row vec_id length was validated");
+        let payload_len = u32::try_from(self.encoded_payload.len())
+            .expect("assignment row payload length was validated");
+
+        let mut out = Vec::with_capacity(encoded_len);
         out.extend_from_slice(&self.flags.to_le_bytes());
         out.push(vec_id_len);
         out.extend_from_slice(self.vec_id.as_bytes());
@@ -436,7 +464,7 @@ impl SpireLeafAssignmentRow {
         out.extend_from_slice(&self.gamma.to_le_bytes());
         out.extend_from_slice(&payload_len.to_le_bytes());
         out.extend_from_slice(&self.encoded_payload);
-        Ok(out)
+        out
     }
 
     pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
@@ -564,9 +592,11 @@ impl SpireLeafPartitionObject {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate_header()?;
 
-        let mut out = self.header.encode()?;
+        let mut out = self
+            .header
+            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V1);
         for assignment in &self.assignments {
-            out.extend_from_slice(&assignment.encode()?);
+            out.extend_from_slice(&assignment.encode_after_validation());
         }
         Ok(out)
     }
@@ -609,6 +639,8 @@ impl SpireLeafPartitionObject {
     }
 
     fn validate_header_without_assignment_len(&self) -> Result<(), String> {
+        self.header
+            .validate_for_format_version(PARTITION_OBJECT_FORMAT_VERSION_V1)?;
         if self.header.kind != SpirePartitionObjectKind::Leaf {
             return Err(format!(
                 "ec_spire leaf partition object header kind must be Leaf, got {:?}",
@@ -679,7 +711,7 @@ impl SpireLeafPartitionObjectV2Meta {
         self.validate()?;
         let mut out = self
             .header
-            .encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V2);
         out.push(self.payload_format);
         out.push(self.vec_id_kind as u8);
         out.extend_from_slice(&0_u16.to_le_bytes());
@@ -890,7 +922,7 @@ impl SpireLeafPartitionObjectV2Segment {
         self.validate_against_meta(meta)?;
         let mut out = self
             .header
-            .encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V2);
         out.extend_from_slice(&self.segment_no.to_le_bytes());
         out.extend_from_slice(&self.row_base.to_le_bytes());
         out.extend_from_slice(&self.header.assignment_count.to_le_bytes());
@@ -1289,7 +1321,9 @@ impl SpireRoutingPartitionObject {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
 
-        let mut out = self.header.encode()?;
+        let mut out = self
+            .header
+            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V1);
         out.extend_from_slice(&self.dimensions.to_le_bytes());
         out.extend_from_slice(&0_u16.to_le_bytes());
         for child in self.children() {
@@ -1376,7 +1410,8 @@ impl SpireRoutingPartitionObject {
     }
 
     fn validate(&self) -> Result<(), String> {
-        self.header.encode()?;
+        self.header
+            .validate_for_format_version(PARTITION_OBJECT_FORMAT_VERSION_V1)?;
         match self.header.kind {
             SpirePartitionObjectKind::Root => {
                 if self.header.parent_pid != 0 {
@@ -1505,9 +1540,11 @@ impl SpireDeltaPartitionObject {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate_header()?;
 
-        let mut out = self.header.encode()?;
+        let mut out = self
+            .header
+            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V1);
         for assignment in &self.assignments {
-            out.extend_from_slice(&assignment.encode()?);
+            out.extend_from_slice(&assignment.encode_after_validation());
         }
         Ok(out)
     }
@@ -1551,6 +1588,8 @@ impl SpireDeltaPartitionObject {
     }
 
     fn validate_header_without_assignment_len(&self) -> Result<(), String> {
+        self.header
+            .validate_for_format_version(PARTITION_OBJECT_FORMAT_VERSION_V1)?;
         if self.header.kind != SpirePartitionObjectKind::Delta {
             return Err(format!(
                 "ec_spire delta partition object header kind must be Delta, got {:?}",
@@ -2044,7 +2083,7 @@ fn validate_leaf_v2_header(
     header: &SpirePartitionObjectHeader,
     expected_flag: u32,
 ) -> Result<(), String> {
-    header.encode_with_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
+    header.validate_for_format_version(PARTITION_OBJECT_FORMAT_VERSION_V2)?;
     if header.kind != SpirePartitionObjectKind::Leaf {
         return Err(format!(
             "ec_spire leaf V2 header kind must be Leaf, got {:?}",
@@ -2227,7 +2266,7 @@ fn validate_scored_assignment_payload(assignment: &SpireLeafAssignmentRow) -> Re
 }
 
 fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), String> {
-    validate_assignment_flags(assignment.flags)?;
+    assignment.validate_wire_shape()?;
     let is_insert = assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0;
     let is_delete = assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE != 0;
     if is_insert == is_delete {
@@ -2265,7 +2304,6 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     if is_delete && !assignment.encoded_payload.is_empty() {
         return Err("ec_spire delete delta assignment payload must be empty".to_owned());
     }
-    assignment.encode()?;
     Ok(())
 }
 
@@ -2283,7 +2321,7 @@ fn validate_leaf_assignments(assignments: &[SpireLeafAssignmentRow]) -> Result<(
 }
 
 fn validate_leaf_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), String> {
-    assignment.encode()?;
+    assignment.validate_wire_shape()?;
     if assignment.flags & (SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE)
         != 0
     {
@@ -2436,6 +2474,18 @@ mod tests {
         header.pid = 1;
         header.object_version = 0;
         assert!(header.encode().is_err());
+    }
+
+    #[test]
+    fn partition_object_constructors_reject_invalid_header_identity() {
+        let row = leaf_v2_assignment(1, 8);
+
+        assert!(SpireLeafPartitionObject::new(0, 3, 0, vec![row.clone()]).is_err());
+        assert!(SpireLeafPartitionObject::new(17, 0, 0, vec![row]).is_err());
+        assert!(SpireDeltaPartitionObject::new(0, 4, 17, Vec::new()).is_err());
+        assert!(SpireDeltaPartitionObject::new(19, 0, 17, Vec::new()).is_err());
+        assert!(SpireRoutingPartitionObject::root(0, 3, 2, routing_children()).is_err());
+        assert!(SpireRoutingPartitionObject::root(11, 0, 2, routing_children()).is_err());
     }
 
     #[test]
