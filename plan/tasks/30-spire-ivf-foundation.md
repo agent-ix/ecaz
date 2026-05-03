@@ -200,7 +200,10 @@ Decision record:
   states. PID and local vec_id allocators now expose non-mutating
   near-exhaustion diagnostics, with a root/control helper that reports both
   cursors from persisted allocator state. Snapshot diagnostics now split
-  available object bytes into routing, leaf, and delta buckets.
+  available object bytes into routing, leaf, and delta buckets. A
+  `SpireObjectReader` trait now defines the shared object read contract, and
+  snapshot diagnostics consume that trait instead of the concrete in-memory
+  store.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

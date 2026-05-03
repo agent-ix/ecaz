@@ -1187,6 +1187,33 @@ impl SpireLeafPartitionObjectV2 {
     }
 }
 
+pub(super) trait SpireObjectReader {
+    fn read_object_header(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpirePartitionObjectHeader, String>;
+
+    fn read_routing_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireRoutingPartitionObject, String>;
+
+    fn read_leaf_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObject, String>;
+
+    fn read_leaf_object_v2(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2, String>;
+
+    fn read_delta_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireDeltaPartitionObject, String>;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingChildEntry {
     pub(super) centroid_index: u32,
@@ -2013,6 +2040,43 @@ impl SpireLocalObjectStore {
             ));
         }
         Ok(())
+    }
+}
+
+impl SpireObjectReader for SpireLocalObjectStore {
+    fn read_object_header(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpirePartitionObjectHeader, String> {
+        SpireLocalObjectStore::read_object_header(self, placement)
+    }
+
+    fn read_routing_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireRoutingPartitionObject, String> {
+        SpireLocalObjectStore::read_routing_object(self, placement)
+    }
+
+    fn read_leaf_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObject, String> {
+        SpireLocalObjectStore::read_leaf_object(self, placement)
+    }
+
+    fn read_leaf_object_v2(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2, String> {
+        SpireLocalObjectStore::read_leaf_object_v2(self, placement)
+    }
+
+    fn read_delta_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireDeltaPartitionObject, String> {
+        SpireLocalObjectStore::read_delta_object(self, placement)
     }
 }
 

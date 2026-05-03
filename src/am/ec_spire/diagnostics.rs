@@ -7,7 +7,7 @@ use super::meta::{
     SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     SpireValidatedEpochSnapshot,
 };
-use super::storage::{SpireLocalObjectStore, SpirePartitionObjectKind};
+use super::storage::{SpireObjectReader, SpirePartitionObjectKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireSnapshotDiagnostics {
@@ -53,7 +53,7 @@ pub(super) fn collect_allocator_diagnostics(
 
 pub(super) fn collect_snapshot_diagnostics(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_reader: &impl SpireObjectReader,
 ) -> Result<SpireSnapshotDiagnostics, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
 
@@ -106,14 +106,14 @@ pub(super) fn collect_snapshot_diagnostics(
             .available_object_bytes
             .checked_add(object_bytes)
             .ok_or_else(|| "ec_spire diagnostics object byte count overflow".to_owned())?;
-        match object_store.read_object_header(placement)?.kind {
+        match object_reader.read_object_header(placement)?.kind {
             SpirePartitionObjectKind::Root => {
                 diagnostics.root_object_count += 1;
                 diagnostics.routing_object_bytes = diagnostics
                     .routing_object_bytes
                     .checked_add(object_bytes)
                     .ok_or_else(|| "ec_spire diagnostics routing byte count overflow".to_owned())?;
-                let object = object_store.read_routing_object(placement)?;
+                let object = object_reader.read_routing_object(placement)?;
                 diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Internal => {
@@ -122,7 +122,7 @@ pub(super) fn collect_snapshot_diagnostics(
                     .routing_object_bytes
                     .checked_add(object_bytes)
                     .ok_or_else(|| "ec_spire diagnostics routing byte count overflow".to_owned())?;
-                let object = object_store.read_routing_object(placement)?;
+                let object = object_reader.read_routing_object(placement)?;
                 diagnostics.routing_child_count += object.child_count();
             }
             SpirePartitionObjectKind::Leaf => {
@@ -131,7 +131,7 @@ pub(super) fn collect_snapshot_diagnostics(
                     .leaf_object_bytes
                     .checked_add(object_bytes)
                     .ok_or_else(|| "ec_spire diagnostics leaf byte count overflow".to_owned())?;
-                let object = object_store.read_leaf_object(placement)?;
+                let object = object_reader.read_leaf_object(placement)?;
                 diagnostics.leaf_assignment_count += object.assignments.len();
             }
             SpirePartitionObjectKind::Delta => {
@@ -140,7 +140,7 @@ pub(super) fn collect_snapshot_diagnostics(
                     .delta_object_bytes
                     .checked_add(object_bytes)
                     .ok_or_else(|| "ec_spire diagnostics delta byte count overflow".to_owned())?;
-                let object = object_store.read_delta_object(placement)?;
+                let object = object_reader.read_delta_object(placement)?;
                 diagnostics.delta_assignment_count += object.assignments.len();
             }
         }

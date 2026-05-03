@@ -322,6 +322,11 @@ available-object byte count and also split those bytes into routing, leaf, and
 delta buckets. Future graph/object kinds should add their own buckets instead
 of overloading the aggregate.
 
+Implementation checkpoint: `SpireObjectReader` now defines the shared object
+read contract for headers, routing objects, V1/V2 leaf objects, and deltas. The
+in-memory local object store implements the trait, and snapshot diagnostics
+consume the trait instead of the concrete store type.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.
