@@ -381,8 +381,9 @@ Decision record:
   placement snapshot surface has focused PG18 coverage for empty and populated
   local single-store indexes. The SQL scan placement snapshot surface has
   focused PG18 coverage for query-specific routed leaf PID and candidate-row
-  counts. The SQL root routing snapshot surface has focused PG18 coverage for
-  empty and populated local single-store indexes; physical page reclamation,
+  counts plus post-build insert-delta leaf/delta PID and candidate-row splits.
+  The SQL root routing snapshot surface has focused PG18 coverage for empty
+  and populated local single-store indexes; physical page reclamation,
   old-epoch cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
