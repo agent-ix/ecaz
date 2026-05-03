@@ -551,6 +551,7 @@ pub(crate) unsafe fn index_root_routing_snapshot(
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
         let mut root = None;
+        // Walk the full manifest so malformed epochs with multiple roots are reported.
         for manifest_entry in &snapshot.object_manifest().entries {
             let lookup = snapshot.require_lookup(manifest_entry.pid, "root routing snapshot")?;
             let header = object_store.read_object_header(lookup.placement)?;
@@ -570,7 +571,8 @@ pub(crate) unsafe fn index_root_routing_snapshot(
         let Some((root_pid, root_object_version, root_object)) = root else {
             return Err("ec_spire root routing snapshot found no active root object".to_owned());
         };
-        let root_child_count = root_object.child_count() as u64;
+        let root_child_count = u64::try_from(root_object.child_count())
+            .map_err(|_| "ec_spire root routing child count exceeds u64".to_owned())?;
         let rows = root_object
             .children()
             .map(|child| {

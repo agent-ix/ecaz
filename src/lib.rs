@@ -3393,6 +3393,12 @@ mod tests {
         )
         .expect("routing snapshot query should succeed")
         .expect("bool aggregate should exist");
+        let child_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT child_store_relid) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
 
         assert_eq!(row_count, 2);
         assert_eq!(root_child_count, 2);
@@ -3400,6 +3406,7 @@ mod tests {
         assert_eq!(leaf_children, 2);
         assert_eq!(assignment_count, 2);
         assert!(parent_links_match);
+        assert_eq!(child_store_relid_count, 1);
     }
 
     #[pg_test]
