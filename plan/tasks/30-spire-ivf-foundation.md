@@ -168,6 +168,15 @@ Decision record:
 
 ## Phase 1 — Single-Level SPIRE-IVF Foundation
 
+Phase 1 landing scope is the local single-store, single-level `ec_spire`
+foundation with TurboQuant and RaBitQ as scannable assignment payload formats.
+RaBitQ is the compact scannable target for the Phase 1 storage/recall/speed
+tradeoff, with final measured claims still gated on the landing review packet.
+Populated PQ-FastScan SPIRE indexes are explicitly deferred to a post-Phase-1
+grouped-PQ metadata/scorer slice; this is not a Phase 1 landing blocker. Empty
+`pq_fastscan` SPIRE indexes remain supported because they expose options and
+diagnostics without scoring assignments.
+
 - [x] **Module skeleton.** Add SPIRE-owned modules using ADR-041 boundaries,
   expected initial shape:
   - `src/am/ec_spire/mod.rs`
@@ -345,11 +354,13 @@ Decision record:
   covered by row-encoded delete deltas for the same base leaf PID. Empty active
   epochs still return no rows, including empty `pq_fastscan` indexes that
   expose the deferred payload format but have no assignments to score.
-- [ ] **Scan path (PQ-FastScan populated indexes).** Persist grouped-PQ model
-  metadata for SPIRE assignment payloads, bind the persisted metadata to the
-  PQ-FastScan scorer at scan time, and promote populated `pq_fastscan` SPIRE
-  indexes from build-blocked to scannable. Empty `pq_fastscan` SPIRE indexes
-  already return no rows safely because there are no assignments to score.
+- [ ] **Post-Phase-1 scan path (PQ-FastScan populated indexes).** Persist
+  grouped-PQ model metadata for SPIRE assignment payloads, bind the persisted
+  metadata to the PQ-FastScan scorer at scan time, and promote populated
+  `pq_fastscan` SPIRE indexes from build-blocked to scannable. Empty
+  `pq_fastscan` SPIRE indexes already return no rows safely because there are
+  no assignments to score. Populated PQ-FastScan support is intentionally
+  deferred and does not block Phase 1 landing.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
