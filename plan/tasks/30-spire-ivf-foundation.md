@@ -81,9 +81,10 @@ read-only split/merge threshold recommendations for follow-up scheduling;
 insert-debt diagnostics now expose per-leaf delta fanout and batching
 recommendations while actual insert batching remains open. Measured
 recall/latency evidence remains open.
-PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
-object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
-remain open. Task 30 implements
+PQ-FastScan scorer binding, measured recall/latency summary evidence, and
+physical object reclamation/old-epoch cleanup remain open. Real SQL VACUUM
+coverage now reaches insert-delta compaction plus deleted-row scan
+invisibility through PostgreSQL's normal callback path. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -487,8 +488,9 @@ Decision record:
   focused PG18 coverage for empty, populated, and post-insert delta active
   epochs. Delta SQL diagnostics now have focused PG18 coverage for empty,
   populated no-delta, post-insert delta, and pre-cleanup delete-delta active
-  epochs. Physical page reclamation, old-epoch cleanup, and real SQL VACUUM
-  end-to-end coverage remain open.
+  epochs. Real SQL VACUUM end-to-end coverage now exercises insert-delta
+  compaction and deleted-row routed scan suppression; physical page reclamation
+  and old-epoch cleanup remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -528,9 +530,10 @@ Decision record:
   active placement directory, with focused coverage for no-delta cleanup,
   insert-only deltas, and mixed insert/delete deltas on one leaf. Replacement
   vacuum publishes now write a retired manifest copy for the previous active
-  epoch before advancing root/control; physical page reclamation/old-epoch
-  cleanup and full SQL VACUUM end-to-end coverage remain open as separate
-  validation/reclamation follow-ups.
+  epoch before advancing root/control; real SQL VACUUM end-to-end coverage now
+  exercises insert-delta compaction and deleted-row routed scan suppression
+  through PostgreSQL's normal callback path. Physical page reclamation and
+  old-epoch cleanup remain open as separate reclamation follow-ups.
 - [x] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split. SQL leaf diagnostics now expose per-leaf base, delta, and
   effective assignment counts. The first read-only trigger marks a leaf as a

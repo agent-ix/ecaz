@@ -592,7 +592,7 @@ pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
     exact_score_ip: F,
 ) -> Result<Vec<SpireScoredScanCandidate>, String>
 where
-    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
     let mut candidates = collect_quantized_routed_probe_candidates(
         snapshot,
@@ -615,7 +615,7 @@ pub(super) fn collect_single_level_scan_plan_reranked_candidates<F>(
     exact_score_ip: F,
 ) -> Result<Vec<SpireScoredScanCandidate>, String>
 where
-    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
     if scan_plan.nprobe == 0 {
         return Ok(Vec::new());
@@ -642,7 +642,7 @@ pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
     exact_score_ip: F,
 ) -> Result<SpirePreparedScanCandidates, String>
 where
-    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
     let leaf_count = count_snapshot_single_level_leaf_pids(snapshot, object_store)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
@@ -748,7 +748,7 @@ pub(super) fn rerank_scored_candidates_by_ip<F>(
     mut exact_score_ip: F,
 ) -> Result<(), String>
 where
-    F: FnMut(&SpireScoredScanCandidate) -> Result<f32, String>,
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
     let rerank_len = if rerank_width == 0 {
         candidates.len()
@@ -756,20 +756,26 @@ where
         rerank_width.min(candidates.len())
     };
 
-    for candidate in candidates.iter_mut().take(rerank_len) {
-        let ip = exact_score_ip(candidate)?;
+    let mut reranked = Vec::with_capacity(rerank_len);
+    let mut tail = candidates.split_off(rerank_len);
+    for mut candidate in candidates.drain(..) {
+        let Some(ip) = exact_score_ip(&candidate)? else {
+            continue;
+        };
         if !ip.is_finite() {
             return Err(
                 "ec_spire routed candidate reranker returned a non-finite score".to_owned(),
             );
         }
         candidate.score = -ip;
+        reranked.push(candidate);
     }
 
-    candidates[..rerank_len].sort_by(scored_candidate_cmp);
-    if rerank_width > 0 {
-        candidates.truncate(rerank_len);
+    reranked.sort_by(scored_candidate_cmp);
+    if rerank_width == 0 {
+        reranked.append(&mut tail);
     }
+    *candidates = reranked;
     Ok(())
 }
 
@@ -1656,8 +1662,10 @@ unsafe fn exact_heap_source_inner_product(
     indexed_attribute: source::IndexedVectorAttribute,
     query: &[f32],
     heap_tid: ItemPointer,
-) -> Result<f32, String> {
-    unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+) -> Result<Option<f32>, String> {
+    if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {
+        return Ok(None);
+    }
     let datum = unsafe {
         required_slot_datum(
             slot,
@@ -1674,7 +1682,7 @@ unsafe fn exact_heap_source_inner_product(
     }
     .and_then(|source_vector| exact_source_inner_product(query, &source_vector));
     unsafe { pg_sys::ExecClearTuple(slot) };
-    result
+    result.map(Some)
 }
 
 unsafe fn fetch_heap_row_version(
@@ -1682,19 +1690,16 @@ unsafe fn fetch_heap_row_version(
     heap_tid: ItemPointer,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
     unsafe { pg_sys::ExecClearTuple(slot) };
     let fetched =
         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
     if !fetched {
-        return Err(format!(
-            "ec_spire heap rerank could not fetch heap tuple at ({},{})",
-            heap_tid.block_number, heap_tid.offset_number
-        ));
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
 }
 
 unsafe fn required_slot_datum(
@@ -2920,11 +2925,11 @@ mod tests {
             Some(2),
             2,
             |candidate| {
-                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 1.0,
                     2 => 10.0,
                     other => panic!("unexpected rerank candidate {other}"),
-                })
+                }))
             },
         )
         .unwrap();
@@ -2987,11 +2992,11 @@ mod tests {
             &[1.0, 0.0],
             scan_plan,
             |candidate| {
-                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 1.0,
                     2 => 10.0,
                     other => panic!("unexpected rerank candidate {other}"),
-                })
+                }))
             },
         )
         .unwrap();
@@ -3054,11 +3059,11 @@ mod tests {
             &query,
             options,
             |candidate| {
-                Ok(match candidate.vec_id.local_sequence().unwrap() {
+                Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 1.0,
                     2 => 10.0,
                     other => panic!("unexpected rerank candidate {other}"),
-                })
+                }))
             },
         )
         .unwrap();
@@ -3366,11 +3371,11 @@ mod tests {
         ];
 
         rerank_scored_candidates_by_ip(&mut candidates, 2, |candidate| {
-            Ok(match candidate.vec_id.local_sequence().unwrap() {
+            Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                 1 => 1.0,
                 2 => 10.0,
                 other => panic!("unexpected rerank candidate {other}"),
-            })
+            }))
         })
         .unwrap();
 
@@ -3390,7 +3395,7 @@ mod tests {
         ];
 
         rerank_scored_candidates_by_ip(&mut candidates, 0, |candidate| {
-            Ok(candidate.heap_tid.offset_number as f32)
+            Ok(Some(candidate.heap_tid.offset_number as f32))
         })
         .unwrap();
 
@@ -3404,11 +3409,35 @@ mod tests {
     }
 
     #[test]
+    fn rerank_scored_candidates_by_ip_drops_invisible_candidates() {
+        let mut candidates = vec![
+            scored_candidate(1, 10, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 10, 3, -3.0),
+        ];
+
+        rerank_scored_candidates_by_ip(&mut candidates, 0, |candidate| {
+            if candidate.vec_id.local_sequence() == Some(2) {
+                Ok(None)
+            } else {
+                Ok(Some(candidate.heap_tid.offset_number as f32))
+            }
+        })
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(3));
+        assert_eq!(candidates[0].score, -3.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
     fn rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
         let mut candidates = vec![scored_candidate(1, 10, 1, -5.0)];
 
         assert!(
-            rerank_scored_candidates_by_ip(&mut candidates, 0, |_| Ok(f32::INFINITY))
+            rerank_scored_candidates_by_ip(&mut candidates, 0, |_| Ok(Some(f32::INFINITY)))
                 .unwrap_err()
                 .contains("non-finite")
         );

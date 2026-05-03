@@ -5795,6 +5795,92 @@ mod tests {
         assert_eq!(first_id, 3);
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_sql_vacuum_mixed_delta() {
+        const TABLE_NAME: &str = "ec_spire_sql_vacuum_mixed_delta";
+        const INDEX_NAME: &str = "ec_spire_sql_vacuum_mixed_delta_idx";
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding) VALUES
+                   (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+                   (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 2);",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta insert",
+            &format!(
+                "INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42));",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta delete",
+            &format!("DELETE FROM {TABLE_NAME} WHERE id = 1;"),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta VACUUM",
+            &format!("VACUUM {TABLE_NAME};"),
+        );
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = index_oid(INDEX_NAME);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(heap_count, 2);
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "leaf_assignment_count"),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count"),
+            0
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 2 \
+             ) ranked WHERE id = 1"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let inserted_row_returned = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[] \
+                 LIMIT 2 \
+             ) ranked WHERE id = 3"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(inserted_row_returned, 1);
+    }
+
     #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
