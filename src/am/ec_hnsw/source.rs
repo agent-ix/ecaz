@@ -7,6 +7,8 @@ use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
 
 use super::page;
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::{float32x4_t, vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
 #[cfg(target_arch = "x86")]
 use std::arch::x86::{
     __m256, _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
@@ -82,6 +84,13 @@ pub(crate) fn inner_product(left: &[f32], right: &[f32]) -> f32 {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { inner_product_neon(left, right) };
+        }
+    }
+
     inner_product_scalar(left, right)
 }
 
@@ -140,6 +149,50 @@ unsafe fn inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     let acc = _mm256_add_ps(acc01, acc23);
     let mut lanes = [0.0_f32; 8];
     unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };
+    let mut sum = lanes.iter().sum::<f32>();
+    for idx in offset..left.len() {
+        sum += left[idx] * right[idx];
+    }
+    sum
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+    let mut acc0: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc1: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc2: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc3: float32x4_t = vdupq_n_f32(0.0);
+    let mut offset = 0_usize;
+
+    while offset + 16 <= left.len() {
+        let l0 = unsafe { vld1q_f32(left.as_ptr().add(offset)) };
+        let r0 = unsafe { vld1q_f32(right.as_ptr().add(offset)) };
+        let l1 = unsafe { vld1q_f32(left.as_ptr().add(offset + 4)) };
+        let r1 = unsafe { vld1q_f32(right.as_ptr().add(offset + 4)) };
+        let l2 = unsafe { vld1q_f32(left.as_ptr().add(offset + 8)) };
+        let r2 = unsafe { vld1q_f32(right.as_ptr().add(offset + 8)) };
+        let l3 = unsafe { vld1q_f32(left.as_ptr().add(offset + 12)) };
+        let r3 = unsafe { vld1q_f32(right.as_ptr().add(offset + 12)) };
+        acc0 = vfmaq_f32(acc0, l0, r0);
+        acc1 = vfmaq_f32(acc1, l1, r1);
+        acc2 = vfmaq_f32(acc2, l2, r2);
+        acc3 = vfmaq_f32(acc3, l3, r3);
+        offset += 16;
+    }
+
+    while offset + 4 <= left.len() {
+        let l = unsafe { vld1q_f32(left.as_ptr().add(offset)) };
+        let r = unsafe { vld1q_f32(right.as_ptr().add(offset)) };
+        acc0 = vfmaq_f32(acc0, l, r);
+        offset += 4;
+    }
+
+    let acc01 = vaddq_f32(acc0, acc1);
+    let acc23 = vaddq_f32(acc2, acc3);
+    let acc = vaddq_f32(acc01, acc23);
+    let mut lanes = [0.0_f32; 4];
+    unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };
     let mut sum = lanes.iter().sum::<f32>();
     for idx in offset..left.len() {
         sum += left[idx] * right[idx];
