@@ -4885,6 +4885,58 @@ mod tests {
         assert_eq!(active_epoch, 2);
         assert_eq!(active_root_epoch, 2);
         assert_eq!(cleanup_eligible_count, 0);
+
+        let index_oid = index_oid("ec_spire_epoch_snapshot_sql_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+
+        let post_compaction_manifest_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_distinct_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_retired_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE state = 'retired'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_superseded_manifest_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_blocked_reason = 'superseded_manifest'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("max row should exist");
+        let post_compaction_active_root_epoch = Spi::get_one::<i64>(
+            "SELECT epoch FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("active root row should exist");
+
+        assert_eq!(post_compaction_manifest_row_count, 5);
+        assert_eq!(post_compaction_distinct_epoch_count, 3);
+        assert_eq!(post_compaction_retired_epoch_count, 2);
+        assert_eq!(post_compaction_superseded_manifest_count, 2);
+        assert_eq!(post_compaction_active_epoch, 3);
+        assert_eq!(post_compaction_active_root_epoch, 3);
     }
 
     #[pg_test]
