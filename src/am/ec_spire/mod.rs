@@ -1,6 +1,6 @@
 //! ec_spire access-method scaffold.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod assign;
 mod build;
@@ -710,14 +710,32 @@ pub(crate) unsafe fn index_epoch_snapshot(
             .sort_by_key(|(tid, manifest)| (manifest.epoch, tid.block_number, tid.offset_number));
 
         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
-        let cleanup_plan = meta::plan_epoch_cleanup(
-            &manifests
-                .iter()
-                .map(|(_, manifest)| *manifest)
-                .collect::<Vec<_>>(),
-            root_control.active_epoch,
-            now_micros,
-        )?;
+        let mut latest_manifest_tid_by_epoch = HashMap::new();
+        for (tid, manifest) in &manifests {
+            latest_manifest_tid_by_epoch
+                .entry(manifest.epoch)
+                .and_modify(|latest_tid: &mut crate::storage::page::ItemPointer| {
+                    if (tid.block_number, tid.offset_number)
+                        > (latest_tid.block_number, latest_tid.offset_number)
+                    {
+                        *latest_tid = *tid;
+                    }
+                })
+                .or_insert(*tid);
+        }
+        let latest_manifests = manifests
+            .iter()
+            .filter_map(|(tid, manifest)| {
+                let latest_tid = latest_manifest_tid_by_epoch.get(&manifest.epoch)?;
+                if latest_tid == tid {
+                    Some(*manifest)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let cleanup_plan =
+            meta::plan_epoch_cleanup(&latest_manifests, root_control.active_epoch, now_micros)?;
         let cleanup_epochs: HashSet<u64> = cleanup_plan.cleanup_epochs.into_iter().collect();
         let retained_retired_epochs: HashSet<u64> =
             cleanup_plan.retained_retired_epochs.into_iter().collect();
@@ -725,10 +743,25 @@ pub(crate) unsafe fn index_epoch_snapshot(
         Ok(manifests
             .into_iter()
             .map(|(tid, manifest)| {
+                let is_latest_manifest = latest_manifest_tid_by_epoch
+                    .get(&manifest.epoch)
+                    .is_some_and(|latest_tid| latest_tid == &tid);
                 let is_active_root_manifest = root_control.active_epoch == manifest.epoch
                     && root_control.epoch_manifest_tid == tid;
-                let cleanup_eligible_now = cleanup_epochs.contains(&manifest.epoch);
+                let cleanup_eligible_now =
+                    is_latest_manifest && cleanup_epochs.contains(&manifest.epoch);
                 let retained_retired = retained_retired_epochs.contains(&manifest.epoch);
+                let cleanup_blocked_reason = if is_latest_manifest {
+                    epoch_cleanup_blocked_reason(
+                        &manifest,
+                        now_micros,
+                        is_active_root_manifest,
+                        retained_retired,
+                        cleanup_eligible_now,
+                    )
+                } else {
+                    "superseded_manifest"
+                };
                 SpireIndexEpochSnapshotRow {
                     active_epoch: root_control.active_epoch,
                     epoch: manifest.epoch,
@@ -741,13 +774,7 @@ pub(crate) unsafe fn index_epoch_snapshot(
                     manifest_offset: tid.offset_number,
                     is_active_root_manifest,
                     cleanup_eligible_now,
-                    cleanup_blocked_reason: epoch_cleanup_blocked_reason(
-                        &manifest,
-                        now_micros,
-                        is_active_root_manifest,
-                        retained_retired,
-                        cleanup_eligible_now,
-                    ),
+                    cleanup_blocked_reason,
                 }
             })
             .collect())

@@ -551,6 +551,20 @@ pub(super) unsafe fn write_manifest_bundle_to_relation(
     })
 }
 
+pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
+    index_relation: pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+) -> Result<ItemPointer, String> {
+    let retired_epoch_manifest = SpireEpochManifest {
+        state: SpireEpochState::Retired,
+        active_query_count: 0,
+        ..previous_epoch_manifest
+    };
+    retired_epoch_manifest.validate()?;
+    let encoded = retired_epoch_manifest.encode()?;
+    unsafe { page::append_object_tuple(index_relation, &encoded) }
+}
+
 pub(super) unsafe fn write_placement_entries_to_relation(
     index_relation: pg_sys::Relation,
     placement_directory: &SpirePlacementDirectory,

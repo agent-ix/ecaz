@@ -70,8 +70,10 @@ root routing snapshot now exposes active centroid-to-child PID rows; relation
 storage diagnostics now quantify active-referenced and cleanup-candidate object
 tuples while physical reclamation remains deferred; scan sanity diagnostics now
 expose resolved scan preconditions for exact leaf coverage and full-frontier
-rerank; epoch diagnostics now expose persisted epoch manifest rows and cleanup
-eligibility blockers, while measured recall/latency evidence remains open.
+rerank; replacement-epoch publishes now write a retired manifest copy for the
+previous active epoch, and epoch diagnostics expose persisted epoch manifest
+rows and cleanup eligibility blockers, while measured recall/latency evidence
+remains open.
 PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
 object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
 remain open. Task 30 implements
@@ -380,9 +382,10 @@ Decision record:
   precondition diagnostic, not measured recall or latency evidence. SQL
   function `ec_spire_index_epoch_snapshot(index_oid)` now reports detected
   persisted epoch manifest rows, active-root-manifest status, and cleanup
-  eligibility/blocker labels so retention state is visible before old-epoch
-  reclamation is implemented. Measured recall/latency summary rows and deeper
-  operator guidance remain open.
+  eligibility/blocker labels, including superseded manifest rows after an epoch
+  state transition, so retention state is visible before old-epoch reclamation
+  is implemented. Measured recall/latency summary rows and deeper operator
+  guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -409,7 +412,8 @@ Decision record:
   surface has focused PG18 coverage for empty, approximate bounded-leaf, and
   exact-leaf/full-frontier-rerank configurations; the SQL epoch snapshot
   surface has focused PG18 coverage for empty, populated, and post-insert
-  active-epoch publication states. Physical page reclamation, old-epoch
+  active-epoch publication states, including previous-epoch retired manifest
+  copies and superseded manifest labels. Physical page reclamation, old-epoch
   cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
@@ -427,8 +431,9 @@ Decision record:
   V2 base leaf using the inserted vector as the bootstrap centroid; later
   inserts use the delta epoch path, including focused coverage for multi-row
   inserts that publish multiple deltas on one base leaf. Vacuum cleanup can now
-  compact active delta epochs into replacement V2 base leaves; insert batching
-  remains open.
+  compact active delta epochs into replacement V2 base leaves. Replacement
+  epoch publication now writes a retired manifest copy for the previous active
+  epoch before advancing root/control; insert batching remains open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
@@ -437,9 +442,10 @@ Decision record:
   scans suppress covered `vec_id`s. `amvacuumcleanup` now compacts active delta
   objects into replacement V2 base leaves and removes delta objects from the
   active placement directory, with focused coverage for no-delta cleanup,
-  insert-only deltas, and mixed insert/delete deltas on one leaf; physical page
-  reclamation/old-epoch cleanup and full SQL VACUUM end-to-end coverage remain
-  open.
+  insert-only deltas, and mixed insert/delete deltas on one leaf. Replacement
+  vacuum publishes now write a retired manifest copy for the previous active
+  epoch before advancing root/control; physical page reclamation/old-epoch
+  cleanup and full SQL VACUUM end-to-end coverage remain open.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that

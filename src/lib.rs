@@ -4045,9 +4045,29 @@ mod tests {
         )
         .expect("post-build insert should publish a delta epoch");
 
-        let post_insert_epoch_count = Spi::get_one::<i64>(
+        let post_insert_manifest_row_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM \
              ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_insert_distinct_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let retired_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE state = 'retired'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let superseded_manifest_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_blocked_reason = 'superseded_manifest'",
         )
         .expect("epoch snapshot query should succeed")
         .expect("count row should exist");
@@ -4072,7 +4092,10 @@ mod tests {
         .expect("epoch snapshot query should succeed")
         .expect("count row should exist");
 
-        assert_eq!(post_insert_epoch_count, 2);
+        assert_eq!(post_insert_manifest_row_count, 3);
+        assert_eq!(post_insert_distinct_epoch_count, 2);
+        assert_eq!(retired_epoch_count, 1);
+        assert_eq!(superseded_manifest_count, 1);
         assert_eq!(active_epoch, 2);
         assert_eq!(active_root_epoch, 2);
         assert_eq!(cleanup_eligible_count, 0);

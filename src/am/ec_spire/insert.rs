@@ -161,6 +161,9 @@ unsafe fn publish_insert_delta_epoch(
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
     let manifests = encode_manifest_bundle_for_publish(input)?;
+    unsafe {
+        build::write_retired_epoch_manifest_to_relation(index_relation, active_epoch_manifest)?
+    };
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
