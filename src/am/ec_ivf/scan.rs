@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, BinaryHeap, HashMap};
+use std::collections::{hash_map::Entry, BinaryHeap, HashMap, HashSet};
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
@@ -1125,30 +1125,25 @@ fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result
     }
 }
 
-fn build_probe_block_sequence(ranges: &mut [ProbeBlockRange]) -> Result<Vec<u32>, String> {
+fn build_probe_block_sequence(ranges: &[ProbeBlockRange]) -> Result<Vec<u32>, String> {
     if ranges.is_empty() {
         return Ok(Vec::new());
     }
 
-    ranges.sort_by(|left, right| {
-        left.head_block
-            .cmp(&right.head_block)
-            .then_with(|| left.tail_block.cmp(&right.tail_block))
-    });
-
     let mut blocks = Vec::new();
-    let mut next_block: Option<u32> = None;
+    let mut seen_blocks = HashSet::new();
     for range in ranges {
-        let start = next_block
-            .map(|next| next.max(range.head_block))
-            .unwrap_or(range.head_block);
-        if start > range.tail_block {
-            continue;
+        if range.head_block > range.tail_block {
+            return Err(format!(
+                "ec_ivf probe block range {}..={} is invalid",
+                range.head_block, range.tail_block
+            ));
         }
-        for block_number in start..=range.tail_block {
-            blocks.push(block_number);
+        for block_number in range.head_block..=range.tail_block {
+            if seen_blocks.insert(block_number) {
+                blocks.push(block_number);
+            }
         }
-        next_block = range.tail_block.checked_add(1);
     }
 
     Ok(blocks)
@@ -1183,66 +1178,46 @@ unsafe fn build_selected_probe_plan(
         return Err("ec_ivf metadata has lists but no directory head".to_owned());
     }
 
-    let mut sorted_selected_lists = selected_lists.to_vec();
-    sorted_selected_lists.sort_unstable();
-    sorted_selected_lists.dedup();
-    if sorted_selected_lists
-        .iter()
-        .any(|list_id| *list_id >= metadata.nlists)
-    {
-        return Err("ec_ivf selected list is out of range".to_owned());
-    }
-
+    let directories = unsafe { load_directory_entries(index_relation, metadata)? };
+    let mut ordered_selected_lists = Vec::with_capacity(selected_lists.len());
     let mut selected_list_mask = vec![false; metadata.nlists as usize];
     let mut remaining_live_tids_by_list = vec![0_u64; metadata.nlists as usize];
-    for list_id in &sorted_selected_lists {
-        selected_list_mask[*list_id as usize] = true;
+    for &list_id in selected_lists {
+        if list_id >= metadata.nlists {
+            return Err("ec_ivf selected list is out of range".to_owned());
+        }
+        let selected = &mut selected_list_mask[list_id as usize];
+        if *selected {
+            continue;
+        }
+        *selected = true;
+        ordered_selected_lists.push(list_id);
     }
 
     let mut candidate_bound = 0_usize;
     let mut ranges = Vec::new();
-    let mut selected_index = 0_usize;
-    let mut next_tid = metadata.directory_head;
+    for &list_id in &ordered_selected_lists {
+        let directory = directories
+            .get(list_id as usize)
+            .ok_or_else(|| format!("ec_ivf directory list {list_id} is out of range"))?;
+        let live_count = usize::try_from(directory.live_count)
+            .map_err(|_| format!("ec_ivf list {list_id} live count exceeds usize"))?;
+        remaining_live_tids_by_list[list_id as usize] = directory.live_count;
+        candidate_bound = candidate_bound
+            .checked_add(live_count)
+            .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
 
-    for expected_list_id in 0..metadata.nlists {
-        let (directory, following_tid) =
-            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
-        if directory.list_id != expected_list_id {
-            return Err(format!(
-                "ec_ivf directory order mismatch: got list {}, expected {}",
-                directory.list_id, expected_list_id
-            ));
+        if posting_block_count(directory)? != 0 {
+            ranges.push(ProbeBlockRange {
+                head_block: directory.head_block.block_number,
+                tail_block: directory.tail_block.block_number,
+            });
         }
-
-        if selected_index < sorted_selected_lists.len()
-            && sorted_selected_lists[selected_index] == expected_list_id
-        {
-            let live_count = usize::try_from(directory.live_count)
-                .map_err(|_| format!("ec_ivf list {expected_list_id} live count exceeds usize"))?;
-            remaining_live_tids_by_list[expected_list_id as usize] = directory.live_count;
-            candidate_bound = candidate_bound
-                .checked_add(live_count)
-                .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
-
-            if posting_block_count(&directory)? != 0 {
-                ranges.push(ProbeBlockRange {
-                    head_block: directory.head_block.block_number,
-                    tail_block: directory.tail_block.block_number,
-                });
-            }
-            selected_index += 1;
-        }
-
-        next_tid = following_tid;
     }
 
-    if selected_index != sorted_selected_lists.len() {
-        return Err("ec_ivf selected probe plan did not resolve every selected list".to_owned());
-    }
-
-    let block_sequence = build_probe_block_sequence(&mut ranges)?;
+    let block_sequence = build_probe_block_sequence(&ranges)?;
     Ok(SelectedProbePlan {
-        selected_lists: sorted_selected_lists,
+        selected_lists: ordered_selected_lists,
         selected_list_mask,
         remaining_live_tids_by_list,
         block_sequence,
@@ -1797,20 +1772,29 @@ mod tests {
 
     #[test]
     fn build_probe_block_sequence_merges_overlapping_ranges_once() {
-        let mut ranges = vec![range(12, 14), range(10, 12), range(18, 19)];
+        let ranges = vec![range(12, 14), range(10, 12), range(18, 19)];
 
-        let sequence = build_probe_block_sequence(&mut ranges).unwrap();
+        let sequence = build_probe_block_sequence(&ranges).unwrap();
 
-        assert_eq!(sequence, vec![10, 11, 12, 13, 14, 18, 19]);
+        assert_eq!(sequence, vec![12, 13, 14, 10, 11, 18, 19]);
     }
 
     #[test]
     fn build_probe_block_sequence_skips_empty_lists() {
-        let mut ranges = vec![range(8, 9)];
+        let ranges = vec![range(8, 9)];
 
-        let sequence = build_probe_block_sequence(&mut ranges).unwrap();
+        let sequence = build_probe_block_sequence(&ranges).unwrap();
 
         assert_eq!(sequence, vec![8, 9]);
+    }
+
+    #[test]
+    fn build_probe_block_sequence_deduplicates_shared_blocks_in_first_range_order() {
+        let ranges = vec![range(20, 22), range(18, 20), range(22, 23)];
+
+        let sequence = build_probe_block_sequence(&ranges).unwrap();
+
+        assert_eq!(sequence, vec![20, 21, 22, 18, 19, 23]);
     }
 
     #[test]
