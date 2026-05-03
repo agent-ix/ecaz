@@ -521,13 +521,13 @@ Decision record:
   vacuum publishes now write a retired manifest copy for the previous active
   epoch before advancing root/control; physical page reclamation/old-epoch
   cleanup and full SQL VACUUM end-to-end coverage remain open.
-- [ ] **Split trigger.** Define the partition growth/drift threshold that
+- [x] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split. SQL leaf diagnostics now expose per-leaf base, delta, and
   effective assignment counts. The first read-only trigger marks a leaf as a
   split candidate when its effective assignment count is at least
   `max(32, 4 * ceil(total_effective_assignments / active_leaf_count))`; the
   actual split scheduler remains open.
-- [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that
+- [x] **Merge trigger.** Define the sparse/low-quality partition threshold that
   schedules a merge. The first read-only trigger marks a leaf as a merge
   candidate when its effective assignment count is at or below
   `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`; the
