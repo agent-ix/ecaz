@@ -3591,6 +3591,7 @@ mod tests {
         let epoch_two =
             SpireRootControlState::published(2, 5, 4, tid(20, 1), tid(20, 2), tid(20, 3)).unwrap();
 
+        assert_eq!(opaque.root_control, None);
         assert_eq!(opaque.observe_root_control_for_rescan(epoch_one), epoch_one);
         assert_eq!(opaque.root_control, Some(epoch_one));
         assert_eq!(

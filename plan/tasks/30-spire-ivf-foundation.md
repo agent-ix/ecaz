@@ -467,8 +467,9 @@ Decision record:
   now has focused PG18 coverage, and vacuum compaction now guards malformed
   leaf object header PID mismatches before rewriting an affected base leaf. The
   scan descriptor root-control cache now replaces its observed state on every
-  rescan so scan-side cursor fields cannot go stale, and the SQL health
-  snapshot surface has focused PG18 coverage for clean and delta-pending active
+  rescan so scan-side cursor fields cannot go stale, including explicit
+  coverage for the empty-cache seed observation, and the SQL health snapshot
+  surface has focused PG18 coverage for clean and delta-pending active
   epochs. The SQL placement snapshot surface has focused PG18 coverage for
   empty and populated local single-store indexes, plus unit-level aggregate/per-store coverage for
   delta object and delta-assignment byte/count accounting. The SQL scan
