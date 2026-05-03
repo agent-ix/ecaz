@@ -18,6 +18,7 @@
     {
       "kind": "load",
       "name": "load-real100k-n128-w500",
+      "tags": ["load", "baseline", "100k", "n128", "w500"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
@@ -36,6 +37,7 @@
     {
       "kind": "recall",
       "name": "recall10-nprobe-sweep-w500",
+      "tags": ["recall", "recall10", "sweep", "100k", "n128", "w500"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
@@ -46,6 +48,7 @@
     {
       "kind": "latency",
       "name": "latency-nprobe-sweep-w500",
+      "tags": ["latency", "sweep", "100k", "n128", "w500"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
@@ -55,6 +58,7 @@
     {
       "kind": "recall",
       "name": "recall100-candidates-w500",
+      "tags": ["recall", "recall100", "candidate", "100k", "n128", "w500"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 100,
       "sweep": [80, 96],
@@ -65,6 +69,7 @@
     {
       "kind": "recall",
       "name": "recall100-candidates-w1000",
+      "tags": ["recall", "recall100", "candidate", "100k", "n128", "w1000"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 100,
       "sweep": [80, 96],
@@ -75,6 +80,7 @@
     {
       "kind": "latency",
       "name": "latency-candidates-w1000",
+      "tags": ["latency", "candidate", "100k", "n128", "w1000"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 10,
       "sweep": [80, 96],
@@ -84,12 +90,14 @@
     {
       "kind": "storage",
       "name": "storage-real100k-n128",
+      "tags": ["storage", "100k", "n128"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "log_file": "review/30178-task31-suite-runner-dry-run/artifacts/storage_real100k_pqg8_n128.log"
     },
     {
       "kind": "explain",
       "name": "explain-quality-candidate",
+      "tags": ["explain", "candidate", "100k", "n128", "w1000"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "index_name": "task31_m5_real100k_pqg8_n128_idx",
       "nprobe": 96,

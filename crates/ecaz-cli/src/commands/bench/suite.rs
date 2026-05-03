@@ -8,7 +8,7 @@ use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -71,6 +71,19 @@ struct RunArgs {
     #[arg(long = "only")]
     only: Vec<String>,
 
+    /// Run only steps with this tag. Repeatable.
+    #[arg(long = "only-tag")]
+    only_tag: Vec<String>,
+
+    /// Reuse successful step records from an earlier manifest.
+    #[arg(long)]
+    resume_from: Option<PathBuf>,
+
+    /// Write normalized result rows. Defaults to `<artifact_dir>/results.jsonl`
+    /// when the config has `artifact_dir`.
+    #[arg(long)]
+    results_output: Option<PathBuf>,
+
     /// Write the suite manifest to this path. Defaults to
     /// `<artifact_dir>/suite-manifest.json` when the config has `artifact_dir`.
     #[arg(long)]
@@ -96,6 +109,10 @@ struct ReportArgs {
     /// Suite manifest produced by `ecaz bench suite run`.
     #[arg(long)]
     manifest: PathBuf,
+
+    /// Write normalized result rows parsed from manifest artifacts.
+    #[arg(long)]
+    results_output: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -104,6 +121,9 @@ struct SuiteRunOptions {
     dry_run: bool,
     continue_on_error: bool,
     only: Vec<String>,
+    only_tag: Vec<String>,
+    resume_from: Option<PathBuf>,
+    results_output: Option<PathBuf>,
     manifest_output: Option<PathBuf>,
 }
 
@@ -156,6 +176,8 @@ enum SuiteStep {
 #[derive(Debug, Deserialize)]
 struct LoadStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     prefix: String,
     corpus_file: PathBuf,
     queries_file: PathBuf,
@@ -180,6 +202,8 @@ struct LoadStep {
 #[derive(Debug, Deserialize)]
 struct RecallStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     prefix: String,
     k: usize,
     sweep: Vec<i32>,
@@ -206,6 +230,8 @@ struct RecallStep {
 #[derive(Debug, Deserialize)]
 struct LatencyStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     prefix: String,
     sweep: Vec<i32>,
     #[serde(default)]
@@ -235,6 +261,8 @@ struct LatencyStep {
 #[derive(Debug, Deserialize)]
 struct StorageStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     prefix: String,
     #[serde(default)]
     log_file: Option<PathBuf>,
@@ -243,6 +271,8 @@ struct StorageStep {
 #[derive(Debug, Deserialize)]
 struct ExplainStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     prefix: String,
     #[serde(default)]
     index_name: Option<String>,
@@ -267,6 +297,8 @@ struct ExplainStep {
 #[derive(Debug, Deserialize)]
 struct RawStep {
     name: String,
+    #[serde(default)]
+    tags: Vec<String>,
     args: Vec<String>,
     #[serde(default)]
     expected_artifacts: Vec<PathBuf>,
@@ -300,6 +332,8 @@ struct StepRecord {
     command: Vec<String>,
     selected: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     expected_artifacts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     status: Option<StepStatus>,
@@ -328,7 +362,9 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
         Some(SuiteCommand::Run(run_args)) => run_suite(conn, run_args.into()).await,
         Some(SuiteCommand::Audit(audit_args)) => audit_suite(&audit_args.config).await,
         Some(SuiteCommand::Status(status_args)) => status_manifest(&status_args.manifest).await,
-        Some(SuiteCommand::Report(report_args)) => report_manifest(&report_args.manifest).await,
+        Some(SuiteCommand::Report(report_args)) => {
+            report_manifest(&report_args.manifest, report_args.results_output.as_deref()).await
+        }
         None => {
             let config = args.config.context(
                 "missing --config; use `ecaz bench suite run --config <path>` or the legacy `ecaz bench suite --config <path> --dry-run` alias",
@@ -346,6 +382,9 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
                     dry_run: true,
                     continue_on_error: false,
                     only: args.only,
+                    only_tag: Vec::new(),
+                    resume_from: None,
+                    results_output: None,
                     manifest_output: args.manifest_output,
                 },
             )
@@ -361,6 +400,9 @@ impl From<RunArgs> for SuiteRunOptions {
             dry_run: args.dry_run,
             continue_on_error: args.continue_on_error,
             only: args.only,
+            only_tag: args.only_tag,
+            resume_from: args.resume_from,
+            results_output: args.results_output,
             manifest_output: args.manifest_output,
         }
     }
@@ -371,6 +413,9 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     validate_config(&config)?;
 
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
+    if let Some(resume_from) = &args.resume_from {
+        apply_resume(&mut manifest, resume_from).await?;
+    }
     write_manifest_if_requested(&args, &config, &manifest).await?;
 
     if args.dry_run {
@@ -390,6 +435,14 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     let exe = std::env::current_exe().context("resolving current ecaz executable")?;
     for idx in 0..manifest.steps.len() {
         if !manifest.steps[idx].selected {
+            continue;
+        }
+        if matches!(manifest.steps[idx].status, Some(StepStatus::Succeeded)) {
+            crate::ecaz_println!(
+                "[suite:{}] {} already succeeded in resume manifest",
+                config.name,
+                manifest.steps[idx].name
+            );
             continue;
         }
         prepare_step(&config.steps[idx]).await?;
@@ -431,6 +484,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         }
     }
 
+    write_results_if_requested(&args, &config, &manifest).await?;
     Ok(())
 }
 
@@ -502,9 +556,10 @@ async fn status_manifest(path: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn report_manifest(path: &Path) -> Result<()> {
+async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<()> {
     let manifest = load_manifest(path).await?;
     let summary = summarize_manifest(&manifest).await;
+    let rows = extract_result_rows(&manifest).await?;
     crate::ecaz_println!("# Suite Report: {}", manifest.suite);
     crate::ecaz_println!("");
     crate::ecaz_println!("- config: `{}`", manifest.config);
@@ -546,6 +601,26 @@ async fn report_manifest(path: &Path) -> Result<()> {
                     .join("<br>")
             }
         );
+    }
+    if !rows.is_empty() {
+        crate::ecaz_println!("");
+        crate::ecaz_println!("## Parsed Results");
+        crate::ecaz_println!("");
+        crate::ecaz_println!("| Step | Kind | Metric | Values |");
+        crate::ecaz_println!("| --- | --- | --- | --- |");
+        for row in &rows {
+            crate::ecaz_println!(
+                "| {} | {} | {} | {} |",
+                row.step,
+                row.kind,
+                row.metric,
+                format_metric_values(&row.values)
+            );
+        }
+    }
+    if let Some(path) = results_output {
+        write_results_jsonl(path, &rows).await?;
+        crate::ecaz_eprintln!("wrote {}", path.display());
     }
     Ok(())
 }
@@ -590,7 +665,7 @@ fn build_manifest(
     };
 
     for step in &config.steps {
-        let selected = args.only.is_empty() || args.only.iter().any(|only| only == step.name());
+        let selected = step_selected(step, args);
         let command = if selected {
             child_command_args(conn, step.expand(&config.defaults, conn)?)
         } else {
@@ -601,6 +676,7 @@ fn build_manifest(
             kind: step.kind().to_string(),
             command,
             selected,
+            tags: step.tags().to_vec(),
             expected_artifacts: step
                 .expected_artifacts()
                 .iter()
@@ -624,6 +700,40 @@ fn build_manifest(
     Ok(manifest)
 }
 
+fn step_selected(step: &SuiteStep, args: &SuiteRunOptions) -> bool {
+    let name_matches = args.only.is_empty() || args.only.iter().any(|only| only == step.name());
+    let tag_matches = args.only_tag.is_empty()
+        || args
+            .only_tag
+            .iter()
+            .any(|only| step.tags().iter().any(|tag| tag == only));
+    name_matches && tag_matches
+}
+
+async fn apply_resume(manifest: &mut SuiteManifest, resume_from: &Path) -> Result<()> {
+    let previous = load_manifest(resume_from).await?;
+    let previous_by_name: HashMap<_, _> = previous
+        .steps
+        .into_iter()
+        .map(|step| (step.name.clone(), step))
+        .collect();
+    for step in &mut manifest.steps {
+        if !step.selected {
+            continue;
+        }
+        if let Some(previous) = previous_by_name.get(&step.name) {
+            if matches!(previous.status, Some(StepStatus::Succeeded)) {
+                step.status = previous.status;
+                step.started_at_unix_ms = previous.started_at_unix_ms;
+                step.finished_at_unix_ms = previous.finished_at_unix_ms;
+                step.duration_ms = previous.duration_ms;
+                step.exit_code = previous.exit_code;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn write_manifest_if_requested(
     args: &SuiteRunOptions,
     config: &SuiteConfig,
@@ -642,6 +752,242 @@ async fn write_manifest_if_requested(
         crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
     }
     Ok(())
+}
+
+async fn write_results_if_requested(
+    args: &SuiteRunOptions,
+    config: &SuiteConfig,
+    manifest: &SuiteManifest,
+) -> Result<()> {
+    let path = args.results_output.clone().or_else(|| {
+        config
+            .artifact_dir
+            .as_ref()
+            .map(|dir| dir.join("results.jsonl"))
+    });
+    if let Some(path) = path {
+        let rows = extract_result_rows(manifest).await?;
+        write_results_jsonl(&path, &rows).await?;
+        crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct ResultRow {
+    suite: String,
+    step: String,
+    kind: String,
+    metric: String,
+    artifact: String,
+    values: BTreeMap<String, String>,
+}
+
+async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>> {
+    let mut rows = Vec::new();
+    for step in &manifest.steps {
+        if !matches!(step.status, Some(StepStatus::Succeeded)) {
+            continue;
+        }
+        for artifact in &step.expected_artifacts {
+            let path = Path::new(artifact);
+            let Ok(raw) = tokio::fs::read_to_string(path).await else {
+                continue;
+            };
+            rows.extend(parse_result_rows(manifest, step, artifact, &raw));
+        }
+    }
+    Ok(rows)
+}
+
+fn parse_result_rows(
+    manifest: &SuiteManifest,
+    step: &StepRecord,
+    artifact: &str,
+    raw: &str,
+) -> Vec<ResultRow> {
+    match step.kind.as_str() {
+        "recall" | "latency" => parse_table_rows(raw)
+            .into_iter()
+            .map(|values| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric: step.kind.clone(),
+                artifact: artifact.into(),
+                values,
+            })
+            .collect(),
+        "storage" => parse_storage_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values,
+            })
+            .collect(),
+        "load" => parse_load_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
+    let mut header: Option<Vec<String>> = None;
+    let mut rows = Vec::new();
+    for cells in table_lines(raw) {
+        if cells.iter().any(|cell| cell.chars().all(|ch| ch == '═')) {
+            continue;
+        }
+        if header.as_ref().map(|h| h.len()) != Some(cells.len()) {
+            header = Some(cells);
+            continue;
+        }
+        if let Some(header) = &header {
+            rows.push(
+                header
+                    .iter()
+                    .cloned()
+                    .zip(cells.into_iter())
+                    .collect::<BTreeMap<_, _>>(),
+            );
+        }
+    }
+    rows
+}
+
+fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    let mut rows = Vec::new();
+    for table_row in parse_table_rows(raw) {
+        if let (Some(field), Some(value)) = (table_row.get("field"), table_row.get("value")) {
+            rows.push((
+                "storage_field".into(),
+                BTreeMap::from([
+                    ("field".into(), field.clone()),
+                    ("value".into(), value.clone()),
+                ]),
+            ));
+        } else if table_row.contains_key("index") {
+            rows.push(("storage_index".into(), table_row));
+        }
+    }
+    rows
+}
+
+fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    let mut rows = Vec::new();
+    for line in raw.lines() {
+        if let Some((name, seconds)) = parse_timed_loader_line(line, "copied corpus table ") {
+            rows.push((
+                "load_timing".into(),
+                timed_values("copy_corpus", &name, seconds),
+            ));
+        } else if let Some((name, seconds)) = parse_timed_loader_line(line, "encoded corpus table ")
+        {
+            rows.push((
+                "load_timing".into(),
+                timed_values("encode_corpus", &name, seconds),
+            ));
+        } else if let Some((name, seconds)) = parse_timed_loader_line(line, "copied queries table ")
+        {
+            rows.push((
+                "load_timing".into(),
+                timed_values("copy_queries", &name, seconds),
+            ));
+        } else if let Some((name, seconds)) = parse_timed_loader_line(line, "built ") {
+            rows.push((
+                "load_timing".into(),
+                timed_values("build_index", &name, seconds),
+            ));
+        } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
+            rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
+        }
+    }
+    rows
+}
+
+fn parse_timed_loader_line(line: &str, prefix: &str) -> Option<(String, String)> {
+    let rest = line
+        .trim_start()
+        .strip_prefix("[loader] ")?
+        .strip_prefix(prefix)?;
+    let (name, duration) = rest.rsplit_once(" in ")?;
+    Some((name.trim().into(), duration_seconds(duration.trim())?))
+}
+
+fn timed_values(phase: &str, subject: &str, seconds: String) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("phase".into(), phase.into()),
+        ("subject".into(), subject.into()),
+        ("seconds".into(), seconds),
+    ])
+}
+
+fn duration_seconds(value: &str) -> Option<String> {
+    let value = value.trim();
+    let split_at = value
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .unwrap_or(value.len());
+    let amount = value[..split_at].parse::<f64>().ok()?;
+    let unit = value[split_at..].trim();
+    let seconds = match unit {
+        "ms" => amount / 1000.0,
+        "" | "s" => amount,
+        "m" | "min" => amount * 60.0,
+        _ => return None,
+    };
+    Some(format!("{seconds:.6}"))
+}
+
+fn table_lines(raw: &str) -> Vec<Vec<String>> {
+    raw.lines()
+        .filter(|line| line.trim_start().starts_with('│'))
+        .map(|line| {
+            line.trim_matches('│')
+                .split('┆')
+                .flat_map(|part| part.split('│'))
+                .map(|cell| cell.trim().to_string())
+                .filter(|cell| !cell.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|cells| !cells.is_empty())
+        .collect()
+}
+
+async fn write_results_jsonl(path: &Path, rows: &[ResultRow]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut body = String::new();
+    for row in rows {
+        body.push_str(&serde_json::to_string(row)?);
+        body.push('\n');
+    }
+    tokio::fs::write(path, body)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+fn format_metric_values(values: &BTreeMap<String, String>) -> String {
+    values
+        .iter()
+        .map(|(key, value)| format!("`{key}={value}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn validate_config(config: &SuiteConfig) -> Result<()> {
@@ -684,6 +1030,17 @@ impl SuiteStep {
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
             SuiteStep::Raw(_) => "raw",
+        }
+    }
+
+    fn tags(&self) -> &[String] {
+        match self {
+            SuiteStep::Load(step) => &step.tags,
+            SuiteStep::Recall(step) => &step.tags,
+            SuiteStep::Latency(step) => &step.tags,
+            SuiteStep::Storage(step) => &step.tags,
+            SuiteStep::Explain(step) => &step.tags,
+            SuiteStep::Raw(step) => &step.tags,
         }
     }
 
@@ -1152,6 +1509,12 @@ mod tests {
             "--dry-run",
             "--only",
             "r10",
+            "--only-tag",
+            "recall",
+            "--resume-from",
+            "old-manifest.json",
+            "--results-output",
+            "results.jsonl",
         ])
         .expect("suite parses");
         match cli.args.command {
@@ -1159,6 +1522,9 @@ mod tests {
                 assert_eq!(args.config, PathBuf::from("suite.json"));
                 assert!(args.dry_run);
                 assert_eq!(args.only, vec!["r10"]);
+                assert_eq!(args.only_tag, vec!["recall"]);
+                assert_eq!(args.resume_from, Some(PathBuf::from("old-manifest.json")));
+                assert_eq!(args.results_output, Some(PathBuf::from("results.jsonl")));
             }
             _ => panic!("expected run command"),
         }
@@ -1237,6 +1603,7 @@ mod tests {
         };
         let step = RecallStep {
             name: "recall".into(),
+            tags: vec!["sweep".into()],
             prefix: "surface".into(),
             k: 10,
             sweep: vec![48, 96],
@@ -1258,6 +1625,75 @@ mod tests {
     }
 
     #[test]
+    fn step_selection_requires_name_and_tag_matches() {
+        let step = SuiteStep::Recall(RecallStep {
+            name: "recall".into(),
+            tags: vec!["recall".into(), "sweep".into()],
+            prefix: "surface".into(),
+            k: 10,
+            sweep: vec![48],
+            rerank_width: None,
+            queries_limit: None,
+            profile: None,
+            bits: None,
+            seed: None,
+            force_index: None,
+            truth_cache_file: None,
+            truth_cache_dir: None,
+            log_output: None,
+        });
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: vec!["recall".into()],
+            only_tag: vec!["sweep".into()],
+            resume_from: None,
+            results_output: None,
+            manifest_output: None,
+        };
+        assert!(step_selected(&step, &args));
+
+        let args = SuiteRunOptions {
+            only_tag: vec!["latency".into()],
+            ..args
+        };
+        assert!(!step_selected(&step, &args));
+    }
+
+    #[test]
+    fn parses_recall_result_table() {
+        let rows = parse_table_rows(
+            "┌────────┬──────────┬────────┬─────────────┐\n\
+             │ nprobe ┆ recall@k ┆ ndcg@k ┆ mean q-time │\n\
+             ╞════════╪══════════╪════════╪═════════════╡\n\
+             │ 96     ┆ 0.9980   ┆ 0.9997 ┆ 11.00 ms    │\n\
+             └────────┴──────────┴────────┴─────────────┘\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].get("nprobe").map(String::as_str), Some("96"));
+        assert_eq!(rows[0].get("recall@k").map(String::as_str), Some("0.9980"));
+    }
+
+    #[test]
+    fn parses_loader_timing_rows() {
+        let rows = parse_load_rows(
+            "[loader] copied corpus table p_corpus in 15.02s\n\
+             [loader] copied queries table p_queries in 183.48ms\n\
+             [loader] completed prefix p in 45.76s\n",
+        );
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[0].1.get("phase").map(String::as_str),
+            Some("copy_corpus")
+        );
+        assert_eq!(
+            rows[1].1.get("seconds").map(String::as_str),
+            Some("0.183480")
+        );
+    }
+
+    #[test]
     fn prefixes_child_commands_with_connection_flags() {
         let args = child_command_args(&conn(), vec!["bench".into(), "storage".into()]);
         assert!(args.windows(2).any(|w| w == ["--database", "postgres"]));
@@ -1272,6 +1708,7 @@ mod tests {
         let defaults = SuiteDefaults::default();
         let step = ExplainStep {
             name: "explain".into(),
+            tags: Vec::new(),
             prefix: "pfx".into(),
             index_name: None,
             query_table: None,
@@ -1296,6 +1733,7 @@ mod tests {
     fn explain_sql_uses_suite_fields() {
         let step = ExplainStep {
             name: "explain".into(),
+            tags: Vec::new(),
             prefix: "pfx".into(),
             index_name: None,
             query_table: None,

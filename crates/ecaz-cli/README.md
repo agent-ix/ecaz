@@ -250,6 +250,7 @@ The first-supported config schema is JSON `schema_version: 1`:
     {
       "kind": "recall",
       "name": "recall10-nprobe-sweep-w500",
+      "tags": ["recall", "recall10", "sweep", "100k", "n128", "w500"],
       "prefix": "task31_m5_real100k_pqg8_n128",
       "k": 10,
       "sweep": [40, 48, 56, 64, 80, 96],
@@ -303,14 +304,25 @@ stops on the first failed selected step; add `--continue-on-error` when a sweep
 should keep going after failures.
 
 During optimization, use `--only` to target a narrow slice while preserving the
-same config:
+same config, or `--only-tag` to target categories of steps:
 
 ```sh
 ecaz bench suite run \
   --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json \
   --only recall10-nprobe-sweep-w500 \
   --only latency-nprobe-sweep-w500
+
+ecaz bench suite run \
+  --config crates/ecaz-cli/suites/task31-m5-ivf-100k.json \
+  --only-tag recall \
+  --only-tag candidate
 ```
+
+Use `--resume-from <suite-manifest.json>` to skip steps that already succeeded
+in a previous manifest while retaining the current config's expanded commands.
+The runner writes normalized metric rows to `<artifact_dir>/results.jsonl` after
+execution; override with `--results-output <path>` if the packet needs a
+different location.
 
 After or during a run, inspect the manifest:
 
@@ -319,13 +331,15 @@ ecaz bench suite status \
   --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
 
 ecaz bench suite report \
-  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json
+  --manifest review/30178-task31-suite-runner-dry-run/artifacts/suite-manifest.json \
+  --results-output review/example/artifacts/results.jsonl
 ```
 
 `status` reports completed, failed, skipped, dry-run, stale, and
-missing-artifact counts. `report` emits a minimal markdown summary from the
-manifest. Normalized recall/latency/storage metric extraction is intentionally
-deferred until the execution and manifest shape settle.
+missing-artifact counts. `report` emits a markdown summary from the manifest
+and parses completed recall, latency, storage, and load artifacts into a
+normalized JSONL result stream for plotting/comparison. Raw logs remain the
+source of truth.
 
 For RDS/Graviton or other remote runs, keep the same suite config shape and set
 connection flags or libpq environment variables at invocation time. Store
