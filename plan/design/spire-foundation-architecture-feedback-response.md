@@ -171,6 +171,13 @@ diagnostics can consume build-produced V2 base leaves. The current scan helper
 uses V2 row reconstruction as a compatibility bridge before direct
 column-view-driven batch scoring lands.
 
+Implementation checkpoint: quantized routed candidate scans now read
+build-produced V2 leaves, batch-score each column segment through
+`SpirePreparedAssignmentScorer::score_batch_ip`, and construct scored
+candidates only for visible primary rows. The row-oriented scanner remains as
+the V1 compatibility and test helper; the persisted Phase 1 scan path should
+use the V2 column route.
+
 ## Snapshot Lookup and Validation
 
 `SpirePublishedEpochSnapshot::new` remains the construction-time validation

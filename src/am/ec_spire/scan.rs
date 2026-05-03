@@ -12,7 +12,8 @@ use super::options::{
 };
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
-    is_delete_delta_assignment, is_visible_primary_assignment, SpireLeafAssignmentRow,
+    is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
+    SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject,
     SpireLocalObjectStore, SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
 };
 use crate::storage::page::ItemPointer;
@@ -367,15 +368,35 @@ pub(super) fn collect_quantized_routed_probe_candidates(
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
-    collect_ranked_routed_probe_candidates(
-        snapshot,
-        object_store,
-        query_vector,
-        nprobe,
-        |row| scorer.score_assignment_ip(row),
-        dedupe_mode,
-        limit,
-    )
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
+    let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
+    if limit == Some(0) {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates = Vec::new();
+    let mut candidates_by_vec_id = match dedupe_mode {
+        SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
+        SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
+    };
+    for leaf_pid in leaf_pids {
+        append_quantized_leaf_candidates_for_pid(
+            &snapshot,
+            object_store,
+            leaf_pid,
+            root_pid,
+            &scorer,
+            &mut candidates,
+            &mut candidates_by_vec_id,
+        )?;
+    }
+
+    if let Some(candidates_by_vec_id) = candidates_by_vec_id {
+        candidates.extend(candidates_by_vec_id.into_values());
+    }
+
+    Ok(rank_bounded_scored_candidates(candidates, limit))
 }
 
 pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
@@ -586,6 +607,147 @@ pub(super) fn collect_validated_snapshot_visible_primary_rows(
     Ok(visible_rows)
 }
 
+fn append_quantized_leaf_candidates_for_pid(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &SpireLocalObjectStore,
+    leaf_pid: u64,
+    root_pid: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(leaf_pid, "quantized routed scan leaf")?;
+    let manifest_entry = lookup.manifest_entry;
+    let placement = lookup.placement;
+    if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+        return Ok(());
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire quantized routed scan pid {leaf_pid} is not a leaf object"
+        ));
+    }
+    if header.parent_pid != root_pid {
+        return Err(format!(
+            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
+            header.parent_pid
+        ));
+    }
+
+    match object_store.read_leaf_object_v2(placement) {
+        Ok(leaf_object) => {
+            for columns in leaf_object.column_segments()? {
+                append_quantized_v2_column_candidates(
+                    columns,
+                    leaf_pid,
+                    manifest_entry.object_version,
+                    scorer,
+                    candidates,
+                    candidates_by_vec_id,
+                )?;
+            }
+            Ok(())
+        }
+        Err(v2_error) => {
+            let leaf_object = object_store.read_leaf_object(placement).map_err(|v1_error| {
+                format!(
+                    "ec_spire quantized scan could not read leaf pid {leaf_pid} as V2 or V1: V2 error: {v2_error}; V1 error: {v1_error}"
+                )
+            })?;
+            append_quantized_v1_leaf_candidates(
+                leaf_object,
+                leaf_pid,
+                manifest_entry.object_version,
+                scorer,
+                candidates,
+                candidates_by_vec_id,
+            )
+        }
+    }
+}
+
+fn append_quantized_v2_column_candidates(
+    columns: SpireLeafObjectColumns<'_>,
+    pid: u64,
+    object_version: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+) -> Result<(), String> {
+    let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
+    if column_format != scorer.payload_format() {
+        return Err(format!(
+            "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
+            column_format,
+            scorer.payload_format()
+        ));
+    }
+
+    let mut scores = vec![0.0; columns.row_count()];
+    scorer.score_batch_ip(
+        columns.payload_stride,
+        columns.payloads,
+        columns.gammas,
+        &mut scores,
+    )?;
+
+    for (row_offset, ip) in scores.into_iter().enumerate() {
+        if !is_visible_primary_assignment_flags(columns.flags[row_offset]) {
+            continue;
+        }
+        if !ip.is_finite() {
+            return Err(
+                "ec_spire routed candidate batch scorer returned a non-finite score".to_owned(),
+            );
+        }
+
+        let row = columns.row(row_offset)?;
+        let candidate = SpireScoredScanCandidate {
+            pid,
+            object_version,
+            row_index: row.row_index,
+            vec_id: SpireVecId::local(row.local_vec_seq()?),
+            heap_tid: row.heap_tid,
+            score: -ip,
+        };
+        append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+    }
+    Ok(())
+}
+
+fn append_quantized_v1_leaf_candidates(
+    leaf_object: SpireLeafPartitionObject,
+    pid: u64,
+    object_version: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+) -> Result<(), String> {
+    for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
+        if !is_visible_primary_assignment(&assignment) {
+            continue;
+        }
+        let ip = scorer.score_assignment_ip(&assignment)?;
+        if !ip.is_finite() {
+            return Err("ec_spire routed candidate scorer returned a non-finite score".to_owned());
+        }
+        let row_index = u32::try_from(row_index)
+            .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+        let candidate = SpireScoredScanCandidate {
+            pid,
+            object_version,
+            row_index,
+            vec_id: assignment.vec_id,
+            heap_tid: assignment.heap_tid,
+            score: -ip,
+        };
+        append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+    }
+    Ok(())
+}
+
 fn rank_routed_leaf_rows_by_ip<F>(
     routed_rows: Vec<SpireRoutedLeafScanRows>,
     mut score_ip: F,
@@ -623,20 +785,7 @@ where
                 heap_tid: row.assignment.heap_tid,
                 score: -ip,
             };
-            if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
-                match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
-                            *entry.get_mut() = candidate;
-                        }
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(candidate);
-                    }
-                }
-            } else {
-                candidates.push(candidate);
-            }
+            append_scored_candidate(candidate, &mut candidates, &mut candidates_by_vec_id);
         }
     }
 
@@ -645,6 +794,27 @@ where
     }
 
     Ok(rank_bounded_scored_candidates(candidates, limit))
+}
+
+fn append_scored_candidate(
+    candidate: SpireScoredScanCandidate,
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+) {
+    if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
+        match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
+                    *entry.get_mut() = candidate;
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+            }
+        }
+    } else {
+        candidates.push(candidate);
+    }
 }
 
 fn scored_candidate_cmp(
@@ -1835,7 +2005,7 @@ mod tests {
             Some(2),
         )
         .unwrap_err()
-        .contains("payload length mismatch"));
+        .contains("payload stride mismatch"));
     }
 
     #[test]

@@ -148,17 +148,16 @@ Decision record:
   path have landed; single-level and partitioned build drafts now write V2 base
   leaves, object-header dispatch understands V2 metadata placements, and scan
   helpers can read either V1 compatibility leaves or V2 base leaves.
-- [ ] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
+- [x] **Borrowed leaf reads and batch scoring.** Add borrowed V2 column views,
   borrowed row references for row-encoded deltas, one shared assignment
   visibility predicate, and batch assignment scorer entry points before
   persisted scan callbacks consume leaf objects. Borrowed V1 row references and
   shared visibility predicates have landed, and the prepared assignment scorer
   now has a shape-checked batch scoring entry point for TurboQuant and RaBitQ.
   V2 leaf segments now expose borrowed column views plus row accessors over
-  flags, fixed-stride vec_ids, heap TIDs, gammas, and payload chunks. Scan
-  dispatch can read V2 leaves, but the candidate scorer still materializes
-  owned row objects before scoring; direct column-view batch scoring remains
-  open.
+  flags, fixed-stride vec_ids, heap TIDs, gammas, and payload chunks. Quantized
+  routed candidate scans now batch-score V2 payload blocks directly from those
+  column views, while retaining V1 row-scoring fallback for compatibility tests.
 - [x] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly
