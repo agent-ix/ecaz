@@ -1183,20 +1183,22 @@ impl SpireLeafPartitionObjectV2 {
         Ok(())
     }
 
-    pub(super) fn column_segments(&self) -> Result<Vec<SpireLeafObjectColumns<'_>>, String> {
+    pub(super) fn column_segments(
+        &self,
+    ) -> Result<impl Iterator<Item = Result<SpireLeafObjectColumns<'_>, String>> + '_, String> {
         self.validate()?;
-        self.segments
+        Ok(self
+            .segments
             .iter()
-            .map(|segment| segment.columns(&self.meta))
-            .collect()
+            .map(|segment| segment.columns(&self.meta)))
     }
 
     pub(super) fn assignment_rows(&self) -> Result<Vec<SpireLeafAssignmentRow>, String> {
-        let column_segments = self.column_segments()?;
         let row_count = usize::try_from(self.meta.header.assignment_count)
             .map_err(|_| "ec_spire leaf V2 assignment count exceeds usize".to_owned())?;
         let mut rows = Vec::with_capacity(row_count);
-        for columns in column_segments {
+        for columns in self.column_segments()? {
+            let columns = columns?;
             for row_offset in 0..columns.row_count() {
                 let row = columns.row(row_offset)?;
                 rows.push(SpireLeafAssignmentRow {
@@ -3487,7 +3489,11 @@ mod tests {
         }
         assert_eq!(decoded_row_count, assignments.len());
 
-        let column_segments = decoded.column_segments().unwrap();
+        let column_segments = decoded
+            .column_segments()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(column_segments.len(), decoded.segments.len());
         assert_eq!(
             column_segments[0].payload_format,
@@ -3535,7 +3541,7 @@ mod tests {
         assert_eq!(decoded.meta.first_segment_locator, ItemPointer::INVALID);
         assert_eq!(decoded.meta.payload_format, SPIRE_PAYLOAD_FORMAT_NONE);
         assert!(decoded.segments.is_empty());
-        assert!(decoded.column_segments().unwrap().is_empty());
+        assert_eq!(decoded.column_segments().unwrap().count(), 0);
     }
 
     #[test]

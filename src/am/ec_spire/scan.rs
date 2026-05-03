@@ -921,6 +921,7 @@ fn append_quantized_leaf_candidates_for_pid(
     match object_store.read_leaf_object_v2(placement) {
         Ok(leaf_object) => {
             for columns in leaf_object.column_segments()? {
+                let columns = columns?;
                 append_quantized_v2_column_candidates(
                     columns,
                     snapshot.epoch_manifest().epoch,
