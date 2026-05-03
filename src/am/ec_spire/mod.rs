@@ -126,6 +126,21 @@ pub(crate) struct SpireIndexRelationStorageSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexScanSanitySnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) active_leaf_count: u32,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) exact_leaf_coverage: bool,
+    pub(crate) effective_rerank_width: i32,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) full_frontier_rerank: bool,
+    pub(crate) recall_sanity_status: &'static str,
+    pub(crate) latency_risk_status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
@@ -312,6 +327,39 @@ fn assignment_payload_scannability(
     }
 }
 
+fn scan_sanity_status(
+    active_epoch: u64,
+    exact_leaf_coverage: bool,
+    full_frontier_rerank: bool,
+) -> (&'static str, &'static str, &'static str) {
+    if active_epoch == 0 {
+        return (
+            "empty",
+            "none",
+            "build or insert rows to publish the first SPIRE epoch",
+        );
+    }
+    if exact_leaf_coverage && full_frontier_rerank {
+        return (
+            "exact_leaf_and_frontier_coverage",
+            "full_scan",
+            "use this configuration only for recall sanity checks or small indexes",
+        );
+    }
+    if exact_leaf_coverage {
+        return (
+            "exact_leaf_coverage_bounded_rerank",
+            "bounded_rerank",
+            "set rerank_width = 0 for full-frontier exact recall sanity checks",
+        );
+    }
+    (
+        "approximate_leaf_coverage",
+        "bounded_leaf_probe",
+        "increase nprobe to active_leaf_count for exact leaf coverage sanity checks",
+    )
+}
+
 fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
     match mode {
         meta::SpireConsistencyMode::Strict => "strict",
@@ -437,6 +485,57 @@ pub(crate) unsafe fn index_options_snapshot(
             assignment_payload_scannable,
             assignment_payload_status,
             assignment_payload_recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_scan_sanity_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexScanSanitySnapshot {
+    let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let active_leaf_count = if root_control.active_epoch == 0 {
+            0
+        } else {
+            let (epoch_manifest, object_manifest, placement_directory) =
+                unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+            let snapshot = meta::SpirePublishedEpochSnapshot::new(
+                &epoch_manifest,
+                &object_manifest,
+                &placement_directory,
+            )?;
+            let object_store =
+                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            scan::count_snapshot_single_level_leaf_pids(&snapshot, &object_store)?
+        };
+        let relation_nprobe = u32::try_from(relation_options.nprobe)
+            .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
+        let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
+        let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
+        let exact_leaf_coverage =
+            active_leaf_count > 0 && nprobe.effective_nprobe == active_leaf_count;
+        let full_frontier_rerank =
+            active_leaf_count > 0 && rerank_width.effective_rerank_width == 0;
+        let (recall_sanity_status, latency_risk_status, recommendation) = scan_sanity_status(
+            root_control.active_epoch,
+            exact_leaf_coverage,
+            full_frontier_rerank,
+        );
+
+        Ok(SpireIndexScanSanitySnapshot {
+            active_epoch: root_control.active_epoch,
+            active_leaf_count,
+            effective_nprobe: nprobe.effective_nprobe,
+            effective_nprobe_source: nprobe.source,
+            exact_leaf_coverage,
+            effective_rerank_width: rerank_width.effective_rerank_width,
+            effective_rerank_width_source: rerank_width.source,
+            full_frontier_rerank,
+            recall_sanity_status,
+            latency_risk_status,
+            recommendation,
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

@@ -68,10 +68,12 @@ active placement/object/byte counts; a query-specific scan placement snapshot
 now exposes per-store routed leaf PID, delta PID, and candidate-row counts; a
 root routing snapshot now exposes active centroid-to-child PID rows; relation
 storage diagnostics now quantify active-referenced and cleanup-candidate object
-tuples while physical reclamation remains deferred.
-PQ-FastScan scorer binding, recall/latency summary evidence, physical object
-reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage remain
-open. Task 30 implements
+tuples while physical reclamation remains deferred; scan sanity diagnostics now
+expose resolved scan preconditions for exact leaf coverage and full-frontier
+rerank, while measured recall/latency evidence remains open.
+PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
+object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
+remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -370,8 +372,12 @@ Decision record:
   function `ec_spire_index_relation_storage_snapshot(index_oid)` now reports
   relation object tuple counts/bytes, active-referenced tuple counts/bytes, and
   cleanup-candidate tuple counts/bytes so old-epoch physical debt is visible
-  before tuple reclamation is implemented.
-  Recall/latency summary rows and deeper operator guidance remain open.
+  before tuple reclamation is implemented. SQL function
+  `ec_spire_index_scan_sanity_snapshot(index_oid)` now reports resolved scan
+  option labels, exact-leaf-coverage status, full-frontier-rerank status, and
+  conservative recall-sanity/latency-risk labels. This is a deterministic
+  precondition diagnostic, not measured recall or latency evidence. Measured
+  recall/latency summary rows and deeper operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -394,7 +400,9 @@ Decision record:
   focused PG18 coverage for query-specific routed leaf PID and candidate-row
   counts plus post-build insert-delta leaf/delta PID and candidate-row splits.
   The SQL root routing snapshot surface has focused PG18 coverage for empty
-  and populated local single-store indexes; physical page reclamation,
+  and populated local single-store indexes; the SQL scan sanity snapshot
+  surface has focused PG18 coverage for empty, approximate bounded-leaf, and
+  exact-leaf/full-frontier-rerank configurations. Physical page reclamation,
   old-epoch cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.

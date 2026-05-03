@@ -1348,6 +1348,46 @@ fn ec_spire_index_options_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_sanity_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(active_leaf_count, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(exact_leaf_coverage, bool),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
+        name!(full_frontier_rerank, bool),
+        name!(recall_sanity_status, String),
+        name!(latency_risk_status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_sanity_snapshot") };
+    let snapshot = unsafe { am::spire_index_scan_sanity_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::from(snapshot.active_leaf_count),
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        snapshot.exact_leaf_coverage,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
+        snapshot.full_frontier_rerank,
+        snapshot.recall_sanity_status.to_owned(),
+        snapshot.latency_risk_status.to_owned(),
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_health_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3607,6 +3647,101 @@ mod tests {
         assert!(!pq_assignment_payload_scannable);
         assert_eq!(pq_assignment_payload_status, "deferred_model_metadata");
         assert!(pq_assignment_payload_recommendation.contains("grouped-PQ model"));
+    }
+
+    #[pg_test]
+    fn test_ec_spire_scan_sanity_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_scan_sanity_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_sanity_empty_idx ON ec_spire_scan_sanity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_empty_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        assert_eq!(empty_status, "empty");
+
+        Spi::run("DROP INDEX ec_spire_scan_sanity_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_scan_sanity_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_sanity_sql_idx ON ec_spire_scan_sanity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let exact_leaf_coverage = Spi::get_one::<bool>(
+            "SELECT exact_leaf_coverage FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let full_frontier_rerank = Spi::get_one::<bool>(
+            "SELECT full_frontier_rerank FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let recall_sanity_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+
+        assert_eq!(active_leaf_count, 2);
+        assert!(!exact_leaf_coverage);
+        assert!(!full_frontier_rerank);
+        assert_eq!(recall_sanity_status, "approximate_leaf_coverage");
+
+        Spi::run("SET LOCAL ec_spire.nprobe = 2").expect("SET should succeed");
+        Spi::run("SET LOCAL ec_spire.rerank_width = 0").expect("SET should succeed");
+        let exact_leaf_coverage = Spi::get_one::<bool>(
+            "SELECT exact_leaf_coverage FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let full_frontier_rerank = Spi::get_one::<bool>(
+            "SELECT full_frontier_rerank FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let recall_sanity_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let latency_risk_status = Spi::get_one::<String>(
+            "SELECT latency_risk_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+
+        assert!(exact_leaf_coverage);
+        assert!(full_frontier_rerank);
+        assert_eq!(recall_sanity_status, "exact_leaf_and_frontier_coverage");
+        assert_eq!(latency_risk_status, "full_scan");
     }
 
     #[pg_test]
