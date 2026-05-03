@@ -4445,6 +4445,31 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "ec_spire PQ-FastScan encoding requires a persisted grouped-PQ model"
+    )]
+    fn test_ec_spire_pq_fastscan_populated_build_reports_deferral() {
+        Spi::run(
+            "CREATE TABLE ec_spire_pq_build_deferral \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_pq_build_deferral (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX ec_spire_pq_build_deferral_idx ON ec_spire_pq_build_deferral \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("populated pq_fastscan SPIRE build should report deferral");
+    }
+
+    #[pg_test]
     fn test_ec_spire_scan_sanity_snapshot_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_scan_sanity_sql (id bigint primary key, embedding ecvector)",
