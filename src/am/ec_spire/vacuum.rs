@@ -8,9 +8,8 @@ use super::assign::{
     SpirePidAllocator,
 };
 use super::build::{
-    self, encode_manifest_bundle_for_publish, object_manifest_from_placement_writes,
-    root_control_state_for_publish, write_manifest_bundle_to_relation,
-    write_placement_entries_to_relation, SpirePublishCoordinatorInput,
+    self, object_manifest_from_placement_writes, write_placement_entries_to_relation,
+    SpirePublishCoordinatorInput,
 };
 use super::meta::{SpireEpochManifest, SpireEpochState, SpirePlacementDirectory};
 use super::storage::{
@@ -389,13 +388,9 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
-    let manifests = encode_manifest_bundle_for_publish(input)?;
     unsafe {
-        build::write_retired_epoch_manifest_to_relation(index_relation, active_epoch_manifest)?
-    };
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
-    let root_control = root_control_state_for_publish(input, locators)?;
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)?;
+    }
     Ok(true)
 }
 
@@ -512,13 +507,9 @@ fn publish_delete_delta_epoch(
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
-    let manifests = encode_manifest_bundle_for_publish(input)?;
     unsafe {
-        build::write_retired_epoch_manifest_to_relation(index_relation, active_epoch_manifest)?
-    };
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
-    let root_control = root_control_state_for_publish(input, locators)?;
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        build::publish_replacement_epoch_to_relation(index_relation, active_epoch_manifest, input)?;
+    }
     Ok(())
 }
 

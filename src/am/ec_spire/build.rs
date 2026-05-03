@@ -571,6 +571,19 @@ pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
     unsafe { page::append_object_tuple(index_relation, &encoded) }
 }
 
+pub(super) unsafe fn publish_replacement_epoch_to_relation(
+    index_relation: pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+    input: SpirePublishCoordinatorInput<'_>,
+) -> Result<(), String> {
+    let manifests = encode_manifest_bundle_for_publish(input)?;
+    unsafe { write_retired_epoch_manifest_to_relation(index_relation, previous_epoch_manifest)? };
+    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let root_control = root_control_state_for_publish(input, locators)?;
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    Ok(())
+}
+
 pub(super) unsafe fn write_placement_entries_to_relation(
     index_relation: pg_sys::Relation,
     placement_directory: &SpirePlacementDirectory,
