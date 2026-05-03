@@ -330,6 +330,9 @@ mod tests {
         SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
+    use crate::am::ec_spire::update::{
+        build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
+    };
     use crate::storage::page::ItemPointer;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -484,6 +487,83 @@ mod tests {
             diagnostics.routing_object_bytes + diagnostics.leaf_object_bytes
         );
         assert_eq!(diagnostics.delta_object_bytes, 0);
+    }
+
+    #[test]
+    fn diagnostics_count_delta_objects_and_assignments() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let delta_draft = build_delta_epoch_draft_from_snapshot(
+            SpireDeltaEpochInput {
+                epoch: 8,
+                object_version: 1,
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                base_pid: SPIRE_FIRST_PID + 1,
+                placement_tid: tid(80, 1),
+                insert_assignments: vec![assignment_input(20, 1)],
+                delete_assignments: Vec::new(),
+            },
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let delta_snapshot = SpirePublishedEpochSnapshot::new(
+            &delta_draft.epoch_manifest,
+            &delta_draft.object_manifest,
+            &delta_draft.placement_directory,
+        )
+        .unwrap();
+
+        let snapshot_diagnostics =
+            collect_snapshot_diagnostics(&delta_snapshot, &object_store).unwrap();
+        let store_diagnostics =
+            collect_store_placement_diagnostics(&delta_snapshot, &object_store).unwrap();
+
+        assert_eq!(snapshot_diagnostics.object_count, 4);
+        assert_eq!(snapshot_diagnostics.root_object_count, 1);
+        assert_eq!(snapshot_diagnostics.leaf_object_count, 2);
+        assert_eq!(snapshot_diagnostics.delta_object_count, 1);
+        assert_eq!(snapshot_diagnostics.leaf_assignment_count, 2);
+        assert_eq!(snapshot_diagnostics.delta_assignment_count, 1);
+        assert!(snapshot_diagnostics.delta_object_bytes > 0);
+        assert_eq!(
+            snapshot_diagnostics.available_object_bytes,
+            snapshot_diagnostics.routing_object_bytes
+                + snapshot_diagnostics.leaf_object_bytes
+                + snapshot_diagnostics.delta_object_bytes
+        );
+
+        assert_eq!(store_diagnostics.len(), 1);
+        let store = &store_diagnostics[0];
+        assert_eq!(store.placement_count, 4);
+        assert_eq!(store.object_count, 4);
+        assert_eq!(store.root_object_count, 1);
+        assert_eq!(store.leaf_object_count, 2);
+        assert_eq!(store.delta_object_count, 1);
+        assert_eq!(store.assignment_count, 3);
+        assert!(store.delta_object_bytes > 0);
+        assert_eq!(
+            store.available_object_bytes,
+            store.routing_object_bytes + store.leaf_object_bytes + store.delta_object_bytes
+        );
     }
 
     #[test]

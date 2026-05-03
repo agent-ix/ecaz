@@ -436,9 +436,11 @@ Decision record:
   now has focused PG18 coverage, and the SQL health snapshot surface has
   focused PG18 coverage for clean and delta-pending active epochs. The SQL
   placement snapshot surface has focused PG18 coverage for empty and populated
-  local single-store indexes. The SQL scan placement snapshot surface has
-  focused PG18 coverage for query-specific routed leaf PID and candidate-row
-  counts plus post-build insert-delta leaf/delta PID and candidate-row splits.
+  local single-store indexes, plus unit-level aggregate/per-store coverage for
+  delta object and delta-assignment byte/count accounting. The SQL scan
+  placement snapshot surface has focused PG18 coverage for query-specific
+  routed leaf PID and candidate-row counts plus post-build insert-delta
+  leaf/delta PID and candidate-row splits.
   The SQL root routing snapshot surface has focused PG18 coverage for empty
   and populated local single-store indexes, plus unit-level malformed active
   manifest coverage for missing-root and multiple-root diagnostics; the SQL
