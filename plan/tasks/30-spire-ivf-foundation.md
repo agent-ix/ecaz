@@ -499,7 +499,9 @@ Decision record:
   Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
   populated local single-store indexes. Object SQL diagnostics now have
   focused PG18 coverage for empty, populated, and post-insert delta active
-  epochs. Delta SQL diagnostics now have focused PG18 coverage for empty,
+  epochs. Placement SQL diagnostics now have focused PG18 coverage for
+  post-insert delta object and delta-byte accounting. Delta SQL diagnostics
+  now have focused PG18 coverage for empty,
   populated no-delta, post-insert delta, and pre-cleanup delete-delta active
   epochs. Real SQL VACUUM end-to-end coverage now exercises insert-delta
   compaction and deleted-row routed scan suppression; physical page reclamation

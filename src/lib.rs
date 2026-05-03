@@ -3750,6 +3750,42 @@ mod tests {
         assert_eq!(assignment_count, 3);
         assert!(available_object_bytes > 0);
         assert_eq!(placement_object_bytes, available_object_bytes);
+
+        Spi::run(
+            "INSERT INTO ec_spire_place_sql (id, embedding) VALUES \
+             (4, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should publish delta placement");
+
+        let post_insert_placement_count = Spi::get_one::<i64>(
+            "SELECT placement_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let post_insert_delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let post_insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT assignment_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let delta_object_bytes = Spi::get_one::<i64>(
+            "SELECT delta_object_bytes FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+
+        assert_eq!(post_insert_placement_count, 4);
+        assert_eq!(post_insert_delta_object_count, 1);
+        assert_eq!(post_insert_assignment_count, 4);
+        assert!(delta_object_bytes > 0);
     }
 
     #[pg_test]
