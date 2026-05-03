@@ -291,7 +291,7 @@ Decision record:
   rewrite relation-backed placement entries under the same strict local
   single-store shape; physical cleanup of no-longer-active object tuples
   remains tracked separately under validation/vacuum cleanup.
-- [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
+- [x] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into
   `src/am/common/training.rs` with `ec_ivf` compatibility wrappers so SPIRE can
@@ -309,7 +309,10 @@ Decision record:
   collects heap rows, trains the single-level centroid plan using the build
   sample setting, writes relation-backed routing and V2 leaf objects, persists
   placement-entry locators, writes manifest bundles, and publishes the active
-  root/control state. Active-epoch scan loading and relation-backed snapshot
+  root/control state. TurboQuant and RaBitQ populated builds are supported
+  through row-local assignment payloads; populated PQ-FastScan builds now
+  report the explicit grouped-PQ model metadata deferral until SPIRE persists
+  that model. Active-epoch scan loading and relation-backed snapshot
   diagnostics now consume the persisted epoch.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
