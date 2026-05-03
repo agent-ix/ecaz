@@ -30,8 +30,9 @@ and live `amrescan` can return an empty cursor for an empty active epoch while
 populated relation-backed snapshot loading remains blocked. Relation-backed
 object tuple append/read helpers can now store encoded SPIRE object bytes in
 data blocks after the root/control page and round-trip an encoded routing
-object from an `ec_spire` index relation. Assignment payload scoring now reuses
-the existing TurboQuant and
+object from an `ec_spire` index relation through a relation object store that
+emits local single-store placement entries. Assignment payload scoring now
+reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
@@ -232,8 +233,10 @@ Decision record:
   placements. Partitioned build drafts now publish root and leaf PID placements
   into the local object store. Relation-backed object tuple append/read helpers
   now write and read encoded object bytes from index data blocks after the
-  root/control page; placement-directory persistence and populated build
-  integration remain open.
+  root/control page, and a relation object store can emit/read local
+  single-store routing-object placements from those tuples. Placement-directory
+  persistence, V2 leaf relation-store writes, and populated build integration
+  remain open.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into

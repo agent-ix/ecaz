@@ -48,11 +48,13 @@ fn not_implemented(callback: &str) -> ! {
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
     index_oid: pg_sys::Oid,
-) -> (u32, u16, u64, u64, u64, u32, u64) {
+) -> (u32, u16, u64, u32, u64, u64, u32, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
-    let result = (|| -> Result<(u32, u16, u64, u64, u64, u32, u64), String> {
-        let mut object = storage::SpireRoutingPartitionObject::root(
+    let result = (|| -> Result<(u32, u16, u64, u32, u64, u64, u32, u64), String> {
+        let store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object = storage::SpireRoutingPartitionObject::root(
             10,
             1,
             2,
@@ -62,22 +64,20 @@ pub(crate) unsafe fn debug_spire_relation_object_tuple_roundtrip(
                 centroid: vec![1.0, 0.0],
             }],
         )?;
-        object.header.published_epoch_backref = 1;
 
-        let encoded = object.encode()?;
-        let tid = unsafe { page::append_object_tuple(index_relation, &encoded)? };
+        let placement = unsafe { store.insert_routing_object(1, &object)? };
         let root_control = unsafe { page::read_root_control_page(index_relation) };
-        let raw = unsafe { page::read_object_tuple(index_relation, tid)? };
-        let decoded = storage::SpireRoutingPartitionObject::decode(&raw)?;
+        let decoded = unsafe { store.read_routing_object(&placement)? };
         let child = decoded
             .children()
             .next()
             .ok_or_else(|| "ec_spire debug routing object lost its child".to_owned())?;
 
         Ok((
-            tid.block_number,
-            tid.offset_number,
+            placement.object_tid.block_number,
+            placement.object_tid.offset_number,
             root_control.active_epoch,
+            placement.store_relid,
             decoded.header.pid,
             decoded.header.object_version,
             decoded.header.child_count,

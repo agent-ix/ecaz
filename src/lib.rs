@@ -2682,12 +2682,13 @@ mod tests {
         .expect("empty ec_spire index creation should succeed");
 
         let index_oid = index_oid("ec_spire_object_tuple_idx");
-        let (block, offset, active_epoch, pid, object_version, child_count, child_pid) =
+        let (block, offset, active_epoch, store_relid, pid, object_version, child_count, child_pid) =
             unsafe { am::debug_spire_relation_object_tuple_roundtrip(index_oid) };
 
         assert!(block >= 1);
         assert!(offset >= 1);
         assert_eq!(active_epoch, 0);
+        assert_eq!(store_relid, u32::from(index_oid));
         assert_eq!(pid, 10);
         assert_eq!(object_version, 1);
         assert_eq!(child_count, 1);

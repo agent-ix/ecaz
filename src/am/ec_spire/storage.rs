@@ -2,9 +2,12 @@
 
 use std::{collections::HashSet, mem::size_of};
 
+use pgrx::pg_sys;
+
 use super::meta::{
     SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID, SPIRE_SINGLE_LOCAL_STORE_ID,
 };
+use super::page;
 use crate::storage::page::{
     element_or_neighbor_tuple_fits, usable_page_bytes, DataPageChain, ItemPointer,
     DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
@@ -2176,6 +2179,131 @@ impl SpireObjectReader for SpireLocalObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
         SpireLocalObjectStore::read_delta_object(self, placement)
+    }
+}
+
+pub(super) struct SpireRelationObjectStore {
+    index_relation: pg_sys::Relation,
+    store_relid: u32,
+}
+
+impl SpireRelationObjectStore {
+    pub(super) unsafe fn for_index_relation(
+        index_relation: pg_sys::Relation,
+    ) -> Result<Self, String> {
+        if index_relation.is_null() {
+            return Err("ec_spire relation object store needs a valid relation".to_owned());
+        }
+        let relation_oid = unsafe { (*index_relation).rd_id };
+        if relation_oid == pg_sys::InvalidOid {
+            return Err("ec_spire relation object store relid is invalid".to_owned());
+        }
+        let store_relid = relation_oid.into();
+        Ok(Self {
+            index_relation,
+            store_relid,
+        })
+    }
+
+    pub(super) unsafe fn insert_routing_object(
+        &self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire relation object store epoch 0 is invalid".to_owned());
+        }
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = unsafe { page::append_object_tuple(self.index_relation, &encoded)? };
+        let placement = SpirePlacementEntry::local_single_store_available(
+            epoch,
+            durable_object.header.pid,
+            self.store_relid,
+            durable_object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
+    pub(super) unsafe fn read_routing_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireRoutingPartitionObject, String> {
+        let raw = unsafe { self.read_object_bytes(placement)? };
+        let object = SpireRoutingPartitionObject::decode(&raw)?;
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
+        }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
+            ));
+        }
+        Ok(object)
+    }
+
+    unsafe fn read_object_bytes(&self, placement: &SpirePlacementEntry) -> Result<Vec<u8>, String> {
+        self.validate_local_available_placement(placement)?;
+        let raw = unsafe { page::read_object_tuple(self.index_relation, placement.object_tid)? };
+        let expected_len = usize::try_from(placement.object_bytes)
+            .map_err(|_| "ec_spire placement object_bytes exceeds usize".to_owned())?;
+        if raw.len() != expected_len {
+            return Err(format!(
+                "ec_spire object byte length mismatch: placement {}, tuple {}",
+                placement.object_bytes,
+                raw.len()
+            ));
+        }
+        Ok(raw)
+    }
+
+    fn validate_local_available_placement(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<(), String> {
+        if placement.node_id != SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire relation object store cannot read node_id {}",
+                placement.node_id
+            ));
+        }
+        if placement.local_store_id != SPIRE_SINGLE_LOCAL_STORE_ID {
+            return Err(format!(
+                "ec_spire relation object store cannot read local_store_id {}",
+                placement.local_store_id
+            ));
+        }
+        if placement.store_relid != self.store_relid {
+            return Err(format!(
+                "ec_spire placement store_relid {} does not match relation store relid {}",
+                placement.store_relid, self.store_relid
+            ));
+        }
+        if placement.state != SpirePlacementState::Available {
+            return Err(format!(
+                "ec_spire relation object store cannot read {:?} placement",
+                placement.state
+            ));
+        }
+        Ok(())
     }
 }
 
