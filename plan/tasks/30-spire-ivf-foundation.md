@@ -353,8 +353,12 @@ Decision record:
   `ec_spire_index_active_snapshot_diagnostics(index_oid)` now exposes the
   active root/control cursors, consistency mode, object/placement/state counts,
   assignment counts, routing-child count, and object byte buckets for the
-  active SPIRE epoch. SQL function `ec_spire_index_options_snapshot(index_oid)`
-  now exposes relation `nlists`, `nprobe`, `rerank_width`,
+  active SPIRE epoch. SQL function
+  `ec_spire_index_allocator_snapshot(index_oid, warn_within)` now exposes
+  active root/control allocation cursors, remaining PID/local-vec-id
+  allocations as text, and near-exhaustion flags for a caller-provided warning
+  threshold. SQL function `ec_spire_index_options_snapshot(index_oid)` now
+  exposes relation `nlists`, `nprobe`, `rerank_width`,
   `training_sample_rows`, `seed`, `pq_group_size`, `storage_format`, resolved
   assignment payload format, session scan overrides, active leaf count, and
   effective `nprobe`/`rerank_width` values with source labels. It also reports
@@ -421,9 +425,11 @@ Decision record:
   coverage for first-epoch publication plus a second delta insert. Vacuum
   delete-delta publication and routed scan suppression now have focused PG18
   coverage; the SQL active-snapshot diagnostics surface now has focused PG18
-  coverage for empty and insert-populated active epochs, and the SQL options
-  snapshot surface has focused PG18 coverage for reloptions, session
-  overrides, active leaf count, and effective scan option resolution. Vacuum
+  coverage for empty and insert-populated active epochs, allocator SQL
+  diagnostics now have focused PG18 coverage for empty and insert-bootstrapped
+  indexes, and the SQL options snapshot surface has focused PG18 coverage for
+  reloptions, session overrides, active leaf count, and effective scan option
+  resolution. Vacuum
   cleanup compaction of active delta objects into replacement V2 base leaves
   now has focused PG18 coverage, and the SQL health snapshot surface has
   focused PG18 coverage for clean and delta-pending active epochs. The SQL

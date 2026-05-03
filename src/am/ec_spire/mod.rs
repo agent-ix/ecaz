@@ -74,6 +74,18 @@ pub(crate) struct SpireActiveSnapshotDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexAllocatorSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) warn_within: u64,
+    pub(crate) next_pid: u64,
+    pub(crate) remaining_pid_allocations: u64,
+    pub(crate) pid_near_exhaustion: bool,
+    pub(crate) next_local_vec_seq: u64,
+    pub(crate) remaining_local_vec_id_allocations: u64,
+    pub(crate) local_vec_id_near_exhaustion: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) nlists: i32,
     pub(crate) active_leaf_count: u32,
@@ -643,6 +655,27 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
             routing_object_bytes: diagnostics.routing_object_bytes,
             leaf_object_bytes: diagnostics.leaf_object_bytes,
             delta_object_bytes: diagnostics.delta_object_bytes,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_allocator_snapshot(
+    index_relation: pg_sys::Relation,
+    warn_within: u64,
+) -> SpireIndexAllocatorSnapshot {
+    let result = (|| -> Result<SpireIndexAllocatorSnapshot, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let diagnostics = diagnostics::collect_allocator_diagnostics(&root_control, warn_within)?;
+        Ok(SpireIndexAllocatorSnapshot {
+            active_epoch: root_control.active_epoch,
+            warn_within,
+            next_pid: diagnostics.pid.next_value,
+            remaining_pid_allocations: diagnostics.pid.remaining_allocations,
+            pid_near_exhaustion: diagnostics.pid.near_exhaustion,
+            next_local_vec_seq: diagnostics.local_vec_id.next_value,
+            remaining_local_vec_id_allocations: diagnostics.local_vec_id.remaining_allocations,
+            local_vec_id_near_exhaustion: diagnostics.local_vec_id.near_exhaustion,
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

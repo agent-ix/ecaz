@@ -1115,6 +1115,47 @@ fn ec_spire_index_active_snapshot_diagnostics(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_allocator_snapshot(
+    index_oid: pg_sys::Oid,
+    warn_within: i64,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(warn_within, i64),
+        name!(next_pid, i64),
+        name!(remaining_pid_allocations, String),
+        name!(pid_near_exhaustion, bool),
+        name!(next_local_vec_seq, i64),
+        name!(remaining_local_vec_id_allocations, String),
+        name!(local_vec_id_near_exhaustion, bool),
+    ),
+> {
+    if warn_within < 0 {
+        pgrx::error!("ec_spire allocator warning threshold must be non-negative");
+    }
+    let warn_within =
+        u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_allocator_snapshot") };
+    let snapshot = unsafe { am::spire_index_allocator_snapshot(index_relation, warn_within) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.warn_within).expect("warning threshold should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        snapshot.remaining_pid_allocations.to_string(),
+        snapshot.pid_near_exhaustion,
+        i64::try_from(snapshot.next_local_vec_seq)
+            .expect("next local vec sequence should fit in i64"),
+        snapshot.remaining_local_vec_id_allocations.to_string(),
+        snapshot.local_vec_id_near_exhaustion,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_placement_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3511,6 +3552,97 @@ mod tests {
         assert_eq!(leaf_assignment_count, 1);
         assert_eq!(delta_assignment_count, 1);
         assert_eq!(routing_child_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_allocator_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_alloc_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_alloc_sql_idx ON ec_spire_alloc_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_local_vec_seq = Spi::get_one::<i64>(
+            "SELECT next_local_vec_seq FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let remaining_pid_allocations = Spi::get_one::<String>(
+            "SELECT remaining_pid_allocations FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+
+        assert_eq!(active_epoch, 0);
+        assert_eq!(next_pid, 1);
+        assert_eq!(next_local_vec_seq, 1);
+        assert_eq!(remaining_pid_allocations, (u64::MAX - 1).to_string());
+
+        Spi::run(
+            "INSERT INTO ec_spire_alloc_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let warn_within = Spi::get_one::<i64>(
+            "SELECT warn_within FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_local_vec_seq = Spi::get_one::<i64>(
+            "SELECT next_local_vec_seq FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let pid_near_exhaustion = Spi::get_one::<bool>(
+            "SELECT pid_near_exhaustion FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let local_vec_id_near_exhaustion = Spi::get_one::<bool>(
+            "SELECT local_vec_id_near_exhaustion FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(warn_within, 42);
+        assert_eq!(next_pid, 3);
+        assert_eq!(next_local_vec_seq, 2);
+        assert!(!pid_near_exhaustion);
+        assert!(!local_vec_id_near_exhaustion);
     }
 
     #[pg_test]
