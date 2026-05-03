@@ -43,14 +43,40 @@ From the repository root:
 cargo install --path crates/ecaz-cli
 ```
 
-That puts `ecaz` on `$PATH`. All commands accept `--database`, `--host`,
-`--port`, `--user`, `--password`, and `--log-file`; each also falls back to
-the matching libpq environment variable (`PGDATABASE`, `PGHOST`, `PGPORT`,
-`PGUSER`, `PGPASSWORD`) when the flag is omitted. `--host` may be either a
-TCP host name or a Unix socket directory such as `/home/peter/.pgrx`.
+That installs the binary under Cargo's bin directory, usually
+`$HOME/.cargo/bin/ecaz`. Interactive shells may also put that directory on
+`$PATH`; when running from an agent or other sandboxed tool session, prefer the
+absolute installed path (for example `/Users/peter/.cargo/bin/ecaz`) so one
+approval rule can cover the operator surface consistently.
+
+All commands accept `--database`, `--host`, `--port`, `--user`, `--password`,
+and `--log-file`; each also falls back to the matching libpq environment
+variable (`PGDATABASE`, `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`) when the
+flag is omitted. `--host` may be either a TCP host name or a Unix socket
+directory such as `/home/peter/.pgrx`.
 `--log-file` mirrors the CLI's stdout/stderr into a packet-local artifact
 file so review runs do not need shell `tee` wrappers. When `--log-file` is
 set, transient progress bars are suppressed so the artifact stays stable.
+
+## Sandboxed Agent Sessions
+
+Use `ecaz` as the approval boundary for local PostgreSQL and pgrx work. In
+practice that means granting the installed binary path once, then running corpus
+generation, load/list/inspect, benchmark, storage, scratch, and SQL checks
+through that binary:
+
+```sh
+/Users/peter/.cargo/bin/ecaz dev sql --pg 18 --db postgres \
+  --socket-dir /Users/peter/.pgrx --raw \
+  --sql "select version()" \
+  --log-output review/example/artifacts/pg18-status.log
+```
+
+Prefer this to direct `psql`, wrapper scripts, or one-off shell plumbing when
+the operation already exists in the CLI. If a benchmark or setup step needs a
+new repeated operation, add a narrow `ecaz` subcommand or option instead of
+working around the sandbox with ad hoc commands. This keeps packet-local logs,
+libpq options, and approval scope in one place.
 
 ## Command tree
 
