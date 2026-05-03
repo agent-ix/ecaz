@@ -1,0 +1,29 @@
+# Suite Report: task31-m5-ivf-100k-quality-rerank-loop-cleanup
+
+- config: `review/30199-task31-suite-quality-rerank-loop-cleanup/task31-m5-ivf-100k-quality.packet.json`
+- config_sha256: `ba074f7288c6b8fd064ee1d1a18f1da5244e655ceb01364c56e6cc0b757edd8f`
+- dry_run: `false`
+- steps: completed 3, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall100-candidates-w1000 | recall | Succeeded | 3231 | `review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log` |
+| latency-candidates-w1000 | latency | Succeeded | 2502 | `review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log` |
+| explain-quality-candidate | explain | Succeeded | 30 | `review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql`<br>`review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=14.79 ms`, `ndcg@k=0.9994`, `nprobe=80`, `recall@k=0.9880` |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=13.13 ms`, `ndcg@k=0.9997`, `nprobe=96`, `recall@k=0.9920` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=15.9 ms`, `mean=11.4 ms`, `memory_samples=0`, `min=9.68 ms`, `nprobe=80`, `p50=11.5 ms`, `p95=12.4 ms`, `p99=12.6 ms`, `rss_peak_kb=0`, `stddev=0.70 ms` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=16.6 ms`, `mean=12.9 ms`, `memory_samples=0`, `min=11.4 ms`, `nprobe=96`, `p50=12.8 ms`, `p95=13.6 ms`, `p99=13.9 ms`, `rss_peak_kb=0`, `stddev=0.60 ms` |
+
+## Thresholds
+
+| Name | Status | Actual | Expected |
+| --- | --- | ---: | ---: |
+| quality-candidate-recall100-floor | pass | 0.992 | Gte 0.99 |
+| quality-candidate-p50-budget-ms | pass | 12.8 | Lte 15 |
+wrote review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/results.jsonl

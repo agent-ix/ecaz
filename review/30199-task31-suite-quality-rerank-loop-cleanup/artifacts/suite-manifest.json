@@ -1,0 +1,200 @@
+{
+  "suite": "task31-m5-ivf-100k-quality-rerank-loop-cleanup",
+  "schema_version": 1,
+  "config": "review/30199-task31-suite-quality-rerank-loop-cleanup/task31-m5-ivf-100k-quality.packet.json",
+  "config_sha256": "ba074f7288c6b8fd064ee1d1a18f1da5244e655ceb01364c56e6cc0b757edd8f",
+  "dry_run": false,
+  "generated_at_unix_ms": 1777840832090,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "recall100-candidates-w1000",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task31_m5_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "100",
+        "--sweep",
+        "80,96",
+        "--rerank-width",
+        "1000",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/truth_real100k_n128_k100.json",
+        "--log-output",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "recall100",
+        "candidate",
+        "quality",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1777840832090,
+      "finished_at_unix_ms": 1777840835322,
+      "duration_ms": 3231,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-candidates-w1000",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task31_m5_real100k_pqg8_n128",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "80,96",
+        "--rerank-width",
+        "1000",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "candidate",
+        "quality",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1777840835322,
+      "finished_at_unix_ms": 1777840837824,
+      "duration_ms": 2502,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-quality-candidate",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
+        "--log-output",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "candidate",
+        "quality",
+        "100k",
+        "n128",
+        "w1000"
+      ],
+      "expected_artifacts": [
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
+        "review/30199-task31-suite-quality-rerank-loop-cleanup/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1777840837825,
+      "finished_at_unix_ms": 1777840837856,
+      "duration_ms": 30,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "quality-candidate-recall100-floor",
+      "step": "recall100-candidates-w1000",
+      "metric": "recall",
+      "filters": {
+        "nprobe": "96"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.99,
+      "actual": 0.992,
+      "passed": true,
+      "message": "recall@k 0.992 Gte 0.99 -> true"
+    },
+    {
+      "name": "quality-candidate-p50-budget-ms",
+      "step": "latency-candidates-w1000",
+      "metric": "latency",
+      "filters": {
+        "nprobe": "96"
+      },
+      "field": "p50",
+      "op": "lte",
+      "expected": 15.0,
+      "actual": 12.8,
+      "passed": true,
+      "message": "p50 12.8 Lte 15 -> true"
+    }
+  ]
+}
