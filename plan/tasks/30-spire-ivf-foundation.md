@@ -446,9 +446,9 @@ Decision record:
   populated local single-store indexes. Object SQL diagnostics now have
   focused PG18 coverage for empty, populated, and post-insert delta active
   epochs. Delta SQL diagnostics now have focused PG18 coverage for empty,
-  populated no-delta, and post-insert delta active epochs. Physical page
-  reclamation, old-epoch cleanup, and real SQL VACUUM end-to-end coverage
-  remain open.
+  populated no-delta, post-insert delta, and pre-cleanup delete-delta active
+  epochs. Physical page reclamation, old-epoch cleanup, and real SQL VACUUM
+  end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

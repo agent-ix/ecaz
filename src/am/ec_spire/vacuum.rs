@@ -598,3 +598,39 @@ pub(crate) unsafe fn debug_spire_vacuum_remove_heap_tids(
     };
     result
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_vacuum_bulkdelete_heap_tids(
+    index_oid: pg_sys::Oid,
+    dead_tids: &[ItemPointer],
+) -> pg_sys::IndexBulkDeleteResult {
+    let index_relation = unsafe {
+        pg_sys::index_open(
+            index_oid,
+            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+        )
+    };
+    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    info.index = index_relation;
+    let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+    let mut callback_state = DebugVacuumCallbackState {
+        dead_tids: dead_tids.iter().copied().collect(),
+    };
+
+    let stats = unsafe {
+        ec_spire_ambulkdelete(
+            info_ptr,
+            std::ptr::null_mut(),
+            Some(debug_vacuum_dead_tid_callback),
+            (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
+        )
+    };
+    let result = unsafe { *stats };
+    unsafe {
+        pg_sys::index_close(
+            index_relation,
+            pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+        )
+    };
+    result
+}

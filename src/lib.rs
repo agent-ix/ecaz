@@ -4092,6 +4092,71 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_delta_snapshot_sql_delete_delta() {
+        Spi::run(
+            "CREATE TABLE ec_spire_delta_delete_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_delta_delete_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_delete_sql_idx ON ec_spire_delta_delete_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let deleted_tid = heap_tid_for_row("ec_spire_delta_delete_sql", 1);
+        Spi::run("DELETE FROM ec_spire_delta_delete_sql WHERE id = 1")
+            .expect("delete should succeed");
+        let index_oid = index_oid("ec_spire_delta_delete_sql_idx");
+        let stats =
+            unsafe { am::debug_spire_vacuum_bulkdelete_heap_tids(index_oid, &[deleted_tid]) };
+        assert_eq!(stats.tuples_removed as i64, 1);
+
+        let delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        let insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(insert_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let delete_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let scan_delete_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_delta_row_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_delta_delete_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("sum should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_rows, 1);
+        assert_eq!(insert_assignment_count, 0);
+        assert_eq!(delete_assignment_count, 1);
+        assert_eq!(scan_delete_count, 1);
+        assert_eq!(active_epoch, 2);
+    }
+
+    #[pg_test]
     fn test_ec_spire_options_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_options_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

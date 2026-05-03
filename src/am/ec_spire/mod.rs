@@ -20,7 +20,9 @@ mod vacuum;
 use pgrx::pg_sys;
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::vacuum::debug_spire_vacuum_remove_heap_tids;
+pub(crate) use self::vacuum::{
+    debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
+};
 
 pub(super) const EC_SPIRE_DEFAULT_NLISTS: i32 = 0;
 pub(super) const EC_SPIRE_MIN_NLISTS: i32 = 0;
