@@ -18,8 +18,9 @@ const PLACEMENT_DIRECTORY_MAGIC: u32 = 0x4450_5345; // "ESPD" as little-endian b
 const PLACEMENT_DIRECTORY_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const OBJECT_MANIFEST_MAGIC: u32 = 0x4d4f_5345; // "ESOM" as little-endian bytes.
 const OBJECT_MANIFEST_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
+const EPOCH_MANIFEST_MAGIC: u32 = 0x454d_5345; // "ESME" as little-endian bytes.
 const PLACEMENT_ENTRY_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 4 + 4 + 4 + 8 + ITEM_POINTER_BYTES + 4;
-const EPOCH_MANIFEST_BYTES: usize = 2 + 1 + 1 + 8 + 8 + 8 + 8;
+const EPOCH_MANIFEST_BYTES: usize = 4 + 2 + 1 + 1 + 8 + 8 + 8 + 8;
 const MANIFEST_ENTRY_BYTES: usize = 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -561,6 +562,7 @@ impl SpireEpochManifest {
         self.validate()?;
 
         let mut out = Vec::with_capacity(EPOCH_MANIFEST_BYTES);
+        out.extend_from_slice(&EPOCH_MANIFEST_MAGIC.to_le_bytes());
         out.extend_from_slice(&META_FORMAT_VERSION.to_le_bytes());
         out.push(self.state as u8);
         out.push(self.consistency_mode as u8);
@@ -579,20 +581,24 @@ impl SpireEpochManifest {
                 input.len()
             ));
         }
-        validate_format_version(&input[0..2])?;
+        let magic = u32::from_le_bytes(input[0..4].try_into().expect("epoch magic bytes"));
+        if magic != EPOCH_MANIFEST_MAGIC {
+            return Err(format!("ec_spire invalid epoch manifest magic: {magic:#x}"));
+        }
+        validate_format_version(&input[4..6])?;
 
         let manifest = Self {
-            state: SpireEpochState::decode(input[2])?,
-            consistency_mode: SpireConsistencyMode::decode(input[3])?,
-            epoch: u64::from_le_bytes(input[4..12].try_into().expect("epoch bytes")),
+            state: SpireEpochState::decode(input[6])?,
+            consistency_mode: SpireConsistencyMode::decode(input[7])?,
+            epoch: u64::from_le_bytes(input[8..16].try_into().expect("epoch bytes")),
             published_at_micros: i64::from_le_bytes(
-                input[12..20].try_into().expect("published_at bytes"),
+                input[16..24].try_into().expect("published_at bytes"),
             ),
             retain_until_micros: i64::from_le_bytes(
-                input[20..28].try_into().expect("retain_until bytes"),
+                input[24..32].try_into().expect("retain_until bytes"),
             ),
             active_query_count: u64::from_le_bytes(
-                input[28..36].try_into().expect("active query count bytes"),
+                input[32..40].try_into().expect("active query count bytes"),
             ),
         };
         manifest.validate()?;
@@ -1391,6 +1397,10 @@ mod tests {
             SpireEpochManifest::decode(&manifest.encode().unwrap()).unwrap(),
             manifest
         );
+        assert_eq!(
+            manifest.encode().unwrap().len(),
+            SpireEpochManifest::encoded_len()
+        );
     }
 
     #[test]
@@ -1422,11 +1432,31 @@ mod tests {
         };
         let mut encoded = manifest.encode().unwrap();
 
-        encoded[2] = 99;
+        encoded[6] = 99;
         assert!(SpireEpochManifest::decode(&encoded).is_err());
 
-        encoded[2] = SpireEpochState::Failed as u8;
-        encoded[3] = 99;
+        encoded[6] = SpireEpochState::Failed as u8;
+        encoded[7] = 99;
+        assert!(SpireEpochManifest::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn epoch_manifest_rejects_invalid_magic_and_format() {
+        let manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Failed,
+            consistency_mode: SpireConsistencyMode::Degraded,
+            published_at_micros: 0,
+            retain_until_micros: 0,
+            active_query_count: 0,
+        };
+        let mut encoded = manifest.encode().unwrap();
+
+        encoded[0] = 0;
+        assert!(SpireEpochManifest::decode(&encoded).is_err());
+
+        encoded = manifest.encode().unwrap();
+        encoded[4] = 2;
         assert!(SpireEpochManifest::decode(&encoded).is_err());
     }
 

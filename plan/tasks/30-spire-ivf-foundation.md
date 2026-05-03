@@ -241,7 +241,9 @@ Decision record:
   `WritingObjects -> WritingPlacements -> WritingManifest -> Validating ->
   PublishingActiveEpoch` states. Failed transitions return a staged
   `SpirePublishFailed` and cannot construct root/control bytes that would
-  advance the active epoch.
+  advance the active epoch. The epoch-manifest codec now carries an explicit
+  magic prefix so diagnostic tuple scans can identify epoch manifests
+  structurally rather than by tuple length alone.
 - [x] **Architecture follow-up cleanups.** Add object epoch back-references,
   a `SpireObjectReader` trait shared by in-memory and buffer-cache readers,
   byte diagnostics by object kind, allocator near-exhaustion diagnostics,
