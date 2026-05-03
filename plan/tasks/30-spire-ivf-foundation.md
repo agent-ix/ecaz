@@ -74,8 +74,8 @@ replacement epochs while physical reclamation remains deferred;
 scan sanity diagnostics now expose resolved scan preconditions for exact leaf
 coverage and full-frontier rerank; replacement-epoch publishes now write a
 retired manifest copy for the previous active epoch, and epoch diagnostics
-now cover post-insert and post-vacuum-compaction retired manifest rows plus
-cleanup eligibility blockers; leaf
+now cover post-insert and post-vacuum-compaction retired manifest rows,
+partial-publish retired/bundle residue, and cleanup eligibility blockers; leaf
 diagnostics now expose per-leaf base/delta/effective assignment counts plus
 read-only split/merge threshold recommendations for follow-up scheduling;
 insert-debt diagnostics now expose per-leaf delta fanout and batching

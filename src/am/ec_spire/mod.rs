@@ -1977,6 +1977,50 @@ mod tests {
     }
 
     #[test]
+    fn epoch_snapshot_bundle_residue_keeps_previous_root_manifest_authoritative() {
+        let active_tid = tid(10, 1);
+        let retired_residue_tid = tid(10, 2);
+        let bundle_residue_tid = tid(10, 3);
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, active_tid, tid(10, 4), tid(10, 5))
+                .expect("root/control should build");
+
+        let rows = epoch_snapshot_rows_from_manifests(
+            root_control,
+            vec![
+                (active_tid, published_epoch_manifest(7)),
+                (retired_residue_tid, retired_epoch_manifest(7)),
+                (bundle_residue_tid, published_epoch_manifest(8)),
+            ],
+            2,
+        )
+        .expect("epoch snapshot rows should build");
+
+        assert_eq!(rows.len(), 3);
+        let active_row = rows
+            .iter()
+            .find(|row| row.manifest_offset == active_tid.offset_number)
+            .expect("active root row should exist");
+        let bundle_residue_row = rows
+            .iter()
+            .find(|row| row.epoch == 8)
+            .expect("bundle residue row should exist");
+
+        assert_eq!(active_row.epoch, 7);
+        assert_eq!(active_row.state, "published");
+        assert!(active_row.is_active_root_manifest);
+        assert!(!active_row.cleanup_eligible_now);
+        assert_eq!(active_row.cleanup_blocked_reason, "active_root_manifest");
+        assert_eq!(bundle_residue_row.state, "published");
+        assert!(!bundle_residue_row.is_active_root_manifest);
+        assert!(!bundle_residue_row.cleanup_eligible_now);
+        assert_eq!(
+            bundle_residue_row.cleanup_blocked_reason,
+            "state_not_cleanup_eligible"
+        );
+    }
+
+    #[test]
     fn leaf_maintenance_thresholds_use_named_split_merge_policy() {
         assert_eq!(leaf_maintenance_thresholds(0, 0), (0, 0));
         assert_eq!(leaf_maintenance_thresholds(2, 3), (32, 0));
