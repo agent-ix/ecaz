@@ -1,0 +1,29 @@
+# Suite Report: task31-m5-ivf-100k-quality-score-ranked
+
+- config: `review/30187-task31-suite-quality-score-ranked/task31-m5-ivf-100k-quality.packet.json`
+- config_sha256: `d074de5df8707344ba454a4c82b27375608530762fad5e9bba36b39abdc1c453`
+- dry_run: `false`
+- steps: completed 3, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall100-candidates-w1000 | recall | Succeeded | 2942 | `review/30187-task31-suite-quality-score-ranked/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log` |
+| latency-candidates-w1000 | latency | Succeeded | 2542 | `review/30187-task31-suite-quality-score-ranked/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log` |
+| explain-quality-candidate | explain | Succeeded | 30 | `review/30187-task31-suite-quality-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql`<br>`review/30187-task31-suite-quality-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w1000.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=11.98 ms`, `ndcg@k=0.9994`, `nprobe=80`, `recall@k=0.9880` |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=13.08 ms`, `ndcg@k=0.9997`, `nprobe=96`, `recall@k=0.9920` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=15.7 ms`, `mean=11.4 ms`, `memory_samples=0`, `min=9.44 ms`, `nprobe=80`, `p50=11.3 ms`, `p95=12.4 ms`, `p99=12.8 ms`, `rss_peak_kb=0`, `stddev=0.68 ms` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=17.1 ms`, `mean=13.1 ms`, `memory_samples=0`, `min=11.3 ms`, `nprobe=96`, `p50=13.1 ms`, `p95=14.2 ms`, `p99=15.1 ms`, `rss_peak_kb=0`, `stddev=0.76 ms` |
+
+## Thresholds
+
+| Name | Status | Actual | Expected |
+| --- | --- | ---: | ---: |
+| quality-candidate-recall100-floor | pass | 0.992 | Gte 0.99 |
+| quality-candidate-p50-budget-ms | pass | 13.1 | Lte 15 |
+wrote review/30187-task31-suite-quality-score-ranked/artifacts/results.jsonl

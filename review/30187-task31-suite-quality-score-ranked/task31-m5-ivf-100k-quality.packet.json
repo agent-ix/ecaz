@@ -1,0 +1,75 @@
+{
+  "name": "task31-m5-ivf-100k-quality-score-ranked",
+  "schema_version": 1,
+  "artifact_dir": "review/30187-task31-suite-quality-score-ranked/artifacts",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "quality-candidate-recall100-floor",
+      "step": "recall100-candidates-w1000",
+      "metric": "recall",
+      "filters": {
+        "nprobe": "96"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.99
+    },
+    {
+      "name": "quality-candidate-p50-budget-ms",
+      "step": "latency-candidates-w1000",
+      "metric": "latency",
+      "filters": {
+        "nprobe": "96"
+      },
+      "field": "p50",
+      "op": "lte",
+      "value": 15.0
+    }
+  ],
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall100-candidates-w1000",
+      "tags": ["recall", "recall100", "candidate", "quality", "100k", "n128", "w1000"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "k": 100,
+      "sweep": [80, 96],
+      "rerank_width": 1000,
+      "truth_cache_file": "review/30187-task31-suite-quality-score-ranked/artifacts/truth_real100k_n128_k100.json",
+      "log_output": "review/30187-task31-suite-quality-score-ranked/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-candidates-w1000",
+      "tags": ["latency", "candidate", "quality", "100k", "n128", "w1000"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "k": 10,
+      "sweep": [80, 96],
+      "rerank_width": 1000,
+      "log_output": "review/30187-task31-suite-quality-score-ranked/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-quality-candidate",
+      "tags": ["explain", "candidate", "quality", "100k", "n128", "w1000"],
+      "prefix": "task31_m5_real100k_pqg8_n128",
+      "index_name": "task31_m5_real100k_pqg8_n128_idx",
+      "nprobe": 96,
+      "rerank_width": 1000,
+      "sql_file": "review/30187-task31-suite-quality-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql",
+      "log_output": "review/30187-task31-suite-quality-score-ranked/artifacts/explain_real100k_pqg8_n128_p96_w1000.log"
+    }
+  ]
+}
