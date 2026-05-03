@@ -1,0 +1,22 @@
+# Suite Report: task31-m5-ivf-100k-balanced-heap-ordered-rerank
+
+- config: `review/30192-task31-suite-balanced-heap-ordered-rerank/task31-m5-ivf-100k-balanced.packet.json`
+- config_sha256: `0502de8b513fe3227ed7eac58272132b044430990e33df2b3bae995f97f06033`
+- dry_run: `false`
+- steps: completed 3, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall100-candidates-w500 | recall | Succeeded | 2531 | `review/30192-task31-suite-balanced-heap-ordered-rerank/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log` |
+| latency-candidates-w500 | latency | Succeeded | 2099 | `review/30192-task31-suite-balanced-heap-ordered-rerank/artifacts/latency_real100k_pqg8_n128_w500_p80_96.log` |
+| explain-balanced-candidate | explain | Succeeded | 28 | `review/30192-task31-suite-balanced-heap-ordered-rerank/artifacts/explain_real100k_pqg8_n128_p96_w500.sql`<br>`review/30192-task31-suite-balanced-heap-ordered-rerank/artifacts/explain_real100k_pqg8_n128_p96_w500.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall100-candidates-w500 | recall | recall | `mean q-time=9.81 ms`, `ndcg@k=0.9988`, `nprobe=80`, `recall@k=0.9639` |
+| recall100-candidates-w500 | recall | recall | `mean q-time=11.09 ms`, `ndcg@k=0.9991`, `nprobe=96`, `recall@k=0.9676` |
+| latency-candidates-w500 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=13.0 ms`, `mean=9.30 ms`, `memory_samples=0`, `min=7.89 ms`, `nprobe=80`, `p50=9.30 ms`, `p95=9.95 ms`, `p99=10.5 ms`, `rss_peak_kb=0`, `stddev=0.57 ms` |
+| latency-candidates-w500 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=16.1 ms`, `mean=10.6 ms`, `memory_samples=0`, `min=9.25 ms`, `nprobe=96`, `p50=10.6 ms`, `p95=11.3 ms`, `p99=11.5 ms`, `rss_peak_kb=0`, `stddev=0.70 ms` |
+wrote review/30192-task31-suite-balanced-heap-ordered-rerank/artifacts/results.jsonl
