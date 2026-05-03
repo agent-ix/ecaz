@@ -49,9 +49,13 @@ architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
 PostgreSQL relation-backed build, initial quantized scan with heap rerank, and
 active snapshot cardinality diagnostics now have a strict single-store path,
-and post-build inserts can publish strict delta epochs, while delete, cleanup,
-empty-index insert bootstrap, PQ-FastScan scorer binding, and SQL/admin
-exposure remain open. Task 30 implements
+and post-build inserts can publish strict delta epochs, while empty-index
+insert bootstrap, PQ-FastScan scorer binding, and SQL/admin exposure remain
+open. Vacuum can now publish strict row-encoded delete-delta epochs for
+callback-dead visible assignments, and live scans suppress base and
+delta-insert candidates whose `vec_id`s are covered by a routed delete delta;
+physical object cleanup/compaction and full SQL VACUUM end-to-end coverage
+remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -298,8 +302,9 @@ Decision record:
   and V2 leaf objects, exact-reranks the resolved candidate window from the
   heap indexed column for `ecvector`/`tqvector`, and fills the scan cursor.
   Routed scans now also include row-encoded delta insert objects whose parent
-  PID is one of the probed leaves. Empty active epochs still return no rows.
-  PQ-FastScan scorer binding remains open.
+  PID is one of the probed leaves, and suppress base or delta-insert candidates
+  covered by row-encoded delete deltas for the same base leaf PID. Empty active
+  epochs still return no rows. PQ-FastScan scorer binding remains open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -329,7 +334,9 @@ Decision record:
   now exercises relation-backed active snapshot cardinality diagnostics and
   live `ecvector` heap rerank, and a separate populated `tqvector` test covers
   the decoded heap-rerank branch. Insert-after-build delta publication now has
-  focused PG18 coverage. Delete/vacuum cleanup remains open.
+  focused PG18 coverage. Vacuum delete-delta publication and routed scan
+  suppression now have focused PG18 coverage; physical cleanup/compaction and
+  real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -344,7 +351,12 @@ Decision record:
   include routed delta inserts in live scans. Empty-index insert bootstrap,
   batching, and compaction remain open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
-  entries without breaking scan invariants.
+  entries without breaking scan invariants. The first strict local path now
+  runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
+  groups callback-dead heap locators by base leaf PID, writes row-encoded
+  delete-delta objects, publishes a replacement active epoch, and makes routed
+  scans suppress covered `vec_id`s. Physical cleanup, compaction into new V2
+  base objects, and full SQL VACUUM end-to-end coverage remain open.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that

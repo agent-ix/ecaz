@@ -409,12 +409,15 @@ pub(super) fn collect_quantized_routed_probe_candidates(
         SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
     };
     for leaf_pid in leaf_pids {
+        let deleted_vec_ids =
+            collect_delta_delete_vec_ids_for_base_pid(&snapshot, object_store, leaf_pid)?;
         append_quantized_leaf_candidates_for_pid(
             &snapshot,
             object_store,
             leaf_pid,
             root_pid,
             &scorer,
+            &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
         )?;
@@ -423,6 +426,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
             object_store,
             leaf_pid,
             &scorer,
+            &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
         )?;
@@ -649,6 +653,7 @@ fn append_quantized_leaf_candidates_for_pid(
     leaf_pid: u64,
     root_pid: u64,
     scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
 ) -> Result<(), String> {
@@ -681,6 +686,7 @@ fn append_quantized_leaf_candidates_for_pid(
                     leaf_pid,
                     manifest_entry.object_version,
                     scorer,
+                    deleted_vec_ids,
                     candidates,
                     candidates_by_vec_id,
                 )?;
@@ -699,6 +705,7 @@ fn append_quantized_leaf_candidates_for_pid(
                 leaf_pid,
                 manifest_entry.object_version,
                 scorer,
+                deleted_vec_ids,
                 candidates,
                 candidates_by_vec_id,
             )
@@ -712,6 +719,7 @@ fn append_quantized_v2_column_candidates(
     pid: u64,
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
 ) -> Result<(), String> {
@@ -743,13 +751,17 @@ fn append_quantized_v2_column_candidates(
         }
 
         let row = columns.row(row_offset)?;
+        let vec_id = SpireVecId::local(row.local_vec_seq()?);
+        if deleted_vec_ids.contains(&vec_id) {
+            continue;
+        }
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
             object_version,
             row_index: row.row_index,
             assignment_flags: row.flags,
-            vec_id: SpireVecId::local(row.local_vec_seq()?),
+            vec_id,
             heap_tid: row.heap_tid,
             score: -ip,
         };
@@ -763,6 +775,7 @@ fn append_quantized_delta_candidates_for_base_pid(
     object_store: &impl SpireObjectReader,
     base_pid: u64,
     scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
 ) -> Result<(), String> {
@@ -784,6 +797,9 @@ fn append_quantized_delta_candidates_for_base_pid(
                 continue;
             }
             if !is_visible_primary_assignment(&assignment) {
+                continue;
+            }
+            if deleted_vec_ids.contains(&assignment.vec_id) {
                 continue;
             }
             let ip = scorer.score_assignment_ip(&assignment)?;
@@ -810,17 +826,50 @@ fn append_quantized_delta_candidates_for_base_pid(
     Ok(())
 }
 
+fn collect_delta_delete_vec_ids_for_base_pid(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    base_pid: u64,
+) -> Result<HashSet<SpireVecId>, String> {
+    let mut deleted_vec_ids = HashSet::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "quantized routed scan delete delta")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
+            continue;
+        }
+
+        let delta_object = object_store.read_delta_object(placement)?;
+        for assignment in delta_object.assignments {
+            if is_delete_delta_assignment(&assignment) {
+                deleted_vec_ids.insert(assignment.vec_id);
+            }
+        }
+    }
+    Ok(deleted_vec_ids)
+}
+
 fn append_quantized_v1_leaf_candidates(
     leaf_object: SpireLeafPartitionObject,
     epoch: u64,
     pid: u64,
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
 ) -> Result<(), String> {
     for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
         if !is_visible_primary_assignment(&assignment) {
+            continue;
+        }
+        if deleted_vec_ids.contains(&assignment.vec_id) {
             continue;
         }
         let ip = scorer.score_assignment_ip(&assignment)?;
