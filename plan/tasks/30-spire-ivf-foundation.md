@@ -478,7 +478,10 @@ Decision record:
   and post-insert delta states.
   It now also covers read-only merge recommendations for empty leaves and no
   split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
-  now have focused PG18 coverage for repeated same-leaf post-build inserts.
+  now have focused PG18 coverage for repeated same-leaf post-build inserts,
+  and PG18 external-session coverage now exercises concurrent same-leaf
+  post-build inserts through serialized delta epoch publication plus
+  index-routed visibility for both inserted rows.
   Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
   populated local single-store indexes. Object SQL diagnostics now have
   focused PG18 coverage for empty, populated, and post-insert delta active
@@ -540,7 +543,11 @@ Decision record:
   `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`; the
   actual merge scheduler remains open.
 - [ ] **Concurrency validation.** Add a stress harness for insert/delete/scan
-  overlap against leaf assignment rows and partition-object storage.
+  overlap against leaf assignment rows and partition-object storage. Concurrent
+  same-leaf post-build inserts now have a focused PG18 external-session test
+  that verifies root-control epoch/allocator serialization, active
+  leaf/delta-assignment accounting, and scan visibility. Delete overlap and
+  longer-running mixed insert/delete/scan stress remain open.
 
 ## Phase 3 — SPIRE Recursion
 
