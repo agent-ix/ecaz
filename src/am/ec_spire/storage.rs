@@ -2182,6 +2182,10 @@ impl SpireObjectReader for SpireLocalObjectStore {
     }
 }
 
+/// Relation-backed SPIRE object store.
+///
+/// Insert methods take `&self` because PostgreSQL buffer locks and WAL, not
+/// Rust ownership of this wrapper, serialize relation mutation.
 pub(super) struct SpireRelationObjectStore {
     index_relation: pg_sys::Relation,
     store_relid: u32,

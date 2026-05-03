@@ -2717,6 +2717,42 @@ mod tests {
         assert_eq!(first_heap_block, 42);
     }
 
+    #[pg_test]
+    fn test_ec_spire_empty_manifest_publish_roundtrip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_manifest_publish (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_manifest_publish_idx ON ec_spire_manifest_publish USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_manifest_publish_idx");
+        let (
+            active_epoch,
+            next_pid,
+            next_local_vec_seq,
+            epoch_block,
+            epoch_offset,
+            object_block,
+            object_offset,
+            placement_block,
+            placement_offset,
+        ) = unsafe { am::debug_spire_empty_manifest_publish_roundtrip(index_oid) };
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 1);
+        assert_eq!(next_local_vec_seq, 1);
+        assert!(epoch_block >= 1);
+        assert!(epoch_offset >= 1);
+        assert!(object_block >= 1);
+        assert!(object_offset >= 1);
+        assert!(placement_block >= 1);
+        assert!(placement_offset >= 1);
+    }
+
     fn index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")

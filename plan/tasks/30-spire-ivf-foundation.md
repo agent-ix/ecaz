@@ -34,8 +34,12 @@ object from an `ec_spire` index relation through a relation object store that
 emits local single-store placement entries. The same relation object store can
 now write and read segmented V2 leaf metadata plus segment chains for local
 single-store placements, and implements the shared `SpireObjectReader`
-interface for future snapshot scan loading. Assignment payload scoring now
-reuses the existing TurboQuant and
+interface for future snapshot scan loading. Encoded manifest bundles can now be
+persisted as relation tuples and used to publish a new root/control active
+epoch. The publish coordinator now requires write evidence for object and
+placement stage transitions, and relation object pages guard root/control
+initialization, special-area reads, and FSM reuse. Assignment payload scoring
+now reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
@@ -239,8 +243,11 @@ Decision record:
   root/control page, and a relation object store can emit/read local
   single-store routing-object placements plus V2 leaf metadata/segment chains
   from those tuples. The relation store now implements `SpireObjectReader` for
-  future live snapshot loading. Placement-directory persistence and populated
-  build integration remain open.
+  future live snapshot loading. Encoded epoch/object/placement manifest bundles
+  can now be written to relation tuples and published through root/control; the
+  relation append/read helpers have initial reviewer hardening for stage
+  evidence, root/control initialization, root/control special-area bounds, and
+  FSM reuse. Populated build integration remains open.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into

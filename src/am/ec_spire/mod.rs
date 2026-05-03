@@ -145,3 +145,50 @@ pub(crate) unsafe fn debug_spire_relation_leaf_v2_roundtrip(
     unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
+    index_oid: pg_sys::Oid,
+) -> (u64, u64, u64, u32, u16, u32, u16, u32, u16) {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let result = (|| -> Result<(u64, u64, u64, u32, u16, u32, u16, u32, u16), String> {
+        let epoch_manifest = meta::SpireEpochManifest {
+            epoch: 1,
+            state: meta::SpireEpochState::Published,
+            consistency_mode: meta::SpireConsistencyMode::Strict,
+            published_at_micros: 1,
+            retain_until_micros: 600_000_001,
+            active_query_count: 0,
+        };
+        let object_manifest = meta::SpireObjectManifest::from_entries(1, Vec::new())?;
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, Vec::new())?;
+        let input = build::SpirePublishCoordinatorInput {
+            epoch_manifest: &epoch_manifest,
+            object_manifest: &object_manifest,
+            placement_directory: &placement_directory,
+            next_pid: assign::SPIRE_FIRST_PID,
+            next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ,
+        };
+        let manifests = build::encode_manifest_bundle_for_publish(input)?;
+        let locators =
+            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let root_control = build::root_control_state_for_publish(input, locators)?;
+        unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        let persisted = unsafe { page::read_root_control_page(index_relation) };
+
+        Ok((
+            persisted.active_epoch,
+            persisted.next_pid,
+            persisted.next_local_vec_seq,
+            persisted.epoch_manifest_tid.block_number,
+            persisted.epoch_manifest_tid.offset_number,
+            persisted.object_manifest_tid.block_number,
+            persisted.object_manifest_tid.offset_number,
+            persisted.placement_directory_tid.block_number,
+            persisted.placement_directory_tid.offset_number,
+        ))
+    })();
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}

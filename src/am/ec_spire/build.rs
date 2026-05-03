@@ -90,6 +90,18 @@ pub(super) struct SpirePublishedManifestLocators {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpirePublishObjectWriteEvidence {
+    pub(super) pid: u64,
+    pub(super) object_tid: ItemPointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpirePublishPlacementWriteEvidence {
+    pub(super) pid: u64,
+    pub(super) placement_tid: ItemPointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpirePublishStage {
     WritingObjects,
     WritingPlacements,
@@ -167,14 +179,24 @@ impl<'a> SpirePublishWritingObjects<'a> {
         Self { input }
     }
 
-    pub(super) fn objects_written(self) -> SpirePublishWritingPlacements<'a> {
-        SpirePublishWritingPlacements { input: self.input }
+    pub(super) fn objects_written(
+        self,
+        evidence: &[SpirePublishObjectWriteEvidence],
+    ) -> Result<SpirePublishWritingPlacements<'a>, SpirePublishFailed> {
+        validate_object_write_evidence(self.input.placement_directory, evidence)
+            .map_err(|error| SpirePublishFailed::at(SpirePublishStage::WritingObjects, error))?;
+        Ok(SpirePublishWritingPlacements { input: self.input })
     }
 }
 
 impl<'a> SpirePublishWritingPlacements<'a> {
-    pub(super) fn placements_written(self) -> SpirePublishWritingManifest<'a> {
-        SpirePublishWritingManifest { input: self.input }
+    pub(super) fn placements_written(
+        self,
+        evidence: &[SpirePublishPlacementWriteEvidence],
+    ) -> Result<SpirePublishWritingManifest<'a>, SpirePublishFailed> {
+        validate_placement_write_evidence(self.input.object_manifest, evidence)
+            .map_err(|error| SpirePublishFailed::at(SpirePublishStage::WritingPlacements, error))?;
+        Ok(SpirePublishWritingManifest { input: self.input })
     }
 }
 
@@ -257,11 +279,141 @@ impl SpirePublishPublishingActiveEpoch<'_> {
 fn publish_through_validation(
     input: SpirePublishCoordinatorInput<'_>,
 ) -> Result<SpirePublishPublishingActiveEpoch<'_>, SpirePublishFailed> {
+    let object_evidence = object_write_evidence_from_placement_directory(input.placement_directory);
+    let placement_evidence = placement_write_evidence_from_object_manifest(input.object_manifest);
     SpirePublishWritingObjects::new(input)
-        .objects_written()
-        .placements_written()
+        .objects_written(&object_evidence)?
+        .placements_written(&placement_evidence)?
         .write_manifests()?
         .validate()
+}
+
+pub(super) fn object_write_evidence_from_placement_directory(
+    placement_directory: &SpirePlacementDirectory,
+) -> Vec<SpirePublishObjectWriteEvidence> {
+    placement_directory
+        .entries
+        .iter()
+        .map(|entry| SpirePublishObjectWriteEvidence {
+            pid: entry.pid,
+            object_tid: entry.object_tid,
+        })
+        .collect()
+}
+
+pub(super) fn placement_write_evidence_from_object_manifest(
+    object_manifest: &SpireObjectManifest,
+) -> Vec<SpirePublishPlacementWriteEvidence> {
+    object_manifest
+        .entries
+        .iter()
+        .map(|entry| SpirePublishPlacementWriteEvidence {
+            pid: entry.pid,
+            placement_tid: entry.placement_tid,
+        })
+        .collect()
+}
+
+fn validate_object_write_evidence(
+    placement_directory: &SpirePlacementDirectory,
+    evidence: &[SpirePublishObjectWriteEvidence],
+) -> Result<(), String> {
+    if evidence.len() != placement_directory.entries.len() {
+        return Err(format!(
+            "ec_spire publish object write evidence count mismatch: got {}, expected {}",
+            evidence.len(),
+            placement_directory.entries.len()
+        ));
+    }
+
+    let mut sorted = evidence.to_vec();
+    sorted.sort_by_key(|entry| entry.pid);
+    let mut previous_pid = None;
+    for entry in &sorted {
+        if entry.pid == 0 {
+            return Err("ec_spire publish object write evidence pid 0 is invalid".to_owned());
+        }
+        if entry.object_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_spire publish object write evidence for pid {} has invalid object_tid",
+                entry.pid
+            ));
+        }
+        if Some(entry.pid) == previous_pid {
+            return Err(format!(
+                "ec_spire publish object write evidence duplicate pid {}",
+                entry.pid
+            ));
+        }
+        previous_pid = Some(entry.pid);
+    }
+
+    for (expected, actual) in placement_directory.entries.iter().zip(sorted.iter()) {
+        if expected.pid != actual.pid {
+            return Err(format!(
+                "ec_spire publish object write evidence pid mismatch: got {}, expected {}",
+                actual.pid, expected.pid
+            ));
+        }
+        if expected.object_tid != actual.object_tid {
+            return Err(format!(
+                "ec_spire publish object write evidence object_tid mismatch for pid {}",
+                expected.pid
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_placement_write_evidence(
+    object_manifest: &SpireObjectManifest,
+    evidence: &[SpirePublishPlacementWriteEvidence],
+) -> Result<(), String> {
+    if evidence.len() != object_manifest.entries.len() {
+        return Err(format!(
+            "ec_spire publish placement write evidence count mismatch: got {}, expected {}",
+            evidence.len(),
+            object_manifest.entries.len()
+        ));
+    }
+
+    let mut sorted = evidence.to_vec();
+    sorted.sort_by_key(|entry| entry.pid);
+    let mut previous_pid = None;
+    for entry in &sorted {
+        if entry.pid == 0 {
+            return Err("ec_spire publish placement write evidence pid 0 is invalid".to_owned());
+        }
+        if entry.placement_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_spire publish placement write evidence for pid {} has invalid placement_tid",
+                entry.pid
+            ));
+        }
+        if Some(entry.pid) == previous_pid {
+            return Err(format!(
+                "ec_spire publish placement write evidence duplicate pid {}",
+                entry.pid
+            ));
+        }
+        previous_pid = Some(entry.pid);
+    }
+
+    for (expected, actual) in object_manifest.entries.iter().zip(sorted.iter()) {
+        if expected.pid != actual.pid {
+            return Err(format!(
+                "ec_spire publish placement write evidence pid mismatch: got {}, expected {}",
+                actual.pid, expected.pid
+            ));
+        }
+        if expected.placement_tid != actual.placement_tid {
+            return Err(format!(
+                "ec_spire publish placement write evidence placement_tid mismatch for pid {}",
+                expected.pid
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn encode_manifest_bundle_for_publish(
@@ -288,6 +440,23 @@ pub(super) fn encode_publish_bundle_for_publish(
         .and_then(|publish| publish.publish_active_epoch(locators))
         .map(|published| published.bundle)
         .map_err(SpirePublishFailed::into_error)
+}
+
+pub(super) unsafe fn write_manifest_bundle_to_relation(
+    index_relation: pg_sys::Relation,
+    manifests: &SpireEncodedManifestBundle,
+) -> Result<SpirePublishedManifestLocators, String> {
+    let epoch_manifest_tid =
+        unsafe { page::append_object_tuple(index_relation, &manifests.epoch_manifest)? };
+    let object_manifest_tid =
+        unsafe { page::append_object_tuple(index_relation, &manifests.object_manifest)? };
+    let placement_directory_tid =
+        unsafe { page::append_object_tuple(index_relation, &manifests.placement_directory)? };
+    Ok(SpirePublishedManifestLocators {
+        epoch_manifest_tid,
+        object_manifest_tid,
+        placement_directory_tid,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -796,7 +965,9 @@ unsafe extern "C-unwind" fn ec_spire_empty_build_callback(
 mod tests {
     use super::{
         build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
-        train_single_level_centroid_plan, SpirePartitionedSingleLevelBuildInput,
+        object_write_evidence_from_placement_directory,
+        placement_write_evidence_from_object_manifest, train_single_level_centroid_plan,
+        SpirePartitionedSingleLevelBuildInput, SpirePublishStage, SpirePublishWritingObjects,
         SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
@@ -1017,6 +1188,36 @@ mod tests {
 
         assert!(error.contains("Validating failed"));
         assert!(error.contains("object_version mismatch"));
+    }
+
+    #[test]
+    fn publish_coordinator_rejects_missing_object_write_evidence() {
+        let (draft, _, _, _) = build_valid_draft();
+        let error = SpirePublishWritingObjects::new(draft.publish_input())
+            .objects_written(&[])
+            .unwrap_err();
+
+        assert_eq!(error.stage, SpirePublishStage::WritingObjects);
+        assert!(error.error.contains("object write evidence count mismatch"));
+    }
+
+    #[test]
+    fn publish_coordinator_rejects_mismatched_placement_write_evidence() {
+        let (draft, _, _, _) = build_valid_draft();
+        let object_evidence =
+            object_write_evidence_from_placement_directory(&draft.placement_directory);
+        let mut placement_evidence =
+            placement_write_evidence_from_object_manifest(&draft.object_manifest);
+        placement_evidence[0].placement_tid = tid(99, 9);
+
+        let error = SpirePublishWritingObjects::new(draft.publish_input())
+            .objects_written(&object_evidence)
+            .unwrap()
+            .placements_written(&placement_evidence)
+            .unwrap_err();
+
+        assert_eq!(error.stage, SpirePublishStage::WritingPlacements);
+        assert!(error.error.contains("placement_tid mismatch"));
     }
 
     #[test]

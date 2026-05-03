@@ -88,6 +88,13 @@ pub(super) unsafe fn read_root_control_page(
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
+    if special_size < SpireRootControlState::encoded_len() {
+        pgrx::error!(
+            "ec_spire root/control special area too small: got {special_size}, expected at least {}",
+            SpireRootControlState::encoded_len()
+        );
+    }
     let root_control_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     let root_control_bytes = unsafe {
         std::slice::from_raw_parts(root_control_ptr, SpireRootControlState::encoded_len())
@@ -109,12 +116,31 @@ pub(super) unsafe fn append_object_tuple(
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    if existing_blocks < FIRST_DATA_BLOCK_NUMBER {
+        return Err(
+            "ec_spire root/control block must be initialized before object tuples".to_owned(),
+        );
+    }
+
     if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
         let last_data_block = existing_blocks - 1;
         if let Some(tid) =
             unsafe { try_append_object_tuple_to_block(index_relation, last_data_block, payload)? }
         {
             return Ok(tid);
+        }
+
+        let required_space = raw_tuple_storage_bytes(payload.len());
+        let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };
+        if fsm_block >= FIRST_DATA_BLOCK_NUMBER
+            && fsm_block < existing_blocks
+            && fsm_block != last_data_block
+        {
+            if let Some(tid) =
+                unsafe { try_append_object_tuple_to_block(index_relation, fsm_block, payload)? }
+            {
+                return Ok(tid);
+            }
         }
     }
 
@@ -228,6 +254,15 @@ unsafe fn append_object_tuple_to_new_block(
     index_relation: pg_sys::Relation,
     payload: &[u8],
 ) -> Result<crate::storage::page::ItemPointer, String> {
+    let existing_blocks = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    if existing_blocks < FIRST_DATA_BLOCK_NUMBER {
+        return Err(
+            "ec_spire root/control block must be initialized before object tuples".to_owned(),
+        );
+    }
+
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
