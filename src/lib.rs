@@ -2697,6 +2697,16 @@ mod tests {
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 4);
         assert_eq!(next_local_vec_seq, 4);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_populated_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
     }
 
     #[pg_test]

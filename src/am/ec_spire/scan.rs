@@ -3,7 +3,8 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::ptr;
 
 use super::meta::{
-    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
+    SpireConsistencyMode, SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
+    SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     SpireValidatedEpochSnapshot,
 };
 use super::options::{
@@ -15,7 +16,7 @@ use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScor
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
     SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader,
-    SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
+    SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::storage::page::ItemPointer;
@@ -1160,6 +1161,39 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
     }
 }
 
+unsafe fn load_relation_epoch_manifests(
+    index_relation: pg_sys::Relation,
+    root_control: SpireRootControlState,
+) -> Result<
+    (
+        SpireEpochManifest,
+        SpireObjectManifest,
+        SpirePlacementDirectory,
+    ),
+    String,
+> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    }
+    let epoch_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+    let object_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+    let placement_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let epoch_manifest = SpireEpochManifest::decode(&epoch_bytes)?;
+    let object_manifest = SpireObjectManifest::decode(&object_bytes)?;
+    let placement_directory = SpirePlacementDirectory::decode(&placement_bytes)?;
+    if epoch_manifest.epoch != root_control.active_epoch {
+        return Err(format!(
+            "ec_spire root/control active epoch {} does not match epoch manifest {}",
+            root_control.active_epoch, epoch_manifest.epoch
+        ));
+    }
+    SpireValidatedEpochSnapshot::new(&epoch_manifest, &object_manifest, &placement_directory)?;
+    Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
 unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireScanQuery, String> {
     if orderbys.is_null() {
         return Err("ec_spire amrescan received null order-by scan keys".to_owned());
@@ -1239,10 +1273,26 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
                 return;
             }
 
-            opaque.query = Some(query);
-            pgrx::error!(
-                "ec_spire amrescan relation-backed snapshot loading is not implemented yet"
+            let (epoch_manifest, object_manifest, placement_directory) =
+                load_relation_epoch_manifests((*scan).indexRelation, root_control)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let snapshot = SpirePublishedEpochSnapshot::new(
+                &epoch_manifest,
+                &object_manifest,
+                &placement_directory,
             )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let object_store = SpireRelationObjectStore::for_index_relation((*scan).indexRelation)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let prepared = prepare_single_level_snapshot_scan_candidates(
+                &snapshot,
+                &object_store,
+                &query,
+                relation_options((*scan).indexRelation),
+                |candidate| Ok(-candidate.score),
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+            opaque.reset_for_candidates(query, prepared.scan_plan, prepared.candidates);
         })
     }
 }

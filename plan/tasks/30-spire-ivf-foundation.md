@@ -26,9 +26,9 @@ metadata can now provide the single-level leaf count that scan option resolution
 needs, and scan opaque state now carries a validated query object for future
 `ScanKey` parsing. The relation-backed root/control page can now persist and
 read the empty SPIRE state, empty `ambuild`/`ambuildempty` initialize that page,
-and live `amrescan` can return an empty cursor for an empty active epoch while
-populated relation-backed snapshot loading remains blocked. Relation-backed
-object tuple append/read helpers can now store encoded SPIRE object bytes in
+and live `amrescan` can return an empty cursor for an empty active epoch or
+load an active relation-backed epoch into a scan cursor. Relation-backed object
+tuple append/read helpers can now store encoded SPIRE object bytes in
 data blocks after the root/control page and round-trip an encoded routing
 object from an `ec_spire` index relation through a relation object store that
 emits local single-store placement entries. The same relation object store can
@@ -47,8 +47,9 @@ deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
 architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
-PostgreSQL relation-backed scan persistence remains intentionally unwired until
-relation-backed snapshot loading lands. Task 30 implements
+PostgreSQL relation-backed build and initial quantized scan now have a strict
+single-store path, while exact heap rerank, insert/delete, cleanup, and richer
+diagnostics remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -289,10 +290,11 @@ Decision record:
   can now derive the scan-plan leaf count from root routing metadata once a
   published snapshot is loaded, and scan state now stores a validated
   non-empty, finite, non-zero query object. Live `amrescan` now parses and
-  validates the ORDER BY query, reads the relation-backed root/control page, and
-  returns no rows for an empty active epoch. Populated live snapshot loading,
-  heap rerank callback implementation, and PQ-FastScan scorer binding remain
-  open.
+  validates the ORDER BY query, reads the relation-backed root/control page,
+  loads active epoch/object/placement manifests, reads relation-backed routing
+  and V2 leaf objects, and fills the scan cursor from quantized candidates.
+  Empty active epochs still return no rows. Exact heap rerank callback
+  implementation and PQ-FastScan scorer binding remain open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -315,9 +317,10 @@ Decision record:
   reporting, and relation-backed admin reads remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
-  cardinality. Empty-build and populated-build publication now have PG18
-  coverage; active-epoch scan, insert-after-build, delete/vacuum cleanup, and
-  relation-backed cardinality diagnostics remain open.
+  cardinality. Empty-build, populated-build publication, and populated
+  active-epoch ordered scan now have PG18 coverage; insert-after-build,
+  delete/vacuum cleanup, and relation-backed cardinality diagnostics remain
+  open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
