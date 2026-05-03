@@ -7,6 +7,7 @@ mod diagnostics;
 mod insert;
 mod meta;
 mod options;
+mod page;
 mod quantizer;
 mod routine;
 mod scan;

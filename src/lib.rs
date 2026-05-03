@@ -2647,6 +2647,30 @@ mod tests {
         assert_eq!(opclasses, 2);
     }
 
+    #[pg_test]
+    fn test_ec_spire_empty_build_scan_no_rows() {
+        Spi::run("CREATE TABLE ec_spire_empty_scan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_empty_scan_idx ON ec_spire_empty_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                SELECT id FROM ec_spire_empty_scan \
+                ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                LIMIT 1 \
+             ) AS ordered_empty",
+        )
+        .expect("ordered empty ec_spire query should succeed")
+        .expect("count should not be NULL");
+
+        assert_eq!(rows, 0);
+    }
+
     fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")

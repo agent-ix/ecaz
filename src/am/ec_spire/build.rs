@@ -1,3 +1,6 @@
+use std::ffi::c_void;
+use std::ptr;
+
 use super::assign::{
     build_primary_leaf_assignments, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
     SpirePidAllocator,
@@ -11,9 +14,10 @@ use super::storage::{
     SpireLeafPartitionObject, SpireLocalObjectStore, SpireRoutingChildEntry,
     SpireRoutingPartitionObject,
 };
+use super::{options, page};
 use crate::am::common::training as common_training;
 use crate::storage::page::ItemPointer;
-use pgrx::pg_sys;
+use pgrx::{pg_sys, PgBox};
 
 const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
 
@@ -736,15 +740,56 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
-    _heap_relation: pg_sys::Relation,
-    _index_relation: pg_sys::Relation,
-    _index_info: *mut pg_sys::IndexInfo,
+    heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("ambuild")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let _options = options::relation_options(index_relation);
+            let heap_tuples = pg_sys::table_index_build_scan(
+                heap_relation,
+                index_relation,
+                index_info,
+                false,
+                false,
+                Some(ec_spire_empty_build_callback),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            );
+            page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
+
+            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+            result.heap_tuples = heap_tuples;
+            result.index_tuples = 0.0;
+            result.into_pg()
+        })
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| super::not_implemented("ambuildempty")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());
+        })
+    }
+}
+
+unsafe extern "C-unwind" fn ec_spire_empty_build_callback(
+    _index: pg_sys::Relation,
+    _tid: pg_sys::ItemPointer,
+    _values: *mut pg_sys::Datum,
+    _isnull: *mut bool,
+    _tuple_is_alive: bool,
+    _state: *mut c_void,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            pgrx::error!(
+                "ec_spire populated ambuild is not implemented yet; create the index on an empty relation for the current persistence checkpoint"
+            )
+        })
+    }
 }
 
 #[cfg(test)]

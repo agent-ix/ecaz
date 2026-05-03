@@ -33,6 +33,10 @@ pub(super) struct SpireRootControlState {
 }
 
 impl SpireRootControlState {
+    pub(super) fn encoded_len() -> usize {
+        ROOT_CONTROL_STATE_BYTES
+    }
+
     pub(super) fn empty() -> Self {
         Self {
             active_epoch: 0,

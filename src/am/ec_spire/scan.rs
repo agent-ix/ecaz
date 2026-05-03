@@ -7,9 +7,10 @@ use super::meta::{
     SpireValidatedEpochSnapshot,
 };
 use super::options::{
-    resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
+    relation_options, resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
     SpireSingleLevelScanPlan,
 };
+use super::page;
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
@@ -1207,13 +1208,22 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
             }
             let opaque = &mut *opaque_ptr;
             opaque.clear_scan_work();
-            opaque.query =
-                Some(decode_scan_orderby_query(orderbys).unwrap_or_else(|e| pgrx::error!("{e}")));
+            let query = decode_scan_orderby_query(orderbys).unwrap_or_else(|e| pgrx::error!("{e}"));
             (*scan).xs_recheck = false;
             (*scan).xs_recheckorderby = false;
             (*scan).xs_orderbyvals = ptr::null_mut();
             (*scan).xs_orderbynulls = ptr::null_mut();
 
+            let root_control = page::read_root_control_page((*scan).indexRelation);
+            if root_control.active_epoch == 0 {
+                let scan_plan =
+                    resolve_single_level_scan_plan(0, relation_options((*scan).indexRelation))
+                        .unwrap_or_else(|e| pgrx::error!("{e}"));
+                opaque.reset_for_candidates(query, scan_plan, Vec::new());
+                return;
+            }
+
+            opaque.query = Some(query);
             pgrx::error!(
                 "ec_spire amrescan relation-backed snapshot loading is not implemented yet"
             )

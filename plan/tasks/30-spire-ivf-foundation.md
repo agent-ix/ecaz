@@ -24,9 +24,11 @@ future `amgettuple` wiring, and scan callbacks now have allocated opaque state
 plus cursor-drain emission once `amrescan` can populate candidates. Root routing
 metadata can now provide the single-level leaf count that scan option resolution
 needs, and scan opaque state now carries a validated query object for future
-`ScanKey` parsing. Live `amrescan` now validates scan shape, decodes the ORDER
-BY query, stores it in opaque state, and fails at relation-backed snapshot
-loading. Assignment payload scoring now reuses the existing TurboQuant and
+`ScanKey` parsing. The relation-backed root/control page can now persist and
+read the empty SPIRE state, empty `ambuild`/`ambuildempty` initialize that page,
+and live `amrescan` can return an empty cursor for an empty active epoch while
+populated relation-backed snapshot loading remains blocked. Assignment payload
+scoring now reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
@@ -241,8 +243,9 @@ Decision record:
   PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata. A
   source-vector helper now builds quantized leaf assignment inputs from heap
   locators plus source vectors for future AM build/insert wiring. Live
-  relation-backed build writes remain blocked on the pre-persistence
-  architecture gate.
+  relation-backed empty build now initializes the persisted root/control page
+  and rejects populated heap builds with an explicit not-implemented error;
+  populated relation-backed build writes remain blocked on object persistence.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
@@ -261,10 +264,10 @@ Decision record:
   can now derive the scan-plan leaf count from root routing metadata once a
   published snapshot is loaded, and scan state now stores a validated
   non-empty, finite, non-zero query object. Live `amrescan` now parses and
-  stores the ORDER BY query before stopping at the relation-backed snapshot
-  loading boundary. Snapshot/object loading, heap rerank callback
-  implementation, and PQ-FastScan scorer binding remain open; live snapshot
-  loading remains blocked on the pre-persistence architecture gate.
+  validates the ORDER BY query, reads the relation-backed root/control page, and
+  returns no rows for an empty active epoch. Populated live snapshot loading,
+  heap rerank callback implementation, and PQ-FastScan scorer binding remain
+  open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
