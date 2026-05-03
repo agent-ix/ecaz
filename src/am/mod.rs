@@ -22,7 +22,10 @@ pub(crate) use self::ec_ivf::{
     IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
     IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
 };
-pub(crate) use self::ec_spire::active_snapshot_diagnostics as spire_active_snapshot_diagnostics;
+pub(crate) use self::ec_spire::{
+    active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
+    index_options_snapshot as spire_index_options_snapshot,
+};
 
 pub(crate) fn register_gucs() {
     ec_diskann::register_gucs();

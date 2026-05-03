@@ -1115,6 +1115,44 @@ fn ec_spire_index_active_snapshot_diagnostics(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_options_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(nlists, i32),
+        name!(relation_nprobe, i32),
+        name!(session_nprobe, Option<i32>),
+        name!(relation_rerank_width, i32),
+        name!(session_rerank_width, Option<i32>),
+        name!(training_sample_rows, i32),
+        name!(seed, i32),
+        name!(pq_group_size, i32),
+        name!(storage_format, String),
+        name!(assignment_payload_format, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_options_snapshot") };
+    let snapshot = unsafe { am::spire_index_options_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.nlists,
+        snapshot.relation_nprobe,
+        snapshot.session_nprobe,
+        snapshot.relation_rerank_width,
+        snapshot.session_rerank_width,
+        snapshot.training_sample_rows,
+        snapshot.seed,
+        snapshot.pq_group_size,
+        snapshot.storage_format.to_owned(),
+        snapshot.assignment_payload_format.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_page_ownership(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -2837,6 +2875,57 @@ mod tests {
         assert_eq!(leaf_assignment_count, 1);
         assert_eq!(delta_assignment_count, 1);
         assert_eq!(routing_child_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_options_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_options_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_sql_idx ON ec_spire_options_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 3, \
+                 nprobe = 2, \
+                 rerank_width = 7, \
+                 training_sample_rows = 11, \
+                 seed = 13, \
+                 pq_group_size = 4, \
+                 storage_format = 'rabitq' \
+             )",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run("SET LOCAL ec_spire.nprobe = 5").expect("SET should succeed");
+        Spi::run("SET LOCAL ec_spire.rerank_width = 9").expect("SET should succeed");
+
+        let nlists = Spi::get_one::<i32>(
+            "SELECT nlists FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let session_nprobe = Spi::get_one::<i32>(
+            "SELECT session_nprobe FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let assignment_payload_format = Spi::get_one::<String>(
+            "SELECT assignment_payload_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+
+        assert_eq!(nlists, 3);
+        assert_eq!(session_nprobe, 5);
+        assert_eq!(storage_format, "rabitq");
+        assert_eq!(assignment_payload_format, "rabitq");
     }
 
     #[pg_test]

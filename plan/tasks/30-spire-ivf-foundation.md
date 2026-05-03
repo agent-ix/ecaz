@@ -55,9 +55,11 @@ can now publish strict row-encoded delete-delta epochs for
 callback-dead visible assignments, and live scans suppress base and
 delta-insert candidates whose `vec_id`s are covered by a routed delete delta;
 the first SQL diagnostics surface now exposes active epoch/object/placement
-cardinality through `ec_spire_index_active_snapshot_diagnostics`. PQ-FastScan
-scorer binding, broader SQL/admin exposure, physical object cleanup/compaction,
-and full SQL VACUUM end-to-end coverage remain open. Task 30 implements
+cardinality through `ec_spire_index_active_snapshot_diagnostics`, and relation
+build/scan options through `ec_spire_index_options_snapshot`. PQ-FastScan
+scorer binding, richer SQL/admin summaries, physical object
+cleanup/compaction, and full SQL VACUUM end-to-end coverage remain open. Task
+30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -331,8 +333,11 @@ Decision record:
   `ec_spire_index_active_snapshot_diagnostics(index_oid)` now exposes the
   active root/control cursors, consistency mode, object/placement/state counts,
   assignment counts, routing-child count, and object byte buckets for the
-  active SPIRE epoch. Quantizer/build-parameter reporting and richer admin
-  summaries remain open.
+  active SPIRE epoch. SQL function `ec_spire_index_options_snapshot(index_oid)`
+  now exposes relation `nlists`, `nprobe`, `rerank_width`,
+  `training_sample_rows`, `seed`, `pq_group_size`, `storage_format`, resolved
+  assignment payload format, and session scan overrides. Richer admin summaries
+  and health recommendations remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -344,8 +349,10 @@ Decision record:
   coverage for first-epoch publication plus a second delta insert. Vacuum
   delete-delta publication and routed scan suppression now have focused PG18
   coverage; the SQL active-snapshot diagnostics surface now has focused PG18
-  coverage for empty and insert-populated active epochs. Physical
-  cleanup/compaction and real SQL VACUUM end-to-end coverage remain open.
+  coverage for empty and insert-populated active epochs, and the SQL options
+  snapshot surface has focused PG18 coverage for reloptions plus session
+  overrides. Physical cleanup/compaction and real SQL VACUUM end-to-end
+  coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

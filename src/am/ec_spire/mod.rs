@@ -69,6 +69,20 @@ pub(crate) struct SpireActiveSnapshotDiagnostics {
     pub(crate) delta_object_bytes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexOptionsSnapshot {
+    pub(crate) nlists: i32,
+    pub(crate) relation_nprobe: i32,
+    pub(crate) session_nprobe: Option<i32>,
+    pub(crate) relation_rerank_width: i32,
+    pub(crate) session_rerank_width: Option<i32>,
+    pub(crate) training_sample_rows: i32,
+    pub(crate) seed: i32,
+    pub(crate) pq_group_size: i32,
+    pub(crate) storage_format: &'static str,
+    pub(crate) assignment_payload_format: &'static str,
+}
+
 impl SpireActiveSnapshotDiagnostics {
     fn empty(root_control: meta::SpireRootControlState) -> Self {
         Self {
@@ -95,6 +109,14 @@ impl SpireActiveSnapshotDiagnostics {
             leaf_object_bytes: 0,
             delta_object_bytes: 0,
         }
+    }
+}
+
+fn assignment_payload_format_name(format: quantizer::SpireAssignmentPayloadFormat) -> &'static str {
+    match format {
+        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "turboquant",
+        quantizer::SpireAssignmentPayloadFormat::PqFastScan => "pq_fastscan",
+        quantizer::SpireAssignmentPayloadFormat::RaBitQ => "rabitq",
     }
 }
 
@@ -151,6 +173,35 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_options_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexOptionsSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let session_nprobe = match options::current_session_nprobe() {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+    let session_rerank_width = match options::current_session_rerank_width() {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+
+    SpireIndexOptionsSnapshot {
+        nlists: relation_options.nlists,
+        relation_nprobe: relation_options.nprobe,
+        session_nprobe,
+        relation_rerank_width: relation_options.rerank_width,
+        session_rerank_width,
+        training_sample_rows: relation_options.training_sample_rows,
+        seed: relation_options.seed,
+        pq_group_size: relation_options.pq_group_size,
+        storage_format: relation_options.storage_format.reloption_name(),
+        assignment_payload_format: assignment_payload_format_name(
+            relation_options.assignment_payload_format(),
+        ),
+    }
 }
 
 fn not_implemented(callback: &str) -> ! {
