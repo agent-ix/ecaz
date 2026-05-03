@@ -311,9 +311,10 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         let header = store.read_object_header(placement)?;
         match header.kind {
             SpirePartitionObjectKind::Delta => {}
-            SpirePartitionObjectKind::Leaf if affected_base_pids.contains(&header.pid) => {
+            SpirePartitionObjectKind::Leaf if affected_base_pids.contains(&manifest_entry.pid) => {
+                let leaf_pid = require_compaction_leaf_pid_match(manifest_entry.pid, header.pid)?;
                 let rows = compact_rows_by_base_pid
-                    .remove(&header.pid)
+                    .remove(&leaf_pid)
                     .unwrap_or_default();
                 // Compaction normalizes rewritten base leaves into the V2 segment format.
                 let object_version =
@@ -323,19 +324,19 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
                         .ok_or_else(|| {
                             format!(
                                 "ec_spire vacuum compaction object version overflow for pid {}",
-                                header.pid
+                                leaf_pid
                             )
                         })?;
                 placement_entries.push(unsafe {
                     store.insert_leaf_object_v2_from_rows(
                         new_epoch,
-                        header.pid,
+                        leaf_pid,
                         object_version,
                         header.parent_pid,
                         &rows,
                     )?
                 });
-                compacted_base_pids.insert(header.pid);
+                compacted_base_pids.insert(leaf_pid);
             }
             SpirePartitionObjectKind::Root
             | SpirePartitionObjectKind::Internal
@@ -396,6 +397,15 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(true)
+}
+
+fn require_compaction_leaf_pid_match(manifest_pid: u64, header_pid: u64) -> Result<u64, String> {
+    if manifest_pid != header_pid {
+        return Err(format!(
+            "ec_spire vacuum compaction leaf pid mismatch: manifest pid {manifest_pid}, object header pid {header_pid}"
+        ));
+    }
+    Ok(manifest_pid)
 }
 
 fn collect_delete_vec_ids_by_base_pid(
@@ -543,6 +553,26 @@ unsafe fn heap_tid_is_dead(
     let mut tid = pg_sys::ItemPointerData::default();
     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
     unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compaction_leaf_pid_match_rejects_malformed_header_pid() {
+        let error = require_compaction_leaf_pid_match(42, 43).unwrap_err();
+
+        assert_eq!(
+            error,
+            "ec_spire vacuum compaction leaf pid mismatch: manifest pid 42, object header pid 43"
+        );
+    }
+
+    #[test]
+    fn compaction_leaf_pid_match_returns_manifest_pid() {
+        assert_eq!(require_compaction_leaf_pid_match(42, 42), Ok(42));
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
