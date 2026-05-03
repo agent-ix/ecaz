@@ -26,6 +26,7 @@ pub(crate) use self::ec_spire::{
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
     index_health_snapshot as spire_index_health_snapshot,
     index_options_snapshot as spire_index_options_snapshot,
+    index_placement_snapshot as spire_index_placement_snapshot,
 };
 
 pub(crate) fn register_gucs() {

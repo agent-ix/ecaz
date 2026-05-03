@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use super::assign::{
     SpireAllocatorExhaustionDiagnostics, SpireLocalVecIdAllocator, SpirePidAllocator,
@@ -27,6 +27,30 @@ pub(super) struct SpireSnapshotDiagnostics {
     pub(super) routing_child_count: usize,
     pub(super) leaf_assignment_count: usize,
     pub(super) delta_assignment_count: usize,
+    pub(super) available_object_bytes: u64,
+    pub(super) routing_object_bytes: u64,
+    pub(super) leaf_object_bytes: u64,
+    pub(super) delta_object_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireStorePlacementDiagnostics {
+    pub(super) epoch: u64,
+    pub(super) node_id: u32,
+    pub(super) local_store_id: u32,
+    pub(super) placement_count: usize,
+    pub(super) available_placement_count: usize,
+    pub(super) stale_placement_count: usize,
+    pub(super) unavailable_placement_count: usize,
+    pub(super) skipped_placement_count: usize,
+    pub(super) object_count: usize,
+    pub(super) root_object_count: usize,
+    pub(super) internal_object_count: usize,
+    pub(super) leaf_object_count: usize,
+    pub(super) delta_object_count: usize,
+    pub(super) routing_child_count: usize,
+    pub(super) assignment_count: usize,
+    pub(super) placement_object_bytes: u64,
     pub(super) available_object_bytes: u64,
     pub(super) routing_object_bytes: u64,
     pub(super) leaf_object_bytes: u64,
@@ -158,9 +182,144 @@ pub(super) fn collect_snapshot_diagnostics(
     Ok(diagnostics)
 }
 
+pub(super) fn collect_store_placement_diagnostics(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_reader: &impl SpireObjectReader,
+) -> Result<Vec<SpireStorePlacementDiagnostics>, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let epoch = snapshot.epoch_manifest().epoch;
+    let mut by_store = BTreeMap::<(u32, u32), SpireStorePlacementDiagnostics>::new();
+
+    for placement in &snapshot.placement_directory().entries {
+        let entry = by_store
+            .entry((placement.node_id, placement.local_store_id))
+            .or_insert_with(|| SpireStorePlacementDiagnostics {
+                epoch,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                placement_count: 0,
+                available_placement_count: 0,
+                stale_placement_count: 0,
+                unavailable_placement_count: 0,
+                skipped_placement_count: 0,
+                object_count: 0,
+                root_object_count: 0,
+                internal_object_count: 0,
+                leaf_object_count: 0,
+                delta_object_count: 0,
+                routing_child_count: 0,
+                assignment_count: 0,
+                placement_object_bytes: 0,
+                available_object_bytes: 0,
+                routing_object_bytes: 0,
+                leaf_object_bytes: 0,
+                delta_object_bytes: 0,
+            });
+
+        entry.placement_count += 1;
+        entry.placement_object_bytes = entry
+            .placement_object_bytes
+            .checked_add(u64::from(placement.object_bytes))
+            .ok_or_else(|| "ec_spire placement diagnostics byte count overflow".to_owned())?;
+
+        match placement.state {
+            SpirePlacementState::Available => {
+                entry.available_placement_count += 1;
+            }
+            SpirePlacementState::Stale => {
+                entry.stale_placement_count += 1;
+                continue;
+            }
+            SpirePlacementState::Unavailable => {
+                entry.unavailable_placement_count += 1;
+                continue;
+            }
+            SpirePlacementState::Skipped => {
+                entry.skipped_placement_count += 1;
+                continue;
+            }
+        }
+
+        let object_bytes = u64::from(placement.object_bytes);
+        entry.object_count += 1;
+        entry.available_object_bytes = entry
+            .available_object_bytes
+            .checked_add(object_bytes)
+            .ok_or_else(|| {
+                "ec_spire placement diagnostics available byte count overflow".to_owned()
+            })?;
+        let header = object_reader.read_object_header(placement)?;
+        match header.kind {
+            SpirePartitionObjectKind::Root => {
+                entry.root_object_count += 1;
+                let routing_object_bytes = entry
+                    .routing_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics routing byte count overflow".to_owned()
+                    })?;
+                entry.routing_object_bytes = routing_object_bytes;
+                let object = object_reader.read_routing_object(placement)?;
+                entry.routing_child_count += object.child_count();
+            }
+            SpirePartitionObjectKind::Internal => {
+                entry.internal_object_count += 1;
+                let routing_object_bytes = entry
+                    .routing_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics routing byte count overflow".to_owned()
+                    })?;
+                entry.routing_object_bytes = routing_object_bytes;
+                let object = object_reader.read_routing_object(placement)?;
+                entry.routing_child_count += object.child_count();
+            }
+            SpirePartitionObjectKind::Leaf => {
+                entry.leaf_object_count += 1;
+                entry.leaf_object_bytes = entry
+                    .leaf_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics leaf byte count overflow".to_owned()
+                    })?;
+                let assignment_count = usize::try_from(header.assignment_count).map_err(|_| {
+                    "ec_spire placement diagnostics assignment count exceeds usize".to_owned()
+                })?;
+                entry.assignment_count = entry
+                    .assignment_count
+                    .checked_add(assignment_count)
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics assignment count overflow".to_owned()
+                    })?;
+            }
+            SpirePartitionObjectKind::Delta => {
+                entry.delta_object_count += 1;
+                entry.delta_object_bytes = entry
+                    .delta_object_bytes
+                    .checked_add(object_bytes)
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics delta byte count overflow".to_owned()
+                    })?;
+                let object = object_reader.read_delta_object(placement)?;
+                entry.assignment_count = entry
+                    .assignment_count
+                    .checked_add(object.assignments.len())
+                    .ok_or_else(|| {
+                        "ec_spire placement diagnostics assignment count overflow".to_owned()
+                    })?;
+            }
+        }
+    }
+
+    Ok(by_store.into_values().collect())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{collect_allocator_diagnostics, collect_snapshot_diagnostics};
+    use super::{
+        collect_allocator_diagnostics, collect_snapshot_diagnostics,
+        collect_store_placement_diagnostics,
+    };
     use crate::am::ec_spire::assign::{
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_PID,
     };
@@ -327,5 +486,46 @@ mod tests {
             diagnostics.routing_object_bytes + diagnostics.leaf_object_bytes
         );
         assert_eq!(diagnostics.delta_object_bytes, 0);
+    }
+
+    #[test]
+    fn store_placement_diagnostics_groups_available_objects_by_store() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let diagnostics = collect_store_placement_diagnostics(&snapshot, &object_store).unwrap();
+
+        assert_eq!(diagnostics.len(), 1);
+        let store = &diagnostics[0];
+        assert_eq!(store.epoch, 7);
+        assert_eq!(store.node_id, 0);
+        assert_eq!(store.local_store_id, 0);
+        assert_eq!(store.placement_count, 3);
+        assert_eq!(store.available_placement_count, 3);
+        assert_eq!(store.object_count, 3);
+        assert_eq!(store.root_object_count, 1);
+        assert_eq!(store.leaf_object_count, 2);
+        assert_eq!(store.routing_child_count, 2);
+        assert_eq!(store.assignment_count, 2);
+        assert!(store.placement_object_bytes > 0);
+        assert_eq!(store.placement_object_bytes, store.available_object_bytes);
+        assert_eq!(
+            store.available_object_bytes,
+            store.routing_object_bytes + store.leaf_object_bytes + store.delta_object_bytes
+        );
     }
 }
