@@ -3262,6 +3262,62 @@ mod tests {
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+        let delta_scanned_pid_count = Spi::get_one::<i64>(
+            "SELECT scanned_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_leaf_pid_count = Spi::get_one::<i64>(
+            "SELECT leaf_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_delta_pid_count = Spi::get_one::<i64>(
+            "SELECT delta_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_leaf_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT leaf_candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT delta_candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delete_delta_row_count = Spi::get_one::<i64>(
+            "SELECT delete_delta_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+
+        assert_eq!(delta_scanned_pid_count, 2);
+        assert_eq!(delta_leaf_pid_count, 1);
+        assert_eq!(delta_delta_pid_count, 1);
+        assert_eq!(delta_candidate_row_count, 2);
+        assert_eq!(delta_leaf_candidate_row_count, 1);
+        assert_eq!(delta_delta_candidate_row_count, 1);
+        assert_eq!(delete_delta_row_count, 0);
     }
 
     #[pg_test]
