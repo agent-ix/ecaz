@@ -1,0 +1,23 @@
+# Suite Report: task31-threshold-fixture
+
+- config: `crates/ecaz-cli/suites/task31-m5-ivf-100k.json`
+- config_sha256: `fixture`
+- dry_run: `false`
+- steps: completed 1, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall-fixture | recall | Succeeded | 11000 | `review/30176-task31-m5-100k-candidate-repeatability/artifacts/recall10_repeat_real100k_pqg8_n128_p96_w500.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall-fixture | recall | recall | `mean q-time=11.00 ms`, `ndcg@k=0.9997`, `nprobe=96`, `recall@k=0.9980` |
+
+## Thresholds
+
+| Name | Status | Actual | Expected |
+| --- | --- | ---: | ---: |
+| recall-fixture-floor | pass | 0.998 | Gte 0.995 |
+wrote review/30181-task31-suite-thresholds/artifacts/threshold_results.jsonl

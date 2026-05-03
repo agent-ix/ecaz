@@ -1,0 +1,43 @@
+{
+  "suite": "task31-threshold-fixture",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task31-m5-ivf-100k.json",
+  "config_sha256": "fixture",
+  "dry_run": false,
+  "generated_at_unix_ms": 1777833600000,
+  "connection": {
+    "database": "postgres",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "recall-fixture",
+      "kind": "recall",
+      "command": [],
+      "selected": true,
+      "tags": ["recall"],
+      "expected_artifacts": [
+        "review/30176-task31-m5-100k-candidate-repeatability/artifacts/recall10_repeat_real100k_pqg8_n128_p96_w500.log"
+      ],
+      "status": "succeeded",
+      "duration_ms": 11000,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "recall-fixture-floor",
+      "step": "recall-fixture",
+      "metric": "recall",
+      "field": "recall@k",
+      "op": "gte",
+      "expected": 0.995,
+      "actual": 0.998,
+      "passed": true,
+      "message": "recall@k 0.998 Gte 0.995 -> true"
+    }
+  ]
+}
