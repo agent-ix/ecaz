@@ -74,6 +74,34 @@ ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
 ```
 
+## Performance
+
+All results are local engineering measurements on 1536-dimensional DBpedia
+OpenAI embeddings. Corpus sizes differ across index families; comprehensive
+cross-index benchmarks are in progress. See [Benchmarks](docs/benchmarks.md)
+for full results, source packets, and methodology.
+
+**Compression:** 7.85x vs fp32 — 783 bytes per 1536-dim vector
+(~9 tuples per 8KB page vs ~1 for fp32).
+
+**HNSW vs DiskANN** (10K corpus, `m=32` / `graph_degree=32`):
+
+| Index | Recall@10 | Mean latency | Index size |
+| --- | ---: | ---: | ---: |
+| `ec_hnsw` | 96.95–97.15% | 2.91 ms | 15.1 MB |
+| `ec_diskann` | 99.65–99.75% | 7.80–9.34 ms | 4.9 MB |
+
+Source: `review/11109-task29d-final-readiness/`
+
+**IVF** (100K corpus, `pq_fastscan`, `nlists=128`, `nprobe=96`):
+
+| Tuning | Recall@100 | p50 | p99 |
+| --- | ---: | ---: | ---: |
+| balanced (`rerank_width=500`) | 96.76% | 10.7 ms | 12.1 ms |
+| quality (`rerank_width=1000`) | 99.20% | 12.1 ms | 13.7 ms |
+
+Source: `review/30203-task31-current-m5-candidate-decision/`
+
 ## Choosing An Index
 
 Each index family implements a different search algorithm. Quantization
@@ -162,34 +190,6 @@ make test
 make pg-test
 make pg-test-pg17
 ```
-
-## Performance
-
-Measured local results on 1536-dimensional OpenAI embeddings
-([DBpedia corpus](docs/recall-methodology.md)):
-
-| Surface | Current local result |
-| --- | --- |
-| Compression | 7.85x vs fp32 (783 bytes per 1536-dim vector) |
-| HNSW recall@10 | 97.1% - 97.5% on 10K; 92.6% - 95.2% on 50K |
-| IVF 100K selected point | Recall@10 0.9920, p50 173.4 ms, 19,791,872 B index |
-| DiskANN real-10K selected point | Recall@10 0.9965 - 0.9975, mean 7.80 - 9.34 ms, 4,939,776 B index |
-
-These are local engineering results, not product benchmark claims. See
-[Benchmarks](docs/benchmarks.md) for full results, source packets, and
-methodology.
-
-The supported operator workflow uses the `ecaz` CLI:
-
-```bash
-cargo install --path crates/ecaz-cli
-ecaz corpus prepare --profile ec_hnsw_real_10k --parquet /path/to/parquet --output-dir /path/to/staged
-ecaz corpus load --prefix ec_hnsw_real_10k --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv --profile ec_hnsw
-ecaz bench recall --prefix ec_hnsw_real_10k --profile ec_hnsw
-```
-
-Use `--log-file review/<topic>/artifacts/<run>.log` when producing review
-packet evidence.
 
 ## Documentation
 
