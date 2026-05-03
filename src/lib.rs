@@ -5451,6 +5451,9 @@ mod tests {
         let index_oid = index_oid("ec_spire_insert_multi_epoch_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
             unsafe { am::debug_spire_root_control(index_oid) };
+        // This assertion documents the current no-batching contract: PostgreSQL
+        // invokes `aminsert` once per row, so each row publishes its own delta
+        // epoch. Insert batching should update this expectation deliberately.
         assert_eq!(active_epoch, 6);
         assert_eq!(next_pid, 9);
         assert_eq!(next_local_vec_seq, 8);
