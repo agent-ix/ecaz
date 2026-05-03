@@ -2721,6 +2721,38 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_tqvector_populated_build_scans_with_heap_rerank() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tqvector_populated_build \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tqvector_populated_build (id, embedding) VALUES \
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tqvector_populated_build_idx \
+             ON ec_spire_tqvector_populated_build USING ec_spire \
+             (embedding tqvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire tqvector index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_tqvector_populated_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire tqvector query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

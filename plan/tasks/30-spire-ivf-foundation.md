@@ -47,10 +47,10 @@ deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
 architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
-PostgreSQL relation-backed build, initial quantized scan, and active snapshot
-cardinality diagnostics now have a strict single-store path, while exact heap
-rerank, insert/delete, cleanup, and SQL/admin exposure remain open. Task 30
-implements
+PostgreSQL relation-backed build, initial quantized scan with heap rerank, and
+active snapshot cardinality diagnostics now have a strict single-store path,
+while insert/delete, cleanup, PQ-FastScan scorer binding, and SQL/admin
+exposure remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -294,9 +294,10 @@ Decision record:
   non-empty, finite, non-zero query object. Live `amrescan` now parses and
   validates the ORDER BY query, reads the relation-backed root/control page,
   loads active epoch/object/placement manifests, reads relation-backed routing
-  and V2 leaf objects, and fills the scan cursor from quantized candidates.
-  Empty active epochs still return no rows. Exact heap rerank callback
-  implementation and PQ-FastScan scorer binding remain open.
+  and V2 leaf objects, exact-reranks the resolved candidate window from the
+  heap indexed column for `ecvector`/`tqvector`, and fills the scan cursor.
+  Empty active epochs still return no rows. PQ-FastScan scorer binding remains
+  open.
 - [x] **Scan/build option plumbing.** Register SPIRE-owned reloptions and
   session GUCs for the single-level foundation before AM callbacks consume
   them. The AM routine now exposes `amoptions` for `nlists`, `nprobe`,
@@ -322,9 +323,11 @@ Decision record:
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
-  active-epoch ordered scan now have PG18 coverage; relation-backed active
-  snapshot cardinality diagnostics are covered by the populated-build test.
-  Insert-after-build and delete/vacuum cleanup remain open.
+  active-epoch ordered scan now have PG18 coverage; the populated-build test
+  now exercises relation-backed active snapshot cardinality diagnostics and
+  live `ecvector` heap rerank, and a separate populated `tqvector` test covers
+  the decoded heap-rerank branch. Insert-after-build and delete/vacuum cleanup
+  remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::ffi::c_void;
+use std::mem::size_of;
 use std::ptr;
 
 use super::meta::{
@@ -19,6 +21,8 @@ use super::storage::{
     SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
+use crate::am::ec_hnsw::source;
+use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
 
@@ -1210,6 +1214,212 @@ unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireSc
     SpireScanQuery::new(values)
 }
 
+unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
+    scan: pg_sys::IndexScanDesc,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &SpireRelationObjectStore,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+) -> Result<SpirePreparedScanCandidates, String> {
+    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
+    let snapshot_pg = unsafe { resolve_scan_snapshot(scan) };
+    let indexed_attribute = unsafe {
+        source::resolve_indexed_vector_attribute(
+            heap_relation,
+            (*scan).indexRelation,
+            "ec_spire heap rerank indexed column",
+        )
+    };
+    let slot = unsafe { allocate_heap_slot(heap_relation)? };
+
+    let result = prepare_single_level_snapshot_scan_candidates(
+        snapshot,
+        object_store,
+        query,
+        options,
+        |candidate| unsafe {
+            exact_heap_source_inner_product(
+                heap_relation,
+                snapshot_pg,
+                slot,
+                indexed_attribute,
+                query.values(),
+                candidate.heap_tid,
+            )
+        },
+    );
+
+    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
+    if heap_relation_owned {
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+    result
+}
+
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+    if !unsafe { (*scan).heapRelation }.is_null() {
+        return (unsafe { (*scan).heapRelation }, false);
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("ec_spire heap rerank could not resolve heap relation");
+    }
+    (
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+        true,
+    )
+}
+
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
+    if !unsafe { (*scan).xs_snapshot }.is_null() {
+        return unsafe { (*scan).xs_snapshot };
+    }
+
+    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if !active_snapshot.is_null() {
+        return active_snapshot;
+    }
+
+    pgrx::error!("ec_spire heap rerank requires an executor or active snapshot");
+}
+
+unsafe fn allocate_heap_slot(
+    heap_relation: pg_sys::Relation,
+) -> Result<*mut pg_sys::TupleTableSlot, String> {
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        return Err("ec_spire heap rerank failed to allocate a heap tuple slot".to_owned());
+    }
+    Ok(slot)
+}
+
+unsafe fn exact_heap_source_inner_product(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    indexed_attribute: source::IndexedVectorAttribute,
+    query: &[f32],
+    heap_tid: ItemPointer,
+) -> Result<f32, String> {
+    unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+    let datum = unsafe {
+        required_slot_datum(
+            slot,
+            indexed_attribute.attnum,
+            "ec_spire heap rerank source vector",
+        )?
+    };
+    let result = unsafe {
+        indexed_vector_datum_to_source_vector(
+            datum,
+            indexed_attribute.kind,
+            "ec_spire heap rerank source vector",
+        )
+    }
+    .and_then(|source_vector| exact_source_inner_product(query, &source_vector));
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    result
+}
+
+unsafe fn fetch_heap_row_version(
+    heap_relation: pg_sys::Relation,
+    heap_tid: ItemPointer,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+) -> Result<(), String> {
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    let fetched =
+        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    if !fetched {
+        return Err(format!(
+            "ec_spire heap rerank could not fetch heap tuple at ({},{})",
+            heap_tid.block_number, heap_tid.offset_number
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn required_slot_datum(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> Result<pg_sys::Datum, String> {
+    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+    }
+    let attr_index = usize::try_from(attnum - 1)
+        .map_err(|_| "ec_spire heap rerank attribute number must be positive".to_owned())?;
+    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+        return Err(format!("ec_spire does not support NULL {label}"));
+    }
+    Ok(unsafe { *(*slot).tts_values.add(attr_index) })
+}
+
+unsafe fn indexed_vector_datum_to_source_vector(
+    datum: pg_sys::Datum,
+    kind: source::IndexedVectorKind,
+    label: &str,
+) -> Result<Vec<f32>, String> {
+    let bytes = unsafe { detoasted_varlena_bytes(datum, label)? };
+    match kind {
+        source::IndexedVectorKind::Ecvector => crate::unpack_raw_f32(&bytes, label),
+        source::IndexedVectorKind::Tqvector => tqvector_bytes_to_source_vector(&bytes, label),
+    }
+}
+
+fn tqvector_bytes_to_source_vector(bytes: &[u8], label: &str) -> Result<Vec<f32>, String> {
+    let (dimensions, bits, seed, gamma, code) =
+        crate::unpack(bytes).map_err(|e| format!("{label} is invalid tqvector: {e}"))?;
+    let mut full_payload = Vec::with_capacity(size_of::<f32>() + code.len());
+    full_payload.extend_from_slice(&gamma.to_le_bytes());
+    full_payload.extend_from_slice(code);
+    let quantizer = ProdQuantizer::cached(usize::from(dimensions), bits, seed);
+    Ok(quantizer.decode_approximate(&full_payload))
+}
+
+unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Result<Vec<u8>, String> {
+    if datum.is_null() {
+        return Err(format!("ec_spire does not support NULL {label}"));
+    }
+    let original = datum.cast_mut_ptr::<c_void>().cast::<pg_sys::varlena>();
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+    if varlena.is_null() {
+        return Err(format!("ec_spire could not detoast {label}"));
+    }
+    let owned = !ptr::eq(varlena, original);
+    let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
+    if owned {
+        unsafe { pg_sys::pfree(varlena.cast()) };
+    }
+    Ok(bytes)
+}
+
+fn exact_source_inner_product(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {
+    if query.len() != source_vector.len() {
+        return Err(format!(
+            "ec_spire heap rerank dimension mismatch: query dim {}, heap dim {}",
+            query.len(),
+            source_vector.len()
+        ));
+    }
+    if source_vector.iter().any(|value| !value.is_finite()) {
+        return Err("ec_spire heap rerank source vector contains a non-finite value".to_owned());
+    }
+    let score = source::inner_product(query, source_vector);
+    if !score.is_finite() {
+        return Err("ec_spire heap rerank produced a non-finite score".to_owned());
+    }
+    Ok(score)
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
@@ -1284,12 +1494,12 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             let object_store = SpireRelationObjectStore::for_index_relation((*scan).indexRelation)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let prepared = prepare_single_level_snapshot_scan_candidates(
+            let prepared = prepare_single_level_relation_snapshot_scan_candidates(
+                scan,
                 &snapshot,
                 &object_store,
                 &query,
                 relation_options((*scan).indexRelation),
-                |candidate| Ok(-candidate.score),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             opaque.reset_for_candidates(query, prepared.scan_plan, prepared.candidates);
