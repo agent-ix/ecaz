@@ -1,0 +1,36 @@
+# Suite Report: task31-m5-ivf-100k
+
+- config: `review/30183-task31-suite-candidate-run/task31-m5-ivf-100k.packet.json`
+- config_sha256: `9026fe6a87f42fe539fc39545efe1d605f47443b2e7c931f2a0165ca307d5d74`
+- dry_run: `false`
+- steps: completed 4, failed 0, skipped 4, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| load-real100k-n128-w500 | load | Skipped | - | `review/30183-task31-suite-candidate-run/artifacts/load_real100k_pqg8_n128_w500.log` |
+| recall10-nprobe-sweep-w500 | recall | Skipped | - | `review/30183-task31-suite-candidate-run/artifacts/recall10_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log` |
+| latency-nprobe-sweep-w500 | latency | Skipped | - | `review/30183-task31-suite-candidate-run/artifacts/latency_real100k_pqg8_n128_w500_p40_48_56_64_80_96.log` |
+| recall100-candidates-w500 | recall | Succeeded | 7572 | `review/30183-task31-suite-candidate-run/artifacts/recall100_real100k_pqg8_n128_w500_p80_96.log` |
+| recall100-candidates-w1000 | recall | Succeeded | 2979 | `review/30183-task31-suite-candidate-run/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log` |
+| latency-candidates-w1000 | latency | Succeeded | 2517 | `review/30183-task31-suite-candidate-run/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log` |
+| storage-real100k-n128 | storage | Skipped | - | `review/30183-task31-suite-candidate-run/artifacts/storage_real100k_pqg8_n128.log` |
+| explain-quality-candidate | explain | Succeeded | 40 | `review/30183-task31-suite-candidate-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql`<br>`review/30183-task31-suite-candidate-run/artifacts/explain_real100k_pqg8_n128_p96_w1000.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall100-candidates-w500 | recall | recall | `mean q-time=10.38 ms`, `ndcg@k=0.9988`, `nprobe=80`, `recall@k=0.9639` |
+| recall100-candidates-w500 | recall | recall | `mean q-time=11.11 ms`, `ndcg@k=0.9991`, `nprobe=96`, `recall@k=0.9676` |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=12.10 ms`, `ndcg@k=0.9994`, `nprobe=80`, `recall@k=0.9880` |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=13.35 ms`, `ndcg@k=0.9997`, `nprobe=96`, `recall@k=0.9920` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=16.2 ms`, `mean=11.4 ms`, `memory_samples=0`, `min=9.87 ms`, `nprobe=80`, `p50=11.4 ms`, `p95=12.1 ms`, `p99=12.9 ms`, `rss_peak_kb=0`, `stddev=0.68 ms` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=18.7 ms`, `mean=12.9 ms`, `memory_samples=0`, `min=11.4 ms`, `nprobe=96`, `p50=12.9 ms`, `p95=13.6 ms`, `p99=14.0 ms`, `rss_peak_kb=0`, `stddev=0.74 ms` |
+
+## Thresholds
+
+| Name | Status | Actual | Expected |
+| --- | --- | ---: | ---: |
+| quality-candidate-recall100-floor | pass | 0.992 | Gte 0.99 |
+| quality-candidate-p50-budget-ms | pass | 12.9 | Lte 15 |
+wrote review/30183-task31-suite-candidate-run/artifacts/results.jsonl
