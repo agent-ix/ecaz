@@ -2672,6 +2672,34 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_populated_build_publishes_root_control() {
+        Spi::run(
+            "CREATE TABLE ec_spire_populated_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_populated_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_populated_build_idx ON ec_spire_populated_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_populated_build_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 4);
+    }
+
+    #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

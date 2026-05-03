@@ -50,7 +50,7 @@ pub(crate) use self::ec_ivf::{
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::{
     debug_spire_empty_manifest_publish_roundtrip, debug_spire_relation_leaf_v2_roundtrip,
-    debug_spire_relation_object_tuple_roundtrip,
+    debug_spire_relation_object_tuple_roundtrip, debug_spire_root_control,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

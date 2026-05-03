@@ -192,3 +192,16 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
     unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
+    let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    (
+        root_control.active_epoch,
+        root_control.next_pid,
+        root_control.next_local_vec_seq,
+    )
+}

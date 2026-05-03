@@ -36,17 +36,19 @@ now write and read segmented V2 leaf metadata plus segment chains for local
 single-store placements, and implements the shared `SpireObjectReader`
 interface for future snapshot scan loading. Encoded manifest bundles can now be
 persisted as relation tuples and used to publish a new root/control active
-epoch. The publish coordinator now requires write evidence for object and
-placement stage transitions, and relation object pages guard root/control
-initialization, special-area reads, and FSM reuse. Assignment payload scoring
-now reuses the existing TurboQuant and
+epoch. Populated relation-backed builds now write routing objects, V2 leaf
+objects, durable placement-entry rows, and manifest bundles before advancing
+root/control to the active epoch. The publish coordinator now requires write
+evidence for object and placement stage transitions, and relation object pages
+guard root/control initialization, special-area reads, and FSM reuse.
+Assignment payload scoring now reuses the existing TurboQuant and
 RaBitQ quantizers behind a SPIRE-owned row scorer, while PQ-FastScan remains
 deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
 architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
-PostgreSQL relation-backed build/scan persistence remains intentionally
-unwired until that gate is cleared. Task 30 implements
+PostgreSQL relation-backed scan persistence remains intentionally unwired until
+relation-backed snapshot loading lands. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -247,7 +249,9 @@ Decision record:
   can now be written to relation tuples and published through root/control; the
   relation append/read helpers have initial reviewer hardening for stage
   evidence, root/control initialization, root/control special-area bounds, and
-  FSM reuse. Populated build integration remains open.
+  FSM reuse. Populated builds now persist one root routing object, one V2 leaf
+  object per centroid, durable placement-entry tuples, manifest bundles, and an
+  active root/control state for the initial strict local epoch.
 - [ ] **Build path.** Reuse IVF centroid training, PQ/RaBitQ/PQ-FastScan
   encoding where applicable, and write posting-list membership through leaf
   partition objects. The spherical k-means training helper is now factored into
@@ -261,10 +265,12 @@ Decision record:
   RaBitQ row payloads through the existing quantizer implementations and keeps
   PQ-FastScan explicit but blocked on persisted grouped-PQ model metadata. A
   source-vector helper now builds quantized leaf assignment inputs from heap
-  locators plus source vectors for future AM build/insert wiring. Live
-  relation-backed empty build now initializes the persisted root/control page
-  and rejects populated heap builds with an explicit not-implemented error;
-  populated relation-backed build writes remain blocked on object persistence.
+  locators plus source vectors for AM build wiring. Live relation-backed empty
+  build initializes the persisted root/control page. Live populated build now
+  collects heap rows, trains the single-level centroid plan using the build
+  sample setting, writes relation-backed routing and V2 leaf objects, persists
+  placement-entry locators, writes manifest bundles, and publishes the active
+  root/control state. Active-epoch scan loading remains open.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
@@ -295,8 +301,10 @@ Decision record:
   `ec_spire.nprobe` and `ec_spire.rerank_width`. These settings now resolve to
   a helper-level single-level scan plan carrying effective `nprobe`, assignment
   payload format, rerank width, and pre-rerank candidate limit, and the scan
-  helper now consumes that plan before live AM callback wiring. Option
-  consumption by live build/scan callbacks remains part of those open tasks.
+  helper now consumes that plan before live AM callback wiring. Live build now
+  consumes `nlists`, `training_sample_rows`, `seed`, and assignment
+  `storage_format` for populated index publication; live scan option
+  consumption remains part of the scan path task.
 - [ ] **Admin/diagnostics.** Expose centroid counts, assignment cardinality,
   leaf partition object counts, posting-list row counts, placement map state,
   quantizer profile, and build parameters. The foundation now has an internal
@@ -307,7 +315,9 @@ Decision record:
   reporting, and relation-backed admin reads remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
-  cardinality.
+  cardinality. Empty-build and populated-build publication now have PG18
+  coverage; active-epoch scan, insert-after-build, delete/vacuum cleanup, and
+  relation-backed cardinality diagnostics remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 

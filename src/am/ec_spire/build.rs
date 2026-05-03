@@ -11,11 +11,11 @@ use super::assign::{
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
-    SpireValidatedEpochSnapshot,
+    SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    SpireLeafPartitionObject, SpireLocalObjectStore, SpireRoutingChildEntry,
-    SpireRoutingPartitionObject,
+    SpireLeafPartitionObject, SpireLocalObjectStore, SpireRelationObjectStore,
+    SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
@@ -25,6 +25,9 @@ use crate::storage::page::ItemPointer;
 
 const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
 const SPIRE_DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
+const SPIRE_INITIAL_EPOCH: u64 = 1;
+const SPIRE_INITIAL_OBJECT_VERSION: u64 = 1;
+const MICROS_PER_SECOND: i64 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpireIndexedVectorKind {
@@ -890,6 +893,49 @@ impl SpireBuildState {
             .map(|index| self.tuples[index].source_vector.as_slice())
             .collect()
     }
+
+    fn assignment_inputs(&self) -> Vec<SpireLeafAssignmentInput> {
+        self.tuples
+            .iter()
+            .map(|tuple| tuple.assignment.clone())
+            .collect()
+    }
+
+    fn train_centroid_plan(&self) -> Result<SpireSingleLevelCentroidPlan, String> {
+        let dimensions = self
+            .dimensions
+            .ok_or_else(|| "ec_spire centroid training requires at least one tuple".to_owned())?;
+        let requested_nlists = u32::try_from(self.options.nlists)
+            .map_err(|_| "ec_spire nlists reloption must be non-negative".to_owned())?;
+        let nlists = common_training::resolve_auto_nlists(requested_nlists, self.tuples.len());
+        let sample_vectors = self.training_sample_vectors();
+        let model = common_training::train_spherical_kmeans(
+            "ec_spire",
+            &sample_vectors,
+            usize::from(dimensions),
+            nlists,
+            self.options.seed as u64,
+            SPIRE_DEFAULT_KMEANS_ITERATIONS,
+        )?;
+        let mut assignment_indexes = Vec::with_capacity(self.tuples.len());
+        for tuple in &self.tuples {
+            let centroid_index = common_training::assign_vector_to_centroid(
+                "ec_spire",
+                &tuple.source_vector,
+                &model,
+            )?;
+            assignment_indexes.push(
+                u32::try_from(centroid_index)
+                    .map_err(|_| "ec_spire centroid assignment index exceeds u32".to_owned())?,
+            );
+        }
+
+        Ok(SpireSingleLevelCentroidPlan {
+            dimensions,
+            centroids: model.centroids,
+            assignment_indexes,
+        })
+    }
 }
 
 fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
@@ -1097,6 +1143,135 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     Ok(draft)
 }
 
+unsafe fn publish_relation_partitioned_single_level_build(
+    index_relation: pg_sys::Relation,
+    state: &SpireBuildState,
+) -> Result<usize, String> {
+    if state.scanned_tuples == 0 {
+        return Ok(0);
+    }
+
+    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let epoch_manifest = SpireEpochManifest {
+        epoch: SPIRE_INITIAL_EPOCH,
+        state: SpireEpochState::Published,
+        consistency_mode: SpireConsistencyMode::Strict,
+        published_at_micros,
+        retain_until_micros,
+        active_query_count: 0,
+    };
+    epoch_manifest.validate()?;
+
+    let centroid_plan = state.train_centroid_plan()?;
+    let assignments = state.assignment_inputs();
+    let centroid_count = centroid_plan.centroid_count();
+    if assignments.len() != centroid_plan.assignment_indexes.len() {
+        return Err(format!(
+            "ec_spire populated build assignment count {} does not match centroid assignment count {}",
+            assignments.len(),
+            centroid_plan.assignment_indexes.len()
+        ));
+    }
+
+    let mut pid_allocator = SpirePidAllocator::default();
+    let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+    let root_pid = pid_allocator.allocate()?;
+    let mut centroid_pids = Vec::with_capacity(centroid_count);
+    for _ in 0..centroid_count {
+        centroid_pids.push(pid_allocator.allocate()?);
+    }
+    let route_map = SpireSingleLevelRouteMap::from_centroid_plan(&centroid_plan, &centroid_pids)?;
+    let routing_object = SpireRoutingPartitionObject::root(
+        root_pid,
+        SPIRE_INITIAL_OBJECT_VERSION,
+        centroid_plan.dimensions,
+        route_map
+            .entries
+            .iter()
+            .map(|entry| SpireRoutingChildEntry {
+                centroid_index: entry.centroid_index,
+                child_pid: entry.pid,
+                centroid: entry.centroid.clone(),
+            })
+            .collect(),
+    )?;
+
+    let mut assignments_by_centroid = vec![Vec::new(); centroid_count];
+    for (assignment, assignment_index) in assignments
+        .into_iter()
+        .zip(centroid_plan.assignment_indexes.iter().copied())
+    {
+        let centroid_index = usize::try_from(assignment_index)
+            .map_err(|_| "ec_spire centroid assignment index exceeds usize".to_owned())?;
+        let assignments = assignments_by_centroid.get_mut(centroid_index).ok_or_else(|| {
+            format!(
+                "ec_spire centroid assignment index {centroid_index} exceeds centroid count {centroid_count}"
+            )
+        })?;
+        assignments.push(assignment);
+    }
+
+    let mut leaf_assignments_by_centroid = Vec::with_capacity(centroid_count);
+    for assignments in assignments_by_centroid {
+        leaf_assignments_by_centroid.push(build_primary_leaf_assignments(
+            &mut local_vec_id_allocator,
+            assignments,
+        )?);
+    }
+
+    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let mut placements = Vec::with_capacity(centroid_count + 1);
+    placements.push(unsafe { store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)? });
+    for (pid, assignments) in centroid_pids
+        .iter()
+        .copied()
+        .zip(leaf_assignments_by_centroid.iter())
+    {
+        placements.push(unsafe {
+            store.insert_leaf_object_v2_from_rows(
+                SPIRE_INITIAL_EPOCH,
+                pid,
+                SPIRE_INITIAL_OBJECT_VERSION,
+                root_pid,
+                assignments,
+            )?
+        });
+    }
+    let placement_directory =
+        SpirePlacementDirectory::from_entries(SPIRE_INITIAL_EPOCH, placements)?;
+    let placement_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+    let object_manifest = object_manifest_from_placement_writes(
+        SPIRE_INITIAL_EPOCH,
+        &placement_directory,
+        &placement_evidence,
+    )?;
+
+    let input = SpirePublishCoordinatorInput {
+        epoch_manifest: &epoch_manifest,
+        object_manifest: &object_manifest,
+        placement_directory: &placement_directory,
+        next_pid: pid_allocator.next_pid(),
+        next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
+    };
+    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let root_control = root_control_state_for_publish(input, locators)?;
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    Ok(state.scanned_tuples)
+}
+
+unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+    let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+    let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
+        .checked_mul(MICROS_PER_SECOND)
+        .ok_or_else(|| "ec_spire epoch retention micros overflow".to_owned())?;
+    let retain_until_micros = published_at_micros
+        .checked_add(retention_micros)
+        .ok_or_else(|| "ec_spire epoch retain_until timestamp overflow".to_owned())?;
+    Ok((published_at_micros, retain_until_micros))
+}
+
 unsafe fn build_spire_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
@@ -1283,10 +1458,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             let index_tuples = if state.scanned_tuples == 0 {
                 0.0
             } else {
-                pgrx::error!(
-                    "ec_spire populated ambuild publish is not implemented yet; collected {} indexed tuples",
-                    state.scanned_tuples
-                )
+                publish_relation_partitioned_single_level_build(index_relation, &state)
+                    .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
+                    as f64
             };
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
@@ -1514,6 +1688,20 @@ mod tests {
         assert_eq!(state.training_sample_count(), 1);
         assert_eq!(state.training_sample_vectors().len(), 1);
         assert_eq!(resolve_training_sample_count(0, 12_000), 10_000);
+    }
+
+    #[test]
+    fn build_state_trains_centroid_plan_for_all_collected_rows() {
+        let mut state = SpireBuildState::new(options(1), SpireIndexedVectorKind::Ecvector);
+        state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(build_tuple(2, vec![0.0, 1.0])).unwrap();
+        state.try_push(build_tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state.train_centroid_plan().unwrap();
+
+        assert_eq!(plan.dimensions, 2);
+        assert_eq!(plan.centroid_count(), 2);
+        assert_eq!(plan.assignment_indexes.len(), 3);
     }
 
     #[test]
