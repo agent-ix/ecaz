@@ -99,9 +99,35 @@ Follow-up validation:
 - `git diff --cached --check`
   - clean
 
+## SQL Delta Follow-up
+
+- Follow-up code commit: `65f7dad0` (`Cover SPIRE scan placement SQL deltas`)
+- Extended `test_ec_spire_scan_placement_snapshot_sql` to insert into a built
+  `ec_spire` index and verify that
+  `ec_spire_index_scan_placement_snapshot` reports one scanned leaf PID plus
+  one scanned delta PID for the routed query.
+- The SQL test now asserts the post-insert split:
+  `scanned_pid_count = 2`, `leaf_pid_count = 1`, `delta_pid_count = 1`,
+  `candidate_row_count = 2`, `leaf_candidate_row_count = 1`,
+  `delta_candidate_row_count = 1`, and `delete_delta_row_count = 0`.
+
+SQL delta follow-up validation:
+
+- `cargo fmt`
+  - Completed; existing stable rustfmt warnings for unstable
+    `imports_granularity` / `group_imports`.
+- `cargo test --lib test_ec_spire_scan_placement_snapshot_sql --no-default-features --features pg18 -- --nocapture`
+  - `1 passed; 0 failed; 0 ignored; 0 measured; 1090 filtered out`
+- `cargo test --lib ec_spire --no-default-features --features pg18`
+  - `210 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out`
+- `git diff --check`
+  - clean
+- `git diff --cached --check`
+  - clean
+
 Remaining scope note:
 
-- No SQL-level delta/delete-delta scan-placement test was added in this
-  follow-up. The unit coverage now exercises the shared actual scan walker for
-  delete-delta suppression, and the SQL wrapper remains covered for the
-  no-delta local single-store path.
+- SQL-level delete-delta scan-placement coverage remains open. The current
+  public SQL lifecycle can create insert deltas directly; the available debug
+  vacuum helper compacts delete-delta state during cleanup, so it does not
+  leave a stable SQL-visible delete-delta placement snapshot to assert here.
