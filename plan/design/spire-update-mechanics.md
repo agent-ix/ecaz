@@ -30,9 +30,12 @@ The read-only trigger surface is `ec_spire_index_leaf_snapshot(index_oid)`.
 The first local rules are:
 
 - split candidate: effective assignments are at least
-  `max(32, 4 * ceil(total_effective_assignments / active_leaf_count))`
+  `max(SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS,
+  SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER *
+  ceil(total_effective_assignments / active_leaf_count))`
 - merge candidate: effective assignments are at or below
-  `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`
+  `floor(ceil(total_effective_assignments / active_leaf_count) /
+  SPIRE_LEAF_MERGE_AVERAGE_DIVISOR)`
 
 The scheduler should treat those rows as advisory. The concrete scheduler is
 not decided yet; viable first implementations are a manual

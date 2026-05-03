@@ -39,6 +39,10 @@ pub(super) const EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS: i32 = 10_000_000;
 pub(super) const EC_SPIRE_DEFAULT_SEED: i32 = 42;
 pub(super) const EC_SPIRE_MIN_SEED: i32 = 0;
 pub(super) const EC_SPIRE_MAX_SEED: i32 = i32::MAX;
+
+const SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER: u64 = 4;
+const SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS: u64 = 32;
+const SPIRE_LEAF_MERGE_AVERAGE_DIVISOR: u64 = 4;
 pub(super) const EC_SPIRE_DEFAULT_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_PQ_GROUP_SIZE: i32 = 32;
@@ -612,8 +616,10 @@ fn leaf_maintenance_thresholds(effective_total: u64, leaf_count: u64) -> (u64, u
         return (0, 0);
     }
     let average = effective_total.div_ceil(leaf_count);
-    let split_threshold = average.saturating_mul(4).max(32);
-    let merge_threshold = average / 4;
+    let split_threshold = average
+        .saturating_mul(SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER)
+        .max(SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS);
+    let merge_threshold = average / SPIRE_LEAF_MERGE_AVERAGE_DIVISOR;
     (split_threshold, merge_threshold)
 }
 
@@ -1965,6 +1971,13 @@ mod tests {
             retired_residue_row.cleanup_blocked_reason,
             "retained_retired_epoch"
         );
+    }
+
+    #[test]
+    fn leaf_maintenance_thresholds_use_named_split_merge_policy() {
+        assert_eq!(leaf_maintenance_thresholds(0, 0), (0, 0));
+        assert_eq!(leaf_maintenance_thresholds(2, 3), (32, 0));
+        assert_eq!(leaf_maintenance_thresholds(120, 3), (160, 10));
     }
 
     fn root_for_child(pid: u64, child_pid: u64) -> storage::SpireRoutingPartitionObject {

@@ -546,8 +546,10 @@ Decision record:
   schedules a split. SQL leaf diagnostics now expose per-leaf base, delta, and
   effective assignment counts. The first read-only trigger marks a leaf as a
   split candidate when its effective assignment count is at least
-  `max(32, 4 * ceil(total_effective_assignments / active_leaf_count))`; the
-  actual split scheduler remains open.
+  `max(SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS,
+  SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER *
+  ceil(total_effective_assignments / active_leaf_count))`; the actual split
+  scheduler remains open.
 - [x] **Merge trigger.** Define the sparse/low-quality partition threshold that
   schedules a merge. The first read-only trigger marks a leaf as a merge
   candidate when its effective assignment count is at or below
