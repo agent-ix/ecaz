@@ -153,7 +153,9 @@ Decision record:
   persisted scan callbacks consume leaf objects. Borrowed V1 row references and
   shared visibility predicates have landed, and the prepared assignment scorer
   now has a shape-checked batch scoring entry point for TurboQuant and RaBitQ.
-  V2 column views and scan migration remain open.
+  V2 leaf segments now expose borrowed column views plus row accessors over
+  flags, fixed-stride vec_ids, heap TIDs, gammas, and payload chunks. Scan
+  migration remains open.
 - [x] **Validated snapshot lookup cache.** Introduce a validated epoch snapshot
   wrapper with PID-indexed manifest/placement lookups. Internal scan, update,
   and diagnostics helpers should consume the wrapper instead of repeatedly

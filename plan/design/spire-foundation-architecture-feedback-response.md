@@ -154,6 +154,12 @@ now validates payload stride/counts and scores TurboQuant/RaBitQ payload chunks
 into caller-provided output storage. The scan path still uses row-at-a-time
 scoring until V2 column views are wired into leaf reads.
 
+Implementation checkpoint: decoded `LeafPartitionObjectV2` segments now expose
+borrowed column views over flags, fixed-stride vec_id bytes, heap TIDs, gammas,
+and payload chunks, plus bounds-checked row accessors for compatibility code.
+The view currently borrows from the decoded in-memory object; relation-backed
+buffer readers can later construct the same view directly over page bytes.
+
 ## Snapshot Lookup and Validation
 
 `SpirePublishedEpochSnapshot::new` remains the construction-time validation

@@ -64,6 +64,85 @@ impl SpireVecIdKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireLeafObjectColumnRowRef<'a> {
+    pub(super) row_index: u32,
+    pub(super) flags: u16,
+    pub(super) vec_id_bytes: &'a [u8],
+    pub(super) heap_tid: ItemPointer,
+    pub(super) gamma: f32,
+    pub(super) encoded_payload: &'a [u8],
+}
+
+impl SpireLeafObjectColumnRowRef<'_> {
+    pub(super) fn local_vec_seq(&self) -> Result<u64, String> {
+        decode_leaf_v2_local_vec_id(self.vec_id_bytes)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireLeafObjectColumns<'a> {
+    pub(super) header: SpirePartitionObjectHeader,
+    pub(super) payload_format: u8,
+    pub(super) payload_stride: usize,
+    pub(super) vec_id_kind: SpireVecIdKind,
+    pub(super) vec_id_stride: usize,
+    pub(super) row_base: u32,
+    pub(super) flags: &'a [u16],
+    pub(super) vec_ids: &'a [u8],
+    pub(super) heap_tids: &'a [ItemPointer],
+    pub(super) gammas: &'a [f32],
+    pub(super) payloads: &'a [u8],
+}
+
+impl<'a> SpireLeafObjectColumns<'a> {
+    pub(super) fn row_count(&self) -> usize {
+        self.flags.len()
+    }
+
+    pub(super) fn row(&self, row_offset: usize) -> Result<SpireLeafObjectColumnRowRef<'a>, String> {
+        if row_offset >= self.row_count() {
+            return Err(format!(
+                "ec_spire leaf V2 column row offset {row_offset} exceeds row count {}",
+                self.row_count()
+            ));
+        }
+        let row_offset_u32 = u32::try_from(row_offset)
+            .map_err(|_| "ec_spire leaf V2 column row offset exceeds u32".to_owned())?;
+        let row_index = self
+            .row_base
+            .checked_add(row_offset_u32)
+            .ok_or_else(|| "ec_spire leaf V2 column row index overflow".to_owned())?;
+        let vec_id_start = row_offset
+            .checked_mul(self.vec_id_stride)
+            .ok_or_else(|| "ec_spire leaf V2 column vec_id offset overflow".to_owned())?;
+        let vec_id_end = vec_id_start
+            .checked_add(self.vec_id_stride)
+            .ok_or_else(|| "ec_spire leaf V2 column vec_id end overflow".to_owned())?;
+        let payload_start = row_offset
+            .checked_mul(self.payload_stride)
+            .ok_or_else(|| "ec_spire leaf V2 column payload offset overflow".to_owned())?;
+        let payload_end = payload_start
+            .checked_add(self.payload_stride)
+            .ok_or_else(|| "ec_spire leaf V2 column payload end overflow".to_owned())?;
+
+        Ok(SpireLeafObjectColumnRowRef {
+            row_index,
+            flags: self.flags[row_offset],
+            vec_id_bytes: self
+                .vec_ids
+                .get(vec_id_start..vec_id_end)
+                .ok_or_else(|| "ec_spire leaf V2 column vec_id slice out of bounds".to_owned())?,
+            heap_tid: self.heap_tids[row_offset],
+            gamma: self.gammas[row_offset],
+            encoded_payload: self
+                .payloads
+                .get(payload_start..payload_end)
+                .ok_or_else(|| "ec_spire leaf V2 column payload slice out of bounds".to_owned())?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct SpireVecId {
     bytes: Vec<u8>,
@@ -786,6 +865,27 @@ impl SpireLeafPartitionObjectV2Segment {
         Ok(segment)
     }
 
+    pub(super) fn columns<'a>(
+        &'a self,
+        meta: &'a SpireLeafPartitionObjectV2Meta,
+    ) -> Result<SpireLeafObjectColumns<'a>, String> {
+        self.validate_against_meta(meta)?;
+        Ok(SpireLeafObjectColumns {
+            header: self.header,
+            payload_format: meta.payload_format,
+            payload_stride: usize::try_from(meta.payload_stride)
+                .map_err(|_| "ec_spire leaf V2 payload stride exceeds usize".to_owned())?,
+            vec_id_kind: meta.vec_id_kind,
+            vec_id_stride: usize::from(meta.vec_id_stride),
+            row_base: self.row_base,
+            flags: &self.flags,
+            vec_ids: &self.vec_ids,
+            heap_tids: &self.heap_tids,
+            gammas: &self.gammas,
+            payloads: &self.payloads,
+        })
+    }
+
     fn encode(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<Vec<u8>, String> {
         self.validate_against_meta(meta)?;
         let mut out = self
@@ -1044,6 +1144,14 @@ impl SpireLeafPartitionObjectV2 {
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn column_segments(&self) -> Result<Vec<SpireLeafObjectColumns<'_>>, String> {
+        self.validate()?;
+        self.segments
+            .iter()
+            .map(|segment| segment.columns(&self.meta))
+            .collect()
     }
 }
 
@@ -2217,7 +2325,7 @@ mod tests {
         is_visible_primary_assignment_ref, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
         SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
         SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+        SpireVecIdKind, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
         SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
@@ -2631,10 +2739,32 @@ mod tests {
         }
         assert_eq!(decoded_row_count, assignments.len());
 
+        let column_segments = decoded.column_segments().unwrap();
+        assert_eq!(column_segments.len(), decoded.segments.len());
+        assert_eq!(
+            column_segments[0].payload_format,
+            SPIRE_PAYLOAD_FORMAT_TURBOQUANT
+        );
+        assert_eq!(column_segments[0].payload_stride, 64);
+        assert_eq!(column_segments[0].vec_id_kind, SpireVecIdKind::LocalU64);
+        assert_eq!(column_segments[0].vec_id_stride, 16);
+        let first_row = column_segments[0].row(0).unwrap();
+        assert_eq!(first_row.row_index, 0);
+        assert_eq!(first_row.flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        assert_eq!(first_row.local_vec_seq().unwrap(), 1);
+        assert_eq!(first_row.heap_tid, assignments[0].heap_tid);
+        assert_eq!(first_row.gamma, assignments[0].gamma);
+        assert_eq!(first_row.encoded_payload, assignments[0].encoded_payload);
+
         let first_vec_id = decode_leaf_v2_local_vec_id(&decoded.segments[0].vec_ids[0..16])
             .expect("first local vec_id decodes");
         assert_eq!(first_vec_id, 1);
         let last = decoded.segments.last().expect("segments are present");
+        let last_columns = column_segments.last().expect("column segments are present");
+        let last_row = last_columns.row(last_columns.row_count() - 1).unwrap();
+        assert_eq!(last_row.local_vec_seq().unwrap(), 13);
+        assert_eq!(last_row.heap_tid, assignments[12].heap_tid);
+        assert!(last_columns.row(last_columns.row_count()).is_err());
         let last_vec_id_start = (last.flags.len() - 1) * 16;
         let last_vec_id =
             decode_leaf_v2_local_vec_id(&last.vec_ids[last_vec_id_start..last_vec_id_start + 16])
@@ -2657,6 +2787,7 @@ mod tests {
         assert_eq!(decoded.meta.first_segment_locator, ItemPointer::INVALID);
         assert_eq!(decoded.meta.payload_format, SPIRE_PAYLOAD_FORMAT_NONE);
         assert!(decoded.segments.is_empty());
+        assert!(decoded.column_segments().unwrap().is_empty());
     }
 
     #[test]
