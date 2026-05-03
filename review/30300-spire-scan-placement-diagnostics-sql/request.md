@@ -65,3 +65,43 @@ validation, recall/latency summary evidence, or PQ-FastScan scorer binding.
   only.
 - The scan placement counts are query-specific diagnostic rows, not a persistent
   scan telemetry store.
+
+## Reviewer Follow-up
+
+- Follow-up code commit: `6c6ce94a` (`Share SPIRE scan diagnostics walker`)
+- Addressed the main drift-risk feedback by replacing the diagnostic-only
+  manifest/visibility walkers with observer hooks on the real quantized routed
+  scan path.
+- `collect_validated_quantized_routed_probe_candidates` now accepts a routed
+  scan observer; normal scans use a no-op observer, while scan placement
+  diagnostics collect scanned leaf/delta PID counts, delete-delta rows, and
+  visible candidate-row counts from the same skip, header validation,
+  delete-delta, visibility, payload, scoring, and candidate-gating loops used
+  by the actual scan.
+- Removed the old `collect_delta_scan_diagnostics_for_base_pid`,
+  `collect_leaf_scan_candidate_diagnostics_for_pid`, and
+  `store_scan_diagnostics_entry` diagnostic-only walkers.
+- Added coverage for the `nprobe == 0` empty-diagnostics path, stale
+  `scan_plan.leaf_count` rejection, and degraded-mode `Unavailable` leaf
+  skipping.
+
+Follow-up validation:
+
+- `cargo fmt`
+  - Completed; existing stable rustfmt warnings for unstable
+    `imports_granularity` / `group_imports`.
+- `cargo test --lib collect_scan_placement_diagnostics --no-default-features --features pg18`
+  - `2 passed; 0 failed; 0 ignored; 0 measured; 1089 filtered out`
+- `cargo test --lib ec_spire --no-default-features --features pg18`
+  - `210 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out`
+- `git diff --check`
+  - clean
+- `git diff --cached --check`
+  - clean
+
+Remaining scope note:
+
+- No SQL-level delta/delete-delta scan-placement test was added in this
+  follow-up. The unit coverage now exercises the shared actual scan walker for
+  delete-delta suppression, and the SQL wrapper remains covered for the
+  no-delta local single-store path.
