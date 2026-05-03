@@ -54,12 +54,13 @@ an empty active epoch can bootstrap a strict one-leaf root/leaf epoch. Vacuum
 can now publish strict row-encoded delete-delta epochs for
 callback-dead visible assignments, and live scans suppress base and
 delta-insert candidates whose `vec_id`s are covered by a routed delete delta;
-the first SQL diagnostics surface now exposes active epoch/object/placement
-cardinality through `ec_spire_index_active_snapshot_diagnostics`, and relation
-build/scan options through `ec_spire_index_options_snapshot`. PQ-FastScan
-scorer binding, richer SQL/admin summaries, physical object
-cleanup/compaction, and full SQL VACUUM end-to-end coverage remain open. Task
-30 implements
+vacuum cleanup can now compact active delta objects into replacement V2 base
+leaves while removing delta placements from the active directory. The first
+SQL diagnostics surface now exposes active epoch/object/placement cardinality
+through `ec_spire_index_active_snapshot_diagnostics`, and relation build/scan
+options through `ec_spire_index_options_snapshot`. PQ-FastScan scorer binding,
+richer SQL/admin summaries, physical object reclamation/old-epoch cleanup, and
+full SQL VACUUM end-to-end coverage remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -351,8 +352,9 @@ Decision record:
   coverage; the SQL active-snapshot diagnostics surface now has focused PG18
   coverage for empty and insert-populated active epochs, and the SQL options
   snapshot surface has focused PG18 coverage for reloptions plus session
-  overrides. Physical cleanup/compaction and real SQL VACUUM end-to-end
-  coverage remain open.
+  overrides. Vacuum cleanup compaction of active delta objects into replacement
+  V2 base leaves now has focused PG18 coverage; physical page reclamation,
+  old-epoch cleanup, and real SQL VACUUM end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -367,14 +369,17 @@ Decision record:
   include routed delta inserts in live scans. The first insert into an empty
   active epoch now publishes epoch 1 with a one-child root routing object and a
   V2 base leaf using the inserted vector as the bootstrap centroid; later
-  inserts use the delta epoch path. Batching and compaction remain open.
+  inserts use the delta epoch path. Vacuum cleanup can now compact active delta
+  epochs into replacement V2 base leaves; insert batching remains open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
   groups callback-dead heap locators by base leaf PID, writes row-encoded
   delete-delta objects, publishes a replacement active epoch, and makes routed
-  scans suppress covered `vec_id`s. Physical cleanup, compaction into new V2
-  base objects, and full SQL VACUUM end-to-end coverage remain open.
+  scans suppress covered `vec_id`s. `amvacuumcleanup` now compacts active delta
+  objects into replacement V2 base leaves and removes delta objects from the
+  active placement directory; physical page reclamation/old-epoch cleanup and
+  full SQL VACUUM end-to-end coverage remain open.
 - [ ] **Split trigger.** Define the partition growth/drift threshold that
   schedules a split.
 - [ ] **Merge trigger.** Define the sparse/low-quality partition threshold that

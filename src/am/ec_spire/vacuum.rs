@@ -16,7 +16,7 @@ use super::meta::{SpireEpochManifest, SpireEpochState, SpirePlacementDirectory};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
     SpireLeafAssignmentRow, SpireObjectReader, SpirePartitionObjectKind, SpireRelationObjectStore,
-    SpireVecId,
+    SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::{page, scan};
 use crate::storage::page::ItemPointer;
@@ -38,11 +38,10 @@ impl Drop for RelationLockGuard {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct VacuumVisibleAssignment {
     base_pid: u64,
-    vec_id: SpireVecId,
-    heap_tid: ItemPointer,
+    assignment: SpireLeafAssignmentRow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,11 +90,23 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
                 pgrx::error!("ec_spire amvacuumcleanup requires vacuum info")
             }
             let index_relation = (*info).index;
-            let live_count = collect_live_assignment_count(index_relation)
+            let live_count = run_vacuum_cleanup(index_relation)
                 .unwrap_or_else(|e| pgrx::error!("ec_spire vacuum cleanup stats failed: {e}"));
             finish_vacuum_stats(index_relation, stats, live_count, 0)
         })
     }
+}
+
+unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
+    let _guard = unsafe { lock_vacuum_publish_relation(index_relation) };
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch == 0 {
+        return Ok(0);
+    }
+    if unsafe { publish_compacted_delta_epoch_if_needed(index_relation, root_control)? } {
+        return collect_live_assignment_count(index_relation);
+    }
+    collect_live_assignment_count(index_relation)
 }
 
 unsafe fn lock_vacuum_publish_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
@@ -132,13 +143,13 @@ unsafe fn run_bulkdelete(
     let visible = collect_visible_assignments(&active_snapshot, &store)?;
     let mut deletes_by_base_pid: HashMap<u64, Vec<SpireDeleteDeltaInput>> = HashMap::new();
     for assignment in &visible {
-        if unsafe { heap_tid_is_dead(assignment.heap_tid, callback, callback_state) } {
+        if unsafe { heap_tid_is_dead(assignment.assignment.heap_tid, callback, callback_state) } {
             deletes_by_base_pid
                 .entry(assignment.base_pid)
                 .or_default()
                 .push(SpireDeleteDeltaInput {
-                    vec_id: assignment.vec_id.clone(),
-                    heap_tid: assignment.heap_tid,
+                    vec_id: assignment.assignment.vec_id.clone(),
+                    heap_tid: assignment.assignment.heap_tid,
                 });
         }
     }
@@ -219,8 +230,7 @@ fn collect_visible_assignments(
                     }
                     visible.push(VacuumVisibleAssignment {
                         base_pid: manifest_entry.pid,
-                        vec_id: assignment.vec_id,
-                        heap_tid: assignment.heap_tid,
+                        assignment,
                     });
                 }
             }
@@ -236,8 +246,7 @@ fn collect_visible_assignments(
                     }
                     visible.push(VacuumVisibleAssignment {
                         base_pid: header.parent_pid,
-                        vec_id: assignment.vec_id,
-                        heap_tid: assignment.heap_tid,
+                        assignment,
                     });
                 }
             }
@@ -246,6 +255,145 @@ fn collect_visible_assignments(
     }
 
     Ok(visible)
+}
+
+unsafe fn publish_compacted_delta_epoch_if_needed(
+    index_relation: pg_sys::Relation,
+    root_control: super::meta::SpireRootControlState,
+) -> Result<bool, String> {
+    let (active_epoch_manifest, object_manifest, placement_directory) =
+        unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+    let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
+        &active_epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let snapshot = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
+    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+
+    let mut affected_base_pids = HashSet::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "vacuum compaction delta")?;
+        let header = store.read_object_header(lookup.placement)?;
+        if header.kind == SpirePartitionObjectKind::Delta {
+            affected_base_pids.insert(header.parent_pid);
+        }
+    }
+    if affected_base_pids.is_empty() {
+        return Ok(false);
+    }
+
+    let mut compact_rows_by_base_pid: HashMap<u64, Vec<SpireLeafAssignmentRow>> = HashMap::new();
+    for visible in collect_visible_assignments(&active_snapshot, &store)? {
+        if !affected_base_pids.contains(&visible.base_pid) {
+            continue;
+        }
+        let mut assignment = visible.assignment;
+        assignment.flags &= !SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+        compact_rows_by_base_pid
+            .entry(visible.base_pid)
+            .or_default()
+            .push(assignment);
+    }
+
+    let new_epoch = root_control
+        .active_epoch
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire vacuum compaction epoch overflow".to_owned())?;
+    let (published_at_micros, retain_until_micros) =
+        unsafe { build::current_epoch_publish_times()? };
+    let pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+    let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
+
+    let mut placement_entries = Vec::with_capacity(placement_directory.entries.len());
+    let mut compacted_base_pids = HashSet::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "vacuum compaction object")?;
+        let placement = lookup.placement;
+        let header = store.read_object_header(placement)?;
+        match header.kind {
+            SpirePartitionObjectKind::Delta => {}
+            SpirePartitionObjectKind::Leaf if affected_base_pids.contains(&header.pid) => {
+                let rows = compact_rows_by_base_pid
+                    .remove(&header.pid)
+                    .unwrap_or_default();
+                let object_version =
+                    manifest_entry
+                        .object_version
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            format!(
+                                "ec_spire vacuum compaction object version overflow for pid {}",
+                                header.pid
+                            )
+                        })?;
+                placement_entries.push(unsafe {
+                    store.insert_leaf_object_v2_from_rows(
+                        new_epoch,
+                        header.pid,
+                        object_version,
+                        header.parent_pid,
+                        &rows,
+                    )?
+                });
+                compacted_base_pids.insert(header.pid);
+            }
+            SpirePartitionObjectKind::Root
+            | SpirePartitionObjectKind::Internal
+            | SpirePartitionObjectKind::Leaf => {
+                let mut carried = placement.clone();
+                carried.epoch = new_epoch;
+                placement_entries.push(carried);
+            }
+        }
+    }
+
+    if compacted_base_pids != affected_base_pids {
+        let missing = affected_base_pids
+            .difference(&compacted_base_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "ec_spire vacuum compaction delta parent pids do not all reference active leaves: {missing:?}"
+        ));
+    }
+    if !compact_rows_by_base_pid.is_empty() {
+        let leftover = compact_rows_by_base_pid.keys().copied().collect::<Vec<_>>();
+        return Err(format!(
+            "ec_spire vacuum compaction had leftover rows for base pids: {leftover:?}"
+        ));
+    }
+
+    let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
+    let placement_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+    let object_manifest = object_manifest_from_placement_writes(
+        new_epoch,
+        &placement_directory,
+        &placement_evidence,
+    )?;
+    let epoch_manifest = SpireEpochManifest {
+        epoch: new_epoch,
+        state: SpireEpochState::Published,
+        consistency_mode: active_epoch_manifest.consistency_mode,
+        published_at_micros,
+        retain_until_micros,
+        active_query_count: 0,
+    };
+    epoch_manifest.validate()?;
+
+    let input = SpirePublishCoordinatorInput {
+        epoch_manifest: &epoch_manifest,
+        object_manifest: &object_manifest,
+        placement_directory: &placement_directory,
+        next_pid: pid_allocator.next_pid(),
+        next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
+    };
+    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let root_control = root_control_state_for_publish(input, locators)?;
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    Ok(true)
 }
 
 fn collect_delete_vec_ids_by_base_pid(

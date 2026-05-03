@@ -3125,9 +3125,23 @@ mod tests {
         assert_eq!(stats.num_index_tuples, 1.0);
         let (active_epoch, next_pid, next_local_vec_seq) =
             unsafe { am::debug_spire_root_control(index_oid) };
-        assert_eq!(active_epoch, 2);
+        assert_eq!(active_epoch, 3);
         assert_eq!(next_pid, 5);
         assert_eq!(next_local_vec_seq, 3);
+        let leaf_assignment_count = Spi::get_one::<i64>(
+            "SELECT leaf_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_vacuum_delta_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_vacuum_delta_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        assert_eq!(leaf_assignment_count, 1);
+        assert_eq!(delta_object_count, 0);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
         let first_id = Spi::get_one::<i64>(
