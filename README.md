@@ -7,10 +7,24 @@
 />
 
 Ecaz is a PostgreSQL extension written in Rust with a focus on performant,
-highly scalable vector storage and retrieval. It aims to support a broad range of quantization and
-index options rather than a single fixed architecture. Current index families
-include HNSW (`ec_hnsw`), IVF (`ec_ivf`), and DiskANN/Vamana-style graphs
-(`ec_diskann`).
+highly scalable vector storage and retrieval. It aims to support a broad range
+of quantization and index options rather than a single fixed architecture.
+
+#### Column Types
+
+- `ecvector(dim)` — canonical vector row type
+- `tqvector` — TurboQuant quantized vector storage
+
+#### Quantization Types
+
+- `turboquant` — default; suitable for small and medium indexes
+- `pq_fastscan` — grouped hot path with colder rerank payload; for latency-critical workloads
+
+#### Index Families
+
+- `ec_hnsw` — HNSW graph index (general-purpose default)
+- `ec_ivf` — IVF posting-list index
+- `ec_diskann` — DiskANN/Vamana-style graph index
 
 ## This software was written 100% by AI
 
@@ -58,11 +72,6 @@ SELECT * FROM memories
 ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
 ```
-
-`tqvector` is not the canonical row type. It is a family-specific TurboQuant
-artifact surface for explicit tests, tooling, and debugging. Future persisted
-quantized families should add their own family-specific sibling types rather
-than overloading `ecvector`.
 
 ## Choosing An Index
 
