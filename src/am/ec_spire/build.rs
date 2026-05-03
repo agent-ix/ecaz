@@ -25,8 +25,8 @@ use crate::storage::page::ItemPointer;
 
 const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
 const SPIRE_DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
-const SPIRE_INITIAL_EPOCH: u64 = 1;
-const SPIRE_INITIAL_OBJECT_VERSION: u64 = 1;
+pub(super) const SPIRE_INITIAL_EPOCH: u64 = 1;
+pub(super) const SPIRE_INITIAL_OBJECT_VERSION: u64 = 1;
 const MICROS_PER_SECOND: i64 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

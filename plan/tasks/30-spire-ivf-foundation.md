@@ -49,13 +49,14 @@ architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
 PostgreSQL relation-backed build, initial quantized scan with heap rerank, and
 active snapshot cardinality diagnostics now have a strict single-store path,
-and post-build inserts can publish strict delta epochs, while empty-index
-insert bootstrap, PQ-FastScan scorer binding, and SQL/admin exposure remain
-open. Vacuum can now publish strict row-encoded delete-delta epochs for
+post-build inserts can publish strict delta epochs, and the first insert into
+an empty active epoch can bootstrap a strict one-leaf root/leaf epoch. Vacuum
+can now publish strict row-encoded delete-delta epochs for
 callback-dead visible assignments, and live scans suppress base and
 delta-insert candidates whose `vec_id`s are covered by a routed delete delta;
-physical object cleanup/compaction and full SQL VACUUM end-to-end coverage
-remain open. Task 30 implements
+PQ-FastScan scorer binding, SQL/admin exposure, physical object
+cleanup/compaction, and full SQL VACUUM end-to-end coverage remain open. Task
+30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -334,9 +335,11 @@ Decision record:
   now exercises relation-backed active snapshot cardinality diagnostics and
   live `ecvector` heap rerank, and a separate populated `tqvector` test covers
   the decoded heap-rerank branch. Insert-after-build delta publication now has
-  focused PG18 coverage. Vacuum delete-delta publication and routed scan
-  suppression now have focused PG18 coverage; physical cleanup/compaction and
-  real SQL VACUUM end-to-end coverage remain open.
+  focused PG18 coverage, and empty-index insert bootstrap now has focused PG18
+  coverage for first-epoch publication plus a second delta insert. Vacuum
+  delete-delta publication and routed scan suppression now have focused PG18
+  coverage; physical cleanup/compaction and real SQL VACUUM end-to-end coverage
+  remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -348,8 +351,10 @@ Decision record:
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
   write a row-encoded `DELTA_INSERT` object, publish a new active epoch, and
-  include routed delta inserts in live scans. Empty-index insert bootstrap,
-  batching, and compaction remain open.
+  include routed delta inserts in live scans. The first insert into an empty
+  active epoch now publishes epoch 1 with a one-child root routing object and a
+  V2 base leaf using the inserted vector as the bootstrap centroid; later
+  inserts use the delta epoch path. Batching and compaction remain open.
 - [ ] **Delete/vacuum path.** Remove dead assignment rows and posting-list
   entries without breaking scan invariants. The first strict local path now
   runs `ambulkdelete` callbacks over visible base and delta-insert assignments,
