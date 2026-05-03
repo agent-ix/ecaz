@@ -489,7 +489,11 @@ Decision record:
   now have focused PG18 coverage for repeated same-leaf post-build inserts,
   and PG18 external-session coverage now exercises concurrent same-leaf
   post-build inserts through serialized delta epoch publication plus
-  index-routed visibility for both inserted rows.
+  index-routed visibility for both inserted rows. PG18 external-session
+  coverage now also exercises a heterogeneous insert, SQL VACUUM, and routed
+  scan workload released through the same advisory barrier, asserting the final
+  epoch counters and live/deleted-row visibility remain coherent for either
+  writer order.
   Hierarchy SQL diagnostics now have focused PG18 coverage for empty and
   populated local single-store indexes. Object SQL diagnostics now have
   focused PG18 coverage for empty, populated, and post-insert delta active

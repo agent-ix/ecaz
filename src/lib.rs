@@ -5885,6 +5885,143 @@ mod tests {
         assert_eq!(inserted_row_returned, 1);
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_concurrent_insert_vacuum_scan() {
+        const TABLE_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan";
+        const INDEX_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan_idx";
+        // Test-unique advisory-lock id; conventionally `<review-packet>0`.
+        const BARRIER_KEY: i64 = 303_520;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire heterogeneous concurrency setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 1);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (2, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42));
+                 DELETE FROM {TABLE_NAME} WHERE id = 1;",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let barrier_sql = format!(
+            "SET lock_timeout = '10s';
+             SET statement_timeout = '30s';
+             SELECT pg_advisory_lock_shared({BARRIER_KEY});
+             SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
+        );
+        let workers = vec![
+            (
+                "spire heterogeneous insert worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous insert worker",
+                    &[
+                        barrier_sql.clone(),
+                        format!(
+                            "INSERT INTO {TABLE_NAME} (id, embedding)
+                             VALUES (3, encode_to_ecvector(ARRAY[1.0, 0.2], 4, 42));"
+                        ),
+                    ],
+                ),
+            ),
+            (
+                "spire heterogeneous vacuum worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous vacuum worker",
+                    &[barrier_sql.clone(), format!("VACUUM {TABLE_NAME};")],
+                ),
+            ),
+            (
+                "spire heterogeneous scan worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous scan worker",
+                    &[
+                        barrier_sql,
+                        format!(
+                            "SET enable_seqscan = off;
+                             SELECT count(*) FROM (
+                                 SELECT id FROM {TABLE_NAME}
+                                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[]
+                                 LIMIT 3
+                             ) ranked;"
+                        ),
+                        format!(
+                            "SELECT count(*) FROM (
+                                 SELECT id FROM {TABLE_NAME}
+                                 ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[]
+                                 LIMIT 3
+                             ) ranked;"
+                        ),
+                    ],
+                ),
+            ),
+        ];
+        wait_for_advisory_lock_waiters(BARRIER_KEY, 3);
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = index_oid(INDEX_NAME);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(heap_count, 2);
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+
+        let leaf_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "leaf_assignment_count");
+        let delta_object_count = ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count");
+        let delta_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count");
+        assert_eq!(leaf_assignment_count + delta_assignment_count, 3);
+        assert!(delta_object_count <= 1);
+        assert!(delta_assignment_count <= 1);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 3 \
+             ) ranked WHERE id = 1"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let visible_live_rows = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[] \
+                 LIMIT 3 \
+             ) ranked WHERE id IN (2, 3)"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(visible_live_rows, 2);
+    }
+
     #[pg_test]
     fn test_ec_spire_relation_object_tuple_roundtrip() {
         Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
@@ -6113,6 +6250,22 @@ mod tests {
         psql_command(connection)
             .arg("-c")
             .arg(sql)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"))
+    }
+
+    fn spawn_psql_commands(
+        connection: &PsqlTestConnection,
+        label: &str,
+        sql_commands: &[String],
+    ) -> Child {
+        let mut command = psql_command(connection);
+        for sql in sql_commands {
+            command.arg("-c").arg(sql);
+        }
+        command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
