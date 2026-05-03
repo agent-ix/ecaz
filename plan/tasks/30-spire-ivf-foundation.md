@@ -197,7 +197,9 @@ Decision record:
   object validators check header identity directly, and encoders reuse the
   post-validation encode path. Placement entries now have explicit local
   single-store constructors for available, stale, unavailable, and skipped
-  states.
+  states. PID and local vec_id allocators now expose non-mutating
+  near-exhaustion diagnostics, with a root/control helper that reports both
+  cursors from persisted allocator state.
 - [x] **Leaf assignment rows.** Implement logical `(vec_id, pid)` assignment
   rows inside leaf partition objects with one row per vector in the initial
   single-level path. Foundation codecs and draft builders now store validated

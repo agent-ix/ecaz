@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
+use super::assign::{
+    SpireAllocatorExhaustionDiagnostics, SpireLocalVecIdAllocator, SpirePidAllocator,
+};
 use super::meta::{
-    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot,
+    SpireConsistencyMode, SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     SpireValidatedEpochSnapshot,
 };
 use super::storage::{SpireLocalObjectStore, SpirePartitionObjectKind};
@@ -25,6 +28,24 @@ pub(super) struct SpireSnapshotDiagnostics {
     pub(super) leaf_assignment_count: usize,
     pub(super) delta_assignment_count: usize,
     pub(super) available_object_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireAllocatorDiagnostics {
+    pub(super) pid: SpireAllocatorExhaustionDiagnostics,
+    pub(super) local_vec_id: SpireAllocatorExhaustionDiagnostics,
+}
+
+pub(super) fn collect_allocator_diagnostics(
+    root_control: &SpireRootControlState,
+    warn_within: u64,
+) -> Result<SpireAllocatorDiagnostics, String> {
+    let pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+    let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
+    Ok(SpireAllocatorDiagnostics {
+        pid: pid_allocator.exhaustion_diagnostics(warn_within),
+        local_vec_id: local_vec_id_allocator.exhaustion_diagnostics(warn_within),
+    })
 }
 
 pub(super) fn collect_snapshot_diagnostics(
@@ -108,7 +129,7 @@ pub(super) fn collect_snapshot_diagnostics(
 
 #[cfg(test)]
 mod tests {
-    use super::collect_snapshot_diagnostics;
+    use super::{collect_allocator_diagnostics, collect_snapshot_diagnostics};
     use crate::am::ec_spire::assign::{
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_PID,
     };
@@ -118,7 +139,7 @@ mod tests {
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpirePlacementDirectory,
-        SpirePlacementState, SpirePublishedEpochSnapshot,
+        SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::storage::page::ItemPointer;
@@ -155,6 +176,28 @@ mod tests {
                 assignment_indexes: vec![0, 1],
             },
         }
+    }
+
+    #[test]
+    fn allocator_diagnostics_uses_root_control_cursors() {
+        let root_control = SpireRootControlState::published(
+            7,
+            u64::MAX - 3,
+            u64::MAX - 2,
+            tid(70, 1),
+            tid(70, 2),
+            tid(70, 3),
+        )
+        .unwrap();
+
+        let diagnostics = collect_allocator_diagnostics(&root_control, 3).unwrap();
+
+        assert_eq!(diagnostics.pid.next_value, u64::MAX - 3);
+        assert_eq!(diagnostics.pid.remaining_allocations, 3);
+        assert!(diagnostics.pid.near_exhaustion);
+        assert_eq!(diagnostics.local_vec_id.next_value, u64::MAX - 2);
+        assert_eq!(diagnostics.local_vec_id.remaining_allocations, 2);
+        assert!(diagnostics.local_vec_id.near_exhaustion);
     }
 
     #[test]

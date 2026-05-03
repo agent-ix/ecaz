@@ -313,6 +313,10 @@ Implementation checkpoint: local single-store placement entries now expose
 explicit constructors for `Available`, `Stale`, `Unavailable`, and `Skipped`
 states. Existing single-store object writes use the available constructor.
 
+Implementation checkpoint: PID and local vec_id allocators now expose
+non-mutating near-exhaustion diagnostics. The diagnostics module can derive both
+allocator statuses from root/control cursors without advancing either sequence.
+
 ## Required Slice Order
 
 1. Implement V2 segmented columnar leaf codecs and borrowed views.

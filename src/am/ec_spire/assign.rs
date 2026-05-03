@@ -11,6 +11,24 @@ pub(super) const SPIRE_FIRST_PID: u64 = 1;
 pub(super) const SPIRE_FIRST_LOCAL_VEC_SEQ: u64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireAllocatorExhaustionDiagnostics {
+    pub(super) next_value: u64,
+    pub(super) remaining_allocations: u64,
+    pub(super) near_exhaustion: bool,
+}
+
+impl SpireAllocatorExhaustionDiagnostics {
+    fn from_next_value(next_value: u64, warn_within: u64) -> Self {
+        let remaining_allocations = u64::MAX.saturating_sub(next_value);
+        Self {
+            next_value,
+            remaining_allocations,
+            near_exhaustion: remaining_allocations <= warn_within,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpirePidAllocator {
     next_pid: u64,
 }
@@ -33,6 +51,13 @@ impl SpirePidAllocator {
 
     pub(super) fn next_pid(&self) -> u64 {
         self.next_pid
+    }
+
+    pub(super) fn exhaustion_diagnostics(
+        &self,
+        warn_within: u64,
+    ) -> SpireAllocatorExhaustionDiagnostics {
+        SpireAllocatorExhaustionDiagnostics::from_next_value(self.next_pid, warn_within)
     }
 
     pub(super) fn allocate(&mut self) -> Result<u64, String> {
@@ -81,6 +106,13 @@ impl SpireLocalVecIdAllocator {
 
     pub(super) fn next_local_vec_seq(&self) -> u64 {
         self.next_local_vec_seq
+    }
+
+    pub(super) fn exhaustion_diagnostics(
+        &self,
+        warn_within: u64,
+    ) -> SpireAllocatorExhaustionDiagnostics {
+        SpireAllocatorExhaustionDiagnostics::from_next_value(self.next_local_vec_seq, warn_within)
     }
 
     pub(super) fn allocate(&mut self) -> Result<SpireVecId, String> {
@@ -284,6 +316,18 @@ mod tests {
     }
 
     #[test]
+    fn pid_allocator_reports_near_exhaustion_status() {
+        let allocator = SpirePidAllocator::new(u64::MAX - 5).unwrap();
+
+        let diagnostics = allocator.exhaustion_diagnostics(10);
+
+        assert_eq!(diagnostics.next_value, u64::MAX - 5);
+        assert_eq!(diagnostics.remaining_allocations, 5);
+        assert!(diagnostics.near_exhaustion);
+        assert!(!allocator.exhaustion_diagnostics(4).near_exhaustion);
+    }
+
+    #[test]
     fn allocator_rejects_zero_next_sequence() {
         assert!(SpireLocalVecIdAllocator::new(0).is_err());
     }
@@ -326,6 +370,18 @@ mod tests {
         assert_eq!(allocator.next_local_vec_seq(), u64::MAX);
         assert!(allocator.observe(&SpireVecId::local(u64::MAX)).is_err());
         assert_eq!(allocator.next_local_vec_seq(), u64::MAX);
+    }
+
+    #[test]
+    fn local_vec_id_allocator_reports_near_exhaustion_status() {
+        let allocator = SpireLocalVecIdAllocator::new(u64::MAX - 2).unwrap();
+
+        let diagnostics = allocator.exhaustion_diagnostics(2);
+
+        assert_eq!(diagnostics.next_value, u64::MAX - 2);
+        assert_eq!(diagnostics.remaining_allocations, 2);
+        assert!(diagnostics.near_exhaustion);
+        assert!(!allocator.exhaustion_diagnostics(1).near_exhaustion);
     }
 
     #[test]
