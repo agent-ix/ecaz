@@ -3,6 +3,8 @@
 ## Checkpoint
 
 - Code commit: `c8edc1ea` (`Expose SPIRE root routing diagnostics`)
+- Feedback response commit: `6ff7fd33`
+  (`Address SPIRE root routing review nits`)
 - Branch: `task30-spire-partition-object-spec`
 - Task: Task 30 SPIRE IVF foundation
 - Scope: active root routing diagnostics for relation-backed `ec_spire`
@@ -60,3 +62,31 @@ PQ-FastScan scorer binding.
   only.
 - The root routing rows are active snapshot diagnostics, not persistent query
   telemetry and not PostgreSQL declarative table partition metadata.
+
+## Feedback Response
+
+Reviewer feedback in `feedback.md` requested a checked root child-count
+conversion, a short note explaining why the root search walks the whole
+manifest, and a trivial assertion for `child_store_relid`. Response commit
+`6ff7fd33`:
+
+- Replaced the `usize` to `u64` cast for `root_child_count` with
+  `u64::try_from(...)` and an explicit diagnostic error.
+- Added a short comment that the manifest walk intentionally continues so
+  malformed multiple-root epochs are reported.
+- Extended the SQL test to assert the local single-store fixture reports one
+  distinct `child_store_relid`.
+
+Additional validation for `6ff7fd33`:
+
+- `cargo fmt`
+  - Completed; existing stable rustfmt warnings for unstable
+    `imports_granularity` / `group_imports`.
+- `cargo test --lib test_ec_spire_root_routing_snapshot_sql --no-default-features --features pg18 -- --nocapture`
+  - `1 passed; 0 failed; 0 ignored; 0 measured; 1094 filtered out`
+- `cargo test --lib ec_spire --no-default-features --features pg18`
+  - `214 passed; 0 failed; 0 ignored; 0 measured; 881 filtered out`
+- `git diff --check`
+  - clean
+- `git diff --cached --check`
+  - clean before response commit
