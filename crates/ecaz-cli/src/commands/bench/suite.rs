@@ -145,6 +145,8 @@ struct ThresholdConfig {
     name: String,
     step: String,
     metric: String,
+    #[serde(default)]
+    filters: BTreeMap<String, String>,
     field: String,
     op: ThresholdOp,
     value: f64,
@@ -376,6 +378,8 @@ struct ThresholdResult {
     name: String,
     step: String,
     metric: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    filters: BTreeMap<String, String>,
     field: String,
     op: ThresholdOp,
     expected: f64,
@@ -781,6 +785,13 @@ fn step_selected(step: &SuiteStep, args: &SuiteRunOptions) -> bool {
 
 async fn apply_resume(manifest: &mut SuiteManifest, resume_from: &Path) -> Result<()> {
     let previous = load_manifest(resume_from).await?;
+    if previous.config_sha256 != manifest.config_sha256 {
+        bail!(
+            "resume manifest config hash {} does not match current config hash {}",
+            previous.config_sha256,
+            manifest.config_sha256
+        );
+    }
     let previous_by_name: HashMap<_, _> = previous
         .steps
         .into_iter()
@@ -792,6 +803,12 @@ async fn apply_resume(manifest: &mut SuiteManifest, resume_from: &Path) -> Resul
         }
         if let Some(previous) = previous_by_name.get(&step.name) {
             if matches!(previous.status, Some(StepStatus::Succeeded)) {
+                if previous.command != step.command {
+                    bail!(
+                        "resume step {:?} command differs from current expanded command",
+                        step.name
+                    );
+                }
                 step.status = previous.status;
                 step.started_at_unix_ms = previous.started_at_unix_ms;
                 step.finished_at_unix_ms = previous.finished_at_unix_ms;
@@ -1070,6 +1087,14 @@ fn evaluate_threshold(threshold: &ThresholdConfig, rows: &[ResultRow]) -> Thresh
     let actual = rows
         .iter()
         .filter(|row| row.step == threshold.step && row.metric == threshold.metric)
+        .filter(|row| {
+            threshold.filters.iter().all(|(key, value)| {
+                row.values
+                    .get(key)
+                    .map(|actual| actual == value)
+                    .unwrap_or(false)
+            })
+        })
         .filter_map(|row| row.values.get(&threshold.field))
         .filter_map(|value| parse_numeric_prefix(value))
         .next();
@@ -1080,6 +1105,7 @@ fn evaluate_threshold(threshold: &ThresholdConfig, rows: &[ResultRow]) -> Thresh
         name: threshold.name.clone(),
         step: threshold.step.clone(),
         metric: threshold.metric.clone(),
+        filters: threshold.filters.clone(),
         field: threshold.field.clone(),
         op: threshold.op,
         expected: threshold.value,
@@ -1091,8 +1117,8 @@ fn evaluate_threshold(threshold: &ThresholdConfig, rows: &[ResultRow]) -> Thresh
                 threshold.field, actual, threshold.op, threshold.value, passed
             ),
             None => format!(
-                "no result row for step={}, metric={}, field={}",
-                threshold.step, threshold.metric, threshold.field
+                "no result row for step={}, metric={}, filters={:?}, field={}",
+                threshold.step, threshold.metric, threshold.filters, threshold.field
             ),
         },
     }
@@ -1833,6 +1859,7 @@ mod tests {
             name: "recall-floor".into(),
             step: "recall".into(),
             metric: "recall".into(),
+            filters: BTreeMap::new(),
             field: "recall@k".into(),
             op: ThresholdOp::Gte,
             value: 0.995,
@@ -1841,6 +1868,46 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert!(results[0].passed);
         assert_eq!(results[0].actual, Some(0.9980));
+    }
+
+    #[test]
+    fn threshold_filters_select_matching_sweep_row() {
+        let rows = vec![
+            ResultRow {
+                suite: "suite".into(),
+                step: "recall".into(),
+                kind: "recall".into(),
+                metric: "recall".into(),
+                artifact: "recall.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "48".into()),
+                    ("recall@k".into(), "0.9820".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "recall".into(),
+                kind: "recall".into(),
+                metric: "recall".into(),
+                artifact: "recall.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "96".into()),
+                    ("recall@k".into(), "0.9980".into()),
+                ]),
+            },
+        ];
+        let threshold = ThresholdConfig {
+            name: "recall-p96-floor".into(),
+            step: "recall".into(),
+            metric: "recall".into(),
+            filters: BTreeMap::from([("nprobe".into(), "96".into())]),
+            field: "recall@k".into(),
+            op: ThresholdOp::Gte,
+            value: 0.995,
+        };
+        let result = evaluate_threshold(&threshold, &rows);
+        assert!(result.passed);
+        assert_eq!(result.actual, Some(0.9980));
     }
 
     #[test]

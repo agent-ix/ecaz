@@ -251,6 +251,9 @@ The first-supported config schema is JSON `schema_version: 1`:
       "name": "recall10-floor",
       "step": "recall10-nprobe-sweep-w500",
       "metric": "recall",
+      "filters": {
+        "nprobe": "96"
+      },
       "field": "recall@k",
       "op": "gte",
       "value": 0.995
@@ -335,9 +338,11 @@ execution; override with `--results-output <path>` if the packet needs a
 different location.
 
 Optional `thresholds` fail a completed suite when parsed results miss a target.
-Thresholds match by `step`, `metric`, and result `field`; supported operators
-are `gt`, `gte`, `lt`, `lte`, and `eq`. Numeric parsing uses the leading number
-from fields such as `0.9980`, `10.8 ms`, or `202.9 B`.
+Thresholds match by `step`, `metric`, optional exact-match `filters`, and result
+`field`; supported operators are `gt`, `gte`, `lt`, `lte`, and `eq`. Numeric
+parsing uses the leading number from fields such as `0.9980`, `10.8 ms`, or
+`202.9 B`. Resume is strict: `--resume-from` only reuses succeeded step records
+when the prior manifest config hash and expanded command match the current run.
 
 After or during a run, inspect the manifest:
 

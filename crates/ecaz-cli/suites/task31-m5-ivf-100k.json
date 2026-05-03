@@ -19,6 +19,9 @@
       "name": "quality-candidate-recall100-floor",
       "step": "recall100-candidates-w1000",
       "metric": "recall",
+      "filters": {
+        "nprobe": "96"
+      },
       "field": "recall@k",
       "op": "gte",
       "value": 0.99
@@ -27,6 +30,9 @@
       "name": "quality-candidate-p50-budget-ms",
       "step": "latency-candidates-w1000",
       "metric": "latency",
+      "filters": {
+        "nprobe": "96"
+      },
       "field": "p50",
       "op": "lte",
       "value": 15.0
