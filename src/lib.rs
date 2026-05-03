@@ -1314,6 +1314,9 @@ fn ec_spire_index_options_snapshot(
         name!(pq_group_size, i32),
         name!(storage_format, String),
         name!(assignment_payload_format, String),
+        name!(assignment_payload_scannable, bool),
+        name!(assignment_payload_status, String),
+        name!(assignment_payload_recommendation, String),
     ),
 > {
     let index_relation =
@@ -1337,6 +1340,9 @@ fn ec_spire_index_options_snapshot(
         snapshot.pq_group_size,
         snapshot.storage_format.to_owned(),
         snapshot.assignment_payload_format.to_owned(),
+        snapshot.assignment_payload_scannable,
+        snapshot.assignment_payload_status.to_owned(),
+        snapshot.assignment_payload_recommendation.to_owned(),
     ))
 }
 
@@ -3447,11 +3453,25 @@ mod tests {
         )
         .expect("options query should succeed")
         .expect("options row should exist");
+        let assignment_payload_scannable = Spi::get_one::<bool>(
+            "SELECT assignment_payload_scannable FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let assignment_payload_status = Spi::get_one::<String>(
+            "SELECT assignment_payload_status FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
 
         assert_eq!(nlists, 3);
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");
+        assert!(assignment_payload_scannable);
+        assert_eq!(assignment_payload_status, "supported");
         let active_leaf_count = Spi::get_one::<i64>(
             "SELECT active_leaf_count FROM \
              ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
@@ -3488,6 +3508,54 @@ mod tests {
         assert_eq!(effective_nprobe_source, "session");
         assert_eq!(effective_rerank_width, 9);
         assert_eq!(effective_rerank_width_source, "session");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_options_pq_empty \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("empty table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_pq_empty_idx ON ec_spire_options_pq_empty \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("empty pq_fastscan ec_spire index creation should succeed");
+        let pq_storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_format = Spi::get_one::<String>(
+            "SELECT assignment_payload_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_scannable = Spi::get_one::<bool>(
+            "SELECT assignment_payload_scannable FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_status = Spi::get_one::<String>(
+            "SELECT assignment_payload_status FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_recommendation = Spi::get_one::<String>(
+            "SELECT assignment_payload_recommendation FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+
+        assert_eq!(pq_storage_format, "pq_fastscan");
+        assert_eq!(pq_assignment_payload_format, "pq_fastscan");
+        assert!(!pq_assignment_payload_scannable);
+        assert_eq!(pq_assignment_payload_status, "deferred_model_metadata");
+        assert!(pq_assignment_payload_recommendation.contains("grouped-PQ model"));
     }
 
     #[pg_test]

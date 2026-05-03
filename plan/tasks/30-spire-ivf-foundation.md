@@ -59,7 +59,9 @@ leaves while removing delta placements from the active directory. The first
 SQL diagnostics surface now exposes active epoch/object/placement cardinality
 through `ec_spire_index_active_snapshot_diagnostics`, and relation build/scan
 options plus effective scan option resolution through
-`ec_spire_index_options_snapshot`; the health snapshot now reports
+`ec_spire_index_options_snapshot`, including whether the resolved assignment
+payload format is currently scannable and the explicit PQ-FastScan grouped-PQ
+metadata deferral when applicable; the health snapshot now reports
 conservative status/recommendation rows, including active delta compaction
 recommendations, and the first placement snapshot exposes per-local-store
 active placement/object/byte counts; a query-specific scan placement snapshot
@@ -345,7 +347,10 @@ Decision record:
   now exposes relation `nlists`, `nprobe`, `rerank_width`,
   `training_sample_rows`, `seed`, `pq_group_size`, `storage_format`, resolved
   assignment payload format, session scan overrides, active leaf count, and
-  effective `nprobe`/`rerank_width` values with source labels. SQL function
+  effective `nprobe`/`rerank_width` values with source labels. It also reports
+  assignment-payload scannability, status, and recommendation text so
+  `pq_fastscan` indexes surface the grouped-PQ model metadata deferral before
+  scan-time scorer binding is implemented. SQL function
   `ec_spire_index_health_snapshot(index_oid)` now reports a conservative
   active-epoch health status, recommendation text, delta compaction
   recommendation flag, placement-state counts, and assignment counts.

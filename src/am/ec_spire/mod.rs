@@ -86,6 +86,9 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) pq_group_size: i32,
     pub(crate) storage_format: &'static str,
     pub(crate) assignment_payload_format: &'static str,
+    pub(crate) assignment_payload_scannable: bool,
+    pub(crate) assignment_payload_status: &'static str,
+    pub(crate) assignment_payload_recommendation: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +278,24 @@ fn assignment_payload_format_name(format: quantizer::SpireAssignmentPayloadForma
     }
 }
 
+fn assignment_payload_scannability(
+    format: quantizer::SpireAssignmentPayloadFormat,
+) -> (bool, &'static str, &'static str) {
+    match format {
+        quantizer::SpireAssignmentPayloadFormat::TurboQuant
+        | quantizer::SpireAssignmentPayloadFormat::RaBitQ => (
+            true,
+            "supported",
+            "format can be used for current SPIRE scans",
+        ),
+        quantizer::SpireAssignmentPayloadFormat::PqFastScan => (
+            false,
+            "deferred_model_metadata",
+            "persist grouped-PQ model metadata before using pq_fastscan with SPIRE",
+        ),
+    }
+}
+
 fn consistency_mode_name(mode: meta::SpireConsistencyMode) -> &'static str {
     match mode {
         meta::SpireConsistencyMode::Strict => "strict",
@@ -372,6 +393,12 @@ pub(crate) unsafe fn index_options_snapshot(
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
         let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
         let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
+        let assignment_payload_format = relation_options.assignment_payload_format();
+        let (
+            assignment_payload_scannable,
+            assignment_payload_status,
+            assignment_payload_recommendation,
+        ) = assignment_payload_scannability(assignment_payload_format);
 
         Ok(SpireIndexOptionsSnapshot {
             nlists: relation_options.nlists,
@@ -390,9 +417,10 @@ pub(crate) unsafe fn index_options_snapshot(
             seed: relation_options.seed,
             pq_group_size: relation_options.pq_group_size,
             storage_format: relation_options.storage_format.reloption_name(),
-            assignment_payload_format: assignment_payload_format_name(
-                relation_options.assignment_payload_format(),
-            ),
+            assignment_payload_format: assignment_payload_format_name(assignment_payload_format),
+            assignment_payload_scannable,
+            assignment_payload_status,
+            assignment_payload_recommendation,
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
