@@ -555,6 +555,9 @@ pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
     index_relation: pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
 ) -> Result<ItemPointer, String> {
+    if previous_epoch_manifest.state != SpireEpochState::Published {
+        return Err("ec_spire can only retire a previously published epoch manifest".to_owned());
+    }
     let retired_epoch_manifest = SpireEpochManifest {
         state: SpireEpochState::Retired,
         active_query_count: 0,
@@ -562,6 +565,9 @@ pub(super) unsafe fn write_retired_epoch_manifest_to_relation(
     };
     retired_epoch_manifest.validate()?;
     let encoded = retired_epoch_manifest.encode()?;
+    // Replacement publishes append this retired copy before the new manifest
+    // bundle while holding the publish/extension lock, so its TID orders after
+    // the original published manifest for snapshot dedupe.
     unsafe { page::append_object_tuple(index_relation, &encoded) }
 }
 

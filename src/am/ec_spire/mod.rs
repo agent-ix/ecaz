@@ -528,6 +528,85 @@ fn epoch_cleanup_blocked_reason(
     }
 }
 
+fn epoch_snapshot_rows_from_manifests(
+    root_control: meta::SpireRootControlState,
+    mut manifests: Vec<(crate::storage::page::ItemPointer, meta::SpireEpochManifest)>,
+    now_micros: i64,
+) -> Result<Vec<SpireIndexEpochSnapshotRow>, String> {
+    manifests.sort_by_key(|(tid, manifest)| (manifest.epoch, tid.block_number, tid.offset_number));
+
+    let mut latest_manifest_tid_by_epoch = HashMap::new();
+    for (tid, manifest) in &manifests {
+        latest_manifest_tid_by_epoch
+            .entry(manifest.epoch)
+            .and_modify(|latest_tid: &mut crate::storage::page::ItemPointer| {
+                if (tid.block_number, tid.offset_number)
+                    > (latest_tid.block_number, latest_tid.offset_number)
+                {
+                    *latest_tid = *tid;
+                }
+            })
+            .or_insert(*tid);
+    }
+    let latest_manifests = manifests
+        .iter()
+        .filter_map(|(tid, manifest)| {
+            let latest_tid = latest_manifest_tid_by_epoch.get(&manifest.epoch)?;
+            if latest_tid == tid {
+                Some(*manifest)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let cleanup_plan =
+        meta::plan_epoch_cleanup(&latest_manifests, root_control.active_epoch, now_micros)?;
+    let cleanup_epochs: HashSet<u64> = cleanup_plan.cleanup_epochs.into_iter().collect();
+    let retained_retired_epochs: HashSet<u64> =
+        cleanup_plan.retained_retired_epochs.into_iter().collect();
+
+    Ok(manifests
+        .into_iter()
+        .map(|(tid, manifest)| {
+            let is_latest_manifest = latest_manifest_tid_by_epoch
+                .get(&manifest.epoch)
+                .is_some_and(|latest_tid| latest_tid == &tid);
+            let is_active_root_manifest = root_control.active_epoch == manifest.epoch
+                && root_control.epoch_manifest_tid == tid;
+            let cleanup_eligible_now =
+                is_latest_manifest && cleanup_epochs.contains(&manifest.epoch);
+            let retained_retired = retained_retired_epochs.contains(&manifest.epoch);
+            let cleanup_blocked_reason = if is_active_root_manifest {
+                "active_root_manifest"
+            } else if is_latest_manifest {
+                epoch_cleanup_blocked_reason(
+                    &manifest,
+                    now_micros,
+                    false,
+                    retained_retired,
+                    cleanup_eligible_now,
+                )
+            } else {
+                "superseded_manifest"
+            };
+            SpireIndexEpochSnapshotRow {
+                active_epoch: root_control.active_epoch,
+                epoch: manifest.epoch,
+                state: epoch_state_name(manifest.state),
+                consistency_mode: consistency_mode_name(manifest.consistency_mode),
+                published_at_micros: manifest.published_at_micros,
+                retain_until_micros: manifest.retain_until_micros,
+                active_query_count: manifest.active_query_count,
+                manifest_block: tid.block_number,
+                manifest_offset: tid.offset_number,
+                is_active_root_manifest,
+                cleanup_eligible_now,
+                cleanup_blocked_reason,
+            }
+        })
+        .collect())
+}
+
 fn leaf_maintenance_thresholds(effective_total: u64, leaf_count: u64) -> (u64, u64) {
     if leaf_count == 0 {
         return (0, 0);
@@ -946,78 +1025,8 @@ pub(crate) unsafe fn index_epoch_snapshot(
                 Ok(())
             })?
         };
-        manifests
-            .sort_by_key(|(tid, manifest)| (manifest.epoch, tid.block_number, tid.offset_number));
-
         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
-        let mut latest_manifest_tid_by_epoch = HashMap::new();
-        for (tid, manifest) in &manifests {
-            latest_manifest_tid_by_epoch
-                .entry(manifest.epoch)
-                .and_modify(|latest_tid: &mut crate::storage::page::ItemPointer| {
-                    if (tid.block_number, tid.offset_number)
-                        > (latest_tid.block_number, latest_tid.offset_number)
-                    {
-                        *latest_tid = *tid;
-                    }
-                })
-                .or_insert(*tid);
-        }
-        let latest_manifests = manifests
-            .iter()
-            .filter_map(|(tid, manifest)| {
-                let latest_tid = latest_manifest_tid_by_epoch.get(&manifest.epoch)?;
-                if latest_tid == tid {
-                    Some(*manifest)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let cleanup_plan =
-            meta::plan_epoch_cleanup(&latest_manifests, root_control.active_epoch, now_micros)?;
-        let cleanup_epochs: HashSet<u64> = cleanup_plan.cleanup_epochs.into_iter().collect();
-        let retained_retired_epochs: HashSet<u64> =
-            cleanup_plan.retained_retired_epochs.into_iter().collect();
-
-        Ok(manifests
-            .into_iter()
-            .map(|(tid, manifest)| {
-                let is_latest_manifest = latest_manifest_tid_by_epoch
-                    .get(&manifest.epoch)
-                    .is_some_and(|latest_tid| latest_tid == &tid);
-                let is_active_root_manifest = root_control.active_epoch == manifest.epoch
-                    && root_control.epoch_manifest_tid == tid;
-                let cleanup_eligible_now =
-                    is_latest_manifest && cleanup_epochs.contains(&manifest.epoch);
-                let retained_retired = retained_retired_epochs.contains(&manifest.epoch);
-                let cleanup_blocked_reason = if is_latest_manifest {
-                    epoch_cleanup_blocked_reason(
-                        &manifest,
-                        now_micros,
-                        is_active_root_manifest,
-                        retained_retired,
-                        cleanup_eligible_now,
-                    )
-                } else {
-                    "superseded_manifest"
-                };
-                SpireIndexEpochSnapshotRow {
-                    active_epoch: root_control.active_epoch,
-                    epoch: manifest.epoch,
-                    state: epoch_state_name(manifest.state),
-                    consistency_mode: consistency_mode_name(manifest.consistency_mode),
-                    published_at_micros: manifest.published_at_micros,
-                    retain_until_micros: manifest.retain_until_micros,
-                    active_query_count: manifest.active_query_count,
-                    manifest_block: tid.block_number,
-                    manifest_offset: tid.offset_number,
-                    is_active_root_manifest,
-                    cleanup_eligible_now,
-                    cleanup_blocked_reason,
-                }
-            })
-            .collect())
+        epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -1869,10 +1878,28 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
 mod tests {
     use super::*;
 
+    fn tid(block_number: u32, offset_number: u16) -> crate::storage::page::ItemPointer {
+        crate::storage::page::ItemPointer {
+            block_number,
+            offset_number,
+        }
+    }
+
     fn published_epoch_manifest(epoch: u64) -> meta::SpireEpochManifest {
         meta::SpireEpochManifest {
             epoch,
             state: meta::SpireEpochState::Published,
+            consistency_mode: meta::SpireConsistencyMode::Strict,
+            published_at_micros: 1,
+            retain_until_micros: 1,
+            active_query_count: 0,
+        }
+    }
+
+    fn retired_epoch_manifest(epoch: u64) -> meta::SpireEpochManifest {
+        meta::SpireEpochManifest {
+            epoch,
+            state: meta::SpireEpochState::Retired,
             consistency_mode: meta::SpireConsistencyMode::Strict,
             published_at_micros: 1,
             retain_until_micros: 1,
@@ -1897,6 +1924,47 @@ mod tests {
         store
             .insert_leaf_object_v2_from_rows(1, pid, 1, parent_pid, &[])
             .expect("empty leaf object should store")
+    }
+
+    #[test]
+    fn epoch_snapshot_partial_retired_residue_keeps_root_manifest_authoritative() {
+        let active_tid = tid(10, 1);
+        let retired_residue_tid = tid(10, 2);
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, active_tid, tid(10, 3), tid(10, 4))
+                .expect("root/control should build");
+
+        let rows = epoch_snapshot_rows_from_manifests(
+            root_control,
+            vec![
+                (active_tid, published_epoch_manifest(7)),
+                (retired_residue_tid, retired_epoch_manifest(7)),
+            ],
+            2,
+        )
+        .expect("epoch snapshot rows should build");
+
+        assert_eq!(rows.len(), 2);
+        let active_row = rows
+            .iter()
+            .find(|row| row.manifest_offset == active_tid.offset_number)
+            .expect("active root row should exist");
+        let retired_residue_row = rows
+            .iter()
+            .find(|row| row.manifest_offset == retired_residue_tid.offset_number)
+            .expect("retired residue row should exist");
+
+        assert_eq!(active_row.state, "published");
+        assert!(active_row.is_active_root_manifest);
+        assert!(!active_row.cleanup_eligible_now);
+        assert_eq!(active_row.cleanup_blocked_reason, "active_root_manifest");
+        assert_eq!(retired_residue_row.state, "retired");
+        assert!(!retired_residue_row.is_active_root_manifest);
+        assert!(!retired_residue_row.cleanup_eligible_now);
+        assert_eq!(
+            retired_residue_row.cleanup_blocked_reason,
+            "retained_retired_epoch"
+        );
     }
 
     fn root_for_child(pid: u64, child_pid: u64) -> storage::SpireRoutingPartitionObject {
