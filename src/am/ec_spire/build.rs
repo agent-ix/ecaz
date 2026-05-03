@@ -916,6 +916,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let _options = options::relation_options(index_relation);
+            page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
             let heap_tuples = pg_sys::table_index_build_scan(
                 heap_relation,
                 index_relation,
@@ -926,7 +927,6 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                 ptr::null_mut(),
                 ptr::null_mut(),
             );
-            page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
