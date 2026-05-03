@@ -5357,6 +5357,29 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "ec_spire does not support NULL indexed values")]
+    fn test_ec_spire_insert_after_build_rejects_null_value() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_null_value (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_null_value (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_null_value_idx ON ec_spire_insert_null_value \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run("INSERT INTO ec_spire_insert_null_value (id, embedding) VALUES (3, NULL)")
+            .expect("NULL post-build insert should fail");
+    }
+
+    #[pg_test]
     fn test_ec_spire_insert_bootstraps_empty_index_epoch() {
         Spi::run("CREATE TABLE ec_spire_insert_empty (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
