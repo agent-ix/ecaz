@@ -17,7 +17,7 @@ of quantization and index options rather than a single fixed architecture.
 
 #### Quantization Types
 
-- `turboquant` — default; suitable for small and medium indexes
+- `turboquant` — default; simplest operational path
 - `pq_fastscan` — grouped hot path with colder rerank payload; for latency-critical workloads
 
 #### Index Families
