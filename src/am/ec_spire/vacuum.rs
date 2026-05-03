@@ -312,20 +312,21 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
             SpirePartitionObjectKind::Delta => {}
             SpirePartitionObjectKind::Leaf if affected_base_pids.contains(&manifest_entry.pid) => {
                 let leaf_pid = require_compaction_leaf_pid_match(manifest_entry.pid, header.pid)?;
+                let leaf_object_version = require_compaction_leaf_object_version_match(
+                    manifest_entry.object_version,
+                    header.object_version,
+                    leaf_pid,
+                )?;
                 let rows = compact_rows_by_base_pid
                     .remove(&leaf_pid)
                     .unwrap_or_default();
                 // Compaction normalizes rewritten base leaves into the V2 segment format.
-                let object_version =
-                    manifest_entry
-                        .object_version
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            format!(
-                                "ec_spire vacuum compaction object version overflow for pid {}",
-                                leaf_pid
-                            )
-                        })?;
+                let object_version = leaf_object_version.checked_add(1).ok_or_else(|| {
+                    format!(
+                        "ec_spire vacuum compaction object version overflow for pid {}",
+                        leaf_pid
+                    )
+                })?;
                 placement_entries.push(unsafe {
                     store.insert_leaf_object_v2_from_rows(
                         new_epoch,
@@ -401,6 +402,19 @@ fn require_compaction_leaf_pid_match(manifest_pid: u64, header_pid: u64) -> Resu
         ));
     }
     Ok(manifest_pid)
+}
+
+fn require_compaction_leaf_object_version_match(
+    manifest_object_version: u64,
+    header_object_version: u64,
+    leaf_pid: u64,
+) -> Result<u64, String> {
+    if manifest_object_version != header_object_version {
+        return Err(format!(
+            "ec_spire vacuum compaction leaf object_version mismatch for pid {leaf_pid}: manifest object_version {manifest_object_version}, object header object_version {header_object_version}"
+        ));
+    }
+    Ok(manifest_object_version)
 }
 
 fn collect_delete_vec_ids_by_base_pid(
@@ -563,6 +577,24 @@ mod tests {
     #[test]
     fn compaction_leaf_pid_match_returns_manifest_pid() {
         assert_eq!(require_compaction_leaf_pid_match(42, 42), Ok(42));
+    }
+
+    #[test]
+    fn compaction_leaf_object_version_match_rejects_malformed_header_version() {
+        let error = require_compaction_leaf_object_version_match(7, 8, 42).unwrap_err();
+
+        assert_eq!(
+            error,
+            "ec_spire vacuum compaction leaf object_version mismatch for pid 42: manifest object_version 7, object header object_version 8"
+        );
+    }
+
+    #[test]
+    fn compaction_leaf_object_version_match_returns_manifest_version() {
+        assert_eq!(
+            require_compaction_leaf_object_version_match(7, 7, 42),
+            Ok(7)
+        );
     }
 }
 
