@@ -342,8 +342,9 @@ of overloading the aggregate.
 
 Implementation checkpoint: `SpireObjectReader` now defines the shared object
 read contract for headers, routing objects, V1/V2 leaf objects, and deltas. The
-in-memory local object store implements the trait, and snapshot diagnostics
-consume the trait instead of the concrete store type.
+in-memory local object store implements the trait, and snapshot diagnostics,
+scan helpers, and read-only delta-update assignment collection consume the
+trait instead of the concrete store type.
 
 Implementation checkpoint: partition-object headers now carry
 `published_epoch_backref`. Draft objects keep `0` until durable local-store

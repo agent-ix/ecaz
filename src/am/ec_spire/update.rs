@@ -18,7 +18,8 @@ use super::meta::{
 };
 use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScanRow};
 use super::storage::{
-    SpireDeltaPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind, SpireVecId,
+    SpireDeltaPartitionObject, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
+    SpireVecId,
 };
 use crate::storage::page::ItemPointer;
 
@@ -242,7 +243,7 @@ fn validate_delta_base_snapshot_placements_available(
 
 fn collect_snapshot_assignment_vec_ids(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireVecId>, String> {
     let mut vec_ids = Vec::new();
     for manifest_entry in &snapshot.object_manifest().entries {

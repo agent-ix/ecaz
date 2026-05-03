@@ -203,8 +203,9 @@ Decision record:
   cursors from persisted allocator state. Snapshot diagnostics now split
   available object bytes into routing, leaf, and delta buckets. A
   `SpireObjectReader` trait now defines the shared object read contract, and
-  snapshot diagnostics consume that trait instead of the concrete in-memory
-  store. Partition-object headers now carry a `published_epoch_backref` stamped
+  snapshot diagnostics, scan helpers, and read-only delta-update collection
+  consume that trait instead of the concrete in-memory store. Partition-object
+  headers now carry a `published_epoch_backref` stamped
   by local-store insertion and verified as not newer than the placement epoch
   on reads; V2 leaf metadata and segments inherit the same header
   back-reference. Assignment payload encoding no longer returns a discarded

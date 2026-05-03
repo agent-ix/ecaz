@@ -13,8 +13,8 @@ use super::options::{
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
-    SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject,
-    SpireLocalObjectStore, SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
+    SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader,
+    SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
 };
 use crate::storage::page::ItemPointer;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
@@ -262,7 +262,7 @@ impl Default for SpireScanCandidateCursor {
 
 pub(super) fn collect_snapshot_leaf_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     collect_validated_snapshot_leaf_rows(&snapshot, object_store)
@@ -270,7 +270,7 @@ pub(super) fn collect_snapshot_leaf_rows(
 
 fn collect_validated_snapshot_leaf_rows(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let mut rows = Vec::new();
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -298,7 +298,7 @@ fn collect_validated_snapshot_leaf_rows(
 
 pub(super) fn collect_snapshot_routed_leaf_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
 ) -> Result<SpireRoutedLeafScanRows, String> {
     let mut routed =
@@ -310,7 +310,7 @@ pub(super) fn collect_snapshot_routed_leaf_rows(
 
 pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
@@ -332,7 +332,7 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
 
 pub(super) fn count_snapshot_single_level_leaf_pids(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<u32, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let (_, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
@@ -342,7 +342,7 @@ pub(super) fn count_snapshot_single_level_leaf_pids(
 
 pub(super) fn collect_ranked_routed_probe_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     nprobe: u32,
     score_ip: F,
@@ -359,7 +359,7 @@ where
 
 pub(super) fn collect_quantized_routed_probe_candidates(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     nprobe: u32,
     payload_format: SpireAssignmentPayloadFormat,
@@ -401,7 +401,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
 
 pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     nprobe: u32,
     payload_format: SpireAssignmentPayloadFormat,
@@ -428,7 +428,7 @@ where
 
 pub(super) fn collect_single_level_scan_plan_reranked_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     scan_plan: SpireSingleLevelScanPlan,
     exact_score_ip: F,
@@ -455,7 +455,7 @@ where
 
 pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     query: &SpireScanQuery,
     options: EcSpireOptions,
     exact_score_ip: F,
@@ -512,7 +512,7 @@ where
 
 pub(super) fn collect_snapshot_delta_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireDeltaScanRow>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     collect_validated_snapshot_delta_rows(&snapshot, object_store)
@@ -520,7 +520,7 @@ pub(super) fn collect_snapshot_delta_rows(
 
 fn collect_validated_snapshot_delta_rows(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireDeltaScanRow>, String> {
     let mut rows = Vec::new();
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -553,7 +553,7 @@ fn collect_validated_snapshot_delta_rows(
 
 pub(super) fn collect_snapshot_visible_primary_rows(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     collect_validated_snapshot_visible_primary_rows(&snapshot, object_store)
@@ -561,7 +561,7 @@ pub(super) fn collect_snapshot_visible_primary_rows(
 
 pub(super) fn collect_validated_snapshot_visible_primary_rows(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let delta_rows = collect_validated_snapshot_delta_rows(snapshot, object_store)?;
     let deleted_vec_ids: HashSet<_> = delta_rows
@@ -609,7 +609,7 @@ pub(super) fn collect_validated_snapshot_visible_primary_rows(
 
 fn append_quantized_leaf_candidates_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     leaf_pid: u64,
     root_pid: u64,
     scorer: &SpirePreparedAssignmentScorer,
@@ -878,7 +878,7 @@ where
 
 fn load_snapshot_root_routing_object(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<(u64, SpireRoutingPartitionObject), String> {
     let mut root = None;
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -992,7 +992,7 @@ fn inner_product(left: &[f32], right: &[f32]) -> f32 {
 
 fn collect_snapshot_leaf_rows_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     leaf_pid: u64,
     root_pid: u64,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
@@ -1025,7 +1025,7 @@ fn collect_snapshot_leaf_rows_for_pid(
 }
 
 fn read_leaf_scan_rows(
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
     placement: &super::meta::SpirePlacementEntry,
     pid: u64,
     object_version: u64,
