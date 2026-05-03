@@ -286,8 +286,8 @@ struct SpireScanOpaque {
     query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
     cursor: SpireScanCandidateCursor,
-    // Cached across rescans, but refreshed when the root/control page reports
-    // a different active epoch.
+    // Cached for diagnostics and tests; every rescan replaces this with the
+    // root/control page just read so scan-side cursor fields cannot go stale.
     root_control: Option<SpireRootControlState>,
 }
 
@@ -335,11 +335,6 @@ impl SpireScanOpaque {
         &mut self,
         observed: SpireRootControlState,
     ) -> SpireRootControlState {
-        if let Some(cached) = self.root_control {
-            if cached.active_epoch == observed.active_epoch {
-                return cached;
-            }
-        }
         self.root_control = Some(observed);
         observed
     }
@@ -3587,7 +3582,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_opaque_refreshes_root_control_when_active_epoch_changes() {
+    fn scan_opaque_refreshes_root_control_on_every_rescan_observation() {
         let mut opaque = SpireScanOpaque::default();
         let epoch_one =
             SpireRootControlState::published(1, 4, 3, tid(10, 1), tid(10, 2), tid(10, 3)).unwrap();
@@ -3600,9 +3595,9 @@ mod tests {
         assert_eq!(opaque.root_control, Some(epoch_one));
         assert_eq!(
             opaque.observe_root_control_for_rescan(same_epoch_newer_cursors),
-            epoch_one
+            same_epoch_newer_cursors
         );
-        assert_eq!(opaque.root_control, Some(epoch_one));
+        assert_eq!(opaque.root_control, Some(same_epoch_newer_cursors));
         assert_eq!(opaque.observe_root_control_for_rescan(epoch_two), epoch_two);
         assert_eq!(opaque.root_control, Some(epoch_two));
     }

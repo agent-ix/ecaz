@@ -458,11 +458,11 @@ Decision record:
   cleanup compaction of active delta objects into replacement V2 base leaves
   now has focused PG18 coverage, and vacuum compaction now guards malformed
   leaf object header PID mismatches before rewriting an affected base leaf. The
-  scan descriptor root-control cache now refreshes when a rescan observes a
-  different active epoch, and the SQL health snapshot surface has focused PG18
-  coverage for clean and delta-pending active epochs. The SQL
-  placement snapshot surface has focused PG18 coverage for empty and populated
-  local single-store indexes, plus unit-level aggregate/per-store coverage for
+  scan descriptor root-control cache now replaces its observed state on every
+  rescan so scan-side cursor fields cannot go stale, and the SQL health
+  snapshot surface has focused PG18 coverage for clean and delta-pending active
+  epochs. The SQL placement snapshot surface has focused PG18 coverage for
+  empty and populated local single-store indexes, plus unit-level aggregate/per-store coverage for
   delta object and delta-assignment byte/count accounting. The SQL scan
   placement snapshot surface has focused PG18 coverage for query-specific
   routed leaf PID and candidate-row counts plus post-build insert-delta
