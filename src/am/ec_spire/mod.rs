@@ -205,3 +205,54 @@ pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u
         root_control.next_local_vec_seq,
     )
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireDebugSnapshotDiagnostics {
+    pub(crate) epoch: u64,
+    pub(crate) object_count: u64,
+    pub(crate) placement_count: u64,
+    pub(crate) local_store_count: u64,
+    pub(crate) available_placement_count: u64,
+    pub(crate) root_object_count: u64,
+    pub(crate) leaf_object_count: u64,
+    pub(crate) routing_child_count: u64,
+    pub(crate) leaf_assignment_count: u64,
+    pub(crate) available_object_bytes: u64,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
+    index_oid: pg_sys::Oid,
+) -> SpireDebugSnapshotDiagnostics {
+    let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let result = (|| -> Result<SpireDebugSnapshotDiagnostics, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
+
+        Ok(SpireDebugSnapshotDiagnostics {
+            epoch: diagnostics.epoch,
+            object_count: diagnostics.object_count as u64,
+            placement_count: diagnostics.placement_count as u64,
+            local_store_count: diagnostics.local_store_count as u64,
+            available_placement_count: diagnostics.available_placement_count as u64,
+            root_object_count: diagnostics.root_object_count as u64,
+            leaf_object_count: diagnostics.leaf_object_count as u64,
+            routing_child_count: diagnostics.routing_child_count as u64,
+            leaf_assignment_count: diagnostics.leaf_assignment_count as u64,
+            available_object_bytes: diagnostics.available_object_bytes,
+        })
+    })();
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}

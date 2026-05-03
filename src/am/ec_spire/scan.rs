@@ -1161,7 +1161,7 @@ pub(super) fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
     }
 }
 
-unsafe fn load_relation_epoch_manifests(
+pub(super) unsafe fn load_relation_epoch_manifests(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) -> Result<

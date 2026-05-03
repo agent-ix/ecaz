@@ -2693,10 +2693,21 @@ mod tests {
         let index_oid = index_oid("ec_spire_populated_build_idx");
         let (active_epoch, next_pid, next_local_vec_seq) =
             unsafe { am::debug_spire_root_control(index_oid) };
+        let diagnostics = unsafe { am::debug_spire_active_snapshot_diagnostics(index_oid) };
 
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 4);
         assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(diagnostics.epoch, 1);
+        assert_eq!(diagnostics.object_count, 3);
+        assert_eq!(diagnostics.placement_count, 3);
+        assert_eq!(diagnostics.local_store_count, 1);
+        assert_eq!(diagnostics.available_placement_count, 3);
+        assert_eq!(diagnostics.root_object_count, 1);
+        assert_eq!(diagnostics.leaf_object_count, 2);
+        assert_eq!(diagnostics.routing_child_count, 2);
+        assert_eq!(diagnostics.leaf_assignment_count, 3);
+        assert!(diagnostics.available_object_bytes > 0);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
         let first_id = Spi::get_one::<i64>(

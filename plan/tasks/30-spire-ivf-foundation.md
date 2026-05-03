@@ -47,9 +47,10 @@ deferred until grouped-PQ model metadata is persisted. AM option/GUC plumbing
 exists for single-level build and scan parameters. A pre-persistence
 architecture gate from the first foundation review is now recorded in
 `plan/design/spire-foundation-architecture-feedback-response.md`; live
-PostgreSQL relation-backed build and initial quantized scan now have a strict
-single-store path, while exact heap rerank, insert/delete, cleanup, and richer
-diagnostics remain open. Task 30 implements
+PostgreSQL relation-backed build, initial quantized scan, and active snapshot
+cardinality diagnostics now have a strict single-store path, while exact heap
+rerank, insert/delete, cleanup, and SQL/admin exposure remain open. Task 30
+implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -271,7 +272,8 @@ Decision record:
   collects heap rows, trains the single-level centroid plan using the build
   sample setting, writes relation-backed routing and V2 leaf objects, persists
   placement-entry locators, writes manifest bundles, and publishes the active
-  root/control state. Active-epoch scan loading remains open.
+  root/control state. Active-epoch scan loading and relation-backed snapshot
+  diagnostics now consume the persisted epoch.
 - [ ] **Scan path.** Route a query to top-`nprobe` partitions, score
   candidates, and rerank using the same correctness contract as local IVF. The
   foundation now has helper-level root routing object discovery, strict/degraded
@@ -313,14 +315,16 @@ Decision record:
   snapshot diagnostics helper that reports epoch/consistency mode, object and
   placement counts, local-store count, placement-state counts, object-kind
   counts, routing-child count, assignment counts, and available object bytes
-  for available local placements. SQL exposure, quantizer/build-parameter
-  reporting, and relation-backed admin reads remain open.
+  for available local placements. Relation-backed active snapshot diagnostics
+  now read persisted manifests and partition objects through the relation
+  object store for focused PG18 cardinality coverage. SQL exposure and
+  quantizer/build-parameter reporting remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
-  active-epoch ordered scan now have PG18 coverage; insert-after-build,
-  delete/vacuum cleanup, and relation-backed cardinality diagnostics remain
-  open.
+  active-epoch ordered scan now have PG18 coverage; relation-backed active
+  snapshot cardinality diagnostics are covered by the populated-build test.
+  Insert-after-build and delete/vacuum cleanup remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
