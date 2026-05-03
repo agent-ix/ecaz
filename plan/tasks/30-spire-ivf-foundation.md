@@ -175,7 +175,9 @@ Decision record:
   deterministic tie-break contract. The routed scan helper now keeps a bounded
   route heap ordered by higher inner product, lower centroid index, then lower
   child PID. Candidate ranking dedupes by `vec_id`, then keeps a bounded heap
-  ordered by lower ORDER BY score, heap TID, PID, row index, and `vec_id` bytes.
+  ordered by lower ORDER BY score, newer serving epoch, primary assignment
+  before boundary replica within an epoch, heap TID, PID, row index, and
+  `vec_id` bytes.
 - [x] **Explicit dedupe mode.** Carry a scan/snapshot dedupe mode so Phase 1's
   primary-only path skips the `vec_id` HashMap, while boundary replicas and
   future remote merge re-enable `vec_id` dedupe explicitly. The single-level

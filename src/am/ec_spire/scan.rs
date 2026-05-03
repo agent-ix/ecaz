@@ -15,6 +15,7 @@ use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
     SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader,
     SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireVecId,
+    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::storage::page::ItemPointer;
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
@@ -37,6 +38,7 @@ pub(super) struct SpireDeltaScanRow {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutedLeafScanRows {
+    pub(super) epoch: u64,
     pub(super) root_pid: u64,
     pub(super) leaf_pid: u64,
     pub(super) rows: Vec<SpireLeafScanRow>,
@@ -44,9 +46,11 @@ pub(super) struct SpireRoutedLeafScanRows {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireScoredScanCandidate {
+    pub(super) epoch: u64,
     pub(super) pid: u64,
     pub(super) object_version: u64,
     pub(super) row_index: u32,
+    pub(super) assignment_flags: u16,
     pub(super) vec_id: SpireVecId,
     pub(super) heap_tid: ItemPointer,
     pub(super) score: f32,
@@ -317,11 +321,13 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
     let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
+    let epoch = snapshot.epoch_manifest().epoch;
 
     let mut routed = Vec::with_capacity(leaf_pids.len());
     for leaf_pid in leaf_pids {
         let rows = collect_snapshot_leaf_rows_for_pid(&snapshot, object_store, leaf_pid, root_pid)?;
         routed.push(SpireRoutedLeafScanRows {
+            epoch,
             root_pid,
             leaf_pid,
             rows,
@@ -641,6 +647,7 @@ fn append_quantized_leaf_candidates_for_pid(
             for columns in leaf_object.column_segments()? {
                 append_quantized_v2_column_candidates(
                     columns,
+                    snapshot.epoch_manifest().epoch,
                     leaf_pid,
                     manifest_entry.object_version,
                     scorer,
@@ -658,6 +665,7 @@ fn append_quantized_leaf_candidates_for_pid(
             })?;
             append_quantized_v1_leaf_candidates(
                 leaf_object,
+                snapshot.epoch_manifest().epoch,
                 leaf_pid,
                 manifest_entry.object_version,
                 scorer,
@@ -670,6 +678,7 @@ fn append_quantized_leaf_candidates_for_pid(
 
 fn append_quantized_v2_column_candidates(
     columns: SpireLeafObjectColumns<'_>,
+    epoch: u64,
     pid: u64,
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
@@ -705,9 +714,11 @@ fn append_quantized_v2_column_candidates(
 
         let row = columns.row(row_offset)?;
         let candidate = SpireScoredScanCandidate {
+            epoch,
             pid,
             object_version,
             row_index: row.row_index,
+            assignment_flags: row.flags,
             vec_id: SpireVecId::local(row.local_vec_seq()?),
             heap_tid: row.heap_tid,
             score: -ip,
@@ -719,6 +730,7 @@ fn append_quantized_v2_column_candidates(
 
 fn append_quantized_v1_leaf_candidates(
     leaf_object: SpireLeafPartitionObject,
+    epoch: u64,
     pid: u64,
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
@@ -736,9 +748,11 @@ fn append_quantized_v1_leaf_candidates(
         let row_index = u32::try_from(row_index)
             .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
         let candidate = SpireScoredScanCandidate {
+            epoch,
             pid,
             object_version,
             row_index,
+            assignment_flags: assignment.flags,
             vec_id: assignment.vec_id,
             heap_tid: assignment.heap_tid,
             score: -ip,
@@ -778,9 +792,11 @@ where
                 );
             }
             let candidate = SpireScoredScanCandidate {
+                epoch: routed.epoch,
                 pid: row.pid,
                 object_version: row.object_version,
                 row_index: row.row_index,
+                assignment_flags: row.assignment.flags,
                 vec_id: row.assignment.vec_id.clone(),
                 heap_tid: row.assignment.heap_tid,
                 score: -ip,
@@ -823,6 +839,10 @@ fn scored_candidate_cmp(
 ) -> Ordering {
     left.score
         .total_cmp(&right.score)
+        .then_with(|| right.epoch.cmp(&left.epoch))
+        .then_with(|| {
+            candidate_assignment_role_rank(left).cmp(&candidate_assignment_role_rank(right))
+        })
         .then_with(|| left.heap_tid.block_number.cmp(&right.heap_tid.block_number))
         .then_with(|| {
             left.heap_tid
@@ -832,6 +852,10 @@ fn scored_candidate_cmp(
         .then_with(|| left.pid.cmp(&right.pid))
         .then_with(|| left.row_index.cmp(&right.row_index))
         .then_with(|| left.vec_id.as_bytes().cmp(right.vec_id.as_bytes()))
+}
+
+fn candidate_assignment_role_rank(candidate: &SpireScoredScanCandidate) -> u8 {
+    u8::from(candidate.assignment_flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0)
 }
 
 fn rank_bounded_scored_candidates<I>(
@@ -1447,9 +1471,11 @@ mod tests {
         score: f32,
     ) -> SpireScoredScanCandidate {
         SpireScoredScanCandidate {
+            epoch: 1,
             pid: SPIRE_FIRST_PID + vec_seq,
             object_version: 1,
             row_index: u32::from(offset_number),
+            assignment_flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
             vec_id: SpireVecId::local(vec_seq),
             heap_tid: tid(block_number, offset_number),
             score,
@@ -2258,6 +2284,7 @@ mod tests {
             vec![100],
         );
         let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
             root_pid: SPIRE_FIRST_PID,
             leaf_pid: SPIRE_FIRST_PID + 1,
             rows: vec![
@@ -2300,6 +2327,7 @@ mod tests {
     #[test]
     fn rank_routed_leaf_rows_by_ip_can_skip_vec_id_dedupe() {
         let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
             root_pid: SPIRE_FIRST_PID,
             leaf_pid: SPIRE_FIRST_PID + 1,
             rows: vec![
@@ -2348,6 +2376,7 @@ mod tests {
     #[test]
     fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_candidates() {
         let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
             root_pid: SPIRE_FIRST_PID,
             leaf_pid: SPIRE_FIRST_PID + 1,
             rows: vec![
@@ -2418,8 +2447,29 @@ mod tests {
     }
 
     #[test]
+    fn scored_candidate_tie_break_prefers_newer_epoch_then_primary_role() {
+        let older_primary = scored_candidate(1, 10, 1, 1.0);
+        let mut newer_replica = scored_candidate(2, 10, 2, 1.0);
+        newer_replica.epoch = 2;
+        newer_replica.assignment_flags =
+            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        let mut newer_primary = scored_candidate(3, 10, 3, 1.0);
+        newer_primary.epoch = 2;
+
+        let ranked = super::rank_bounded_scored_candidates(
+            vec![older_primary, newer_replica, newer_primary],
+            None,
+        );
+
+        assert_eq!(ranked[0].vec_id.local_sequence(), Some(3));
+        assert_eq!(ranked[1].vec_id.local_sequence(), Some(2));
+        assert_eq!(ranked[2].vec_id.local_sequence(), Some(1));
+    }
+
+    #[test]
     fn rank_routed_leaf_rows_by_ip_rejects_non_finite_scores() {
         let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
             root_pid: SPIRE_FIRST_PID,
             leaf_pid: SPIRE_FIRST_PID + 1,
             rows: vec![SpireLeafScanRow {

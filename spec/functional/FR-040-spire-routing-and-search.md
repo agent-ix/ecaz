@@ -83,4 +83,4 @@ Recursive SPIRE can route through at least two hierarchy levels before leaf scor
 
 ### FR-040-AC-3
 
-Boundary replica deduplication keeps the best candidate for a `vec_id` and exposes diagnostics for duplicate candidates suppressed.
+Boundary replica deduplication keeps the best candidate for a `vec_id` and exposes diagnostics for duplicate candidates suppressed. For equal scores, candidate ordering prefers the newer serving epoch, then a primary assignment before a boundary replica from the same epoch, then the deterministic heap TID/PID/row/`vec_id` tie-break.

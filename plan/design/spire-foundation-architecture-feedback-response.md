@@ -240,7 +240,8 @@ max-heaps whose head is the worst retained entry, then sorts only the retained
 entries before returning them. Route selection ranks higher centroid
 inner-product first, then lower centroid index, then lower child PID. Candidate
 selection ranks lower ORDER BY score first (`score = -inner_product`), then
-lower heap TID block/offset, PID, row position, and `vec_id` bytes. When
+newer serving epoch, primary assignment before boundary replica within an
+epoch, lower heap TID block/offset, PID, row position, and `vec_id` bytes. When
 boundary replicas or remote merge are enabled, the explicit dedupe step applies
 before final limit selection.
 
@@ -322,8 +323,8 @@ from the `PublishingActiveEpoch` state.
 - Split diagnostics bytes by routing, leaf-base, delta, and future graph kinds.
 - Add allocator near-exhaustion diagnostics for PID and local vec ID cursors.
 - Keep primary-assignment visibility semantics in one helper.
-- Extend tie-break documentation when replicas and newer replacement epochs
-  participate in the same result merge.
+- Carry epoch and assignment-role tie-break fields on scored candidates so
+  replicas and newer replacement epochs have a deterministic merge contract.
 - Add placement builders/constructors that make available/stale/unavailable
   state explicit at construction time.
 
