@@ -1052,6 +1052,8 @@ unsafe fn rerank_probe_candidates_heap_f32(
         attnum: i32::from(opaque.heap_rerank_source_attnum),
         kind: opaque.heap_rerank_source_kind,
     };
+    let query_values =
+        unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
 
     unsafe { prefetch_heap_rerank_blocks(opaque.heap_rerank_relation, candidates) };
 
@@ -1076,13 +1078,10 @@ unsafe fn rerank_probe_candidates_heap_f32(
                 "ec_ivf heap_f32 rerank source vector",
             )
         };
-        candidate.score = source::negative_inner_product_index_internal(
-            scan_query_values(opaque),
-            source_vector.as_slice(),
-        );
+        candidate.score =
+            source::negative_inner_product_index_internal(query_values, source_vector.as_slice());
         opaque.explain_counters.record_rerank_row();
         drop(source_vector);
-        unsafe { pg_sys::ExecClearTuple(opaque.heap_rerank_slot) };
     }
 }
 
