@@ -428,9 +428,10 @@ Decision record:
   function `ec_spire_index_delta_snapshot(index_oid)` now reports one row per
   active readable delta object with parent leaf PID, object version,
   published-epoch back-reference, store placement, assignment count, and
-  insert/delete assignment counts. Measured recall/latency summary rows and
-  deeper operator guidance remain open under the review/measurement gate rather
-  than the Phase 1 admin diagnostic surface.
+  insert/delete assignment counts. Operator-facing diagnostic guidance now
+  lives in `docs/SPIRE_DIAGNOSTICS.md`. Measured recall/latency summary rows
+  remain open under the review/measurement gate rather than the Phase 1 admin
+  diagnostic surface.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
