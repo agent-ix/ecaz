@@ -491,8 +491,13 @@ Decision record:
 
 ## Phase 2 — Update Mechanics
 
-- [ ] **Cluster split-and-merge plan.** Translate the LIRE/SPFresh-style update
-  mechanics into SPIRE's Postgres storage model.
+- [x] **Cluster split-and-merge plan.** Translate the LIRE/SPFresh-style update
+  mechanics into SPIRE's Postgres storage model. Recorded in
+  `plan/design/spire-update-mechanics.md`: split/merge allocate replacement
+  PIDs when partition coverage changes, rebalance may reuse PID with a new
+  object version only when coverage is unchanged, active deltas are folded into
+  replacement V2 leaves before publication, and root/control advances through
+  the existing epoch publish contract.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
