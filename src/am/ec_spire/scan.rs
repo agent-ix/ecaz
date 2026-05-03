@@ -160,6 +160,89 @@ pub(super) struct SpireScanPlacementDiagnostics {
     pub(super) stores: Vec<SpireStoreScanDiagnostics>,
 }
 
+trait SpireRoutedScanObserver {
+    fn scanned_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn scanned_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn delete_delta_row(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn visible_leaf_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn visible_delta_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+}
+
+struct SpireNoopRoutedScanObserver;
+
+impl SpireRoutedScanObserver for SpireNoopRoutedScanObserver {}
+
+struct SpireScanPlacementDiagnosticsObserver {
+    by_store: BTreeMap<(u32, u32), SpireStoreScanDiagnostics>,
+}
+
+impl SpireScanPlacementDiagnosticsObserver {
+    fn new() -> Self {
+        Self {
+            by_store: BTreeMap::new(),
+        }
+    }
+
+    fn into_stores(self) -> Vec<SpireStoreScanDiagnostics> {
+        self.by_store.into_values().collect()
+    }
+
+    fn entry(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+    ) -> &mut SpireStoreScanDiagnostics {
+        self.by_store
+            .entry((placement.node_id, placement.local_store_id))
+            .or_insert_with(|| SpireStoreScanDiagnostics {
+                epoch,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                scanned_pid_count: 0,
+                leaf_pid_count: 0,
+                delta_pid_count: 0,
+                candidate_row_count: 0,
+                leaf_candidate_row_count: 0,
+                delta_candidate_row_count: 0,
+                delete_delta_row_count: 0,
+            })
+    }
+}
+
+impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
+    fn scanned_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.scanned_pid_count += 1;
+        entry.leaf_pid_count += 1;
+    }
+
+    fn scanned_delta(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.scanned_pid_count += 1;
+        entry.delta_pid_count += 1;
+    }
+
+    fn delete_delta_row(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        self.entry(epoch, placement).delete_delta_row_count += 1;
+    }
+
+    fn visible_leaf_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.candidate_row_count += 1;
+        entry.leaf_candidate_row_count += 1;
+    }
+
+    fn visible_delta_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.candidate_row_count += 1;
+        entry.delta_candidate_row_count += 1;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireScanQuery {
     pub(super) dimensions: u16,
@@ -414,11 +497,38 @@ pub(super) fn collect_quantized_routed_probe_candidates(
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
-    let scorer =
-        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
-    let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
+    let mut observer = SpireNoopRoutedScanObserver;
+    collect_validated_quantized_routed_probe_candidates(
+        &snapshot,
+        object_store,
+        query_vector,
+        root_pid,
+        &root_object,
+        nprobe,
+        payload_format,
+        dedupe_mode,
+        limit,
+        &mut observer,
+    )
+}
+
+fn collect_validated_quantized_routed_probe_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    root_pid: u64,
+    root_object: &SpireRoutingPartitionObject,
+    nprobe: u32,
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let leaf_pids = route_root_object_to_leaf_pids(root_object, query_vector, nprobe)?;
     if limit == Some(0) {
         return Ok(Vec::new());
     }
@@ -430,9 +540,9 @@ pub(super) fn collect_quantized_routed_probe_candidates(
     };
     for leaf_pid in leaf_pids {
         let deleted_vec_ids =
-            collect_delta_delete_vec_ids_for_base_pid(&snapshot, object_store, leaf_pid)?;
+            collect_delta_delete_vec_ids_for_base_pid(snapshot, object_store, leaf_pid, observer)?;
         append_quantized_leaf_candidates_for_pid(
-            &snapshot,
+            snapshot,
             object_store,
             leaf_pid,
             root_pid,
@@ -440,15 +550,17 @@ pub(super) fn collect_quantized_routed_probe_candidates(
             &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
+            observer,
         )?;
         append_quantized_delta_candidates_for_base_pid(
-            &snapshot,
+            snapshot,
             object_store,
             leaf_pid,
             &scorer,
             &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
+            observer,
         )?;
     }
 
@@ -601,28 +713,23 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         });
     }
 
-    let leaf_pids = route_root_object_to_leaf_pids(&root_object, query.values(), scan_plan.nprobe)?;
-    let mut by_store = BTreeMap::<(u32, u32), SpireStoreScanDiagnostics>::new();
-    for leaf_pid in leaf_pids {
-        let deleted_vec_ids = collect_delta_scan_diagnostics_for_base_pid(
-            snapshot,
-            object_store,
-            leaf_pid,
-            &mut by_store,
-        )?;
-        collect_leaf_scan_candidate_diagnostics_for_pid(
-            snapshot,
-            object_store,
-            leaf_pid,
-            root_pid,
-            &deleted_vec_ids,
-            &mut by_store,
-        )?;
-    }
+    let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+    let _candidates = collect_validated_quantized_routed_probe_candidates(
+        snapshot,
+        object_store,
+        query.values(),
+        root_pid,
+        &root_object,
+        scan_plan.nprobe,
+        scan_plan.payload_format,
+        scan_plan.dedupe_mode,
+        scan_plan.candidate_limit,
+        &mut observer,
+    )?;
 
     Ok(SpireScanPlacementDiagnostics {
         scan_plan,
-        stores: by_store.into_values().collect(),
+        stores: observer.into_stores(),
     })
 }
 
@@ -754,140 +861,6 @@ pub(super) fn collect_validated_snapshot_visible_primary_rows(
     Ok(visible_rows)
 }
 
-fn collect_delta_scan_diagnostics_for_base_pid(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    base_pid: u64,
-    by_store: &mut BTreeMap<(u32, u32), SpireStoreScanDiagnostics>,
-) -> Result<HashSet<SpireVecId>, String> {
-    let mut deleted_vec_ids = HashSet::new();
-    let mut delta_assignments = Vec::new();
-    for manifest_entry in &snapshot.object_manifest().entries {
-        let lookup =
-            snapshot.require_lookup(manifest_entry.pid, "scan placement diagnostics delta")?;
-        let placement = lookup.placement;
-        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
-            continue;
-        }
-
-        let header = object_store.read_object_header(placement)?;
-        if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
-            continue;
-        }
-
-        let entry =
-            store_scan_diagnostics_entry(by_store, snapshot.epoch_manifest().epoch, placement);
-        entry.scanned_pid_count += 1;
-        entry.delta_pid_count += 1;
-
-        let delta_object = object_store.read_delta_object(placement)?;
-        for assignment in &delta_object.assignments {
-            if is_delete_delta_assignment(assignment) {
-                entry.delete_delta_row_count += 1;
-                deleted_vec_ids.insert(assignment.vec_id.clone());
-            }
-        }
-        delta_assignments.push((
-            placement.node_id,
-            placement.local_store_id,
-            delta_object.assignments,
-        ));
-    }
-
-    for (node_id, local_store_id, assignments) in delta_assignments {
-        let entry = by_store
-            .get_mut(&(node_id, local_store_id))
-            .expect("delta diagnostics entry should exist");
-        for assignment in assignments {
-            if is_delete_delta_assignment(&assignment) {
-                continue;
-            }
-            if !is_visible_primary_assignment(&assignment) {
-                continue;
-            }
-            if deleted_vec_ids.contains(&assignment.vec_id) {
-                continue;
-            }
-            entry.candidate_row_count += 1;
-            entry.delta_candidate_row_count += 1;
-        }
-    }
-
-    Ok(deleted_vec_ids)
-}
-
-fn collect_leaf_scan_candidate_diagnostics_for_pid(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    leaf_pid: u64,
-    root_pid: u64,
-    deleted_vec_ids: &HashSet<SpireVecId>,
-    by_store: &mut BTreeMap<(u32, u32), SpireStoreScanDiagnostics>,
-) -> Result<(), String> {
-    let lookup = snapshot.require_lookup(leaf_pid, "scan placement diagnostics leaf")?;
-    let manifest_entry = lookup.manifest_entry;
-    let placement = lookup.placement;
-    if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
-        return Ok(());
-    }
-
-    let header = object_store.read_object_header(placement)?;
-    if header.kind != SpirePartitionObjectKind::Leaf {
-        return Err(format!(
-            "ec_spire scan placement diagnostics pid {leaf_pid} is not a leaf object"
-        ));
-    }
-    if header.parent_pid != root_pid {
-        return Err(format!(
-            "ec_spire scan placement diagnostics leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
-            header.parent_pid
-        ));
-    }
-
-    let entry = store_scan_diagnostics_entry(by_store, snapshot.epoch_manifest().epoch, placement);
-    entry.scanned_pid_count += 1;
-    entry.leaf_pid_count += 1;
-
-    for row in read_leaf_scan_rows(
-        object_store,
-        placement,
-        leaf_pid,
-        manifest_entry.object_version,
-    )? {
-        if !is_visible_primary_assignment(&row.assignment) {
-            continue;
-        }
-        if deleted_vec_ids.contains(&row.assignment.vec_id) {
-            continue;
-        }
-        entry.candidate_row_count += 1;
-        entry.leaf_candidate_row_count += 1;
-    }
-
-    Ok(())
-}
-
-fn store_scan_diagnostics_entry<'a>(
-    by_store: &'a mut BTreeMap<(u32, u32), SpireStoreScanDiagnostics>,
-    epoch: u64,
-    placement: &SpirePlacementEntry,
-) -> &'a mut SpireStoreScanDiagnostics {
-    by_store
-        .entry((placement.node_id, placement.local_store_id))
-        .or_insert_with(|| SpireStoreScanDiagnostics {
-            epoch,
-            node_id: placement.node_id,
-            local_store_id: placement.local_store_id,
-            scanned_pid_count: 0,
-            leaf_pid_count: 0,
-            delta_pid_count: 0,
-            candidate_row_count: 0,
-            leaf_candidate_row_count: 0,
-            delta_candidate_row_count: 0,
-            delete_delta_row_count: 0,
-        })
-}
-
 fn append_quantized_leaf_candidates_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -897,6 +870,7 @@ fn append_quantized_leaf_candidates_for_pid(
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let lookup = snapshot.require_lookup(leaf_pid, "quantized routed scan leaf")?;
     let manifest_entry = lookup.manifest_entry;
@@ -917,6 +891,7 @@ fn append_quantized_leaf_candidates_for_pid(
             header.parent_pid
         ));
     }
+    observer.scanned_leaf(snapshot.epoch_manifest().epoch, placement);
 
     match object_store.read_leaf_object_v2(placement) {
         Ok(leaf_object) => {
@@ -931,6 +906,8 @@ fn append_quantized_leaf_candidates_for_pid(
                     deleted_vec_ids,
                     candidates,
                     candidates_by_vec_id,
+                    placement,
+                    observer,
                 )?;
             }
             Ok(())
@@ -950,6 +927,8 @@ fn append_quantized_leaf_candidates_for_pid(
                 deleted_vec_ids,
                 candidates,
                 candidates_by_vec_id,
+                placement,
+                observer,
             )
         }
     }
@@ -964,6 +943,8 @@ fn append_quantized_v2_column_candidates(
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
     if column_format != scorer.payload_format() {
@@ -997,6 +978,7 @@ fn append_quantized_v2_column_candidates(
         if deleted_vec_ids.contains(&vec_id) {
             continue;
         }
+        observer.visible_leaf_candidate(epoch, placement);
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
@@ -1020,6 +1002,7 @@ fn append_quantized_delta_candidates_for_base_pid(
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "quantized routed scan delta")?;
@@ -1052,6 +1035,7 @@ fn append_quantized_delta_candidates_for_base_pid(
             }
             let row_index = u32::try_from(row_index)
                 .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+            observer.visible_delta_candidate(snapshot.epoch_manifest().epoch, placement);
             let candidate = SpireScoredScanCandidate {
                 epoch: snapshot.epoch_manifest().epoch,
                 pid: manifest_entry.pid,
@@ -1072,6 +1056,7 @@ fn collect_delta_delete_vec_ids_for_base_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     base_pid: u64,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<HashSet<SpireVecId>, String> {
     let mut deleted_vec_ids = HashSet::new();
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -1086,10 +1071,12 @@ fn collect_delta_delete_vec_ids_for_base_pid(
         if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
             continue;
         }
+        observer.scanned_delta(snapshot.epoch_manifest().epoch, placement);
 
         let delta_object = object_store.read_delta_object(placement)?;
         for assignment in delta_object.assignments {
             if is_delete_delta_assignment(&assignment) {
+                observer.delete_delta_row(snapshot.epoch_manifest().epoch, placement);
                 deleted_vec_ids.insert(assignment.vec_id);
             }
         }
@@ -1106,6 +1093,8 @@ fn append_quantized_v1_leaf_candidates(
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
         if !is_visible_primary_assignment(&assignment) {
@@ -1120,6 +1109,7 @@ fn append_quantized_v1_leaf_candidates(
         }
         let row_index = u32::try_from(row_index)
             .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+        observer.visible_leaf_candidate(epoch, placement);
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
@@ -2573,6 +2563,115 @@ mod tests {
         assert_eq!(store.leaf_candidate_row_count, 0);
         assert_eq!(store.delta_candidate_row_count, 1);
         assert_eq!(store.delete_delta_row_count, 1);
+
+        let zero_nprobe_plan = SpireSingleLevelScanPlan {
+            nprobe: 0,
+            ..scan_plan
+        };
+        let zero_nprobe_diagnostics = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            zero_nprobe_plan,
+        )
+        .unwrap();
+        assert_eq!(zero_nprobe_diagnostics.scan_plan.nprobe, 0);
+        assert!(zero_nprobe_diagnostics.stores.is_empty());
+
+        let stale_leaf_count_plan = SpireSingleLevelScanPlan {
+            leaf_count: 3,
+            ..scan_plan
+        };
+        let error = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            stale_leaf_count_plan,
+        )
+        .unwrap_err();
+        assert!(error.contains("does not match snapshot leaf_count 2"));
+    }
+
+    #[test]
+    fn collect_scan_placement_diagnostics_skips_degraded_unavailable_leaf() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![
+                    quantized_assignment_input(
+                        10,
+                        1,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[1.0, 0.0],
+                    ),
+                    quantized_assignment_input(
+                        10,
+                        2,
+                        SpireAssignmentPayloadFormat::TurboQuant,
+                        &[-1.0, 0.0],
+                    ),
+                ],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: draft.epoch_manifest.epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Degraded,
+            published_at_micros: draft.epoch_manifest.published_at_micros,
+            retain_until_micros: draft.epoch_manifest.retain_until_micros,
+            active_query_count: 0,
+        };
+        let mut placements = draft.placement_directory.entries.clone();
+        placements
+            .iter_mut()
+            .find(|placement| placement.pid == SPIRE_FIRST_PID + 1)
+            .unwrap()
+            .state = SpirePlacementState::Unavailable;
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(draft.epoch_manifest.epoch, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 2,
+            nprobe: 2,
+            nprobe_source: "relation",
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 10,
+            rerank_width_source: "relation",
+            candidate_limit: Some(10),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+        };
+
+        let diagnostics = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.stores.len(), 1);
+        let store = &diagnostics.stores[0];
+        assert_eq!(store.epoch, 7);
+        assert_eq!(store.scanned_pid_count, 1);
+        assert_eq!(store.leaf_pid_count, 1);
+        assert_eq!(store.delta_pid_count, 0);
+        assert_eq!(store.candidate_row_count, 1);
+        assert_eq!(store.leaf_candidate_row_count, 1);
+        assert_eq!(store.delta_candidate_row_count, 0);
+        assert_eq!(store.delete_delta_row_count, 0);
     }
 
     #[test]
