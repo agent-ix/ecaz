@@ -1562,60 +1562,65 @@ pub(crate) unsafe fn index_root_routing_snapshot(
         )?;
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-        let mut root = None;
-        // Walk the full manifest so malformed epochs with multiple roots are reported.
-        for manifest_entry in &snapshot.object_manifest().entries {
-            let lookup = snapshot.require_lookup(manifest_entry.pid, "root routing snapshot")?;
-            let header = object_store.read_object_header(lookup.placement)?;
-            if header.kind != storage::SpirePartitionObjectKind::Root {
-                continue;
-            }
-            if root.is_some() {
-                return Err("ec_spire root routing snapshot found multiple root objects".to_owned());
-            }
-            root = Some((
-                manifest_entry.pid,
-                manifest_entry.object_version,
-                object_store.read_routing_object(lookup.placement)?,
-            ));
-        }
-
-        let Some((root_pid, root_object_version, root_object)) = root else {
-            return Err("ec_spire root routing snapshot found no active root object".to_owned());
-        };
-        let root_child_count = u64::try_from(root_object.child_count())
-            .map_err(|_| "ec_spire root routing child count exceeds u64".to_owned())?;
-        let rows = root_object
-            .children()
-            .map(|child| {
-                let child_lookup =
-                    snapshot.require_lookup(child.child_pid, "root routing child")?;
-                let child_header = object_store.read_object_header(child_lookup.placement)?;
-                Ok(SpireIndexRootRoutingSnapshotRow {
-                    active_epoch: snapshot.epoch_manifest().epoch,
-                    root_pid,
-                    root_object_version,
-                    root_level: root_object.header.level,
-                    root_child_count,
-                    centroid_dimensions: root_object.dimensions,
-                    centroid_index: child.centroid_index,
-                    child_pid: child.child_pid,
-                    child_kind: partition_object_kind_name(child_header.kind),
-                    child_object_version: child_header.object_version,
-                    child_level: child_header.level,
-                    child_parent_pid: child_header.parent_pid,
-                    child_assignment_count: u64::from(child_header.assignment_count),
-                    child_node_id: child_lookup.placement.node_id,
-                    child_local_store_id: child_lookup.placement.local_store_id,
-                    child_store_relid: child_lookup.placement.store_relid,
-                    child_placement_state: placement_state_name(child_lookup.placement.state),
-                    child_object_bytes: u64::from(child_lookup.placement.object_bytes),
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        Ok(rows)
+        collect_root_routing_snapshot_rows(&snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn collect_root_routing_snapshot_rows(
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+) -> Result<Vec<SpireIndexRootRoutingSnapshotRow>, String> {
+    let mut root = None;
+    // Walk the full manifest so malformed epochs with multiple roots are reported.
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "root routing snapshot")?;
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind != storage::SpirePartitionObjectKind::Root {
+            continue;
+        }
+        if root.is_some() {
+            return Err("ec_spire root routing snapshot found multiple root objects".to_owned());
+        }
+        root = Some((
+            manifest_entry.pid,
+            manifest_entry.object_version,
+            object_store.read_routing_object(lookup.placement)?,
+        ));
+    }
+
+    let Some((root_pid, root_object_version, root_object)) = root else {
+        return Err("ec_spire root routing snapshot found no active root object".to_owned());
+    };
+    let root_child_count = u64::try_from(root_object.child_count())
+        .map_err(|_| "ec_spire root routing child count exceeds u64".to_owned())?;
+    root_object
+        .children()
+        .map(|child| {
+            let child_lookup = snapshot.require_lookup(child.child_pid, "root routing child")?;
+            let child_header = object_store.read_object_header(child_lookup.placement)?;
+            Ok(SpireIndexRootRoutingSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                root_pid,
+                root_object_version,
+                root_level: root_object.header.level,
+                root_child_count,
+                centroid_dimensions: root_object.dimensions,
+                centroid_index: child.centroid_index,
+                child_pid: child.child_pid,
+                child_kind: partition_object_kind_name(child_header.kind),
+                child_object_version: child_header.object_version,
+                child_level: child_header.level,
+                child_parent_pid: child_header.parent_pid,
+                child_assignment_count: u64::from(child_header.assignment_count),
+                child_node_id: child_lookup.placement.node_id,
+                child_local_store_id: child_lookup.placement.local_store_id,
+                child_store_relid: child_lookup.placement.store_relid,
+                child_placement_state: placement_state_name(child_lookup.placement.state),
+                child_object_bytes: u64::from(child_lookup.placement.object_bytes),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
 }
 
 fn not_implemented(callback: &str) -> ! {
@@ -1832,4 +1837,150 @@ pub(crate) unsafe fn debug_spire_active_snapshot_diagnostics(
     })();
     unsafe { pg_sys::index_close(index_relation, lockmode) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn published_epoch_manifest(epoch: u64) -> meta::SpireEpochManifest {
+        meta::SpireEpochManifest {
+            epoch,
+            state: meta::SpireEpochState::Published,
+            consistency_mode: meta::SpireConsistencyMode::Strict,
+            published_at_micros: 1,
+            retain_until_micros: 1,
+            active_query_count: 0,
+        }
+    }
+
+    fn manifest_entry_for(placement: &meta::SpirePlacementEntry) -> meta::SpireManifestEntry {
+        meta::SpireManifestEntry {
+            epoch: placement.epoch,
+            pid: placement.pid,
+            object_version: placement.object_version,
+            placement_tid: placement.object_tid,
+        }
+    }
+
+    fn empty_leaf_row(
+        store: &mut storage::SpireLocalObjectStore,
+        pid: u64,
+        parent_pid: u64,
+    ) -> meta::SpirePlacementEntry {
+        store
+            .insert_leaf_object_v2_from_rows(1, pid, 1, parent_pid, &[])
+            .expect("empty leaf object should store")
+    }
+
+    fn root_for_child(pid: u64, child_pid: u64) -> storage::SpireRoutingPartitionObject {
+        storage::SpireRoutingPartitionObject::root(
+            pid,
+            1,
+            2,
+            vec![storage::SpireRoutingChildEntry {
+                centroid_index: 0,
+                child_pid,
+                centroid: vec![1.0, 0.0],
+            }],
+        )
+        .expect("root routing object should build")
+    }
+
+    #[test]
+    fn root_routing_snapshot_rejects_active_manifest_without_root() {
+        let mut store = storage::SpireLocalObjectStore::with_default_page_size(12345)
+            .expect("local store should build");
+        let leaf = empty_leaf_row(&mut store, 20, 10);
+        let epoch_manifest = published_epoch_manifest(1);
+        let object_manifest =
+            meta::SpireObjectManifest::from_entries(1, vec![manifest_entry_for(&leaf)])
+                .expect("object manifest should build");
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, vec![leaf])
+            .expect("placement directory should build");
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .expect("snapshot should validate");
+
+        let err = collect_root_routing_snapshot_rows(&snapshot, &store)
+            .expect_err("rootless active snapshot should fail");
+
+        assert_eq!(
+            err,
+            "ec_spire root routing snapshot found no active root object"
+        );
+    }
+
+    #[test]
+    fn root_routing_snapshot_rejects_active_manifest_with_multiple_roots() {
+        let mut store = storage::SpireLocalObjectStore::with_default_page_size(12345)
+            .expect("local store should build");
+        let leaf = empty_leaf_row(&mut store, 20, 10);
+        let first_root = store
+            .insert_routing_object(1, &root_for_child(10, 20))
+            .expect("first root should store");
+        let second_root = store
+            .insert_routing_object(1, &root_for_child(11, 20))
+            .expect("second root should store");
+        let epoch_manifest = published_epoch_manifest(1);
+        let placements = vec![first_root, second_root, leaf];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            1,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .expect("object manifest should build");
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)
+            .expect("placement directory should build");
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .expect("snapshot should validate");
+
+        let err = collect_root_routing_snapshot_rows(&snapshot, &store)
+            .expect_err("multi-root active snapshot should fail");
+
+        assert_eq!(
+            err,
+            "ec_spire root routing snapshot found multiple root objects"
+        );
+    }
+
+    #[test]
+    fn root_routing_snapshot_reports_child_rows_from_local_store() {
+        let mut store = storage::SpireLocalObjectStore::with_default_page_size(12345)
+            .expect("local store should build");
+        let leaf = empty_leaf_row(&mut store, 20, 10);
+        let root = store
+            .insert_routing_object(1, &root_for_child(10, 20))
+            .expect("root should store");
+        let epoch_manifest = published_epoch_manifest(1);
+        let placements = vec![root, leaf];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            1,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .expect("object manifest should build");
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)
+            .expect("placement directory should build");
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .expect("snapshot should validate");
+
+        let rows = collect_root_routing_snapshot_rows(&snapshot, &store)
+            .expect("root routing rows should collect");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].root_pid, 10);
+        assert_eq!(rows[0].child_pid, 20);
+        assert_eq!(rows[0].child_kind, "leaf");
+        assert_eq!(rows[0].child_store_relid, 12345);
+    }
 }

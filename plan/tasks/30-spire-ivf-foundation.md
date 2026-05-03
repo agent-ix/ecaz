@@ -66,17 +66,19 @@ conservative status/recommendation rows, including active delta compaction
 recommendations, and the first placement snapshot exposes per-local-store
 active placement/object/byte counts; a query-specific scan placement snapshot
 now exposes per-store routed leaf PID, delta PID, and candidate-row counts; a
-root routing snapshot now exposes active centroid-to-child PID rows; relation
-storage diagnostics now quantify active-referenced and cleanup-candidate object
-tuples while physical reclamation remains deferred; scan sanity diagnostics now
-expose resolved scan preconditions for exact leaf coverage and full-frontier
-rerank; replacement-epoch publishes now write a retired manifest copy for the
-previous active epoch, and epoch diagnostics expose persisted epoch manifest
-rows and cleanup eligibility blockers; leaf diagnostics now expose per-leaf
-base/delta/effective assignment counts plus read-only split/merge threshold
-recommendations for follow-up scheduling; insert-debt diagnostics now expose
-per-leaf delta fanout and batching recommendations while actual insert batching
-remains open. Measured recall/latency evidence remains open.
+root routing snapshot now exposes active centroid-to-child PID rows and has
+unit coverage for malformed active manifests with zero or multiple root
+objects; relation storage diagnostics now quantify active-referenced and
+cleanup-candidate object tuples while physical reclamation remains deferred;
+scan sanity diagnostics now expose resolved scan preconditions for exact leaf
+coverage and full-frontier rerank; replacement-epoch publishes now write a
+retired manifest copy for the previous active epoch, and epoch diagnostics
+expose persisted epoch manifest rows and cleanup eligibility blockers; leaf
+diagnostics now expose per-leaf base/delta/effective assignment counts plus
+read-only split/merge threshold recommendations for follow-up scheduling;
+insert-debt diagnostics now expose per-leaf delta fanout and batching
+recommendations while actual insert batching remains open. Measured
+recall/latency evidence remains open.
 PQ-FastScan scorer binding, measured recall/latency summary evidence, physical
 object reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage
 remain open. Task 30 implements
@@ -438,13 +440,15 @@ Decision record:
   focused PG18 coverage for query-specific routed leaf PID and candidate-row
   counts plus post-build insert-delta leaf/delta PID and candidate-row splits.
   The SQL root routing snapshot surface has focused PG18 coverage for empty
-  and populated local single-store indexes; the SQL scan sanity snapshot
-  surface has focused PG18 coverage for empty, approximate bounded-leaf, and
-  exact-leaf/full-frontier-rerank configurations; the SQL epoch snapshot
-  surface has focused PG18 coverage for empty, populated, and post-insert
-  active-epoch publication states, including previous-epoch retired manifest
-  copies and superseded manifest labels. The SQL leaf snapshot surface has
-  focused PG18 coverage for empty, populated, and post-insert delta states.
+  and populated local single-store indexes, plus unit-level malformed active
+  manifest coverage for missing-root and multiple-root diagnostics; the SQL
+  scan sanity snapshot surface has focused PG18 coverage for empty,
+  approximate bounded-leaf, and exact-leaf/full-frontier-rerank configurations;
+  the SQL epoch snapshot surface has focused PG18 coverage for empty,
+  populated, and post-insert active-epoch publication states, including
+  previous-epoch retired manifest copies and superseded manifest labels. The
+  SQL leaf snapshot surface has focused PG18 coverage for empty, populated,
+  and post-insert delta states.
   It now also covers read-only merge recommendations for empty leaves and no
   split recommendation for tiny populated leaves. Insert-debt SQL diagnostics
   now have focused PG18 coverage for repeated same-leaf post-build inserts.
