@@ -1,0 +1,29 @@
+# Suite Report: task31-m5-ivf-100k-quality-ecvector-rerank-decode
+
+- config: `review/30202-task31-m5-quality-ecvector-rerank-decode/task31-m5-ivf-100k-quality.packet.json`
+- config_sha256: `5c52bc32eef38296b9879ebbc2e5826ad46966dcf0e81552145da3b28b52230f`
+- dry_run: `false`
+- steps: completed 3, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall100-candidates-w1000 | recall | Succeeded | 3210 | `review/30202-task31-m5-quality-ecvector-rerank-decode/artifacts/recall100_real100k_pqg8_n128_w1000_p80_96.log` |
+| latency-candidates-w1000 | latency | Succeeded | 2365 | `review/30202-task31-m5-quality-ecvector-rerank-decode/artifacts/latency_real100k_pqg8_n128_w1000_p80_96.log` |
+| explain-quality-candidate | explain | Succeeded | 30 | `review/30202-task31-m5-quality-ecvector-rerank-decode/artifacts/explain_real100k_pqg8_n128_p96_w1000.sql`<br>`review/30202-task31-m5-quality-ecvector-rerank-decode/artifacts/explain_real100k_pqg8_n128_p96_w1000.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=15.02 ms`, `ndcg@k=0.9994`, `nprobe=80`, `recall@k=0.9880` |
+| recall100-candidates-w1000 | recall | recall | `mean q-time=12.66 ms`, `ndcg@k=0.9997`, `nprobe=96`, `recall@k=0.9920` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=15.3 ms`, `mean=10.7 ms`, `memory_samples=0`, `min=9.14 ms`, `nprobe=80`, `p50=10.7 ms`, `p95=11.5 ms`, `p99=12.0 ms`, `rss_peak_kb=0`, `stddev=0.72 ms` |
+| latency-candidates-w1000 | latency | latency | `count=100`, `hwm_peak_kb=0`, `max=16.4 ms`, `mean=12.1 ms`, `memory_samples=0`, `min=10.6 ms`, `nprobe=96`, `p50=12.1 ms`, `p95=12.9 ms`, `p99=13.4 ms`, `rss_peak_kb=0`, `stddev=0.65 ms` |
+
+## Thresholds
+
+| Name | Status | Actual | Expected |
+| --- | --- | ---: | ---: |
+| quality-candidate-recall100-floor | pass | 0.992 | Gte 0.99 |
+| quality-candidate-p50-budget-ms | pass | 12.1 | Lte 15 |
+wrote review/30202-task31-m5-quality-ecvector-rerank-decode/artifacts/results.jsonl
