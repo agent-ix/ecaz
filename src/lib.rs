@@ -1183,6 +1183,59 @@ fn ec_spire_index_placement_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_placement_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_rerank_width, i64),
+        name!(effective_rerank_width_source, String),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(scanned_pid_count, i64),
+        name!(leaf_pid_count, i64),
+        name!(delta_pid_count, i64),
+        name!(candidate_row_count, i64),
+        name!(leaf_candidate_row_count, i64),
+        name!(delta_candidate_row_count, i64),
+        name!(delete_delta_row_count, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_placement_snapshot") };
+    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            i64::try_from(row.effective_rerank_width)
+                .expect("effective rerank width should fit in i64"),
+            row.effective_rerank_width_source.to_owned(),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::try_from(row.scanned_pid_count).expect("scanned pid count should fit in i64"),
+            i64::try_from(row.leaf_pid_count).expect("leaf pid count should fit in i64"),
+            i64::try_from(row.delta_pid_count).expect("delta pid count should fit in i64"),
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.leaf_candidate_row_count)
+                .expect("leaf candidate row count should fit in i64"),
+            i64::try_from(row.delta_candidate_row_count)
+                .expect("delta candidate row count should fit in i64"),
+            i64::try_from(row.delete_delta_row_count)
+                .expect("delete delta row count should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_options_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -3088,6 +3141,69 @@ mod tests {
         assert_eq!(assignment_count, 3);
         assert!(available_object_bytes > 0);
         assert_eq!(placement_object_bytes, available_object_bytes);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_scan_placement_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_scan_place_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_place_sql_idx ON ec_spire_scan_place_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 10)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("count should exist");
+        let effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let leaf_pid_count = Spi::get_one::<i64>(
+            "SELECT leaf_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let scanned_pid_count = Spi::get_one::<i64>(
+            "SELECT scanned_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let candidate_row_count = Spi::get_one::<i64>(
+            "SELECT candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_pid_count = Spi::get_one::<i64>(
+            "SELECT delta_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+
+        assert_eq!(row_count, 1);
+        assert_eq!(effective_nprobe, 1);
+        assert_eq!(leaf_pid_count, 1);
+        assert_eq!(scanned_pid_count, 1);
+        assert_eq!(delta_pid_count, 0);
+        assert!(candidate_row_count > 0);
     }
 
     #[pg_test]

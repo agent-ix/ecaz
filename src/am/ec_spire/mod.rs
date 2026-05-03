@@ -130,6 +130,24 @@ pub(crate) struct SpireIndexPlacementSnapshotRow {
     pub(crate) delta_object_bytes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexScanPlacementSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) local_store_id: u32,
+    pub(crate) scanned_pid_count: u64,
+    pub(crate) leaf_pid_count: u64,
+    pub(crate) delta_pid_count: u64,
+    pub(crate) candidate_row_count: u64,
+    pub(crate) leaf_candidate_row_count: u64,
+    pub(crate) delta_candidate_row_count: u64,
+    pub(crate) delete_delta_row_count: u64,
+}
+
 impl SpireActiveSnapshotDiagnostics {
     fn empty(root_control: meta::SpireRootControlState) -> Self {
         Self {
@@ -388,6 +406,57 @@ pub(crate) unsafe fn index_placement_snapshot(
                 routing_object_bytes: row.routing_object_bytes,
                 leaf_object_bytes: row.leaf_object_bytes,
                 delta_object_bytes: row.delta_object_bytes,
+            })
+            .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_scan_placement_snapshot(
+    index_relation: pg_sys::Relation,
+    query_values: Vec<f32>,
+) -> Vec<SpireIndexScanPlacementSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanPlacementSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let diagnostics = scan::collect_single_level_scan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            options::relation_options(index_relation),
+        )?;
+        let rows = diagnostics
+            .stores
+            .into_iter()
+            .map(|store| SpireIndexScanPlacementSnapshotRow {
+                active_epoch: store.epoch,
+                effective_nprobe: diagnostics.scan_plan.nprobe,
+                effective_nprobe_source: diagnostics.scan_plan.nprobe_source,
+                effective_rerank_width: diagnostics.scan_plan.rerank_width as u64,
+                effective_rerank_width_source: diagnostics.scan_plan.rerank_width_source,
+                node_id: store.node_id,
+                local_store_id: store.local_store_id,
+                scanned_pid_count: store.scanned_pid_count as u64,
+                leaf_pid_count: store.leaf_pid_count as u64,
+                delta_pid_count: store.delta_pid_count as u64,
+                candidate_row_count: store.candidate_row_count as u64,
+                leaf_candidate_row_count: store.leaf_candidate_row_count as u64,
+                delta_candidate_row_count: store.delta_candidate_row_count as u64,
+                delete_delta_row_count: store.delete_delta_row_count as u64,
             })
             .collect();
         Ok(rows)

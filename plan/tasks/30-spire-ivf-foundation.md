@@ -62,9 +62,11 @@ options plus effective scan option resolution through
 `ec_spire_index_options_snapshot`; the health snapshot now reports
 conservative status/recommendation rows, including active delta compaction
 recommendations, and the first placement snapshot exposes per-local-store
-active placement/object/byte counts. PQ-FastScan scorer binding,
-recall/latency summary evidence, physical object reclamation/old-epoch
-cleanup, and full SQL VACUUM end-to-end coverage remain open. Task 30 implements
+active placement/object/byte counts; a query-specific scan placement snapshot
+now exposes per-store routed leaf PID, delta PID, and candidate-row counts.
+PQ-FastScan scorer binding, recall/latency summary evidence, physical object
+reclamation/old-epoch cleanup, and full SQL VACUUM end-to-end coverage remain
+open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -349,7 +351,11 @@ Decision record:
   SQL function `ec_spire_index_placement_snapshot(index_oid)` now reports
   one row per active `(node_id, local_store_id)` with placement counts,
   placement-state counts, object-kind counts, assignment counts, routing-child
-  counts, and object-byte buckets.
+  counts, and object-byte buckets. SQL function
+  `ec_spire_index_scan_placement_snapshot(index_oid, query)` now reports one
+  row per scan-touched `(node_id, local_store_id)` with resolved scan-option
+  labels, scanned PID counts, leaf/delta PID counts, candidate-row counts, and
+  delete-delta row counts for the supplied query.
   Recall/latency summary rows and deeper operator guidance remain open.
 - [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
@@ -369,8 +375,10 @@ Decision record:
   now has focused PG18 coverage, and the SQL health snapshot surface has
   focused PG18 coverage for clean and delta-pending active epochs. The SQL
   placement snapshot surface has focused PG18 coverage for empty and populated
-  local single-store indexes; physical page reclamation, old-epoch cleanup, and
-  real SQL VACUUM end-to-end coverage remain open.
+  local single-store indexes. The SQL scan placement snapshot surface has
+  focused PG18 coverage for query-specific routed leaf PID and candidate-row
+  counts; physical page reclamation, old-epoch cleanup, and real SQL VACUUM
+  end-to-end coverage remain open.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
@@ -429,8 +437,10 @@ Decision record:
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
   reports active per-store placement counts, placement-state counts,
   object-kind counts, assignment counts, routing-child counts, and object bytes
-  for the local single-store path; scan-time candidate rows and scanned PID
-  counts remain open.
+  for the local single-store path. The query-specific SQL scan placement
+  snapshot now reports scan-touched leaf/delta PID counts and candidate rows
+  per local store; multi-store physical placement, parallel local fetch, and
+  benchmark-backed local placement claims remain open.
 - [ ] **Local placement benchmark.** Measure one-store vs multi-store behavior
   on a machine with multiple physical NVMe devices before making any product
   claim.
