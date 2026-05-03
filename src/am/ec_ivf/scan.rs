@@ -30,6 +30,13 @@ struct EcIvfScanOpaque {
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
+    heap_rerank_relation: pg_sys::Relation,
+    heap_rerank_relation_owned: bool,
+    heap_rerank_snapshot: pg_sys::Snapshot,
+    heap_rerank_snapshot_owned: bool,
+    heap_rerank_slot: *mut pg_sys::TupleTableSlot,
+    heap_rerank_source_attnum: i16,
+    heap_rerank_source_kind: source::SourceDatumKind,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
 }
@@ -285,6 +292,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             };
             store_scan_query(opaque, &query);
             store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
+            configure_heap_rerank_state(scan, opaque, &index_options);
 
             if metadata.dimensions != 0 {
                 let centroid_scores =
@@ -608,6 +616,7 @@ unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
 unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     unsafe { free_scan_query(opaque) };
     free_scan_prepared_query(opaque);
+    unsafe { free_heap_rerank_state(opaque) };
     unsafe {
         free_centroid_scores(opaque);
         free_selected_lists(opaque);
@@ -640,6 +649,67 @@ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
         drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
         opaque.candidate_dedup = ptr::null_mut();
     }
+}
+
+unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.heap_rerank_slot.is_null() {
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.heap_rerank_slot) };
+        opaque.heap_rerank_slot = ptr::null_mut();
+    }
+    if opaque.heap_rerank_snapshot_owned && !opaque.heap_rerank_snapshot.is_null() {
+        unsafe { pg_sys::UnregisterSnapshot(opaque.heap_rerank_snapshot) };
+    }
+    opaque.heap_rerank_snapshot = ptr::null_mut();
+    opaque.heap_rerank_snapshot_owned = false;
+    if opaque.heap_rerank_relation_owned && !opaque.heap_rerank_relation.is_null() {
+        unsafe {
+            pg_sys::table_close(
+                opaque.heap_rerank_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+    }
+    opaque.heap_rerank_relation = ptr::null_mut();
+    opaque.heap_rerank_relation_owned = false;
+    opaque.heap_rerank_source_attnum = 0;
+    opaque.heap_rerank_source_kind = source::SourceDatumKind::Unknown;
+}
+
+unsafe fn configure_heap_rerank_state(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut EcIvfScanOpaque,
+    index_options: &super::options::EcIvfOptions,
+) {
+    unsafe { free_heap_rerank_state(opaque) };
+
+    if index_options.rerank.v1_effective() != super::options::RerankMode::HeapF32 {
+        return;
+    }
+
+    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
+    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let source_attribute = unsafe {
+        source::resolve_indexed_ecvector_attribute(
+            heap_relation,
+            (*scan).indexRelation,
+            "ec_ivf heap_f32 rerank indexed column",
+        )
+    };
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "ec_ivf heap_f32 rerank failed to allocate a heap tuple slot",
+        )
+    };
+
+    opaque.heap_rerank_relation = heap_relation;
+    opaque.heap_rerank_relation_owned = heap_relation_owned;
+    opaque.heap_rerank_snapshot = snapshot;
+    opaque.heap_rerank_snapshot_owned = snapshot_owned;
+    opaque.heap_rerank_slot = slot;
+    opaque.heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
+        .expect("heap rerank source attnum should fit in i16");
+    opaque.heap_rerank_source_kind = source_attribute.kind;
 }
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
@@ -930,7 +1000,7 @@ fn consume_live_tid_budget(
 }
 
 unsafe fn rerank_probe_candidates(
-    scan: pg_sys::IndexScanDesc,
+    _scan: pg_sys::IndexScanDesc,
     index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
     candidates: &mut Vec<EcIvfScoredCandidate>,
@@ -942,9 +1012,7 @@ unsafe fn rerank_probe_candidates(
                 super::options::resolve_scan_rerank_width(index_options.rerank_width)
                     .effective_rerank_width;
             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
-            unsafe {
-                rerank_probe_candidates_heap_f32(scan, opaque, &mut candidates[..rerank_len])
-            };
+            unsafe { rerank_probe_candidates_heap_f32(opaque, &mut candidates[..rerank_len]) };
             candidates[..rerank_len].sort_by(candidate_cmp);
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
@@ -966,7 +1034,6 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
 }
 
 unsafe fn rerank_probe_candidates_heap_f32(
-    scan: pg_sys::IndexScanDesc,
     opaque: &mut EcIvfScanOpaque,
     candidates: &mut [EcIvfScoredCandidate],
 ) {
@@ -974,38 +1041,34 @@ unsafe fn rerank_probe_candidates_heap_f32(
         return;
     }
     candidates.sort_by(candidate_heap_tid_cmp);
-    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
-    let snapshot = unsafe { resolve_scan_snapshot(scan) };
-    let source_attribute = unsafe {
-        source::resolve_indexed_ecvector_attribute(
-            heap_relation,
-            (*scan).indexRelation,
-            "ec_ivf heap_f32 rerank indexed column",
-        )
-    };
-    let slot = unsafe {
-        source::allocate_heap_slot(
-            heap_relation,
-            "ec_ivf heap_f32 rerank failed to allocate a heap tuple slot",
-        )
+    if opaque.heap_rerank_relation.is_null()
+        || opaque.heap_rerank_snapshot.is_null()
+        || opaque.heap_rerank_slot.is_null()
+        || opaque.heap_rerank_source_attnum <= 0
+    {
+        pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
+    }
+    let source_attribute = source::SourceAttribute {
+        attnum: i32::from(opaque.heap_rerank_source_attnum),
+        kind: opaque.heap_rerank_source_kind,
     };
 
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+    unsafe { prefetch_heap_rerank_blocks(opaque.heap_rerank_relation, candidates) };
 
     for candidate in candidates {
         unsafe {
             source::fetch_heap_row_version(
-                heap_relation,
+                opaque.heap_rerank_relation,
                 candidate.heap_tid,
-                snapshot,
-                slot,
+                opaque.heap_rerank_snapshot,
+                opaque.heap_rerank_slot,
                 "ec_ivf heap_f32 rerank source vector",
             )
         };
         let source_vector = unsafe {
             source::FlatFloat4SourceRef::from_datum(
                 source::required_slot_datum(
-                    slot,
+                    opaque.heap_rerank_slot,
                     source_attribute.attnum,
                     "ec_ivf heap_f32 rerank source vector",
                 ),
@@ -1019,12 +1082,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
         );
         opaque.explain_counters.record_rerank_row();
         drop(source_vector);
-        unsafe { pg_sys::ExecClearTuple(slot) };
-    }
-
-    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
-    if heap_relation_owned {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        unsafe { pg_sys::ExecClearTuple(opaque.heap_rerank_slot) };
     }
 }
 
@@ -1093,17 +1151,21 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Re
     )
 }
 
-unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
     if !unsafe { (*scan).xs_snapshot }.is_null() {
-        return unsafe { (*scan).xs_snapshot };
+        return (unsafe { (*scan).xs_snapshot }, false);
     }
 
     let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
-        return active_snapshot;
+        return (active_snapshot, false);
     }
 
-    pgrx::error!("ec_ivf heap_f32 rerank requires an executor or active snapshot");
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("ec_ivf heap_f32 rerank could not resolve an active snapshot");
+    }
+    (registered_snapshot, true)
 }
 
 fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
