@@ -200,6 +200,10 @@ pub(super) unsafe fn scan_object_tuples<F>(
 where
     F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
 {
+    // The visitor runs while the current object page is held under
+    // BUFFER_LOCK_SHARE. Keep visitors limited to CPU-only tuple inspection
+    // and copying bytes into caller-owned state; do not read or pin other pages
+    // in this relation from inside the callback.
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
