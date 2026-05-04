@@ -662,6 +662,12 @@ diagnostics without scoring assignments.
   parent rewrite wrapper into one pure merge routing preparation seam. It
   returns the rewritten parent plus replacement children after validating the
   PID plan and replacement parent object version.
+- [x] **Relation scheduled merge execution-parts helper.** Scheduler execution
+  now has a pure relation-input parts builder for merge decisions. It combines
+  the merge routing parts with folded replacement leaf rows, validates leaf
+  input coverage against the replacement child, and carries publish/retention
+  timestamps plus replacement object versions into the existing publish-plan
+  input builder shape.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
