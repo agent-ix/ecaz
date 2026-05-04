@@ -757,6 +757,10 @@ diagnostics without scoring assignments.
   replacement placement directory, builds the scheduled replacement epoch draft,
   and publishes root/control through the existing replacement epoch publisher.
   Live scheduler invocation remains open.
+- [x] **Relation selected scheduled replacement publish helper.** Scheduler
+  execution now has a selected-plan preflight and relation publish wrapper that
+  keep decision, PID plan, and publish plan bundled through relation publish
+  validation before delegating to the existing relation object-write path.
 - [x] **Scheduled replacement publish-lock plan helper.** Scheduler execution
   now has a pure helper that binds root/control active epoch and allocator
   cursors, the active epoch manifest, the checked scheduler decision, and the
