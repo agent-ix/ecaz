@@ -809,6 +809,11 @@ diagnostics without scoring assignments.
 - [x] **Selected scheduled execution snapshot validator.** Scheduler execution
   now has a pure snapshot validator that consumes the selected publish-lock plan
   directly for active epoch and consistency-mode drift checks.
+- [x] **Selected scheduled replacement snapshot loaders.** Scheduler execution
+  now has selected-plan wrappers for loading the decision-bound parent routing
+  object and collecting folded affected-leaf rows from the active snapshot,
+  keeping snapshot validation bundled with the publish-lock plan before
+  merge/split material preparation.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

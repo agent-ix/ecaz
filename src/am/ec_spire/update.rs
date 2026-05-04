@@ -879,6 +879,15 @@ pub(super) fn load_scheduled_replacement_parent_routing(
     Ok(parent)
 }
 
+pub(super) fn load_selected_scheduled_replacement_parent_routing(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+) -> Result<SpireRoutingPartitionObject, String> {
+    validate_selected_scheduled_replacement_execution_snapshot(snapshot, selected)?;
+    load_scheduled_replacement_parent_routing(snapshot, object_store, &selected.decision)
+}
+
 pub(super) fn build_scheduled_merge_replacement_routing_parts(
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -1501,6 +1510,19 @@ pub(super) fn collect_replacement_leaf_rows(
         .collect::<Vec<_>>();
     folded.sort_by_key(|entry| entry.base_pid);
     Ok(folded)
+}
+
+pub(super) fn collect_selected_scheduled_replacement_leaf_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+) -> Result<Vec<SpireReplacementLeafRows>, String> {
+    validate_selected_scheduled_replacement_execution_snapshot(snapshot, selected)?;
+    collect_replacement_leaf_rows(
+        snapshot,
+        object_store,
+        &selected.decision.affected_leaf_pids,
+    )
 }
 
 pub(super) fn rewrite_routing_partition_for_leaf_replacement(
@@ -3316,7 +3338,9 @@ mod tests {
         build_scheduled_split_replacement_routing_parts,
         build_split_replacement_leaf_object_inputs, choose_leaf_replacement_schedule,
         choose_scheduled_replacement_publish_lock_plan, collect_replacement_leaf_rows,
-        load_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
+        collect_selected_scheduled_replacement_leaf_rows,
+        load_scheduled_replacement_parent_routing,
+        load_selected_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
         plan_rechecked_scheduled_replacement_publish_lock,
         plan_replacement_epoch_placement_directory, plan_scheduled_leaf_replacement_pids,
         plan_scheduled_replacement_publish_epoch, plan_scheduled_replacement_publish_lock,
@@ -4159,6 +4183,78 @@ mod tests {
         )
         .unwrap_err()
         .contains("missing affected leaf"));
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_parent_loader_uses_lock_plan() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        let parent =
+            load_selected_scheduled_replacement_parent_routing(&snapshot, &object_store, &selected)
+                .unwrap();
+
+        assert_eq!(parent.header.pid, 1);
+        assert_eq!(
+            parent
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 12, 13]
+        );
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_parent_loader_rejects_snapshot_drift() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                active_epoch: 6,
+                ..scheduled_split_decision(7)
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 7,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        assert!(load_selected_scheduled_replacement_parent_routing(
+            &snapshot,
+            &object_store,
+            &selected
+        )
+        .unwrap_err()
+        .contains("snapshot epoch"));
     }
 
     #[test]
@@ -5922,6 +6018,80 @@ mod tests {
             .unwrap_err()
             .contains("next_local_vec_seq")
         );
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_leaf_rows_collects_affected_rows() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        let rows =
+            collect_selected_scheduled_replacement_leaf_rows(&snapshot, &object_store, &selected)
+                .unwrap();
+
+        assert_eq!(
+            rows.iter().map(|row| row.base_pid).collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+        assert_eq!(rows[0].rows[0].heap_tid, tid(10, 1));
+        assert_eq!(rows[1].rows[0].heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_leaf_rows_rejects_snapshot_drift() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Degraded,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        assert!(collect_selected_scheduled_replacement_leaf_rows(
+            &snapshot,
+            &object_store,
+            &selected
+        )
+        .unwrap_err()
+        .contains("consistency mode"));
     }
 
     #[test]
