@@ -680,6 +680,9 @@ diagnostics without scoring assignments.
   has the same merge routing/leaf composition for local dry-run execution,
   preserving caller-provided placement-write evidence while sharing relation
   merge validation and publish-plan drift checks.
+- [x] **Local selected scheduled merge execution-input helper.** Scheduler
+  execution now has a local dry-run merge builder that consumes the selected
+  publish-lock plan directly while preserving placement-write evidence.
 - [x] **Relation scheduled split execution-parts helper.** Scheduler execution
   now has split-side pure composition for caller-trained replacement centroids
   and routed replacement leaf inputs. It builds replacement routing parts,
