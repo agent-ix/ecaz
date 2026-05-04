@@ -907,12 +907,19 @@ fn validate_leaf_replacement_schedule_rows(
     rows: &[SpireIndexLeafSnapshotRow],
 ) -> Result<(), String> {
     let mut active_epoch = None;
+    let mut seen_leaf_pids = HashSet::new();
     for row in rows {
         if row.active_epoch == 0 {
             return Err("ec_spire replacement scheduler row active_epoch 0 is invalid".to_owned());
         }
         if row.leaf_pid == 0 {
             return Err("ec_spire replacement scheduler row leaf_pid 0 is invalid".to_owned());
+        }
+        if !seen_leaf_pids.insert(row.leaf_pid) {
+            return Err(format!(
+                "ec_spire replacement scheduler duplicate row for leaf pid {}",
+                row.leaf_pid
+            ));
         }
         if row.parent_pid == 0 && (row.split_recommended || row.merge_recommended) {
             return Err(format!(
@@ -3079,6 +3086,13 @@ mod tests {
         ])
         .unwrap_err()
         .contains("multiple active epochs"));
+
+        assert!(choose_leaf_replacement_schedule(&[
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(11, 1, 2, false, true),
+        ])
+        .unwrap_err()
+        .contains("duplicate row"));
     }
 
     #[test]
