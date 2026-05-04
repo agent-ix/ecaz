@@ -564,6 +564,12 @@ diagnostics without scoring assignments.
   routing placement plus replacement leaf placements. This keeps old PIDs
   queryable only through retained prior placement directories while the new
   active directory references the replacement objects.
+- [x] **Replacement publish-draft helper.** Phase 2 now has a pure draft helper
+  that turns a planned replacement placement directory plus durable placement
+  write evidence into a published epoch manifest, object manifest, validated
+  epoch snapshot, root/control state, and encoded publish bundle inputs. This
+  reuses the existing publish coordinator evidence checks before live
+  split/merge relation publishing is wired.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

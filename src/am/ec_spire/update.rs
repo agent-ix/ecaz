@@ -8,8 +8,9 @@ use super::assign::{
 };
 use super::build::{
     encode_manifest_bundle_for_publish, encode_publish_bundle_for_publish,
-    root_control_state_for_publish, SpireEncodedManifestBundle, SpireEncodedPublishBundle,
-    SpirePublishCoordinatorInput, SpirePublishedManifestLocators,
+    object_manifest_from_placement_writes, root_control_state_for_publish,
+    SpireEncodedManifestBundle, SpireEncodedPublishBundle, SpirePublishCoordinatorInput,
+    SpirePublishPlacementWriteEvidence, SpirePublishedManifestLocators,
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
@@ -96,6 +97,57 @@ pub(super) struct SpireLeafReplacementPidPlan {
 pub(super) struct SpireReplacementLeafRows {
     pub(super) base_pid: u64,
     pub(super) rows: Vec<SpireLeafAssignmentRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireReplacementEpochInput {
+    pub(super) epoch: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) placement_directory: SpirePlacementDirectory,
+    pub(super) placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireReplacementEpochDraft {
+    pub(super) epoch_manifest: SpireEpochManifest,
+    pub(super) object_manifest: SpireObjectManifest,
+    pub(super) placement_directory: SpirePlacementDirectory,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+impl SpireReplacementEpochDraft {
+    fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest: &self.object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq: self.next_local_vec_seq,
+        }
+    }
+
+    pub(super) fn encode_manifest_bundle(&self) -> Result<SpireEncodedManifestBundle, String> {
+        encode_manifest_bundle_for_publish(self.publish_input())
+    }
+
+    pub(super) fn root_control_state(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, String> {
+        root_control_state_for_publish(self.publish_input(), locators)
+    }
+
+    pub(super) fn encode_publish_bundle(
+        &self,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireEncodedPublishBundle, String> {
+        encode_publish_bundle_for_publish(self.publish_input(), locators)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -399,6 +451,56 @@ pub(super) fn plan_replacement_epoch_placement_directory(
     entries.push(replacement_parent_placement);
     entries.extend(replacement_leaf_placements);
     SpirePlacementDirectory::from_entries(new_epoch, entries)
+}
+
+pub(super) fn build_replacement_epoch_draft(
+    input: SpireReplacementEpochInput,
+) -> Result<SpireReplacementEpochDraft, String> {
+    let epoch_manifest = SpireEpochManifest {
+        epoch: input.epoch,
+        state: SpireEpochState::Published,
+        consistency_mode: input.consistency_mode,
+        published_at_micros: input.published_at_micros,
+        retain_until_micros: input.retain_until_micros,
+        active_query_count: 0,
+    };
+    epoch_manifest.validate()?;
+    let object_manifest = object_manifest_from_placement_writes(
+        input.epoch,
+        &input.placement_directory,
+        &input.placement_write_evidence,
+    )?;
+    let draft = SpireReplacementEpochDraft {
+        epoch_manifest,
+        object_manifest,
+        placement_directory: input.placement_directory,
+        next_pid: input.next_pid,
+        next_local_vec_seq: input.next_local_vec_seq,
+    };
+    SpireValidatedEpochSnapshot::new(
+        &draft.epoch_manifest,
+        &draft.object_manifest,
+        &draft.placement_directory,
+    )?;
+    root_control_state_for_publish(draft.publish_input(), manifest_locators_for_validation())?;
+    Ok(draft)
+}
+
+fn manifest_locators_for_validation() -> SpirePublishedManifestLocators {
+    SpirePublishedManifestLocators {
+        epoch_manifest_tid: ItemPointer {
+            block_number: 1,
+            offset_number: 1,
+        },
+        object_manifest_tid: ItemPointer {
+            block_number: 1,
+            offset_number: 2,
+        },
+        placement_directory_tid: ItemPointer {
+            block_number: 1,
+            offset_number: 3,
+        },
+    }
 }
 
 fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String> {
@@ -865,21 +967,22 @@ fn validate_delete_delta_targets(
 mod tests {
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
-        collect_replacement_leaf_rows, plan_leaf_replacement_pids,
+        build_replacement_epoch_draft, collect_replacement_leaf_rows, plan_leaf_replacement_pids,
         plan_replacement_epoch_placement_directory, rewrite_routing_partition_for_leaf_replacement,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireRoutingReplacementChild,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireReplacementEpochInput,
+        SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
         SpirePidAllocator,
     };
     use crate::am::ec_spire::build::{
-        build_single_level_leaf_epoch_draft, SpirePublishedManifestLocators,
-        SpireSingleLevelBuildInput,
+        build_single_level_leaf_epoch_draft, SpirePublishPlacementWriteEvidence,
+        SpirePublishedManifestLocators, SpireSingleLevelBuildInput,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementState,
+        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::{
@@ -1413,6 +1516,65 @@ mod tests {
                 .unwrap()
                 .pid,
             12
+        );
+    }
+
+    #[test]
+    fn replacement_epoch_draft_builds_manifest_and_publish_bundle() {
+        let placement_directory = SpirePlacementDirectory::from_entries(
+            8,
+            vec![
+                SpirePlacementEntry::local_single_store_available(8, 1, 12345, 4, tid(30, 1), 128),
+                SpirePlacementEntry::local_single_store_available(8, 21, 12345, 1, tid(31, 1), 256),
+            ],
+        )
+        .unwrap();
+        let draft = build_replacement_epoch_draft(SpireReplacementEpochInput {
+            epoch: 8,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            consistency_mode: SpireConsistencyMode::Strict,
+            placement_directory,
+            placement_write_evidence: vec![
+                SpirePublishPlacementWriteEvidence {
+                    pid: 21,
+                    placement_tid: tid(90, 2),
+                },
+                SpirePublishPlacementWriteEvidence {
+                    pid: 1,
+                    placement_tid: tid(90, 1),
+                },
+            ],
+            next_pid: 30,
+            next_local_vec_seq: 5,
+        })
+        .unwrap();
+
+        assert_eq!(draft.epoch_manifest.epoch, 8);
+        assert_eq!(
+            draft.object_manifest.get(1).unwrap().placement_tid,
+            tid(90, 1)
+        );
+        assert_eq!(
+            draft.object_manifest.get(21).unwrap().placement_tid,
+            tid(90, 2)
+        );
+        let root_control = draft.root_control_state(manifest_locators()).unwrap();
+        assert_eq!(root_control.active_epoch, 8);
+        assert_eq!(root_control.next_pid, 30);
+        assert_eq!(root_control.next_local_vec_seq, 5);
+        let encoded = draft.encode_publish_bundle(manifest_locators()).unwrap();
+        assert_eq!(
+            SpireEpochManifest::decode(&encoded.manifests.epoch_manifest).unwrap(),
+            draft.epoch_manifest
+        );
+        assert_eq!(
+            SpireObjectManifest::decode(&encoded.manifests.object_manifest).unwrap(),
+            draft.object_manifest
+        );
+        assert_eq!(
+            SpirePlacementDirectory::decode(&encoded.manifests.placement_directory).unwrap(),
+            draft.placement_directory
         );
     }
 
