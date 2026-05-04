@@ -663,6 +663,11 @@ diagnostics without scoring assignments.
   final `next_pid` against the fresh PID plan selected under the publish lock.
   It rejects reused PID plans, wrong parent placement PID, leaf-placement PID
   order mismatches, and cursor mismatches before publish-draft assembly.
+- [x] **Local scheduled replacement execution draft helper.** Scheduler
+  execution now has a local-store dry-run helper that writes decision-bound
+  replacement objects, validates the written placement output against the PID
+  plan, and builds the scheduled replacement epoch draft. It catches
+  replacement-child order drift before relation callback integration.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

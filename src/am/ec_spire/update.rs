@@ -204,6 +204,20 @@ pub(super) struct SpireScheduledReplacementEpochObjectPlacementInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLocalScheduledReplacementExecutionInput {
+    pub(super) epoch: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) replacement_parent: SpireRoutingPartitionObject,
+    pub(super) replacement_children: Vec<SpireRoutingReplacementChild>,
+    pub(super) leaf_object_version: u64,
+    pub(super) leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    pub(super) placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
     pub(super) centroid: Vec<f32>,
@@ -1124,6 +1138,45 @@ pub(super) fn validate_scheduled_replacement_pid_plan_output(
     Ok(())
 }
 
+pub(super) fn build_local_scheduled_replacement_epoch_draft(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    input: SpireLocalScheduledReplacementExecutionInput,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireReplacementEpochDraft, String> {
+    let replacement_object_placements = write_local_scheduled_replacement_objects(
+        input.epoch,
+        &input.replacement_parent,
+        decision,
+        &input.replacement_children,
+        input.leaf_object_version,
+        input.leaf_inputs,
+        object_store,
+    )?;
+    validate_scheduled_replacement_pid_plan_output(
+        decision,
+        pid_plan,
+        &replacement_object_placements,
+        pid_plan.next_pid,
+    )?;
+    build_scheduled_replacement_epoch_draft_from_object_placements(
+        snapshot,
+        object_store,
+        decision,
+        SpireScheduledReplacementEpochObjectPlacementInput {
+            epoch: input.epoch,
+            published_at_micros: input.published_at_micros,
+            retain_until_micros: input.retain_until_micros,
+            consistency_mode: input.consistency_mode,
+            replacement_object_placements,
+            placement_write_evidence: input.placement_write_evidence,
+            next_pid: pid_plan.next_pid,
+            next_local_vec_seq: input.next_local_vec_seq,
+        },
+    )
+}
+
 pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
@@ -1902,8 +1955,8 @@ mod tests {
     use super::SpireIndexLeafSnapshotRow;
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
-        build_merge_replacement_leaf_object_input, build_replacement_epoch_draft,
-        build_replacement_epoch_draft_from_object_placements,
+        build_local_scheduled_replacement_epoch_draft, build_merge_replacement_leaf_object_input,
+        build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
@@ -1914,9 +1967,10 @@ mod tests {
         validate_scheduled_replacement_pid_plan_output, write_local_replacement_objects,
         write_local_scheduled_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
         SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
-        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
-        SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
-        SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
+        SpireLeafReplacementScheduleMode, SpireLocalScheduledReplacementExecutionInput,
+        SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
+        SpireReplacementLeafObjectInput, SpireReplacementLeafRows,
+        SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
     };
     use crate::am::ec_spire::assign::{
@@ -3873,6 +3927,232 @@ mod tests {
         )
         .unwrap_err()
         .contains("next_pid"));
+    }
+
+    #[test]
+    fn local_scheduled_replacement_execution_writes_objects_and_builds_draft() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let new_epoch = 8;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_11 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                11,
+                1,
+                root.header.pid,
+                &[primary_row(1, 10, 1)],
+            )
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let leaf_13 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                13,
+                1,
+                root.header.pid,
+                &[primary_row(3, 10, 3)],
+            )
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_11, leaf_12, leaf_13];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let replacement_children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let replacement_parent = rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            replacement_children.clone(),
+            4,
+        )
+        .unwrap();
+
+        let draft = build_local_scheduled_replacement_epoch_draft(
+            &snapshot,
+            &decision,
+            &pid_plan,
+            SpireLocalScheduledReplacementExecutionInput {
+                epoch: new_epoch,
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                replacement_parent,
+                replacement_children,
+                leaf_object_version: 2,
+                leaf_inputs: vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+                placement_write_evidence: placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+                next_local_vec_seq: 7,
+            },
+            &mut object_store,
+        )
+        .unwrap();
+
+        assert_eq!(draft.next_pid, 23);
+        assert_eq!(draft.next_local_vec_seq, 7);
+        assert_eq!(
+            draft
+                .placement_directory
+                .entries
+                .iter()
+                .map(|entry| entry.pid)
+                .collect::<Vec<_>>(),
+            vec![1, 11, 13, 21, 22]
+        );
+    }
+
+    #[test]
+    fn local_scheduled_replacement_execution_rejects_children_outside_pid_plan_order() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_12];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let replacement_children = vec![
+            replacement_child(22, vec![-0.5, 0.5]),
+            replacement_child(21, vec![0.5, 0.5]),
+        ];
+        let replacement_parent = rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            replacement_children.clone(),
+            4,
+        )
+        .unwrap();
+
+        assert!(build_local_scheduled_replacement_epoch_draft(
+            &snapshot,
+            &decision,
+            &pid_plan,
+            SpireLocalScheduledReplacementExecutionInput {
+                epoch: 8,
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                replacement_parent,
+                replacement_children,
+                leaf_object_version: 2,
+                leaf_inputs: vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+                placement_write_evidence: placement_write_evidence_for_pids(&[1, 21, 22]),
+                next_local_vec_seq: 7,
+            },
+            &mut object_store,
+        )
+        .unwrap_err()
+        .contains("do not match pid plan"));
     }
 
     #[test]
