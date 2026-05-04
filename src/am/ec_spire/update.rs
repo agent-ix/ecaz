@@ -441,6 +441,69 @@ pub(super) fn recheck_leaf_replacement_schedule_decision(
     Ok(())
 }
 
+pub(super) fn build_merge_replacement_leaf_object_input(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    replacement_leaf_rows: Vec<SpireReplacementLeafRows>,
+) -> Result<SpireReplacementLeafObjectInput, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if decision.mode != SpireLeafReplacementScheduleMode::Merge {
+        return Err("ec_spire merge replacement leaf input requires a merge decision".to_owned());
+    }
+    if pid_plan.reuses_existing_pid {
+        return Err(
+            "ec_spire merge replacement leaf input requires fresh replacement pid".to_owned(),
+        );
+    }
+    let [replacement_pid] = pid_plan.replacement_pids.as_slice() else {
+        return Err(
+            "ec_spire merge replacement leaf input requires exactly one replacement pid".to_owned(),
+        );
+    };
+
+    let affected: HashSet<u64> = decision.affected_leaf_pids.iter().copied().collect();
+    let mut rows_by_base_pid = HashMap::new();
+    for leaf_rows in replacement_leaf_rows {
+        if !affected.contains(&leaf_rows.base_pid) {
+            return Err(format!(
+                "ec_spire merge replacement leaf input got rows for unselected base pid {}",
+                leaf_rows.base_pid
+            ));
+        }
+        if rows_by_base_pid
+            .insert(leaf_rows.base_pid, leaf_rows.rows)
+            .is_some()
+        {
+            return Err(format!(
+                "ec_spire merge replacement leaf input got duplicate rows for base pid {}",
+                leaf_rows.base_pid
+            ));
+        }
+    }
+
+    let mut rows = Vec::new();
+    for base_pid in &decision.affected_leaf_pids {
+        let Some(mut leaf_rows) = rows_by_base_pid.remove(base_pid) else {
+            return Err(format!(
+                "ec_spire merge replacement leaf input missing rows for base pid {base_pid}"
+            ));
+        };
+        rows.append(&mut leaf_rows);
+    }
+    let input = SpireReplacementLeafObjectInput {
+        pid: *replacement_pid,
+        rows,
+    };
+    validate_replacement_leaf_object_inputs(
+        &[SpireRoutingReplacementChild {
+            child_pid: input.pid,
+            centroid: Vec::new(),
+        }],
+        std::slice::from_ref(&input),
+    )?;
+    Ok(input)
+}
+
 fn leaf_replacement_schedule_decisions_match(
     observed: &SpireLeafReplacementScheduleDecision,
     expected: &SpireLeafReplacementScheduleDecision,
@@ -1524,15 +1587,16 @@ mod tests {
     use super::SpireIndexLeafSnapshotRow;
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
-        build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
-        choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
-        plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
-        plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
-        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
-        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        build_merge_replacement_leaf_object_input, build_replacement_epoch_draft,
+        build_replacement_epoch_draft_from_object_placements, choose_leaf_replacement_schedule,
+        collect_replacement_leaf_rows, plan_leaf_replacement_pids,
+        plan_replacement_epoch_placement_directory, plan_scheduled_leaf_replacement_pids,
+        recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
+        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
         SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
         SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
-        SpireReplacementLeafObjectInput, SpireRoutingReplacementChild,
+        SpireReplacementLeafObjectInput, SpireReplacementLeafRows, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -2063,6 +2127,106 @@ mod tests {
                 .unwrap_err()
                 .contains("no longer recommended")
         );
+    }
+
+    #[test]
+    fn merge_replacement_leaf_input_combines_folded_rows_in_decision_order() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30],
+            reuses_existing_pid: false,
+            next_pid: 31,
+        };
+
+        let input = build_merge_replacement_leaf_object_input(
+            &decision,
+            &pid_plan,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 20, 2)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 20, 1)],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(input.pid, 30);
+        assert_eq!(
+            input
+                .rows
+                .iter()
+                .map(|row| row.heap_tid)
+                .collect::<Vec<_>>(),
+            vec![tid(20, 1), tid(20, 2)]
+        );
+    }
+
+    #[test]
+    fn merge_replacement_leaf_input_rejects_wrong_mode_or_row_set() {
+        let split_decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30],
+            reuses_existing_pid: false,
+            next_pid: 31,
+        };
+        assert!(
+            build_merge_replacement_leaf_object_input(&split_decision, &pid_plan, Vec::new())
+                .unwrap_err()
+                .contains("requires a merge decision")
+        );
+
+        let merge_decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        assert!(build_merge_replacement_leaf_object_input(
+            &merge_decision,
+            &pid_plan,
+            vec![SpireReplacementLeafRows {
+                base_pid: 11,
+                rows: vec![primary_row(1, 20, 1)],
+            }],
+        )
+        .unwrap_err()
+        .contains("missing rows"));
+        assert!(build_merge_replacement_leaf_object_input(
+            &merge_decision,
+            &pid_plan,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 20, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 13,
+                    rows: Vec::new(),
+                },
+            ],
+        )
+        .unwrap_err()
+        .contains("unselected base pid"));
     }
 
     #[test]

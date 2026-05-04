@@ -619,6 +619,12 @@ diagnostics without scoring assignments.
   decision disappeared or changed before object writes, preserving the design
   requirement that live execution revalidate selected PIDs under the publish
   lock.
+- [x] **Merge replacement leaf-input helper.** Merge scheduler execution now
+  has a pure helper that combines folded rows from the selected affected leaves
+  into the single replacement leaf input required by the replacement object
+  writer. It validates merge decision shape, requires one fresh replacement
+  PID, rejects missing/extra/duplicate base PID row groups, preserves affected
+  leaf order, and reuses the replacement leaf-object input validator.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
