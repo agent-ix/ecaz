@@ -1469,6 +1469,11 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
             decision.replacement_leaf_count
         ));
     }
+    validate_scheduled_replacement_parent_contents(
+        replacement_parent,
+        decision,
+        replacement_children,
+    )?;
     if leaf_object_version == 0 {
         return Err(
             "ec_spire scheduled replacement execution leaf object_version 0 is invalid".to_owned(),
@@ -1502,6 +1507,33 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
         ));
     }
     validate_replacement_leaf_object_inputs(replacement_children, leaf_inputs)
+}
+
+fn validate_scheduled_replacement_parent_contents(
+    replacement_parent: &SpireRoutingPartitionObject,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_children: &[SpireRoutingReplacementChild],
+) -> Result<(), String> {
+    let parent_child_pids = replacement_parent
+        .children()
+        .map(|child| child.child_pid)
+        .collect::<HashSet<_>>();
+    for child in replacement_children {
+        if !parent_child_pids.contains(&child.child_pid) {
+            return Err(format!(
+                "ec_spire scheduled replacement execution parent is missing replacement child pid {}",
+                child.child_pid
+            ));
+        }
+    }
+    for affected_pid in &decision.affected_leaf_pids {
+        if parent_child_pids.contains(affected_pid) {
+            return Err(format!(
+                "ec_spire scheduled replacement execution parent still contains affected leaf pid {affected_pid}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_scheduled_replacement_execution_snapshot(
@@ -2579,6 +2611,26 @@ mod tests {
             replacement_leaf_count: 2,
             reason: "test_split",
         }
+    }
+
+    fn scheduled_split_replacement_children() -> Vec<SpireRoutingReplacementChild> {
+        vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ]
+    }
+
+    fn scheduled_rewritten_parent_for_decision(
+        decision: &SpireLeafReplacementScheduleDecision,
+        replacement_children: Vec<SpireRoutingReplacementChild>,
+    ) -> SpireRoutingPartitionObject {
+        rewrite_scheduled_replacement_parent_routing(
+            &root_routing_object(),
+            decision,
+            replacement_children,
+            4,
+        )
+        .unwrap()
     }
 
     fn primary_row(vec_seq: u64, block_number: u32, offset_number: u16) -> SpireLeafAssignmentRow {
@@ -4809,6 +4861,9 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
 
         let input = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
@@ -4817,11 +4872,8 @@ mod tests {
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
-                replacement_parent: root_routing_object(),
-                replacement_children: vec![
-                    replacement_child(21, vec![0.5, 0.5]),
-                    replacement_child(22, vec![-0.5, 0.5]),
-                ],
+                replacement_parent,
+                replacement_children,
                 leaf_object_version: 2,
                 leaf_inputs: vec![
                     SpireReplacementLeafObjectInput {
@@ -4865,6 +4917,9 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
 
         let err = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &SpireScheduledReplacementPublishPlan {
@@ -4876,11 +4931,8 @@ mod tests {
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
-                replacement_parent: root_routing_object(),
-                replacement_children: vec![
-                    replacement_child(21, vec![0.5, 0.5]),
-                    replacement_child(22, vec![-0.5, 0.5]),
-                ],
+                replacement_parent,
+                replacement_children,
                 leaf_object_version: 2,
                 leaf_inputs: vec![
                     SpireReplacementLeafObjectInput {
@@ -4913,6 +4965,9 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
         let input = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
@@ -4920,11 +4975,8 @@ mod tests {
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
-                replacement_parent: root_routing_object(),
-                replacement_children: vec![
-                    replacement_child(21, vec![0.5, 0.5]),
-                    replacement_child(22, vec![-0.5, 0.5]),
-                ],
+                replacement_parent,
+                replacement_children,
                 leaf_object_version: 2,
                 leaf_inputs: vec![
                     SpireReplacementLeafObjectInput {
@@ -5078,14 +5130,14 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
         let parts = SpireRelationScheduledReplacementExecutionParts {
             published_at_micros: 3000,
             retain_until_micros: 4000,
-            replacement_parent: root_routing_object(),
-            replacement_children: vec![
-                replacement_child(21, vec![0.5, 0.5]),
-                replacement_child(22, vec![-0.5, 0.5]),
-            ],
+            replacement_parent,
+            replacement_children,
             leaf_object_version: 2,
             leaf_inputs: vec![
                 SpireReplacementLeafObjectInput {
@@ -5134,14 +5186,14 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
         let parts = SpireRelationScheduledReplacementExecutionParts {
             published_at_micros: 3000,
             retain_until_micros: 4000,
-            replacement_parent: root_routing_object(),
-            replacement_children: vec![
-                replacement_child(21, vec![0.5, 0.5]),
-                replacement_child(22, vec![-0.5, 0.5]),
-            ],
+            replacement_parent,
+            replacement_children,
             leaf_object_version: 2,
             leaf_inputs: vec![
                 SpireReplacementLeafObjectInput {
@@ -5183,6 +5235,46 @@ mod tests {
             )
             .unwrap_err()
             .contains("object_version")
+        );
+
+        let unrewritten_parent_parts = SpireRelationScheduledReplacementExecutionParts {
+            replacement_parent: root_routing_object(),
+            ..parts.clone()
+        };
+        assert!(
+            build_relation_scheduled_replacement_execution_input_from_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &decision,
+                unrewritten_parent_parts,
+            )
+            .unwrap_err()
+            .contains("missing replacement child")
+        );
+
+        let stale_leaf_parent_parts = SpireRelationScheduledReplacementExecutionParts {
+            replacement_parent: SpireRoutingPartitionObject::root(
+                1,
+                3,
+                2,
+                vec![
+                    routing_child(0, 12, vec![0.0, 1.0]),
+                    routing_child(1, 21, vec![0.5, 0.5]),
+                    routing_child(2, 22, vec![-0.5, 0.5]),
+                ],
+            )
+            .unwrap(),
+            ..parts.clone()
+        };
+        assert!(
+            build_relation_scheduled_replacement_execution_input_from_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &decision,
+                stale_leaf_parent_parts,
+            )
+            .unwrap_err()
+            .contains("still contains affected leaf")
         );
 
         let swapped_parts = SpireRelationScheduledReplacementExecutionParts {
@@ -5259,6 +5351,9 @@ mod tests {
             next_pid: 23,
         };
         let decision = scheduled_split_decision(7);
+        let replacement_children = scheduled_split_replacement_children();
+        let replacement_parent =
+            scheduled_rewritten_parent_for_decision(&decision, replacement_children.clone());
         let input = build_relation_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
@@ -5266,11 +5361,8 @@ mod tests {
             SpireRelationScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
-                replacement_parent: root_routing_object(),
-                replacement_children: vec![
-                    replacement_child(21, vec![0.5, 0.5]),
-                    replacement_child(22, vec![-0.5, 0.5]),
-                ],
+                replacement_parent,
+                replacement_children,
                 leaf_object_version: 2,
                 leaf_inputs: vec![
                     SpireReplacementLeafObjectInput {
