@@ -1217,6 +1217,28 @@ pub(super) fn plan_scheduled_replacement_publish_epoch(
                 .to_owned(),
         );
     }
+    if let Some(stale_pid) = pid_plan
+        .replacement_pids
+        .iter()
+        .copied()
+        .find(|pid| *pid < root_control.next_pid)
+    {
+        return Err(format!(
+            "ec_spire scheduled replacement pid {stale_pid} is behind root/control next_pid {}",
+            root_control.next_pid
+        ));
+    }
+    if let Some(unadvanced_pid) = pid_plan
+        .replacement_pids
+        .iter()
+        .copied()
+        .find(|pid| *pid >= pid_plan.next_pid)
+    {
+        return Err(format!(
+            "ec_spire scheduled replacement pid plan next_pid {} does not advance past replacement pid {unadvanced_pid}",
+            pid_plan.next_pid
+        ));
+    }
     if pid_plan.next_pid < root_control.next_pid {
         return Err(format!(
             "ec_spire scheduled replacement pid plan next_pid {} is behind root/control next_pid {}",
@@ -5120,6 +5142,34 @@ mod tests {
         )
         .unwrap_err()
         .contains("behind root/control next_pid"));
+
+        let stale_replacement_pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![19, 20],
+            reuses_existing_pid: false,
+            next_pid: 22,
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &stale_replacement_pid_plan,
+        )
+        .unwrap_err()
+        .contains("behind root/control next_pid"));
+
+        let unadvanced_pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![20, 21],
+            reuses_existing_pid: false,
+            next_pid: 21,
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &unadvanced_pid_plan,
+        )
+        .unwrap_err()
+        .contains("does not advance"));
     }
 
     #[test]

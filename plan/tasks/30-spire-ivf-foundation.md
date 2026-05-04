@@ -687,8 +687,9 @@ diagnostics without scoring assignments.
   now has a pure helper that binds root/control active epoch and allocator
   cursors, the active epoch manifest, the checked scheduler decision, and the
   fresh PID plan into the immediate replacement publish plan. It rejects stale
-  decisions, non-published active manifests, reused PID plans, and PID cursor
-  regressions before relation writes begin.
+  decisions, non-published active manifests, reused PID plans, replacement PIDs
+  behind the root/control cursor, and final PID cursor regressions before
+  relation writes begin.
 - [x] **Relation scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the relation scheduled replacement execution input. It preserves the
