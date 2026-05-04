@@ -18,8 +18,9 @@ use super::meta::{
 };
 use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScanRow};
 use super::storage::{
-    SpireDeltaPartitionObject, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
-    SpireVecId,
+    is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
+    SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
+    SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use crate::storage::page::ItemPointer;
 
@@ -73,6 +74,265 @@ impl SpireDeltaEpochDraft {
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireEncodedPublishBundle, String> {
         encode_publish_bundle_for_publish(self.publish_input(), locators)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireLeafReplacementMode {
+    Split,
+    Merge,
+    Rebalance { parent_centroid_byte_equal: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireLeafReplacementPidPlan {
+    pub(super) replacement_pids: Vec<u64>,
+    pub(super) reuses_existing_pid: bool,
+    pub(super) next_pid: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireReplacementLeafRows {
+    pub(super) base_pid: u64,
+    pub(super) rows: Vec<SpireLeafAssignmentRow>,
+}
+
+pub(super) fn plan_leaf_replacement_pids(
+    mode: SpireLeafReplacementMode,
+    affected_leaf_pids: &[u64],
+    replacement_leaf_count: usize,
+    pid_allocator: &mut SpirePidAllocator,
+) -> Result<SpireLeafReplacementPidPlan, String> {
+    validate_affected_leaf_pids(affected_leaf_pids)?;
+    if replacement_leaf_count == 0 {
+        return Err("ec_spire leaf replacement requires at least one replacement leaf".to_owned());
+    }
+
+    let mut cursor = *pid_allocator;
+    for pid in affected_leaf_pids {
+        cursor.observe(*pid)?;
+    }
+
+    let (replacement_pids, reuses_existing_pid) = match mode {
+        SpireLeafReplacementMode::Split => {
+            if affected_leaf_pids.len() != 1 {
+                return Err(
+                    "ec_spire split replacement requires exactly one affected leaf pid".to_owned(),
+                );
+            }
+            if replacement_leaf_count < 2 {
+                return Err(
+                    "ec_spire split replacement requires at least two replacement leaves"
+                        .to_owned(),
+                );
+            }
+            (
+                allocate_replacement_pids(&mut cursor, replacement_leaf_count)?,
+                false,
+            )
+        }
+        SpireLeafReplacementMode::Merge => {
+            if replacement_leaf_count != 1 {
+                return Err(
+                    "ec_spire merge replacement publishes exactly one replacement leaf".to_owned(),
+                );
+            }
+            (vec![cursor.allocate()?], false)
+        }
+        SpireLeafReplacementMode::Rebalance {
+            parent_centroid_byte_equal,
+        } => {
+            if affected_leaf_pids.len() != 1 || replacement_leaf_count != 1 {
+                return Err(
+                    "ec_spire rebalance replacement requires exactly one affected leaf and one replacement leaf"
+                        .to_owned(),
+                );
+            }
+            if !parent_centroid_byte_equal {
+                return Err(
+                    "ec_spire rebalance may reuse a pid only when the parent routing centroid is byte-equal"
+                        .to_owned(),
+                );
+            }
+            (vec![affected_leaf_pids[0]], true)
+        }
+    };
+
+    let plan = SpireLeafReplacementPidPlan {
+        replacement_pids,
+        reuses_existing_pid,
+        next_pid: cursor.next_pid(),
+    };
+    *pid_allocator = cursor;
+    Ok(plan)
+}
+
+pub(super) fn collect_replacement_leaf_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    affected_leaf_pids: &[u64],
+) -> Result<Vec<SpireReplacementLeafRows>, String> {
+    validate_affected_leaf_pids(affected_leaf_pids)?;
+    let affected: HashSet<u64> = affected_leaf_pids.iter().copied().collect();
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    validate_delta_base_snapshot_placements_available(&snapshot)?;
+    let deleted_by_base_pid = collect_delete_vec_ids_by_base_pid(&snapshot, object_store)?;
+    let mut rows_by_base_pid: HashMap<u64, Vec<SpireLeafAssignmentRow>> = HashMap::new();
+    let mut active_leaf_pids = HashSet::new();
+    let mut visible_vec_ids = HashSet::new();
+
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "replacement leaf row")?;
+        let placement = lookup.placement;
+        let header = object_store.read_object_header(placement)?;
+        match header.kind {
+            SpirePartitionObjectKind::Leaf if affected.contains(&manifest_entry.pid) => {
+                active_leaf_pids.insert(manifest_entry.pid);
+                let deleted = deleted_by_base_pid.get(&manifest_entry.pid);
+                for assignment in read_leaf_assignments_for_replacement(object_store, placement)? {
+                    push_visible_replacement_row(
+                        &mut rows_by_base_pid,
+                        &mut visible_vec_ids,
+                        manifest_entry.pid,
+                        assignment,
+                        deleted,
+                    )?;
+                }
+            }
+            SpirePartitionObjectKind::Delta if affected.contains(&header.parent_pid) => {
+                let deleted = deleted_by_base_pid.get(&header.parent_pid);
+                let delta = object_store.read_delta_object(placement)?;
+                for assignment in delta.assignments {
+                    push_visible_replacement_row(
+                        &mut rows_by_base_pid,
+                        &mut visible_vec_ids,
+                        header.parent_pid,
+                        assignment,
+                        deleted,
+                    )?;
+                }
+            }
+            SpirePartitionObjectKind::Root
+            | SpirePartitionObjectKind::Internal
+            | SpirePartitionObjectKind::Leaf
+            | SpirePartitionObjectKind::Delta => {}
+        }
+    }
+
+    if active_leaf_pids.len() != affected.len() {
+        let mut missing = affected
+            .difference(&active_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        return Err(format!(
+            "ec_spire replacement leaf rows require active leaf pids for all affected pids: missing {missing:?}"
+        ));
+    }
+
+    let mut folded = rows_by_base_pid
+        .into_iter()
+        .map(|(base_pid, rows)| SpireReplacementLeafRows { base_pid, rows })
+        .collect::<Vec<_>>();
+    folded.sort_by_key(|entry| entry.base_pid);
+    Ok(folded)
+}
+
+fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String> {
+    if affected_leaf_pids.is_empty() {
+        return Err("ec_spire leaf replacement requires at least one affected leaf pid".to_owned());
+    }
+    let mut seen = HashSet::new();
+    for pid in affected_leaf_pids {
+        if *pid == 0 {
+            return Err("ec_spire leaf replacement affected pid 0 is invalid".to_owned());
+        }
+        if !seen.insert(*pid) {
+            return Err("ec_spire leaf replacement affected leaf pids must be unique".to_owned());
+        }
+    }
+    Ok(())
+}
+
+fn allocate_replacement_pids(
+    pid_allocator: &mut SpirePidAllocator,
+    count: usize,
+) -> Result<Vec<u64>, String> {
+    let mut pids = Vec::with_capacity(count);
+    for _ in 0..count {
+        pids.push(pid_allocator.allocate()?);
+    }
+    Ok(pids)
+}
+
+fn push_visible_replacement_row(
+    rows_by_base_pid: &mut HashMap<u64, Vec<SpireLeafAssignmentRow>>,
+    visible_vec_ids: &mut HashSet<SpireVecId>,
+    base_pid: u64,
+    mut assignment: SpireLeafAssignmentRow,
+    deleted: Option<&HashSet<SpireVecId>>,
+) -> Result<(), String> {
+    if !is_visible_primary_assignment(&assignment) {
+        return Ok(());
+    }
+    if deleted.is_some_and(|deleted| deleted.contains(&assignment.vec_id)) {
+        return Ok(());
+    }
+    assignment.flags &= !SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+    if !visible_vec_ids.insert(assignment.vec_id.clone()) {
+        return Err(
+            "ec_spire replacement leaf rows contain duplicate visible vec_id assignments"
+                .to_owned(),
+        );
+    }
+    rows_by_base_pid
+        .entry(base_pid)
+        .or_default()
+        .push(assignment);
+    Ok(())
+}
+
+fn collect_delete_vec_ids_by_base_pid(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<HashMap<u64, HashSet<SpireVecId>>, String> {
+    let mut deleted_by_base_pid: HashMap<u64, HashSet<SpireVecId>> = HashMap::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "replacement delete assignment")?;
+        let placement = lookup.placement;
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Delta {
+            continue;
+        }
+        let delta = object_store.read_delta_object(placement)?;
+        for assignment in delta.assignments {
+            if is_delete_delta_assignment(&assignment) {
+                deleted_by_base_pid
+                    .entry(header.parent_pid)
+                    .or_default()
+                    .insert(assignment.vec_id);
+            }
+        }
+    }
+    Ok(deleted_by_base_pid)
+}
+
+fn read_leaf_assignments_for_replacement(
+    object_store: &impl SpireObjectReader,
+    placement: &SpirePlacementEntry,
+) -> Result<Vec<SpireLeafAssignmentRow>, String> {
+    match object_store.read_leaf_object(placement) {
+        Ok(object) => Ok(object.assignments),
+        Err(v1_error) => object_store
+            .read_leaf_object_v2(placement)
+            .map_err(|v2_error| {
+                format!(
+                    "ec_spire replacement leaf rows could not read leaf pid {} as V1 or V2: V1 error: {v1_error}; V2 error: {v2_error}",
+                    placement.pid
+                )
+            })?
+            .assignment_rows(),
     }
 }
 
@@ -325,7 +585,9 @@ fn validate_delete_delta_targets(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
+        build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
+        collect_replacement_leaf_rows, plan_leaf_replacement_pids, SpireDeltaEpochInput,
+        SpireLeafReplacementMode,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -525,6 +787,74 @@ mod tests {
     }
 
     #[test]
+    fn replacement_pid_plan_allocates_split_children_from_pid_cursor() {
+        let mut pid_allocator = SpirePidAllocator::new(3).unwrap();
+
+        let plan = plan_leaf_replacement_pids(
+            SpireLeafReplacementMode::Split,
+            &[10],
+            2,
+            &mut pid_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(plan.replacement_pids, vec![11, 12]);
+        assert!(!plan.reuses_existing_pid);
+        assert_eq!(plan.next_pid, 13);
+        assert_eq!(pid_allocator.next_pid(), 13);
+    }
+
+    #[test]
+    fn replacement_pid_plan_allocates_merge_survivor_from_pid_cursor() {
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+
+        let plan = plan_leaf_replacement_pids(
+            SpireLeafReplacementMode::Merge,
+            &[4, 5],
+            1,
+            &mut pid_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(plan.replacement_pids, vec![20]);
+        assert!(!plan.reuses_existing_pid);
+        assert_eq!(plan.next_pid, 21);
+        assert_eq!(pid_allocator.next_pid(), 21);
+    }
+
+    #[test]
+    fn replacement_pid_plan_rebalance_reuses_pid_only_for_byte_equal_centroid() {
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+
+        let plan = plan_leaf_replacement_pids(
+            SpireLeafReplacementMode::Rebalance {
+                parent_centroid_byte_equal: true,
+            },
+            &[4],
+            1,
+            &mut pid_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(plan.replacement_pids, vec![4]);
+        assert!(plan.reuses_existing_pid);
+        assert_eq!(plan.next_pid, 20);
+        assert_eq!(pid_allocator.next_pid(), 20);
+
+        let err = plan_leaf_replacement_pids(
+            SpireLeafReplacementMode::Rebalance {
+                parent_centroid_byte_equal: false,
+            },
+            &[4],
+            1,
+            &mut pid_allocator,
+        )
+        .unwrap_err();
+        assert!(err.contains("parent routing centroid is byte-equal"));
+        assert_eq!(pid_allocator.next_pid(), 20);
+    }
+
+    #[test]
     fn delta_epoch_draft_from_snapshot_carries_base_entries() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
@@ -599,6 +929,53 @@ mod tests {
         assert_eq!(draft.next_local_vec_seq, 3);
         assert_eq!(pid_allocator.next_pid(), 3);
         assert_eq!(local_vec_id_allocator.next_local_vec_seq(), 3);
+    }
+
+    #[test]
+    fn replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let base_draft = build_single_level_leaf_epoch_draft(
+            base_build_input(vec![insert_assignment(10, 1)]),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let base_snapshot = SpirePublishedEpochSnapshot::new(
+            &base_draft.epoch_manifest,
+            &base_draft.object_manifest,
+            &base_draft.placement_directory,
+        )
+        .unwrap();
+        let mut input = delta_input(
+            vec![insert_assignment(20, 1)],
+            vec![delete_assignment(1, 10, 1)],
+        );
+        input.base_pid = 1;
+        let delta_draft = build_delta_epoch_draft_from_snapshot(
+            input,
+            &base_snapshot,
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let delta_snapshot = SpirePublishedEpochSnapshot::new(
+            &delta_draft.epoch_manifest,
+            &delta_draft.object_manifest,
+            &delta_draft.placement_directory,
+        )
+        .unwrap();
+
+        let folded = collect_replacement_leaf_rows(&delta_snapshot, &object_store, &[1]).unwrap();
+
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0].base_pid, 1);
+        assert_eq!(folded[0].rows.len(), 1);
+        assert_eq!(folded[0].rows[0].heap_tid, tid(20, 1));
+        assert_eq!(folded[0].rows[0].flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
     }
 
     #[test]

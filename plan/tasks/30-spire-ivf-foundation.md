@@ -539,6 +539,15 @@ diagnostics without scoring assignments.
   follow-up now also records whole-root rewrite cost for the single-level
   foundation, old-PID queryability during retention, scheduler choices, and
   PID allocator cursor serialization under the publish lock.
+- [x] **Replacement leaf planning helper.** Phase 2 implementation has a pure
+  `ec_spire::update` helper for replacement-leaf PID planning and row folding.
+  Split and merge allocate replacement leaf PIDs from the observed root/control
+  PID allocator cursor, while rebalance reuses the existing PID only when the
+  parent-routing centroid remains byte-equal. The row-folding helper reads the
+  active epoch snapshot, folds active insert/delete deltas into replacement
+  base-leaf rows, clears delta-insert flags on surviving rows, and fails closed
+  if an affected PID is not an active leaf. Routing-object rewrite and scheduler
+  execution remain open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
