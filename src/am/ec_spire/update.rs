@@ -557,6 +557,60 @@ pub(super) fn build_split_replacement_leaf_object_inputs(
     Ok(ordered)
 }
 
+pub(super) fn build_scheduled_routing_replacement_children(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    centroids: Vec<Vec<f32>>,
+) -> Result<Vec<SpireRoutingReplacementChild>, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if pid_plan.reuses_existing_pid {
+        return Err(
+            "ec_spire scheduled routing replacement requires fresh replacement pids".to_owned(),
+        );
+    }
+    if pid_plan.replacement_pids.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled routing replacement pid count {} does not match decision replacement count {}",
+            pid_plan.replacement_pids.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    if centroids.len() != pid_plan.replacement_pids.len() {
+        return Err(format!(
+            "ec_spire scheduled routing replacement centroid count {} does not match replacement pid count {}",
+            centroids.len(),
+            pid_plan.replacement_pids.len()
+        ));
+    }
+
+    let mut seen_pids = HashSet::new();
+    let mut children = Vec::with_capacity(pid_plan.replacement_pids.len());
+    for (pid, centroid) in pid_plan.replacement_pids.iter().zip(centroids) {
+        if *pid == 0 {
+            return Err("ec_spire scheduled routing replacement pid 0 is invalid".to_owned());
+        }
+        if !seen_pids.insert(*pid) {
+            return Err("ec_spire scheduled routing replacement pids must be unique".to_owned());
+        }
+        if centroid.is_empty() {
+            return Err(format!(
+                "ec_spire scheduled routing replacement child pid {pid} centroid is empty"
+            ));
+        }
+        if centroid.iter().any(|component| !component.is_finite()) {
+            return Err(format!(
+                "ec_spire scheduled routing replacement child pid {pid} centroid must be finite"
+            ));
+        }
+        children.push(SpireRoutingReplacementChild {
+            child_pid: *pid,
+            centroid,
+        });
+    }
+
+    Ok(children)
+}
+
 fn leaf_replacement_schedule_decisions_match(
     observed: &SpireLeafReplacementScheduleDecision,
     expected: &SpireLeafReplacementScheduleDecision,
@@ -1642,15 +1696,16 @@ mod tests {
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         build_merge_replacement_leaf_object_input, build_replacement_epoch_draft,
         build_replacement_epoch_draft_from_object_placements,
-        build_split_replacement_leaf_object_inputs, choose_leaf_replacement_schedule,
-        collect_replacement_leaf_rows, plan_leaf_replacement_pids,
-        plan_replacement_epoch_placement_directory, plan_scheduled_leaf_replacement_pids,
-        recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
-        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
-        SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
-        SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
-        SpireReplacementLeafObjectInput, SpireReplacementLeafRows, SpireRoutingReplacementChild,
+        build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
+        choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
+        plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
+        plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
+        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
+        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
+        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
+        SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
+        SpireReplacementLeafRows, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -2365,6 +2420,141 @@ mod tests {
         )
         .unwrap_err()
         .contains("duplicate vec_id"));
+    }
+
+    #[test]
+    fn scheduled_routing_replacement_children_pair_pids_and_centroids_in_plan_order() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        let children = build_scheduled_routing_replacement_children(
+            &decision,
+            &pid_plan,
+            vec![vec![1.0, 0.0], vec![0.0, 1.0]],
+        )
+        .unwrap();
+
+        assert_eq!(
+            children,
+            vec![
+                replacement_child(30, vec![1.0, 0.0]),
+                replacement_child(31, vec![0.0, 1.0])
+            ]
+        );
+    }
+
+    #[test]
+    fn scheduled_routing_replacement_children_accept_merge_survivor() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30],
+            reuses_existing_pid: false,
+            next_pid: 31,
+        };
+
+        let children = build_scheduled_routing_replacement_children(
+            &decision,
+            &pid_plan,
+            vec![vec![0.5, 0.5]],
+        )
+        .unwrap();
+
+        assert_eq!(children, vec![replacement_child(30, vec![0.5, 0.5])]);
+    }
+
+    #[test]
+    fn scheduled_routing_replacement_children_reject_count_and_centroid_shape() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &pid_plan,
+            vec![vec![1.0, 0.0]],
+        )
+        .unwrap_err()
+        .contains("centroid count"));
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &pid_plan,
+            vec![vec![1.0, 0.0], Vec::new()],
+        )
+        .unwrap_err()
+        .contains("centroid is empty"));
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &pid_plan,
+            vec![vec![1.0, 0.0], vec![f32::NAN, 1.0]],
+        )
+        .unwrap_err()
+        .contains("centroid must be finite"));
+    }
+
+    #[test]
+    fn scheduled_routing_replacement_children_reject_reused_or_mismatched_pids() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &SpireLeafReplacementPidPlan {
+                replacement_pids: vec![12],
+                reuses_existing_pid: true,
+                next_pid: 30,
+            },
+            vec![vec![1.0, 0.0]],
+        )
+        .unwrap_err()
+        .contains("fresh replacement pids"));
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &SpireLeafReplacementPidPlan {
+                replacement_pids: vec![30],
+                reuses_existing_pid: false,
+                next_pid: 31,
+            },
+            vec![vec![1.0, 0.0]],
+        )
+        .unwrap_err()
+        .contains("pid count"));
     }
 
     #[test]

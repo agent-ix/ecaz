@@ -632,6 +632,13 @@ diagnostics without scoring assignments.
   reuses the replacement leaf-object input validator to reject duplicate
   `vec_id`s or non-normalized rows. Centroid training/routing remains a live
   scheduler responsibility.
+- [x] **Scheduled routing replacement child helper.** Scheduler execution now
+  has a pure helper that pairs fresh scheduled replacement PIDs with
+  scheduler-provided replacement centroids in PID-plan order. It validates
+  decision shape, PID count, centroid count, fresh/unique replacement PIDs, and
+  finite non-empty centroid vectors before handing exact parent-dimension
+  validation to the existing routing rewrite helper. Live centroid
+  recomputation and relation execution remain open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
