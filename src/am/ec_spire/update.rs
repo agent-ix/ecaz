@@ -921,6 +921,37 @@ pub(super) fn build_relation_scheduled_merge_replacement_execution_parts(
     })
 }
 
+pub(super) fn build_relation_scheduled_merge_replacement_execution_input(
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
+    parent: &SpireRoutingPartitionObject,
+    rows: &[SpireIndexLeafSnapshotRow],
+    replacement_leaf_rows: Vec<SpireReplacementLeafRows>,
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    let parts = build_relation_scheduled_merge_replacement_execution_parts(
+        decision,
+        pid_plan,
+        parent,
+        rows,
+        replacement_leaf_rows,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+    )?;
+    build_relation_scheduled_replacement_execution_input_from_publish_plan(
+        publish_plan,
+        pid_plan,
+        decision,
+        parts,
+    )
+}
+
 pub(super) fn rewrite_scheduled_replacement_parent_routing(
     parent: &SpireRoutingPartitionObject,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -2695,6 +2726,7 @@ mod tests {
         build_local_scheduled_replacement_epoch_draft,
         build_local_scheduled_replacement_execution_input_from_publish_plan,
         build_merge_replacement_leaf_object_input,
+        build_relation_scheduled_merge_replacement_execution_input,
         build_relation_scheduled_merge_replacement_execution_parts,
         build_relation_scheduled_replacement_execution_input_from_publish_plan,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
@@ -3750,6 +3782,150 @@ mod tests {
         )
         .unwrap_err()
         .contains("fresh replacement pids"));
+    }
+
+    #[test]
+    fn relation_scheduled_merge_replacement_execution_input_uses_publish_plan() {
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 22,
+            next_local_vec_seq: 100,
+        };
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21],
+            reuses_existing_pid: false,
+            next_pid: 22,
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+
+        let input = build_relation_scheduled_merge_replacement_execution_input(
+            &publish_plan,
+            &pid_plan,
+            &decision,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+        )
+        .unwrap();
+
+        assert_eq!(input.epoch, 8);
+        assert_eq!(input.consistency_mode, SpireConsistencyMode::Strict);
+        assert_eq!(input.next_local_vec_seq, 100);
+        assert_eq!(input.replacement_children[0].child_pid, 21);
+        assert_eq!(
+            input
+                .replacement_parent
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![21, 13]
+        );
+    }
+
+    #[test]
+    fn relation_scheduled_merge_replacement_execution_input_rejects_plan_drift() {
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 23,
+            next_local_vec_seq: 100,
+        };
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21],
+            reuses_existing_pid: false,
+            next_pid: 22,
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+
+        assert!(build_relation_scheduled_merge_replacement_execution_input(
+            &publish_plan,
+            &pid_plan,
+            &decision,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+        )
+        .unwrap_err()
+        .contains("next_pid"));
+
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 22,
+            next_local_vec_seq: 100,
+        };
+        assert!(build_relation_scheduled_merge_replacement_execution_input(
+            &publish_plan,
+            &pid_plan,
+            &decision,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            0,
+            3000,
+            4000,
+        )
+        .unwrap_err()
+        .contains("object_version"));
     }
 
     #[test]

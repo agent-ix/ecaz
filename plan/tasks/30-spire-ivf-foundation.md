@@ -668,6 +668,10 @@ diagnostics without scoring assignments.
   input coverage against the replacement child, and carries publish/retention
   timestamps plus replacement object versions into the existing publish-plan
   input builder shape.
+- [x] **Relation scheduled merge execution-input helper.** Scheduler execution
+  now composes the merge execution-parts builder with the checked publish-plan
+  input builder, producing a fully validated relation scheduled replacement
+  execution input for merge decisions before relation object writes.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
