@@ -648,8 +648,9 @@ diagnostics without scoring assignments.
   the affected parent-routing child centroids and active leaf snapshot
   assignment counts. It validates merge decision shape, active epoch, parent
   PID, affected leaf row coverage, duplicate affected rows, child centroid
-  dimensions, and zero-count sparse merges before the centroid is bound to the
-  fresh replacement PID. Split centroid training/routing remains open.
+  dimensions, affected-row merge recommendations, and zero-count sparse merges
+  before the centroid is bound to the fresh replacement PID. Split centroid
+  training/routing remains open.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent

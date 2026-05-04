@@ -767,6 +767,11 @@ pub(super) fn build_scheduled_merge_replacement_centroids(
                 row.parent_pid, decision.replaced_parent_pid
             ));
         }
+        if !row.merge_recommended {
+            return Err(format!(
+                "ec_spire scheduled merge centroid affected leaf pid {leaf_pid} is no longer merge recommended"
+            ));
+        }
         let child = children_by_pid.get(leaf_pid).ok_or_else(|| {
             format!(
                 "ec_spire scheduled merge centroid parent is missing affected leaf pid {leaf_pid}"
@@ -3266,6 +3271,18 @@ mod tests {
         )
         .unwrap_err()
         .contains("duplicate snapshot row"));
+
+        let quiet_rows = vec![
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(12, 1, 1, false, false),
+        ];
+        assert!(build_scheduled_merge_replacement_centroids(
+            &decision,
+            &root_routing_object(),
+            &quiet_rows,
+        )
+        .unwrap_err()
+        .contains("no longer merge recommended"));
     }
 
     #[test]
