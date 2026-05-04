@@ -156,6 +156,12 @@ pub(super) struct SpireReplacementLeafObjectInput {
     pub(super) rows: Vec<SpireLeafAssignmentRow>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireReplacementObjectPlacements {
+    pub(super) parent_placement: SpirePlacementEntry,
+    pub(super) leaf_placements: Vec<SpirePlacementEntry>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
@@ -562,6 +568,58 @@ pub(super) fn validate_replacement_leaf_object_inputs(
         }
     }
     Ok(())
+}
+
+pub(super) fn write_local_replacement_objects(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireReplacementObjectPlacements, String> {
+    if epoch == 0 {
+        return Err("ec_spire local replacement object epoch 0 is invalid".to_owned());
+    }
+    if leaf_object_version == 0 {
+        return Err("ec_spire local replacement leaf object_version 0 is invalid".to_owned());
+    }
+    match replacement_parent.header.kind {
+        SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal => {}
+        other => {
+            return Err(format!(
+                "ec_spire local replacement parent must be Root or Internal, got {other:?}"
+            ));
+        }
+    }
+    validate_replacement_leaf_object_inputs(replacement_children, &leaf_inputs)?;
+
+    let parent_placement = object_store.insert_routing_object(epoch, replacement_parent)?;
+    let inputs_by_pid = leaf_inputs
+        .into_iter()
+        .map(|input| (input.pid, input))
+        .collect::<HashMap<_, _>>();
+    let mut leaf_placements = Vec::with_capacity(replacement_children.len());
+    for child in replacement_children {
+        let input = inputs_by_pid.get(&child.child_pid).ok_or_else(|| {
+            format!(
+                "ec_spire local replacement child pid {} has no leaf input",
+                child.child_pid
+            )
+        })?;
+        leaf_placements.push(object_store.insert_leaf_object_v2_from_rows(
+            epoch,
+            input.pid,
+            leaf_object_version,
+            replacement_parent.header.pid,
+            &input.rows,
+        )?);
+    }
+
+    Ok(SpireReplacementObjectPlacements {
+        parent_placement,
+        leaf_placements,
+    })
 }
 
 fn manifest_locators_for_validation() -> SpirePublishedManifestLocators {
@@ -1047,8 +1105,9 @@ mod tests {
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         build_replacement_epoch_draft, collect_replacement_leaf_rows, plan_leaf_replacement_pids,
         plan_replacement_epoch_placement_directory, rewrite_routing_partition_for_leaf_replacement,
-        validate_replacement_leaf_object_inputs, SpireDeltaEpochInput, SpireLeafReplacementMode,
-        SpireReplacementEpochInput, SpireReplacementLeafObjectInput, SpireRoutingReplacementChild,
+        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireReplacementEpochInput,
+        SpireReplacementLeafObjectInput, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1697,6 +1756,84 @@ mod tests {
             validate_replacement_leaf_object_inputs(&children, &wrong_pid)
                 .unwrap_err()
                 .contains("no replacement routing child")
+        );
+    }
+
+    #[test]
+    fn local_replacement_object_writer_persists_routing_and_leaf_objects() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let replacement_root =
+            rewrite_routing_partition_for_leaf_replacement(&root, &[12], children.clone(), 4)
+                .unwrap();
+
+        let placements = write_local_replacement_objects(
+            8,
+            &replacement_root,
+            &children,
+            1,
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(2, 20, 2)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(1, 20, 1)],
+                },
+            ],
+            &mut object_store,
+        )
+        .unwrap();
+
+        let stored_root = object_store
+            .read_routing_object(&placements.parent_placement)
+            .unwrap();
+        let stored_root_children = stored_root.children().collect::<Vec<_>>();
+        assert_eq!(placements.parent_placement.epoch, 8);
+        assert_eq!(placements.parent_placement.pid, replacement_root.header.pid);
+        assert_eq!(stored_root.header.published_epoch_backref, 8);
+        assert_eq!(
+            stored_root_children
+                .iter()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 21, 22, 13]
+        );
+
+        assert_eq!(
+            placements
+                .leaf_placements
+                .iter()
+                .map(|placement| placement.pid)
+                .collect::<Vec<_>>(),
+            vec![21, 22]
+        );
+        let first_leaf = object_store
+            .read_leaf_object_v2(&placements.leaf_placements[0])
+            .unwrap();
+        let second_leaf = object_store
+            .read_leaf_object_v2(&placements.leaf_placements[1])
+            .unwrap();
+        assert_eq!(
+            first_leaf.meta.header.parent_pid,
+            replacement_root.header.pid
+        );
+        assert_eq!(
+            second_leaf.meta.header.parent_pid,
+            replacement_root.header.pid
+        );
+        assert_eq!(
+            first_leaf.assignment_rows().unwrap()[0].heap_tid,
+            tid(20, 1)
+        );
+        assert_eq!(
+            second_leaf.assignment_rows().unwrap()[0].heap_tid,
+            tid(20, 2)
         );
     }
 

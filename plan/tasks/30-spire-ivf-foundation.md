@@ -573,6 +573,13 @@ diagnostics without scoring assignments.
   also validate that leaf-input PIDs match replacement routing children exactly
   and contain only normalized base-leaf rows without delta flags or duplicate
   `vec_id`s.
+- [x] **Local replacement object write helper.** Phase 2 now has a local
+  object-store helper that writes the rewritten parent routing object and
+  replacement V2 leaf objects for a planned replacement epoch. It validates
+  replacement leaf inputs, writes routing and leaf objects with published-epoch
+  backrefs through the local store, and returns placements ordered by
+  replacement routing children. Live relation-backed object writes and
+  scheduler execution remain open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
