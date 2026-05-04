@@ -669,6 +669,12 @@ diagnostics without scoring assignments.
   replacement objects, validates the written placement output against the PID
   plan, and builds the scheduled replacement epoch draft. It catches
   replacement-child order drift before relation callback integration.
+- [x] **Local scheduled replacement publish-plan input helper.** Scheduler
+  execution now has a pure builder that carries the checked publish-lock plan
+  into the local scheduled replacement execution input while preserving
+  caller-provided placement-write evidence. It shares PID cursor,
+  replacement-child order, and leaf-input validation with the relation input
+  builder.
 - [x] **Relation scheduled replacement publish helper.** Scheduler execution now
   has a relation-side wrapper that writes decision-bound replacement objects,
   validates written placements against the scheduled PID plan, writes the
