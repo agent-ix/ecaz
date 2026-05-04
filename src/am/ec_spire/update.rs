@@ -2064,6 +2064,18 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
     )
 }
 
+pub(super) fn validate_relation_selected_scheduled_replacement_execution_publish_plan(
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    input: &SpireRelationScheduledReplacementExecutionInput,
+) -> Result<(), String> {
+    validate_relation_scheduled_replacement_execution_publish_plan(
+        &selected.lock_plan.publish_plan,
+        &selected.lock_plan.pid_plan,
+        &selected.decision,
+        input,
+    )
+}
+
 pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -2097,6 +2109,18 @@ pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
         input.leaf_object_version,
         input.published_at_micros,
         &input.leaf_inputs,
+    )
+}
+
+pub(super) fn validate_local_selected_scheduled_replacement_execution_publish_plan(
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    input: &SpireLocalScheduledReplacementExecutionInput,
+) -> Result<(), String> {
+    validate_local_scheduled_replacement_execution_publish_plan(
+        &selected.lock_plan.publish_plan,
+        &selected.lock_plan.pid_plan,
+        &selected.decision,
+        input,
     )
 }
 
@@ -3178,7 +3202,9 @@ mod tests {
         recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing,
         validate_local_scheduled_replacement_execution_publish_plan,
+        validate_local_selected_scheduled_replacement_execution_publish_plan,
         validate_relation_scheduled_replacement_execution_publish_plan,
+        validate_relation_selected_scheduled_replacement_execution_publish_plan,
         validate_replacement_leaf_object_inputs, validate_scheduled_replacement_pid_plan_output,
         write_local_replacement_objects, write_local_scheduled_replacement_objects,
         SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
@@ -5392,6 +5418,182 @@ mod tests {
             )
             .unwrap_err()
             .contains("merge decision")
+        );
+    }
+
+    #[test]
+    fn selected_scheduled_execution_publish_plan_validators_use_lock_plan() {
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 100,
+                },
+            },
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        let relation_input = build_relation_selected_scheduled_merge_replacement_execution_input(
+            &selected,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+        )
+        .unwrap();
+        let local_input = build_local_selected_scheduled_merge_replacement_execution_input(
+            &selected,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+            placement_write_evidence_for_pids(&[1, 21]),
+        )
+        .unwrap();
+
+        validate_relation_selected_scheduled_replacement_execution_publish_plan(
+            &selected,
+            &relation_input,
+        )
+        .unwrap();
+        validate_local_selected_scheduled_replacement_execution_publish_plan(
+            &selected,
+            &local_input,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn selected_scheduled_execution_publish_plan_validators_reject_drift() {
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 100,
+                },
+            },
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        let relation_input = build_relation_selected_scheduled_merge_replacement_execution_input(
+            &selected,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+        )
+        .unwrap();
+        let mut stale_relation_input = relation_input.clone();
+        stale_relation_input.next_local_vec_seq = 101;
+        assert!(
+            validate_relation_selected_scheduled_replacement_execution_publish_plan(
+                &selected,
+                &stale_relation_input,
+            )
+            .unwrap_err()
+            .contains("next_local_vec_seq")
+        );
+
+        let local_input = build_local_selected_scheduled_merge_replacement_execution_input(
+            &selected,
+            &root_routing_object(),
+            &rows,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+            placement_write_evidence_for_pids(&[1, 21]),
+        )
+        .unwrap();
+        let mut stale_local_input = local_input.clone();
+        stale_local_input.next_local_vec_seq = 101;
+        assert!(
+            validate_local_selected_scheduled_replacement_execution_publish_plan(
+                &selected,
+                &stale_local_input,
+            )
+            .unwrap_err()
+            .contains("next_local_vec_seq")
         );
     }
 

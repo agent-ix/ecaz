@@ -789,6 +789,10 @@ diagnostics without scoring assignments.
   begin. The relation publish wrapper also takes the checked publish plan and
   revalidates the execution input and active snapshot consistency mode against
   it before writing relation objects.
+- [x] **Selected scheduled execution-input validators.** Scheduler execution
+  now has relation and local validators that consume the selected publish-lock
+  plan directly, keeping decision, PID plan, and publish plan bundled during
+  final execution-input drift checks.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
