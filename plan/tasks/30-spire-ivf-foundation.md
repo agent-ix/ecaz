@@ -587,6 +587,13 @@ diagnostics without scoring assignments.
   `SpireRelationObjectStore`, so relation publish wiring can consume the same
   replacement-object placement bundle as the local helper. Scheduler execution
   and root/control publication wiring remain open.
+- [x] **Replacement publish assembly helper.** Phase 2 now has a helper that
+  turns replacement object placements plus placement-write evidence into the
+  final replacement epoch draft. It plans the new active placement directory,
+  drops the affected old leaves and their deltas, validates the object
+  manifest/root-control publish shape, and preserves root/control allocator
+  cursors supplied by the caller. Live scheduler execution and root/control
+  relation publication remain open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
