@@ -1247,6 +1247,7 @@ pub(super) fn build_local_scheduled_replacement_execution_input_from_publish_pla
         decision,
         &parts.replacement_parent,
         &parts.replacement_children,
+        parts.leaf_object_version,
         &parts.leaf_inputs,
     )?;
 
@@ -1276,6 +1277,7 @@ pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_
         decision,
         &parts.replacement_parent,
         &parts.replacement_children,
+        parts.leaf_object_version,
         &parts.leaf_inputs,
     )?;
 
@@ -1322,6 +1324,7 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
         decision,
         &input.replacement_parent,
         &input.replacement_children,
+        input.leaf_object_version,
         &input.leaf_inputs,
     )
 }
@@ -1356,6 +1359,7 @@ pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
         decision,
         &input.replacement_parent,
         &input.replacement_children,
+        input.leaf_object_version,
         &input.leaf_inputs,
     )
 }
@@ -1366,6 +1370,7 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
     decision: &SpireLeafReplacementScheduleDecision,
     replacement_parent: &SpireRoutingPartitionObject,
     replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
     leaf_inputs: &[SpireReplacementLeafObjectInput],
 ) -> Result<(), String> {
     validate_leaf_replacement_schedule_decision_shape(decision)?;
@@ -1381,6 +1386,11 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
             replacement_children.len(),
             decision.replacement_leaf_count
         ));
+    }
+    if leaf_object_version == 0 {
+        return Err(
+            "ec_spire scheduled replacement execution leaf object_version 0 is invalid".to_owned(),
+        );
     }
     if pid_plan.reuses_existing_pid {
         return Err(
@@ -4901,6 +4911,21 @@ mod tests {
             )
             .unwrap_err()
             .contains("next_pid")
+        );
+
+        let zero_version_parts = SpireRelationScheduledReplacementExecutionParts {
+            leaf_object_version: 0,
+            ..parts.clone()
+        };
+        assert!(
+            build_relation_scheduled_replacement_execution_input_from_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &decision,
+                zero_version_parts,
+            )
+            .unwrap_err()
+            .contains("object_version")
         );
 
         let swapped_parts = SpireRelationScheduledReplacementExecutionParts {
