@@ -110,6 +110,12 @@ pub(super) struct SpireSplitReplacementSourceRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireSplitReplacementFetchedSourceVector {
+    pub(super) heap_tid: ItemPointer,
+    pub(super) source_vector: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireSplitReplacementMaterialization {
     pub(super) centroids: Vec<Vec<f32>>,
     pub(super) leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
@@ -679,6 +685,88 @@ pub(super) fn build_split_replacement_leaf_object_inputs(
         ordered.push(input);
     }
     Ok(ordered)
+}
+
+pub(super) fn build_split_replacement_source_rows(
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_rows: Vec<SpireReplacementLeafRows>,
+    fetched_sources: Vec<SpireSplitReplacementFetchedSourceVector>,
+) -> Result<Vec<SpireSplitReplacementSourceRow>, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if decision.mode != SpireLeafReplacementScheduleMode::Split {
+        return Err("ec_spire split replacement source rows require a split decision".to_owned());
+    }
+    let [affected_pid] = decision.affected_leaf_pids.as_slice() else {
+        return Err(
+            "ec_spire split replacement source rows require one affected leaf pid".to_owned(),
+        );
+    };
+    let [replacement_row_group] = replacement_rows.as_slice() else {
+        return Err(
+            "ec_spire split replacement source rows require one affected row group".to_owned(),
+        );
+    };
+    if replacement_row_group.base_pid != *affected_pid {
+        return Err(format!(
+            "ec_spire split replacement source rows got row group for unselected base pid {}",
+            replacement_row_group.base_pid
+        ));
+    }
+    if replacement_row_group.rows.is_empty() {
+        return Err("ec_spire split replacement source rows require assignment rows".to_owned());
+    }
+
+    let mut sources_by_heap_tid = HashMap::with_capacity(fetched_sources.len());
+    for fetched in fetched_sources {
+        if fetched.heap_tid == ItemPointer::INVALID {
+            return Err(
+                "ec_spire split replacement source rows require valid heap tids".to_owned(),
+            );
+        }
+        if sources_by_heap_tid
+            .insert(fetched.heap_tid, fetched.source_vector)
+            .is_some()
+        {
+            return Err(format!(
+                "ec_spire split replacement source rows got duplicate source heap tid {}:{}",
+                fetched.heap_tid.block_number, fetched.heap_tid.offset_number
+            ));
+        }
+    }
+
+    let mut seen_assignment_heap_tids = HashSet::new();
+    let mut source_rows = Vec::with_capacity(replacement_row_group.rows.len());
+    for assignment in &replacement_row_group.rows {
+        if !seen_assignment_heap_tids.insert(assignment.heap_tid) {
+            return Err(format!(
+                "ec_spire split replacement source rows got duplicate assignment heap tid {}:{}",
+                assignment.heap_tid.block_number, assignment.heap_tid.offset_number
+            ));
+        }
+        let Some(source_vector) = sources_by_heap_tid.remove(&assignment.heap_tid) else {
+            return Err(format!(
+                "ec_spire split replacement source rows missing source vector for heap tid {}:{}",
+                assignment.heap_tid.block_number, assignment.heap_tid.offset_number
+            ));
+        };
+        source_rows.push(SpireSplitReplacementSourceRow {
+            base_pid: replacement_row_group.base_pid,
+            assignment: assignment.clone(),
+            source_vector,
+        });
+    }
+
+    if !sources_by_heap_tid.is_empty() {
+        let mut unused_heap_tids = sources_by_heap_tid.keys().copied().collect::<Vec<_>>();
+        unused_heap_tids.sort_by_key(|tid| (tid.block_number, tid.offset_number));
+        let first = unused_heap_tids[0];
+        return Err(format!(
+            "ec_spire split replacement source rows got unused source vector for heap tid {}:{}",
+            first.block_number, first.offset_number
+        ));
+    }
+
+    Ok(source_rows)
 }
 
 pub(super) fn build_split_replacement_leaf_materialization(
@@ -3622,8 +3710,9 @@ mod tests {
         build_scheduled_routing_replacement_children,
         build_scheduled_split_replacement_routing_parts,
         build_split_replacement_leaf_materialization, build_split_replacement_leaf_object_inputs,
-        choose_leaf_replacement_schedule, choose_scheduled_replacement_publish_lock_plan,
-        collect_replacement_leaf_rows, collect_selected_scheduled_replacement_leaf_rows,
+        build_split_replacement_source_rows, choose_leaf_replacement_schedule,
+        choose_scheduled_replacement_publish_lock_plan, collect_replacement_leaf_rows,
+        collect_selected_scheduled_replacement_leaf_rows,
         load_scheduled_replacement_parent_routing,
         load_selected_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
         plan_rechecked_scheduled_replacement_publish_lock,
@@ -3649,7 +3738,8 @@ mod tests {
         SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
         SpireScheduledReplacementPublishLockPlan, SpireScheduledReplacementPublishPlan,
-        SpireSelectedScheduledReplacementPublishLockPlan, SpireSplitReplacementSourceRow,
+        SpireSelectedScheduledReplacementPublishLockPlan, SpireSplitReplacementFetchedSourceVector,
+        SpireSplitReplacementSourceRow,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -7068,6 +7158,95 @@ mod tests {
         )
         .unwrap_err()
         .contains("duplicate vec_id"));
+    }
+
+    #[test]
+    fn split_replacement_source_rows_hydrate_fetched_vectors_in_row_order() {
+        let decision = scheduled_split_decision(7);
+
+        let source_rows = build_split_replacement_source_rows(
+            &decision,
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![primary_row(1, 20, 1), primary_row(2, 20, 2)],
+            }],
+            vec![
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            source_rows
+                .iter()
+                .map(|row| row.assignment.vec_id.clone())
+                .collect::<Vec<_>>(),
+            vec![SpireVecId::local(1), SpireVecId::local(2)]
+        );
+        assert_eq!(
+            source_rows
+                .iter()
+                .map(|row| row.source_vector.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![1.0, 0.0], vec![-1.0, 0.0]]
+        );
+    }
+
+    #[test]
+    fn split_replacement_source_rows_reject_missing_or_stale_vectors() {
+        let decision = scheduled_split_decision(7);
+
+        assert!(build_split_replacement_source_rows(
+            &decision,
+            vec![SpireReplacementLeafRows {
+                base_pid: 13,
+                rows: vec![primary_row(1, 20, 1)],
+            }],
+            vec![SpireSplitReplacementFetchedSourceVector {
+                heap_tid: tid(20, 1),
+                source_vector: vec![1.0, 0.0],
+            }],
+        )
+        .unwrap_err()
+        .contains("unselected base pid"));
+
+        assert!(build_split_replacement_source_rows(
+            &decision,
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![primary_row(1, 20, 1)],
+            }],
+            Vec::new(),
+        )
+        .unwrap_err()
+        .contains("missing source vector"));
+
+        assert!(build_split_replacement_source_rows(
+            &decision,
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![primary_row(1, 20, 1)],
+            }],
+            vec![
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+            ],
+        )
+        .unwrap_err()
+        .contains("unused source vector"));
     }
 
     #[test]
