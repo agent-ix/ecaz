@@ -548,6 +548,14 @@ diagnostics without scoring assignments.
   base-leaf rows, clears delta-insert flags on surviving rows, and fails closed
   if an affected PID is not an active leaf. Routing-object rewrite and scheduler
   execution remain open.
+- [x] **Replacement routing rewrite helper.** Phase 2 now has a pure helper for
+  rewriting a parent routing object after replacement leaf planning. It removes
+  affected child PIDs, inserts the replacement child PIDs and centroids at the
+  first affected position, preserves unaffected child order, reassigns
+  sequential centroid ordinals, carries root/internal parent identity, and
+  rejects replacement PIDs that collide with unaffected children. Live
+  split/merge scheduler execution and relation-backed publish wiring remain
+  open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

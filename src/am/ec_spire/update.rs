@@ -20,7 +20,8 @@ use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScan
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
-    SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+    SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+    SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use crate::storage::page::ItemPointer;
 
@@ -95,6 +96,12 @@ pub(super) struct SpireLeafReplacementPidPlan {
 pub(super) struct SpireReplacementLeafRows {
     pub(super) base_pid: u64,
     pub(super) rows: Vec<SpireLeafAssignmentRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRoutingReplacementChild {
+    pub(super) child_pid: u64,
+    pub(super) centroid: Vec<f32>,
 }
 
 pub(super) fn plan_leaf_replacement_pids(
@@ -238,6 +245,65 @@ pub(super) fn collect_replacement_leaf_rows(
     Ok(folded)
 }
 
+pub(super) fn rewrite_routing_partition_for_leaf_replacement(
+    parent: &SpireRoutingPartitionObject,
+    affected_child_pids: &[u64],
+    replacement_children: Vec<SpireRoutingReplacementChild>,
+    object_version: u64,
+) -> Result<SpireRoutingPartitionObject, String> {
+    validate_affected_leaf_pids(affected_child_pids)?;
+    validate_replacement_routing_children(parent, affected_child_pids, &replacement_children)?;
+
+    let affected: HashSet<u64> = affected_child_pids.iter().copied().collect();
+    let mut inserted_replacements = false;
+    let mut children = Vec::with_capacity(
+        parent
+            .child_count()
+            .saturating_sub(affected.len())
+            .saturating_add(replacement_children.len()),
+    );
+    for child in parent.children() {
+        if affected.contains(&child.child_pid) {
+            if !inserted_replacements {
+                append_replacement_routing_children(&mut children, &replacement_children)?;
+                inserted_replacements = true;
+            }
+            continue;
+        }
+        let centroid_index = u32::try_from(children.len())
+            .map_err(|_| "ec_spire routing replacement child count exceeds u32".to_owned())?;
+        children.push(SpireRoutingChildEntry {
+            centroid_index,
+            child_pid: child.child_pid,
+            centroid: child.centroid.to_vec(),
+        });
+    }
+
+    if !inserted_replacements {
+        return Err("ec_spire routing replacement did not find any affected child pid".to_owned());
+    }
+
+    match parent.header.kind {
+        SpirePartitionObjectKind::Root => SpireRoutingPartitionObject::root(
+            parent.header.pid,
+            object_version,
+            parent.dimensions,
+            children,
+        ),
+        SpirePartitionObjectKind::Internal => SpireRoutingPartitionObject::internal(
+            parent.header.pid,
+            object_version,
+            parent.header.level,
+            parent.header.parent_pid,
+            parent.dimensions,
+            children,
+        ),
+        other => Err(format!(
+            "ec_spire routing replacement parent must be Root or Internal, got {other:?}"
+        )),
+    }
+}
+
 fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String> {
     if affected_leaf_pids.is_empty() {
         return Err("ec_spire leaf replacement requires at least one affected leaf pid".to_owned());
@@ -250,6 +316,94 @@ fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String>
         if !seen.insert(*pid) {
             return Err("ec_spire leaf replacement affected leaf pids must be unique".to_owned());
         }
+    }
+    Ok(())
+}
+
+fn validate_replacement_routing_children(
+    parent: &SpireRoutingPartitionObject,
+    affected_child_pids: &[u64],
+    replacement_children: &[SpireRoutingReplacementChild],
+) -> Result<(), String> {
+    if replacement_children.is_empty() {
+        return Err(
+            "ec_spire routing replacement requires at least one replacement child".to_owned(),
+        );
+    }
+    let affected: HashSet<u64> = affected_child_pids.iter().copied().collect();
+    let mut parent_child_pids = HashSet::new();
+    let mut found_affected = HashSet::new();
+    for child in parent.children() {
+        if !parent_child_pids.insert(child.child_pid) {
+            return Err(
+                "ec_spire routing replacement parent contains duplicate child pids".to_owned(),
+            );
+        }
+        if affected.contains(&child.child_pid) {
+            found_affected.insert(child.child_pid);
+        }
+    }
+    if found_affected.len() != affected.len() {
+        let mut missing = affected
+            .difference(&found_affected)
+            .copied()
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        return Err(format!(
+            "ec_spire routing replacement affected child pids are missing from parent: {missing:?}"
+        ));
+    }
+
+    let mut replacement_pids = HashSet::new();
+    let dimensions = usize::from(parent.dimensions);
+    for replacement in replacement_children {
+        if replacement.child_pid == 0 {
+            return Err("ec_spire routing replacement child pid 0 is invalid".to_owned());
+        }
+        if !replacement_pids.insert(replacement.child_pid) {
+            return Err("ec_spire routing replacement child pids must be unique".to_owned());
+        }
+        if !affected.contains(&replacement.child_pid)
+            && parent_child_pids.contains(&replacement.child_pid)
+        {
+            return Err(format!(
+                "ec_spire routing replacement child pid {} already exists outside the affected set",
+                replacement.child_pid
+            ));
+        }
+        if replacement.centroid.len() != dimensions {
+            return Err(format!(
+                "ec_spire routing replacement child pid {} centroid dimensions mismatch: got {}, expected {dimensions}",
+                replacement.child_pid,
+                replacement.centroid.len()
+            ));
+        }
+        if replacement
+            .centroid
+            .iter()
+            .any(|component| !component.is_finite())
+        {
+            return Err(format!(
+                "ec_spire routing replacement child pid {} centroid must be finite",
+                replacement.child_pid
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn append_replacement_routing_children(
+    children: &mut Vec<SpireRoutingChildEntry>,
+    replacement_children: &[SpireRoutingReplacementChild],
+) -> Result<(), String> {
+    for replacement in replacement_children {
+        let centroid_index = u32::try_from(children.len())
+            .map_err(|_| "ec_spire routing replacement child count exceeds u32".to_owned())?;
+        children.push(SpireRoutingChildEntry {
+            centroid_index,
+            child_pid: replacement.child_pid,
+            centroid: replacement.centroid.clone(),
+        });
     }
     Ok(())
 }
@@ -586,8 +740,9 @@ fn validate_delete_delta_targets(
 mod tests {
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
-        collect_replacement_leaf_rows, plan_leaf_replacement_pids, SpireDeltaEpochInput,
-        SpireLeafReplacementMode,
+        collect_replacement_leaf_rows, plan_leaf_replacement_pids,
+        rewrite_routing_partition_for_leaf_replacement, SpireDeltaEpochInput,
+        SpireLeafReplacementMode, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -603,7 +758,8 @@ mod tests {
         SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::{
-        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore, SpireVecId,
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
         SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
         SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -663,6 +819,39 @@ mod tests {
             consistency_mode: SpireConsistencyMode::Strict,
             placement_tid: tid(70, 1),
             assignments,
+        }
+    }
+
+    fn routing_child(
+        centroid_index: u32,
+        child_pid: u64,
+        centroid: Vec<f32>,
+    ) -> SpireRoutingChildEntry {
+        SpireRoutingChildEntry {
+            centroid_index,
+            child_pid,
+            centroid,
+        }
+    }
+
+    fn root_routing_object() -> SpireRoutingPartitionObject {
+        SpireRoutingPartitionObject::root(
+            1,
+            3,
+            2,
+            vec![
+                routing_child(0, 11, vec![1.0, 0.0]),
+                routing_child(1, 12, vec![0.0, 1.0]),
+                routing_child(2, 13, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn replacement_child(child_pid: u64, centroid: Vec<f32>) -> SpireRoutingReplacementChild {
+        SpireRoutingReplacementChild {
+            child_pid,
+            centroid,
         }
     }
 
@@ -852,6 +1041,104 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("parent routing centroid is byte-equal"));
         assert_eq!(pid_allocator.next_pid(), 20);
+    }
+
+    #[test]
+    fn routing_rewrite_replaces_split_child_in_parent_order() {
+        let root = root_routing_object();
+
+        let rewritten = rewrite_routing_partition_for_leaf_replacement(
+            &root,
+            &[12],
+            vec![
+                replacement_child(21, vec![0.5, 0.5]),
+                replacement_child(22, vec![-0.5, 0.5]),
+            ],
+            4,
+        )
+        .unwrap();
+        let children = rewritten.children().collect::<Vec<_>>();
+
+        assert_eq!(rewritten.header.pid, root.header.pid);
+        assert_eq!(rewritten.header.object_version, 4);
+        assert_eq!(
+            children
+                .iter()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 21, 22, 13]
+        );
+        assert_eq!(
+            children
+                .iter()
+                .map(|child| child.centroid_index)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(children[1].centroid, &[0.5, 0.5]);
+        assert_eq!(children[2].centroid, &[-0.5, 0.5]);
+    }
+
+    #[test]
+    fn routing_rewrite_merges_children_at_first_affected_position() {
+        let root = root_routing_object();
+
+        let rewritten = rewrite_routing_partition_for_leaf_replacement(
+            &root,
+            &[11, 12],
+            vec![replacement_child(30, vec![0.5, 0.5])],
+            4,
+        )
+        .unwrap();
+        let children = rewritten.children().collect::<Vec<_>>();
+
+        assert_eq!(
+            children
+                .iter()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![30, 13]
+        );
+        assert_eq!(children[0].centroid_index, 0);
+        assert_eq!(children[1].centroid_index, 1);
+    }
+
+    #[test]
+    fn routing_rewrite_allows_rebalance_to_replace_same_child_pid() {
+        let root = root_routing_object();
+
+        let rewritten = rewrite_routing_partition_for_leaf_replacement(
+            &root,
+            &[12],
+            vec![replacement_child(12, vec![0.0, 1.0])],
+            4,
+        )
+        .unwrap();
+        let children = rewritten.children().collect::<Vec<_>>();
+
+        assert_eq!(
+            children
+                .iter()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 12, 13]
+        );
+        assert_eq!(children[1].centroid, &[0.0, 1.0]);
+    }
+
+    #[test]
+    fn routing_rewrite_rejects_replacement_pid_colliding_with_unaffected_child() {
+        let root = root_routing_object();
+
+        let err = rewrite_routing_partition_for_leaf_replacement(
+            &root,
+            &[12],
+            vec![replacement_child(13, vec![0.0, 1.0])],
+            4,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("already exists outside the affected set"));
     }
 
     #[test]
