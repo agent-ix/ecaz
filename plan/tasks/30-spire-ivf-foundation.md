@@ -681,6 +681,12 @@ diagnostics without scoring assignments.
   fresh PID plan into the immediate replacement publish plan. It rejects stale
   decisions, non-published active manifests, reused PID plans, and PID cursor
   regressions before relation writes begin.
+- [x] **Relation scheduled replacement publish-plan input helper.** Scheduler
+  execution now has a pure builder that carries the checked publish-lock plan
+  into the relation scheduled replacement execution input. It preserves the
+  planned epoch, active consistency mode, and local vector cursor while
+  rejecting PID cursor drift, reused PID plans, and replacement-child PID order
+  mismatches before relation writes begin.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
