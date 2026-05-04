@@ -649,9 +649,10 @@ diagnostics without scoring assignments.
   has a pure wrapper that binds a checked split/merge decision to replacement
   object placements and placement-write evidence before building the replacement
   epoch draft. It rejects active snapshot/decision epoch mismatches and
-  non-successor publish epochs plus replacement leaf-placement count mismatches
-  before delegating placement directory, manifest, and root/control validation
-  to the existing publish-draft helper. Live relation execution remains open.
+  non-successor publish epochs, consistency-mode drift, and replacement
+  leaf-placement count mismatches before delegating placement directory,
+  manifest, and root/control validation to the existing publish-draft helper.
+  Live relation execution remains open.
 - [x] **Scheduled replacement object-write helper.** Scheduler execution now
   has local and relation object-write wrappers that bind a checked split/merge
   decision to the rewritten parent routing object, replacement children, and
