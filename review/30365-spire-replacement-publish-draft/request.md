@@ -20,6 +20,9 @@ placement planning.
 - validates the epoch snapshot shape
 - exposes the same manifest-bundle, root/control-state, and publish-bundle
   helpers used by existing delta and build drafts
+- validates replacement leaf object inputs before future object writes, proving
+  leaf-input PIDs match replacement routing children exactly and rows are
+  normalized base-leaf rows without delta-insert flags or duplicate `vec_id`s
 
 This keeps split/merge implementation aligned with the existing publish
 coordinator contract before adding any live scheduler, SQL entrypoint, or
@@ -33,6 +36,7 @@ relation-backed publish path.
 ## Validation
 
 - `cargo test replacement_epoch_draft --lib`
+- `cargo test replacement_leaf_object_inputs --lib`
 - `git diff --check`
 
 ## Notes
