@@ -746,6 +746,11 @@ diagnostics without scoring assignments.
   decisions, non-published active manifests, reused PID plans, PID count or
   duplicate-PID drift, replacement PIDs behind the root/control cursor, and
   final PID cursor regressions before relation writes begin.
+- [x] **Scheduled replacement publish-lock allocation helper.** Scheduler
+  execution now has one pure wrapper that allocates scheduled replacement PIDs
+  and derives the checked publish plan as an atomic lock-step output. It plans
+  with a scratch PID allocator and only advances the caller's cursor after the
+  publish plan validates against root/control and the active manifest.
 - [x] **Relation scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the relation scheduled replacement execution input. It preserves the
