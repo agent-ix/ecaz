@@ -648,6 +648,11 @@ diagnostics without scoring assignments.
   row order while requiring exact heap-TID coverage and rejecting stale row
   groups, duplicate fetched sources, duplicate assignment TIDs, missing vectors,
   and unused vectors before the live heap fetcher is wired.
+- [x] **Split replacement materialization-from-rows helper.** Scheduler
+  execution now has a pure composition helper that hydrates selected split leaf
+  rows from fetched source vectors and then trains/routes replacement leaf
+  materialization through the existing split materializer. Live relation work
+  can now focus on exact heap-source fetching and selected-plan invocation.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
