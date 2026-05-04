@@ -846,6 +846,11 @@ diagnostics without scoring assignments.
   split/merge candidate, derives the checked publish-lock plan with a scratch
   PID allocator, and reports planned action, affected/replacement PIDs,
   successor epoch, and allocator cursors without writing relation objects.
+- [x] **Locked maintenance plan snapshot.** Scheduler execution now also
+  exposes `ec_spire_index_locked_maintenance_plan_snapshot(index_oid)`, a
+  no-write preflight that takes the shared SPIRE publish lock before loading
+  the active epoch snapshot and deriving the same checked maintenance plan the
+  live manual scheduler entrypoint will re-use.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
