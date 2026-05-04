@@ -1238,11 +1238,14 @@ pub(super) fn plan_scheduled_replacement_publish_epoch(
 pub(super) fn build_local_scheduled_replacement_execution_input_from_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
     parts: SpireLocalScheduledReplacementExecutionParts,
 ) -> Result<SpireLocalScheduledReplacementExecutionInput, String> {
     validate_scheduled_replacement_execution_publish_plan_parts(
         publish_plan,
         pid_plan,
+        decision,
+        &parts.replacement_parent,
         &parts.replacement_children,
         &parts.leaf_inputs,
     )?;
@@ -1264,11 +1267,14 @@ pub(super) fn build_local_scheduled_replacement_execution_input_from_publish_pla
 pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
     parts: SpireRelationScheduledReplacementExecutionParts,
 ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
     validate_scheduled_replacement_execution_publish_plan_parts(
         publish_plan,
         pid_plan,
+        decision,
+        &parts.replacement_parent,
         &parts.replacement_children,
         &parts.leaf_inputs,
     )?;
@@ -1289,6 +1295,7 @@ pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_
 pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
     input: &SpireRelationScheduledReplacementExecutionInput,
 ) -> Result<(), String> {
     if input.epoch != publish_plan.epoch {
@@ -1312,6 +1319,8 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
     validate_scheduled_replacement_execution_publish_plan_parts(
         publish_plan,
         pid_plan,
+        decision,
+        &input.replacement_parent,
         &input.replacement_children,
         &input.leaf_inputs,
     )
@@ -1320,6 +1329,7 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
 pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
     input: &SpireLocalScheduledReplacementExecutionInput,
 ) -> Result<(), String> {
     if input.epoch != publish_plan.epoch {
@@ -1343,6 +1353,8 @@ pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
     validate_scheduled_replacement_execution_publish_plan_parts(
         publish_plan,
         pid_plan,
+        decision,
+        &input.replacement_parent,
         &input.replacement_children,
         &input.leaf_inputs,
     )
@@ -1351,9 +1363,25 @@ pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
 fn validate_scheduled_replacement_execution_publish_plan_parts(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_parent: &SpireRoutingPartitionObject,
     replacement_children: &[SpireRoutingReplacementChild],
     leaf_inputs: &[SpireReplacementLeafObjectInput],
 ) -> Result<(), String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if replacement_parent.header.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement execution parent pid {} does not match decision parent pid {}",
+            replacement_parent.header.pid, decision.replaced_parent_pid
+        ));
+    }
+    if replacement_children.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled replacement execution child count {} does not match decision replacement count {}",
+            replacement_children.len(),
+            decision.replacement_leaf_count
+        ));
+    }
     if pid_plan.reuses_existing_pid {
         return Err(
             "ec_spire scheduled replacement execution input requires fresh replacement pids"
@@ -1387,7 +1415,12 @@ pub(super) fn build_local_scheduled_replacement_epoch_draft(
     input: SpireLocalScheduledReplacementExecutionInput,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireReplacementEpochDraft, String> {
-    validate_local_scheduled_replacement_execution_publish_plan(publish_plan, pid_plan, &input)?;
+    validate_local_scheduled_replacement_execution_publish_plan(
+        publish_plan,
+        pid_plan,
+        decision,
+        &input,
+    )?;
     let replacement_object_placements = write_local_scheduled_replacement_objects(
         input.epoch,
         &input.replacement_parent,
@@ -1436,7 +1469,12 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
             previous_epoch_manifest.epoch, snapshot.epoch_manifest.epoch
         ));
     }
-    validate_relation_scheduled_replacement_execution_publish_plan(publish_plan, pid_plan, &input)?;
+    validate_relation_scheduled_replacement_execution_publish_plan(
+        publish_plan,
+        pid_plan,
+        decision,
+        &input,
+    )?;
     let replacement_object_placements = unsafe {
         write_relation_scheduled_replacement_objects(
             input.epoch,
@@ -2400,6 +2438,17 @@ mod tests {
         SpireRoutingReplacementChild {
             child_pid,
             centroid,
+        }
+    }
+
+    fn scheduled_split_decision(active_epoch: u64) -> SpireLeafReplacementScheduleDecision {
+        SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
         }
     }
 
@@ -4521,10 +4570,12 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
 
         let input = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
@@ -4575,6 +4626,7 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
 
         let err = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &SpireScheduledReplacementPublishPlan {
@@ -4582,6 +4634,7 @@ mod tests {
                 ..publish_plan
             },
             &pid_plan,
+            &decision,
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
@@ -4621,9 +4674,11 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
         let input = build_local_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             SpireLocalScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
@@ -4651,6 +4706,7 @@ mod tests {
         validate_local_scheduled_replacement_execution_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             &input,
         )
         .unwrap();
@@ -4662,10 +4718,24 @@ mod tests {
         assert!(validate_local_scheduled_replacement_execution_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             &stale_epoch_input,
         )
         .unwrap_err()
         .contains("epoch"));
+
+        let stale_child_count_input = SpireLocalScheduledReplacementExecutionInput {
+            replacement_children: vec![replacement_child(21, vec![0.5, 0.5])],
+            ..input.clone()
+        };
+        assert!(validate_local_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &decision,
+            &stale_child_count_input,
+        )
+        .unwrap_err()
+        .contains("child count"));
 
         let stale_vec_cursor_input = SpireLocalScheduledReplacementExecutionInput {
             next_local_vec_seq: 101,
@@ -4674,6 +4744,7 @@ mod tests {
         assert!(validate_local_scheduled_replacement_execution_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             &stale_vec_cursor_input,
         )
         .unwrap_err()
@@ -4739,6 +4810,7 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
         let parts = SpireRelationScheduledReplacementExecutionParts {
             published_at_micros: 3000,
             retain_until_micros: 4000,
@@ -4763,6 +4835,7 @@ mod tests {
         let input = build_relation_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             parts,
         )
         .unwrap();
@@ -4793,6 +4866,7 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
         let parts = SpireRelationScheduledReplacementExecutionParts {
             published_at_micros: 3000,
             retain_until_micros: 4000,
@@ -4822,6 +4896,7 @@ mod tests {
             build_relation_scheduled_replacement_execution_input_from_publish_plan(
                 &mismatched_plan,
                 &pid_plan,
+                &decision,
                 parts.clone(),
             )
             .unwrap_err()
@@ -4839,10 +4914,52 @@ mod tests {
             build_relation_scheduled_replacement_execution_input_from_publish_plan(
                 &publish_plan,
                 &pid_plan,
+                &decision,
                 swapped_parts,
             )
             .unwrap_err()
             .contains("do not match pid plan")
+        );
+
+        let wrong_parent_parts = SpireRelationScheduledReplacementExecutionParts {
+            replacement_parent: SpireRoutingPartitionObject::root(
+                99,
+                3,
+                2,
+                vec![
+                    routing_child(0, 11, vec![1.0, 0.0]),
+                    routing_child(1, 12, vec![0.0, 1.0]),
+                    routing_child(2, 13, vec![-1.0, 0.0]),
+                ],
+            )
+            .unwrap(),
+            replacement_children: vec![
+                replacement_child(21, vec![0.5, 0.5]),
+                replacement_child(22, vec![-0.5, 0.5]),
+            ],
+            leaf_inputs: vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(5, 30, 1)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(6, 30, 2)],
+                },
+            ],
+            published_at_micros: 3000,
+            retain_until_micros: 4000,
+            leaf_object_version: 2,
+        };
+        assert!(
+            build_relation_scheduled_replacement_execution_input_from_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &decision,
+                wrong_parent_parts,
+            )
+            .unwrap_err()
+            .contains("parent pid")
         );
     }
 
@@ -4859,9 +4976,11 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let decision = scheduled_split_decision(7);
         let input = build_relation_scheduled_replacement_execution_input_from_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             SpireRelationScheduledReplacementExecutionParts {
                 published_at_micros: 3000,
                 retain_until_micros: 4000,
@@ -4888,6 +5007,7 @@ mod tests {
         validate_relation_scheduled_replacement_execution_publish_plan(
             &publish_plan,
             &pid_plan,
+            &decision,
             &input,
         )
         .unwrap();
@@ -4900,6 +5020,7 @@ mod tests {
             validate_relation_scheduled_replacement_execution_publish_plan(
                 &publish_plan,
                 &pid_plan,
+                &decision,
                 &stale_epoch_input,
             )
             .unwrap_err()
@@ -4914,6 +5035,7 @@ mod tests {
             validate_relation_scheduled_replacement_execution_publish_plan(
                 &publish_plan,
                 &pid_plan,
+                &decision,
                 &stale_vec_cursor_input,
             )
             .unwrap_err()
