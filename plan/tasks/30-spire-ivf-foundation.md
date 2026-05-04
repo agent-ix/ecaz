@@ -618,7 +618,8 @@ diagnostics without scoring assignments.
   decision from freshly loaded leaf snapshot rows and fails closed if the
   decision disappeared or changed before object writes, preserving the design
   requirement that live execution revalidate selected PIDs under the publish
-  lock.
+  lock. The recheck now explicitly documents that selector ranking and
+  tie-breaks move in lockstep with this consistency contract.
 - [x] **Merge replacement leaf-input helper.** Merge scheduler execution now
   has a pure helper that combines folded rows from the selected affected leaves
   into the single replacement leaf input required by the replacement object

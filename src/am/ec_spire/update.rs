@@ -497,6 +497,9 @@ pub(super) fn recheck_leaf_replacement_schedule_decision(
     expected: &SpireLeafReplacementScheduleDecision,
 ) -> Result<(), String> {
     validate_leaf_replacement_schedule_decision_shape(expected)?;
+    // Keep this recheck in lockstep with the selector: scheduler execution
+    // treats selector tie-breaks as part of the publish-lock consistency
+    // contract, not just as advisory ranking.
     let Some(observed) = choose_leaf_replacement_schedule(rows)? else {
         return Err("ec_spire replacement scheduler decision is no longer recommended".to_owned());
     };
