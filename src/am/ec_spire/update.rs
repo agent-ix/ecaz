@@ -26,6 +26,7 @@ use super::storage::{
     SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::SpireIndexLeafSnapshotRow;
+use crate::am::common::training as common_training;
 use crate::storage::page::ItemPointer;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -703,6 +704,111 @@ pub(super) fn build_scheduled_routing_replacement_children(
     }
 
     Ok(children)
+}
+
+pub(super) fn build_scheduled_merge_replacement_centroids(
+    decision: &SpireLeafReplacementScheduleDecision,
+    parent: &SpireRoutingPartitionObject,
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<Vec<Vec<f32>>, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    validate_leaf_replacement_schedule_rows(rows)?;
+    if decision.mode != SpireLeafReplacementScheduleMode::Merge {
+        return Err("ec_spire scheduled merge centroid requires a merge decision".to_owned());
+    }
+    if parent.header.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled merge centroid parent pid {} does not match decision parent pid {}",
+            parent.header.pid, decision.replaced_parent_pid
+        ));
+    }
+
+    let dimensions = usize::from(parent.dimensions);
+    if dimensions == 0 {
+        return Err("ec_spire scheduled merge centroid parent dimensions 0 is invalid".to_owned());
+    }
+    let children_by_pid = parent
+        .children()
+        .map(|child| (child.child_pid, child))
+        .collect::<HashMap<_, _>>();
+    let rows_by_leaf_pid = rows
+        .iter()
+        .map(|row| (row.leaf_pid, row))
+        .collect::<HashMap<_, _>>();
+    let mut selected = Vec::with_capacity(decision.affected_leaf_pids.len());
+    let mut total_weight = 0_u64;
+    for leaf_pid in &decision.affected_leaf_pids {
+        let row = rows_by_leaf_pid.get(leaf_pid).ok_or_else(|| {
+            format!(
+                "ec_spire scheduled merge centroid missing snapshot row for leaf pid {leaf_pid}"
+            )
+        })?;
+        if row.active_epoch != decision.active_epoch {
+            return Err(format!(
+                "ec_spire scheduled merge centroid row epoch {} does not match decision epoch {}",
+                row.active_epoch, decision.active_epoch
+            ));
+        }
+        if row.parent_pid != decision.replaced_parent_pid {
+            return Err(format!(
+                "ec_spire scheduled merge centroid row parent pid {} does not match decision parent pid {}",
+                row.parent_pid, decision.replaced_parent_pid
+            ));
+        }
+        let child = children_by_pid.get(leaf_pid).ok_or_else(|| {
+            format!(
+                "ec_spire scheduled merge centroid parent is missing affected leaf pid {leaf_pid}"
+            )
+        })?;
+        if child.centroid.len() != dimensions {
+            return Err(format!(
+                "ec_spire scheduled merge centroid child pid {leaf_pid} dimensions {} do not match parent dimensions {dimensions}",
+                child.centroid.len()
+            ));
+        }
+        if child
+            .centroid
+            .iter()
+            .any(|component| !component.is_finite())
+        {
+            return Err(format!(
+                "ec_spire scheduled merge centroid child pid {leaf_pid} centroid must be finite"
+            ));
+        }
+        total_weight = total_weight
+            .checked_add(row.effective_assignment_count)
+            .ok_or_else(|| "ec_spire scheduled merge centroid row weight overflow".to_owned())?;
+        selected.push((*child, row.effective_assignment_count));
+    }
+
+    let mut centroid = vec![0.0_f64; dimensions];
+    if total_weight == 0 {
+        let weight = 1.0 / selected.len() as f64;
+        for (child, _) in &selected {
+            for (sum, component) in centroid.iter_mut().zip(child.centroid.iter()) {
+                *sum += f64::from(*component) * weight;
+            }
+        }
+    } else {
+        let total_weight = total_weight as f64;
+        for (child, row_weight) in &selected {
+            let weight = *row_weight as f64 / total_weight;
+            for (sum, component) in centroid.iter_mut().zip(child.centroid.iter()) {
+                *sum += f64::from(*component) * weight;
+            }
+        }
+    }
+
+    let centroid = centroid
+        .into_iter()
+        .map(|component| component as f32)
+        .collect::<Vec<_>>();
+    let centroid = common_training::normalize_vector(
+        "ec_spire scheduled merge centroid",
+        &centroid,
+        dimensions,
+    )?;
+    Ok(vec![centroid])
 }
 
 pub(super) fn rewrite_scheduled_replacement_parent_routing(
@@ -2474,6 +2580,7 @@ mod tests {
         build_merge_replacement_leaf_object_input,
         build_relation_scheduled_replacement_execution_input_from_publish_plan,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
+        build_scheduled_merge_replacement_centroids,
         build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
@@ -3054,6 +3161,86 @@ mod tests {
                 .unwrap_err()
                 .contains("no longer recommended")
         );
+    }
+
+    #[test]
+    fn scheduled_merge_replacement_centroid_weights_parent_child_centroids() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+
+        let centroids =
+            build_scheduled_merge_replacement_centroids(&decision, &root_routing_object(), &rows)
+                .unwrap();
+
+        assert_eq!(centroids.len(), 1);
+        assert!((centroids[0][0] - 0.9486833).abs() < 0.0001);
+        assert!((centroids[0][1] - 0.31622776).abs() < 0.0001);
+    }
+
+    #[test]
+    fn scheduled_merge_replacement_centroid_uses_equal_weight_for_empty_leaves() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 0, false, true),
+            leaf_snapshot_row(12, 1, 0, false, true),
+        ];
+
+        let centroids =
+            build_scheduled_merge_replacement_centroids(&decision, &root_routing_object(), &rows)
+                .unwrap();
+
+        assert_eq!(centroids.len(), 1);
+        assert!((centroids[0][0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
+        assert!((centroids[0][1] - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn scheduled_merge_replacement_centroid_rejects_missing_or_stale_inputs() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+
+        assert!(build_scheduled_merge_replacement_centroids(
+            &decision,
+            &root_routing_object(),
+            &[leaf_snapshot_row(11, 1, 1, false, true)],
+        )
+        .unwrap_err()
+        .contains("missing snapshot row"));
+
+        let stale_parent_rows = vec![
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(12, 2, 1, false, true),
+        ];
+        assert!(build_scheduled_merge_replacement_centroids(
+            &decision,
+            &root_routing_object(),
+            &stale_parent_rows,
+        )
+        .unwrap_err()
+        .contains("row parent pid"));
     }
 
     #[test]
