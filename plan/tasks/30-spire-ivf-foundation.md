@@ -672,6 +672,10 @@ diagnostics without scoring assignments.
   now composes the merge execution-parts builder with the checked publish-plan
   input builder, producing a fully validated relation scheduled replacement
   execution input for merge decisions before relation object writes.
+- [x] **Local scheduled merge execution-input helper.** Scheduler execution now
+  has the same merge routing/leaf composition for local dry-run execution,
+  preserving caller-provided placement-write evidence while sharing relation
+  merge validation and publish-plan drift checks.
 - [x] **Relation scheduled split execution-parts helper.** Scheduler execution
   now has split-side pure composition for caller-trained replacement centroids
   and routed replacement leaf inputs. It builds replacement routing parts,
