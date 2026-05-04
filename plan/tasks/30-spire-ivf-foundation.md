@@ -686,7 +686,9 @@ diagnostics without scoring assignments.
   into the relation scheduled replacement execution input. It preserves the
   planned epoch, active consistency mode, and local vector cursor while
   rejecting PID cursor drift, reused PID plans, and replacement-child PID order
-  mismatches before relation writes begin.
+  mismatches before relation writes begin. The relation publish wrapper also
+  takes the checked publish plan and revalidates the execution input against it
+  before writing relation objects.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

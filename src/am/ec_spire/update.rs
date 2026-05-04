@@ -1229,30 +1229,12 @@ pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_
     pid_plan: &SpireLeafReplacementPidPlan,
     parts: SpireRelationScheduledReplacementExecutionParts,
 ) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
-    if pid_plan.reuses_existing_pid {
-        return Err(
-            "ec_spire relation scheduled replacement execution input requires fresh replacement pids"
-                .to_owned(),
-        );
-    }
-    if publish_plan.next_pid != pid_plan.next_pid {
-        return Err(format!(
-            "ec_spire relation scheduled replacement execution input next_pid {} does not match pid plan next_pid {}",
-            publish_plan.next_pid, pid_plan.next_pid
-        ));
-    }
-    let child_pids = parts
-        .replacement_children
-        .iter()
-        .map(|child| child.child_pid)
-        .collect::<Vec<_>>();
-    if child_pids != pid_plan.replacement_pids {
-        return Err(format!(
-            "ec_spire relation scheduled replacement execution child pids {:?} do not match pid plan {:?}",
-            child_pids, pid_plan.replacement_pids
-        ));
-    }
-    validate_replacement_leaf_object_inputs(&parts.replacement_children, &parts.leaf_inputs)?;
+    validate_relation_scheduled_replacement_execution_publish_plan_parts(
+        publish_plan,
+        pid_plan,
+        &parts.replacement_children,
+        &parts.leaf_inputs,
+    )?;
 
     Ok(SpireRelationScheduledReplacementExecutionInput {
         epoch: publish_plan.epoch,
@@ -1265,6 +1247,68 @@ pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_
         leaf_inputs: parts.leaf_inputs,
         next_local_vec_seq: publish_plan.next_local_vec_seq,
     })
+}
+
+pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    input: &SpireRelationScheduledReplacementExecutionInput,
+) -> Result<(), String> {
+    if input.epoch != publish_plan.epoch {
+        return Err(format!(
+            "ec_spire relation scheduled replacement execution epoch {} does not match publish plan epoch {}",
+            input.epoch, publish_plan.epoch
+        ));
+    }
+    if input.consistency_mode != publish_plan.consistency_mode {
+        return Err(format!(
+            "ec_spire relation scheduled replacement execution consistency mode {:?} does not match publish plan consistency mode {:?}",
+            input.consistency_mode, publish_plan.consistency_mode
+        ));
+    }
+    if input.next_local_vec_seq != publish_plan.next_local_vec_seq {
+        return Err(format!(
+            "ec_spire relation scheduled replacement execution next_local_vec_seq {} does not match publish plan next_local_vec_seq {}",
+            input.next_local_vec_seq, publish_plan.next_local_vec_seq
+        ));
+    }
+    validate_relation_scheduled_replacement_execution_publish_plan_parts(
+        publish_plan,
+        pid_plan,
+        &input.replacement_children,
+        &input.leaf_inputs,
+    )
+}
+
+fn validate_relation_scheduled_replacement_execution_publish_plan_parts(
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_inputs: &[SpireReplacementLeafObjectInput],
+) -> Result<(), String> {
+    if pid_plan.reuses_existing_pid {
+        return Err(
+            "ec_spire relation scheduled replacement execution input requires fresh replacement pids"
+                .to_owned(),
+        );
+    }
+    if publish_plan.next_pid != pid_plan.next_pid {
+        return Err(format!(
+            "ec_spire relation scheduled replacement execution input next_pid {} does not match pid plan next_pid {}",
+            publish_plan.next_pid, pid_plan.next_pid
+        ));
+    }
+    let child_pids = replacement_children
+        .iter()
+        .map(|child| child.child_pid)
+        .collect::<Vec<_>>();
+    if child_pids != pid_plan.replacement_pids {
+        return Err(format!(
+            "ec_spire relation scheduled replacement execution child pids {:?} do not match pid plan {:?}",
+            child_pids, pid_plan.replacement_pids
+        ));
+    }
+    validate_replacement_leaf_object_inputs(replacement_children, leaf_inputs)
 }
 
 pub(super) fn build_local_scheduled_replacement_epoch_draft(
@@ -1312,6 +1356,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
+    publish_plan: &SpireScheduledReplacementPublishPlan,
     input: SpireRelationScheduledReplacementExecutionInput,
     object_store: &mut SpireRelationObjectStore,
 ) -> Result<SpireReplacementEpochDraft, String> {
@@ -1321,6 +1366,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
             previous_epoch_manifest.epoch, snapshot.epoch_manifest.epoch
         ));
     }
+    validate_relation_scheduled_replacement_execution_publish_plan(publish_plan, pid_plan, &input)?;
     let replacement_object_placements = unsafe {
         write_relation_scheduled_replacement_objects(
             input.epoch,
@@ -2160,11 +2206,14 @@ mod tests {
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
         plan_scheduled_leaf_replacement_pids, plan_scheduled_replacement_publish_epoch,
         recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
-        rewrite_scheduled_replacement_parent_routing, validate_replacement_leaf_object_inputs,
-        validate_scheduled_replacement_pid_plan_output, write_local_replacement_objects,
-        write_local_scheduled_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
-        SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
-        SpireLeafReplacementScheduleMode, SpireLocalScheduledReplacementExecutionInput,
+        rewrite_scheduled_replacement_parent_routing,
+        validate_relation_scheduled_replacement_execution_publish_plan,
+        validate_replacement_leaf_object_inputs, validate_scheduled_replacement_pid_plan_output,
+        write_local_replacement_objects, write_local_scheduled_replacement_objects,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
+        SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
+        SpireLocalScheduledReplacementExecutionInput,
+        SpireRelationScheduledReplacementExecutionInput,
         SpireRelationScheduledReplacementExecutionParts, SpireReplacementEpochInput,
         SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
         SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
@@ -4535,6 +4584,81 @@ mod tests {
             )
             .unwrap_err()
             .contains("do not match pid plan")
+        );
+    }
+
+    #[test]
+    fn relation_scheduled_replacement_execution_publish_plan_validator_rejects_input_drift() {
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 23,
+            next_local_vec_seq: 100,
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let input = build_relation_scheduled_replacement_execution_input_from_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            SpireRelationScheduledReplacementExecutionParts {
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                replacement_parent: root_routing_object(),
+                replacement_children: vec![
+                    replacement_child(21, vec![0.5, 0.5]),
+                    replacement_child(22, vec![-0.5, 0.5]),
+                ],
+                leaf_object_version: 2,
+                leaf_inputs: vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        validate_relation_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &input,
+        )
+        .unwrap();
+
+        let stale_epoch_input = SpireRelationScheduledReplacementExecutionInput {
+            epoch: 9,
+            ..input.clone()
+        };
+        assert!(
+            validate_relation_scheduled_replacement_execution_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &stale_epoch_input,
+            )
+            .unwrap_err()
+            .contains("epoch")
+        );
+
+        let stale_vec_cursor_input = SpireRelationScheduledReplacementExecutionInput {
+            next_local_vec_seq: 101,
+            ..input
+        };
+        assert!(
+            validate_relation_scheduled_replacement_execution_publish_plan(
+                &publish_plan,
+                &pid_plan,
+                &stale_vec_cursor_input,
+            )
+            .unwrap_err()
+            .contains("next_local_vec_seq")
         );
     }
 
