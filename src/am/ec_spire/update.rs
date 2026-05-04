@@ -657,6 +657,12 @@ pub(super) fn build_scheduled_routing_replacement_children(
         if *pid == 0 {
             return Err("ec_spire scheduled routing replacement pid 0 is invalid".to_owned());
         }
+        if *pid >= pid_plan.next_pid {
+            return Err(format!(
+                "ec_spire scheduled routing replacement pid plan next_pid {} does not advance past replacement pid {pid}",
+                pid_plan.next_pid
+            ));
+        }
         if !seen_pids.insert(*pid) {
             return Err("ec_spire scheduled routing replacement pids must be unique".to_owned());
         }
@@ -3295,6 +3301,18 @@ mod tests {
         )
         .unwrap_err()
         .contains("pid count"));
+
+        assert!(build_scheduled_routing_replacement_children(
+            &decision,
+            &SpireLeafReplacementPidPlan {
+                replacement_pids: vec![30, 31],
+                reuses_existing_pid: false,
+                next_pid: 31,
+            },
+            vec![vec![1.0, 0.0], vec![0.0, 1.0]],
+        )
+        .unwrap_err()
+        .contains("does not advance"));
     }
 
     #[test]

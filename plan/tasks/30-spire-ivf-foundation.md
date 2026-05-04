@@ -636,8 +636,9 @@ diagnostics without scoring assignments.
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
   decision shape, PID count, centroid count, fresh/unique replacement PIDs, and
-  finite non-empty centroid vectors before handing exact parent-dimension
-  validation to the existing routing rewrite helper. Live centroid
+  PID cursor advancement plus finite non-empty centroid vectors before handing
+  exact parent-dimension validation to the existing routing rewrite helper.
+  Live centroid
   recomputation and relation execution remain open.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
