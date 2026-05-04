@@ -793,6 +793,9 @@ diagnostics without scoring assignments.
   now has relation and local validators that consume the selected publish-lock
   plan directly, keeping decision, PID plan, and publish plan bundled during
   final execution-input drift checks.
+- [x] **Selected scheduled execution snapshot validator.** Scheduler execution
+  now has a pure snapshot validator that consumes the selected publish-lock plan
+  directly for active epoch and consistency-mode drift checks.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

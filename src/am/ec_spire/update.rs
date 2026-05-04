@@ -2244,6 +2244,17 @@ fn validate_scheduled_replacement_execution_snapshot(
     Ok(())
 }
 
+pub(super) fn validate_selected_scheduled_replacement_execution_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+) -> Result<(), String> {
+    validate_scheduled_replacement_execution_snapshot(
+        snapshot,
+        &selected.decision,
+        &selected.lock_plan.publish_plan,
+    )
+}
+
 pub(super) fn build_local_scheduled_replacement_epoch_draft(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -3206,6 +3217,7 @@ mod tests {
         validate_relation_scheduled_replacement_execution_publish_plan,
         validate_relation_selected_scheduled_replacement_execution_publish_plan,
         validate_replacement_leaf_object_inputs, validate_scheduled_replacement_pid_plan_output,
+        validate_selected_scheduled_replacement_execution_snapshot,
         write_local_replacement_objects, write_local_scheduled_replacement_objects,
         SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
         SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
@@ -5595,6 +5607,85 @@ mod tests {
             .unwrap_err()
             .contains("next_local_vec_seq")
         );
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_execution_snapshot_validator_uses_lock_plan() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        validate_selected_scheduled_replacement_execution_snapshot(&snapshot, &selected).unwrap();
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_execution_snapshot_validator_rejects_drift() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let stale_decision = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(8),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 9,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        assert!(validate_selected_scheduled_replacement_execution_snapshot(
+            &snapshot,
+            &stale_decision
+        )
+        .unwrap_err()
+        .contains("snapshot epoch"));
+
+        let stale_consistency = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Degraded,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        assert!(validate_selected_scheduled_replacement_execution_snapshot(
+            &snapshot,
+            &stale_consistency
+        )
+        .unwrap_err()
+        .contains("consistency mode"));
     }
 
     #[test]
