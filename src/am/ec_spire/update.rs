@@ -1078,6 +1078,52 @@ pub(super) fn build_scheduled_replacement_epoch_draft_from_object_placements(
     )
 }
 
+pub(super) fn validate_scheduled_replacement_pid_plan_output(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    replacement_object_placements: &SpireReplacementObjectPlacements,
+    next_pid: u64,
+) -> Result<(), String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if pid_plan.reuses_existing_pid {
+        return Err(
+            "ec_spire scheduled replacement publish requires fresh replacement pids".to_owned(),
+        );
+    }
+    if pid_plan.replacement_pids.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled replacement pid plan count {} does not match decision replacement count {}",
+            pid_plan.replacement_pids.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    if replacement_object_placements.parent_placement.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement parent placement pid {} does not match decision parent pid {}",
+            replacement_object_placements.parent_placement.pid,
+            decision.replaced_parent_pid
+        ));
+    }
+    let placement_pids = replacement_object_placements
+        .leaf_placements
+        .iter()
+        .map(|placement| placement.pid)
+        .collect::<Vec<_>>();
+    if placement_pids != pid_plan.replacement_pids {
+        return Err(format!(
+            "ec_spire scheduled replacement leaf placement pids {:?} do not match pid plan {:?}",
+            placement_pids, pid_plan.replacement_pids
+        ));
+    }
+    if next_pid != pid_plan.next_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement next_pid {next_pid} does not match pid plan next_pid {}",
+            pid_plan.next_pid
+        ));
+    }
+    Ok(())
+}
+
 pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
@@ -1865,11 +1911,12 @@ mod tests {
         plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
         rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing, validate_replacement_leaf_object_inputs,
-        write_local_replacement_objects, write_local_scheduled_replacement_objects,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
-        SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
-        SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
-        SpireReplacementLeafObjectInput, SpireReplacementLeafRows, SpireRoutingReplacementChild,
+        validate_scheduled_replacement_pid_plan_output, write_local_replacement_objects,
+        write_local_scheduled_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
+        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
+        SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
+        SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
     };
     use crate::am::ec_spire::assign::{
@@ -3731,6 +3778,101 @@ mod tests {
             .unwrap_err()
             .contains("leaf placement count")
         );
+    }
+
+    #[test]
+    fn scheduled_replacement_pid_plan_output_accepts_matching_placements_and_cursor() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let placements = SpireReplacementObjectPlacements {
+            parent_placement: SpirePlacementEntry::local_single_store_available(
+                8,
+                1,
+                12345,
+                4,
+                tid(40, 1),
+                128,
+            ),
+            leaf_placements: vec![
+                SpirePlacementEntry::local_single_store_available(8, 21, 12345, 2, tid(41, 1), 256),
+                SpirePlacementEntry::local_single_store_available(8, 22, 12345, 2, tid(42, 1), 256),
+            ],
+        };
+
+        validate_scheduled_replacement_pid_plan_output(&decision, &pid_plan, &placements, 23)
+            .unwrap();
+    }
+
+    #[test]
+    fn scheduled_replacement_pid_plan_output_rejects_mismatched_outputs() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let mut placements = SpireReplacementObjectPlacements {
+            parent_placement: SpirePlacementEntry::local_single_store_available(
+                8,
+                1,
+                12345,
+                4,
+                tid(40, 1),
+                128,
+            ),
+            leaf_placements: vec![
+                SpirePlacementEntry::local_single_store_available(8, 22, 12345, 2, tid(42, 1), 256),
+                SpirePlacementEntry::local_single_store_available(8, 21, 12345, 2, tid(41, 1), 256),
+            ],
+        };
+
+        assert!(validate_scheduled_replacement_pid_plan_output(
+            &decision,
+            &pid_plan,
+            &placements,
+            23
+        )
+        .unwrap_err()
+        .contains("do not match pid plan"));
+
+        placements.parent_placement.pid = 2;
+        placements.leaf_placements.swap(0, 1);
+        assert!(validate_scheduled_replacement_pid_plan_output(
+            &decision,
+            &pid_plan,
+            &placements,
+            23
+        )
+        .unwrap_err()
+        .contains("parent placement pid"));
+
+        placements.parent_placement.pid = 1;
+        assert!(validate_scheduled_replacement_pid_plan_output(
+            &decision,
+            &pid_plan,
+            &placements,
+            24
+        )
+        .unwrap_err()
+        .contains("next_pid"));
     }
 
     #[test]

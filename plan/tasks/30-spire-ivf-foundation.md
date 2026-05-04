@@ -658,6 +658,11 @@ diagnostics without scoring assignments.
   leaf inputs before writing replacement objects. They reject parent-PID and
   replacement-child count mismatches before reusing the existing routing/leaf
   object writer validation. Live scheduler invocation remains open.
+- [x] **Scheduled replacement PID-plan output validator.** Scheduler execution
+  now has a pure guard that checks written replacement object placements and
+  final `next_pid` against the fresh PID plan selected under the publish lock.
+  It rejects reused PID plans, wrong parent placement PID, leaf-placement PID
+  order mismatches, and cursor mismatches before publish-draft assembly.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
