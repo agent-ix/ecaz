@@ -983,6 +983,21 @@ pub(super) fn build_relation_scheduled_split_replacement_execution_parts(
     })
 }
 
+fn local_scheduled_replacement_execution_parts_from_relation_parts(
+    parts: SpireRelationScheduledReplacementExecutionParts,
+    placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+) -> SpireLocalScheduledReplacementExecutionParts {
+    SpireLocalScheduledReplacementExecutionParts {
+        published_at_micros: parts.published_at_micros,
+        retain_until_micros: parts.retain_until_micros,
+        replacement_parent: parts.replacement_parent,
+        replacement_children: parts.replacement_children,
+        leaf_object_version: parts.leaf_object_version,
+        leaf_inputs: parts.leaf_inputs,
+        placement_write_evidence,
+    }
+}
+
 pub(super) fn build_local_scheduled_merge_replacement_execution_parts(
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -1006,15 +1021,12 @@ pub(super) fn build_local_scheduled_merge_replacement_execution_parts(
         published_at_micros,
         retain_until_micros,
     )?;
-    Ok(SpireLocalScheduledReplacementExecutionParts {
-        published_at_micros: parts.published_at_micros,
-        retain_until_micros: parts.retain_until_micros,
-        replacement_parent: parts.replacement_parent,
-        replacement_children: parts.replacement_children,
-        leaf_object_version: parts.leaf_object_version,
-        leaf_inputs: parts.leaf_inputs,
-        placement_write_evidence,
-    })
+    Ok(
+        local_scheduled_replacement_execution_parts_from_relation_parts(
+            parts,
+            placement_write_evidence,
+        ),
+    )
 }
 
 pub(super) fn build_local_scheduled_split_replacement_execution_parts(
@@ -1040,15 +1052,12 @@ pub(super) fn build_local_scheduled_split_replacement_execution_parts(
         published_at_micros,
         retain_until_micros,
     )?;
-    Ok(SpireLocalScheduledReplacementExecutionParts {
-        published_at_micros: parts.published_at_micros,
-        retain_until_micros: parts.retain_until_micros,
-        replacement_parent: parts.replacement_parent,
-        replacement_children: parts.replacement_children,
-        leaf_object_version: parts.leaf_object_version,
-        leaf_inputs: parts.leaf_inputs,
-        placement_write_evidence,
-    })
+    Ok(
+        local_scheduled_replacement_execution_parts_from_relation_parts(
+            parts,
+            placement_write_evidence,
+        ),
+    )
 }
 
 pub(super) fn build_relation_scheduled_split_replacement_execution_input(
