@@ -625,6 +625,13 @@ diagnostics without scoring assignments.
   writer. It validates merge decision shape, requires one fresh replacement
   PID, rejects missing/extra/duplicate base PID row groups, preserves affected
   leaf order, and reuses the replacement leaf-object input validator.
+- [x] **Split replacement leaf-input helper.** Split scheduler execution now
+  has a pure helper that validates caller-routed replacement leaf inputs against
+  a split decision and PID plan. It requires fresh replacement PIDs, exact input
+  coverage for every planned replacement PID, orders inputs by the PID plan, and
+  reuses the replacement leaf-object input validator to reject duplicate
+  `vec_id`s or non-normalized rows. Centroid training/routing remains a live
+  scheduler responsibility.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
