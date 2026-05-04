@@ -1287,6 +1287,32 @@ pub(super) fn build_relation_selected_scheduled_merge_replacement_execution_inpu
     )
 }
 
+pub(super) fn build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    rows: &[SpireIndexLeafSnapshotRow],
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    let parent =
+        load_selected_scheduled_replacement_parent_routing(snapshot, object_store, selected)?;
+    let replacement_leaf_rows =
+        collect_selected_scheduled_replacement_leaf_rows(snapshot, object_store, selected)?;
+    build_relation_selected_scheduled_merge_replacement_execution_input(
+        selected,
+        &parent,
+        rows,
+        replacement_leaf_rows,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+    )
+}
+
 pub(super) fn build_local_selected_scheduled_merge_replacement_execution_input(
     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
     parent: &SpireRoutingPartitionObject,
@@ -3394,6 +3420,7 @@ mod tests {
         build_relation_scheduled_split_replacement_execution_input,
         build_relation_scheduled_split_replacement_execution_parts,
         build_relation_selected_scheduled_merge_replacement_execution_input,
+        build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot,
         build_relation_selected_scheduled_split_replacement_execution_input,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         build_scheduled_merge_replacement_centroids,
@@ -5591,6 +5618,115 @@ mod tests {
                     base_pid: 12,
                     rows: vec![primary_row(1, 10, 1)],
                 }],
+                4,
+                2,
+                3000,
+                4000,
+            )
+            .unwrap_err()
+            .contains("merge decision")
+        );
+    }
+
+    #[test]
+    fn relation_selected_scheduled_merge_replacement_execution_input_from_snapshot_loads_inputs() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+
+        let input =
+            build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot(
+                &snapshot,
+                &object_store,
+                &selected,
+                &rows,
+                4,
+                2,
+                3000,
+                4000,
+            )
+            .unwrap();
+
+        assert_eq!(input.epoch, 8);
+        assert_eq!(input.next_local_vec_seq, 7);
+        assert_eq!(
+            input
+                .replacement_parent
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![21, 13]
+        );
+        assert_eq!(input.leaf_inputs[0].pid, 21);
+        assert_eq!(
+            input.leaf_inputs[0]
+                .rows
+                .iter()
+                .map(|row| row.heap_tid)
+                .collect::<Vec<_>>(),
+            vec![tid(10, 1), tid(10, 2)]
+        );
+    }
+
+    #[test]
+    fn relation_selected_scheduled_merge_replacement_execution_input_from_snapshot_rejects_split_plan(
+    ) {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let rows = vec![leaf_snapshot_row(12, 1, 100, true, false)];
+
+        assert!(
+            build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot(
+                &snapshot,
+                &object_store,
+                &selected,
+                &rows,
                 4,
                 2,
                 3000,

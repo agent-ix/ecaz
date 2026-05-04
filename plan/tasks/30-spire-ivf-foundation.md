@@ -814,6 +814,10 @@ diagnostics without scoring assignments.
   object and collecting folded affected-leaf rows from the active snapshot,
   keeping snapshot validation bundled with the publish-lock plan before
   merge/split material preparation.
+- [x] **Relation selected scheduled merge snapshot input helper.** Scheduler
+  execution now has a relation merge input builder that loads the selected
+  parent routing object and folded affected-leaf rows from the active snapshot
+  before composing selected-plan relation execution input.
 - [x] **Local selected scheduled merge snapshot draft helper.** Scheduler
   execution now has a local dry-run merge helper that loads the selected parent
   routing object and folded affected-leaf rows from the active snapshot before
