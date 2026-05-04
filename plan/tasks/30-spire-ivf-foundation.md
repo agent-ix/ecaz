@@ -818,6 +818,10 @@ diagnostics without scoring assignments.
   execution now has a relation merge input builder that loads the selected
   parent routing object and folded affected-leaf rows from the active snapshot
   before composing selected-plan relation execution input.
+- [x] **Relation selected scheduled split snapshot input helper.** Scheduler
+  execution now has a relation split input builder that loads the selected
+  parent routing object from the active snapshot before composing selected-plan
+  relation execution input with caller-trained centroids and routed leaf rows.
 - [x] **Local selected scheduled merge snapshot draft helper.** Scheduler
   execution now has a local dry-run merge helper that loads the selected parent
   routing object and folded affected-leaf rows from the active snapshot before
