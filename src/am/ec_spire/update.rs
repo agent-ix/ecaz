@@ -424,6 +424,34 @@ pub(super) fn choose_leaf_replacement_schedule(
     Ok(None)
 }
 
+pub(super) fn recheck_leaf_replacement_schedule_decision(
+    rows: &[SpireIndexLeafSnapshotRow],
+    expected: &SpireLeafReplacementScheduleDecision,
+) -> Result<(), String> {
+    validate_leaf_replacement_schedule_decision_shape(expected)?;
+    let Some(observed) = choose_leaf_replacement_schedule(rows)? else {
+        return Err("ec_spire replacement scheduler decision is no longer recommended".to_owned());
+    };
+    if !leaf_replacement_schedule_decisions_match(&observed, expected) {
+        return Err(format!(
+            "ec_spire replacement scheduler decision changed under publish lock: expected {:?} for pids {:?}, observed {:?} for pids {:?}",
+            expected.mode, expected.affected_leaf_pids, observed.mode, observed.affected_leaf_pids
+        ));
+    }
+    Ok(())
+}
+
+fn leaf_replacement_schedule_decisions_match(
+    observed: &SpireLeafReplacementScheduleDecision,
+    expected: &SpireLeafReplacementScheduleDecision,
+) -> bool {
+    observed.mode == expected.mode
+        && observed.active_epoch == expected.active_epoch
+        && observed.replaced_parent_pid == expected.replaced_parent_pid
+        && observed.affected_leaf_pids == expected.affected_leaf_pids
+        && observed.replacement_leaf_count == expected.replacement_leaf_count
+}
+
 fn validate_leaf_replacement_schedule_decision_shape(
     decision: &SpireLeafReplacementScheduleDecision,
 ) -> Result<(), String> {
@@ -1499,12 +1527,12 @@ mod tests {
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
-        plan_scheduled_leaf_replacement_pids, rewrite_routing_partition_for_leaf_replacement,
-        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementScheduleDecision,
-        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
-        SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
-        SpireRoutingReplacementChild,
+        plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
+        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
+        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
+        SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
+        SpireReplacementLeafObjectInput, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1992,6 +2020,49 @@ mod tests {
                 .contains("merge decision requires")
         );
         assert_eq!(pid_allocator.next_pid(), 20);
+    }
+
+    #[test]
+    fn replacement_scheduler_recheck_accepts_stable_decision() {
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 2, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        let decision = choose_leaf_replacement_schedule(&rows).unwrap().unwrap();
+
+        recheck_leaf_replacement_schedule_decision(&rows, &decision).unwrap();
+    }
+
+    #[test]
+    fn replacement_scheduler_recheck_rejects_changed_decision() {
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 2, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        let decision = choose_leaf_replacement_schedule(&rows).unwrap().unwrap();
+        let changed = vec![leaf_snapshot_row(13, 1, 80, true, false)];
+
+        assert!(
+            recheck_leaf_replacement_schedule_decision(&changed, &decision)
+                .unwrap_err()
+                .contains("decision changed under publish lock")
+        );
+    }
+
+    #[test]
+    fn replacement_scheduler_recheck_rejects_no_longer_recommended_decision() {
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 2, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        let decision = choose_leaf_replacement_schedule(&rows).unwrap().unwrap();
+        let quiet = vec![leaf_snapshot_row(11, 1, 10, false, false)];
+
+        assert!(
+            recheck_leaf_replacement_schedule_decision(&quiet, &decision)
+                .unwrap_err()
+                .contains("no longer recommended")
+        );
     }
 
     #[test]

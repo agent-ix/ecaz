@@ -613,6 +613,12 @@ diagnostics without scoring assignments.
   allocate exactly one fresh replacement leaf PID, malformed decisions fail
   before advancing the allocator cursor, and the helper returns the next
   root/control PID cursor for publish.
+- [x] **Replacement scheduler recheck helper.** The advisory scheduler now has
+  a pure publish-lock recheck helper. It recomputes the selected replacement
+  decision from freshly loaded leaf snapshot rows and fails closed if the
+  decision disappeared or changed before object writes, preserving the design
+  requirement that live execution revalidate selected PIDs under the publish
+  lock.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
