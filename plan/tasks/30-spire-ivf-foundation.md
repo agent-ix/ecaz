@@ -678,6 +678,11 @@ diagnostics without scoring assignments.
   orders split leaf inputs by the PID plan, and returns relation execution
   parts while leaving actual split centroid training as the remaining live
   scheduler responsibility.
+- [x] **Relation scheduled split execution-input helper.** Scheduler execution
+  now composes split execution parts with the checked publish-plan input
+  builder, producing a fully validated relation scheduled replacement
+  execution input for split decisions once trained centroids and routed leaf
+  inputs are available.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
