@@ -1476,6 +1476,26 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
     validate_replacement_leaf_object_inputs(replacement_children, leaf_inputs)
 }
 
+fn validate_scheduled_replacement_execution_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    decision: &SpireLeafReplacementScheduleDecision,
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+) -> Result<(), String> {
+    if snapshot.epoch_manifest.epoch != decision.active_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement execution snapshot epoch {} does not match decision active epoch {}",
+            snapshot.epoch_manifest.epoch, decision.active_epoch
+        ));
+    }
+    if publish_plan.consistency_mode != snapshot.epoch_manifest.consistency_mode {
+        return Err(format!(
+            "ec_spire scheduled replacement execution publish plan consistency mode {:?} does not match active snapshot consistency mode {:?}",
+            publish_plan.consistency_mode, snapshot.epoch_manifest.consistency_mode
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn build_local_scheduled_replacement_epoch_draft(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -1490,6 +1510,7 @@ pub(super) fn build_local_scheduled_replacement_epoch_draft(
         decision,
         &input,
     )?;
+    validate_scheduled_replacement_execution_snapshot(snapshot, decision, publish_plan)?;
     let replacement_object_placements = write_local_scheduled_replacement_objects(
         input.epoch,
         &input.replacement_parent,
@@ -1544,6 +1565,7 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
         decision,
         &input,
     )?;
+    validate_scheduled_replacement_execution_snapshot(snapshot, decision, publish_plan)?;
     let replacement_object_placements = unsafe {
         write_relation_scheduled_replacement_objects(
             input.epoch,
@@ -4477,6 +4499,40 @@ mod tests {
             4,
         )
         .unwrap();
+
+        assert!(build_local_scheduled_replacement_epoch_draft(
+            &snapshot,
+            &decision,
+            &pid_plan,
+            &SpireScheduledReplacementPublishPlan {
+                consistency_mode: SpireConsistencyMode::Degraded,
+                ..publish_plan.clone()
+            },
+            SpireLocalScheduledReplacementExecutionInput {
+                epoch: new_epoch,
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                consistency_mode: SpireConsistencyMode::Degraded,
+                replacement_parent: replacement_parent.clone(),
+                replacement_children: replacement_children.clone(),
+                leaf_object_version: 2,
+                leaf_inputs: vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+                placement_write_evidence: placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+                next_local_vec_seq: 7,
+            },
+            &mut object_store,
+        )
+        .unwrap_err()
+        .contains("active snapshot consistency mode"));
 
         let draft = build_local_scheduled_replacement_epoch_draft(
             &snapshot,

@@ -676,8 +676,8 @@ diagnostics without scoring assignments.
   replacement-child order, publish-plan successor epoch, decision parent/count,
   leaf object-version, publish timestamp, and leaf-input validation with the
   relation input builder. The local dry-run draft helper also takes the checked
-  publish plan and revalidates the execution input against it before writing
-  local objects.
+  publish plan and revalidates the execution input and active snapshot
+  consistency mode against it before writing local objects.
 - [x] **Relation scheduled replacement publish helper.** Scheduler execution now
   has a relation-side wrapper that writes decision-bound replacement objects,
   validates written placements against the scheduled PID plan, writes the
@@ -699,7 +699,8 @@ diagnostics without scoring assignments.
   drift, decision parent/count drift, and replacement-child PID order or leaf
   object-version/publish timestamp mismatches before relation writes begin. The
   relation publish wrapper also takes the checked publish plan and revalidates
-  the execution input against it before writing relation objects.
+  the execution input and active snapshot consistency mode against it before
+  writing relation objects.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
