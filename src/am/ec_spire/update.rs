@@ -344,6 +344,23 @@ pub(super) fn plan_leaf_replacement_pids(
     Ok(plan)
 }
 
+pub(super) fn plan_scheduled_leaf_replacement_pids(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_allocator: &mut SpirePidAllocator,
+) -> Result<SpireLeafReplacementPidPlan, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    let mode = match decision.mode {
+        SpireLeafReplacementScheduleMode::Split => SpireLeafReplacementMode::Split,
+        SpireLeafReplacementScheduleMode::Merge => SpireLeafReplacementMode::Merge,
+    };
+    plan_leaf_replacement_pids(
+        mode,
+        &decision.affected_leaf_pids,
+        decision.replacement_leaf_count,
+        pid_allocator,
+    )
+}
+
 pub(super) fn choose_leaf_replacement_schedule(
     rows: &[SpireIndexLeafSnapshotRow],
 ) -> Result<Option<SpireLeafReplacementScheduleDecision>, String> {
@@ -405,6 +422,37 @@ pub(super) fn choose_leaf_replacement_schedule(
     }
 
     Ok(None)
+}
+
+fn validate_leaf_replacement_schedule_decision_shape(
+    decision: &SpireLeafReplacementScheduleDecision,
+) -> Result<(), String> {
+    if decision.active_epoch == 0 {
+        return Err("ec_spire replacement scheduler decision active_epoch 0 is invalid".to_owned());
+    }
+    if decision.replaced_parent_pid == 0 {
+        return Err("ec_spire replacement scheduler decision parent pid 0 is invalid".to_owned());
+    }
+    validate_affected_leaf_pids(&decision.affected_leaf_pids)?;
+    match decision.mode {
+        SpireLeafReplacementScheduleMode::Split => {
+            if decision.affected_leaf_pids.len() != 1 || decision.replacement_leaf_count < 2 {
+                return Err(
+                    "ec_spire replacement scheduler split decision requires one affected leaf and at least two replacement leaves"
+                        .to_owned(),
+                );
+            }
+        }
+        SpireLeafReplacementScheduleMode::Merge => {
+            if decision.affected_leaf_pids.len() < 2 || decision.replacement_leaf_count != 1 {
+                return Err(
+                    "ec_spire replacement scheduler merge decision requires at least two affected leaves and one replacement leaf"
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_leaf_replacement_schedule_rows(
@@ -1451,8 +1499,9 @@ mod tests {
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
-        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
-        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        plan_scheduled_leaf_replacement_pids, rewrite_routing_partition_for_leaf_replacement,
+        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementScheduleDecision,
         SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
         SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
         SpireRoutingReplacementChild,
@@ -1887,6 +1936,62 @@ mod tests {
         ])
         .unwrap_err()
         .contains("multiple active epochs"));
+    }
+
+    #[test]
+    fn scheduled_replacement_pid_plan_allocates_from_decision() {
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+        let split_decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+
+        let split_plan =
+            plan_scheduled_leaf_replacement_pids(&split_decision, &mut pid_allocator).unwrap();
+
+        assert_eq!(split_plan.replacement_pids, vec![20, 21]);
+        assert_eq!(split_plan.next_pid, 22);
+        assert_eq!(pid_allocator.next_pid(), 22);
+
+        let merge_decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 13],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+
+        let merge_plan =
+            plan_scheduled_leaf_replacement_pids(&merge_decision, &mut pid_allocator).unwrap();
+
+        assert_eq!(merge_plan.replacement_pids, vec![22]);
+        assert_eq!(merge_plan.next_pid, 23);
+        assert_eq!(pid_allocator.next_pid(), 23);
+    }
+
+    #[test]
+    fn scheduled_replacement_pid_plan_rejects_malformed_decision_without_advancing_cursor() {
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+        let malformed = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11],
+            replacement_leaf_count: 1,
+            reason: "bad_merge",
+        };
+
+        assert!(
+            plan_scheduled_leaf_replacement_pids(&malformed, &mut pid_allocator)
+                .unwrap_err()
+                .contains("merge decision requires")
+        );
+        assert_eq!(pid_allocator.next_pid(), 20);
     }
 
     #[test]
