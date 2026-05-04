@@ -668,6 +668,12 @@ diagnostics without scoring assignments.
   replacement objects, validates the written placement output against the PID
   plan, and builds the scheduled replacement epoch draft. It catches
   replacement-child order drift before relation callback integration.
+- [x] **Relation scheduled replacement publish helper.** Scheduler execution now
+  has a relation-side wrapper that writes decision-bound replacement objects,
+  validates written placements against the scheduled PID plan, writes the
+  replacement placement directory, builds the scheduled replacement epoch draft,
+  and publishes root/control through the existing replacement epoch publisher.
+  Live scheduler invocation remains open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

@@ -218,6 +218,19 @@ pub(super) struct SpireLocalScheduledReplacementExecutionInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRelationScheduledReplacementExecutionInput {
+    pub(super) epoch: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) replacement_parent: SpireRoutingPartitionObject,
+    pub(super) replacement_children: Vec<SpireRoutingReplacementChild>,
+    pub(super) leaf_object_version: u64,
+    pub(super) leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
     pub(super) centroid: Vec<f32>,
@@ -1175,6 +1188,73 @@ pub(super) fn build_local_scheduled_replacement_epoch_draft(
             next_local_vec_seq: input.next_local_vec_seq,
         },
     )
+}
+
+pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
+    index_relation: pgrx::pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    input: SpireRelationScheduledReplacementExecutionInput,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireReplacementEpochDraft, String> {
+    if &previous_epoch_manifest != snapshot.epoch_manifest {
+        return Err(format!(
+            "ec_spire scheduled replacement publish previous epoch manifest mismatch: got {}, expected {}",
+            previous_epoch_manifest.epoch, snapshot.epoch_manifest.epoch
+        ));
+    }
+    let replacement_object_placements = unsafe {
+        write_relation_scheduled_replacement_objects(
+            input.epoch,
+            &input.replacement_parent,
+            decision,
+            &input.replacement_children,
+            input.leaf_object_version,
+            input.leaf_inputs,
+            object_store,
+        )?
+    };
+    validate_scheduled_replacement_pid_plan_output(
+        decision,
+        pid_plan,
+        &replacement_object_placements,
+        pid_plan.next_pid,
+    )?;
+    let placement_directory = replacement_placement_directory_from_object_placements(
+        snapshot,
+        object_store,
+        input.epoch,
+        decision.replaced_parent_pid,
+        decision.affected_leaf_pids.clone(),
+        replacement_object_placements.clone(),
+    )?;
+    let placement_write_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+    let draft = build_scheduled_replacement_epoch_draft_from_object_placements(
+        snapshot,
+        object_store,
+        decision,
+        SpireScheduledReplacementEpochObjectPlacementInput {
+            epoch: input.epoch,
+            published_at_micros: input.published_at_micros,
+            retain_until_micros: input.retain_until_micros,
+            consistency_mode: input.consistency_mode,
+            replacement_object_placements,
+            placement_write_evidence,
+            next_pid: pid_plan.next_pid,
+            next_local_vec_seq: input.next_local_vec_seq,
+        },
+    )?;
+    unsafe {
+        publish_replacement_epoch_to_relation(
+            index_relation,
+            previous_epoch_manifest,
+            draft.publish_input(),
+        )?;
+    }
+    Ok(draft)
 }
 
 pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
