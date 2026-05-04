@@ -1042,6 +1042,16 @@ pub(super) fn build_scheduled_replacement_epoch_draft_from_object_placements(
             snapshot.epoch_manifest.epoch, decision.active_epoch
         ));
     }
+    let expected_epoch = decision
+        .active_epoch
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire scheduled replacement publish epoch overflow".to_owned())?;
+    if input.epoch != expected_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement publish epoch {} must be the immediate successor of active epoch {}",
+            input.epoch, decision.active_epoch
+        ));
+    }
     if input.replacement_object_placements.leaf_placements.len() != decision.replacement_leaf_count
     {
         return Err(format!(
@@ -3678,6 +3688,26 @@ mod tests {
             )
             .unwrap_err()
             .contains("snapshot epoch")
+        );
+
+        assert!(
+            build_scheduled_replacement_epoch_draft_from_object_placements(
+                &snapshot,
+                &object_store,
+                &decision,
+                SpireScheduledReplacementEpochObjectPlacementInput {
+                    epoch: 9,
+                    published_at_micros: 3000,
+                    retain_until_micros: 4000,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    replacement_object_placements: placements.clone(),
+                    placement_write_evidence: placement_write_evidence_for_pids(&[1, 21, 22]),
+                    next_pid: 30,
+                    next_local_vec_seq: 7,
+                },
+            )
+            .unwrap_err()
+            .contains("immediate successor")
         );
 
         let mut missing_leaf_placement = placements;
