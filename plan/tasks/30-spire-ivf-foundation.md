@@ -674,6 +674,12 @@ diagnostics without scoring assignments.
   replacement placement directory, builds the scheduled replacement epoch draft,
   and publishes root/control through the existing replacement epoch publisher.
   Live scheduler invocation remains open.
+- [x] **Scheduled replacement publish-lock plan helper.** Scheduler execution
+  now has a pure helper that binds root/control active epoch and allocator
+  cursors, the active epoch manifest, the checked scheduler decision, and the
+  fresh PID plan into the immediate replacement publish plan. It rejects stale
+  decisions, non-published active manifests, reused PID plans, and PID cursor
+  regressions before relation writes begin.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

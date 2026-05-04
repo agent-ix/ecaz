@@ -230,6 +230,14 @@ pub(super) struct SpireRelationScheduledReplacementExecutionInput {
     pub(super) next_local_vec_seq: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireScheduledReplacementPublishPlan {
+    pub(super) epoch: u64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
@@ -1151,6 +1159,55 @@ pub(super) fn validate_scheduled_replacement_pid_plan_output(
     Ok(())
 }
 
+pub(super) fn plan_scheduled_replacement_publish_epoch(
+    root_control: &SpireRootControlState,
+    active_epoch_manifest: &SpireEpochManifest,
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+) -> Result<SpireScheduledReplacementPublishPlan, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if root_control.active_epoch != decision.active_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement root/control active epoch {} does not match decision active epoch {}",
+            root_control.active_epoch, decision.active_epoch
+        ));
+    }
+    if active_epoch_manifest.epoch != decision.active_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement manifest epoch {} does not match decision active epoch {}",
+            active_epoch_manifest.epoch, decision.active_epoch
+        ));
+    }
+    if active_epoch_manifest.state != SpireEpochState::Published {
+        return Err(format!(
+            "ec_spire scheduled replacement active epoch must be published, got {:?}",
+            active_epoch_manifest.state
+        ));
+    }
+    if pid_plan.reuses_existing_pid {
+        return Err(
+            "ec_spire scheduled replacement publish plan requires fresh replacement pids"
+                .to_owned(),
+        );
+    }
+    if pid_plan.next_pid < root_control.next_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement pid plan next_pid {} is behind root/control next_pid {}",
+            pid_plan.next_pid, root_control.next_pid
+        ));
+    }
+    let epoch = decision
+        .active_epoch
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire scheduled replacement publish epoch overflow".to_owned())?;
+    Ok(SpireScheduledReplacementPublishPlan {
+        epoch,
+        consistency_mode: active_epoch_manifest.consistency_mode,
+        next_pid: pid_plan.next_pid,
+        next_local_vec_seq: root_control.next_local_vec_seq,
+    })
+}
+
 pub(super) fn build_local_scheduled_replacement_epoch_draft(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -2041,8 +2098,8 @@ mod tests {
         build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
-        plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
-        rewrite_routing_partition_for_leaf_replacement,
+        plan_scheduled_leaf_replacement_pids, plan_scheduled_replacement_publish_epoch,
+        recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing, validate_replacement_leaf_object_inputs,
         validate_scheduled_replacement_pid_plan_output, write_local_replacement_objects,
         write_local_scheduled_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
@@ -2051,7 +2108,7 @@ mod tests {
         SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
         SpireReplacementLeafObjectInput, SpireReplacementLeafRows,
         SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
-        SpireScheduledReplacementEpochObjectPlacementInput,
+        SpireScheduledReplacementEpochObjectPlacementInput, SpireScheduledReplacementPublishPlan,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -4233,6 +4290,106 @@ mod tests {
         )
         .unwrap_err()
         .contains("do not match pid plan"));
+    }
+
+    #[test]
+    fn scheduled_replacement_publish_plan_uses_root_control_and_active_manifest() {
+        let root_control =
+            SpireRootControlState::published(7, 20, 100, tid(90, 1), tid(90, 2), tid(90, 3))
+                .unwrap();
+        let active_epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![20, 21],
+            reuses_existing_pid: false,
+            next_pid: 22,
+        };
+
+        let plan = plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &pid_plan,
+        )
+        .unwrap();
+
+        assert_eq!(
+            plan,
+            SpireScheduledReplacementPublishPlan {
+                epoch: 8,
+                consistency_mode: SpireConsistencyMode::Strict,
+                next_pid: 22,
+                next_local_vec_seq: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn scheduled_replacement_publish_plan_rejects_stale_epoch_or_cursor() {
+        let root_control =
+            SpireRootControlState::published(7, 20, 100, tid(90, 1), tid(90, 2), tid(90, 3))
+                .unwrap();
+        let active_epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![20, 21],
+            reuses_existing_pid: false,
+            next_pid: 22,
+        };
+        let stale_decision = SpireLeafReplacementScheduleDecision {
+            active_epoch: 6,
+            ..decision.clone()
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &stale_decision,
+            &pid_plan,
+        )
+        .unwrap_err()
+        .contains("root/control active epoch"));
+
+        let stale_pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![18, 19],
+            reuses_existing_pid: false,
+            next_pid: 19,
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &stale_pid_plan,
+        )
+        .unwrap_err()
+        .contains("behind root/control next_pid"));
     }
 
     #[test]
