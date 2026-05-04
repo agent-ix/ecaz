@@ -2285,6 +2285,34 @@ mod tests {
     }
 
     #[test]
+    fn maintenance_plan_snapshot_reports_selected_merge_plan() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+        let rows = vec![
+            maintenance_leaf_row(11, 1, 3, false, true),
+            maintenance_leaf_row(12, 1, 1, false, true),
+            maintenance_leaf_row(13, 2, 20, false, false),
+        ];
+
+        let snapshot =
+            maintenance_plan_snapshot_from_rows(root_control, &published_epoch_manifest(7), &rows)
+                .expect("maintenance plan should build");
+
+        assert_eq!(snapshot.active_epoch, 7);
+        assert_eq!(snapshot.planner_status, "planned");
+        assert_eq!(snapshot.planned_action, "merge");
+        assert_eq!(snapshot.planned_reason, "sparsest_same_parent_merge_pair");
+        assert_eq!(snapshot.replaced_parent_pid, 1);
+        assert_eq!(snapshot.affected_leaf_pids, vec![11, 12]);
+        assert_eq!(snapshot.replacement_leaf_count, 1);
+        assert_eq!(snapshot.replacement_leaf_pids, vec![40]);
+        assert_eq!(snapshot.publish_epoch, 8);
+        assert_eq!(snapshot.next_pid, 41);
+        assert_eq!(snapshot.next_local_vec_seq, 100);
+    }
+
+    #[test]
     fn leaf_snapshot_base_row_preserves_prior_delta_counts() {
         let mut rows_by_leaf_pid = HashMap::new();
         rows_by_leaf_pid.insert(
