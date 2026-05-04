@@ -751,6 +751,11 @@ diagnostics without scoring assignments.
   and derives the checked publish plan as an atomic lock-step output. It plans
   with a scratch PID allocator and only advances the caller's cursor after the
   publish plan validates against root/control and the active manifest.
+- [x] **Rechecked scheduled publish-lock allocation helper.** Scheduler
+  execution now has a pure wrapper that rechecks the selected split/merge
+  decision against the lock-time leaf snapshot before allocating PIDs and
+  deriving the publish plan. If the decision is no longer selected, the caller's
+  PID cursor is not advanced.
 - [x] **Relation scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the relation scheduled replacement execution input. It preserves the
