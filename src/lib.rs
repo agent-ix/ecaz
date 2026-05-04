@@ -529,6 +529,15 @@ fn format_raw_f32_text(values: &[f32]) -> String {
     format!("[{body}]")
 }
 
+fn format_u64_array_text(values: &[u64]) -> String {
+    let body = values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{body}]")
+}
+
 fn raw_inner_product(left: &[f32], right: &[f32], label: &str) -> Result<f32, String> {
     if left.len() != right.len() {
         return Err(format!(
@@ -1738,6 +1747,49 @@ fn ec_spire_index_leaf_snapshot(
             i64::try_from(row.delta_object_bytes).expect("delta object bytes should fit in i64"),
         )
     }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_plan_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(planner_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(planner_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_plan_snapshot") };
+    let snapshot = unsafe { am::spire_index_maintenance_plan_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.planner_status.to_owned(),
+        snapshot.planned_action.to_owned(),
+        snapshot.planned_reason.to_owned(),
+        i64::try_from(snapshot.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&snapshot.affected_leaf_pids),
+        i64::try_from(snapshot.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&snapshot.replacement_leaf_pids),
+        i64::try_from(snapshot.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(snapshot.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        snapshot.planner_message.to_owned(),
+    ))
 }
 
 #[pg_extern(stable, strict)]

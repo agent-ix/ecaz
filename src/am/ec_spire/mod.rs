@@ -199,6 +199,22 @@ pub(crate) struct SpireIndexLeafSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexMaintenancePlanSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) planner_status: &'static str,
+    pub(crate) planned_action: &'static str,
+    pub(crate) planned_reason: &'static str,
+    pub(crate) replaced_parent_pid: u64,
+    pub(crate) affected_leaf_pids: Vec<u64>,
+    pub(crate) replacement_leaf_count: u64,
+    pub(crate) replacement_leaf_pids: Vec<u64>,
+    pub(crate) publish_epoch: u64,
+    pub(crate) next_pid: u64,
+    pub(crate) next_local_vec_seq: u64,
+    pub(crate) planner_message: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexInsertDebtSnapshot {
     pub(crate) active_epoch: u64,
     pub(crate) active_leaf_count: u64,
@@ -1106,119 +1122,229 @@ pub(crate) unsafe fn index_leaf_snapshot(
         )?;
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-        let mut rows_by_leaf_pid: HashMap<u64, SpireIndexLeafSnapshotRow> = HashMap::new();
+        collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
 
-        for manifest_entry in &snapshot.object_manifest().entries {
-            let lookup = snapshot.require_lookup(manifest_entry.pid, "leaf snapshot")?;
-            let placement = lookup.placement;
-            if placement.state != meta::SpirePlacementState::Available {
-                continue;
+fn collect_leaf_snapshot_rows(
+    root_control: meta::SpireRootControlState,
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+) -> Result<Vec<SpireIndexLeafSnapshotRow>, String> {
+    let mut rows_by_leaf_pid: HashMap<u64, SpireIndexLeafSnapshotRow> = HashMap::new();
+
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "leaf snapshot")?;
+        let placement = lookup.placement;
+        if placement.state != meta::SpirePlacementState::Available {
+            continue;
+        }
+        let header = object_store.read_object_header(placement)?;
+        match header.kind {
+            storage::SpirePartitionObjectKind::Leaf => {
+                apply_leaf_snapshot_base_row(
+                    &mut rows_by_leaf_pid,
+                    root_control.active_epoch,
+                    &header,
+                    placement,
+                );
             }
-            let header = unsafe { object_store.read_object_header(placement)? };
-            match header.kind {
-                storage::SpirePartitionObjectKind::Leaf => {
-                    apply_leaf_snapshot_base_row(
-                        &mut rows_by_leaf_pid,
-                        root_control.active_epoch,
-                        &header,
-                        placement,
-                    );
-                }
-                storage::SpirePartitionObjectKind::Delta => {
-                    let delta_object = unsafe { object_store.read_delta_object(placement)? };
-                    let row = rows_by_leaf_pid
-                        .entry(header.parent_pid)
-                        .or_insert_with(|| SpireIndexLeafSnapshotRow {
-                            active_epoch: root_control.active_epoch,
-                            leaf_pid: header.parent_pid,
-                            parent_pid: 0,
-                            object_version: 0,
-                            node_id: placement.node_id,
-                            local_store_id: placement.local_store_id,
-                            placement_state: "missing_base_leaf",
-                            base_assignment_count: 0,
-                            delta_object_count: 0,
-                            delta_insert_assignment_count: 0,
-                            delta_delete_assignment_count: 0,
-                            effective_assignment_count: 0,
-                            split_assignment_threshold: 0,
-                            merge_assignment_threshold: 0,
-                            split_recommended: false,
-                            merge_recommended: false,
-                            maintenance_action: "none",
-                            maintenance_reason: "missing_base_leaf",
-                            leaf_object_bytes: 0,
-                            delta_object_bytes: 0,
-                        });
-                    row.delta_object_count =
-                        row.delta_object_count.checked_add(1).ok_or_else(|| {
-                            "ec_spire leaf snapshot delta object count overflow".to_owned()
-                        })?;
-                    row.delta_object_bytes = row
-                        .delta_object_bytes
-                        .checked_add(u64::from(placement.object_bytes))
-                        .ok_or_else(|| {
-                            "ec_spire leaf snapshot delta object bytes overflow".to_owned()
-                        })?;
-                    for assignment in &delta_object.assignments {
-                        if storage::is_delete_delta_assignment(assignment) {
-                            row.delta_delete_assignment_count = row
-                                .delta_delete_assignment_count
-                                .checked_add(1)
-                                .ok_or_else(|| {
-                                    "ec_spire leaf snapshot delta delete count overflow".to_owned()
-                                })?;
-                        } else if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
-                            != 0
-                        {
-                            row.delta_insert_assignment_count = row
-                                .delta_insert_assignment_count
-                                .checked_add(1)
-                                .ok_or_else(|| {
-                                    "ec_spire leaf snapshot delta insert count overflow".to_owned()
-                                })?;
-                        }
+            storage::SpirePartitionObjectKind::Delta => {
+                let delta_object = object_store.read_delta_object(placement)?;
+                let row = rows_by_leaf_pid
+                    .entry(header.parent_pid)
+                    .or_insert_with(|| SpireIndexLeafSnapshotRow {
+                        active_epoch: root_control.active_epoch,
+                        leaf_pid: header.parent_pid,
+                        parent_pid: 0,
+                        object_version: 0,
+                        node_id: placement.node_id,
+                        local_store_id: placement.local_store_id,
+                        placement_state: "missing_base_leaf",
+                        base_assignment_count: 0,
+                        delta_object_count: 0,
+                        delta_insert_assignment_count: 0,
+                        delta_delete_assignment_count: 0,
+                        effective_assignment_count: 0,
+                        split_assignment_threshold: 0,
+                        merge_assignment_threshold: 0,
+                        split_recommended: false,
+                        merge_recommended: false,
+                        maintenance_action: "none",
+                        maintenance_reason: "missing_base_leaf",
+                        leaf_object_bytes: 0,
+                        delta_object_bytes: 0,
+                    });
+                row.delta_object_count =
+                    row.delta_object_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire leaf snapshot delta object count overflow".to_owned()
+                    })?;
+                row.delta_object_bytes = row
+                    .delta_object_bytes
+                    .checked_add(u64::from(placement.object_bytes))
+                    .ok_or_else(|| {
+                        "ec_spire leaf snapshot delta object bytes overflow".to_owned()
+                    })?;
+                for assignment in &delta_object.assignments {
+                    if storage::is_delete_delta_assignment(assignment) {
+                        row.delta_delete_assignment_count = row
+                            .delta_delete_assignment_count
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                "ec_spire leaf snapshot delta delete count overflow".to_owned()
+                            })?;
+                    } else if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
+                        row.delta_insert_assignment_count = row
+                            .delta_insert_assignment_count
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                "ec_spire leaf snapshot delta insert count overflow".to_owned()
+                            })?;
                     }
                 }
-                storage::SpirePartitionObjectKind::Root
-                | storage::SpirePartitionObjectKind::Internal => {}
             }
+            storage::SpirePartitionObjectKind::Root
+            | storage::SpirePartitionObjectKind::Internal => {}
+        }
+    }
+
+    let mut rows = rows_by_leaf_pid.into_values().collect::<Vec<_>>();
+    for row in &mut rows {
+        row.effective_assignment_count = row
+            .base_assignment_count
+            .saturating_add(row.delta_insert_assignment_count)
+            .saturating_sub(row.delta_delete_assignment_count);
+    }
+    let effective_total = rows
+        .iter()
+        .map(|row| row.effective_assignment_count)
+        .try_fold(0_u64, |acc, count| {
+            acc.checked_add(count).ok_or_else(|| {
+                "ec_spire leaf snapshot effective assignment total overflow".to_owned()
+            })
+        })?;
+    let leaf_count = u64::try_from(rows.len())
+        .map_err(|_| "ec_spire leaf snapshot row count exceeds u64".to_owned())?;
+    let (split_threshold, merge_threshold) =
+        leaf_maintenance_thresholds(effective_total, leaf_count);
+    for row in &mut rows {
+        row.split_assignment_threshold = split_threshold;
+        row.merge_assignment_threshold = merge_threshold;
+        let (split, merge, action, reason) = leaf_maintenance_labels(
+            row.effective_assignment_count,
+            split_threshold,
+            merge_threshold,
+        );
+        row.split_recommended = split;
+        row.merge_recommended = merge;
+        row.maintenance_action = action;
+        row.maintenance_reason = reason;
+    }
+    rows.sort_by_key(|row| row.leaf_pid);
+    Ok(rows)
+}
+
+fn no_maintenance_plan_snapshot(
+    root_control: meta::SpireRootControlState,
+    active_epoch: u64,
+    planned_reason: &'static str,
+    planner_message: &'static str,
+) -> SpireIndexMaintenancePlanSnapshot {
+    SpireIndexMaintenancePlanSnapshot {
+        active_epoch,
+        planner_status: "no_action",
+        planned_action: "none",
+        planned_reason,
+        replaced_parent_pid: 0,
+        affected_leaf_pids: Vec::new(),
+        replacement_leaf_count: 0,
+        replacement_leaf_pids: Vec::new(),
+        publish_epoch: 0,
+        next_pid: root_control.next_pid,
+        next_local_vec_seq: root_control.next_local_vec_seq,
+        planner_message,
+    }
+}
+
+fn maintenance_plan_snapshot_from_rows(
+    root_control: meta::SpireRootControlState,
+    active_epoch_manifest: &meta::SpireEpochManifest,
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<SpireIndexMaintenancePlanSnapshot, String> {
+    if root_control.active_epoch == 0 {
+        return Ok(no_maintenance_plan_snapshot(
+            root_control,
+            0,
+            "empty_index",
+            "build or insert rows to publish the first SPIRE epoch",
+        ));
+    }
+
+    let mut pid_allocator = assign::SpirePidAllocator::new(root_control.next_pid)?;
+    let Some(selected) = update::choose_scheduled_replacement_publish_lock_plan(
+        rows,
+        &root_control,
+        active_epoch_manifest,
+        &mut pid_allocator,
+    )?
+    else {
+        return Ok(no_maintenance_plan_snapshot(
+            root_control,
+            active_epoch_manifest.epoch,
+            "no_candidate",
+            "active leaves are within split/merge thresholds",
+        ));
+    };
+
+    let planned_action = match selected.decision.mode {
+        update::SpireLeafReplacementScheduleMode::Split => "split",
+        update::SpireLeafReplacementScheduleMode::Merge => "merge",
+    };
+    let replacement_leaf_count = u64::try_from(selected.decision.replacement_leaf_count)
+        .map_err(|_| "ec_spire maintenance plan replacement leaf count exceeds u64".to_owned())?;
+
+    Ok(SpireIndexMaintenancePlanSnapshot {
+        active_epoch: selected.decision.active_epoch,
+        planner_status: "planned",
+        planned_action,
+        planned_reason: selected.decision.reason,
+        replaced_parent_pid: selected.decision.replaced_parent_pid,
+        affected_leaf_pids: selected.decision.affected_leaf_pids,
+        replacement_leaf_count,
+        replacement_leaf_pids: selected.lock_plan.pid_plan.replacement_pids,
+        publish_epoch: selected.lock_plan.publish_plan.epoch,
+        next_pid: selected.lock_plan.publish_plan.next_pid,
+        next_local_vec_seq: selected.lock_plan.publish_plan.next_local_vec_seq,
+        planner_message: "scheduled replacement candidate selected for manual publish",
+    })
+}
+
+pub(crate) unsafe fn index_maintenance_plan_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexMaintenancePlanSnapshot {
+    let result = (|| -> Result<SpireIndexMaintenancePlanSnapshot, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(no_maintenance_plan_snapshot(
+                root_control,
+                0,
+                "empty_index",
+                "build or insert rows to publish the first SPIRE epoch",
+            ));
         }
 
-        let mut rows = rows_by_leaf_pid.into_values().collect::<Vec<_>>();
-        for row in &mut rows {
-            row.effective_assignment_count = row
-                .base_assignment_count
-                .saturating_add(row.delta_insert_assignment_count)
-                .saturating_sub(row.delta_delete_assignment_count);
-        }
-        let effective_total = rows
-            .iter()
-            .map(|row| row.effective_assignment_count)
-            .try_fold(0_u64, |acc, count| {
-                acc.checked_add(count).ok_or_else(|| {
-                    "ec_spire leaf snapshot effective assignment total overflow".to_owned()
-                })
-            })?;
-        let leaf_count = u64::try_from(rows.len())
-            .map_err(|_| "ec_spire leaf snapshot row count exceeds u64".to_owned())?;
-        let (split_threshold, merge_threshold) =
-            leaf_maintenance_thresholds(effective_total, leaf_count);
-        for row in &mut rows {
-            row.split_assignment_threshold = split_threshold;
-            row.merge_assignment_threshold = merge_threshold;
-            let (split, merge, action, reason) = leaf_maintenance_labels(
-                row.effective_assignment_count,
-                split_threshold,
-                merge_threshold,
-            );
-            row.split_recommended = split;
-            row.merge_recommended = merge;
-            row.maintenance_action = action;
-            row.maintenance_reason = reason;
-        }
-        rows.sort_by_key(|row| row.leaf_pid);
-        Ok(rows)
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
+        maintenance_plan_snapshot_from_rows(root_control, &epoch_manifest, &rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -2075,6 +2201,87 @@ mod tests {
             }],
         )
         .expect("root routing object should build")
+    }
+
+    fn maintenance_leaf_row(
+        leaf_pid: u64,
+        parent_pid: u64,
+        effective_assignment_count: u64,
+        split_recommended: bool,
+        merge_recommended: bool,
+    ) -> SpireIndexLeafSnapshotRow {
+        SpireIndexLeafSnapshotRow {
+            active_epoch: 7,
+            leaf_pid,
+            parent_pid,
+            object_version: 1,
+            node_id: meta::SPIRE_LOCAL_NODE_ID,
+            local_store_id: meta::SPIRE_SINGLE_LOCAL_STORE_ID,
+            placement_state: "available",
+            base_assignment_count: effective_assignment_count,
+            delta_object_count: 0,
+            delta_insert_assignment_count: 0,
+            delta_delete_assignment_count: 0,
+            effective_assignment_count,
+            split_assignment_threshold: 32,
+            merge_assignment_threshold: 1,
+            split_recommended,
+            merge_recommended,
+            maintenance_action: "none",
+            maintenance_reason: "test",
+            leaf_object_bytes: 1,
+            delta_object_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn maintenance_plan_snapshot_reports_selected_split_plan() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+        let rows = vec![
+            maintenance_leaf_row(11, 1, 10, false, false),
+            maintenance_leaf_row(12, 1, 100, true, false),
+        ];
+
+        let snapshot =
+            maintenance_plan_snapshot_from_rows(root_control, &published_epoch_manifest(7), &rows)
+                .expect("maintenance plan should build");
+
+        assert_eq!(snapshot.active_epoch, 7);
+        assert_eq!(snapshot.planner_status, "planned");
+        assert_eq!(snapshot.planned_action, "split");
+        assert_eq!(snapshot.planned_reason, "largest_split_candidate");
+        assert_eq!(snapshot.replaced_parent_pid, 1);
+        assert_eq!(snapshot.affected_leaf_pids, vec![12]);
+        assert_eq!(snapshot.replacement_leaf_count, 2);
+        assert_eq!(snapshot.replacement_leaf_pids, vec![40, 41]);
+        assert_eq!(snapshot.publish_epoch, 8);
+        assert_eq!(snapshot.next_pid, 42);
+        assert_eq!(snapshot.next_local_vec_seq, 100);
+    }
+
+    #[test]
+    fn maintenance_plan_snapshot_reports_no_action_without_candidate() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+        let rows = vec![
+            maintenance_leaf_row(11, 1, 10, false, false),
+            maintenance_leaf_row(12, 1, 11, false, false),
+        ];
+
+        let snapshot =
+            maintenance_plan_snapshot_from_rows(root_control, &published_epoch_manifest(7), &rows)
+                .expect("maintenance plan should build");
+
+        assert_eq!(snapshot.active_epoch, 7);
+        assert_eq!(snapshot.planner_status, "no_action");
+        assert_eq!(snapshot.planned_action, "none");
+        assert_eq!(snapshot.planned_reason, "no_candidate");
+        assert_eq!(snapshot.replacement_leaf_pids, Vec::<u64>::new());
+        assert_eq!(snapshot.next_pid, 40);
+        assert_eq!(snapshot.next_local_vec_seq, 100);
     }
 
     #[test]
