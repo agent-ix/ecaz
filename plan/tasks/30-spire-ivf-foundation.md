@@ -642,6 +642,12 @@ diagnostics without scoring assignments.
   replacement leaf inputs in PID-plan order, and rejects stale base PIDs, delta
   rows, invalid dimensions, zero vectors, or malformed split plans before live
   heap-source loading is wired.
+- [x] **Split replacement source-row hydration helper.** Scheduler execution now
+  has a pure bridge from folded selected-leaf assignment rows plus fetched heap
+  source vectors into the materialization input shape. It preserves assignment
+  row order while requiring exact heap-TID coverage and rejecting stale row
+  groups, duplicate fetched sources, duplicate assignment TIDs, missing vectors,
+  and unused vectors before the live heap fetcher is wired.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
