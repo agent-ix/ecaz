@@ -769,6 +769,27 @@ pub(super) fn build_split_replacement_source_rows(
     Ok(source_rows)
 }
 
+pub(super) fn build_split_replacement_leaf_materialization_from_rows(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    replacement_rows: Vec<SpireReplacementLeafRows>,
+    fetched_sources: Vec<SpireSplitReplacementFetchedSourceVector>,
+    dimensions: usize,
+    seed: u64,
+    max_iterations: usize,
+) -> Result<SpireSplitReplacementMaterialization, String> {
+    let source_rows =
+        build_split_replacement_source_rows(decision, replacement_rows, fetched_sources)?;
+    build_split_replacement_leaf_materialization(
+        decision,
+        pid_plan,
+        source_rows,
+        dimensions,
+        seed,
+        max_iterations,
+    )
+}
+
 pub(super) fn build_split_replacement_leaf_materialization(
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -3709,10 +3730,11 @@ mod tests {
         build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children,
         build_scheduled_split_replacement_routing_parts,
-        build_split_replacement_leaf_materialization, build_split_replacement_leaf_object_inputs,
-        build_split_replacement_source_rows, choose_leaf_replacement_schedule,
-        choose_scheduled_replacement_publish_lock_plan, collect_replacement_leaf_rows,
-        collect_selected_scheduled_replacement_leaf_rows,
+        build_split_replacement_leaf_materialization,
+        build_split_replacement_leaf_materialization_from_rows,
+        build_split_replacement_leaf_object_inputs, build_split_replacement_source_rows,
+        choose_leaf_replacement_schedule, choose_scheduled_replacement_publish_lock_plan,
+        collect_replacement_leaf_rows, collect_selected_scheduled_replacement_leaf_rows,
         load_scheduled_replacement_parent_routing,
         load_selected_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
         plan_rechecked_scheduled_replacement_publish_lock,
@@ -7299,6 +7321,46 @@ mod tests {
             materialized.leaf_inputs[1].rows[0].vec_id,
             SpireVecId::local(2)
         );
+    }
+
+    #[test]
+    fn split_replacement_materialization_from_rows_hydrates_trains_and_routes() {
+        let decision = scheduled_split_decision(7);
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        let materialized = build_split_replacement_leaf_materialization_from_rows(
+            &decision,
+            &pid_plan,
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![primary_row(1, 20, 1), primary_row(2, 20, 2)],
+            }],
+            vec![
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+            ],
+            2,
+            42,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(
+            materialized.centroids,
+            vec![vec![1.0, 0.0], vec![-1.0, 0.0]]
+        );
+        assert_eq!(materialized.leaf_inputs[0].rows[0].heap_tid, tid(20, 1));
+        assert_eq!(materialized.leaf_inputs[1].rows[0].heap_tid, tid(20, 2));
     }
 
     #[test]
