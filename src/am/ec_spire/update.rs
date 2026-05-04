@@ -1414,6 +1414,15 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
     leaf_inputs: &[SpireReplacementLeafObjectInput],
 ) -> Result<(), String> {
     validate_leaf_replacement_schedule_decision_shape(decision)?;
+    let expected_epoch = decision.active_epoch.checked_add(1).ok_or_else(|| {
+        "ec_spire scheduled replacement execution publish epoch overflow".to_owned()
+    })?;
+    if publish_plan.epoch != expected_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement execution publish plan epoch {} must be the immediate successor of active epoch {}",
+            publish_plan.epoch, decision.active_epoch
+        ));
+    }
     if replacement_parent.header.pid != decision.replaced_parent_pid {
         return Err(format!(
             "ec_spire scheduled replacement execution parent pid {} does not match decision parent pid {}",
@@ -4760,6 +4769,22 @@ mod tests {
             &input,
         )
         .unwrap();
+
+        let stale_publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 9,
+            ..publish_plan.clone()
+        };
+        assert!(validate_local_scheduled_replacement_execution_publish_plan(
+            &stale_publish_plan,
+            &pid_plan,
+            &decision,
+            &SpireLocalScheduledReplacementExecutionInput {
+                epoch: 9,
+                ..input.clone()
+            },
+        )
+        .unwrap_err()
+        .contains("immediate successor"));
 
         let stale_epoch_input = SpireLocalScheduledReplacementExecutionInput {
             epoch: 9,
