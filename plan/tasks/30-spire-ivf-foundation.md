@@ -556,6 +556,14 @@ diagnostics without scoring assignments.
   rejects replacement PIDs that collide with unaffected children. Live
   split/merge scheduler execution and relation-backed publish wiring remain
   open.
+- [x] **Replacement placement-directory helper.** Phase 2 now has a pure helper
+  for planning the new active placement directory for a replacement epoch. It
+  carries unaffected active placements with the new epoch, drops the replaced
+  parent routing object, drops affected old leaf placements, drops active delta
+  placements attached to affected leaves, and inserts the rewritten parent
+  routing placement plus replacement leaf placements. This keeps old PIDs
+  queryable only through retained prior placement directories while the new
+  active directory references the replacement objects.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

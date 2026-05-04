@@ -304,6 +304,103 @@ pub(super) fn rewrite_routing_partition_for_leaf_replacement(
     }
 }
 
+pub(super) fn plan_replacement_epoch_placement_directory(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    new_epoch: u64,
+    replaced_parent_pid: u64,
+    replacement_parent_placement: SpirePlacementEntry,
+    affected_leaf_pids: &[u64],
+    replacement_leaf_placements: Vec<SpirePlacementEntry>,
+) -> Result<SpirePlacementDirectory, String> {
+    if new_epoch == 0 {
+        return Err("ec_spire replacement placement epoch 0 is invalid".to_owned());
+    }
+    if replaced_parent_pid == 0 {
+        return Err("ec_spire replacement parent pid 0 is invalid".to_owned());
+    }
+    validate_affected_leaf_pids(affected_leaf_pids)?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    if new_epoch <= snapshot.epoch_manifest().epoch {
+        return Err(format!(
+            "ec_spire replacement placement epoch {new_epoch} must be newer than base epoch {}",
+            snapshot.epoch_manifest().epoch
+        ));
+    }
+    validate_delta_base_snapshot_placements_available(&snapshot)?;
+    validate_replacement_placement(
+        new_epoch,
+        replaced_parent_pid,
+        "replacement parent",
+        &replacement_parent_placement,
+    )?;
+    let affected: HashSet<u64> = affected_leaf_pids.iter().copied().collect();
+    let mut replacement_leaf_pids = HashSet::new();
+    for placement in &replacement_leaf_placements {
+        validate_replacement_placement(new_epoch, placement.pid, "replacement leaf", placement)?;
+        if placement.pid == replaced_parent_pid {
+            return Err(
+                "ec_spire replacement leaf placement cannot use the parent routing pid".to_owned(),
+            );
+        }
+        if !replacement_leaf_pids.insert(placement.pid) {
+            return Err("ec_spire replacement leaf placements must have unique pids".to_owned());
+        }
+    }
+
+    let mut entries = Vec::with_capacity(
+        snapshot
+            .placement_directory()
+            .entries
+            .len()
+            .saturating_add(1)
+            .saturating_add(replacement_leaf_placements.len()),
+    );
+    let mut active_affected_leaves = HashSet::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "replacement placement")?;
+        let placement = lookup.placement;
+        let header = object_store.read_object_header(placement)?;
+        match header.kind {
+            SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal
+                if manifest_entry.pid == replaced_parent_pid =>
+            {
+                continue;
+            }
+            SpirePartitionObjectKind::Leaf if affected.contains(&manifest_entry.pid) => {
+                active_affected_leaves.insert(manifest_entry.pid);
+                continue;
+            }
+            SpirePartitionObjectKind::Delta if affected.contains(&header.parent_pid) => {
+                continue;
+            }
+            SpirePartitionObjectKind::Root
+            | SpirePartitionObjectKind::Internal
+            | SpirePartitionObjectKind::Leaf
+            | SpirePartitionObjectKind::Delta => {
+                let mut carried = *placement;
+                carried.epoch = new_epoch;
+                entries.push(carried);
+            }
+        }
+    }
+
+    if active_affected_leaves.len() != affected.len() {
+        let mut missing = affected
+            .difference(&active_affected_leaves)
+            .copied()
+            .collect::<Vec<_>>();
+        missing.sort_unstable();
+        return Err(format!(
+            "ec_spire replacement placement requires active leaf pids for all affected pids: missing {missing:?}"
+        ));
+    }
+
+    entries.push(replacement_parent_placement);
+    entries.extend(replacement_leaf_placements);
+    SpirePlacementDirectory::from_entries(new_epoch, entries)
+}
+
 fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String> {
     if affected_leaf_pids.is_empty() {
         return Err("ec_spire leaf replacement requires at least one affected leaf pid".to_owned());
@@ -317,6 +414,34 @@ fn validate_affected_leaf_pids(affected_leaf_pids: &[u64]) -> Result<(), String>
             return Err("ec_spire leaf replacement affected leaf pids must be unique".to_owned());
         }
     }
+    Ok(())
+}
+
+fn validate_replacement_placement(
+    epoch: u64,
+    expected_pid: u64,
+    label: &str,
+    placement: &SpirePlacementEntry,
+) -> Result<(), String> {
+    if placement.epoch != epoch {
+        return Err(format!(
+            "ec_spire {label} placement epoch {} does not match replacement epoch {epoch}",
+            placement.epoch
+        ));
+    }
+    if placement.pid != expected_pid {
+        return Err(format!(
+            "ec_spire {label} placement pid {} does not match expected pid {expected_pid}",
+            placement.pid
+        ));
+    }
+    if placement.state != SpirePlacementState::Available {
+        return Err(format!(
+            "ec_spire {label} placement must be available, got {:?}",
+            placement.state
+        ));
+    }
+    placement.encode()?;
     Ok(())
 }
 
@@ -741,8 +866,8 @@ mod tests {
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         collect_replacement_leaf_rows, plan_leaf_replacement_pids,
-        rewrite_routing_partition_for_leaf_replacement, SpireDeltaEpochInput,
-        SpireLeafReplacementMode, SpireRoutingReplacementChild,
+        plan_replacement_epoch_placement_directory, rewrite_routing_partition_for_leaf_replacement,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -758,8 +883,8 @@ mod tests {
         SpirePublishedEpochSnapshot, SpireRootControlState,
     };
     use crate::am::ec_spire::storage::{
-        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
-        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
+        SpireLocalObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
         SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR,
         SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -852,6 +977,38 @@ mod tests {
         SpireRoutingReplacementChild {
             child_pid,
             centroid,
+        }
+    }
+
+    fn primary_row(vec_seq: u64, block_number: u32, offset_number: u16) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(vec_seq),
+            heap_tid: tid(block_number, offset_number),
+            payload_format: 1,
+            gamma: 0.5,
+            encoded_payload: vec![1, 2, 3],
+        }
+    }
+
+    fn delta_insert_row(
+        vec_seq: u64,
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireLeafAssignmentRow {
+        let mut row = primary_row(vec_seq, block_number, offset_number);
+        row.flags |= SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+        row
+    }
+
+    fn manifest_entry_for(
+        placement: &crate::am::ec_spire::meta::SpirePlacementEntry,
+    ) -> SpireManifestEntry {
+        SpireManifestEntry {
+            epoch: placement.epoch,
+            pid: placement.pid,
+            object_version: placement.object_version,
+            placement_tid: placement.object_tid,
         }
     }
 
@@ -1139,6 +1296,124 @@ mod tests {
         .unwrap_err();
 
         assert!(err.contains("already exists outside the affected set"));
+    }
+
+    #[test]
+    fn replacement_placement_directory_carries_unaffected_and_drops_old_leaf_and_delta() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let new_epoch = 8;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_11 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                11,
+                1,
+                root.header.pid,
+                &[primary_row(1, 10, 1)],
+            )
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let leaf_13 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                13,
+                1,
+                root.header.pid,
+                &[primary_row(3, 10, 3)],
+            )
+            .unwrap();
+        let delta =
+            SpireDeltaPartitionObject::new(40, 1, 12, vec![delta_insert_row(4, 20, 1)]).unwrap();
+        let delta_placement = object_store
+            .insert_delta_object(active_epoch, &delta)
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_11, leaf_12, leaf_13, delta_placement];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let replacement_root = rewrite_routing_partition_for_leaf_replacement(
+            &root,
+            &[12],
+            vec![
+                replacement_child(21, vec![0.5, 0.5]),
+                replacement_child(22, vec![-0.5, 0.5]),
+            ],
+            4,
+        )
+        .unwrap();
+        let replacement_root_placement = object_store
+            .insert_routing_object(new_epoch, &replacement_root)
+            .unwrap();
+        let replacement_leaf_21 = object_store
+            .insert_leaf_object_v2_from_rows(new_epoch, 21, 1, root.header.pid, &[])
+            .unwrap();
+        let replacement_leaf_22 = object_store
+            .insert_leaf_object_v2_from_rows(new_epoch, 22, 1, root.header.pid, &[])
+            .unwrap();
+
+        let replacement_directory = plan_replacement_epoch_placement_directory(
+            &snapshot,
+            &object_store,
+            new_epoch,
+            root.header.pid,
+            replacement_root_placement,
+            &[12],
+            vec![replacement_leaf_21, replacement_leaf_22],
+        )
+        .unwrap();
+
+        let pids = replacement_directory
+            .entries
+            .iter()
+            .map(|entry| entry.pid)
+            .collect::<Vec<_>>();
+        assert_eq!(pids, vec![1, 11, 13, 21, 22]);
+        assert!(replacement_directory
+            .entries
+            .iter()
+            .all(|entry| entry.epoch == new_epoch));
+        assert!(replacement_directory.get(12).is_none());
+        assert!(replacement_directory.get(40).is_none());
+        assert_eq!(
+            object_store
+                .read_object_header(placement_directory.get(12).unwrap())
+                .unwrap()
+                .pid,
+            12
+        );
     }
 
     #[test]
