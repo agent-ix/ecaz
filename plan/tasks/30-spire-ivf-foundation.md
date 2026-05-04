@@ -672,6 +672,12 @@ diagnostics without scoring assignments.
   now composes the merge execution-parts builder with the checked publish-plan
   input builder, producing a fully validated relation scheduled replacement
   execution input for merge decisions before relation object writes.
+- [x] **Relation scheduled split execution-parts helper.** Scheduler execution
+  now has split-side pure composition for caller-trained replacement centroids
+  and routed replacement leaf inputs. It builds replacement routing parts,
+  orders split leaf inputs by the PID plan, and returns relation execution
+  parts while leaving actual split centroid training as the remaining live
+  scheduler responsibility.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
