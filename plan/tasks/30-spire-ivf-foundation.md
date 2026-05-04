@@ -656,9 +656,10 @@ diagnostics without scoring assignments.
 - [x] **Scheduled replacement object-write helper.** Scheduler execution now
   has local and relation object-write wrappers that bind a checked split/merge
   decision to the rewritten parent routing object, replacement children, and
-  leaf inputs before writing replacement objects. They reject parent-PID and
-  replacement-child count mismatches before reusing the existing routing/leaf
-  object writer validation. Live scheduler invocation remains open.
+  leaf inputs before writing replacement objects. They reject non-successor
+  object epochs, parent-PID mismatches, and replacement-child count mismatches
+  before reusing the existing routing/leaf object writer validation. Live
+  scheduler invocation remains open.
 - [x] **Scheduled replacement PID-plan output validator.** Scheduler execution
   now has a pure guard that checks written replacement object placements and
   final `next_pid` against the fresh PID plan selected under the publish lock.

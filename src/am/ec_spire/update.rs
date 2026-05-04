@@ -1838,6 +1838,16 @@ fn write_scheduled_replacement_objects_with_writer(
     object_store: &mut impl SpireReplacementObjectWriter,
 ) -> Result<SpireReplacementObjectPlacements, String> {
     validate_leaf_replacement_schedule_decision_shape(decision)?;
+    let expected_epoch = decision
+        .active_epoch
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire scheduled replacement object writer epoch overflow".to_owned())?;
+    if epoch != expected_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement object writer epoch {epoch} must be the immediate successor of active epoch {}",
+            decision.active_epoch
+        ));
+    }
     if replacement_parent.header.pid != decision.replaced_parent_pid {
         return Err(format!(
             "ec_spire scheduled replacement object writer parent pid {} does not match decision parent pid {}",
@@ -3864,6 +3874,18 @@ mod tests {
         let replacement_root =
             rewrite_scheduled_replacement_parent_routing(&root, &decision, children.clone(), 4)
                 .unwrap();
+
+        assert!(write_local_scheduled_replacement_objects(
+            9,
+            &replacement_root,
+            &decision,
+            &children,
+            1,
+            Vec::new(),
+            &mut object_store,
+        )
+        .unwrap_err()
+        .contains("immediate successor"));
 
         assert!(write_local_scheduled_replacement_objects(
             8,
