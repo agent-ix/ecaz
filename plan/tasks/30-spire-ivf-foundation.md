@@ -737,6 +737,10 @@ diagnostics without scoring assignments.
   replacement objects, validates the written placement output against the PID
   plan, and builds the scheduled replacement epoch draft. It catches
   replacement-child order drift before relation callback integration.
+- [x] **Local selected scheduled replacement draft helper.** Scheduler
+  execution now has a local dry-run draft builder that consumes the selected
+  publish-lock plan directly, keeping decision, PID plan, and publish plan
+  bundled through object writes and draft assembly.
 - [x] **Local scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the local scheduled replacement execution input while preserving
