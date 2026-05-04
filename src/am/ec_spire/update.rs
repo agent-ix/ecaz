@@ -731,10 +731,22 @@ pub(super) fn build_scheduled_merge_replacement_centroids(
         .children()
         .map(|child| (child.child_pid, child))
         .collect::<HashMap<_, _>>();
-    let rows_by_leaf_pid = rows
+    let affected_leaf_pids = decision
+        .affected_leaf_pids
         .iter()
-        .map(|row| (row.leaf_pid, row))
-        .collect::<HashMap<_, _>>();
+        .copied()
+        .collect::<HashSet<_>>();
+    let mut rows_by_leaf_pid = HashMap::new();
+    for row in rows {
+        if affected_leaf_pids.contains(&row.leaf_pid)
+            && rows_by_leaf_pid.insert(row.leaf_pid, row).is_some()
+        {
+            return Err(format!(
+                "ec_spire scheduled merge centroid got duplicate snapshot row for leaf pid {}",
+                row.leaf_pid
+            ));
+        }
+    }
     let mut selected = Vec::with_capacity(decision.affected_leaf_pids.len());
     let mut total_weight = 0_u64;
     for leaf_pid in &decision.affected_leaf_pids {
@@ -3241,6 +3253,19 @@ mod tests {
         )
         .unwrap_err()
         .contains("row parent pid"));
+
+        let duplicate_rows = vec![
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(11, 1, 2, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+        assert!(build_scheduled_merge_replacement_centroids(
+            &decision,
+            &root_routing_object(),
+            &duplicate_rows,
+        )
+        .unwrap_err()
+        .contains("duplicate snapshot row"));
     }
 
     #[test]
