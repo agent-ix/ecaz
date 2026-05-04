@@ -1374,6 +1374,13 @@ pub(crate) unsafe fn index_maintenance_plan_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn index_locked_maintenance_plan_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexMaintenancePlanSnapshot {
+    let _guard = unsafe { lock_publish_relation(index_relation) };
+    unsafe { index_maintenance_plan_snapshot(index_relation) }
+}
+
 pub(crate) unsafe fn index_insert_debt_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexInsertDebtSnapshot {
