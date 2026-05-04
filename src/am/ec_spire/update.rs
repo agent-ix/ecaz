@@ -21,7 +21,7 @@ use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScan
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+    SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use crate::storage::page::ItemPointer;
@@ -166,6 +166,67 @@ pub(super) struct SpireReplacementObjectPlacements {
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
     pub(super) centroid: Vec<f32>,
+}
+
+trait SpireReplacementObjectWriter {
+    fn write_replacement_parent_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String>;
+
+    fn write_replacement_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String>;
+}
+
+impl SpireReplacementObjectWriter for SpireLocalObjectStore {
+    fn write_replacement_parent_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_routing_object(epoch, object)
+    }
+
+    fn write_replacement_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
+    }
+}
+
+impl SpireReplacementObjectWriter for SpireRelationObjectStore {
+    fn write_replacement_parent_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe { self.insert_routing_object(epoch, object) }
+    }
+
+    fn write_replacement_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
+        }
+    }
 }
 
 pub(super) fn plan_leaf_replacement_pids(
@@ -578,23 +639,60 @@ pub(super) fn write_local_replacement_objects(
     leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireReplacementObjectPlacements, String> {
+    write_replacement_objects_with_writer(
+        epoch,
+        replacement_parent,
+        replacement_children,
+        leaf_object_version,
+        leaf_inputs,
+        object_store,
+    )
+}
+
+pub(super) unsafe fn write_relation_replacement_objects(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireReplacementObjectPlacements, String> {
+    write_replacement_objects_with_writer(
+        epoch,
+        replacement_parent,
+        replacement_children,
+        leaf_object_version,
+        leaf_inputs,
+        object_store,
+    )
+}
+
+fn write_replacement_objects_with_writer(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut impl SpireReplacementObjectWriter,
+) -> Result<SpireReplacementObjectPlacements, String> {
     if epoch == 0 {
-        return Err("ec_spire local replacement object epoch 0 is invalid".to_owned());
+        return Err("ec_spire replacement object epoch 0 is invalid".to_owned());
     }
     if leaf_object_version == 0 {
-        return Err("ec_spire local replacement leaf object_version 0 is invalid".to_owned());
+        return Err("ec_spire replacement leaf object_version 0 is invalid".to_owned());
     }
     match replacement_parent.header.kind {
         SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal => {}
         other => {
             return Err(format!(
-                "ec_spire local replacement parent must be Root or Internal, got {other:?}"
+                "ec_spire replacement parent must be Root or Internal, got {other:?}"
             ));
         }
     }
     validate_replacement_leaf_object_inputs(replacement_children, &leaf_inputs)?;
 
-    let parent_placement = object_store.insert_routing_object(epoch, replacement_parent)?;
+    let parent_placement =
+        object_store.write_replacement_parent_object(epoch, replacement_parent)?;
     let inputs_by_pid = leaf_inputs
         .into_iter()
         .map(|input| (input.pid, input))
@@ -607,7 +705,7 @@ pub(super) fn write_local_replacement_objects(
                 child.child_pid
             )
         })?;
-        leaf_placements.push(object_store.insert_leaf_object_v2_from_rows(
+        leaf_placements.push(object_store.write_replacement_leaf_object_v2_from_rows(
             epoch,
             input.pid,
             leaf_object_version,

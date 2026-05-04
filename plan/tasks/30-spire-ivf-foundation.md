@@ -580,6 +580,13 @@ diagnostics without scoring assignments.
   backrefs through the local store, and returns placements ordered by
   replacement routing children. Live relation-backed object writes and
   scheduler execution remain open.
+- [x] **Relation replacement object write helper.** The replacement object
+  writer now uses a shared validation and placement-ordering path for local and
+  relation-backed object stores. The relation wrapper writes the rewritten
+  parent routing object and replacement V2 leaves through
+  `SpireRelationObjectStore`, so relation publish wiring can consume the same
+  replacement-object placement bundle as the local helper. Scheduler execution
+  and root/control publication wiring remain open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
