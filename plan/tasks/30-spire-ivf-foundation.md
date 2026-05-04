@@ -741,6 +741,9 @@ diagnostics without scoring assignments.
   execution now has a local dry-run draft builder that consumes the selected
   publish-lock plan directly, keeping decision, PID plan, and publish plan
   bundled through object writes and draft assembly.
+- [x] **Local selected scheduled replacement draft preflight.** Scheduler
+  execution now has a pure local dry-run preflight that validates the selected
+  execution input and active snapshot before replacement object writes.
 - [x] **Local scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the local scheduled replacement execution input while preserving

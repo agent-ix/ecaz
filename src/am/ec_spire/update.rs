@@ -2271,6 +2271,15 @@ pub(super) fn validate_relation_selected_scheduled_replacement_publish_inputs(
     validate_selected_scheduled_replacement_execution_snapshot(snapshot, selected)
 }
 
+pub(super) fn validate_local_selected_scheduled_replacement_draft_inputs(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    input: &SpireLocalScheduledReplacementExecutionInput,
+) -> Result<(), String> {
+    validate_local_selected_scheduled_replacement_execution_publish_plan(selected, input)?;
+    validate_selected_scheduled_replacement_execution_snapshot(snapshot, selected)
+}
+
 pub(super) fn build_local_scheduled_replacement_epoch_draft(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -2324,6 +2333,7 @@ pub(super) fn build_local_selected_scheduled_replacement_epoch_draft(
     input: SpireLocalScheduledReplacementExecutionInput,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireReplacementEpochDraft, String> {
+    validate_local_selected_scheduled_replacement_draft_inputs(snapshot, selected, &input)?;
     build_local_scheduled_replacement_epoch_draft(
         snapshot,
         &selected.decision,
@@ -3257,6 +3267,7 @@ mod tests {
         recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing,
         validate_local_scheduled_replacement_execution_publish_plan,
+        validate_local_selected_scheduled_replacement_draft_inputs,
         validate_local_selected_scheduled_replacement_execution_publish_plan,
         validate_relation_scheduled_replacement_execution_publish_plan,
         validate_relation_selected_scheduled_replacement_execution_publish_plan,
@@ -7660,6 +7671,148 @@ mod tests {
             &selected,
             input,
             &mut object_store,
+        )
+        .unwrap_err()
+        .contains("snapshot epoch"));
+    }
+
+    #[test]
+    fn local_selected_scheduled_replacement_draft_inputs_validate_bundle() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let input = build_local_selected_scheduled_split_replacement_execution_input(
+            &selected,
+            &root,
+            vec![vec![0.5, 0.5], vec![-0.5, 0.5]],
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(5, 30, 1)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(6, 30, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+            placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+        )
+        .unwrap();
+
+        validate_local_selected_scheduled_replacement_draft_inputs(&snapshot, &selected, &input)
+            .unwrap();
+    }
+
+    #[test]
+    fn local_selected_scheduled_replacement_draft_inputs_reject_drift() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let input = build_local_selected_scheduled_split_replacement_execution_input(
+            &selected,
+            &root,
+            vec![vec![0.5, 0.5], vec![-0.5, 0.5]],
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(5, 30, 1)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(6, 30, 2)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+            placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+        )
+        .unwrap();
+        let mut stale_input = input.clone();
+        stale_input.next_local_vec_seq = 8;
+        assert!(validate_local_selected_scheduled_replacement_draft_inputs(
+            &snapshot,
+            &selected,
+            &stale_input,
+        )
+        .unwrap_err()
+        .contains("next_local_vec_seq"));
+
+        let stale_selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(8),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 9,
+                    ..selected.lock_plan.publish_plan
+                },
+                ..selected.lock_plan
+            },
+        };
+        let stale_selected_input =
+            build_local_selected_scheduled_split_replacement_execution_input(
+                &stale_selected,
+                &root,
+                vec![vec![0.5, 0.5], vec![-0.5, 0.5]],
+                vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+                4,
+                2,
+                3000,
+                4000,
+                placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+            )
+            .unwrap();
+        assert!(validate_local_selected_scheduled_replacement_draft_inputs(
+            &snapshot,
+            &stale_selected,
+            &stale_selected_input,
         )
         .unwrap_err()
         .contains("snapshot epoch"));
