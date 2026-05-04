@@ -839,6 +839,13 @@ diagnostics without scoring assignments.
   execution now has a local dry-run split helper that loads the selected parent
   routing object from the active snapshot before composing selected-plan split
   draft assembly with caller-trained centroids and routed leaf inputs.
+- [x] **Maintenance plan snapshot.** Scheduler execution now exposes a
+  read-only SQL planning surface,
+  `ec_spire_index_maintenance_plan_snapshot(index_oid)`, that loads one active
+  epoch snapshot, reuses the leaf snapshot collector, chooses the current
+  split/merge candidate, derives the checked publish-lock plan with a scratch
+  PID allocator, and reports planned action, affected/replacement PIDs,
+  successor epoch, and allocator cursors without writing relation objects.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
