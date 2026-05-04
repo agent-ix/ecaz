@@ -702,6 +702,9 @@ diagnostics without scoring assignments.
   mirrors relation split composition for local dry-run execution, preserving
   placement-write evidence while reusing split routing, leaf-input ordering,
   and publish-plan drift validation.
+- [x] **Local selected scheduled split execution-input helper.** Scheduler
+  execution now has a local dry-run split builder that consumes the selected
+  publish-lock plan directly while preserving placement-write evidence.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
