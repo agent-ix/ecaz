@@ -1217,6 +1217,24 @@ pub(super) fn plan_scheduled_replacement_publish_epoch(
                 .to_owned(),
         );
     }
+    if pid_plan.replacement_pids.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled replacement publish plan pid count {} does not match decision replacement count {}",
+            pid_plan.replacement_pids.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    let mut seen_replacement_pids = HashSet::new();
+    if let Some(duplicate_pid) = pid_plan
+        .replacement_pids
+        .iter()
+        .copied()
+        .find(|pid| !seen_replacement_pids.insert(*pid))
+    {
+        return Err(format!(
+            "ec_spire scheduled replacement publish plan replacement pid {duplicate_pid} appears more than once"
+        ));
+    }
     if let Some(stale_pid) = pid_plan
         .replacement_pids
         .iter()
@@ -5128,6 +5146,34 @@ mod tests {
         )
         .unwrap_err()
         .contains("root/control active epoch"));
+
+        let wrong_count_pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![20],
+            reuses_existing_pid: false,
+            next_pid: 21,
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &wrong_count_pid_plan,
+        )
+        .unwrap_err()
+        .contains("pid count"));
+
+        let duplicate_pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![20, 20],
+            reuses_existing_pid: false,
+            next_pid: 21,
+        };
+        assert!(plan_scheduled_replacement_publish_epoch(
+            &root_control,
+            &active_epoch_manifest,
+            &decision,
+            &duplicate_pid_plan,
+        )
+        .unwrap_err()
+        .contains("appears more than once"));
 
         let stale_pid_plan = SpireLeafReplacementPidPlan {
             replacement_pids: vec![18, 19],
