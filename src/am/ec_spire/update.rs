@@ -611,6 +611,34 @@ pub(super) fn build_scheduled_routing_replacement_children(
     Ok(children)
 }
 
+pub(super) fn rewrite_scheduled_replacement_parent_routing(
+    parent: &SpireRoutingPartitionObject,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_children: Vec<SpireRoutingReplacementChild>,
+    object_version: u64,
+) -> Result<SpireRoutingPartitionObject, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if parent.header.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled routing replacement parent pid {} does not match decision parent pid {}",
+            parent.header.pid, decision.replaced_parent_pid
+        ));
+    }
+    if replacement_children.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled routing replacement child count {} does not match decision replacement count {}",
+            replacement_children.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    rewrite_routing_partition_for_leaf_replacement(
+        parent,
+        &decision.affected_leaf_pids,
+        replacement_children,
+        object_version,
+    )
+}
+
 fn leaf_replacement_schedule_decisions_match(
     observed: &SpireLeafReplacementScheduleDecision,
     expected: &SpireLeafReplacementScheduleDecision,
@@ -1700,7 +1728,8 @@ mod tests {
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
         plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
-        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
+        rewrite_routing_partition_for_leaf_replacement,
+        rewrite_scheduled_replacement_parent_routing, validate_replacement_leaf_object_inputs,
         write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
         SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
         SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
@@ -2555,6 +2584,107 @@ mod tests {
         )
         .unwrap_err()
         .contains("pid count"));
+    }
+
+    #[test]
+    fn scheduled_routing_rewrite_applies_split_decision_to_parent() {
+        let root = root_routing_object();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+
+        let rewritten = rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            vec![
+                replacement_child(30, vec![0.5, 0.5]),
+                replacement_child(31, vec![0.25, 0.75]),
+            ],
+            4,
+        )
+        .unwrap();
+
+        assert_eq!(rewritten.header.pid, 1);
+        assert_eq!(rewritten.header.object_version, 4);
+        assert_eq!(
+            rewritten
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 30, 31, 13]
+        );
+    }
+
+    #[test]
+    fn scheduled_routing_rewrite_applies_merge_decision_to_parent() {
+        let root = root_routing_object();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+
+        let rewritten = rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            vec![replacement_child(30, vec![0.5, 0.5])],
+            4,
+        )
+        .unwrap();
+
+        assert_eq!(
+            rewritten
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![30, 13]
+        );
+    }
+
+    #[test]
+    fn scheduled_routing_rewrite_rejects_wrong_parent_or_child_count() {
+        let root = root_routing_object();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let wrong_parent = SpireLeafReplacementScheduleDecision {
+            replaced_parent_pid: 2,
+            ..decision.clone()
+        };
+
+        assert!(rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &wrong_parent,
+            vec![
+                replacement_child(30, vec![0.5, 0.5]),
+                replacement_child(31, vec![0.25, 0.75]),
+            ],
+            4,
+        )
+        .unwrap_err()
+        .contains("does not match decision parent pid"));
+
+        assert!(rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            vec![replacement_child(30, vec![0.5, 0.5])],
+            4,
+        )
+        .unwrap_err()
+        .contains("child count"));
     }
 
     #[test]

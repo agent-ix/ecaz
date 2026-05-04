@@ -639,6 +639,12 @@ diagnostics without scoring assignments.
   finite non-empty centroid vectors before handing exact parent-dimension
   validation to the existing routing rewrite helper. Live centroid
   recomputation and relation execution remain open.
+- [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
+  wrapper that binds a checked split/merge decision to the parent routing
+  object rewrite. It validates the decision shape, rejects loading a parent
+  whose PID does not match the scheduler decision, rejects replacement-child
+  count mismatches, and delegates affected-child and centroid-dimension
+  validation to the existing routing rewrite helper.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
