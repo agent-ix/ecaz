@@ -691,6 +691,10 @@ diagnostics without scoring assignments.
   builder, producing a fully validated relation scheduled replacement
   execution input for split decisions once trained centroids and routed leaf
   inputs are available.
+- [x] **Relation selected scheduled split execution-input helper.** Scheduler
+  execution now has a relation split builder that consumes the selected
+  publish-lock plan directly, keeping the chosen split decision, PID plan, and
+  publish plan bundled until execution-input construction.
 - [x] **Local scheduled split execution-input helper.** Scheduler execution now
   mirrors relation split composition for local dry-run execution, preserving
   placement-write evidence while reusing split routing, leaf-input ordering,

@@ -1103,6 +1103,30 @@ pub(super) fn build_relation_scheduled_split_replacement_execution_input(
     )
 }
 
+pub(super) fn build_relation_selected_scheduled_split_replacement_execution_input(
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    parent: &SpireRoutingPartitionObject,
+    centroids: Vec<Vec<f32>>,
+    routed_leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    build_relation_scheduled_split_replacement_execution_input(
+        &selected.lock_plan.publish_plan,
+        &selected.lock_plan.pid_plan,
+        &selected.decision,
+        parent,
+        centroids,
+        routed_leaf_inputs,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+    )
+}
+
 pub(super) fn build_local_scheduled_split_replacement_execution_input(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -3067,6 +3091,7 @@ mod tests {
         build_relation_scheduled_split_replacement_execution_input,
         build_relation_scheduled_split_replacement_execution_parts,
         build_relation_selected_scheduled_merge_replacement_execution_input,
+        build_relation_selected_scheduled_split_replacement_execution_input,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         build_scheduled_merge_replacement_centroids,
         build_scheduled_merge_replacement_routing_parts,
@@ -4192,6 +4217,111 @@ mod tests {
         )
         .unwrap_err()
         .contains("input count"));
+    }
+
+    #[test]
+    fn relation_selected_scheduled_split_replacement_execution_input_uses_lock_plan() {
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 100,
+                },
+            },
+        };
+
+        let input = build_relation_selected_scheduled_split_replacement_execution_input(
+            &selected,
+            &root_routing_object(),
+            vec![vec![0.5, 0.5], vec![-0.5, 0.5]],
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(2, 10, 2)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(1, 10, 1)],
+                },
+            ],
+            4,
+            2,
+            3000,
+            4000,
+        )
+        .unwrap();
+
+        assert_eq!(input.epoch, 8);
+        assert_eq!(input.next_local_vec_seq, 100);
+        assert_eq!(
+            input
+                .replacement_children
+                .iter()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![21, 22]
+        );
+        assert_eq!(
+            input
+                .leaf_inputs
+                .iter()
+                .map(|leaf_input| leaf_input.pid)
+                .collect::<Vec<_>>(),
+            vec![21, 22]
+        );
+    }
+
+    #[test]
+    fn relation_selected_scheduled_split_replacement_execution_input_rejects_merge_plan() {
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 100,
+                },
+            },
+        };
+
+        assert!(
+            build_relation_selected_scheduled_split_replacement_execution_input(
+                &selected,
+                &root_routing_object(),
+                vec![vec![0.5, 0.5]],
+                vec![SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(1, 10, 1)],
+                }],
+                4,
+                2,
+                3000,
+                4000,
+            )
+            .unwrap_err()
+            .contains("split decision")
+        );
     }
 
     #[test]
