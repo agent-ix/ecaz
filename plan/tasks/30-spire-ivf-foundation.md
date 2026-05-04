@@ -634,8 +634,14 @@ diagnostics without scoring assignments.
   coverage for every planned replacement PID, PID cursor advancement, orders
   inputs by the PID plan, and reuses the replacement leaf-object input validator
   to reject duplicate
-  `vec_id`s or non-normalized rows. Centroid training/routing remains a live
+  `vec_id`s or non-normalized rows. Source-vector loading remains a live
   scheduler responsibility.
+- [x] **Split replacement materialization helper.** Scheduler execution now has
+  a pure helper that accepts selected-leaf source vectors, trains replacement
+  centroids with spherical k-means, routes normalized base rows into
+  replacement leaf inputs in PID-plan order, and rejects stale base PIDs, delta
+  rows, invalid dimensions, zero vectors, or malformed split plans before live
+  heap-source loading is wired.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
