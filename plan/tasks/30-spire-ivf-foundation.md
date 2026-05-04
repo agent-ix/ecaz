@@ -744,6 +744,9 @@ diagnostics without scoring assignments.
 - [x] **Local selected scheduled split draft helper.** Scheduler execution now
   has a local dry-run split helper that composes selected-plan split
   execution-input construction and scheduled replacement draft assembly.
+- [x] **Local selected scheduled merge draft helper.** Scheduler execution now
+  has a local dry-run merge helper that composes selected-plan merge
+  execution-input construction and scheduled replacement draft assembly.
 - [x] **Local selected scheduled replacement draft preflight.** Scheduler
   execution now has a pure local dry-run preflight that validates the selected
   execution input and active snapshot before replacement object writes.
