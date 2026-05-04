@@ -103,6 +103,19 @@ pub(super) struct SpireReplacementLeafRows {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireSplitReplacementSourceRow {
+    pub(super) base_pid: u64,
+    pub(super) assignment: SpireLeafAssignmentRow,
+    pub(super) source_vector: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireSplitReplacementMaterialization {
+    pub(super) centroids: Vec<Vec<f32>>,
+    pub(super) leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireReplacementEpochInput {
     pub(super) epoch: u64,
     pub(super) published_at_micros: i64,
@@ -666,6 +679,103 @@ pub(super) fn build_split_replacement_leaf_object_inputs(
         ordered.push(input);
     }
     Ok(ordered)
+}
+
+pub(super) fn build_split_replacement_leaf_materialization(
+    decision: &SpireLeafReplacementScheduleDecision,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    source_rows: Vec<SpireSplitReplacementSourceRow>,
+    dimensions: usize,
+    seed: u64,
+    max_iterations: usize,
+) -> Result<SpireSplitReplacementMaterialization, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if decision.mode != SpireLeafReplacementScheduleMode::Split {
+        return Err(
+            "ec_spire split replacement materialization requires a split decision".to_owned(),
+        );
+    }
+    let [affected_pid] = decision.affected_leaf_pids.as_slice() else {
+        return Err(
+            "ec_spire split replacement materialization requires one affected leaf pid".to_owned(),
+        );
+    };
+    if dimensions == 0 {
+        return Err("ec_spire split replacement materialization dimensions must be > 0".to_owned());
+    }
+    if max_iterations == 0 {
+        return Err(
+            "ec_spire split replacement materialization requires at least one training iteration"
+                .to_owned(),
+        );
+    }
+    if source_rows.is_empty() {
+        return Err("ec_spire split replacement materialization requires source rows".to_owned());
+    }
+
+    for source_row in &source_rows {
+        if source_row.base_pid != *affected_pid {
+            return Err(format!(
+                "ec_spire split replacement materialization got source row for unselected base pid {}",
+                source_row.base_pid
+            ));
+        }
+        if !is_visible_primary_assignment(&source_row.assignment) {
+            return Err(
+                "ec_spire split replacement materialization requires visible primary rows"
+                    .to_owned(),
+            );
+        }
+        if source_row.assignment.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
+            return Err(
+                "ec_spire split replacement materialization requires normalized base rows"
+                    .to_owned(),
+            );
+        }
+    }
+
+    let source_refs = source_rows
+        .iter()
+        .map(|row| row.source_vector.as_slice())
+        .collect::<Vec<_>>();
+    let model = common_training::train_spherical_kmeans(
+        "ec_spire split replacement materialization",
+        &source_refs,
+        dimensions,
+        decision.replacement_leaf_count,
+        seed,
+        max_iterations,
+    )?;
+
+    let mut routed_inputs = pid_plan
+        .replacement_pids
+        .iter()
+        .map(|pid| SpireReplacementLeafObjectInput {
+            pid: *pid,
+            rows: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    for source_row in source_rows {
+        let centroid_index = common_training::assign_vector_to_centroid(
+            "ec_spire split replacement materialization",
+            &source_row.source_vector,
+            &model,
+        )?;
+        let Some(input) = routed_inputs.get_mut(centroid_index) else {
+            return Err(
+                "ec_spire split replacement materialization centroid index out of bounds"
+                    .to_owned(),
+            );
+        };
+        input.rows.push(source_row.assignment);
+    }
+
+    let leaf_inputs =
+        build_split_replacement_leaf_object_inputs(decision, pid_plan, routed_inputs)?;
+    Ok(SpireSplitReplacementMaterialization {
+        centroids: model.centroids,
+        leaf_inputs,
+    })
 }
 
 pub(super) fn build_scheduled_routing_replacement_children(
@@ -3511,9 +3621,9 @@ mod tests {
         build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children,
         build_scheduled_split_replacement_routing_parts,
-        build_split_replacement_leaf_object_inputs, choose_leaf_replacement_schedule,
-        choose_scheduled_replacement_publish_lock_plan, collect_replacement_leaf_rows,
-        collect_selected_scheduled_replacement_leaf_rows,
+        build_split_replacement_leaf_materialization, build_split_replacement_leaf_object_inputs,
+        choose_leaf_replacement_schedule, choose_scheduled_replacement_publish_lock_plan,
+        collect_replacement_leaf_rows, collect_selected_scheduled_replacement_leaf_rows,
         load_scheduled_replacement_parent_routing,
         load_selected_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
         plan_rechecked_scheduled_replacement_publish_lock,
@@ -3539,7 +3649,7 @@ mod tests {
         SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
         SpireScheduledReplacementPublishLockPlan, SpireScheduledReplacementPublishPlan,
-        SpireSelectedScheduledReplacementPublishLockPlan,
+        SpireSelectedScheduledReplacementPublishLockPlan, SpireSplitReplacementSourceRow,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -6958,6 +7068,113 @@ mod tests {
         )
         .unwrap_err()
         .contains("duplicate vec_id"));
+    }
+
+    #[test]
+    fn split_replacement_materialization_trains_and_routes_source_rows() {
+        let decision = scheduled_split_decision(7);
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        let materialized = build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: primary_row(1, 20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: primary_row(2, 20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+            ],
+            2,
+            42,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(
+            materialized.centroids,
+            vec![vec![1.0, 0.0], vec![-1.0, 0.0]]
+        );
+        assert_eq!(
+            materialized
+                .leaf_inputs
+                .iter()
+                .map(|input| input.pid)
+                .collect::<Vec<_>>(),
+            vec![30, 31]
+        );
+        assert_eq!(
+            materialized.leaf_inputs[0].rows[0].vec_id,
+            SpireVecId::local(1)
+        );
+        assert_eq!(
+            materialized.leaf_inputs[1].rows[0].vec_id,
+            SpireVecId::local(2)
+        );
+    }
+
+    #[test]
+    fn split_replacement_materialization_rejects_stale_or_bad_source_rows() {
+        let decision = scheduled_split_decision(7);
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        assert!(build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![SpireSplitReplacementSourceRow {
+                base_pid: 13,
+                assignment: primary_row(1, 20, 1),
+                source_vector: vec![1.0, 0.0],
+            }],
+            2,
+            42,
+            8,
+        )
+        .unwrap_err()
+        .contains("unselected base pid"));
+
+        assert!(build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![SpireSplitReplacementSourceRow {
+                base_pid: 12,
+                assignment: delta_insert_row(1, 20, 1),
+                source_vector: vec![1.0, 0.0],
+            }],
+            2,
+            42,
+            8,
+        )
+        .unwrap_err()
+        .contains("normalized base rows"));
+
+        assert!(build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![SpireSplitReplacementSourceRow {
+                base_pid: 12,
+                assignment: primary_row(1, 20, 1),
+                source_vector: vec![0.0, 0.0],
+            }],
+            2,
+            42,
+            8,
+        )
+        .unwrap_err()
+        .contains("non-zero vectors"));
     }
 
     #[test]
