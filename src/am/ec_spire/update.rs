@@ -8,7 +8,8 @@ use super::assign::{
 };
 use super::build::{
     encode_manifest_bundle_for_publish, encode_publish_bundle_for_publish,
-    object_manifest_from_placement_writes, root_control_state_for_publish,
+    object_manifest_from_placement_writes, publish_replacement_epoch_to_relation,
+    root_control_state_for_publish, write_placement_entries_to_relation,
     SpireEncodedManifestBundle, SpireEncodedPublishBundle, SpirePublishCoordinatorInput,
     SpirePublishPlacementWriteEvidence, SpirePublishedManifestLocators,
 };
@@ -172,6 +173,19 @@ pub(super) struct SpireReplacementEpochObjectPlacementInput {
     pub(super) affected_leaf_pids: Vec<u64>,
     pub(super) replacement_object_placements: SpireReplacementObjectPlacements,
     pub(super) placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRelationReplacementEpochObjectPlacementInput {
+    pub(super) epoch: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) replaced_parent_pid: u64,
+    pub(super) affected_leaf_pids: Vec<u64>,
+    pub(super) replacement_object_placements: SpireReplacementObjectPlacements,
     pub(super) next_pid: u64,
     pub(super) next_local_vec_seq: u64,
 }
@@ -578,14 +592,13 @@ pub(super) fn build_replacement_epoch_draft_from_object_placements(
     object_store: &impl SpireObjectReader,
     input: SpireReplacementEpochObjectPlacementInput,
 ) -> Result<SpireReplacementEpochDraft, String> {
-    let placement_directory = plan_replacement_epoch_placement_directory(
+    let placement_directory = replacement_placement_directory_from_object_placements(
         snapshot,
         object_store,
         input.epoch,
         input.replaced_parent_pid,
-        input.replacement_object_placements.parent_placement,
-        &input.affected_leaf_pids,
-        input.replacement_object_placements.leaf_placements,
+        input.affected_leaf_pids,
+        input.replacement_object_placements,
     )?;
 
     build_replacement_epoch_draft(SpireReplacementEpochInput {
@@ -598,6 +611,68 @@ pub(super) fn build_replacement_epoch_draft_from_object_placements(
         next_pid: input.next_pid,
         next_local_vec_seq: input.next_local_vec_seq,
     })
+}
+
+pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
+    index_relation: pgrx::pg_sys::Relation,
+    previous_epoch_manifest: SpireEpochManifest,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    input: SpireRelationReplacementEpochObjectPlacementInput,
+) -> Result<SpireReplacementEpochDraft, String> {
+    if &previous_epoch_manifest != snapshot.epoch_manifest {
+        return Err(format!(
+            "ec_spire replacement publish previous epoch manifest mismatch: got {}, expected {}",
+            previous_epoch_manifest.epoch, snapshot.epoch_manifest.epoch
+        ));
+    }
+    let placement_directory = replacement_placement_directory_from_object_placements(
+        snapshot,
+        object_store,
+        input.epoch,
+        input.replaced_parent_pid,
+        input.affected_leaf_pids,
+        input.replacement_object_placements,
+    )?;
+    let placement_write_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+    let draft = build_replacement_epoch_draft(SpireReplacementEpochInput {
+        epoch: input.epoch,
+        published_at_micros: input.published_at_micros,
+        retain_until_micros: input.retain_until_micros,
+        consistency_mode: input.consistency_mode,
+        placement_directory,
+        placement_write_evidence,
+        next_pid: input.next_pid,
+        next_local_vec_seq: input.next_local_vec_seq,
+    })?;
+    unsafe {
+        publish_replacement_epoch_to_relation(
+            index_relation,
+            previous_epoch_manifest,
+            draft.publish_input(),
+        )?;
+    }
+    Ok(draft)
+}
+
+fn replacement_placement_directory_from_object_placements(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    epoch: u64,
+    replaced_parent_pid: u64,
+    affected_leaf_pids: Vec<u64>,
+    replacement_object_placements: SpireReplacementObjectPlacements,
+) -> Result<SpirePlacementDirectory, String> {
+    plan_replacement_epoch_placement_directory(
+        snapshot,
+        object_store,
+        epoch,
+        replaced_parent_pid,
+        replacement_object_placements.parent_placement,
+        &affected_leaf_pids,
+        replacement_object_placements.leaf_placements,
+    )
 }
 
 pub(super) fn validate_replacement_leaf_object_inputs(

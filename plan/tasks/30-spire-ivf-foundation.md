@@ -594,6 +594,13 @@ diagnostics without scoring assignments.
   manifest/root-control publish shape, and preserves root/control allocator
   cursors supplied by the caller. Live scheduler execution and root/control
   relation publication remain open.
+- [x] **Relation replacement publish helper.** Replacement epoch publication now
+  has a relation wrapper that accepts already-written replacement object
+  placements, writes the new placement-directory rows to the index relation,
+  builds the validated replacement epoch draft, retires the previous epoch
+  manifest through the existing publish coordinator, writes the new manifest
+  bundle, and advances root/control. Live split/merge scheduler execution
+  remains open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
