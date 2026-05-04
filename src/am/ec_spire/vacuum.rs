@@ -17,25 +17,11 @@ use super::storage::{
     SpireLeafAssignmentRow, SpireObjectReader, SpirePartitionObjectKind, SpireRelationObjectStore,
     SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
-use super::{page, scan};
+use super::{lock_publish_relation, page, scan};
 use crate::storage::page::ItemPointer;
 
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
-
-const VACUUM_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
-    pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
-
-struct RelationLockGuard {
-    relid: pg_sys::Oid,
-    lockmode: pg_sys::LOCKMODE,
-}
-
-impl Drop for RelationLockGuard {
-    fn drop(&mut self) {
-        unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 struct VacuumVisibleAssignment {
@@ -97,7 +83,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
 }
 
 unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
-    let _guard = unsafe { lock_vacuum_publish_relation(index_relation) };
+    let _guard = unsafe { lock_publish_relation(index_relation) };
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(0);
@@ -106,21 +92,12 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
     collect_live_assignment_count(index_relation)
 }
 
-unsafe fn lock_vacuum_publish_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
-    let relid = unsafe { (*index_relation).rd_id };
-    unsafe { pg_sys::LockRelationOid(relid, VACUUM_PUBLISH_LOCK_MODE) };
-    RelationLockGuard {
-        relid,
-        lockmode: VACUUM_PUBLISH_LOCK_MODE,
-    }
-}
-
 unsafe fn run_bulkdelete(
     index_relation: pg_sys::Relation,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumDeleteResult, String> {
-    let _guard = unsafe { lock_vacuum_publish_relation(index_relation) };
+    let _guard = unsafe { lock_publish_relation(index_relation) };
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
         return Ok(VacuumDeleteResult {

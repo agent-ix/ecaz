@@ -16,21 +16,7 @@ use super::storage::{
     SpireDeltaPartitionObject, SpireRelationObjectStore, SpireRoutingChildEntry,
     SpireRoutingPartitionObject,
 };
-use super::{options, page, scan};
-
-const INSERT_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
-    pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
-
-struct RelationLockGuard {
-    relid: pg_sys::Oid,
-    lockmode: pg_sys::LOCKMODE,
-}
-
-impl Drop for RelationLockGuard {
-    fn drop(&mut self) {
-        unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
-    }
-}
+use super::{lock_publish_relation, options, page, scan};
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
     index_relation: pg_sys::Relation,
@@ -58,15 +44,6 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_aminsert(
     }
 }
 
-unsafe fn lock_insert_publish_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
-    let relid = unsafe { (*index_relation).rd_id };
-    unsafe { pg_sys::LockRelationOid(relid, INSERT_PUBLISH_LOCK_MODE) };
-    RelationLockGuard {
-        relid,
-        lockmode: INSERT_PUBLISH_LOCK_MODE,
-    }
-}
-
 unsafe fn publish_insert_delta_epoch(
     index_relation: pg_sys::Relation,
     values: *mut pg_sys::Datum,
@@ -75,7 +52,7 @@ unsafe fn publish_insert_delta_epoch(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> Result<(), String> {
-    let _guard = unsafe { lock_insert_publish_relation(index_relation) };
+    let _guard = unsafe { lock_publish_relation(index_relation) };
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let relation_options = unsafe { options::relation_options(index_relation) };
     let indexed_vector_kind =

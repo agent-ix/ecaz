@@ -47,6 +47,31 @@ pub(super) const EC_SPIRE_DEFAULT_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_PQ_GROUP_SIZE: i32 = 32;
 
+pub(super) const SPIRE_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
+    pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
+
+pub(super) struct SpireRelationLockGuard {
+    relid: pg_sys::Oid,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+impl Drop for SpireRelationLockGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
+    }
+}
+
+pub(super) unsafe fn lock_publish_relation(
+    index_relation: pg_sys::Relation,
+) -> SpireRelationLockGuard {
+    let relid = unsafe { (*index_relation).rd_id };
+    unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };
+    SpireRelationLockGuard {
+        relid,
+        lockmode: SPIRE_PUBLISH_LOCK_MODE,
+    }
+}
+
 pub(crate) fn register_gucs() {
     options::register_gucs();
 }
