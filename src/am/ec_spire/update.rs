@@ -590,6 +590,8 @@ pub(super) fn build_merge_replacement_leaf_object_input(
         pid: *replacement_pid,
         rows,
     };
+    // Leaf-input validation only needs the replacement PID; centroid shape is
+    // checked later when scheduler-built routing children are available.
     validate_replacement_leaf_object_inputs(
         &[SpireRoutingReplacementChild {
             child_pid: input.pid,
@@ -645,6 +647,8 @@ pub(super) fn build_split_replacement_leaf_object_inputs(
         .iter()
         .map(|pid| SpireRoutingReplacementChild {
             child_pid: *pid,
+            // Leaf-input validation only needs the replacement PID; centroid
+            // shape is checked later against scheduler-built routing children.
             centroid: Vec::new(),
         })
         .collect::<Vec<_>>();
