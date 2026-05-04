@@ -652,6 +652,12 @@ diagnostics without scoring assignments.
   replacement leaf-placement count mismatches before delegating placement
   directory, manifest, and root/control validation to the existing publish-draft
   helper. Live relation execution remains open.
+- [x] **Scheduled replacement object-write helper.** Scheduler execution now
+  has local and relation object-write wrappers that bind a checked split/merge
+  decision to the rewritten parent routing object, replacement children, and
+  leaf inputs before writing replacement objects. They reject parent-PID and
+  replacement-child count mismatches before reusing the existing routing/leaf
+  object writer validation. Live scheduler invocation remains open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

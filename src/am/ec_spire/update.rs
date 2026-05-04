@@ -1238,6 +1238,79 @@ pub(super) unsafe fn write_relation_replacement_objects(
     )
 }
 
+pub(super) fn write_local_scheduled_replacement_objects(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireReplacementObjectPlacements, String> {
+    write_scheduled_replacement_objects_with_writer(
+        epoch,
+        replacement_parent,
+        decision,
+        replacement_children,
+        leaf_object_version,
+        leaf_inputs,
+        object_store,
+    )
+}
+
+pub(super) unsafe fn write_relation_scheduled_replacement_objects(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireReplacementObjectPlacements, String> {
+    write_scheduled_replacement_objects_with_writer(
+        epoch,
+        replacement_parent,
+        decision,
+        replacement_children,
+        leaf_object_version,
+        leaf_inputs,
+        object_store,
+    )
+}
+
+fn write_scheduled_replacement_objects_with_writer(
+    epoch: u64,
+    replacement_parent: &SpireRoutingPartitionObject,
+    decision: &SpireLeafReplacementScheduleDecision,
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_object_version: u64,
+    leaf_inputs: Vec<SpireReplacementLeafObjectInput>,
+    object_store: &mut impl SpireReplacementObjectWriter,
+) -> Result<SpireReplacementObjectPlacements, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if replacement_parent.header.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement object writer parent pid {} does not match decision parent pid {}",
+            replacement_parent.header.pid, decision.replaced_parent_pid
+        ));
+    }
+    if replacement_children.len() != decision.replacement_leaf_count {
+        return Err(format!(
+            "ec_spire scheduled replacement object writer child count {} does not match decision replacement count {}",
+            replacement_children.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    write_replacement_objects_with_writer(
+        epoch,
+        replacement_parent,
+        replacement_children,
+        leaf_object_version,
+        leaf_inputs,
+        object_store,
+    )
+}
+
 fn write_replacement_objects_with_writer(
     epoch: u64,
     replacement_parent: &SpireRoutingPartitionObject,
@@ -1782,11 +1855,11 @@ mod tests {
         plan_scheduled_leaf_replacement_pids, recheck_leaf_replacement_schedule_decision,
         rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing, validate_replacement_leaf_object_inputs,
-        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
-        SpireLeafReplacementPidPlan, SpireLeafReplacementScheduleDecision,
-        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
-        SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
-        SpireReplacementLeafRows, SpireRoutingReplacementChild,
+        write_local_replacement_objects, write_local_scheduled_replacement_objects,
+        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireLeafReplacementPidPlan,
+        SpireLeafReplacementScheduleDecision, SpireLeafReplacementScheduleMode,
+        SpireReplacementEpochInput, SpireReplacementEpochObjectPlacementInput,
+        SpireReplacementLeafObjectInput, SpireReplacementLeafRows, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
     };
     use crate::am::ec_spire::assign::{
@@ -3135,6 +3208,116 @@ mod tests {
             second_leaf.assignment_rows().unwrap()[0].heap_tid,
             tid(20, 2)
         );
+    }
+
+    #[test]
+    fn local_scheduled_replacement_object_writer_persists_decision_bound_objects() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let replacement_root =
+            rewrite_scheduled_replacement_parent_routing(&root, &decision, children.clone(), 4)
+                .unwrap();
+
+        let placements = write_local_scheduled_replacement_objects(
+            8,
+            &replacement_root,
+            &decision,
+            &children,
+            1,
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(2, 20, 2)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(1, 20, 1)],
+                },
+            ],
+            &mut object_store,
+        )
+        .unwrap();
+
+        assert_eq!(placements.parent_placement.pid, root.header.pid);
+        assert_eq!(
+            placements
+                .leaf_placements
+                .iter()
+                .map(|placement| placement.pid)
+                .collect::<Vec<_>>(),
+            vec![21, 22]
+        );
+        let stored_root = object_store
+            .read_routing_object(&placements.parent_placement)
+            .unwrap();
+        assert_eq!(
+            stored_root
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 21, 22, 13]
+        );
+    }
+
+    #[test]
+    fn local_scheduled_replacement_object_writer_rejects_parent_or_child_count_mismatch() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let wrong_parent_decision = SpireLeafReplacementScheduleDecision {
+            replaced_parent_pid: 2,
+            ..decision.clone()
+        };
+        let children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let replacement_root =
+            rewrite_scheduled_replacement_parent_routing(&root, &decision, children.clone(), 4)
+                .unwrap();
+
+        assert!(write_local_scheduled_replacement_objects(
+            8,
+            &replacement_root,
+            &wrong_parent_decision,
+            &children,
+            1,
+            Vec::new(),
+            &mut object_store,
+        )
+        .unwrap_err()
+        .contains("does not match decision parent pid"));
+
+        assert!(write_local_scheduled_replacement_objects(
+            8,
+            &replacement_root,
+            &decision,
+            &children[..1],
+            1,
+            Vec::new(),
+            &mut object_store,
+        )
+        .unwrap_err()
+        .contains("child count"));
     }
 
     #[test]
