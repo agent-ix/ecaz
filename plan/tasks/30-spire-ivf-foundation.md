@@ -520,8 +520,12 @@ diagnostics without scoring assignments.
   and old-epoch cleanup remain open. Final packet-local recall/latency sanity
   evidence remains tracked by the Phase 1 review packet item below rather than
   by this behavior-validation checklist item.
-- [ ] **Review packet.** Land the single-level foundation with packet-local
-  logs and a small recall/latency sanity row.
+- [x] **Review packet.** Land the single-level foundation with packet-local
+  logs and a small recall/latency sanity row. Review packet
+  `review/30361-spire-phase1-landing/request.md` records the Phase 1 landing
+  boundary, cites the scan-sanity SQL row shape, and includes packet-local
+  PG18-feature unit logs for the scan sanity labels, root-control refresh, and
+  partial-publish residue behavior.
 
 ## Phase 2 — Update Mechanics
 
