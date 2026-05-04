@@ -818,6 +818,10 @@ diagnostics without scoring assignments.
   execution now has a local dry-run merge helper that loads the selected parent
   routing object and folded affected-leaf rows from the active snapshot before
   composing selected-plan merge draft assembly.
+- [x] **Local selected scheduled split snapshot draft helper.** Scheduler
+  execution now has a local dry-run split helper that loads the selected parent
+  routing object from the active snapshot before composing selected-plan split
+  draft assembly with caller-trained centroids and routed leaf inputs.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
