@@ -756,6 +756,10 @@ diagnostics without scoring assignments.
   decision against the lock-time leaf snapshot before allocating PIDs and
   deriving the publish plan. If the decision is no longer selected, the caller's
   PID cursor is not advanced.
+- [x] **Selected scheduled publish-lock plan helper.** Scheduler execution now
+  has a pure selector wrapper that chooses the lock-time split/merge decision
+  and returns it with the checked publish-lock plan, or returns `None` without
+  advancing the PID cursor when no leaf replacement is currently recommended.
 - [x] **Relation scheduled replacement publish-plan input helper.** Scheduler
   execution now has a pure builder that carries the checked publish-lock plan
   into the relation scheduled replacement execution input. It preserves the

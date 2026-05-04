@@ -266,6 +266,12 @@ pub(super) struct SpireScheduledReplacementPublishLockPlan {
     pub(super) publish_plan: SpireScheduledReplacementPublishPlan,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireSelectedScheduledReplacementPublishLockPlan {
+    pub(super) decision: SpireLeafReplacementScheduleDecision,
+    pub(super) lock_plan: SpireScheduledReplacementPublishLockPlan,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
@@ -1839,6 +1845,28 @@ pub(super) fn plan_rechecked_scheduled_replacement_publish_lock(
     )
 }
 
+pub(super) fn choose_scheduled_replacement_publish_lock_plan(
+    rows: &[SpireIndexLeafSnapshotRow],
+    root_control: &SpireRootControlState,
+    active_epoch_manifest: &SpireEpochManifest,
+    pid_allocator: &mut SpirePidAllocator,
+) -> Result<Option<SpireSelectedScheduledReplacementPublishLockPlan>, String> {
+    let Some(decision) = choose_leaf_replacement_schedule(rows)? else {
+        return Ok(None);
+    };
+    let lock_plan = plan_rechecked_scheduled_replacement_publish_lock(
+        rows,
+        root_control,
+        active_epoch_manifest,
+        &decision,
+        pid_allocator,
+    )?;
+    Ok(Some(SpireSelectedScheduledReplacementPublishLockPlan {
+        decision,
+        lock_plan,
+    }))
+}
+
 pub(super) fn build_local_scheduled_replacement_execution_input_from_publish_plan(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -3021,8 +3049,9 @@ mod tests {
         build_scheduled_routing_replacement_children,
         build_scheduled_split_replacement_routing_parts,
         build_split_replacement_leaf_object_inputs, choose_leaf_replacement_schedule,
-        collect_replacement_leaf_rows, load_scheduled_replacement_parent_routing,
-        plan_leaf_replacement_pids, plan_rechecked_scheduled_replacement_publish_lock,
+        choose_scheduled_replacement_publish_lock_plan, collect_replacement_leaf_rows,
+        load_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
+        plan_rechecked_scheduled_replacement_publish_lock,
         plan_replacement_epoch_placement_directory, plan_scheduled_leaf_replacement_pids,
         plan_scheduled_replacement_publish_epoch, plan_scheduled_replacement_publish_lock,
         recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
@@ -3040,6 +3069,7 @@ mod tests {
         SpireReplacementLeafRows, SpireReplacementObjectPlacements, SpireRoutingReplacementChild,
         SpireScheduledReplacementEpochObjectPlacementInput,
         SpireScheduledReplacementPublishLockPlan, SpireScheduledReplacementPublishPlan,
+        SpireSelectedScheduledReplacementPublishLockPlan,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -7027,6 +7057,96 @@ mod tests {
         )
         .unwrap_err()
         .contains("no longer recommended"));
+        assert_eq!(pid_allocator.next_pid(), 20);
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_publish_lock_returns_decision_and_plan() {
+        let root_control =
+            SpireRootControlState::published(7, 20, 100, tid(90, 1), tid(90, 2), tid(90, 3))
+                .unwrap();
+        let active_epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, false),
+            leaf_snapshot_row(12, 1, 100, true, false),
+            leaf_snapshot_row(13, 1, 2, false, false),
+        ];
+        let expected_decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "largest_split_candidate",
+        };
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+
+        let selected = choose_scheduled_replacement_publish_lock_plan(
+            &rows,
+            &root_control,
+            &active_epoch_manifest,
+            &mut pid_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected,
+            Some(SpireSelectedScheduledReplacementPublishLockPlan {
+                decision: expected_decision,
+                lock_plan: SpireScheduledReplacementPublishLockPlan {
+                    pid_plan: SpireLeafReplacementPidPlan {
+                        replacement_pids: vec![20, 21],
+                        reuses_existing_pid: false,
+                        next_pid: 22,
+                    },
+                    publish_plan: SpireScheduledReplacementPublishPlan {
+                        epoch: 8,
+                        consistency_mode: SpireConsistencyMode::Strict,
+                        next_pid: 22,
+                        next_local_vec_seq: 100,
+                    },
+                },
+            })
+        );
+        assert_eq!(pid_allocator.next_pid(), 22);
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_publish_lock_returns_none_without_allocation() {
+        let root_control =
+            SpireRootControlState::published(7, 20, 100, tid(90, 1), tid(90, 2), tid(90, 3))
+                .unwrap();
+        let active_epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, false),
+            leaf_snapshot_row(12, 1, 4, false, false),
+            leaf_snapshot_row(13, 1, 2, false, false),
+        ];
+        let mut pid_allocator = SpirePidAllocator::new(20).unwrap();
+
+        let selected = choose_scheduled_replacement_publish_lock_plan(
+            &rows,
+            &root_control,
+            &active_epoch_manifest,
+            &mut pid_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(selected, None);
         assert_eq!(pid_allocator.next_pid(), 20);
     }
 
