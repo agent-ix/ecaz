@@ -601,6 +601,12 @@ diagnostics without scoring assignments.
   manifest through the existing publish coordinator, writes the new manifest
   bundle, and advances root/control. Live split/merge scheduler execution
   remains open.
+- [x] **Replacement scheduler-choice helper.** Phase 2 now has a pure selector
+  over the existing leaf snapshot diagnostics. It validates that candidate rows
+  come from one active epoch, rejects ambiguous split+merge rows, prefers the
+  largest split candidate over merge work, and otherwise selects the sparsest
+  same-parent merge pair. Live execution still needs to re-load and re-check the
+  chosen PIDs under the publish lock before writing replacement objects.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

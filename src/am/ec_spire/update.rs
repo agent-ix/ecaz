@@ -25,6 +25,7 @@ use super::storage::{
     SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
+use super::SpireIndexLeafSnapshotRow;
 use crate::storage::page::ItemPointer;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -196,6 +197,22 @@ pub(super) struct SpireRoutingReplacementChild {
     pub(super) centroid: Vec<f32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireLeafReplacementScheduleMode {
+    Split,
+    Merge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireLeafReplacementScheduleDecision {
+    pub(super) mode: SpireLeafReplacementScheduleMode,
+    pub(super) active_epoch: u64,
+    pub(super) replaced_parent_pid: u64,
+    pub(super) affected_leaf_pids: Vec<u64>,
+    pub(super) replacement_leaf_count: usize,
+    pub(super) reason: &'static str,
+}
+
 trait SpireReplacementObjectWriter {
     fn write_replacement_parent_object(
         &mut self,
@@ -325,6 +342,119 @@ pub(super) fn plan_leaf_replacement_pids(
     };
     *pid_allocator = cursor;
     Ok(plan)
+}
+
+pub(super) fn choose_leaf_replacement_schedule(
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<Option<SpireLeafReplacementScheduleDecision>, String> {
+    validate_leaf_replacement_schedule_rows(rows)?;
+    if let Some(row) = rows
+        .iter()
+        .filter(|row| row.split_recommended)
+        .max_by_key(|row| {
+            (
+                row.effective_assignment_count,
+                std::cmp::Reverse(row.leaf_pid),
+            )
+        })
+    {
+        return Ok(Some(SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch: row.active_epoch,
+            replaced_parent_pid: row.parent_pid,
+            affected_leaf_pids: vec![row.leaf_pid],
+            replacement_leaf_count: 2,
+            reason: "largest_split_candidate",
+        }));
+    }
+
+    let mut merge_candidates_by_parent: HashMap<u64, Vec<&SpireIndexLeafSnapshotRow>> =
+        HashMap::new();
+    for row in rows.iter().filter(|row| row.merge_recommended) {
+        merge_candidates_by_parent
+            .entry(row.parent_pid)
+            .or_default()
+            .push(row);
+    }
+    let mut best_pair: Option<(&SpireIndexLeafSnapshotRow, &SpireIndexLeafSnapshotRow)> = None;
+    for candidates in merge_candidates_by_parent.values_mut() {
+        if candidates.len() < 2 {
+            continue;
+        }
+        candidates.sort_by_key(|row| (row.effective_assignment_count, row.leaf_pid));
+        let pair = (candidates[0], candidates[1]);
+        let replace = match best_pair {
+            Some(best) => merge_pair_sort_key(pair) < merge_pair_sort_key(best),
+            None => true,
+        };
+        if replace {
+            best_pair = Some(pair);
+        }
+    }
+    if let Some((left, right)) = best_pair {
+        let mut affected_leaf_pids = vec![left.leaf_pid, right.leaf_pid];
+        affected_leaf_pids.sort_unstable();
+        return Ok(Some(SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: left.active_epoch,
+            replaced_parent_pid: left.parent_pid,
+            affected_leaf_pids,
+            replacement_leaf_count: 1,
+            reason: "sparsest_same_parent_merge_pair",
+        }));
+    }
+
+    Ok(None)
+}
+
+fn validate_leaf_replacement_schedule_rows(
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<(), String> {
+    let mut active_epoch = None;
+    for row in rows {
+        if row.active_epoch == 0 {
+            return Err("ec_spire replacement scheduler row active_epoch 0 is invalid".to_owned());
+        }
+        if row.leaf_pid == 0 {
+            return Err("ec_spire replacement scheduler row leaf_pid 0 is invalid".to_owned());
+        }
+        if row.parent_pid == 0 && (row.split_recommended || row.merge_recommended) {
+            return Err(format!(
+                "ec_spire replacement scheduler candidate leaf pid {} has parent_pid 0",
+                row.leaf_pid
+            ));
+        }
+        if row.split_recommended && row.merge_recommended {
+            return Err(format!(
+                "ec_spire replacement scheduler leaf pid {} cannot be both split and merge recommended",
+                row.leaf_pid
+            ));
+        }
+        match active_epoch {
+            Some(epoch) if epoch != row.active_epoch => {
+                return Err(format!(
+                    "ec_spire replacement scheduler rows span multiple active epochs: {epoch} and {}",
+                    row.active_epoch
+                ));
+            }
+            Some(_) => {}
+            None => active_epoch = Some(row.active_epoch),
+        }
+    }
+    Ok(())
+}
+
+fn merge_pair_sort_key(
+    pair: (&SpireIndexLeafSnapshotRow, &SpireIndexLeafSnapshotRow),
+) -> (u64, u64, u64, u64) {
+    (
+        pair.0
+            .effective_assignment_count
+            .saturating_add(pair.1.effective_assignment_count),
+        pair.0.effective_assignment_count,
+        pair.0.leaf_pid,
+        pair.1.leaf_pid,
+    )
 }
 
 pub(super) fn collect_replacement_leaf_rows(
@@ -1315,13 +1445,15 @@ fn validate_delete_delta_targets(
 
 #[cfg(test)]
 mod tests {
+    use super::SpireIndexLeafSnapshotRow;
     use super::{
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
-        collect_replacement_leaf_rows, plan_leaf_replacement_pids,
-        plan_replacement_epoch_placement_directory, rewrite_routing_partition_for_leaf_replacement,
-        validate_replacement_leaf_object_inputs, write_local_replacement_objects,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireReplacementEpochInput,
+        choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
+        plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
+        rewrite_routing_partition_for_leaf_replacement, validate_replacement_leaf_object_inputs,
+        write_local_replacement_objects, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
         SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
         SpireRoutingReplacementChild,
     };
@@ -1484,6 +1616,37 @@ mod tests {
                 placement_tid: tid(90, u16::try_from(index + 1).unwrap()),
             })
             .collect()
+    }
+
+    fn leaf_snapshot_row(
+        leaf_pid: u64,
+        parent_pid: u64,
+        effective_assignment_count: u64,
+        split_recommended: bool,
+        merge_recommended: bool,
+    ) -> SpireIndexLeafSnapshotRow {
+        SpireIndexLeafSnapshotRow {
+            active_epoch: 7,
+            leaf_pid,
+            parent_pid,
+            object_version: 1,
+            node_id: 0,
+            local_store_id: 12345,
+            placement_state: "available",
+            base_assignment_count: effective_assignment_count,
+            delta_object_count: 0,
+            delta_insert_assignment_count: 0,
+            delta_delete_assignment_count: 0,
+            effective_assignment_count,
+            split_assignment_threshold: 32,
+            merge_assignment_threshold: 2,
+            split_recommended,
+            merge_recommended,
+            maintenance_action: "none",
+            maintenance_reason: "test",
+            leaf_object_bytes: 128,
+            delta_object_bytes: 0,
+        }
     }
 
     #[test]
@@ -1664,6 +1827,66 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("parent routing centroid is byte-equal"));
         assert_eq!(pid_allocator.next_pid(), 20);
+    }
+
+    #[test]
+    fn replacement_scheduler_prefers_largest_split_candidate() {
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 1, false, true),
+            leaf_snapshot_row(12, 1, 80, true, false),
+            leaf_snapshot_row(13, 1, 40, true, false),
+        ];
+
+        let decision = choose_leaf_replacement_schedule(&rows).unwrap().unwrap();
+
+        assert_eq!(decision.mode, SpireLeafReplacementScheduleMode::Split);
+        assert_eq!(decision.active_epoch, 7);
+        assert_eq!(decision.replaced_parent_pid, 1);
+        assert_eq!(decision.affected_leaf_pids, vec![12]);
+        assert_eq!(decision.replacement_leaf_count, 2);
+        assert_eq!(decision.reason, "largest_split_candidate");
+    }
+
+    #[test]
+    fn replacement_scheduler_selects_sparsest_same_parent_merge_pair() {
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 2, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+            leaf_snapshot_row(13, 2, 0, false, true),
+            leaf_snapshot_row(14, 2, 10, false, true),
+        ];
+
+        let decision = choose_leaf_replacement_schedule(&rows).unwrap().unwrap();
+
+        assert_eq!(decision.mode, SpireLeafReplacementScheduleMode::Merge);
+        assert_eq!(decision.replaced_parent_pid, 1);
+        assert_eq!(decision.affected_leaf_pids, vec![11, 12]);
+        assert_eq!(decision.replacement_leaf_count, 1);
+        assert_eq!(decision.reason, "sparsest_same_parent_merge_pair");
+    }
+
+    #[test]
+    fn replacement_scheduler_rejects_ambiguous_or_cross_epoch_rows() {
+        let mut ambiguous = leaf_snapshot_row(11, 1, 40, true, true);
+        assert!(choose_leaf_replacement_schedule(&[ambiguous.clone()])
+            .unwrap_err()
+            .contains("cannot be both split and merge"));
+
+        ambiguous.split_recommended = false;
+        ambiguous.merge_recommended = true;
+        ambiguous.parent_pid = 0;
+        assert!(choose_leaf_replacement_schedule(&[ambiguous.clone()])
+            .unwrap_err()
+            .contains("parent_pid 0"));
+
+        let mut newer = leaf_snapshot_row(12, 1, 1, false, true);
+        newer.active_epoch = 8;
+        assert!(choose_leaf_replacement_schedule(&[
+            leaf_snapshot_row(11, 1, 1, false, true),
+            newer
+        ])
+        .unwrap_err()
+        .contains("multiple active epochs"));
     }
 
     #[test]
