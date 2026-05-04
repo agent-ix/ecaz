@@ -450,7 +450,7 @@ diagnostics without scoring assignments.
   lives in `docs/SPIRE_DIAGNOSTICS.md`. Measured recall/latency summary rows
   remain open under the review/measurement gate rather than the Phase 1 admin
   diagnostic surface.
-- [ ] **Validation.** Add focused PG18 behavior tests for build, scan, empty
+- [x] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
   active-epoch ordered scan now have PG18 coverage; empty `pq_fastscan` SPIRE
@@ -517,7 +517,9 @@ diagnostics without scoring assignments.
   populated no-delta, post-insert delta, and pre-cleanup delete-delta active
   epochs. Real SQL VACUUM end-to-end coverage now exercises insert-delta
   compaction and deleted-row routed scan suppression; physical page reclamation
-  and old-epoch cleanup remain open.
+  and old-epoch cleanup remain open. Final packet-local recall/latency sanity
+  evidence remains tracked by the Phase 1 review packet item below rather than
+  by this behavior-validation checklist item.
 - [ ] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row.
 
