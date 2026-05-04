@@ -593,6 +593,17 @@ pub(super) fn build_split_replacement_leaf_object_inputs(
             decision.replacement_leaf_count
         ));
     }
+    if let Some(unadvanced_pid) = pid_plan
+        .replacement_pids
+        .iter()
+        .copied()
+        .find(|pid| *pid >= pid_plan.next_pid)
+    {
+        return Err(format!(
+            "ec_spire split replacement leaf input pid plan next_pid {} does not advance past replacement pid {unadvanced_pid}",
+            pid_plan.next_pid
+        ));
+    }
     if routed_leaf_inputs.len() != pid_plan.replacement_pids.len() {
         return Err(format!(
             "ec_spire split replacement leaf input count {} does not match replacement pid count {}",
@@ -3149,6 +3160,27 @@ mod tests {
         )
         .unwrap_err()
         .contains("input count"));
+
+        assert!(build_split_replacement_leaf_object_inputs(
+            &decision,
+            &SpireLeafReplacementPidPlan {
+                replacement_pids: vec![30, 31],
+                reuses_existing_pid: false,
+                next_pid: 31,
+            },
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 30,
+                    rows: vec![primary_row(1, 20, 1)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 31,
+                    rows: vec![primary_row(2, 20, 2)],
+                },
+            ],
+        )
+        .unwrap_err()
+        .contains("does not advance"));
 
         assert!(build_split_replacement_leaf_object_inputs(
             &decision,

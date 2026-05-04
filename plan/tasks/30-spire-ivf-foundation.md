@@ -628,8 +628,9 @@ diagnostics without scoring assignments.
 - [x] **Split replacement leaf-input helper.** Split scheduler execution now
   has a pure helper that validates caller-routed replacement leaf inputs against
   a split decision and PID plan. It requires fresh replacement PIDs, exact input
-  coverage for every planned replacement PID, orders inputs by the PID plan, and
-  reuses the replacement leaf-object input validator to reject duplicate
+  coverage for every planned replacement PID, PID cursor advancement, orders
+  inputs by the PID plan, and reuses the replacement leaf-object input validator
+  to reject duplicate
   `vec_id`s or non-normalized rows. Centroid training/routing remains a live
   scheduler responsibility.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
