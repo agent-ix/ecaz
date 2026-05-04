@@ -657,6 +657,11 @@ diagnostics without scoring assignments.
   active snapshot before centroid binding or routing rewrite. It validates
   decision shape, active epoch, available parent placement, routing-object
   kind, parent PID, and affected-leaf child coverage.
+- [x] **Scheduled merge replacement routing parts helper.** Scheduler
+  execution now composes the merge centroid helper, routing-child builder, and
+  parent rewrite wrapper into one pure merge routing preparation seam. It
+  returns the rewritten parent plus replacement children after validating the
+  PID plan and replacement parent object version.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
