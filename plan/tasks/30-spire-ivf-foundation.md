@@ -645,6 +645,13 @@ diagnostics without scoring assignments.
   whose PID does not match the scheduler decision, rejects replacement-child
   count mismatches, and delegates affected-child and centroid-dimension
   validation to the existing routing rewrite helper.
+- [x] **Scheduled replacement publish-draft helper.** Scheduler execution now
+  has a pure wrapper that binds a checked split/merge decision to replacement
+  object placements and placement-write evidence before building the replacement
+  epoch draft. It rejects active snapshot/decision epoch mismatches and
+  replacement leaf-placement count mismatches before delegating placement
+  directory, manifest, and root/control validation to the existing publish-draft
+  helper. Live relation execution remains open.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

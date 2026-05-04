@@ -192,6 +192,18 @@ pub(super) struct SpireRelationReplacementEpochObjectPlacementInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScheduledReplacementEpochObjectPlacementInput {
+    pub(super) epoch: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) replacement_object_placements: SpireReplacementObjectPlacements,
+    pub(super) placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
     pub(super) centroid: Vec<f32>,
@@ -1017,6 +1029,45 @@ pub(super) fn build_replacement_epoch_draft_from_object_placements(
     })
 }
 
+pub(super) fn build_scheduled_replacement_epoch_draft_from_object_placements(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    decision: &SpireLeafReplacementScheduleDecision,
+    input: SpireScheduledReplacementEpochObjectPlacementInput,
+) -> Result<SpireReplacementEpochDraft, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    if snapshot.epoch_manifest.epoch != decision.active_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement publish snapshot epoch {} does not match decision active epoch {}",
+            snapshot.epoch_manifest.epoch, decision.active_epoch
+        ));
+    }
+    if input.replacement_object_placements.leaf_placements.len() != decision.replacement_leaf_count
+    {
+        return Err(format!(
+            "ec_spire scheduled replacement publish leaf placement count {} does not match decision replacement count {}",
+            input.replacement_object_placements.leaf_placements.len(),
+            decision.replacement_leaf_count
+        ));
+    }
+    build_replacement_epoch_draft_from_object_placements(
+        snapshot,
+        object_store,
+        SpireReplacementEpochObjectPlacementInput {
+            epoch: input.epoch,
+            published_at_micros: input.published_at_micros,
+            retain_until_micros: input.retain_until_micros,
+            consistency_mode: input.consistency_mode,
+            replaced_parent_pid: decision.replaced_parent_pid,
+            affected_leaf_pids: decision.affected_leaf_pids.clone(),
+            replacement_object_placements: input.replacement_object_placements,
+            placement_write_evidence: input.placement_write_evidence,
+            next_pid: input.next_pid,
+            next_local_vec_seq: input.next_local_vec_seq,
+        },
+    )
+}
+
 pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
@@ -1724,6 +1775,7 @@ mod tests {
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         build_merge_replacement_leaf_object_input, build_replacement_epoch_draft,
         build_replacement_epoch_draft_from_object_placements,
+        build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
         plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
@@ -1735,6 +1787,7 @@ mod tests {
         SpireLeafReplacementScheduleMode, SpireReplacementEpochInput,
         SpireReplacementEpochObjectPlacementInput, SpireReplacementLeafObjectInput,
         SpireReplacementLeafRows, SpireRoutingReplacementChild,
+        SpireScheduledReplacementEpochObjectPlacementInput,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -3224,6 +3277,246 @@ mod tests {
                 .map(|child| child.child_pid)
                 .collect::<Vec<_>>(),
             vec![11, 21, 22, 13]
+        );
+    }
+
+    #[test]
+    fn scheduled_replacement_epoch_draft_uses_decision_shape_for_publish_assembly() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let new_epoch = 8;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_11 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                11,
+                1,
+                root.header.pid,
+                &[primary_row(1, 10, 1)],
+            )
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let leaf_13 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                13,
+                1,
+                root.header.pid,
+                &[primary_row(3, 10, 3)],
+            )
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_11, leaf_12, leaf_13];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let replacement_root =
+            rewrite_scheduled_replacement_parent_routing(&root, &decision, children.clone(), 4)
+                .unwrap();
+        let replacement_object_placements = write_local_replacement_objects(
+            new_epoch,
+            &replacement_root,
+            &children,
+            2,
+            vec![
+                SpireReplacementLeafObjectInput {
+                    pid: 21,
+                    rows: vec![primary_row(5, 30, 1)],
+                },
+                SpireReplacementLeafObjectInput {
+                    pid: 22,
+                    rows: vec![primary_row(6, 30, 2)],
+                },
+            ],
+            &mut object_store,
+        )
+        .unwrap();
+
+        let draft = build_scheduled_replacement_epoch_draft_from_object_placements(
+            &snapshot,
+            &object_store,
+            &decision,
+            SpireScheduledReplacementEpochObjectPlacementInput {
+                epoch: new_epoch,
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                replacement_object_placements,
+                placement_write_evidence: placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+                next_pid: 30,
+                next_local_vec_seq: 7,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            draft
+                .placement_directory
+                .entries
+                .iter()
+                .map(|entry| entry.pid)
+                .collect::<Vec<_>>(),
+            vec![1, 11, 13, 21, 22]
+        );
+        assert!(draft.placement_directory.get(12).is_none());
+        assert_eq!(
+            draft.object_manifest.get(21).unwrap().placement_tid,
+            tid(90, 4)
+        );
+        assert_eq!(
+            draft.object_manifest.get(22).unwrap().placement_tid,
+            tid(90, 5)
+        );
+    }
+
+    #[test]
+    fn scheduled_replacement_epoch_draft_rejects_epoch_or_placement_count_mismatch() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let active_epoch = 7;
+        let root = root_routing_object();
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, &root)
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let active_placements = vec![root_placement, leaf_12];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            active_placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, active_placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Split,
+            active_epoch,
+            replaced_parent_pid: root.header.pid,
+            affected_leaf_pids: vec![12],
+            replacement_leaf_count: 2,
+            reason: "test_split",
+        };
+        let replacement_parent_placement =
+            SpirePlacementEntry::local_single_store_available(8, 1, 12345, 4, tid(40, 1), 128);
+        let replacement_leaf_21 =
+            SpirePlacementEntry::local_single_store_available(8, 21, 12345, 2, tid(41, 1), 256);
+        let replacement_leaf_22 =
+            SpirePlacementEntry::local_single_store_available(8, 22, 12345, 2, tid(42, 1), 256);
+        let placements = super::SpireReplacementObjectPlacements {
+            parent_placement: replacement_parent_placement,
+            leaf_placements: vec![replacement_leaf_21, replacement_leaf_22],
+        };
+        let wrong_epoch_decision = SpireLeafReplacementScheduleDecision {
+            active_epoch: active_epoch + 1,
+            ..decision.clone()
+        };
+
+        assert!(
+            build_scheduled_replacement_epoch_draft_from_object_placements(
+                &snapshot,
+                &object_store,
+                &wrong_epoch_decision,
+                SpireScheduledReplacementEpochObjectPlacementInput {
+                    epoch: 8,
+                    published_at_micros: 3000,
+                    retain_until_micros: 4000,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    replacement_object_placements: placements.clone(),
+                    placement_write_evidence: placement_write_evidence_for_pids(&[1, 21, 22]),
+                    next_pid: 30,
+                    next_local_vec_seq: 7,
+                },
+            )
+            .unwrap_err()
+            .contains("snapshot epoch")
+        );
+
+        let mut missing_leaf_placement = placements;
+        missing_leaf_placement.leaf_placements.pop();
+        assert!(
+            build_scheduled_replacement_epoch_draft_from_object_placements(
+                &snapshot,
+                &object_store,
+                &decision,
+                SpireScheduledReplacementEpochObjectPlacementInput {
+                    epoch: 8,
+                    published_at_micros: 3000,
+                    retain_until_micros: 4000,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    replacement_object_placements: missing_leaf_placement,
+                    placement_write_evidence: placement_write_evidence_for_pids(&[1, 21]),
+                    next_pid: 30,
+                    next_local_vec_seq: 7,
+                },
+            )
+            .unwrap_err()
+            .contains("leaf placement count")
         );
     }
 
