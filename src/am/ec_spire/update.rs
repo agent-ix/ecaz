@@ -528,6 +528,12 @@ pub(super) fn build_merge_replacement_leaf_object_input(
             "ec_spire merge replacement leaf input requires exactly one replacement pid".to_owned(),
         );
     };
+    if *replacement_pid >= pid_plan.next_pid {
+        return Err(format!(
+            "ec_spire merge replacement leaf input pid plan next_pid {} does not advance past replacement pid {replacement_pid}",
+            pid_plan.next_pid
+        ));
+    }
 
     let affected: HashSet<u64> = decision.affected_leaf_pids.iter().copied().collect();
     let mut rows_by_base_pid = HashMap::new();
@@ -3058,6 +3064,24 @@ mod tests {
                 .unwrap_err()
                 .contains("requires a merge decision")
         );
+        assert!(build_merge_replacement_leaf_object_input(
+            &SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            &SpireLeafReplacementPidPlan {
+                replacement_pids: vec![30],
+                reuses_existing_pid: false,
+                next_pid: 30,
+            },
+            Vec::new(),
+        )
+        .unwrap_err()
+        .contains("does not advance"));
 
         let merge_decision = SpireLeafReplacementScheduleDecision {
             mode: SpireLeafReplacementScheduleMode::Merge,

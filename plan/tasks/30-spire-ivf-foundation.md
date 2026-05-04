@@ -623,8 +623,9 @@ diagnostics without scoring assignments.
   has a pure helper that combines folded rows from the selected affected leaves
   into the single replacement leaf input required by the replacement object
   writer. It validates merge decision shape, requires one fresh replacement
-  PID, rejects missing/extra/duplicate base PID row groups, preserves affected
-  leaf order, and reuses the replacement leaf-object input validator.
+  PID with an advanced PID cursor, rejects missing/extra/duplicate base PID row
+  groups, preserves affected leaf order, and reuses the replacement leaf-object
+  input validator.
 - [x] **Split replacement leaf-input helper.** Split scheduler execution now
   has a pure helper that validates caller-routed replacement leaf inputs against
   a split decision and PID plan. It requires fresh replacement PIDs, exact input
