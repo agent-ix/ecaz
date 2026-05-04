@@ -1936,6 +1936,42 @@ mod tests {
     }
 
     #[test]
+    fn scan_sanity_status_reports_empty_approximate_and_full_scan() {
+        assert_eq!(
+            scan_sanity_status(0, false, false),
+            (
+                "empty",
+                "none",
+                "build or insert rows to publish the first SPIRE epoch"
+            )
+        );
+        assert_eq!(
+            scan_sanity_status(1, false, false),
+            (
+                "approximate_leaf_coverage",
+                "bounded_leaf_probe",
+                "increase nprobe to active_leaf_count for exact leaf coverage sanity checks"
+            )
+        );
+        assert_eq!(
+            scan_sanity_status(1, true, false),
+            (
+                "exact_leaf_coverage_bounded_rerank",
+                "bounded_rerank",
+                "set rerank_width = 0 for full-frontier exact recall sanity checks"
+            )
+        );
+        assert_eq!(
+            scan_sanity_status(1, true, true),
+            (
+                "exact_leaf_and_frontier_coverage",
+                "full_scan",
+                "use this configuration only for recall sanity checks or small indexes"
+            )
+        );
+    }
+
+    #[test]
     fn epoch_snapshot_partial_retired_residue_keeps_root_manifest_authoritative() {
         let active_tid = tid(10, 1);
         let retired_residue_tid = tid(10, 2);
