@@ -569,7 +569,10 @@ diagnostics without scoring assignments.
   write evidence into a published epoch manifest, object manifest, validated
   epoch snapshot, root/control state, and encoded publish bundle inputs. This
   reuses the existing publish coordinator evidence checks before live
-  split/merge relation publishing is wired.
+  split/merge relation publishing is wired. Replacement leaf object inputs now
+  also validate that leaf-input PIDs match replacement routing children exactly
+  and contain only normalized base-leaf rows without delta flags or duplicate
+  `vec_id`s.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

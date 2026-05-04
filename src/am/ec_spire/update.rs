@@ -151,6 +151,12 @@ impl SpireReplacementEpochDraft {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireReplacementLeafObjectInput {
+    pub(super) pid: u64,
+    pub(super) rows: Vec<SpireLeafAssignmentRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRoutingReplacementChild {
     pub(super) child_pid: u64,
     pub(super) centroid: Vec<f32>,
@@ -484,6 +490,78 @@ pub(super) fn build_replacement_epoch_draft(
     )?;
     root_control_state_for_publish(draft.publish_input(), manifest_locators_for_validation())?;
     Ok(draft)
+}
+
+pub(super) fn validate_replacement_leaf_object_inputs(
+    replacement_children: &[SpireRoutingReplacementChild],
+    leaf_inputs: &[SpireReplacementLeafObjectInput],
+) -> Result<(), String> {
+    if replacement_children.is_empty() {
+        return Err("ec_spire replacement leaf object inputs require children".to_owned());
+    }
+    if replacement_children.len() != leaf_inputs.len() {
+        return Err(format!(
+            "ec_spire replacement leaf object input count {} does not match replacement child count {}",
+            leaf_inputs.len(),
+            replacement_children.len()
+        ));
+    }
+
+    let mut child_pids = HashSet::new();
+    for child in replacement_children {
+        if child.child_pid == 0 {
+            return Err("ec_spire replacement child pid 0 is invalid".to_owned());
+        }
+        if !child_pids.insert(child.child_pid) {
+            return Err("ec_spire replacement child pids must be unique".to_owned());
+        }
+    }
+
+    let mut input_pids = HashSet::new();
+    let mut vec_ids = HashSet::new();
+    for input in leaf_inputs {
+        if input.pid == 0 {
+            return Err("ec_spire replacement leaf object input pid 0 is invalid".to_owned());
+        }
+        if !input_pids.insert(input.pid) {
+            return Err("ec_spire replacement leaf object input pids must be unique".to_owned());
+        }
+        if !child_pids.contains(&input.pid) {
+            return Err(format!(
+                "ec_spire replacement leaf object input pid {} has no replacement routing child",
+                input.pid
+            ));
+        }
+        for row in &input.rows {
+            if !is_visible_primary_assignment(row) {
+                return Err(format!(
+                    "ec_spire replacement leaf object input pid {} contains a non-visible-primary row",
+                    input.pid
+                ));
+            }
+            if row.flags & SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
+                return Err(format!(
+                    "ec_spire replacement leaf object input pid {} must not contain delta-insert rows",
+                    input.pid
+                ));
+            }
+            if !vec_ids.insert(row.vec_id.clone()) {
+                return Err(
+                    "ec_spire replacement leaf object inputs contain duplicate vec_id rows"
+                        .to_owned(),
+                );
+            }
+        }
+    }
+
+    for child_pid in child_pids {
+        if !input_pids.contains(&child_pid) {
+            return Err(format!(
+                "ec_spire replacement routing child pid {child_pid} has no leaf object input"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn manifest_locators_for_validation() -> SpirePublishedManifestLocators {
@@ -969,8 +1047,8 @@ mod tests {
         build_delta_epoch_draft, build_delta_epoch_draft_from_snapshot,
         build_replacement_epoch_draft, collect_replacement_leaf_rows, plan_leaf_replacement_pids,
         plan_replacement_epoch_placement_directory, rewrite_routing_partition_for_leaf_replacement,
-        SpireDeltaEpochInput, SpireLeafReplacementMode, SpireReplacementEpochInput,
-        SpireRoutingReplacementChild,
+        validate_replacement_leaf_object_inputs, SpireDeltaEpochInput, SpireLeafReplacementMode,
+        SpireReplacementEpochInput, SpireReplacementLeafObjectInput, SpireRoutingReplacementChild,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -1575,6 +1653,50 @@ mod tests {
         assert_eq!(
             SpirePlacementDirectory::decode(&encoded.manifests.placement_directory).unwrap(),
             draft.placement_directory
+        );
+    }
+
+    #[test]
+    fn replacement_leaf_object_inputs_match_replacement_children() {
+        let children = vec![
+            replacement_child(21, vec![0.5, 0.5]),
+            replacement_child(22, vec![-0.5, 0.5]),
+        ];
+        let inputs = vec![
+            SpireReplacementLeafObjectInput {
+                pid: 21,
+                rows: vec![primary_row(1, 10, 1)],
+            },
+            SpireReplacementLeafObjectInput {
+                pid: 22,
+                rows: vec![primary_row(2, 10, 2)],
+            },
+        ];
+
+        validate_replacement_leaf_object_inputs(&children, &inputs).unwrap();
+    }
+
+    #[test]
+    fn replacement_leaf_object_inputs_reject_delta_flags_and_pid_mismatch() {
+        let children = vec![replacement_child(21, vec![0.5, 0.5])];
+        let with_delta = vec![SpireReplacementLeafObjectInput {
+            pid: 21,
+            rows: vec![delta_insert_row(1, 10, 1)],
+        }];
+        assert!(
+            validate_replacement_leaf_object_inputs(&children, &with_delta)
+                .unwrap_err()
+                .contains("delta-insert")
+        );
+
+        let wrong_pid = vec![SpireReplacementLeafObjectInput {
+            pid: 22,
+            rows: vec![primary_row(1, 10, 1)],
+        }];
+        assert!(
+            validate_replacement_leaf_object_inputs(&children, &wrong_pid)
+                .unwrap_err()
+                .contains("no replacement routing child")
         );
     }
 
