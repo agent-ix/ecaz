@@ -816,6 +816,51 @@ pub(super) fn build_scheduled_merge_replacement_centroids(
     Ok(vec![centroid])
 }
 
+pub(super) fn load_scheduled_replacement_parent_routing(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    decision: &SpireLeafReplacementScheduleDecision,
+) -> Result<SpireRoutingPartitionObject, String> {
+    validate_leaf_replacement_schedule_decision_shape(decision)?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    if snapshot.epoch_manifest().epoch != decision.active_epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement parent snapshot epoch {} does not match decision active epoch {}",
+            snapshot.epoch_manifest().epoch, decision.active_epoch
+        ));
+    }
+    let lookup = snapshot.require_lookup(
+        decision.replaced_parent_pid,
+        "scheduled replacement parent routing",
+    )?;
+    if lookup.placement.state != SpirePlacementState::Available {
+        return Err(format!(
+            "ec_spire scheduled replacement parent pid {} placement is not available",
+            decision.replaced_parent_pid
+        ));
+    }
+    let parent = object_store.read_routing_object(lookup.placement)?;
+    if parent.header.pid != decision.replaced_parent_pid {
+        return Err(format!(
+            "ec_spire scheduled replacement loaded parent pid {} does not match decision parent pid {}",
+            parent.header.pid, decision.replaced_parent_pid
+        ));
+    }
+    let parent_child_pids = parent
+        .children()
+        .map(|child| child.child_pid)
+        .collect::<HashSet<_>>();
+    for affected_pid in &decision.affected_leaf_pids {
+        if !parent_child_pids.contains(affected_pid) {
+            return Err(format!(
+                "ec_spire scheduled replacement parent pid {} is missing affected leaf pid {affected_pid}",
+                decision.replaced_parent_pid
+            ));
+        }
+    }
+    Ok(parent)
+}
+
 pub(super) fn rewrite_scheduled_replacement_parent_routing(
     parent: &SpireRoutingPartitionObject,
     decision: &SpireLeafReplacementScheduleDecision,
@@ -2596,9 +2641,10 @@ mod tests {
         build_scheduled_replacement_epoch_draft_from_object_placements,
         build_scheduled_routing_replacement_children, build_split_replacement_leaf_object_inputs,
         choose_leaf_replacement_schedule, collect_replacement_leaf_rows,
-        plan_leaf_replacement_pids, plan_replacement_epoch_placement_directory,
-        plan_scheduled_leaf_replacement_pids, plan_scheduled_replacement_publish_epoch,
-        recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
+        load_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
+        plan_replacement_epoch_placement_directory, plan_scheduled_leaf_replacement_pids,
+        plan_scheduled_replacement_publish_epoch, recheck_leaf_replacement_schedule_decision,
+        rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing,
         validate_local_scheduled_replacement_execution_publish_plan,
         validate_relation_scheduled_replacement_execution_publish_plan,
@@ -3285,6 +3331,151 @@ mod tests {
         )
         .unwrap_err()
         .contains("no longer merge recommended"));
+    }
+
+    struct ScheduledReplacementSnapshotFixture {
+        epoch_manifest: SpireEpochManifest,
+        object_manifest: SpireObjectManifest,
+        placement_directory: SpirePlacementDirectory,
+    }
+
+    impl ScheduledReplacementSnapshotFixture {
+        fn snapshot(&self) -> SpirePublishedEpochSnapshot<'_> {
+            SpirePublishedEpochSnapshot::new(
+                &self.epoch_manifest,
+                &self.object_manifest,
+                &self.placement_directory,
+            )
+            .unwrap()
+        }
+    }
+
+    fn scheduled_replacement_snapshot_fixture(
+        object_store: &mut SpireLocalObjectStore,
+        active_epoch: u64,
+        root: &SpireRoutingPartitionObject,
+    ) -> ScheduledReplacementSnapshotFixture {
+        let root_placement = object_store
+            .insert_routing_object(active_epoch, root)
+            .unwrap();
+        let leaf_11 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                11,
+                1,
+                root.header.pid,
+                &[primary_row(1, 10, 1)],
+            )
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                12,
+                1,
+                root.header.pid,
+                &[primary_row(2, 10, 2)],
+            )
+            .unwrap();
+        let leaf_13 = object_store
+            .insert_leaf_object_v2_from_rows(
+                active_epoch,
+                13,
+                1,
+                root.header.pid,
+                &[primary_row(3, 10, 3)],
+            )
+            .unwrap();
+        let placements = vec![root_placement, leaf_11, leaf_12, leaf_13];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: active_epoch,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            active_epoch,
+            placements
+                .iter()
+                .map(manifest_entry_for)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(active_epoch, placements).unwrap();
+        ScheduledReplacementSnapshotFixture {
+            epoch_manifest,
+            object_manifest,
+            placement_directory,
+        }
+    }
+
+    #[test]
+    fn scheduled_replacement_parent_loader_reads_decision_parent() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let decision = scheduled_split_decision(7);
+
+        let parent =
+            load_scheduled_replacement_parent_routing(&snapshot, &object_store, &decision).unwrap();
+        let mut expected = root;
+        expected.header.published_epoch_backref = 7;
+
+        assert_eq!(parent, expected);
+    }
+
+    #[test]
+    fn scheduled_replacement_parent_loader_rejects_stale_inputs() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let mut stale_decision = scheduled_split_decision(8);
+        assert!(load_scheduled_replacement_parent_routing(
+            &snapshot,
+            &object_store,
+            &stale_decision,
+        )
+        .unwrap_err()
+        .contains("snapshot epoch"));
+
+        stale_decision.active_epoch = 7;
+        stale_decision.replaced_parent_pid = 12;
+        assert!(load_scheduled_replacement_parent_routing(
+            &snapshot,
+            &object_store,
+            &stale_decision,
+        )
+        .is_err());
+
+        let missing_child_root = SpireRoutingPartitionObject::root(
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, 11, vec![1.0, 0.0]),
+                routing_child(1, 13, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let mut missing_child_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let missing_child_fixture = scheduled_replacement_snapshot_fixture(
+            &mut missing_child_store,
+            7,
+            &missing_child_root,
+        );
+        let missing_child_snapshot = missing_child_fixture.snapshot();
+        let decision = scheduled_split_decision(7);
+        assert!(load_scheduled_replacement_parent_routing(
+            &missing_child_snapshot,
+            &missing_child_store,
+            &decision,
+        )
+        .unwrap_err()
+        .contains("missing affected leaf"));
     }
 
     #[test]

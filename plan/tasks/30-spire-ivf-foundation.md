@@ -652,6 +652,11 @@ diagnostics without scoring assignments.
   dimensions, affected-row merge recommendations, and zero-count sparse merges
   before the centroid is bound to the fresh replacement PID. Split centroid
   training/routing remains open.
+- [x] **Scheduled replacement parent loader.** Scheduler execution now has a
+  checked seam for loading the decision-bound parent routing object from the
+  active snapshot before centroid binding or routing rewrite. It validates
+  decision shape, active epoch, available parent placement, routing-object
+  kind, parent PID, and affected-leaf child coverage.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
