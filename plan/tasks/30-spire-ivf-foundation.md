@@ -643,8 +643,9 @@ diagnostics without scoring assignments.
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
   whose PID does not match the scheduler decision, rejects replacement-child
-  count mismatches, and delegates affected-child and centroid-dimension
-  validation to the existing routing rewrite helper.
+  count mismatches and invalid replacement parent object versions, and delegates
+  affected-child and centroid-dimension validation to the existing routing
+  rewrite helper.
 - [x] **Scheduled replacement publish-draft helper.** Scheduler execution now
   has a pure wrapper that binds a checked split/merge decision to replacement
   object placements and placement-write evidence before building the replacement

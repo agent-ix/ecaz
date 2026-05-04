@@ -699,6 +699,11 @@ pub(super) fn rewrite_scheduled_replacement_parent_routing(
             decision.replacement_leaf_count
         ));
     }
+    if object_version == 0 {
+        return Err(
+            "ec_spire scheduled routing replacement object_version 0 is invalid".to_owned(),
+        );
+    }
     rewrite_routing_partition_for_leaf_replacement(
         parent,
         &decision.affected_leaf_pids,
@@ -3391,6 +3396,18 @@ mod tests {
         )
         .unwrap_err()
         .contains("child count"));
+
+        assert!(rewrite_scheduled_replacement_parent_routing(
+            &root,
+            &decision,
+            vec![
+                replacement_child(30, vec![0.5, 0.5]),
+                replacement_child(31, vec![0.25, 0.75]),
+            ],
+            0,
+        )
+        .unwrap_err()
+        .contains("object_version"));
     }
 
     #[test]
