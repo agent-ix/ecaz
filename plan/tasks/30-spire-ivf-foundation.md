@@ -672,6 +672,10 @@ diagnostics without scoring assignments.
   now composes the merge execution-parts builder with the checked publish-plan
   input builder, producing a fully validated relation scheduled replacement
   execution input for merge decisions before relation object writes.
+- [x] **Relation selected scheduled merge execution-input helper.** Scheduler
+  execution now has a relation merge builder that consumes the selected
+  publish-lock plan directly, keeping the chosen decision, PID plan, and
+  publish plan bundled until execution-input construction.
 - [x] **Local scheduled merge execution-input helper.** Scheduler execution now
   has the same merge routing/leaf composition for local dry-run execution,
   preserving caller-provided placement-write evidence while sharing relation
