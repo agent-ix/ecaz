@@ -814,6 +814,10 @@ diagnostics without scoring assignments.
   object and collecting folded affected-leaf rows from the active snapshot,
   keeping snapshot validation bundled with the publish-lock plan before
   merge/split material preparation.
+- [x] **Local selected scheduled merge snapshot draft helper.** Scheduler
+  execution now has a local dry-run merge helper that loads the selected parent
+  routing object and folded affected-leaf rows from the active snapshot before
+  composing selected-plan merge draft assembly.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,

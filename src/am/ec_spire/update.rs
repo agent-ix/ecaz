@@ -2420,6 +2420,36 @@ pub(super) fn build_local_selected_scheduled_merge_replacement_epoch_draft(
     build_local_selected_scheduled_replacement_epoch_draft(snapshot, selected, input, object_store)
 }
 
+pub(super) fn build_local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    rows: &[SpireIndexLeafSnapshotRow],
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+    placement_write_evidence: Vec<SpirePublishPlacementWriteEvidence>,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireReplacementEpochDraft, String> {
+    let parent =
+        load_selected_scheduled_replacement_parent_routing(snapshot, object_store, selected)?;
+    let replacement_leaf_rows =
+        collect_selected_scheduled_replacement_leaf_rows(snapshot, object_store, selected)?;
+    build_local_selected_scheduled_merge_replacement_epoch_draft(
+        snapshot,
+        selected,
+        &parent,
+        rows,
+        replacement_leaf_rows,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+        placement_write_evidence,
+        object_store,
+    )
+}
+
 pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
@@ -3318,6 +3348,7 @@ mod tests {
         build_local_scheduled_split_replacement_execution_input,
         build_local_scheduled_split_replacement_execution_parts,
         build_local_selected_scheduled_merge_replacement_epoch_draft,
+        build_local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot,
         build_local_selected_scheduled_merge_replacement_execution_input,
         build_local_selected_scheduled_replacement_epoch_draft,
         build_local_selected_scheduled_split_replacement_epoch_draft,
@@ -8261,6 +8292,106 @@ mod tests {
                     base_pid: 12,
                     rows: vec![primary_row(1, 10, 1)],
                 }],
+                4,
+                2,
+                3000,
+                4000,
+                placement_write_evidence_for_pids(&[1, 11, 13, 21, 22]),
+                &mut object_store,
+            )
+            .unwrap_err()
+            .contains("merge decision")
+        );
+    }
+
+    #[test]
+    fn local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot_loads_inputs() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let rows = vec![
+            leaf_snapshot_row(11, 1, 3, false, true),
+            leaf_snapshot_row(12, 1, 1, false, true),
+        ];
+
+        let draft = build_local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot(
+            &snapshot,
+            &selected,
+            &rows,
+            4,
+            2,
+            3000,
+            4000,
+            placement_write_evidence_for_pids(&[1, 13, 21]),
+            &mut object_store,
+        )
+        .unwrap();
+
+        assert_eq!(draft.next_pid, 22);
+        assert_eq!(
+            draft
+                .placement_directory
+                .entries
+                .iter()
+                .map(|entry| entry.pid)
+                .collect::<Vec<_>>(),
+            vec![1, 13, 21]
+        );
+    }
+
+    #[test]
+    fn local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot_rejects_split_plan() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+        let rows = vec![leaf_snapshot_row(12, 1, 100, true, false)];
+
+        assert!(
+            build_local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot(
+                &snapshot,
+                &selected,
+                &rows,
                 4,
                 2,
                 3000,
