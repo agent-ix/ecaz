@@ -687,6 +687,10 @@ diagnostics without scoring assignments.
   builder, producing a fully validated relation scheduled replacement
   execution input for split decisions once trained centroids and routed leaf
   inputs are available.
+- [x] **Local scheduled split execution-input helper.** Scheduler execution now
+  mirrors relation split composition for local dry-run execution, preserving
+  placement-write evidence while reusing split routing, leaf-input ordering,
+  and publish-plan drift validation.
 - [x] **Scheduled routing rewrite helper.** Scheduler execution now has a pure
   wrapper that binds a checked split/merge decision to the parent routing
   object rewrite. It validates the decision shape, rejects loading a parent
