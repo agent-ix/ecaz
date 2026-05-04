@@ -674,7 +674,8 @@ diagnostics without scoring assignments.
   into the local scheduled replacement execution input while preserving
   caller-provided placement-write evidence. It shares PID cursor,
   replacement-child order, and leaf-input validation with the relation input
-  builder.
+  builder. The local dry-run draft helper also takes the checked publish plan
+  and revalidates the execution input against it before writing local objects.
 - [x] **Relation scheduled replacement publish helper.** Scheduler execution now
   has a relation-side wrapper that writes decision-bound replacement objects,
   validates written placements against the scheduled PID plan, writes the

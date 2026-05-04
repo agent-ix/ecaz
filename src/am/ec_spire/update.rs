@@ -1317,6 +1317,37 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
     )
 }
 
+pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
+    publish_plan: &SpireScheduledReplacementPublishPlan,
+    pid_plan: &SpireLeafReplacementPidPlan,
+    input: &SpireLocalScheduledReplacementExecutionInput,
+) -> Result<(), String> {
+    if input.epoch != publish_plan.epoch {
+        return Err(format!(
+            "ec_spire local scheduled replacement execution epoch {} does not match publish plan epoch {}",
+            input.epoch, publish_plan.epoch
+        ));
+    }
+    if input.consistency_mode != publish_plan.consistency_mode {
+        return Err(format!(
+            "ec_spire local scheduled replacement execution consistency mode {:?} does not match publish plan consistency mode {:?}",
+            input.consistency_mode, publish_plan.consistency_mode
+        ));
+    }
+    if input.next_local_vec_seq != publish_plan.next_local_vec_seq {
+        return Err(format!(
+            "ec_spire local scheduled replacement execution next_local_vec_seq {} does not match publish plan next_local_vec_seq {}",
+            input.next_local_vec_seq, publish_plan.next_local_vec_seq
+        ));
+    }
+    validate_scheduled_replacement_execution_publish_plan_parts(
+        publish_plan,
+        pid_plan,
+        &input.replacement_children,
+        &input.leaf_inputs,
+    )
+}
+
 fn validate_scheduled_replacement_execution_publish_plan_parts(
     publish_plan: &SpireScheduledReplacementPublishPlan,
     pid_plan: &SpireLeafReplacementPidPlan,
@@ -1352,9 +1383,11 @@ pub(super) fn build_local_scheduled_replacement_epoch_draft(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     decision: &SpireLeafReplacementScheduleDecision,
     pid_plan: &SpireLeafReplacementPidPlan,
+    publish_plan: &SpireScheduledReplacementPublishPlan,
     input: SpireLocalScheduledReplacementExecutionInput,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireReplacementEpochDraft, String> {
+    validate_local_scheduled_replacement_execution_publish_plan(publish_plan, pid_plan, &input)?;
     let replacement_object_placements = write_local_scheduled_replacement_objects(
         input.epoch,
         &input.replacement_parent,
@@ -2246,6 +2279,7 @@ mod tests {
         plan_scheduled_leaf_replacement_pids, plan_scheduled_replacement_publish_epoch,
         recheck_leaf_replacement_schedule_decision, rewrite_routing_partition_for_leaf_replacement,
         rewrite_scheduled_replacement_parent_routing,
+        validate_local_scheduled_replacement_execution_publish_plan,
         validate_relation_scheduled_replacement_execution_publish_plan,
         validate_replacement_leaf_object_inputs, validate_scheduled_replacement_pid_plan_output,
         write_local_replacement_objects, write_local_scheduled_replacement_objects,
@@ -4308,6 +4342,12 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: new_epoch,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 23,
+            next_local_vec_seq: 7,
+        };
         let replacement_children = vec![
             replacement_child(21, vec![0.5, 0.5]),
             replacement_child(22, vec![-0.5, 0.5]),
@@ -4324,6 +4364,7 @@ mod tests {
             &snapshot,
             &decision,
             &pid_plan,
+            &publish_plan,
             SpireLocalScheduledReplacementExecutionInput {
                 epoch: new_epoch,
                 published_at_micros: 3000,
@@ -4417,6 +4458,12 @@ mod tests {
             reuses_existing_pid: false,
             next_pid: 23,
         };
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 23,
+            next_local_vec_seq: 7,
+        };
         let replacement_children = vec![
             replacement_child(22, vec![-0.5, 0.5]),
             replacement_child(21, vec![0.5, 0.5]),
@@ -4433,6 +4480,7 @@ mod tests {
             &snapshot,
             &decision,
             &pid_plan,
+            &publish_plan,
             SpireLocalScheduledReplacementExecutionInput {
                 epoch: 8,
                 published_at_micros: 3000,
@@ -4558,6 +4606,78 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("next_pid"));
+    }
+
+    #[test]
+    fn local_scheduled_replacement_execution_publish_plan_validator_rejects_input_drift() {
+        let publish_plan = SpireScheduledReplacementPublishPlan {
+            epoch: 8,
+            consistency_mode: SpireConsistencyMode::Strict,
+            next_pid: 23,
+            next_local_vec_seq: 100,
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![21, 22],
+            reuses_existing_pid: false,
+            next_pid: 23,
+        };
+        let input = build_local_scheduled_replacement_execution_input_from_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            SpireLocalScheduledReplacementExecutionParts {
+                published_at_micros: 3000,
+                retain_until_micros: 4000,
+                replacement_parent: root_routing_object(),
+                replacement_children: vec![
+                    replacement_child(21, vec![0.5, 0.5]),
+                    replacement_child(22, vec![-0.5, 0.5]),
+                ],
+                leaf_object_version: 2,
+                leaf_inputs: vec![
+                    SpireReplacementLeafObjectInput {
+                        pid: 21,
+                        rows: vec![primary_row(5, 30, 1)],
+                    },
+                    SpireReplacementLeafObjectInput {
+                        pid: 22,
+                        rows: vec![primary_row(6, 30, 2)],
+                    },
+                ],
+                placement_write_evidence: placement_write_evidence_for_pids(&[1, 21, 22]),
+            },
+        )
+        .unwrap();
+
+        validate_local_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &input,
+        )
+        .unwrap();
+
+        let stale_epoch_input = SpireLocalScheduledReplacementExecutionInput {
+            epoch: 9,
+            ..input.clone()
+        };
+        assert!(validate_local_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &stale_epoch_input,
+        )
+        .unwrap_err()
+        .contains("epoch"));
+
+        let stale_vec_cursor_input = SpireLocalScheduledReplacementExecutionInput {
+            next_local_vec_seq: 101,
+            ..input
+        };
+        assert!(validate_local_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &stale_vec_cursor_input,
+        )
+        .unwrap_err()
+        .contains("next_local_vec_seq"));
     }
 
     #[test]
