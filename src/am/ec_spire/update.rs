@@ -1288,6 +1288,7 @@ pub(super) fn build_local_scheduled_replacement_execution_input_from_publish_pla
         &parts.replacement_parent,
         &parts.replacement_children,
         parts.leaf_object_version,
+        parts.published_at_micros,
         &parts.leaf_inputs,
     )?;
 
@@ -1318,6 +1319,7 @@ pub(super) fn build_relation_scheduled_replacement_execution_input_from_publish_
         &parts.replacement_parent,
         &parts.replacement_children,
         parts.leaf_object_version,
+        parts.published_at_micros,
         &parts.leaf_inputs,
     )?;
 
@@ -1365,6 +1367,7 @@ pub(super) fn validate_relation_scheduled_replacement_execution_publish_plan(
         &input.replacement_parent,
         &input.replacement_children,
         input.leaf_object_version,
+        input.published_at_micros,
         &input.leaf_inputs,
     )
 }
@@ -1400,6 +1403,7 @@ pub(super) fn validate_local_scheduled_replacement_execution_publish_plan(
         &input.replacement_parent,
         &input.replacement_children,
         input.leaf_object_version,
+        input.published_at_micros,
         &input.leaf_inputs,
     )
 }
@@ -1411,6 +1415,7 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
     replacement_parent: &SpireRoutingPartitionObject,
     replacement_children: &[SpireRoutingReplacementChild],
     leaf_object_version: u64,
+    published_at_micros: i64,
     leaf_inputs: &[SpireReplacementLeafObjectInput],
 ) -> Result<(), String> {
     validate_leaf_replacement_schedule_decision_shape(decision)?;
@@ -1439,6 +1444,11 @@ fn validate_scheduled_replacement_execution_publish_plan_parts(
     if leaf_object_version == 0 {
         return Err(
             "ec_spire scheduled replacement execution leaf object_version 0 is invalid".to_owned(),
+        );
+    }
+    if published_at_micros <= 0 {
+        return Err(
+            "ec_spire scheduled replacement execution requires a publish timestamp".to_owned(),
         );
     }
     if pid_plan.reuses_existing_pid {
@@ -4814,7 +4824,7 @@ mod tests {
 
         let stale_vec_cursor_input = SpireLocalScheduledReplacementExecutionInput {
             next_local_vec_seq: 101,
-            ..input
+            ..input.clone()
         };
         assert!(validate_local_scheduled_replacement_execution_publish_plan(
             &publish_plan,
@@ -4824,6 +4834,19 @@ mod tests {
         )
         .unwrap_err()
         .contains("next_local_vec_seq"));
+
+        let missing_publish_timestamp_input = SpireLocalScheduledReplacementExecutionInput {
+            published_at_micros: 0,
+            ..input
+        };
+        assert!(validate_local_scheduled_replacement_execution_publish_plan(
+            &publish_plan,
+            &pid_plan,
+            &decision,
+            &missing_publish_timestamp_input,
+        )
+        .unwrap_err()
+        .contains("publish timestamp"));
     }
 
     #[test]
