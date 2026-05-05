@@ -1462,6 +1462,48 @@ pub(super) fn build_relation_selected_scheduled_split_replacement_execution_inpu
     )
 }
 
+pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+    heap_relation: pgrx::pg_sys::Relation,
+    heap_snapshot: pgrx::pg_sys::Snapshot,
+    slot: *mut pgrx::pg_sys::TupleTableSlot,
+    indexed_attribute: source::IndexedVectorAttribute,
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    dimensions: usize,
+    seed: u64,
+    max_iterations: usize,
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    let replacement_rows =
+        collect_selected_scheduled_replacement_leaf_rows(snapshot, object_store, selected)?;
+    let fetched_sources = unsafe {
+        fetch_split_replacement_source_vectors(
+            heap_relation,
+            heap_snapshot,
+            slot,
+            indexed_attribute,
+            &replacement_rows,
+        )?
+    };
+    build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources(
+        snapshot,
+        object_store,
+        selected,
+        fetched_sources,
+        dimensions,
+        seed,
+        max_iterations,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+    )
+}
+
 pub(super) fn build_local_selected_scheduled_split_replacement_execution_input(
     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
     parent: &SpireRoutingPartitionObject,
