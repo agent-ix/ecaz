@@ -1048,7 +1048,9 @@ diagnostics without scoring assignments.
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
   parent/child edge, including parent PID, child PID, child level, centroid
-  ordinal, dimensions, centroid vector, and source count. Durable relation
+  ordinal, dimensions, centroid vector, and source count. Recursive epoch
+  materialization now carries those centroid records through the epoch draft so
+  the relation publisher has an explicit persistence payload. Durable relation
   storage and SQL diagnostics for these records remain open.
 - [ ] **Level-local scan primitive.** Given an input query and a parent
   partition, return child partitions to probe. Scan now has a pure
