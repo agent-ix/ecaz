@@ -669,6 +669,11 @@ diagnostics without scoring assignments.
   rows, fetches indexed heap source vectors for those rows, and delegates to
   the checked selected-plan source execution-input builder. The remaining live
   publish slice can focus on lock-time orchestration and epoch publication.
+- [x] **Split heap-dead-row materialization contract.** Reviewer feedback on
+  packet 30448 is handled: heap rows that no longer fetch under the heap
+  snapshot are omitted from the split materialization assignment set before
+  exact source coverage is validated, so a single dead assignment no longer
+  blocks progress for the live rows in the selected split leaf.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
