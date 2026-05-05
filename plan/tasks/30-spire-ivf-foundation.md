@@ -1044,6 +1044,10 @@ diagnostics without scoring assignments.
   centroid, builds the recursive routing hierarchy over those leaf centroids,
   attaches each leaf input to its routed parent PID, and returns the recursive
   epoch object input plus allocator cursors for the later relation publisher.
+  Recursive epoch drafts now expose manifest/root-control publish bundle helpers
+  that consume the local vector allocator cursor explicitly, so the upcoming
+  relation publisher can use the same publish coordinator path as single-level
+  builds without hiding cursor ownership inside the recursive epoch draft.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
