@@ -1062,8 +1062,10 @@ diagnostics without scoring assignments.
   same dataset can be queried as flat single-level IVF and recursive SPIRE. The
   pure scan helper tests now include a four-leaf synthetic hierarchy where a
   flat root and a two-level recursive root/internal shape route the same query
-  to the same best leaf. Relation-backed SQL smoke and candidate scoring over
-  real leaf objects remain open for the final Phase 3 comparison packet.
+  to the same best leaf. The quantized candidate tests now also build matching
+  flat and recursive local object-store snapshots over the same four V2 leaf
+  objects and verify the same top candidate is returned. Relation-backed SQL
+  smoke remains open for the final Phase 3 comparison packet.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
