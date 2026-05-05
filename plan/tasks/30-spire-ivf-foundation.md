@@ -1002,6 +1002,13 @@ diagnostics without scoring assignments.
 
 ## Phase 3 — SPIRE Recursion
 
+- [x] **Recursive hierarchy design checkpoint.** Phase 3 recursion now has a
+  durable design note in `plan/design/spire-recursive-hierarchy.md`. It defines
+  level numbering, root/internal/leaf PID invariants, routing child references,
+  per-level build and `nprobe` metadata, bottom-up recursive build over leaf
+  centroids, level-local scan routing, and the deferred boundaries for
+  replication, graph routing, placement, background scheduling, reclamation,
+  recursive update propagation, and product-scale measurements.
 - [ ] **Hierarchy metadata.** Store levels, parent/child partition IDs,
   centroid dimensions, per-level `nprobe`, and build parameters. The
   single-level foundation now persists root/leaf levels, parent/child PIDs, and
