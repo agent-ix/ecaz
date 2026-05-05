@@ -1027,8 +1027,11 @@ diagnostics without scoring assignments.
   when the child set is under target fanout, repeatedly trains spherical
   k-means over child centroids when another routing level is needed, allocates
   internal/root routing PIDs from the normal PID allocator, and materializes
-  level-aware root/internal routing objects without relation I/O. Live
-  relation-backed recursive build remains open.
+  level-aware root/internal routing objects without relation I/O. Build now
+  also has a local recursive routing epoch materializer that writes routing
+  objects, combines them with already-written leaf placements, validates the
+  manifest/directory snapshot, and rejects missing leaf placement coverage.
+  Live relation-backed recursive build remains open.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
