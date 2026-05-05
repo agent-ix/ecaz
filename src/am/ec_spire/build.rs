@@ -1090,6 +1090,8 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
                     child_pid,
                     child_level: 0,
                     centroid: centroid.clone(),
+                    // First-level recursive children are trained leaf centroids, so this counts
+                    // one centroid source rather than rows assigned to the eventual leaf object.
                     source_count: 1,
                 })
                 .collect(),
@@ -1313,6 +1315,10 @@ fn materialize_pending_recursive_child(
 fn validate_recursive_routing_build_draft(
     draft: &SpireRecursiveRoutingBuildDraft,
 ) -> Result<(), String> {
+    // Recursive drafts pass three validation barriers:
+    // 1. this in-memory routing-object and centroid-record shape check;
+    // 2. epoch leaf-placement validation after object writes;
+    // 3. snapshot-time hierarchy validation before scan descent.
     if draft.routing_objects.is_empty() {
         return Err("ec_spire recursive routing draft requires routing objects".to_owned());
     }
@@ -1335,6 +1341,7 @@ fn validate_recursive_routing_build_draft(
         }
     }
     let mut centroid_keys = HashSet::with_capacity(draft.centroid_records.len());
+    let mut centroid_ordinals_by_parent = HashMap::<u64, Vec<u32>>::new();
     for record in &draft.centroid_records {
         validate_recursive_centroid(record.dimensions, record.child_pid, &record.centroid)?;
         if !centroid_keys.insert((record.parent_pid, record.child_pid)) {
@@ -1348,6 +1355,23 @@ fn validate_recursive_routing_build_draft(
                 "ec_spire recursive routing draft centroid record child {} source_count 0",
                 record.child_pid
             ));
+        }
+        centroid_ordinals_by_parent
+            .entry(record.parent_pid)
+            .or_default()
+            .push(record.centroid_ordinal);
+    }
+    for (parent_pid, mut ordinals) in centroid_ordinals_by_parent {
+        ordinals.sort_unstable();
+        for (position, ordinal) in ordinals.into_iter().enumerate() {
+            let expected = u32::try_from(position).map_err(|_| {
+                "ec_spire recursive routing centroid ordinal exceeds u32".to_owned()
+            })?;
+            if ordinal != expected {
+                return Err(format!(
+                    "ec_spire recursive routing draft centroid ordinals for parent {parent_pid} are not dense at position {position}: got {ordinal}"
+                ));
+            }
         }
     }
     Ok(())
@@ -2845,6 +2869,30 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(draft.root_pid, 11, 0, 0), (draft.root_pid, 12, 0, 1)]
         );
+    }
+
+    #[test]
+    fn recursive_routing_build_validation_rejects_sparse_centroid_ordinals() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![-1.0, 0.0]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+        draft.centroid_records[1].centroid_ordinal = 7;
+
+        let error = super::validate_recursive_routing_build_draft(&draft).unwrap_err();
+
+        assert!(error.contains("centroid ordinals"));
     }
 
     #[test]
