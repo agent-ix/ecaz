@@ -469,6 +469,30 @@ pub(crate) struct SpireIndexRootRoutingSnapshotRow {
     pub(crate) child_object_bytes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexRoutingCentroidSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) parent_pid: u64,
+    pub(crate) parent_kind: &'static str,
+    pub(crate) parent_object_version: u64,
+    pub(crate) parent_level: u16,
+    pub(crate) parent_child_count: u64,
+    pub(crate) centroid_dimensions: u16,
+    pub(crate) centroid_index: u32,
+    pub(crate) child_pid: u64,
+    pub(crate) child_kind: &'static str,
+    pub(crate) child_object_version: u64,
+    pub(crate) child_level: u16,
+    pub(crate) child_parent_pid: u64,
+    pub(crate) child_assignment_count: u64,
+    pub(crate) child_node_id: u32,
+    pub(crate) child_local_store_id: u32,
+    pub(crate) child_store_relid: u32,
+    pub(crate) child_placement_state: &'static str,
+    pub(crate) child_object_bytes: u64,
+    pub(crate) centroid: Vec<f32>,
+}
+
 impl SpireActiveSnapshotDiagnostics {
     fn empty(root_control: meta::SpireRootControlState) -> Self {
         Self {
@@ -2394,6 +2418,29 @@ pub(crate) unsafe fn index_root_routing_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn index_routing_centroid_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexRoutingCentroidSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexRoutingCentroidSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        collect_routing_centroid_snapshot_rows(&snapshot, &object_store)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 fn collect_root_routing_snapshot_rows(
     snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
     object_store: &impl storage::SpireObjectReader,
@@ -2448,6 +2495,54 @@ fn collect_root_routing_snapshot_rows(
             })
         })
         .collect::<Result<Vec<_>, String>>()
+}
+
+fn collect_routing_centroid_snapshot_rows(
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+) -> Result<Vec<SpireIndexRoutingCentroidSnapshotRow>, String> {
+    let mut rows = Vec::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "routing centroid snapshot parent")?;
+        let parent_header = object_store.read_object_header(lookup.placement)?;
+        if parent_header.kind != storage::SpirePartitionObjectKind::Root
+            && parent_header.kind != storage::SpirePartitionObjectKind::Internal
+        {
+            continue;
+        }
+        let parent = object_store.read_routing_object(lookup.placement)?;
+        let parent_child_count = u64::try_from(parent.child_count())
+            .map_err(|_| "ec_spire routing centroid child count exceeds u64".to_owned())?;
+        for child in parent.children() {
+            let child_lookup =
+                snapshot.require_lookup(child.child_pid, "routing centroid snapshot child")?;
+            let child_header = object_store.read_object_header(child_lookup.placement)?;
+            rows.push(SpireIndexRoutingCentroidSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                parent_pid: parent.header.pid,
+                parent_kind: partition_object_kind_name(parent.header.kind),
+                parent_object_version: parent.header.object_version,
+                parent_level: parent.header.level,
+                parent_child_count,
+                centroid_dimensions: parent.dimensions,
+                centroid_index: child.centroid_index,
+                child_pid: child.child_pid,
+                child_kind: partition_object_kind_name(child_header.kind),
+                child_object_version: child_header.object_version,
+                child_level: child_header.level,
+                child_parent_pid: child_header.parent_pid,
+                child_assignment_count: u64::from(child_header.assignment_count),
+                child_node_id: child_lookup.placement.node_id,
+                child_local_store_id: child_lookup.placement.local_store_id,
+                child_store_relid: child_lookup.placement.store_relid,
+                child_placement_state: placement_state_name(child_lookup.placement.state),
+                child_object_bytes: u64::from(child_lookup.placement.object_bytes),
+                centroid: child.centroid.to_vec(),
+            });
+        }
+    }
+    Ok(rows)
 }
 
 fn not_implemented(callback: &str) -> ! {

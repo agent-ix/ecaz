@@ -40,6 +40,7 @@ pub(crate) use self::ec_spire::{
     index_placement_snapshot as spire_index_placement_snapshot,
     index_relation_storage_snapshot as spire_index_relation_storage_snapshot,
     index_root_routing_snapshot as spire_index_root_routing_snapshot,
+    index_routing_centroid_snapshot as spire_index_routing_centroid_snapshot,
     index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
 };

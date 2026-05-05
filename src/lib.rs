@@ -1344,6 +1344,69 @@ fn ec_spire_index_root_routing_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_routing_centroid_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(parent_pid, i64),
+        name!(parent_kind, String),
+        name!(parent_object_version, i64),
+        name!(parent_level, i32),
+        name!(parent_child_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(centroid_index, i64),
+        name!(child_pid, i64),
+        name!(child_kind, String),
+        name!(child_object_version, i64),
+        name!(child_level, i32),
+        name!(child_parent_pid, i64),
+        name!(child_assignment_count, i64),
+        name!(child_node_id, i64),
+        name!(child_local_store_id, i64),
+        name!(child_store_relid, i64),
+        name!(child_placement_state, String),
+        name!(child_object_bytes, i64),
+        name!(centroid, Vec<f32>),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_routing_centroid_snapshot") };
+    let rows = unsafe { am::spire_index_routing_centroid_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            row.parent_kind.to_owned(),
+            i64::try_from(row.parent_object_version)
+                .expect("parent object version should fit in i64"),
+            i32::from(row.parent_level),
+            i64::try_from(row.parent_child_count).expect("parent child count should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            i64::from(row.centroid_index),
+            i64::try_from(row.child_pid).expect("child pid should fit in i64"),
+            row.child_kind.to_owned(),
+            i64::try_from(row.child_object_version)
+                .expect("child object version should fit in i64"),
+            i32::from(row.child_level),
+            i64::try_from(row.child_parent_pid).expect("child parent pid should fit in i64"),
+            i64::try_from(row.child_assignment_count)
+                .expect("child assignment count should fit in i64"),
+            i64::from(row.child_node_id),
+            i64::from(row.child_local_store_id),
+            i64::from(row.child_store_relid),
+            row.child_placement_state.to_owned(),
+            i64::try_from(row.child_object_bytes).expect("child object bytes should fit in i64"),
+            row.centroid,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -4182,6 +4245,108 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_routing_centroid_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_centroid_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_centroid_empty_idx ON ec_spire_centroid_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_empty_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_centroid_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_centroid_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_centroid_sql_idx ON ec_spire_centroid_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let root_parent_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE parent_kind = 'root'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let internal_parent_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE parent_kind = 'internal'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let internal_child_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE child_kind = 'internal'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let leaf_child_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE child_kind = 'leaf'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let max_parent_level = Spi::get_one::<i32>(
+            "SELECT max(parent_level) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("max parent level should exist");
+        let min_child_level = Spi::get_one::<i32>(
+            "SELECT min(child_level) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("min child level should exist");
+        let centroid_lengths_match = Spi::get_one::<bool>(
+            "SELECT bool_and(cardinality(centroid) = centroid_dimensions) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("centroid length aggregate should exist");
+        let parent_links_match = Spi::get_one::<bool>(
+            "SELECT bool_and(child_parent_pid = parent_pid) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("parent link aggregate should exist");
+
+        assert_eq!(row_count, 6);
+        assert_eq!(root_parent_rows, 2);
+        assert_eq!(internal_parent_rows, 4);
+        assert_eq!(internal_child_rows, 2);
+        assert_eq!(leaf_child_rows, 4);
+        assert_eq!(max_parent_level, 2);
+        assert_eq!(min_child_level, 0);
+        assert!(centroid_lengths_match);
+        assert!(parent_links_match);
+    }
+
+    #[pg_test]
     fn test_ec_spire_hierarchy_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_hierarchy_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
@@ -6037,10 +6202,8 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_flat_recursive_same_candidate() {
-        Spi::run(
-            "CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)",
-        )
-        .expect("flat comparison table creation should succeed");
+        Spi::run("CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)")
+            .expect("flat comparison table creation should succeed");
         Spi::run(
             "CREATE TABLE ec_spire_recursive_compare (id bigint primary key, embedding ecvector)",
         )
