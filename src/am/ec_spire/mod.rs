@@ -242,6 +242,24 @@ pub(crate) struct SpireIndexMaintenancePlanSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexMaintenanceRunResult {
+    pub(crate) active_epoch_before: u64,
+    pub(crate) active_epoch_after: u64,
+    pub(crate) maintenance_status: &'static str,
+    pub(crate) planned_action: &'static str,
+    pub(crate) planned_reason: &'static str,
+    pub(crate) replaced_parent_pid: u64,
+    pub(crate) affected_leaf_pids: Vec<u64>,
+    pub(crate) replacement_leaf_count: u64,
+    pub(crate) replacement_leaf_pids: Vec<u64>,
+    pub(crate) publish_epoch: u64,
+    pub(crate) next_pid: u64,
+    pub(crate) next_local_vec_seq: u64,
+    pub(crate) published: bool,
+    pub(crate) maintenance_message: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexInsertDebtSnapshot {
     pub(crate) active_epoch: u64,
     pub(crate) active_leaf_count: u64,
@@ -1294,6 +1312,65 @@ fn no_maintenance_plan_snapshot(
     }
 }
 
+fn no_maintenance_run_result(
+    root_control: meta::SpireRootControlState,
+    active_epoch: u64,
+    planned_reason: &'static str,
+    maintenance_message: &'static str,
+) -> SpireIndexMaintenanceRunResult {
+    SpireIndexMaintenanceRunResult {
+        active_epoch_before: active_epoch,
+        active_epoch_after: active_epoch,
+        maintenance_status: "no_action",
+        planned_action: "none",
+        planned_reason,
+        replaced_parent_pid: 0,
+        affected_leaf_pids: Vec::new(),
+        replacement_leaf_count: 0,
+        replacement_leaf_pids: Vec::new(),
+        publish_epoch: 0,
+        next_pid: root_control.next_pid,
+        next_local_vec_seq: root_control.next_local_vec_seq,
+        published: false,
+        maintenance_message,
+    }
+}
+
+fn selected_maintenance_run_result(
+    selected: update::SpireSelectedScheduledReplacementPublishLockPlan,
+    maintenance_status: &'static str,
+    published: bool,
+    maintenance_message: &'static str,
+) -> Result<SpireIndexMaintenanceRunResult, String> {
+    let planned_action = match selected.decision.mode {
+        update::SpireLeafReplacementScheduleMode::Split => "split",
+        update::SpireLeafReplacementScheduleMode::Merge => "merge",
+    };
+    let replacement_leaf_count = u64::try_from(selected.decision.replacement_leaf_count)
+        .map_err(|_| "ec_spire maintenance run replacement leaf count exceeds u64".to_owned())?;
+
+    Ok(SpireIndexMaintenanceRunResult {
+        active_epoch_before: selected.decision.active_epoch,
+        active_epoch_after: if published {
+            selected.lock_plan.publish_plan.epoch
+        } else {
+            selected.decision.active_epoch
+        },
+        maintenance_status,
+        planned_action,
+        planned_reason: selected.decision.reason,
+        replaced_parent_pid: selected.decision.replaced_parent_pid,
+        affected_leaf_pids: selected.decision.affected_leaf_pids,
+        replacement_leaf_count,
+        replacement_leaf_pids: selected.lock_plan.pid_plan.replacement_pids,
+        publish_epoch: selected.lock_plan.publish_plan.epoch,
+        next_pid: selected.lock_plan.publish_plan.next_pid,
+        next_local_vec_seq: selected.lock_plan.publish_plan.next_local_vec_seq,
+        published,
+        maintenance_message,
+    })
+}
+
 fn maintenance_plan_snapshot_from_rows(
     root_control: meta::SpireRootControlState,
     active_epoch_manifest: &meta::SpireEpochManifest,
@@ -2344,6 +2421,101 @@ mod tests {
         assert_eq!(snapshot.publish_epoch, 8);
         assert_eq!(snapshot.next_pid, 41);
         assert_eq!(snapshot.next_local_vec_seq, 100);
+    }
+
+    fn selected_split_maintenance_plan() -> update::SpireSelectedScheduledReplacementPublishLockPlan
+    {
+        update::SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: update::SpireLeafReplacementScheduleDecision {
+                mode: update::SpireLeafReplacementScheduleMode::Split,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![12],
+                replacement_leaf_count: 2,
+                reason: "largest_split_candidate",
+            },
+            lock_plan: update::SpireScheduledReplacementPublishLockPlan {
+                pid_plan: update::SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![40, 41],
+                    reuses_existing_pid: false,
+                    next_pid: 42,
+                },
+                publish_plan: update::SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: meta::SpireConsistencyMode::Strict,
+                    next_pid: 42,
+                    next_local_vec_seq: 100,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn maintenance_run_result_reports_no_action() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+
+        let result = no_maintenance_run_result(
+            root_control,
+            7,
+            "no_candidate",
+            "active leaves are within split/merge thresholds",
+        );
+
+        assert_eq!(result.active_epoch_before, 7);
+        assert_eq!(result.active_epoch_after, 7);
+        assert_eq!(result.maintenance_status, "no_action");
+        assert_eq!(result.planned_action, "none");
+        assert_eq!(result.planned_reason, "no_candidate");
+        assert_eq!(result.replacement_leaf_pids, Vec::<u64>::new());
+        assert_eq!(result.publish_epoch, 0);
+        assert_eq!(result.next_pid, 40);
+        assert_eq!(result.next_local_vec_seq, 100);
+        assert!(!result.published);
+    }
+
+    #[test]
+    fn maintenance_run_result_reports_projected_selected_plan() {
+        let result = selected_maintenance_run_result(
+            selected_split_maintenance_plan(),
+            "planned",
+            false,
+            "scheduled replacement selected; no epoch was published",
+        )
+        .expect("maintenance run result should build");
+
+        assert_eq!(result.active_epoch_before, 7);
+        assert_eq!(result.active_epoch_after, 7);
+        assert_eq!(result.maintenance_status, "planned");
+        assert_eq!(result.planned_action, "split");
+        assert_eq!(result.planned_reason, "largest_split_candidate");
+        assert_eq!(result.replaced_parent_pid, 1);
+        assert_eq!(result.affected_leaf_pids, vec![12]);
+        assert_eq!(result.replacement_leaf_count, 2);
+        assert_eq!(result.replacement_leaf_pids, vec![40, 41]);
+        assert_eq!(result.publish_epoch, 8);
+        assert_eq!(result.next_pid, 42);
+        assert_eq!(result.next_local_vec_seq, 100);
+        assert!(!result.published);
+    }
+
+    #[test]
+    fn maintenance_run_result_reports_published_selected_plan() {
+        let result = selected_maintenance_run_result(
+            selected_split_maintenance_plan(),
+            "published",
+            true,
+            "scheduled replacement epoch was published",
+        )
+        .expect("maintenance run result should build");
+
+        assert_eq!(result.active_epoch_before, 7);
+        assert_eq!(result.active_epoch_after, 8);
+        assert_eq!(result.maintenance_status, "published");
+        assert_eq!(result.planned_action, "split");
+        assert_eq!(result.publish_epoch, 8);
+        assert!(result.published);
     }
 
     #[test]
