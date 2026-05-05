@@ -659,6 +659,11 @@ diagnostics without scoring assignments.
   replacement rows. The collector returns the exact fetched source records the
   source-row hydration helper consumes, leaving selected-plan invocation as the
   remaining split publish wiring.
+- [x] **Selected split source execution-input helper.** Scheduler execution now
+  has a selected-plan relation builder that loads the decision-bound parent and
+  folded selected leaf rows from the active snapshot, hydrates fetched source
+  vectors, trains/routes split replacement materialization, and feeds the
+  existing relation split execution-input validator.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
