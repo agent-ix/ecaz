@@ -1051,7 +1051,12 @@ diagnostics without scoring assignments.
   Relation publishing now has a recursive epoch bridge that writes placement
   directory entries, rebuilds the object manifest with durable placement-entry
   TIDs, writes the manifest bundle, and installs root/control state through the
-  same publish coordinator used by the existing build path.
+  same publish coordinator used by the existing build path. The build module now
+  also has a non-activated relation recursive build composer that trains the
+  first-level centroid plan from `SpireBuildState`, assembles recursive epoch
+  input, writes recursive leaf/routing objects through the relation store,
+  checks allocator cursor agreement, and invokes the recursive relation publish
+  bridge. Live `ambuild` selection remains intentionally unchanged.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
