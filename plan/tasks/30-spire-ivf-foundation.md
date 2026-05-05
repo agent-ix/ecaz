@@ -1043,7 +1043,10 @@ diagnostics without scoring assignments.
   root-kind guard intact for the current single-level scan path. A pure
   recursive routing coordinator now composes that primitive over already-loaded
   routing objects, validates internal child kind/parent/level shape while
-  descending, and returns selected leaf PIDs without relation I/O.
+  descending, and returns selected leaf PIDs without relation I/O. Scan now also
+  has a snapshot preload helper that reads the unique active root plus active
+  internal routing objects through the existing `SpireObjectReader` boundary,
+  giving live recursive scan wiring a checked root/internal loading seam.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE. The
   pure scan helper tests now include a four-leaf synthetic hierarchy where a

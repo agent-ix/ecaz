@@ -119,6 +119,13 @@ impl Ord for SpireRouteCandidateHeapEntry {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireLoadedRoutingHierarchy {
+    root_pid: u64,
+    root_object: SpireRoutingPartitionObject,
+    internal_objects_by_pid: HashMap<u64, SpireRoutingPartitionObject>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SpireScanOutput {
     pub(super) heap_tid: ItemPointer,
@@ -1277,7 +1284,16 @@ fn load_snapshot_root_routing_object(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
 ) -> Result<(u64, SpireRoutingPartitionObject), String> {
+    let hierarchy = load_snapshot_routing_hierarchy(snapshot, object_store)?;
+    Ok((hierarchy.root_pid, hierarchy.root_object))
+}
+
+fn load_snapshot_routing_hierarchy(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<SpireLoadedRoutingHierarchy, String> {
     let mut root = None;
+    let mut internal_objects_by_pid = HashMap::new();
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "scan root routing load")?;
         let placement = lookup.placement;
@@ -1287,6 +1303,18 @@ fn load_snapshot_root_routing_object(
 
         let header = object_store.read_object_header(placement)?;
         if header.kind != SpirePartitionObjectKind::Root {
+            if header.kind == SpirePartitionObjectKind::Internal {
+                let object = object_store.read_routing_object(placement)?;
+                if internal_objects_by_pid
+                    .insert(manifest_entry.pid, object)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "ec_spire scan snapshot contains duplicate internal routing pid {}",
+                        manifest_entry.pid
+                    ));
+                }
+            }
             continue;
         }
         if root.is_some() {
@@ -1298,7 +1326,13 @@ fn load_snapshot_root_routing_object(
         ));
     }
 
-    root.ok_or_else(|| "ec_spire scan snapshot has no available root routing object".to_owned())
+    let (root_pid, root_object) = root
+        .ok_or_else(|| "ec_spire scan snapshot has no available root routing object".to_owned())?;
+    Ok(SpireLoadedRoutingHierarchy {
+        root_pid,
+        root_object,
+        internal_objects_by_pid,
+    })
 }
 
 fn route_root_object_to_leaf_pids(
@@ -2021,12 +2055,12 @@ mod tests {
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
-        count_snapshot_single_level_leaf_pids, prepare_single_level_snapshot_scan_candidates,
-        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
-        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
-        route_routing_object_to_child_pids, SpireLeafScanRow, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
-        SpireScoredScanCandidate,
+        count_snapshot_single_level_leaf_pids, load_snapshot_routing_hierarchy,
+        prepare_single_level_snapshot_scan_candidates, rank_routed_leaf_rows_by_ip,
+        rerank_scored_candidates_by_ip, route_recursive_routing_objects_to_leaf_pids,
+        route_root_object_to_leaf_pids, route_routing_object_to_child_pids, SpireLeafScanRow,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
+        SpireScanQuery, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -2040,7 +2074,7 @@ mod tests {
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
         SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpirePublishedEpochSnapshot, SpireRootControlState,
+        SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
     };
     use crate::am::ec_spire::options::{
         EcSpireOptions, SpireCandidateDedupeMode, SpireSingleLevelScanPlan, SpireStorageFormat,
@@ -2240,6 +2274,15 @@ mod tests {
     ) -> SpirePublishedEpochSnapshot<'a> {
         SpirePublishedEpochSnapshot::new(epoch_manifest, object_manifest, placement_directory)
             .unwrap()
+    }
+
+    fn manifest_entry_for(placement: &SpirePlacementEntry) -> SpireManifestEntry {
+        SpireManifestEntry {
+            epoch: placement.epoch,
+            pid: placement.pid,
+            object_version: placement.object_version,
+            placement_tid: placement.object_tid,
+        }
     }
 
     #[test]
@@ -3606,6 +3649,117 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("is not one below parent level"));
+    }
+
+    #[test]
+    fn load_snapshot_routing_hierarchy_loads_root_and_internal_objects() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 1,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 2, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let root_placement = object_store.insert_routing_object(7, &root).unwrap();
+        let internal_placement = object_store.insert_routing_object(7, &internal).unwrap();
+        let leaf_placement = object_store
+            .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 2, 1, SPIRE_FIRST_PID + 1, &[])
+            .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let placements = vec![root_placement, internal_placement, leaf_placement];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let hierarchy = load_snapshot_routing_hierarchy(&snapshot, &object_store)
+            .expect("routing hierarchy should load");
+
+        assert_eq!(hierarchy.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(hierarchy.root_object.header.level, 2);
+        assert_eq!(hierarchy.internal_objects_by_pid.len(), 1);
+        assert_eq!(
+            hierarchy
+                .internal_objects_by_pid
+                .get(&(SPIRE_FIRST_PID + 1))
+                .unwrap()
+                .header
+                .parent_pid,
+            SPIRE_FIRST_PID
+        );
+    }
+
+    #[test]
+    fn load_snapshot_routing_hierarchy_rejects_multiple_roots() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let first_root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let second_root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID + 1,
+            1,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &first_root).unwrap(),
+            object_store.insert_routing_object(7, &second_root).unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let error = load_snapshot_routing_hierarchy(&snapshot, &object_store).unwrap_err();
+
+        assert!(error.contains("multiple root routing objects"));
     }
 
     #[test]
