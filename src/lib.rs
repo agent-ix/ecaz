@@ -5341,6 +5341,20 @@ mod tests {
         )
         .expect("maintenance run plan result query should succeed")
         .expect("publish epoch row should exist");
+        let affected_leaf_pids = Spi::get_one::<String>(
+            "SELECT affected_leaf_pids FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("affected leaf pids row should exist");
+        let replacement_leaf_pids = Spi::get_one::<String>(
+            "SELECT replacement_leaf_pids FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("replacement leaf pids row should exist");
+        let next_pid =
+            Spi::get_one::<i64>("SELECT next_pid FROM ec_spire_locked_maintenance_run_plan_result")
+                .expect("maintenance run plan result query should succeed")
+                .expect("next pid row should exist");
         let published = Spi::get_one::<bool>(
             "SELECT published FROM ec_spire_locked_maintenance_run_plan_result",
         )
@@ -5377,6 +5391,64 @@ mod tests {
         assert_eq!(post_active_epoch, pre_active_epoch);
         assert_eq!(post_next_pid, pre_next_pid);
         assert_eq!(post_leaf_count, pre_leaf_count);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_locked_maintenance_run_publish_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("maintenance run should publish the planned replacement");
+
+        let run_status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let run_action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let run_affected_leaf_pids = Spi::get_one::<String>(
+            "SELECT affected_leaf_pids FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("affected leaf pids row should exist");
+        let run_replacement_leaf_pids = Spi::get_one::<String>(
+            "SELECT replacement_leaf_pids FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("replacement leaf pids row should exist");
+        let run_publish_epoch = Spi::get_one::<i64>(
+            "SELECT publish_epoch FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("publish epoch row should exist");
+        let run_active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch after row should exist");
+        let run_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("next pid row should exist");
+        let run_published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("published row should exist");
+
+        assert_eq!(run_status, "published");
+        assert_eq!(run_action, action);
+        assert_eq!(run_affected_leaf_pids, affected_leaf_pids);
+        assert_eq!(run_replacement_leaf_pids, replacement_leaf_pids);
+        assert_eq!(run_publish_epoch, publish_epoch);
+        assert_eq!(run_active_epoch_after, publish_epoch);
+        assert_eq!(run_next_pid, next_pid);
+        assert!(run_published);
     }
 
     #[pg_test]
