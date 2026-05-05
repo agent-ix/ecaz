@@ -64,6 +64,8 @@ impl Drop for SpireRelationLockGuard {
 pub(super) unsafe fn lock_publish_relation(
     index_relation: pg_sys::Relation,
 ) -> SpireRelationLockGuard {
+    // Callers hold an open Relation for the guard lifetime. Capture the relid
+    // before locking and unlock by relid so Drop never dereferences the pointer.
     let relid = unsafe { (*index_relation).rd_id };
     unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };
     SpireRelationLockGuard {
@@ -1341,7 +1343,7 @@ fn maintenance_plan_snapshot_from_rows(
         publish_epoch: selected.lock_plan.publish_plan.epoch,
         next_pid: selected.lock_plan.publish_plan.next_pid,
         next_local_vec_seq: selected.lock_plan.publish_plan.next_local_vec_seq,
-        planner_message: "scheduled replacement candidate selected for manual publish",
+        planner_message: "scheduled replacement candidate selected; publish_epoch, next_pid, and next_local_vec_seq are projected and not advanced",
     })
 }
 
