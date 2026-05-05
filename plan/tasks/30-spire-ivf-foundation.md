@@ -928,6 +928,10 @@ diagnostics without scoring assignments.
   has focused PG18 coverage for a populated split publish over a skewed
   heap-source fixture, proving the run publishes epoch 2, reports split/published
   status, and expands a ten-leaf fixture to eleven active leaves.
+- [x] **Maintenance publish scan visibility smoke.** The merge and split
+  publish smokes now also force indexed ordered scans after the replacement
+  epoch publishes, proving the manual scheduler's replacement objects remain
+  visible to user queries through the SPIRE scan path.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
