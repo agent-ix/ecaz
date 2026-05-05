@@ -5268,6 +5268,80 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_maintenance_run_merge_publish_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_merge_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_maintenance_run_merge_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_merge_idx \
+             ON ec_spire_maintenance_run_merge_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_merge_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass) \
+             WHERE merge_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(pre_merge_candidates, 2);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_merge_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("maintenance run should publish merge epoch");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("reason row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch row should exist");
+        let published =
+            Spi::get_one::<bool>("SELECT published FROM ec_spire_maintenance_run_merge_result")
+                .expect("maintenance run result query should succeed")
+                .expect("published row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "published");
+        assert_eq!(action, "merge");
+        assert_eq!(reason, "sparsest_same_parent_merge_pair");
+        assert_eq!(active_epoch_after, 2);
+        assert!(published);
+        assert_eq!(post_leaf_count, 2);
+    }
+
+    #[pg_test]
     fn test_ec_spire_leaf_snapshot_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_leaf_snapshot_sql \

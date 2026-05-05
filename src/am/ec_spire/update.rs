@@ -1998,6 +1998,9 @@ pub(super) fn collect_replacement_leaf_rows(
             "ec_spire replacement leaf rows require active leaf pids for all affected pids: missing {missing:?}"
         ));
     }
+    for base_pid in &affected {
+        rows_by_base_pid.entry(*base_pid).or_default();
+    }
 
     let mut folded = rows_by_base_pid
         .into_iter()
@@ -7163,6 +7166,77 @@ mod tests {
         );
         assert_eq!(rows[0].rows[0].heap_tid, tid(10, 1));
         assert_eq!(rows[1].rows[0].heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn selected_scheduled_replacement_leaf_rows_keeps_empty_affected_leaf() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let root_placement = object_store.insert_routing_object(7, &root).unwrap();
+        let leaf_11 = object_store
+            .insert_leaf_object_v2_from_rows(7, 11, 1, root.header.pid, &[primary_row(1, 10, 1)])
+            .unwrap();
+        let leaf_12 = object_store
+            .insert_leaf_object_v2_from_rows(7, 12, 1, root.header.pid, &[])
+            .unwrap();
+        let leaf_13 = object_store
+            .insert_leaf_object_v2_from_rows(7, 13, 1, root.header.pid, &[primary_row(3, 10, 3)])
+            .unwrap();
+        let placements = vec![root_placement, leaf_11, leaf_12, leaf_13];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: SpireLeafReplacementScheduleDecision {
+                mode: SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "test_merge",
+            },
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21],
+                    reuses_existing_pid: false,
+                    next_pid: 22,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 22,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        let rows =
+            collect_selected_scheduled_replacement_leaf_rows(&snapshot, &object_store, &selected)
+                .unwrap();
+
+        assert_eq!(
+            rows.iter().map(|row| row.base_pid).collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+        assert_eq!(rows[0].rows.len(), 1);
+        assert!(rows[1].rows.is_empty());
     }
 
     #[test]
