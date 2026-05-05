@@ -908,6 +908,10 @@ diagnostics without scoring assignments.
   reloads and rechecks the active candidate, builds merge or heap-source split
   execution input, publishes the scheduled replacement epoch, and returns the
   maintenance run result row with `published = true`.
+- [x] **Maintenance run empty SQL smoke.** The manual scheduler entrypoint now
+  has focused PG18 coverage for the empty-index no-action row, proving the SQL
+  binding returns `maintenance_status = 'no_action'`, `planned_action = 'none'`,
+  `planned_reason = 'empty_index'`, `published = false`, and active epoch 0.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
