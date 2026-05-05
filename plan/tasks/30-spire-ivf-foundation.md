@@ -916,6 +916,10 @@ diagnostics without scoring assignments.
   has focused PG18 coverage for a populated merge publish, including empty
   affected leaves, proving the run publishes epoch 2, reports merge/published
   status, and reduces a three-leaf fixture to two active leaves.
+- [x] **Maintenance split publish smoke.** The manual scheduler entrypoint now
+  has focused PG18 coverage for a populated split publish over a skewed
+  heap-source fixture, proving the run publishes epoch 2, reports split/published
+  status, and expands a ten-leaf fixture to eleven active leaves.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
