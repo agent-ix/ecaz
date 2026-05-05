@@ -15,8 +15,8 @@ use super::meta::{
     SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    SpireLeafPartitionObject, SpireLocalObjectStore, SpireRelationObjectStore,
-    SpireRoutingChildEntry, SpireRoutingPartitionObject,
+    SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind,
+    SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
@@ -1185,7 +1185,7 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
     };
     epoch_manifest.validate()?;
 
-    validate_recursive_epoch_leaf_placements(&input)?;
+    validate_recursive_epoch_leaf_placements(&input, object_store)?;
 
     let mut placements =
         Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
@@ -1228,8 +1228,13 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
 
 fn validate_recursive_epoch_leaf_placements(
     input: &SpireRecursiveRoutingEpochInput,
+    object_store: &SpireLocalObjectStore,
 ) -> Result<(), String> {
-    let expected_leaf_pids = recursive_routing_leaf_child_pids(&input.routing_draft)?;
+    let expected_leaf_parents = recursive_routing_leaf_parent_pids(&input.routing_draft)?;
+    let expected_leaf_pids = expected_leaf_parents
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
     let mut actual_leaf_pids = HashSet::with_capacity(input.leaf_placements.len());
     for placement in &input.leaf_placements {
         placement.encode()?;
@@ -1243,6 +1248,25 @@ fn validate_recursive_epoch_leaf_placements(
             return Err(format!(
                 "ec_spire recursive routing epoch duplicate leaf placement pid {}",
                 placement.pid
+            ));
+        }
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Leaf {
+            return Err(format!(
+                "ec_spire recursive routing epoch placement pid {} is not a leaf object",
+                placement.pid
+            ));
+        }
+        let expected_parent_pid = expected_leaf_parents.get(&placement.pid).ok_or_else(|| {
+            format!(
+                "ec_spire recursive routing epoch unexpected leaf placement pid {}",
+                placement.pid
+            )
+        })?;
+        if header.parent_pid != *expected_parent_pid {
+            return Err(format!(
+                "ec_spire recursive routing epoch leaf pid {} parent {} does not match routing parent {}",
+                placement.pid, header.parent_pid, expected_parent_pid
             ));
         }
     }
@@ -1262,16 +1286,19 @@ fn validate_recursive_epoch_leaf_placements(
     Ok(())
 }
 
-fn recursive_routing_leaf_child_pids(
+fn recursive_routing_leaf_parent_pids(
     draft: &SpireRecursiveRoutingBuildDraft,
-) -> Result<HashSet<u64>, String> {
-    let mut leaf_pids = HashSet::new();
+) -> Result<HashMap<u64, u64>, String> {
+    let mut leaf_parents = HashMap::new();
     for object in &draft.routing_objects {
         if object.header.level != 1 {
             continue;
         }
         for child in object.children() {
-            if !leaf_pids.insert(child.child_pid) {
+            if leaf_parents
+                .insert(child.child_pid, object.header.pid)
+                .is_some()
+            {
                 return Err(format!(
                     "ec_spire recursive routing epoch duplicate leaf child pid {}",
                     child.child_pid
@@ -1279,10 +1306,10 @@ fn recursive_routing_leaf_child_pids(
             }
         }
     }
-    if leaf_pids.is_empty() {
+    if leaf_parents.is_empty() {
         return Err("ec_spire recursive routing epoch requires leaf child pids".to_owned());
     }
-    Ok(leaf_pids)
+    Ok(leaf_parents)
 }
 
 fn next_recursive_epoch_pid(
@@ -2564,6 +2591,48 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("leaf placement mismatch"));
+    }
+
+    #[test]
+    fn local_recursive_routing_epoch_draft_rejects_leaf_parent_drift() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let routing_draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![-1.0, 0.0]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let first_leaf = object_store
+            .insert_leaf_object_v2_from_rows(7, 11, 3, routing_draft.root_pid + 99, &[])
+            .unwrap();
+        let second_leaf = object_store
+            .insert_leaf_object_v2_from_rows(7, 12, 3, routing_draft.root_pid, &[])
+            .unwrap();
+
+        let error = build_local_recursive_routing_epoch_draft(
+            SpireRecursiveRoutingEpochInput {
+                epoch: 7,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                routing_draft,
+                leaf_placements: vec![first_leaf, second_leaf],
+            },
+            &mut object_store,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("parent"));
+        assert!(error.contains("does not match routing parent"));
     }
 
     #[test]
