@@ -1699,6 +1699,40 @@ impl SpireRecursiveRoutingEpochDraft {
     ) -> Result<SpireEncodedPublishBundle, String> {
         encode_publish_bundle_for_publish(self.publish_input(next_local_vec_seq), locators)
     }
+
+    fn relation_publish_input<'a>(
+        &'a self,
+        object_manifest: &'a SpireObjectManifest,
+        next_local_vec_seq: u64,
+    ) -> SpirePublishCoordinatorInput<'a> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq,
+        }
+    }
+}
+
+pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
+    index_relation: pg_sys::Relation,
+    draft: &SpireRecursiveRoutingEpochDraft,
+    next_local_vec_seq: u64,
+) -> Result<(), String> {
+    let placement_evidence =
+        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory)? };
+    let object_manifest = object_manifest_from_placement_writes(
+        draft.epoch_manifest.epoch,
+        &draft.placement_directory,
+        &placement_evidence,
+    )?;
+    let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq);
+    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let root_control = root_control_state_for_publish(input, locators)?;
+    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    Ok(())
 }
 
 pub(super) fn train_single_level_centroid_plan(
@@ -2432,8 +2466,8 @@ mod tests {
     use super::retired_epoch_manifest_from;
     use super::{
         build_local_recursive_routing_epoch_draft, build_partitioned_single_level_leaf_epoch_draft,
-        build_single_level_leaf_epoch_draft, object_manifest_from_placement_writes,
-        object_write_evidence_from_placement_directory,
+        build_single_level_leaf_epoch_draft, encode_publish_bundle_for_publish,
+        object_manifest_from_placement_writes, object_write_evidence_from_placement_directory,
         placement_write_evidence_from_object_manifest, resolve_training_sample_count,
         train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
         SpirePartitionedSingleLevelBuildInput, SpirePublishPlacementWriteEvidence,
@@ -3264,6 +3298,74 @@ mod tests {
         assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
         assert_eq!(root_control.object_manifest_tid, tid(70, 2));
         assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+    }
+
+    #[test]
+    fn recursive_epoch_relation_publish_input_uses_durable_placement_manifest() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
+            assignment_indexes: vec![0, 1],
+        };
+        let coordinator = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap();
+        let next_local_vec_seq = coordinator.next_local_vec_seq;
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = super::build_local_recursive_routing_epoch_from_leaf_inputs(
+            coordinator.epoch_input,
+            &mut object_store,
+        )
+        .unwrap();
+        let placement_evidence = draft
+            .placement_directory
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, placement)| SpirePublishPlacementWriteEvidence {
+                pid: placement.pid,
+                placement_tid: tid(90, (index + 1) as u16),
+            })
+            .collect::<Vec<_>>();
+        let durable_manifest = object_manifest_from_placement_writes(
+            draft.epoch_manifest.epoch,
+            &draft.placement_directory,
+            &placement_evidence,
+        )
+        .unwrap();
+
+        let encoded = encode_publish_bundle_for_publish(
+            draft.relation_publish_input(&durable_manifest, next_local_vec_seq),
+            manifest_locators(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            SpireObjectManifest::decode(&encoded.manifests.object_manifest).unwrap(),
+            durable_manifest
+        );
+        assert!(durable_manifest
+            .entries
+            .iter()
+            .all(|entry| entry.placement_tid.block_number == 90));
+        let root_control = SpireRootControlState::decode(&encoded.root_control_state).unwrap();
+        assert_eq!(root_control.next_pid, draft.next_pid);
+        assert_eq!(root_control.next_local_vec_seq, next_local_vec_seq);
     }
 
     #[test]
