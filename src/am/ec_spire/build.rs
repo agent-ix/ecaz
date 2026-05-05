@@ -2218,6 +2218,58 @@ unsafe fn publish_relation_partitioned_single_level_build(
     Ok(state.scanned_tuples)
 }
 
+unsafe fn publish_relation_recursive_routing_build(
+    index_relation: pg_sys::Relation,
+    state: &SpireBuildState,
+    target_fanout: u32,
+) -> Result<usize, String> {
+    if state.scanned_tuples == 0 {
+        return Ok(0);
+    }
+
+    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let centroid_plan = state.train_centroid_plan()?;
+    let mut pid_allocator = SpirePidAllocator::default();
+    let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+    let coordinator = build_recursive_epoch_input_from_centroid_plan(
+        SpireRecursiveBuildCoordinatorInput {
+            epoch: SPIRE_INITIAL_EPOCH,
+            object_version: SPIRE_INITIAL_OBJECT_VERSION,
+            published_at_micros,
+            retain_until_micros,
+            consistency_mode: SpireConsistencyMode::Strict,
+            target_fanout,
+            seed: state.options.seed as u64,
+            assignments: state.assignment_inputs(),
+            centroid_plan,
+        },
+        &mut pid_allocator,
+        &mut local_vec_id_allocator,
+    )?;
+    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let mut store = store;
+    let draft = unsafe {
+        build_relation_recursive_routing_epoch_from_leaf_inputs(
+            coordinator.epoch_input,
+            &mut store,
+        )?
+    };
+    if draft.next_pid != coordinator.next_pid {
+        return Err(format!(
+            "ec_spire recursive relation build next_pid {} does not match coordinator next_pid {}",
+            draft.next_pid, coordinator.next_pid
+        ));
+    }
+    unsafe {
+        publish_relation_recursive_routing_epoch_draft(
+            index_relation,
+            &draft,
+            coordinator.next_local_vec_seq,
+        )?
+    };
+    Ok(state.scanned_tuples)
+}
+
 pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
     let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
