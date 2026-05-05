@@ -1049,7 +1049,10 @@ diagnostics without scoring assignments.
   giving live recursive scan wiring a checked root/internal loading seam. The
   routed leaf-row collector now uses that recursive preload/routing path and
   validates each selected leaf against its immediate parent PID, while
-  preserving the existing hierarchy root PID in returned scan-row groups.
+  preserving the existing hierarchy root PID in returned scan-row groups. The
+  quantized candidate collector now also consumes recursive leaf routes, so V2
+  column scoring validates recursive leaf parentage before returning ranked
+  candidates; the diagnostics-only helper remains single-level.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE. The
   pure scan helper tests now include a four-leaf synthetic hierarchy where a
