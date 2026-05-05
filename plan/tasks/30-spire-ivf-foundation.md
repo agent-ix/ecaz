@@ -1066,14 +1066,18 @@ diagnostics without scoring assignments.
   relation build when `recursive_fanout >= 2`, preserving default single-level
   builds while publishing root/internal/leaf hierarchy metadata and routing
   recursive scans through the existing recursive candidate path.
-- [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
+- [x] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
   parent/child edge, including parent PID, child PID, child level, centroid
   ordinal, dimensions, centroid vector, and source count. Recursive epoch
   materialization now carries those centroid records through the epoch draft so
-  the relation publisher has an explicit persistence payload. Durable relation
-  storage and SQL diagnostics for these records remain open.
+  the relation publisher has an explicit persistence payload. Relation-backed
+  root/internal routing objects durably store the centroid vectors for each
+  parent-to-child edge, and
+  `ec_spire_index_routing_centroid_snapshot(index_oid)` now exposes those
+  persisted centroid vectors, levels, ordinals, child kinds, placement state,
+  and parent links through SQL diagnostics.
 - [ ] **Level-local scan primitive.** Given an input query and a parent
   partition, return child partitions to probe. Scan now has a pure
   `route_routing_object_to_child_pids` primitive that accepts root or internal
