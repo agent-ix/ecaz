@@ -126,6 +126,12 @@ struct SpireLoadedRoutingHierarchy {
     internal_objects_by_pid: HashMap<u64, SpireRoutingPartitionObject>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireRecursiveLeafRoute {
+    leaf_pid: u64,
+    parent_pid: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SpireScanOutput {
     pub(super) heap_tid: ItemPointer,
@@ -455,17 +461,27 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     nprobe: u32,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
-    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
-    let leaf_pids = route_root_object_to_leaf_pids(&root_object, query_vector, nprobe)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_routes = route_recursive_routing_objects_to_leaf_routes(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        query_vector,
+        nprobe,
+    )?;
     let epoch = snapshot.epoch_manifest().epoch;
 
-    let mut routed = Vec::with_capacity(leaf_pids.len());
-    for leaf_pid in leaf_pids {
-        let rows = collect_snapshot_leaf_rows_for_pid(&snapshot, object_store, leaf_pid, root_pid)?;
+    let mut routed = Vec::with_capacity(leaf_routes.len());
+    for route in leaf_routes {
+        let rows = collect_snapshot_leaf_rows_for_pid(
+            &snapshot,
+            object_store,
+            route.leaf_pid,
+            route.parent_pid,
+        )?;
         routed.push(SpireRoutedLeafScanRows {
             epoch,
-            root_pid,
-            leaf_pid,
+            root_pid: hierarchy.root_pid,
+            leaf_pid: route.leaf_pid,
             rows,
         });
     }
@@ -1405,29 +1421,57 @@ fn route_recursive_routing_objects_to_leaf_pids(
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<u64>, String> {
+    Ok(route_recursive_routing_objects_to_leaf_routes(
+        root_object,
+        routing_objects_by_pid,
+        query_vector,
+        nprobe,
+    )?
+    .into_iter()
+    .map(|route| route.leaf_pid)
+    .collect())
+}
+
+fn route_recursive_routing_objects_to_leaf_routes(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe: u32,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
     if root_object.header.level == 1 {
-        return route_root_object_to_leaf_pids(root_object, query_vector, nprobe);
+        return Ok(
+            route_root_object_to_leaf_pids(root_object, query_vector, nprobe)?
+                .into_iter()
+                .map(|leaf_pid| SpireRecursiveLeafRoute {
+                    leaf_pid,
+                    parent_pid: root_object.header.pid,
+                })
+                .collect(),
+        );
     }
 
     let mut current_parents = vec![root_object.clone()];
     loop {
         let parent_level = current_parents[0].header.level;
         if parent_level == 1 {
-            let mut leaf_pids = Vec::new();
+            let mut leaf_routes = Vec::new();
             for parent in &current_parents {
                 if parent.header.level != 1 {
                     return Err("ec_spire recursive scan routing parent levels drifted".to_owned());
                 }
-                leaf_pids.extend(route_routing_object_to_child_pids(
-                    parent,
-                    query_vector,
-                    nprobe,
-                )?);
+                leaf_routes.extend(
+                    route_routing_object_to_child_pids(parent, query_vector, nprobe)?
+                        .into_iter()
+                        .map(|leaf_pid| SpireRecursiveLeafRoute {
+                            leaf_pid,
+                            parent_pid: parent.header.pid,
+                        }),
+                );
             }
-            return Ok(leaf_pids);
+            return Ok(leaf_routes);
         }
 
         let mut next_parents = Vec::new();
@@ -1513,7 +1557,7 @@ fn collect_snapshot_leaf_rows_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     leaf_pid: u64,
-    root_pid: u64,
+    expected_parent_pid: u64,
 ) -> Result<Vec<SpireLeafScanRow>, String> {
     let lookup = snapshot.require_lookup(leaf_pid, "routed scan leaf")?;
     let manifest_entry = lookup.manifest_entry;
@@ -1528,10 +1572,10 @@ fn collect_snapshot_leaf_rows_for_pid(
             "ec_spire routed scan pid {leaf_pid} is not a leaf object"
         ));
     }
-    if header.parent_pid != root_pid {
+    if header.parent_pid != expected_parent_pid {
         return Err(format!(
-            "ec_spire routed scan leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
-            header.parent_pid
+            "ec_spire routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {expected_parent_pid}",
+            header.parent_pid,
         ));
     }
 
@@ -2622,6 +2666,89 @@ mod tests {
         assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 1));
         assert_eq!(routed[1].leaf_pid, SPIRE_FIRST_PID + 2);
         assert_eq!(routed[1].rows[0].assignment.heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn collect_snapshot_routed_probe_leaf_rows_accepts_recursive_leaf_parent() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root_pid = SPIRE_FIRST_PID;
+        let internal_pid = SPIRE_FIRST_PID + 1;
+        let first_leaf_pid = SPIRE_FIRST_PID + 2;
+        let second_leaf_pid = SPIRE_FIRST_PID + 3;
+        let root = SpireRoutingPartitionObject::root_at_level(
+            root_pid,
+            1,
+            2,
+            2,
+            vec![routing_child(0, internal_pid, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let internal = SpireRoutingPartitionObject::internal(
+            internal_pid,
+            1,
+            1,
+            root_pid,
+            2,
+            vec![
+                routing_child(0, first_leaf_pid, vec![0.5, 0.0]),
+                routing_child(1, second_leaf_pid, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let first_leaf_rows = vec![assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 1)];
+        let second_leaf_rows = vec![assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 2)];
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store.insert_routing_object(7, &internal).unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    first_leaf_pid,
+                    1,
+                    internal_pid,
+                    &first_leaf_rows,
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    second_leaf_pid,
+                    1,
+                    internal_pid,
+                    &second_leaf_rows,
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let routed =
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[1.0, 0.0], 1)
+                .unwrap();
+
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].root_pid, root_pid);
+        assert_eq!(routed[0].leaf_pid, second_leaf_pid);
+        assert_eq!(routed[0].rows.len(), 1);
+        assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 2));
     }
 
     #[test]
