@@ -132,6 +132,28 @@ struct SpireRecursiveLeafRoute {
     parent_pid: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireRecursiveNprobePolicy {
+    leaf_level_nprobe: u32,
+}
+
+impl SpireRecursiveNprobePolicy {
+    fn new(leaf_level_nprobe: u32) -> Result<Self, String> {
+        if leaf_level_nprobe == 0 {
+            return Err("ec_spire recursive scan requires leaf-level nprobe > 0".to_owned());
+        }
+        Ok(Self { leaf_level_nprobe })
+    }
+
+    fn nprobe_for_parent_level(self, parent_level: u16) -> u32 {
+        if parent_level <= 1 {
+            self.leaf_level_nprobe
+        } else {
+            1
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SpireScanOutput {
     pub(super) heap_tid: ItemPointer,
@@ -1506,16 +1528,19 @@ fn route_recursive_routing_objects_to_leaf_routes(
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
+    let nprobe_policy = SpireRecursiveNprobePolicy::new(nprobe)?;
     if root_object.header.level == 1 {
-        return Ok(
-            route_root_object_to_leaf_pids(root_object, query_vector, nprobe)?
-                .into_iter()
-                .map(|leaf_pid| SpireRecursiveLeafRoute {
-                    leaf_pid,
-                    parent_pid: root_object.header.pid,
-                })
-                .collect(),
-        );
+        return Ok(route_root_object_to_leaf_pids(
+            root_object,
+            query_vector,
+            nprobe_policy.nprobe_for_parent_level(root_object.header.level),
+        )?
+        .into_iter()
+        .map(|leaf_pid| SpireRecursiveLeafRoute {
+            leaf_pid,
+            parent_pid: root_object.header.pid,
+        })
+        .collect());
     }
 
     let mut current_parents = vec![root_object.clone()];
@@ -1528,12 +1553,16 @@ fn route_recursive_routing_objects_to_leaf_routes(
                     return Err("ec_spire recursive scan routing parent levels drifted".to_owned());
                 }
                 leaf_routes.extend(
-                    route_routing_object_to_child_pids(parent, query_vector, nprobe)?
-                        .into_iter()
-                        .map(|leaf_pid| SpireRecursiveLeafRoute {
-                            leaf_pid,
-                            parent_pid: parent.header.pid,
-                        }),
+                    route_routing_object_to_child_pids(
+                        parent,
+                        query_vector,
+                        nprobe_policy.nprobe_for_parent_level(parent.header.level),
+                    )?
+                    .into_iter()
+                    .map(|leaf_pid| SpireRecursiveLeafRoute {
+                        leaf_pid,
+                        parent_pid: parent.header.pid,
+                    }),
                 );
             }
             return Ok(leaf_routes);
@@ -1549,7 +1578,11 @@ fn route_recursive_routing_objects_to_leaf_routes(
             if parent.header.level != parent_level {
                 return Err("ec_spire recursive scan routing parent levels drifted".to_owned());
             }
-            let child_pids = route_routing_object_to_child_pids(parent, query_vector, nprobe)?;
+            let child_pids = route_routing_object_to_child_pids(
+                parent,
+                query_vector,
+                nprobe_policy.nprobe_for_parent_level(parent.header.level),
+            )?;
             for child_pid in child_pids {
                 let child =
                     require_recursive_internal_child(routing_objects_by_pid, child_pid, parent)?;
@@ -4115,6 +4148,59 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("is not one below parent level"));
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 21, vec![-0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![-1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+
+        let leaf_pids = route_recursive_routing_objects_to_leaf_pids(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(leaf_pids, vec![SPIRE_FIRST_PID + 12, SPIRE_FIRST_PID + 11]);
     }
 
     #[test]
