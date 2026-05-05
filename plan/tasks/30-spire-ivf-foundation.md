@@ -1056,7 +1056,10 @@ diagnostics without scoring assignments.
   first-level centroid plan from `SpireBuildState`, assembles recursive epoch
   input, writes recursive leaf/routing objects through the relation store,
   checks allocator cursor agreement, and invokes the recursive relation publish
-  bridge. Live `ambuild` selection remains intentionally unchanged.
+  bridge. Live `ambuild` selection remains intentionally unchanged. SPIRE now
+  has an explicit `recursive_fanout` reloption: the default `0` preserves
+  single-level build behavior, while values `>= 2` are reserved as the opt-in
+  recursive routing fanout for the live activation slice.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
