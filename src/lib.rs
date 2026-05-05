@@ -6036,6 +6036,122 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_flat_recursive_same_candidate() {
+        Spi::run(
+            "CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)",
+        )
+        .expect("flat comparison table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_compare (id bigint primary key, embedding ecvector)",
+        )
+        .expect("recursive comparison table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_flat_compare (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("flat comparison insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_compare (id, embedding) \
+             SELECT id, embedding FROM ec_spire_flat_compare",
+        )
+        .expect("recursive comparison insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_flat_compare_idx \
+             ON ec_spire_flat_compare USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4)",
+        )
+        .expect("flat comparison ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_compare_idx \
+             ON ec_spire_recursive_compare USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive comparison ec_spire index creation should succeed");
+
+        let flat_internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat internal count should exist");
+        let recursive_internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive internal count should exist");
+        let flat_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat hierarchy depth should exist");
+        let recursive_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive hierarchy depth should exist");
+        let flat_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat recursive support flag should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive support flag should exist");
+        let flat_root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat root routing snapshot query should succeed")
+        .expect("flat root row count should exist");
+        let recursive_root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive root routing snapshot query should succeed")
+        .expect("recursive root row count should exist");
+
+        assert_eq!(flat_internal_count, 0);
+        assert_eq!(recursive_internal_count, 2);
+        assert_eq!(flat_depth, 1);
+        assert_eq!(recursive_depth, 2);
+        assert!(!flat_supported);
+        assert!(recursive_supported);
+        assert_eq!(flat_root_rows, 4);
+        assert_eq!(recursive_root_rows, 2);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let flat_first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_flat_compare \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered flat comparison ec_spire query should succeed")
+        .expect("flat comparison query should return a row");
+        let recursive_first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_recursive_compare \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered recursive comparison ec_spire query should succeed")
+        .expect("recursive comparison query should return a row");
+
+        assert_eq!(flat_first_id, 1);
+        assert_eq!(recursive_first_id, flat_first_id);
+    }
+
+    #[pg_test]
     fn test_ec_spire_insert_after_build_delta_epoch() {
         Spi::run(
             "CREATE TABLE ec_spire_insert_after_build (id bigint primary key, embedding ecvector)",
