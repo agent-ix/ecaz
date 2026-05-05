@@ -1015,7 +1015,11 @@ diagnostics without scoring assignments.
   root centroid dimensions, and exposes them through
   `ec_spire_index_hierarchy_snapshot(index_oid)`. The diagnostic explicitly
   reports that recursive routing and per-level `nprobe` are unsupported until
-  the recursive build coordinator lands.
+  the recursive build coordinator lands. The hierarchy diagnostic now also
+  runs a pure recursive shape validator over active root/internal/leaf/delta
+  metadata, preserving the single-level status while reporting malformed
+  recursive parent/child level shapes as invalid before level-aware scan
+  routing descends through them.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,

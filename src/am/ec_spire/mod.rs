@@ -847,10 +847,187 @@ fn partition_object_kind_name(kind: storage::SpirePartitionObjectKind) -> &'stat
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireHierarchyObjectSummary {
+    pid: u64,
+    kind: storage::SpirePartitionObjectKind,
+    level: u16,
+    parent_pid: u64,
+    child_pids: Vec<u64>,
+}
+
+fn hierarchy_object_summary(
+    header: &storage::SpirePartitionObjectHeader,
+    child_pids: Vec<u64>,
+) -> SpireHierarchyObjectSummary {
+    SpireHierarchyObjectSummary {
+        pid: header.pid,
+        kind: header.kind,
+        level: header.level,
+        parent_pid: header.parent_pid,
+        child_pids,
+    }
+}
+
+fn validate_recursive_hierarchy_shape(
+    objects: &[SpireHierarchyObjectSummary],
+) -> Result<bool, String> {
+    if objects.is_empty() {
+        return Ok(false);
+    }
+
+    let mut by_pid = HashMap::with_capacity(objects.len());
+    for object in objects {
+        if object.pid == 0 {
+            return Err("ec_spire hierarchy object pid 0 is invalid".to_owned());
+        }
+        if by_pid.insert(object.pid, object).is_some() {
+            return Err(format!(
+                "ec_spire hierarchy contains duplicate active pid {}",
+                object.pid
+            ));
+        }
+    }
+
+    let roots = objects
+        .iter()
+        .filter(|object| object.kind == storage::SpirePartitionObjectKind::Root)
+        .collect::<Vec<_>>();
+    if roots.len() != 1 {
+        return Err(format!(
+            "ec_spire hierarchy needs exactly one root object, found {}",
+            roots.len()
+        ));
+    }
+    let root = roots[0];
+    if root.parent_pid != 0 {
+        return Err(format!(
+            "ec_spire root pid {} must use parent_pid 0, got {}",
+            root.pid, root.parent_pid
+        ));
+    }
+    if root.level == 0 {
+        return Err(format!("ec_spire root pid {} must use level > 0", root.pid));
+    }
+
+    let has_internal = objects
+        .iter()
+        .any(|object| object.kind == storage::SpirePartitionObjectKind::Internal);
+    for object in objects {
+        match object.kind {
+            storage::SpirePartitionObjectKind::Root
+            | storage::SpirePartitionObjectKind::Internal => {
+                if object.kind == storage::SpirePartitionObjectKind::Internal
+                    && object.parent_pid == 0
+                {
+                    return Err(format!(
+                        "ec_spire internal routing pid {} must have nonzero parent_pid",
+                        object.pid
+                    ));
+                }
+                if object.level == 0 {
+                    return Err(format!(
+                        "ec_spire routing pid {} must use level > 0",
+                        object.pid
+                    ));
+                }
+                let mut seen_children = HashSet::with_capacity(object.child_pids.len());
+                for child_pid in &object.child_pids {
+                    if !seen_children.insert(*child_pid) {
+                        return Err(format!(
+                            "ec_spire routing pid {} references duplicate child pid {}",
+                            object.pid, child_pid
+                        ));
+                    }
+                    let child = by_pid.get(child_pid).ok_or_else(|| {
+                        format!(
+                            "ec_spire routing pid {} references missing child pid {}",
+                            object.pid, child_pid
+                        )
+                    })?;
+                    if child.parent_pid != object.pid {
+                        return Err(format!(
+                            "ec_spire child pid {} parent_pid {} does not match routing pid {}",
+                            child.pid, child.parent_pid, object.pid
+                        ));
+                    }
+                    if object.level == 1 {
+                        if child.kind != storage::SpirePartitionObjectKind::Leaf || child.level != 0
+                        {
+                            return Err(format!(
+                                "ec_spire level-1 routing pid {} child pid {} must be a level-0 leaf",
+                                object.pid, child.pid
+                            ));
+                        }
+                    } else if child.kind != storage::SpirePartitionObjectKind::Internal
+                        || child.level.checked_add(1) != Some(object.level)
+                    {
+                        return Err(format!(
+                            "ec_spire routing pid {} level {} child pid {} has kind {:?} level {}",
+                            object.pid, object.level, child.pid, child.kind, child.level
+                        ));
+                    }
+                }
+            }
+            storage::SpirePartitionObjectKind::Leaf => {
+                if object.level != 0 {
+                    return Err(format!(
+                        "ec_spire leaf pid {} must use level 0, got {}",
+                        object.pid, object.level
+                    ));
+                }
+                let parent = by_pid.get(&object.parent_pid).ok_or_else(|| {
+                    format!(
+                        "ec_spire leaf pid {} references missing parent pid {}",
+                        object.pid, object.parent_pid
+                    )
+                })?;
+                if parent.kind != storage::SpirePartitionObjectKind::Root
+                    && parent.kind != storage::SpirePartitionObjectKind::Internal
+                {
+                    return Err(format!(
+                        "ec_spire leaf pid {} parent pid {} is not a routing object",
+                        object.pid, object.parent_pid
+                    ));
+                }
+                if !parent.child_pids.contains(&object.pid) {
+                    return Err(format!(
+                        "ec_spire leaf pid {} is not referenced by parent pid {}",
+                        object.pid, object.parent_pid
+                    ));
+                }
+            }
+            storage::SpirePartitionObjectKind::Delta => {
+                if object.level != 0 {
+                    return Err(format!(
+                        "ec_spire delta pid {} must use level 0, got {}",
+                        object.pid, object.level
+                    ));
+                }
+                let parent = by_pid.get(&object.parent_pid).ok_or_else(|| {
+                    format!(
+                        "ec_spire delta pid {} references missing base leaf pid {}",
+                        object.pid, object.parent_pid
+                    )
+                })?;
+                if parent.kind != storage::SpirePartitionObjectKind::Leaf {
+                    return Err(format!(
+                        "ec_spire delta pid {} parent pid {} is not a leaf",
+                        object.pid, object.parent_pid
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(has_internal)
+}
+
 fn hierarchy_snapshot_status(
     root_routing_object_count: u64,
     internal_routing_object_count: u64,
     leaf_object_count: u64,
+    hierarchy_shape_valid: bool,
 ) -> (&'static str, &'static str) {
     if root_routing_object_count == 0 && leaf_object_count == 0 {
         return ("empty", "none");
@@ -865,6 +1042,12 @@ fn hierarchy_snapshot_status(
         return (
             "multiple_root_objects",
             "inspect active epoch metadata before enabling recursive routing",
+        );
+    }
+    if !hierarchy_shape_valid {
+        return (
+            "invalid_hierarchy_shape",
+            "inspect active root/internal/leaf parent-child metadata before scanning recursively",
         );
     }
     if internal_routing_object_count == 0 {
@@ -1859,7 +2042,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
     let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
-            let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0);
+            let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true);
             return Ok(SpireIndexHierarchySnapshot {
                 active_epoch: 0,
                 root_pid: 0,
@@ -1902,6 +2085,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
         let mut centroid_dimensions = 0_u16;
         let mut root_child_count = 0_u64;
         let mut leaf_parent_pids = HashSet::new();
+        let mut hierarchy_objects = Vec::new();
 
         for manifest_entry in &snapshot.object_manifest().entries {
             let lookup = snapshot.require_lookup(manifest_entry.pid, "hierarchy snapshot")?;
@@ -1925,6 +2109,10 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                     root_pid = header.pid;
                     root_level = header.level;
                     centroid_dimensions = routing_object.dimensions;
+                    hierarchy_objects.push(hierarchy_object_summary(
+                        &routing_object.header,
+                        routing_object.child_pids.clone(),
+                    ));
                     root_child_count =
                         u64::try_from(routing_object.child_count()).map_err(|_| {
                             "ec_spire hierarchy snapshot root child count exceeds u64".to_owned()
@@ -1940,17 +2128,24 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                         .ok_or_else(|| {
                             "ec_spire hierarchy snapshot internal object count overflow".to_owned()
                         })?;
+                    let routing_object = unsafe { object_store.read_routing_object(placement)? };
+                    hierarchy_objects.push(hierarchy_object_summary(
+                        &routing_object.header,
+                        routing_object.child_pids.clone(),
+                    ));
                 }
                 storage::SpirePartitionObjectKind::Leaf => {
                     leaf_object_count = leaf_object_count.checked_add(1).ok_or_else(|| {
                         "ec_spire hierarchy snapshot leaf object count overflow".to_owned()
                     })?;
                     leaf_parent_pids.insert(header.parent_pid);
+                    hierarchy_objects.push(hierarchy_object_summary(&header, Vec::new()));
                 }
                 storage::SpirePartitionObjectKind::Delta => {
                     delta_object_count = delta_object_count.checked_add(1).ok_or_else(|| {
                         "ec_spire hierarchy snapshot delta object count overflow".to_owned()
                     })?;
+                    hierarchy_objects.push(hierarchy_object_summary(&header, Vec::new()));
                 }
             }
         }
@@ -1964,6 +2159,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             root_routing_object_count,
             internal_routing_object_count,
             leaf_object_count,
+            validate_recursive_hierarchy_shape(&hierarchy_objects).is_ok(),
         );
 
         Ok(SpireIndexHierarchySnapshot {
@@ -2658,6 +2854,123 @@ mod tests {
             }],
         )
         .expect("root routing object should build")
+    }
+
+    fn hierarchy_summary(
+        pid: u64,
+        kind: storage::SpirePartitionObjectKind,
+        level: u16,
+        parent_pid: u64,
+        child_pids: Vec<u64>,
+    ) -> SpireHierarchyObjectSummary {
+        SpireHierarchyObjectSummary {
+            pid,
+            kind,
+            level,
+            parent_pid,
+            child_pids,
+        }
+    }
+
+    #[test]
+    fn recursive_hierarchy_shape_accepts_single_level_root_to_leaves() {
+        let objects = vec![
+            hierarchy_summary(
+                1,
+                storage::SpirePartitionObjectKind::Root,
+                1,
+                0,
+                vec![11, 12],
+            ),
+            hierarchy_summary(
+                11,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                1,
+                Vec::new(),
+            ),
+            hierarchy_summary(
+                12,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                1,
+                Vec::new(),
+            ),
+        ];
+
+        let has_internal =
+            validate_recursive_hierarchy_shape(&objects).expect("shape should validate");
+
+        assert!(!has_internal);
+    }
+
+    #[test]
+    fn recursive_hierarchy_shape_accepts_internal_level_between_root_and_leaves() {
+        let objects = vec![
+            hierarchy_summary(1, storage::SpirePartitionObjectKind::Root, 2, 0, vec![10]),
+            hierarchy_summary(
+                10,
+                storage::SpirePartitionObjectKind::Internal,
+                1,
+                1,
+                vec![11, 12],
+            ),
+            hierarchy_summary(
+                11,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                10,
+                Vec::new(),
+            ),
+            hierarchy_summary(
+                12,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                10,
+                Vec::new(),
+            ),
+        ];
+
+        let has_internal =
+            validate_recursive_hierarchy_shape(&objects).expect("shape should validate");
+
+        assert!(has_internal);
+    }
+
+    #[test]
+    fn recursive_hierarchy_shape_rejects_level_skip_to_leaf() {
+        let objects = vec![
+            hierarchy_summary(1, storage::SpirePartitionObjectKind::Root, 2, 0, vec![11]),
+            hierarchy_summary(
+                11,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                1,
+                Vec::new(),
+            ),
+        ];
+
+        let err = validate_recursive_hierarchy_shape(&objects).unwrap_err();
+
+        assert!(err.contains("child pid 11 has kind Leaf level 0"));
+    }
+
+    #[test]
+    fn recursive_hierarchy_shape_rejects_orphan_leaf_parent_link() {
+        let objects = vec![
+            hierarchy_summary(1, storage::SpirePartitionObjectKind::Root, 1, 0, vec![11]),
+            hierarchy_summary(
+                11,
+                storage::SpirePartitionObjectKind::Leaf,
+                0,
+                99,
+                Vec::new(),
+            ),
+        ];
+
+        let err = validate_recursive_hierarchy_shape(&objects).unwrap_err();
+
+        assert!(err.contains("parent_pid 99 does not match routing pid 1"));
     }
 
     fn maintenance_leaf_row(
