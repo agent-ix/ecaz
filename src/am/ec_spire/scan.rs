@@ -133,11 +133,11 @@ struct SpireRecursiveLeafRoute {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SpireRecursiveNprobePolicy {
+struct SpireConservativeRecursiveNprobePolicy {
     leaf_level_nprobe: u32,
 }
 
-impl SpireRecursiveNprobePolicy {
+impl SpireConservativeRecursiveNprobePolicy {
     fn new(leaf_level_nprobe: u32) -> Result<Self, String> {
         if leaf_level_nprobe == 0 {
             return Err("ec_spire recursive scan requires leaf-level nprobe > 0".to_owned());
@@ -149,6 +149,7 @@ impl SpireRecursiveNprobePolicy {
         if parent_level <= 1 {
             self.leaf_level_nprobe
         } else {
+            // TODO: replace this conservative default when durable per-level nprobe controls land.
             1
         }
     }
@@ -1528,7 +1529,7 @@ fn route_recursive_routing_objects_to_leaf_routes(
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
-    let nprobe_policy = SpireRecursiveNprobePolicy::new(nprobe)?;
+    let nprobe_policy = SpireConservativeRecursiveNprobePolicy::new(nprobe)?;
     if root_object.header.level == 1 {
         return Ok(route_root_object_to_leaf_pids(
             root_object,
@@ -4204,6 +4205,92 @@ mod tests {
         .unwrap();
 
         assert_eq!(leaf_pids, vec![SPIRE_FIRST_PID + 12, SPIRE_FIRST_PID + 11]);
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_pids_descends_three_levels_conservatively() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            3,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 100, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 200, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_2_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 100,
+            1,
+            2,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 110, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 120, vec![0.4, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_2_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 200,
+            1,
+            2,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 210, vec![-0.5, 0.0])],
+        )
+        .unwrap();
+        let level_1_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 110,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 111, vec![2.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 112, vec![1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_1_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 120,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 121, vec![3.0, 0.0])],
+        )
+        .unwrap();
+        let level_1_c = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 210,
+            1,
+            1,
+            SPIRE_FIRST_PID + 200,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 211, vec![-2.0, 0.0])],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (level_2_a.header.pid, level_2_a),
+            (level_2_b.header.pid, level_2_b),
+            (level_1_a.header.pid, level_1_a),
+            (level_1_b.header.pid, level_1_b),
+            (level_1_c.header.pid, level_1_c),
+        ]);
+
+        let leaf_pids = route_recursive_routing_objects_to_leaf_pids(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            leaf_pids,
+            vec![SPIRE_FIRST_PID + 111, SPIRE_FIRST_PID + 112]
+        );
     }
 
     #[test]
