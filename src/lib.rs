@@ -1572,6 +1572,57 @@ fn ec_spire_index_options_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_level_parameter_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(level, i32),
+        name!(routing_object_count, i64),
+        name!(routing_child_count, i64),
+        name!(target_fanout, i64),
+        name!(relation_nprobe, i32),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(nprobe_policy, String),
+        name!(training_sample_rows, i32),
+        name!(training_iterations, i64),
+        name!(centroid_dimensions, i32),
+        name!(distance_operator, String),
+        name!(assignment_payload_format, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_level_parameter_snapshot") };
+    let rows = unsafe { am::spire_index_level_parameter_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i32::from(row.level),
+            i64::try_from(row.routing_object_count)
+                .expect("routing object count should fit in i64"),
+            i64::try_from(row.routing_child_count).expect("routing child count should fit in i64"),
+            i64::from(row.target_fanout),
+            row.relation_nprobe,
+            row.session_nprobe,
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            row.nprobe_policy.to_owned(),
+            row.training_sample_rows,
+            i64::try_from(row.training_iterations).expect("training iterations should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            row.distance_operator.to_owned(),
+            row.assignment_payload_format.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_sanity_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -6236,19 +6287,107 @@ mod tests {
         )
         .expect("hierarchy snapshot query should succeed")
         .expect("recursive support flag should exist");
+        let per_level_nprobe_supported = Spi::get_one::<bool>(
+            "SELECT per_level_nprobe_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("per-level nprobe support flag should exist");
         let root_rows = Spi::get_one::<i64>(
             "SELECT count(*) FROM \
              ec_spire_index_root_routing_snapshot('ec_spire_recursive_build_idx'::regclass)",
         )
         .expect("root routing snapshot query should succeed")
         .expect("root row count should exist");
+        let level_parameter_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level parameter row count should exist");
+        let level_1_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_target_fanout = Spi::get_one::<i64>(
+            "SELECT target_fanout FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_2_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_target_fanout = Spi::get_one::<i64>(
+            "SELECT target_fanout FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_assignment_payloads = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE assignment_payload_format = 'turboquant' \
+               AND distance_operator = 'inner_product' \
+               AND training_iterations = 8",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level payload count should exist");
 
         assert_eq!(hierarchy_status, "hierarchy_metadata_present");
         assert_eq!(internal_count, 2);
         assert_eq!(leaf_count, 4);
         assert_eq!(hierarchy_depth, 2);
         assert!(recursive_supported);
+        assert!(per_level_nprobe_supported);
         assert_eq!(root_rows, 2);
+        assert_eq!(level_parameter_rows, 2);
+        assert_eq!(level_1_child_count, 4);
+        assert_eq!(level_1_target_fanout, 4);
+        assert_eq!(level_1_effective_nprobe, 2);
+        assert_eq!(level_1_nprobe_source, "auto");
+        assert_eq!(level_2_child_count, 2);
+        assert_eq!(level_2_target_fanout, 2);
+        assert_eq!(level_2_effective_nprobe, 1);
+        assert_eq!(level_2_nprobe_source, "conservative_upper_level");
+        assert_eq!(level_assignment_payloads, 2);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
         let first_id = Spi::get_one::<i64>(

@@ -1,6 +1,6 @@
 //! ec_spire access-method scaffold.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod assign;
 mod build;
@@ -208,6 +208,25 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) assignment_payload_scannable: bool,
     pub(crate) assignment_payload_status: &'static str,
     pub(crate) assignment_payload_recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexLevelParameterSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) level: u16,
+    pub(crate) routing_object_count: u64,
+    pub(crate) routing_child_count: u64,
+    pub(crate) target_fanout: u32,
+    pub(crate) relation_nprobe: i32,
+    pub(crate) session_nprobe: Option<i32>,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) nprobe_policy: &'static str,
+    pub(crate) training_sample_rows: i32,
+    pub(crate) training_iterations: u64,
+    pub(crate) centroid_dimensions: u16,
+    pub(crate) distance_operator: &'static str,
+    pub(crate) assignment_payload_format: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -631,6 +650,51 @@ fn count_snapshot_options_leaf_pids(
     } else {
         scan::count_snapshot_single_level_leaf_pids(snapshot, object_store)
     }
+}
+
+fn level_target_fanout(
+    level: u16,
+    relation_options: options::EcSpireOptions,
+    observed_child_count: u64,
+) -> Result<u32, String> {
+    if level == 1 && relation_options.nlists > 0 {
+        return u32::try_from(relation_options.nlists)
+            .map_err(|_| "ec_spire nlists reloption must be non-negative".to_owned());
+    }
+    if level > 1 {
+        if let Some(recursive_fanout) = relation_options.recursive_fanout() {
+            return Ok(recursive_fanout);
+        }
+    }
+    u32::try_from(observed_child_count)
+        .map_err(|_| "ec_spire observed routing child count exceeds u32".to_owned())
+}
+
+fn level_nprobe_resolution(
+    level: u16,
+    leaf_count: u32,
+    relation_options: options::EcSpireOptions,
+) -> Result<(Option<i32>, u32, &'static str, &'static str), String> {
+    let relation_nprobe = u32::try_from(relation_options.nprobe)
+        .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
+    if level <= 1 {
+        let resolved = options::resolve_scan_nprobe(leaf_count, relation_nprobe);
+        let session_nprobe = resolved
+            .session_nprobe
+            .map(|value| i32::try_from(value).expect("session nprobe should fit in i32"));
+        return Ok((
+            session_nprobe,
+            resolved.effective_nprobe,
+            resolved.source,
+            "relation_or_session_leaf_level",
+        ));
+    }
+    Ok((
+        None,
+        1,
+        "conservative_upper_level",
+        "one_child_above_level_1",
+    ))
 }
 
 fn scan_sanity_status(
@@ -1069,6 +1133,7 @@ fn hierarchy_snapshot_status(
     internal_routing_object_count: u64,
     leaf_object_count: u64,
     hierarchy_shape_valid: bool,
+    per_level_nprobe_supported: bool,
 ) -> (&'static str, &'static str) {
     if root_routing_object_count == 0 && leaf_object_count == 0 {
         return ("empty", "none");
@@ -1096,6 +1161,9 @@ fn hierarchy_snapshot_status(
             "single_level_foundation",
             "set recursive_fanout >= 2 during build to publish recursive routing metadata",
         );
+    }
+    if per_level_nprobe_supported {
+        return ("hierarchy_metadata_present", "none");
     }
     (
         "hierarchy_metadata_present",
@@ -1230,6 +1298,113 @@ pub(crate) unsafe fn index_options_snapshot(
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SpireLevelParameterAccumulator {
+    routing_object_count: u64,
+    routing_child_count: u64,
+    centroid_dimensions: u16,
+}
+
+pub(crate) unsafe fn index_level_parameter_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireIndexLevelParameterSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        collect_level_parameter_snapshot_rows(&snapshot, &object_store, relation_options)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn collect_level_parameter_snapshot_rows(
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+    relation_options: options::EcSpireOptions,
+) -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
+    let mut active_leaf_count = 0_u32;
+    let mut levels = BTreeMap::<u16, SpireLevelParameterAccumulator>::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "level parameter snapshot")?;
+        if lookup.placement.state != meta::SpirePlacementState::Available {
+            continue;
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        match header.kind {
+            storage::SpirePartitionObjectKind::Root
+            | storage::SpirePartitionObjectKind::Internal => {
+                let routing_object = object_store.read_routing_object(lookup.placement)?;
+                let entry = levels.entry(header.level).or_default();
+                entry.routing_object_count =
+                    entry.routing_object_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire level parameter routing object count overflow".to_owned()
+                    })?;
+                entry.routing_child_count = entry
+                    .routing_child_count
+                    .checked_add(u64::try_from(routing_object.child_count()).map_err(|_| {
+                        "ec_spire level parameter routing child count exceeds u64".to_owned()
+                    })?)
+                    .ok_or_else(|| {
+                        "ec_spire level parameter routing child count overflow".to_owned()
+                    })?;
+                entry.centroid_dimensions =
+                    entry.centroid_dimensions.max(routing_object.dimensions);
+            }
+            storage::SpirePartitionObjectKind::Leaf => {
+                active_leaf_count = active_leaf_count.checked_add(1).ok_or_else(|| {
+                    "ec_spire level parameter active leaf count overflow".to_owned()
+                })?;
+            }
+            storage::SpirePartitionObjectKind::Delta => {}
+        }
+    }
+
+    let assignment_payload_format = relation_options.assignment_payload_format();
+    levels
+        .into_iter()
+        .map(|(level, entry)| {
+            let (session_nprobe, effective_nprobe, effective_nprobe_source, nprobe_policy) =
+                level_nprobe_resolution(level, active_leaf_count, relation_options)?;
+            Ok(SpireIndexLevelParameterSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                level,
+                routing_object_count: entry.routing_object_count,
+                routing_child_count: entry.routing_child_count,
+                target_fanout: level_target_fanout(
+                    level,
+                    relation_options,
+                    entry.routing_child_count,
+                )?,
+                relation_nprobe: relation_options.nprobe,
+                session_nprobe,
+                effective_nprobe,
+                effective_nprobe_source,
+                nprobe_policy,
+                training_sample_rows: relation_options.training_sample_rows,
+                training_iterations: u64::try_from(build::SPIRE_DEFAULT_KMEANS_ITERATIONS)
+                    .expect("kmeans iteration count should fit in u64"),
+                centroid_dimensions: entry.centroid_dimensions,
+                distance_operator: "inner_product",
+                assignment_payload_format: assignment_payload_format_name(
+                    assignment_payload_format,
+                ),
+            })
+        })
+        .collect()
 }
 
 pub(crate) unsafe fn index_scan_sanity_snapshot(
@@ -2087,7 +2262,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
     let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
-            let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true);
+            let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true, false);
             return Ok(SpireIndexHierarchySnapshot {
                 active_epoch: 0,
                 root_pid: 0,
@@ -2201,11 +2376,13 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             max_observed_level.max(root_level)
         };
         let hierarchy_shape_valid = validate_recursive_hierarchy_shape(&hierarchy_objects).is_ok();
+        let per_level_nprobe_supported = hierarchy_shape_valid && internal_routing_object_count > 0;
         let (status, recommendation) = hierarchy_snapshot_status(
             root_routing_object_count,
             internal_routing_object_count,
             leaf_object_count,
             hierarchy_shape_valid,
+            per_level_nprobe_supported,
         );
 
         Ok(SpireIndexHierarchySnapshot {
@@ -2225,7 +2402,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                 "ec_spire hierarchy snapshot leaf parent count exceeds u64".to_owned()
             })?,
             recursive_routing_supported: hierarchy_shape_valid && internal_routing_object_count > 0,
-            per_level_nprobe_supported: false,
+            per_level_nprobe_supported,
             status,
             recommendation,
         })
