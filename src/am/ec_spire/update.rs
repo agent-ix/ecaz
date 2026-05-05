@@ -794,6 +794,38 @@ pub(super) fn build_split_replacement_leaf_materialization_from_rows(
     )
 }
 
+fn filter_split_replacement_rows_to_fetched_sources(
+    replacement_rows: Vec<SpireReplacementLeafRows>,
+    fetched_sources: &[SpireSplitReplacementFetchedSourceVector],
+) -> Result<Vec<SpireReplacementLeafRows>, String> {
+    let mut fetched_heap_tids = HashSet::with_capacity(fetched_sources.len());
+    for fetched in fetched_sources {
+        if fetched.heap_tid == ItemPointer::INVALID {
+            return Err(
+                "ec_spire split replacement fetched source rows require valid heap tids".to_owned(),
+            );
+        }
+        if !fetched_heap_tids.insert(fetched.heap_tid) {
+            return Err(format!(
+                "ec_spire split replacement fetched source rows got duplicate heap tid {}:{}",
+                fetched.heap_tid.block_number, fetched.heap_tid.offset_number
+            ));
+        }
+    }
+
+    Ok(replacement_rows
+        .into_iter()
+        .map(|row_group| SpireReplacementLeafRows {
+            base_pid: row_group.base_pid,
+            rows: row_group
+                .rows
+                .into_iter()
+                .filter(|assignment| fetched_heap_tids.contains(&assignment.heap_tid))
+                .collect(),
+        })
+        .collect())
+}
+
 pub(super) unsafe fn fetch_split_replacement_source_vectors(
     heap_relation: pgrx::pg_sys::Relation,
     snapshot: pgrx::pg_sys::Snapshot,
@@ -819,6 +851,10 @@ pub(super) unsafe fn fetch_split_replacement_source_vectors(
                 )
             }?
             else {
+                // Heap rows that are no longer visible are omitted here; the
+                // heap-source wrapper drops their assignment rows before
+                // materialization so exact source coverage still holds for
+                // the live row set.
                 continue;
             };
             fetched_sources.push(SpireSplitReplacementFetchedSourceVector {
@@ -1489,14 +1525,24 @@ pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_executi
             &replacement_rows,
         )?
     };
-    build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources(
-        snapshot,
-        object_store,
-        selected,
+    let replacement_rows =
+        filter_split_replacement_rows_to_fetched_sources(replacement_rows, &fetched_sources)?;
+    let parent =
+        load_selected_scheduled_replacement_parent_routing(snapshot, object_store, selected)?;
+    let materialized = build_split_replacement_leaf_materialization_from_rows(
+        &selected.decision,
+        &selected.lock_plan.pid_plan,
+        replacement_rows,
         fetched_sources,
         dimensions,
         seed,
         max_iterations,
+    )?;
+    build_relation_selected_scheduled_split_replacement_execution_input(
+        selected,
+        &parent,
+        materialized.centroids,
+        materialized.leaf_inputs,
         parent_object_version,
         leaf_object_version,
         published_at_micros,
@@ -3856,6 +3902,7 @@ mod tests {
         build_split_replacement_leaf_object_inputs, build_split_replacement_source_rows,
         choose_leaf_replacement_schedule, choose_scheduled_replacement_publish_lock_plan,
         collect_replacement_leaf_rows, collect_selected_scheduled_replacement_leaf_rows,
+        filter_split_replacement_rows_to_fetched_sources,
         load_scheduled_replacement_parent_routing,
         load_selected_scheduled_replacement_parent_routing, plan_leaf_replacement_pids,
         plan_rechecked_scheduled_replacement_publish_lock,
@@ -7460,6 +7507,61 @@ mod tests {
         )
         .unwrap_err()
         .contains("unused source vector"));
+    }
+
+    #[test]
+    fn split_replacement_rows_filter_to_fetched_heap_sources() {
+        let filtered = filter_split_replacement_rows_to_fetched_sources(
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![
+                    primary_row(1, 20, 1),
+                    primary_row(2, 20, 2),
+                    primary_row(3, 20, 3),
+                ],
+            }],
+            &[
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 3),
+                    source_vector: vec![-1.0, 0.0],
+                },
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].base_pid, 12);
+        assert_eq!(
+            filtered[0]
+                .rows
+                .iter()
+                .map(|row| row.heap_tid)
+                .collect::<Vec<_>>(),
+            vec![tid(20, 1), tid(20, 3)]
+        );
+
+        assert!(filter_split_replacement_rows_to_fetched_sources(
+            vec![SpireReplacementLeafRows {
+                base_pid: 12,
+                rows: vec![primary_row(1, 20, 1)],
+            }],
+            &[
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+                SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+            ],
+        )
+        .unwrap_err()
+        .contains("duplicate heap tid"));
     }
 
     #[test]
