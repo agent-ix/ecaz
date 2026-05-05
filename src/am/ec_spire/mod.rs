@@ -259,6 +259,12 @@ pub(crate) struct SpireIndexMaintenanceRunResult {
     pub(crate) maintenance_message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireScheduledReplacementObjectVersionPlan {
+    parent_object_version: u64,
+    leaf_object_version: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexInsertDebtSnapshot {
     pub(crate) active_epoch: u64,
@@ -1368,6 +1374,75 @@ fn selected_maintenance_run_result(
         next_local_vec_seq: selected.lock_plan.publish_plan.next_local_vec_seq,
         published,
         maintenance_message,
+    })
+}
+
+fn next_spire_object_version(current: u64, label: &str, pid: u64) -> Result<u64, String> {
+    if current == 0 {
+        return Err(format!(
+            "ec_spire {label} object_version 0 is invalid for pid {pid}"
+        ));
+    }
+    current.checked_add(1).ok_or_else(|| {
+        format!("ec_spire {label} object_version overflow for pid {pid}: current {current}")
+    })
+}
+
+fn scheduled_replacement_object_version_plan(
+    selected: &update::SpireSelectedScheduledReplacementPublishLockPlan,
+    parent_object_version: u64,
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<SpireScheduledReplacementObjectVersionPlan, String> {
+    let replacement_parent_object_version = next_spire_object_version(
+        parent_object_version,
+        "scheduled replacement parent",
+        selected.decision.replaced_parent_pid,
+    )?;
+    let affected_leaf_pids = selected
+        .decision
+        .affected_leaf_pids
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let mut seen_leaf_pids = HashSet::with_capacity(affected_leaf_pids.len());
+    let mut max_leaf_object_version = None;
+    for row in rows {
+        if !affected_leaf_pids.contains(&row.leaf_pid) {
+            continue;
+        }
+        if !seen_leaf_pids.insert(row.leaf_pid) {
+            return Err(format!(
+                "ec_spire scheduled replacement saw duplicate affected leaf pid {}",
+                row.leaf_pid
+            ));
+        }
+        let leaf_object_version = next_spire_object_version(
+            row.object_version,
+            "scheduled replacement leaf",
+            row.leaf_pid,
+        )?;
+        max_leaf_object_version = Some(
+            max_leaf_object_version
+                .unwrap_or(leaf_object_version)
+                .max(leaf_object_version),
+        );
+    }
+    if seen_leaf_pids.len() != affected_leaf_pids.len() {
+        let missing = affected_leaf_pids
+            .difference(&seen_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "ec_spire scheduled replacement object version plan missing affected leaf rows: {missing:?}"
+        ));
+    }
+    let leaf_object_version = max_leaf_object_version.ok_or_else(|| {
+        "ec_spire scheduled replacement object version plan requires affected leaf rows".to_owned()
+    })?;
+
+    Ok(SpireScheduledReplacementObjectVersionPlan {
+        parent_object_version: replacement_parent_object_version,
+        leaf_object_version,
     })
 }
 
@@ -2633,6 +2708,68 @@ mod tests {
         assert_eq!(result.replacement_leaf_pids, Vec::<u64>::new());
         assert_eq!(result.next_pid, 40);
         assert!(!result.published);
+    }
+
+    #[test]
+    fn scheduled_replacement_object_version_plan_uses_successor_versions() {
+        let selected = selected_split_maintenance_plan();
+        let mut unaffected = maintenance_leaf_row(11, 1, 10, false, false);
+        unaffected.object_version = 9;
+        let mut affected = maintenance_leaf_row(12, 1, 100, true, false);
+        affected.object_version = 3;
+
+        let plan = scheduled_replacement_object_version_plan(&selected, 4, &[unaffected, affected])
+            .expect("object version plan should build");
+
+        assert_eq!(plan.parent_object_version, 5);
+        assert_eq!(plan.leaf_object_version, 4);
+    }
+
+    #[test]
+    fn scheduled_replacement_object_version_plan_uses_max_affected_leaf_successor() {
+        let selected = update::SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: update::SpireLeafReplacementScheduleDecision {
+                mode: update::SpireLeafReplacementScheduleMode::Merge,
+                active_epoch: 7,
+                replaced_parent_pid: 1,
+                affected_leaf_pids: vec![11, 12],
+                replacement_leaf_count: 1,
+                reason: "sparsest_same_parent_merge_pair",
+            },
+            lock_plan: update::SpireScheduledReplacementPublishLockPlan {
+                pid_plan: update::SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![40],
+                    reuses_existing_pid: false,
+                    next_pid: 41,
+                },
+                publish_plan: update::SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: meta::SpireConsistencyMode::Strict,
+                    next_pid: 41,
+                    next_local_vec_seq: 100,
+                },
+            },
+        };
+        let mut first = maintenance_leaf_row(11, 1, 3, false, true);
+        first.object_version = 2;
+        let mut second = maintenance_leaf_row(12, 1, 1, false, true);
+        second.object_version = 5;
+
+        let plan = scheduled_replacement_object_version_plan(&selected, 4, &[first, second])
+            .expect("object version plan should build");
+
+        assert_eq!(plan.parent_object_version, 5);
+        assert_eq!(plan.leaf_object_version, 6);
+    }
+
+    #[test]
+    fn scheduled_replacement_object_version_plan_rejects_missing_affected_leaf() {
+        let selected = selected_split_maintenance_plan();
+        let rows = vec![maintenance_leaf_row(11, 1, 10, false, false)];
+
+        let err = scheduled_replacement_object_version_plan(&selected, 4, &rows).unwrap_err();
+
+        assert!(err.contains("missing affected leaf rows"));
     }
 
     #[test]
