@@ -894,6 +894,11 @@ diagnostics without scoring assignments.
   entrypoints, preserving planned action, affected/replacement PIDs, publish
   epoch, allocator cursors, and whether a replacement epoch was actually
   published.
+- [x] **Locked maintenance run plan.** Scheduler execution now exposes
+  `ec_spire_index_locked_maintenance_run_plan(index_oid)`, a no-write run-plan
+  SQL surface that holds the publish lock, loads the active snapshot, chooses
+  the same selected replacement candidate as the live scheduler, and reports
+  the run-result row with `published = false`.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
