@@ -1019,7 +1019,10 @@ diagnostics without scoring assignments.
   runs a pure recursive shape validator over active root/internal/leaf/delta
   metadata, preserving the single-level status while reporting malformed
   recursive parent/child level shapes as invalid before level-aware scan
-  routing descends through them.
+  routing descends through them. Now that opt-in recursive `ambuild` publishes
+  internal routing objects and recursive scan routing is live, the hierarchy
+  diagnostic reports `recursive_routing_supported = true` for valid hierarchies
+  with internal routing objects while leaving single-level indexes unsupported.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
