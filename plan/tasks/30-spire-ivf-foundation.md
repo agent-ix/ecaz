@@ -664,6 +664,11 @@ diagnostics without scoring assignments.
   folded selected leaf rows from the active snapshot, hydrates fetched source
   vectors, trains/routes split replacement materialization, and feeds the
   existing relation split execution-input validator.
+- [x] **Selected split heap-source execution-input helper.** Scheduler
+  execution now has the relation wrapper that collects folded selected split
+  rows, fetches indexed heap source vectors for those rows, and delegates to
+  the checked selected-plan source execution-input builder. The remaining live
+  publish slice can focus on lock-time orchestration and epoch publication.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
