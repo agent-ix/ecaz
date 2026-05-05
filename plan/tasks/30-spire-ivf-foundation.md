@@ -1023,6 +1023,10 @@ diagnostics without scoring assignments.
   with internal routing objects while leaving single-level indexes unsupported.
   Per-level `nprobe` metadata remains deferred; the current live routing policy
   applies configured `nprobe` at level 1 and probes one child above that.
+  `ec_spire_index_options_snapshot(index_oid)` now reports `recursive_fanout`
+  plus whether the relation is using the recursive build path, and options /
+  scan-sanity active leaf counts now traverse recursive hierarchies instead of
+  treating root-to-internal edges as leaves.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
