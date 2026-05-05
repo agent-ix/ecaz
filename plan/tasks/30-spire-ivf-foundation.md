@@ -653,6 +653,12 @@ diagnostics without scoring assignments.
   rows from fetched source vectors and then trains/routes replacement leaf
   materialization through the existing split materializer. Live relation work
   can now focus on exact heap-source fetching and selected-plan invocation.
+- [x] **Split replacement source-vector fetch helper.** Scheduler execution now
+  has a relation-ready bridge that reuses the SPIRE heap-rerank indexed-vector
+  loader to fetch `ecvector` or `tqvector` source vectors for folded split
+  replacement rows. The collector returns the exact fetched source records the
+  source-row hydration helper consumes, leaving selected-plan invocation as the
+  remaining split publish wiring.
 - [x] **Scheduled routing replacement child helper.** Scheduler execution now
   has a pure helper that pairs fresh scheduled replacement PIDs with
   scheduler-provided replacement centroids in PID-plan order. It validates
