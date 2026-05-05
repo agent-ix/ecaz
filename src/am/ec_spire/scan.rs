@@ -2272,9 +2272,11 @@ mod tests {
         SpirePidAllocator, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::build::{
-        build_partitioned_single_level_leaf_epoch_draft, build_single_level_leaf_epoch_draft,
-        SpirePartitionedSingleLevelBuildInput, SpireSingleLevelBuildInput,
-        SpireSingleLevelCentroidPlan,
+        build_local_recursive_routing_epoch_draft, build_partitioned_single_level_leaf_epoch_draft,
+        build_recursive_routing_hierarchy_draft, build_single_level_leaf_epoch_draft,
+        SpirePartitionedSingleLevelBuildInput, SpireRecursiveRoutingBuildInput,
+        SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
+        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
@@ -4558,6 +4560,107 @@ mod tests {
         assert_eq!(recursive_candidates, flat_candidates);
         assert_eq!(recursive_candidates[0].pid, SPIRE_FIRST_PID + 12);
         assert_eq!(recursive_candidates[0].heap_tid, tid(10, 2));
+    }
+
+    #[test]
+    fn materialized_recursive_routing_epoch_scans_quantized_candidates() {
+        let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
+        let leaf_specs = [
+            (SPIRE_FIRST_PID + 20, 1, tid(10, 1), [0.5, 0.0]),
+            (SPIRE_FIRST_PID + 21, 2, tid(10, 2), [1.5, 0.0]),
+            (SPIRE_FIRST_PID + 22, 3, tid(10, 3), [-1.5, 0.0]),
+            (SPIRE_FIRST_PID + 23, 4, tid(10, 4), [-0.5, 0.0]),
+        ];
+        let mut pid_allocator = SpirePidAllocator::default();
+        let routing_draft = build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 1,
+                dimensions: 2,
+                target_fanout: 2,
+                seed: 42,
+                children: leaf_specs
+                    .iter()
+                    .map(|(pid, _, _, centroid)| SpireRecursiveRoutingChildInput {
+                        child_pid: *pid,
+                        child_level: 0,
+                        centroid: centroid.to_vec(),
+                        source_count: 1,
+                    })
+                    .collect(),
+            },
+            &mut pid_allocator,
+        )
+        .unwrap();
+        let mut leaf_parent_pids = HashMap::new();
+        for object in routing_draft
+            .routing_objects
+            .iter()
+            .filter(|object| object.header.level == 1)
+        {
+            for child in object.children() {
+                leaf_parent_pids.insert(child.child_pid, object.header.pid);
+            }
+        }
+
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let mut leaf_placements = Vec::new();
+        for (pid, vec_seq, heap_tid, source_vector) in &leaf_specs {
+            let input = encode_assignment_input(payload_format, *heap_tid, source_vector).unwrap();
+            let rows = vec![SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(*vec_seq),
+                heap_tid: *heap_tid,
+                payload_format: input.payload_format,
+                gamma: input.gamma,
+                encoded_payload: input.encoded_payload,
+            }];
+            leaf_placements.push(
+                object_store
+                    .insert_leaf_object_v2_from_rows(
+                        7,
+                        *pid,
+                        1,
+                        *leaf_parent_pids.get(pid).unwrap(),
+                        &rows,
+                    )
+                    .unwrap(),
+            );
+        }
+        let epoch_draft = build_local_recursive_routing_epoch_draft(
+            SpireRecursiveRoutingEpochInput {
+                epoch: 7,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                routing_draft,
+                leaf_placements,
+            },
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_draft.epoch_manifest,
+            &epoch_draft.object_manifest,
+            &epoch_draft.placement_directory,
+        )
+        .unwrap();
+
+        let candidates = collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            payload_format,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            Some(2),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 21);
+        assert_eq!(candidates[0].heap_tid, tid(10, 2));
+        assert_eq!(candidates[1].pid, SPIRE_FIRST_PID + 20);
+        assert_eq!(candidates[1].heap_tid, tid(10, 1));
     }
 
     #[test]
