@@ -1666,6 +1666,41 @@ impl SpirePartitionedSingleLevelBuildDraft {
     }
 }
 
+impl SpireRecursiveRoutingEpochDraft {
+    fn publish_input(&self, next_local_vec_seq: u64) -> SpirePublishCoordinatorInput<'_> {
+        SpirePublishCoordinatorInput {
+            epoch_manifest: &self.epoch_manifest,
+            object_manifest: &self.object_manifest,
+            placement_directory: &self.placement_directory,
+            next_pid: self.next_pid,
+            next_local_vec_seq,
+        }
+    }
+
+    pub(super) fn encode_manifest_bundle(
+        &self,
+        next_local_vec_seq: u64,
+    ) -> Result<SpireEncodedManifestBundle, String> {
+        encode_manifest_bundle_for_publish(self.publish_input(next_local_vec_seq))
+    }
+
+    pub(super) fn root_control_state(
+        &self,
+        next_local_vec_seq: u64,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireRootControlState, String> {
+        root_control_state_for_publish(self.publish_input(next_local_vec_seq), locators)
+    }
+
+    pub(super) fn encode_publish_bundle(
+        &self,
+        next_local_vec_seq: u64,
+        locators: SpirePublishedManifestLocators,
+    ) -> Result<SpireEncodedPublishBundle, String> {
+        encode_publish_bundle_for_publish(self.publish_input(next_local_vec_seq), locators)
+    }
+}
+
 pub(super) fn train_single_level_centroid_plan(
     dimensions: u16,
     source_vectors: &[Vec<f32>],
@@ -3171,6 +3206,64 @@ mod tests {
             local_vec_id_allocator.next_local_vec_seq(),
             SPIRE_FIRST_LOCAL_VEC_SEQ
         );
+    }
+
+    #[test]
+    fn recursive_epoch_draft_encodes_publish_bundle_with_allocator_cursor() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
+            assignment_indexes: vec![0, 1],
+        };
+        let coordinator = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap();
+        let next_local_vec_seq = coordinator.next_local_vec_seq;
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = super::build_local_recursive_routing_epoch_from_leaf_inputs(
+            coordinator.epoch_input,
+            &mut object_store,
+        )
+        .unwrap();
+
+        let encoded = draft
+            .encode_publish_bundle(next_local_vec_seq, manifest_locators())
+            .unwrap();
+        let root_control = SpireRootControlState::decode(&encoded.root_control_state).unwrap();
+
+        assert_eq!(
+            SpireEpochManifest::decode(&encoded.manifests.epoch_manifest).unwrap(),
+            draft.epoch_manifest
+        );
+        assert_eq!(
+            SpireObjectManifest::decode(&encoded.manifests.object_manifest).unwrap(),
+            draft.object_manifest
+        );
+        assert_eq!(
+            SpirePlacementDirectory::decode(&encoded.manifests.placement_directory).unwrap(),
+            draft.placement_directory
+        );
+        assert_eq!(root_control.active_epoch, draft.epoch_manifest.epoch);
+        assert_eq!(root_control.next_pid, draft.next_pid);
+        assert_eq!(root_control.next_local_vec_seq, next_local_vec_seq);
+        assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
+        assert_eq!(root_control.object_manifest_tid, tid(70, 2));
+        assert_eq!(root_control.placement_directory_tid, tid(70, 3));
     }
 
     #[test]
