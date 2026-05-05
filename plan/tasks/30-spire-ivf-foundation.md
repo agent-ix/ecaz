@@ -1030,8 +1030,9 @@ diagnostics without scoring assignments.
   level-aware root/internal routing objects without relation I/O. Build now
   also has a local recursive routing epoch materializer that writes routing
   objects, combines them with already-written leaf placements, validates the
-  manifest/directory snapshot, and rejects missing leaf placement coverage.
-  Live relation-backed recursive build remains open.
+  manifest/directory snapshot, rejects missing leaf placement coverage, and
+  verifies each leaf object's stored parent PID against its level-1 routing
+  parent. Live relation-backed recursive build remains open.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
