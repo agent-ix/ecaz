@@ -18,7 +18,10 @@ use super::meta::{
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
     SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
 };
-use super::scan::{collect_validated_snapshot_visible_primary_rows, SpireLeafScanRow};
+use super::scan::{
+    collect_validated_snapshot_visible_primary_rows, load_indexed_source_vector_from_heap_row,
+    SpireLeafScanRow,
+};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
     SpireLeafAssignmentRow, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
@@ -27,6 +30,7 @@ use super::storage::{
 };
 use super::SpireIndexLeafSnapshotRow;
 use crate::am::common::training as common_training;
+use crate::am::ec_hnsw::source;
 use crate::storage::page::ItemPointer;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -788,6 +792,42 @@ pub(super) fn build_split_replacement_leaf_materialization_from_rows(
         seed,
         max_iterations,
     )
+}
+
+pub(super) unsafe fn fetch_split_replacement_source_vectors(
+    heap_relation: pgrx::pg_sys::Relation,
+    snapshot: pgrx::pg_sys::Snapshot,
+    slot: *mut pgrx::pg_sys::TupleTableSlot,
+    indexed_attribute: source::IndexedVectorAttribute,
+    replacement_rows: &[SpireReplacementLeafRows],
+) -> Result<Vec<SpireSplitReplacementFetchedSourceVector>, String> {
+    let row_count = replacement_rows
+        .iter()
+        .map(|row_group| row_group.rows.len())
+        .sum();
+    let mut fetched_sources = Vec::with_capacity(row_count);
+    for row_group in replacement_rows {
+        for assignment in &row_group.rows {
+            let Some(source_vector) = unsafe {
+                load_indexed_source_vector_from_heap_row(
+                    heap_relation,
+                    snapshot,
+                    slot,
+                    indexed_attribute,
+                    assignment.heap_tid,
+                    "ec_spire split replacement source vector",
+                )
+            }?
+            else {
+                continue;
+            };
+            fetched_sources.push(SpireSplitReplacementFetchedSourceVector {
+                heap_tid: assignment.heap_tid,
+                source_vector,
+            });
+        }
+    }
+    Ok(fetched_sources)
 }
 
 pub(super) fn build_split_replacement_leaf_materialization(

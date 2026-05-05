@@ -1658,24 +1658,36 @@ unsafe fn exact_heap_source_inner_product(
     query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<Option<f32>, String> {
+    let Some(source_vector) = unsafe {
+        load_indexed_source_vector_from_heap_row(
+            heap_relation,
+            snapshot,
+            slot,
+            indexed_attribute,
+            heap_tid,
+            "ec_spire heap rerank source vector",
+        )
+    }?
+    else {
+        return Ok(None);
+    };
+    exact_source_inner_product(query, &source_vector).map(Some)
+}
+
+pub(super) unsafe fn load_indexed_source_vector_from_heap_row(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    indexed_attribute: source::IndexedVectorAttribute,
+    heap_tid: ItemPointer,
+    label: &str,
+) -> Result<Option<Vec<f32>>, String> {
     if !unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? } {
         return Ok(None);
     }
-    let datum = unsafe {
-        required_slot_datum(
-            slot,
-            indexed_attribute.attnum,
-            "ec_spire heap rerank source vector",
-        )?
-    };
-    let result = unsafe {
-        indexed_vector_datum_to_source_vector(
-            datum,
-            indexed_attribute.kind,
-            "ec_spire heap rerank source vector",
-        )
-    }
-    .and_then(|source_vector| exact_source_inner_product(query, &source_vector));
+    let datum = unsafe { required_slot_datum(slot, indexed_attribute.attnum, label)? };
+    let result =
+        unsafe { indexed_vector_datum_to_source_vector(datum, indexed_attribute.kind, label) };
     unsafe { pg_sys::ExecClearTuple(slot) };
     result.map(Some)
 }
