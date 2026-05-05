@@ -1424,6 +1424,44 @@ pub(super) fn build_relation_selected_scheduled_split_replacement_execution_inpu
     )
 }
 
+pub(super) fn build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected: &SpireSelectedScheduledReplacementPublishLockPlan,
+    fetched_sources: Vec<SpireSplitReplacementFetchedSourceVector>,
+    dimensions: usize,
+    seed: u64,
+    max_iterations: usize,
+    parent_object_version: u64,
+    leaf_object_version: u64,
+    published_at_micros: i64,
+    retain_until_micros: i64,
+) -> Result<SpireRelationScheduledReplacementExecutionInput, String> {
+    let parent =
+        load_selected_scheduled_replacement_parent_routing(snapshot, object_store, selected)?;
+    let replacement_rows =
+        collect_selected_scheduled_replacement_leaf_rows(snapshot, object_store, selected)?;
+    let materialized = build_split_replacement_leaf_materialization_from_rows(
+        &selected.decision,
+        &selected.lock_plan.pid_plan,
+        replacement_rows,
+        fetched_sources,
+        dimensions,
+        seed,
+        max_iterations,
+    )?;
+    build_relation_selected_scheduled_split_replacement_execution_input(
+        selected,
+        &parent,
+        materialized.centroids,
+        materialized.leaf_inputs,
+        parent_object_version,
+        leaf_object_version,
+        published_at_micros,
+        retain_until_micros,
+    )
+}
+
 pub(super) fn build_local_selected_scheduled_split_replacement_execution_input(
     selected: &SpireSelectedScheduledReplacementPublishLockPlan,
     parent: &SpireRoutingPartitionObject,
@@ -3764,6 +3802,7 @@ mod tests {
         build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot,
         build_relation_selected_scheduled_split_replacement_execution_input,
         build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot,
+        build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources,
         build_replacement_epoch_draft, build_replacement_epoch_draft_from_object_placements,
         build_scheduled_merge_replacement_centroids,
         build_scheduled_merge_replacement_routing_parts,
@@ -5141,6 +5180,76 @@ mod tests {
                 .map(|leaf_input| leaf_input.pid)
                 .collect::<Vec<_>>(),
             vec![21, 22]
+        );
+    }
+
+    #[test]
+    fn relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources_materializes(
+    ) {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = root_routing_object();
+        let fixture = scheduled_replacement_snapshot_fixture(&mut object_store, 7, &root);
+        let snapshot = fixture.snapshot();
+        let selected = SpireSelectedScheduledReplacementPublishLockPlan {
+            decision: scheduled_split_decision(7),
+            lock_plan: SpireScheduledReplacementPublishLockPlan {
+                pid_plan: SpireLeafReplacementPidPlan {
+                    replacement_pids: vec![21, 22],
+                    reuses_existing_pid: false,
+                    next_pid: 23,
+                },
+                publish_plan: SpireScheduledReplacementPublishPlan {
+                    epoch: 8,
+                    consistency_mode: SpireConsistencyMode::Strict,
+                    next_pid: 23,
+                    next_local_vec_seq: 7,
+                },
+            },
+        };
+
+        let input =
+            build_relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources(
+                &snapshot,
+                &object_store,
+                &selected,
+                vec![SpireSplitReplacementFetchedSourceVector {
+                    heap_tid: tid(10, 2),
+                    source_vector: vec![1.0, 0.0],
+                }],
+                2,
+                42,
+                8,
+                4,
+                2,
+                3000,
+                4000,
+            )
+            .unwrap();
+
+        assert_eq!(input.epoch, 8);
+        assert_eq!(
+            input
+                .replacement_parent
+                .children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 21, 22, 13]
+        );
+        assert_eq!(
+            input
+                .replacement_children
+                .iter()
+                .map(|child| (child.child_pid, child.centroid.clone()))
+                .collect::<Vec<_>>(),
+            vec![(21, vec![1.0, 0.0]), (22, vec![1.0, 0.0])]
+        );
+        assert_eq!(
+            input
+                .leaf_inputs
+                .iter()
+                .map(|leaf_input| (leaf_input.pid, leaf_input.rows.len()))
+                .collect::<Vec<_>>(),
+            vec![(21, 1), (22, 0)]
         );
     }
 
