@@ -6236,6 +6236,23 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "ec_spire recursive_fanout reloption must be 0 or at least 2")]
+    fn test_ec_spire_recursive_fanout_one_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_fanout_one \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_fanout_one_idx \
+             ON ec_spire_recursive_fanout_one USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 1)",
+        )
+        .expect("recursive_fanout = 1 should be rejected");
+    }
+
+    #[pg_test]
     fn test_ec_spire_recursive_fanout_build_hierarchy() {
         Spi::run(
             "CREATE TABLE ec_spire_recursive_build (id bigint primary key, embedding ecvector)",

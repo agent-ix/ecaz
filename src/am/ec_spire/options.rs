@@ -113,13 +113,21 @@ impl EcSpireOptions {
     }
 
     pub(super) fn recursive_fanout(self) -> Option<u32> {
+        validate_recursive_fanout_value(self.recursive_fanout)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
         match self.recursive_fanout {
             0 => None,
             value if value >= 2 => Some(value as u32),
-            _ => {
-                pgrx::error!("ec_spire recursive_fanout reloption must be 0 or at least 2")
-            }
+            _ => unreachable!("recursive_fanout validation rejects value 1"),
         }
+    }
+}
+
+fn validate_recursive_fanout_value(value: i32) -> Result<(), String> {
+    if value == 0 || value >= 2 {
+        Ok(())
+    } else {
+        Err("ec_spire recursive_fanout reloption must be 0 or at least 2".to_owned())
     }
 }
 
@@ -325,7 +333,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
             pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"recursive_fanout".as_ptr(),
-                c"Opt-in recursive SPIRE routing fanout; 0 keeps single-level build behavior."
+                c"Opt-in recursive SPIRE routing fanout; 0 keeps single-level build behavior, values must be at least 2."
                     .as_ptr(),
                 EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
                 EC_SPIRE_MIN_RECURSIVE_FANOUT,
@@ -437,6 +445,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
     }
 
     let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
+    validate_recursive_fanout_value(reloptions.recursive_fanout)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let storage_format_reloption = unsafe {
         read_string_reloption(
             rd_options,
@@ -480,8 +490,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 mod tests {
     use super::{
         resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, EcSpireOptions, SpireCandidateDedupeMode,
-        SpireStorageFormat,
+        resolve_single_level_scan_plan_values, validate_recursive_fanout_value, EcSpireOptions,
+        SpireCandidateDedupeMode, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -513,6 +523,14 @@ mod tests {
             SpireStorageFormat::RaBitQ.assignment_payload_format(),
             SpireAssignmentPayloadFormat::RaBitQ
         );
+    }
+
+    #[test]
+    fn recursive_fanout_validation_rejects_one() {
+        assert!(validate_recursive_fanout_value(0).is_ok());
+        assert!(validate_recursive_fanout_value(2).is_ok());
+        assert!(validate_recursive_fanout_value(32).is_ok());
+        assert!(validate_recursive_fanout_value(1).is_err());
     }
 
     #[test]
