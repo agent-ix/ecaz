@@ -3609,6 +3609,74 @@ mod tests {
     }
 
     #[test]
+    fn recursive_route_matches_flat_single_level_on_small_hierarchy() {
+        let flat_root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 21, vec![-1.5, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 22, vec![-0.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let recursive_root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID + 100,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![-0.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+
+        let query = [1.0, 0.0];
+        let flat_best = route_root_object_to_leaf_pids(&flat_root, &query, 1).unwrap();
+        let recursive_best = route_recursive_routing_objects_to_leaf_pids(
+            &recursive_root,
+            &routing_objects_by_pid,
+            &query,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(flat_best, vec![SPIRE_FIRST_PID + 12]);
+        assert_eq!(recursive_best, flat_best);
+    }
+
+    #[test]
     fn rerank_scored_candidates_by_ip_rescores_prefix_and_truncates() {
         let mut candidates = vec![
             scored_candidate(1, 10, 1, -5.0),

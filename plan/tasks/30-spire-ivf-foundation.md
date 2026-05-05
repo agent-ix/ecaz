@@ -1045,7 +1045,11 @@ diagnostics without scoring assignments.
   routing objects, validates internal child kind/parent/level shape while
   descending, and returns selected leaf PIDs without relation I/O.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
-  same dataset can be queried as flat single-level IVF and recursive SPIRE.
+  same dataset can be queried as flat single-level IVF and recursive SPIRE. The
+  pure scan helper tests now include a four-leaf synthetic hierarchy where a
+  flat root and a two-level recursive root/internal shape route the same query
+  to the same best leaf. Relation-backed SQL smoke and candidate scoring over
+  real leaf objects remain open for the final Phase 3 comparison packet.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
