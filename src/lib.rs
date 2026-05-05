@@ -5837,6 +5837,39 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "ec_spire maintenance split/merge is deferred for recursive SPIRE indexes until recursive update propagation lands"
+    )]
+    fn test_ec_spire_recursive_maintenance_run_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_maintenance_rejected \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_maintenance_rejected (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_maintenance_rejected_idx \
+             ON ec_spire_recursive_maintenance_rejected \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_index_maintenance_run(\
+             'ec_spire_recursive_maintenance_rejected_idx'::regclass)",
+        )
+        .expect("recursive maintenance should be rejected");
+    }
+
+    #[pg_test]
     fn test_ec_spire_maintenance_run_merge_publish_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_maintenance_run_merge_sql \

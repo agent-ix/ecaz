@@ -1812,6 +1812,28 @@ fn no_maintenance_run_result(
     }
 }
 
+const RECURSIVE_MAINTENANCE_DEFERRED_MESSAGE: &str =
+    "ec_spire maintenance split/merge is deferred for recursive SPIRE indexes until recursive update propagation lands";
+
+fn reject_recursive_maintenance_until_update_propagation<R: storage::SpireObjectReader>(
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &R,
+) -> Result<(), String> {
+    for entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(entry.pid, "recursive maintenance guard")?;
+        if lookup.placement.state != meta::SpirePlacementState::Available {
+            continue;
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind == storage::SpirePartitionObjectKind::Internal
+            || (header.kind == storage::SpirePartitionObjectKind::Root && header.level > 1)
+        {
+            return Err(RECURSIVE_MAINTENANCE_DEFERRED_MESSAGE.to_owned());
+        }
+    }
+    Ok(())
+}
+
 fn selected_maintenance_run_result(
     selected: update::SpireSelectedScheduledReplacementPublishLockPlan,
     maintenance_status: &'static str,
@@ -2094,6 +2116,7 @@ pub(crate) unsafe fn index_maintenance_plan_snapshot(
         )?;
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
         maintenance_plan_snapshot_from_rows(root_control, &epoch_manifest, &rows)
     })();
@@ -2131,6 +2154,7 @@ pub(crate) unsafe fn index_locked_maintenance_run_plan(
         )?;
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        reject_recursive_maintenance_until_update_propagation(&snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
         maintenance_run_result_from_rows(root_control, &epoch_manifest, &rows)
     })();
@@ -2163,6 +2187,7 @@ pub(crate) unsafe fn index_maintenance_run(
             meta::SpireValidatedEpochSnapshot::from_snapshot(published_snapshot)?;
         let mut object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        reject_recursive_maintenance_until_update_propagation(&validated_snapshot, &object_store)?;
         let rows = collect_leaf_snapshot_rows(root_control, &validated_snapshot, &object_store)?;
         let mut pid_allocator = assign::SpirePidAllocator::new(root_control.next_pid)?;
         let Some(selected) = update::choose_scheduled_replacement_publish_lock_plan(
@@ -3709,6 +3734,68 @@ mod tests {
             err,
             "ec_spire root routing snapshot found multiple root objects"
         );
+    }
+
+    #[test]
+    fn recursive_maintenance_guard_rejects_recursive_hierarchy() {
+        let mut store = storage::SpireLocalObjectStore::with_default_page_size(12345)
+            .expect("local store should build");
+        let leaf = empty_leaf_row(&mut store, 30, 20);
+        let internal = store
+            .insert_routing_object(
+                1,
+                &storage::SpireRoutingPartitionObject::internal(
+                    20,
+                    1,
+                    1,
+                    10,
+                    2,
+                    vec![storage::SpireRoutingChildEntry {
+                        centroid_index: 0,
+                        child_pid: 30,
+                        centroid: vec![1.0, 0.0],
+                    }],
+                )
+                .expect("internal routing object should build"),
+            )
+            .expect("internal should store");
+        let root = store
+            .insert_routing_object(
+                1,
+                &storage::SpireRoutingPartitionObject::root_at_level(
+                    10,
+                    1,
+                    2,
+                    2,
+                    vec![storage::SpireRoutingChildEntry {
+                        centroid_index: 0,
+                        child_pid: 20,
+                        centroid: vec![1.0, 0.0],
+                    }],
+                )
+                .expect("root routing object should build"),
+            )
+            .expect("root should store");
+        let epoch_manifest = published_epoch_manifest(1);
+        let placements = vec![root, internal, leaf];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            1,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .expect("object manifest should build");
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)
+            .expect("placement directory should build");
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .expect("snapshot should validate");
+
+        let err = reject_recursive_maintenance_until_update_propagation(&snapshot, &store)
+            .expect_err("recursive hierarchy should reject maintenance");
+
+        assert_eq!(err, RECURSIVE_MAINTENANCE_DEFERRED_MESSAGE);
     }
 
     #[test]
