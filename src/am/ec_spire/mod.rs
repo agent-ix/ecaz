@@ -1371,6 +1371,44 @@ fn selected_maintenance_run_result(
     })
 }
 
+fn maintenance_run_result_from_rows(
+    root_control: meta::SpireRootControlState,
+    active_epoch_manifest: &meta::SpireEpochManifest,
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<SpireIndexMaintenanceRunResult, String> {
+    if root_control.active_epoch == 0 {
+        return Ok(no_maintenance_run_result(
+            root_control,
+            0,
+            "empty_index",
+            "build or insert rows to publish the first SPIRE epoch",
+        ));
+    }
+
+    let mut pid_allocator = assign::SpirePidAllocator::new(root_control.next_pid)?;
+    let Some(selected) = update::choose_scheduled_replacement_publish_lock_plan(
+        rows,
+        &root_control,
+        active_epoch_manifest,
+        &mut pid_allocator,
+    )?
+    else {
+        return Ok(no_maintenance_run_result(
+            root_control,
+            active_epoch_manifest.epoch,
+            "no_candidate",
+            "active leaves are within split/merge thresholds",
+        ));
+    };
+
+    selected_maintenance_run_result(
+        selected,
+        "planned",
+        false,
+        "scheduled replacement candidate selected under publish lock; no epoch was published",
+    )
+}
+
 fn maintenance_plan_snapshot_from_rows(
     root_control: meta::SpireRootControlState,
     active_epoch_manifest: &meta::SpireEpochManifest,
@@ -1458,6 +1496,36 @@ pub(crate) unsafe fn index_locked_maintenance_plan_snapshot(
 ) -> SpireIndexMaintenancePlanSnapshot {
     let _guard = unsafe { lock_publish_relation(index_relation) };
     unsafe { index_maintenance_plan_snapshot(index_relation) }
+}
+
+pub(crate) unsafe fn index_locked_maintenance_run_plan(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexMaintenanceRunResult {
+    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(no_maintenance_run_result(
+                root_control,
+                0,
+                "empty_index",
+                "build or insert rows to publish the first SPIRE epoch",
+            ));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
+        maintenance_run_result_from_rows(root_control, &epoch_manifest, &rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn index_insert_debt_snapshot(
@@ -2516,6 +2584,55 @@ mod tests {
         assert_eq!(result.planned_action, "split");
         assert_eq!(result.publish_epoch, 8);
         assert!(result.published);
+    }
+
+    #[test]
+    fn maintenance_run_plan_from_rows_reports_selected_split_without_publishing() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+        let rows = vec![
+            maintenance_leaf_row(11, 1, 10, false, false),
+            maintenance_leaf_row(12, 1, 100, true, false),
+        ];
+
+        let result =
+            maintenance_run_result_from_rows(root_control, &published_epoch_manifest(7), &rows)
+                .expect("maintenance run plan should build");
+
+        assert_eq!(result.active_epoch_before, 7);
+        assert_eq!(result.active_epoch_after, 7);
+        assert_eq!(result.maintenance_status, "planned");
+        assert_eq!(result.planned_action, "split");
+        assert_eq!(result.planned_reason, "largest_split_candidate");
+        assert_eq!(result.replacement_leaf_pids, vec![40, 41]);
+        assert_eq!(result.publish_epoch, 8);
+        assert_eq!(result.next_pid, 42);
+        assert!(!result.published);
+    }
+
+    #[test]
+    fn maintenance_run_plan_from_rows_reports_no_candidate() {
+        let root_control =
+            meta::SpireRootControlState::published(7, 40, 100, tid(1, 1), tid(1, 2), tid(1, 3))
+                .expect("root control should build");
+        let rows = vec![
+            maintenance_leaf_row(11, 1, 10, false, false),
+            maintenance_leaf_row(12, 1, 11, false, false),
+        ];
+
+        let result =
+            maintenance_run_result_from_rows(root_control, &published_epoch_manifest(7), &rows)
+                .expect("maintenance run plan should build");
+
+        assert_eq!(result.active_epoch_before, 7);
+        assert_eq!(result.active_epoch_after, 7);
+        assert_eq!(result.maintenance_status, "no_action");
+        assert_eq!(result.planned_action, "none");
+        assert_eq!(result.planned_reason, "no_candidate");
+        assert_eq!(result.replacement_leaf_pids, Vec::<u64>::new());
+        assert_eq!(result.next_pid, 40);
+        assert!(!result.published);
     }
 
     #[test]

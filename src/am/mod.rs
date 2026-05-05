@@ -32,6 +32,7 @@ pub(crate) use self::ec_spire::{
     index_insert_debt_snapshot as spire_index_insert_debt_snapshot,
     index_leaf_snapshot as spire_index_leaf_snapshot,
     index_locked_maintenance_plan_snapshot as spire_index_locked_maintenance_plan_snapshot,
+    index_locked_maintenance_run_plan as spire_index_locked_maintenance_run_plan,
     index_maintenance_plan_snapshot as spire_index_maintenance_plan_snapshot,
     index_object_snapshot as spire_index_object_snapshot,
     index_options_snapshot as spire_index_options_snapshot,
