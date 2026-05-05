@@ -1022,6 +1022,13 @@ diagnostics without scoring assignments.
   routing descends through them.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
+  Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
+  it accepts child PID/centroid records, preserves the single-level root shape
+  when the child set is under target fanout, repeatedly trains spherical
+  k-means over child centroids when another routing level is needed, allocates
+  internal/root routing PIDs from the normal PID allocator, and materializes
+  level-aware root/internal routing objects without relation I/O. Live
+  relation-backed recursive build remains open.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them.
 - [ ] **Level-local scan primitive.** Given an input query and a parent

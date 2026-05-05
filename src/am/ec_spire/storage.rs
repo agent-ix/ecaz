@@ -1272,11 +1272,21 @@ impl SpireRoutingPartitionObject {
         dimensions: u16,
         children: Vec<SpireRoutingChildEntry>,
     ) -> Result<Self, String> {
+        Self::root_at_level(pid, object_version, 1, dimensions, children)
+    }
+
+    pub(super) fn root_at_level(
+        pid: u64,
+        object_version: u64,
+        level: u16,
+        dimensions: u16,
+        children: Vec<SpireRoutingChildEntry>,
+    ) -> Result<Self, String> {
         Self::new(
             SpirePartitionObjectKind::Root,
             pid,
             object_version,
-            1,
+            level,
             0,
             dimensions,
             children,

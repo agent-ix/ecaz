@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, CStr};
 use std::mem::size_of;
 use std::ptr;
@@ -97,6 +98,31 @@ pub(super) struct SpirePartitionedSingleLevelBuildDraft {
     pub(super) leaf_objects: Vec<SpireLeafPartitionObject>,
     pub(super) next_pid: u64,
     pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveRoutingChildInput {
+    pub(super) child_pid: u64,
+    pub(super) child_level: u16,
+    pub(super) centroid: Vec<f32>,
+    pub(super) source_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveRoutingBuildInput {
+    pub(super) object_version: u64,
+    pub(super) dimensions: u16,
+    pub(super) target_fanout: u32,
+    pub(super) seed: u64,
+    pub(super) children: Vec<SpireRecursiveRoutingChildInput>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveRoutingBuildDraft {
+    pub(super) root_pid: u64,
+    pub(super) root_level: u16,
+    pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    pub(super) next_pid: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -763,6 +789,303 @@ impl SpireSingleLevelRouteMap {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+struct SpirePendingRecursiveRoutingNode {
+    pid: u64,
+    level: u16,
+    centroid: Vec<f32>,
+    source_count: u64,
+    children: Vec<SpireRecursiveRoutingChildInput>,
+}
+
+pub(super) fn build_recursive_routing_hierarchy_draft(
+    input: SpireRecursiveRoutingBuildInput,
+    pid_allocator: &mut SpirePidAllocator,
+) -> Result<SpireRecursiveRoutingBuildDraft, String> {
+    input.validate()?;
+    let target_fanout = usize::try_from(input.target_fanout)
+        .map_err(|_| "ec_spire recursive routing fanout exceeds usize".to_owned())?;
+    let mut pid_cursor = *pid_allocator;
+    let mut current_children = input.children;
+    let mut pending_nodes = Vec::new();
+
+    while current_children.len() > target_fanout {
+        let child_level = current_children[0].child_level;
+        let parent_level = child_level
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire recursive routing level overflow".to_owned())?;
+        let source_vectors = current_children
+            .iter()
+            .map(|child| child.centroid.as_slice())
+            .collect::<Vec<_>>();
+        let model = common_training::train_spherical_kmeans(
+            "ec_spire recursive routing",
+            &source_vectors,
+            usize::from(input.dimensions),
+            target_fanout,
+            input.seed.wrapping_add(u64::from(parent_level)),
+            SPIRE_DEFAULT_KMEANS_ITERATIONS,
+        )?;
+        let mut grouped_children = vec![Vec::new(); model.centroid_count()];
+        for child in current_children {
+            let centroid_index = common_training::assign_vector_to_centroid(
+                "ec_spire recursive routing",
+                &child.centroid,
+                &model,
+            )?;
+            grouped_children[centroid_index].push(child);
+        }
+
+        let mut next_children = Vec::new();
+        for (centroid_index, children) in grouped_children.into_iter().enumerate() {
+            if children.is_empty() {
+                continue;
+            }
+            let pid = pid_cursor.allocate()?;
+            let source_count = sum_recursive_source_counts(&children)?;
+            let centroid = model.centroids[centroid_index].clone();
+            pending_nodes.push(SpirePendingRecursiveRoutingNode {
+                pid,
+                level: parent_level,
+                centroid: centroid.clone(),
+                source_count,
+                children,
+            });
+            next_children.push(SpireRecursiveRoutingChildInput {
+                child_pid: pid,
+                child_level: parent_level,
+                centroid,
+                source_count,
+            });
+        }
+        current_children = next_children;
+    }
+
+    let root_level = current_children[0]
+        .child_level
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire recursive routing root level overflow".to_owned())?;
+    let root_pid = pid_cursor.allocate()?;
+    let pending_by_pid = pending_nodes
+        .iter()
+        .map(|node| (node.pid, node))
+        .collect::<HashMap<_, _>>();
+    let mut routing_objects = Vec::with_capacity(pending_nodes.len() + 1);
+    routing_objects.push(SpireRoutingPartitionObject::root_at_level(
+        root_pid,
+        input.object_version,
+        root_level,
+        input.dimensions,
+        routing_child_entries(&current_children)?,
+    )?);
+    let mut visited_internal_pids = HashSet::with_capacity(pending_nodes.len());
+    for child in &current_children {
+        materialize_pending_recursive_child(
+            child,
+            root_pid,
+            input.object_version,
+            input.dimensions,
+            &pending_by_pid,
+            &mut visited_internal_pids,
+            &mut routing_objects,
+        )?;
+    }
+    if visited_internal_pids.len() != pending_nodes.len() {
+        return Err("ec_spire recursive routing contains unreachable internal nodes".to_owned());
+    }
+
+    let draft = SpireRecursiveRoutingBuildDraft {
+        root_pid,
+        root_level,
+        routing_objects,
+        next_pid: pid_cursor.next_pid(),
+    };
+    validate_recursive_routing_build_draft(&draft)?;
+    *pid_allocator = pid_cursor;
+    Ok(draft)
+}
+
+impl SpireRecursiveRoutingBuildInput {
+    fn validate(&self) -> Result<(), String> {
+        if self.object_version == 0 {
+            return Err("ec_spire recursive routing object_version 0 is invalid".to_owned());
+        }
+        if self.dimensions == 0 {
+            return Err("ec_spire recursive routing requires dimensions > 0".to_owned());
+        }
+        if self.target_fanout < 2 {
+            return Err("ec_spire recursive routing fanout must be at least 2".to_owned());
+        }
+        if self.children.is_empty() {
+            return Err("ec_spire recursive routing requires at least one child".to_owned());
+        }
+        let expected_level = self.children[0].child_level;
+        let mut child_pids = HashSet::with_capacity(self.children.len());
+        for child in &self.children {
+            if child.child_pid == 0 {
+                return Err("ec_spire recursive routing child pid 0 is invalid".to_owned());
+            }
+            if !child_pids.insert(child.child_pid) {
+                return Err(format!(
+                    "ec_spire recursive routing duplicate child pid {}",
+                    child.child_pid
+                ));
+            }
+            if child.child_level != expected_level {
+                return Err(format!(
+                    "ec_spire recursive routing child pid {} level {} does not match expected level {expected_level}",
+                    child.child_pid, child.child_level
+                ));
+            }
+            if child.source_count == 0 {
+                return Err(format!(
+                    "ec_spire recursive routing child pid {} source_count 0 is invalid",
+                    child.child_pid
+                ));
+            }
+            validate_recursive_centroid(self.dimensions, child.child_pid, &child.centroid)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_recursive_centroid(
+    dimensions: u16,
+    child_pid: u64,
+    centroid: &[f32],
+) -> Result<(), String> {
+    let expected = usize::from(dimensions);
+    if centroid.len() != expected {
+        return Err(format!(
+            "ec_spire recursive routing child pid {child_pid} centroid dimensions mismatch: got {}, expected {expected}",
+            centroid.len()
+        ));
+    }
+    if centroid.iter().any(|component| !component.is_finite()) {
+        return Err(format!(
+            "ec_spire recursive routing child pid {child_pid} centroid must be finite"
+        ));
+    }
+    Ok(())
+}
+
+fn sum_recursive_source_counts(
+    children: &[SpireRecursiveRoutingChildInput],
+) -> Result<u64, String> {
+    children.iter().try_fold(0_u64, |sum, child| {
+        sum.checked_add(child.source_count)
+            .ok_or_else(|| "ec_spire recursive routing source_count overflow".to_owned())
+    })
+}
+
+fn routing_child_entries(
+    children: &[SpireRecursiveRoutingChildInput],
+) -> Result<Vec<SpireRoutingChildEntry>, String> {
+    children
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            Ok(SpireRoutingChildEntry {
+                centroid_index: u32::try_from(index)
+                    .map_err(|_| "ec_spire recursive routing child index exceeds u32".to_owned())?,
+                child_pid: child.child_pid,
+                centroid: child.centroid.clone(),
+            })
+        })
+        .collect()
+}
+
+fn materialize_pending_recursive_child(
+    child: &SpireRecursiveRoutingChildInput,
+    parent_pid: u64,
+    object_version: u64,
+    dimensions: u16,
+    pending_by_pid: &HashMap<u64, &SpirePendingRecursiveRoutingNode>,
+    visited_internal_pids: &mut HashSet<u64>,
+    routing_objects: &mut Vec<SpireRoutingPartitionObject>,
+) -> Result<(), String> {
+    if child.child_level == 0 {
+        return Ok(());
+    }
+    let node = pending_by_pid.get(&child.child_pid).ok_or_else(|| {
+        format!(
+            "ec_spire recursive routing missing internal node pid {}",
+            child.child_pid
+        )
+    })?;
+    if node.level != child.child_level {
+        return Err(format!(
+            "ec_spire recursive routing internal node pid {} level {} does not match child level {}",
+            node.pid, node.level, child.child_level
+        ));
+    }
+    if node.source_count != child.source_count {
+        return Err(format!(
+            "ec_spire recursive routing internal node pid {} source_count {} does not match child source_count {}",
+            node.pid, node.source_count, child.source_count
+        ));
+    }
+    if node.centroid != child.centroid {
+        return Err(format!(
+            "ec_spire recursive routing internal node pid {} centroid drift",
+            node.pid
+        ));
+    }
+    if !visited_internal_pids.insert(node.pid) {
+        return Err(format!(
+            "ec_spire recursive routing internal node pid {} reached twice",
+            node.pid
+        ));
+    }
+    routing_objects.push(SpireRoutingPartitionObject::internal(
+        node.pid,
+        object_version,
+        node.level,
+        parent_pid,
+        dimensions,
+        routing_child_entries(&node.children)?,
+    )?);
+    for child in &node.children {
+        materialize_pending_recursive_child(
+            child,
+            node.pid,
+            object_version,
+            dimensions,
+            pending_by_pid,
+            visited_internal_pids,
+            routing_objects,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_recursive_routing_build_draft(
+    draft: &SpireRecursiveRoutingBuildDraft,
+) -> Result<(), String> {
+    if draft.routing_objects.is_empty() {
+        return Err("ec_spire recursive routing draft requires routing objects".to_owned());
+    }
+    if draft.routing_objects[0].header.kind != super::storage::SpirePartitionObjectKind::Root {
+        return Err("ec_spire recursive routing draft first object must be root".to_owned());
+    }
+    if draft.routing_objects[0].header.pid != draft.root_pid {
+        return Err("ec_spire recursive routing draft root pid mismatch".to_owned());
+    }
+    if draft.routing_objects[0].header.level != draft.root_level {
+        return Err("ec_spire recursive routing draft root level mismatch".to_owned());
+    }
+    let mut pids = HashSet::with_capacity(draft.routing_objects.len());
+    for object in &draft.routing_objects {
+        if !pids.insert(object.header.pid) {
+            return Err(format!(
+                "ec_spire recursive routing draft duplicate routing pid {}",
+                object.header.pid
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl SpireSingleLevelBuildDraft {
@@ -1553,8 +1876,9 @@ mod tests {
         placement_write_evidence_from_object_manifest, resolve_training_sample_count,
         train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
         SpirePartitionedSingleLevelBuildInput, SpirePublishPlacementWriteEvidence,
-        SpirePublishStage, SpirePublishWritingObjects, SpireSingleLevelBuildInput,
-        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
+        SpirePublishStage, SpirePublishWritingObjects, SpireRecursiveRoutingBuildInput,
+        SpireRecursiveRoutingChildInput, SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
+        SpireSingleLevelRouteMap,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -1568,7 +1892,7 @@ mod tests {
         SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
     };
     use crate::am::ec_spire::quantizer::{self, SpireAssignmentPayloadFormat};
-    use crate::am::ec_spire::storage::SpireLocalObjectStore;
+    use crate::am::ec_spire::storage::{SpireLocalObjectStore, SpirePartitionObjectKind};
     use crate::storage::page::ItemPointer;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -1641,6 +1965,15 @@ mod tests {
             placement_tids: vec![tid(60, 1), tid(60, 2)],
             assignments,
             centroid_plan,
+        }
+    }
+
+    fn recursive_child(pid: u64, centroid: Vec<f32>) -> SpireRecursiveRoutingChildInput {
+        SpireRecursiveRoutingChildInput {
+            child_pid: pid,
+            child_level: 0,
+            centroid,
+            source_count: 1,
         }
     }
 
@@ -1794,6 +2127,114 @@ mod tests {
         };
 
         assert!(SpireSingleLevelRouteMap::from_centroid_plan(&centroid_plan, &[11]).is_err());
+    }
+
+    #[test]
+    fn recursive_routing_build_keeps_single_level_shape_when_under_fanout() {
+        let mut pid_allocator = SpirePidAllocator::default();
+
+        let draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![-1.0, 0.0]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+
+        assert_eq!(draft.root_pid, SPIRE_FIRST_PID);
+        assert_eq!(draft.root_level, 1);
+        assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 1);
+        assert_eq!(pid_allocator.next_pid(), draft.next_pid);
+        assert_eq!(draft.routing_objects.len(), 1);
+        let root = &draft.routing_objects[0];
+        assert_eq!(root.header.pid, draft.root_pid);
+        assert_eq!(root.header.level, 1);
+        assert_eq!(
+            root.children()
+                .map(|child| child.child_pid)
+                .collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+    }
+
+    #[test]
+    fn recursive_routing_build_materializes_internal_level() {
+        let mut pid_allocator = SpirePidAllocator::default();
+
+        let draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 2,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![0.9, 0.1]),
+                    recursive_child(13, vec![-1.0, 0.0]),
+                    recursive_child(14, vec![-0.9, 0.1]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+
+        assert_eq!(draft.root_level, 2);
+        assert_eq!(draft.routing_objects.len(), 3);
+        let root = &draft.routing_objects[0];
+        assert_eq!(root.header.pid, draft.root_pid);
+        assert_eq!(root.header.level, 2);
+        assert_eq!(root.header.parent_pid, 0);
+        assert_eq!(root.child_count(), 2);
+        let root_child_pids = root
+            .children()
+            .map(|child| child.child_pid)
+            .collect::<Vec<_>>();
+        let internal_objects = draft.routing_objects.iter().skip(1).collect::<Vec<_>>();
+        assert_eq!(
+            internal_objects
+                .iter()
+                .map(|object| object.header.pid)
+                .collect::<Vec<_>>(),
+            root_child_pids
+        );
+        for object in internal_objects {
+            assert_eq!(object.header.kind, SpirePartitionObjectKind::Internal);
+            assert_eq!(object.header.level, 1);
+            assert_eq!(object.header.parent_pid, draft.root_pid);
+            assert!(object.child_count() >= 1);
+            assert!(object
+                .children()
+                .all(|child| [11, 12, 13, 14].contains(&child.child_pid)));
+        }
+    }
+
+    #[test]
+    fn recursive_routing_build_rejects_mixed_child_levels() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut internal_child = recursive_child(12, vec![-1.0, 0.0]);
+        internal_child.child_level = 1;
+
+        let error = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 2,
+                seed: 42,
+                children: vec![recursive_child(11, vec![1.0, 0.0]), internal_child],
+            },
+            &mut pid_allocator,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("does not match expected level"));
+        assert_eq!(pid_allocator.next_pid(), SPIRE_FIRST_PID);
     }
 
     #[test]
