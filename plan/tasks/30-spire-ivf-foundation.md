@@ -1059,7 +1059,10 @@ diagnostics without scoring assignments.
   bridge. Live `ambuild` selection remains intentionally unchanged. SPIRE now
   has an explicit `recursive_fanout` reloption: the default `0` preserves
   single-level build behavior, while values `>= 2` are reserved as the opt-in
-  recursive routing fanout for the live activation slice.
+  recursive routing fanout. Live populated `ambuild` now switches to recursive
+  relation build when `recursive_fanout >= 2`, preserving default single-level
+  builds while publishing root/internal/leaf hierarchy metadata and routing
+  recursive scans through the existing recursive candidate path.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
@@ -1100,8 +1103,11 @@ diagnostics without scoring assignments.
   objects and verify the same top candidate is returned. A follow-up proof now
   materializes a recursive routing epoch through the build helper and scans the
   resulting snapshot through the quantized recursive candidate path.
-  Relation-backed SQL smoke remains open for the final Phase 3 comparison
-  packet.
+  Relation-backed SQL smoke now covers an opt-in `recursive_fanout = 2`
+  populated build: hierarchy diagnostics report internal routing objects and
+  depth 2, root-routing diagnostics report root-to-internal children, and an
+  ordered scan returns the expected nearest row. The final comparison packet can
+  build on that live relation-backed path.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
