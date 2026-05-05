@@ -1,14 +1,15 @@
 # SPIRE Update Mechanics Plan
 
-Status: Phase 2 planning checkpoint for Task 30
-Date: 2026-05-03
+Status: Phase 2 implementation checkpoint for Task 30
+Date: 2026-05-05
 Scope: local single-store split/merge/rebalance mechanics over SPIRE
 partition objects
 
 This note translates the LIRE/SPFresh-style online update mechanics into the
 PostgreSQL relation-backed storage model chosen by ADR-049 and the Phase 0
-partition-object design. It does not implement a scheduler or background
-worker; it defines the publication shape future code must follow.
+partition-object design. The first manual scheduler path is now implemented as
+`ec_spire_index_maintenance_run(index_oid)`; background scheduling remains
+future work.
 
 ## Invariants
 
@@ -37,12 +38,15 @@ The first local rules are:
   `floor(ceil(total_effective_assignments / active_leaf_count) /
   SPIRE_LEAF_MERGE_AVERAGE_DIVISOR)`
 
-The scheduler should treat those rows as advisory. The concrete scheduler is
-not decided yet; viable first implementations are a manual
-`ec_spire_maintain(index_oid)` SQL entrypoint, a VACUUM-time cleanup hook, or a
-later background worker. Before publishing, whichever scheduler wins must
-reload the active epoch under the update/vacuum publish lock and re-check that
-the selected leaf PIDs still satisfy the expected state.
+The scheduler treats those rows as advisory. The first concrete scheduler is
+the manual `ec_spire_index_maintenance_run(index_oid)` SQL entrypoint, with a
+no-write preflight exposed as
+`ec_spire_index_locked_maintenance_run_plan(index_oid)`. The manual entrypoint
+is `VOLATILE`, takes the shared publish lock, reloads the active epoch, chooses
+the current split/merge candidate, derives the checked publish-lock plan, builds
+merge or heap-source split execution input, and publishes the replacement
+epoch. Future VACUUM-time or background-worker schedulers must keep the same
+lock-time reload and selected-PID recheck contract before publishing.
 
 ## Split
 
@@ -93,10 +97,12 @@ Rebalance keeps the logical partition identity only when coverage does not
 change. For example, moving a leaf object to another local store or compacting
 its row segments may reuse the PID and increment `object_version`.
 
-For Phase 1, "coverage does not change" means the centroid stored in the parent
-routing object remains byte-equal. A maintenance step that recomputes or drifts
-that centroid changes routing semantics and is therefore a coverage rewrite:
-split, merge, or split-of-one/merge-of-one style replacement with new PIDs.
+For the current single-level foundation, "coverage does not change" means the
+centroid stored in the parent routing object remains byte-equal. A maintenance
+step that recomputes or drifts that centroid changes routing semantics and is
+therefore a coverage rewrite: split, merge, or split-of-one/merge-of-one style
+replacement with new PIDs. Live manual scheduling currently publishes split and
+merge replacements; PID-preserving rebalance remains future work.
 
 ## Deltas and Visibility
 
@@ -123,7 +129,7 @@ candidates.
 
 ## Concurrency
 
-The first implementation should use the same publish lock as insert and vacuum
+The first implementation uses the same publish lock as insert and vacuum
 cleanup. Concurrent scans keep using the previously active epoch until
 root/control advances. Concurrent writers serialize at the publish boundary.
 
@@ -132,5 +138,6 @@ by insert. This allocator-cursor dependency is the main reason split, merge,
 rebalance, insert, and vacuum cleanup share one publish lock in the first
 implementation: the lock serializes both epoch publication and PID allocation.
 
-Later batching or optimistic publish can relax this, but must preserve the same
-epoch validation contract and deterministic `vec_id` dedupe semantics.
+Later batching, background scheduling, or optimistic publish can relax this, but
+must preserve the same epoch validation contract and deterministic `vec_id`
+dedupe semantics.
