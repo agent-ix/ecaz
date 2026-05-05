@@ -6004,6 +6004,12 @@ mod tests {
         )
         .expect("hierarchy snapshot query should succeed")
         .expect("hierarchy depth should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("recursive support flag should exist");
         let root_rows = Spi::get_one::<i64>(
             "SELECT count(*) FROM \
              ec_spire_index_root_routing_snapshot('ec_spire_recursive_build_idx'::regclass)",
@@ -6015,6 +6021,7 @@ mod tests {
         assert_eq!(internal_count, 2);
         assert_eq!(leaf_count, 4);
         assert_eq!(hierarchy_depth, 2);
+        assert!(recursive_supported);
         assert_eq!(root_rows, 2);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");

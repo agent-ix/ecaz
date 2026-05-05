@@ -1056,12 +1056,12 @@ fn hierarchy_snapshot_status(
     if internal_routing_object_count == 0 {
         return (
             "single_level_foundation",
-            "recursive build coordinator and level-aware scan routing are not implemented",
+            "set recursive_fanout >= 2 during build to publish recursive routing metadata",
         );
     }
     (
         "hierarchy_metadata_present",
-        "recursive build coordinator and level-aware scan routing are not implemented",
+        "recursive routing is available; per-level nprobe metadata remains deferred",
     )
 }
 
@@ -2158,11 +2158,12 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
         } else {
             max_observed_level.max(root_level)
         };
+        let hierarchy_shape_valid = validate_recursive_hierarchy_shape(&hierarchy_objects).is_ok();
         let (status, recommendation) = hierarchy_snapshot_status(
             root_routing_object_count,
             internal_routing_object_count,
             leaf_object_count,
-            validate_recursive_hierarchy_shape(&hierarchy_objects).is_ok(),
+            hierarchy_shape_valid,
         );
 
         Ok(SpireIndexHierarchySnapshot {
@@ -2181,7 +2182,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             distinct_leaf_parent_count: u64::try_from(leaf_parent_pids.len()).map_err(|_| {
                 "ec_spire hierarchy snapshot leaf parent count exceeds u64".to_owned()
             })?,
-            recursive_routing_supported: false,
+            recursive_routing_supported: hierarchy_shape_valid && internal_routing_object_count > 0,
             per_level_nprobe_supported: false,
             status,
             recommendation,
