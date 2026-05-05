@@ -5342,6 +5342,75 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_maintenance_run_split_publish_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_split_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_maintenance_run_split_sql (id, embedding) \
+             SELECT gs, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42) \
+             FROM generate_series(1, 60) AS gs",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_split_idx \
+             ON ec_spire_maintenance_run_split_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 10)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_split_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_split_idx'::regclass) \
+             WHERE split_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(pre_split_candidates, 1);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_split_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_split_idx'::regclass)",
+        )
+        .expect("maintenance run should publish split epoch");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch row should exist");
+        let published =
+            Spi::get_one::<bool>("SELECT published FROM ec_spire_maintenance_run_split_result")
+                .expect("maintenance run result query should succeed")
+                .expect("published row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_split_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "published");
+        assert_eq!(action, "split");
+        assert_eq!(active_epoch_after, 2);
+        assert!(published);
+        assert_eq!(post_leaf_count, 11);
+    }
+
+    #[pg_test]
     fn test_ec_spire_leaf_snapshot_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_leaf_snapshot_sql \
