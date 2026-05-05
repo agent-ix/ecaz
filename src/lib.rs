@@ -5451,6 +5451,52 @@ mod tests {
         assert_eq!(active_epoch_after, 2);
         assert!(published);
         assert_eq!(post_leaf_count, 2);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_merge_second_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("second maintenance run should return no action");
+
+        let second_status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("status row should exist");
+        let second_reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("reason row should exist");
+        let second_active_epoch_before = Spi::get_one::<i64>(
+            "SELECT active_epoch_before FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("active epoch before row should exist");
+        let second_active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("active epoch after row should exist");
+        let second_published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("published row should exist");
+        let second_post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(second_status, "no_action");
+        assert_eq!(second_reason, "no_candidate");
+        assert_eq!(second_active_epoch_before, 2);
+        assert_eq!(second_active_epoch_after, 2);
+        assert!(!second_published);
+        assert_eq!(second_post_leaf_count, 2);
     }
 
     #[pg_test]
