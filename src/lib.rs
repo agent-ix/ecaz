@@ -1884,7 +1884,7 @@ fn ec_spire_index_locked_maintenance_run_plan(
     ))
 }
 
-#[pg_extern(stable, strict)]
+#[pg_extern(volatile, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_maintenance_run(
     index_oid: pg_sys::Oid,
@@ -5381,6 +5381,14 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_maintenance_run_no_candidate_sql() {
+        let maintenance_run_volatility = Spi::get_one::<String>(
+            "SELECT provolatile::text FROM pg_proc \
+             WHERE proname = 'ec_spire_index_maintenance_run' AND pronargs = 1",
+        )
+        .expect("pg_proc volatility query should succeed")
+        .expect("maintenance run function should exist");
+        assert_eq!(maintenance_run_volatility, "v");
+
         Spi::run(
             "CREATE TABLE ec_spire_maintenance_run_no_candidate_sql \
              (id bigint primary key, embedding ecvector)",
