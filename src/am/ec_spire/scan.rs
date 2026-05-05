@@ -498,6 +498,15 @@ pub(super) fn count_snapshot_single_level_leaf_pids(
         .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())
 }
 
+pub(super) fn count_snapshot_recursive_leaf_pids(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<u32, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)
+}
+
 pub(super) fn collect_ranked_routed_probe_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -1542,29 +1551,9 @@ fn route_recursive_routing_objects_to_leaf_routes(
             }
             let child_pids = route_routing_object_to_child_pids(parent, query_vector, nprobe)?;
             for child_pid in child_pids {
-                let child = routing_objects_by_pid.get(&child_pid).ok_or_else(|| {
-                    format!(
-                        "ec_spire recursive scan missing internal routing child pid {child_pid}"
-                    )
-                })?;
-                if child.header.kind != SpirePartitionObjectKind::Internal {
-                    return Err(format!(
-                        "ec_spire recursive scan child pid {child_pid} is not an internal routing object"
-                    ));
-                }
-                if child.header.parent_pid != parent.header.pid {
-                    return Err(format!(
-                        "ec_spire recursive scan child pid {child_pid} parent_pid {} does not match parent pid {}",
-                        child.header.parent_pid, parent.header.pid
-                    ));
-                }
-                if child.header.level.checked_add(1) != Some(parent.header.level) {
-                    return Err(format!(
-                        "ec_spire recursive scan child pid {child_pid} level {} is not one below parent level {}",
-                        child.header.level, parent.header.level
-                    ));
-                }
-                next_parents.push(child.clone());
+                let child =
+                    require_recursive_internal_child(routing_objects_by_pid, child_pid, parent)?;
+                next_parents.push((*child).clone());
             }
         }
         if next_parents.is_empty() {
@@ -1572,6 +1561,88 @@ fn route_recursive_routing_objects_to_leaf_routes(
         }
         current_parents = next_parents;
     }
+}
+
+fn count_recursive_routing_leaf_pids(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+) -> Result<u32, String> {
+    if root_object.header.kind != SpirePartitionObjectKind::Root {
+        return Err("ec_spire recursive scan leaf count requires a root routing object".to_owned());
+    }
+
+    let mut current_parents = vec![root_object];
+    loop {
+        let parent_level = current_parents[0].header.level;
+        if parent_level == 1 {
+            let mut leaf_count = 0usize;
+            for parent in &current_parents {
+                if parent.header.level != 1 {
+                    return Err(
+                        "ec_spire recursive scan leaf count parent levels drifted".to_owned()
+                    );
+                }
+                leaf_count = leaf_count
+                    .checked_add(parent.child_count())
+                    .ok_or_else(|| "ec_spire recursive scan leaf count overflow".to_owned())?;
+            }
+            return u32::try_from(leaf_count)
+                .map_err(|_| "ec_spire recursive scan leaf count exceeds u32".to_owned());
+        }
+
+        let mut next_parents = Vec::new();
+        for parent in &current_parents {
+            if parent.header.kind != SpirePartitionObjectKind::Root
+                && parent.header.kind != SpirePartitionObjectKind::Internal
+            {
+                return Err(
+                    "ec_spire recursive scan leaf count parent must be a routing object".to_owned(),
+                );
+            }
+            if parent.header.level != parent_level {
+                return Err("ec_spire recursive scan leaf count parent levels drifted".to_owned());
+            }
+            for child in parent.children() {
+                next_parents.push(require_recursive_internal_child(
+                    routing_objects_by_pid,
+                    child.child_pid,
+                    parent,
+                )?);
+            }
+        }
+        if next_parents.is_empty() {
+            return Err("ec_spire recursive scan leaf count found no internal children".to_owned());
+        }
+        current_parents = next_parents;
+    }
+}
+
+fn require_recursive_internal_child<'a>(
+    routing_objects_by_pid: &'a HashMap<u64, SpireRoutingPartitionObject>,
+    child_pid: u64,
+    parent: &SpireRoutingPartitionObject,
+) -> Result<&'a SpireRoutingPartitionObject, String> {
+    let child = routing_objects_by_pid.get(&child_pid).ok_or_else(|| {
+        format!("ec_spire recursive scan missing internal routing child pid {child_pid}")
+    })?;
+    if child.header.kind != SpirePartitionObjectKind::Internal {
+        return Err(format!(
+            "ec_spire recursive scan child pid {child_pid} is not an internal routing object"
+        ));
+    }
+    if child.header.parent_pid != parent.header.pid {
+        return Err(format!(
+            "ec_spire recursive scan child pid {child_pid} parent_pid {} does not match parent pid {}",
+            child.header.parent_pid, parent.header.pid
+        ));
+    }
+    if child.header.level.checked_add(1) != Some(parent.header.level) {
+        return Err(format!(
+            "ec_spire recursive scan child pid {child_pid} level {} is not one below parent level {}",
+            child.header.level, parent.header.level
+        ));
+    }
+    Ok(child)
 }
 
 fn route_candidate_cmp(left: &SpireRouteCandidate, right: &SpireRouteCandidate) -> Ordering {
@@ -2155,12 +2226,13 @@ mod tests {
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
-        count_snapshot_single_level_leaf_pids, load_snapshot_routing_hierarchy,
-        prepare_single_level_snapshot_scan_candidates, rank_routed_leaf_rows_by_ip,
-        rerank_scored_candidates_by_ip, route_recursive_routing_objects_to_leaf_pids,
-        route_root_object_to_leaf_pids, route_routing_object_to_child_pids, SpireLeafScanRow,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanQuery, SpireScoredScanCandidate,
+        count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
+        load_snapshot_routing_hierarchy, prepare_single_level_snapshot_scan_candidates,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
+        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
+        route_routing_object_to_child_pids, SpireLeafScanRow, SpireRoutedLeafScanRows,
+        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
+        SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -3046,6 +3118,111 @@ mod tests {
 
         assert_eq!(
             count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap(),
+            3
+        );
+    }
+
+    #[test]
+    fn count_snapshot_recursive_leaf_pids_counts_leaf_level_children() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root_pid = SPIRE_FIRST_PID;
+        let first_internal_pid = SPIRE_FIRST_PID + 1;
+        let second_internal_pid = SPIRE_FIRST_PID + 2;
+        let root = SpireRoutingPartitionObject::root_at_level(
+            root_pid,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, first_internal_pid, vec![1.0, 0.0]),
+                routing_child(1, second_internal_pid, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let first_internal = SpireRoutingPartitionObject::internal(
+            first_internal_pid,
+            1,
+            1,
+            root_pid,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![0.25, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 11, vec![0.75, 0.0]),
+            ],
+        )
+        .unwrap();
+        let second_internal = SpireRoutingPartitionObject::internal(
+            second_internal_pid,
+            1,
+            1,
+            root_pid,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store
+                .insert_routing_object(7, &first_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(7, &second_internal)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 10,
+                    1,
+                    first_internal_pid,
+                    &[],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 11,
+                    1,
+                    first_internal_pid,
+                    &[],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 20,
+                    1,
+                    second_internal_pid,
+                    &[],
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        assert_eq!(
+            count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap(),
+            2
+        );
+        assert_eq!(
+            count_snapshot_recursive_leaf_pids(&snapshot, &object_store).unwrap(),
             3
         );
     }
