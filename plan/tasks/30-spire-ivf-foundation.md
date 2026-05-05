@@ -1032,7 +1032,9 @@ diagnostics without scoring assignments.
   objects, combines them with already-written leaf placements, validates the
   manifest/directory snapshot, rejects missing leaf placement coverage, and
   verifies each leaf object's stored parent PID against its level-1 routing
-  parent. Live relation-backed recursive build remains open.
+  parent. The materializer now uses a shared object-store writer seam with a
+  relation-backed entry point for writing recursive routing objects. Live
+  relation-backed recursive build orchestration remains open.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
