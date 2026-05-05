@@ -1009,7 +1009,7 @@ diagnostics without scoring assignments.
   centroids, level-local scan routing, and the deferred boundaries for
   replication, graph routing, placement, background scheduling, reclamation,
   recursive update propagation, and product-scale measurements.
-- [ ] **Hierarchy metadata.** Store levels, parent/child partition IDs,
+- [x] **Hierarchy metadata.** Store levels, parent/child partition IDs,
   centroid dimensions, per-level `nprobe`, and build parameters. The
   single-level foundation now persists root/leaf levels, parent/child PIDs, and
   root centroid dimensions, and exposes them through
@@ -1027,6 +1027,13 @@ diagnostics without scoring assignments.
   plus whether the relation is using the recursive build path, and options /
   scan-sanity active leaf counts now traverse recursive hierarchies instead of
   treating root-to-internal edges as leaves.
+  `ec_spire_index_level_parameter_snapshot(index_oid)` now exposes one row per
+  active routing level with routing object/child counts, target fanout,
+  effective `nprobe`, the current per-level `nprobe` policy, training sample
+  rows, training iterations, centroid dimensions, distance semantics, and
+  assignment payload format. Recursive hierarchy snapshots now report
+  `per_level_nprobe_supported = true` for valid recursive hierarchies that have
+  this per-level diagnostic metadata.
 - [x] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
