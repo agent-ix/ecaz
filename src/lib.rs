@@ -5268,6 +5268,118 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_locked_maintenance_run_plan_no_write_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_locked_maintenance_run_plan_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_locked_maintenance_run_plan_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_locked_maintenance_run_plan_idx \
+             ON ec_spire_locked_maintenance_run_plan_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let pre_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("next pid row should exist");
+        let pre_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_locked_maintenance_run_plan_result AS \
+             SELECT * FROM \
+             ec_spire_index_locked_maintenance_run_plan(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("locked maintenance run plan should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("action row should exist");
+        let active_epoch_before = Spi::get_one::<i64>(
+            "SELECT active_epoch_before FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("active epoch before row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("active epoch after row should exist");
+        let publish_epoch = Spi::get_one::<i64>(
+            "SELECT publish_epoch FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("publish epoch row should exist");
+        let published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("published row should exist");
+        let post_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let post_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("next pid row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "planned");
+        assert_eq!(action, "merge");
+        assert_eq!(active_epoch_before, pre_active_epoch);
+        assert_eq!(active_epoch_after, pre_active_epoch);
+        assert_eq!(publish_epoch, pre_active_epoch + 1);
+        assert!(!published);
+        assert_eq!(post_active_epoch, pre_active_epoch);
+        assert_eq!(post_next_pid, pre_next_pid);
+        assert_eq!(post_leaf_count, pre_leaf_count);
+    }
+
+    #[pg_test]
     fn test_ec_spire_maintenance_run_merge_publish_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_maintenance_run_merge_sql \
