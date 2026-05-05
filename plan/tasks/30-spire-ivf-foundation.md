@@ -899,6 +899,10 @@ diagnostics without scoring assignments.
   SQL surface that holds the publish lock, loads the active snapshot, chooses
   the same selected replacement candidate as the live scheduler, and reports
   the run-result row with `published = false`.
+- [x] **Locked maintenance run-plan SQL smoke.** The no-write run-plan SQL
+  surface now has focused PG18 coverage proving a populated merge candidate is
+  reported as planned/projected, while active epoch, allocator cursor, and leaf
+  count remain unchanged after the locked call returns.
 - [x] **Scheduled replacement object-version plan.** Live scheduler
   orchestration now derives successor object versions for replacement parent
   routing and replacement leaves from active snapshot metadata, rejecting zero,
