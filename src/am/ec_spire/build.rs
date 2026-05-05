@@ -139,6 +139,27 @@ pub(super) struct SpireRecursiveCentroidRecord {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveBuildCoordinatorInput {
+    pub(super) epoch: u64,
+    pub(super) object_version: u64,
+    pub(super) published_at_micros: i64,
+    pub(super) retain_until_micros: i64,
+    pub(super) consistency_mode: SpireConsistencyMode,
+    pub(super) target_fanout: u32,
+    pub(super) seed: u64,
+    pub(super) assignments: Vec<SpireLeafAssignmentInput>,
+    pub(super) centroid_plan: SpireSingleLevelCentroidPlan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveBuildCoordinatorDraft {
+    pub(super) epoch_input: SpireRecursiveRoutingEpochObjectInput,
+    pub(super) leaf_pids: Vec<u64>,
+    pub(super) next_pid: u64,
+    pub(super) next_local_vec_seq: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRecursiveLeafObjectInput {
     pub(super) pid: u64,
     pub(super) object_version: u64,
@@ -1028,6 +1049,88 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
     Ok(draft)
 }
 
+pub(super) fn build_recursive_epoch_input_from_centroid_plan(
+    input: SpireRecursiveBuildCoordinatorInput,
+    pid_allocator: &mut SpirePidAllocator,
+    local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
+) -> Result<SpireRecursiveBuildCoordinatorDraft, String> {
+    input.centroid_plan.validate()?;
+    let centroid_count = input.centroid_plan.centroid_count();
+    if input.assignments.len() != input.centroid_plan.assignment_indexes.len() {
+        return Err(format!(
+            "ec_spire recursive build assignment count {} does not match centroid assignment count {}",
+            input.assignments.len(),
+            input.centroid_plan.assignment_indexes.len()
+        ));
+    }
+
+    let assignments_by_centroid = group_assignments_by_centroid(
+        input.assignments,
+        &input.centroid_plan.assignment_indexes,
+        centroid_count,
+    )?;
+    let mut pid_cursor = *pid_allocator;
+    let mut local_vec_id_cursor = *local_vec_id_allocator;
+    let mut leaf_pids = Vec::with_capacity(centroid_count);
+    for _ in 0..centroid_count {
+        leaf_pids.push(pid_cursor.allocate()?);
+    }
+    let routing_draft = build_recursive_routing_hierarchy_draft(
+        SpireRecursiveRoutingBuildInput {
+            object_version: input.object_version,
+            dimensions: input.centroid_plan.dimensions,
+            target_fanout: input.target_fanout,
+            seed: input.seed,
+            children: leaf_pids
+                .iter()
+                .copied()
+                .zip(input.centroid_plan.centroids.iter())
+                .map(|(child_pid, centroid)| SpireRecursiveRoutingChildInput {
+                    child_pid,
+                    child_level: 0,
+                    centroid: centroid.clone(),
+                    source_count: 1,
+                })
+                .collect(),
+        },
+        &mut pid_cursor,
+    )?;
+    let leaf_parent_pids = recursive_routing_leaf_parent_pids(&routing_draft)?;
+    let mut leaf_inputs = Vec::with_capacity(centroid_count);
+    for (pid, assignments) in leaf_pids
+        .iter()
+        .copied()
+        .zip(assignments_by_centroid.into_iter())
+    {
+        let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
+            format!("ec_spire recursive build missing routing parent for leaf pid {pid}")
+        })?;
+        leaf_inputs.push(SpireRecursiveLeafObjectInput {
+            pid,
+            object_version: input.object_version,
+            parent_pid,
+            rows: build_primary_leaf_assignments(&mut local_vec_id_cursor, assignments)?,
+        });
+    }
+
+    let draft = SpireRecursiveBuildCoordinatorDraft {
+        epoch_input: SpireRecursiveRoutingEpochObjectInput {
+            epoch: input.epoch,
+            published_at_micros: input.published_at_micros,
+            retain_until_micros: input.retain_until_micros,
+            consistency_mode: input.consistency_mode,
+            routing_draft,
+            leaf_inputs,
+        },
+        leaf_pids,
+        next_pid: pid_cursor.next_pid(),
+        next_local_vec_seq: local_vec_id_cursor.next_local_vec_seq(),
+    };
+    *pid_allocator = pid_cursor;
+    *local_vec_id_allocator = local_vec_id_cursor;
+    Ok(draft)
+}
+
 impl SpireRecursiveRoutingBuildInput {
     fn validate(&self) -> Result<(), String> {
         if self.object_version == 0 {
@@ -1814,21 +1917,11 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
         ));
     }
 
-    let mut assignments_by_centroid = vec![Vec::new(); centroid_count];
-    for (assignment, assignment_index) in input
-        .assignments
-        .into_iter()
-        .zip(input.centroid_plan.assignment_indexes.iter().copied())
-    {
-        let centroid_index = usize::try_from(assignment_index)
-            .map_err(|_| "ec_spire centroid assignment index exceeds usize".to_owned())?;
-        let assignments = assignments_by_centroid.get_mut(centroid_index).ok_or_else(|| {
-            format!(
-                "ec_spire centroid assignment index {centroid_index} exceeds centroid count {centroid_count}"
-            )
-        })?;
-        assignments.push(assignment);
-    }
+    let assignments_by_centroid = group_assignments_by_centroid(
+        input.assignments,
+        &input.centroid_plan.assignment_indexes,
+        centroid_count,
+    )?;
 
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
@@ -1919,6 +2012,32 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     Ok(draft)
 }
 
+fn group_assignments_by_centroid(
+    assignments: Vec<SpireLeafAssignmentInput>,
+    assignment_indexes: &[u32],
+    centroid_count: usize,
+) -> Result<Vec<Vec<SpireLeafAssignmentInput>>, String> {
+    if assignments.len() != assignment_indexes.len() {
+        return Err(format!(
+            "ec_spire centroid assignment count {} does not match assignment index count {}",
+            assignments.len(),
+            assignment_indexes.len()
+        ));
+    }
+    let mut assignments_by_centroid = vec![Vec::new(); centroid_count];
+    for (assignment, assignment_index) in assignments.into_iter().zip(assignment_indexes.iter()) {
+        let centroid_index = usize::try_from(*assignment_index)
+            .map_err(|_| "ec_spire centroid assignment index exceeds usize".to_owned())?;
+        let assignments = assignments_by_centroid.get_mut(centroid_index).ok_or_else(|| {
+            format!(
+                "ec_spire centroid assignment index {centroid_index} exceeds centroid count {centroid_count}"
+            )
+        })?;
+        assignments.push(assignment);
+    }
+    Ok(assignments_by_centroid)
+}
+
 unsafe fn publish_relation_partitioned_single_level_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
@@ -1972,20 +2091,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
             .collect(),
     )?;
 
-    let mut assignments_by_centroid = vec![Vec::new(); centroid_count];
-    for (assignment, assignment_index) in assignments
-        .into_iter()
-        .zip(centroid_plan.assignment_indexes.iter().copied())
-    {
-        let centroid_index = usize::try_from(assignment_index)
-            .map_err(|_| "ec_spire centroid assignment index exceeds usize".to_owned())?;
-        let assignments = assignments_by_centroid.get_mut(centroid_index).ok_or_else(|| {
-            format!(
-                "ec_spire centroid assignment index {centroid_index} exceeds centroid count {centroid_count}"
-            )
-        })?;
-        assignments.push(assignment);
-    }
+    let assignments_by_centroid = group_assignments_by_centroid(
+        assignments,
+        &centroid_plan.assignment_indexes,
+        centroid_count,
+    )?;
 
     let mut leaf_assignments_by_centroid = Vec::with_capacity(centroid_count);
     for assignments in assignments_by_centroid {
@@ -2290,10 +2400,11 @@ mod tests {
         placement_write_evidence_from_object_manifest, resolve_training_sample_count,
         train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
         SpirePartitionedSingleLevelBuildInput, SpirePublishPlacementWriteEvidence,
-        SpirePublishStage, SpirePublishWritingObjects, SpireRecursiveLeafObjectInput,
-        SpireRecursiveRoutingBuildInput, SpireRecursiveRoutingChildInput,
-        SpireRecursiveRoutingEpochInput, SpireRecursiveRoutingEpochObjectInput,
-        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
+        SpirePublishStage, SpirePublishWritingObjects, SpireRecursiveBuildCoordinatorInput,
+        SpireRecursiveLeafObjectInput, SpireRecursiveRoutingBuildInput,
+        SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
+        SpireRecursiveRoutingEpochObjectInput, SpireSingleLevelBuildInput,
+        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -2935,6 +3046,126 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("does not match routing parent"));
+    }
+
+    #[test]
+    fn recursive_build_coordinator_assembles_epoch_input_from_centroid_plan() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![
+                vec![1.0, 0.0],
+                vec![0.9, 0.1],
+                vec![-1.0, 0.0],
+                vec![-0.9, 0.1],
+            ],
+            assignment_indexes: vec![0, 1, 2, 3],
+        };
+
+        let draft = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                assignments: vec![
+                    assignment_input(10, 1),
+                    assignment_input(10, 2),
+                    assignment_input(10, 3),
+                    assignment_input(10, 4),
+                ],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap();
+
+        assert_eq!(
+            draft.leaf_pids,
+            vec![
+                SPIRE_FIRST_PID,
+                SPIRE_FIRST_PID + 1,
+                SPIRE_FIRST_PID + 2,
+                SPIRE_FIRST_PID + 3
+            ]
+        );
+        assert_eq!(draft.epoch_input.routing_draft.root_level, 2);
+        assert_eq!(draft.epoch_input.leaf_inputs.len(), 4);
+        assert!(draft
+            .epoch_input
+            .leaf_inputs
+            .iter()
+            .all(|leaf_input| leaf_input.parent_pid != 0 && leaf_input.rows.len() == 1));
+        assert_eq!(
+            draft
+                .epoch_input
+                .leaf_inputs
+                .iter()
+                .map(|leaf_input| leaf_input.rows[0].vec_id.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                SpireVecId::local(SPIRE_FIRST_LOCAL_VEC_SEQ),
+                SpireVecId::local(SPIRE_FIRST_LOCAL_VEC_SEQ + 1),
+                SpireVecId::local(SPIRE_FIRST_LOCAL_VEC_SEQ + 2),
+                SpireVecId::local(SPIRE_FIRST_LOCAL_VEC_SEQ + 3),
+            ]
+        );
+
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let next_pid = draft.next_pid;
+        let next_local_vec_seq = draft.next_local_vec_seq;
+        let epoch_draft = super::build_local_recursive_routing_epoch_from_leaf_inputs(
+            draft.epoch_input,
+            &mut object_store,
+        )
+        .unwrap();
+        assert_eq!(epoch_draft.root_pid, SPIRE_FIRST_PID + 6);
+        assert_eq!(epoch_draft.object_manifest.entries.len(), 7);
+        assert_eq!(pid_allocator.next_pid(), next_pid);
+        assert_eq!(
+            local_vec_id_allocator.next_local_vec_seq(),
+            next_local_vec_seq
+        );
+    }
+
+    #[test]
+    fn recursive_build_coordinator_rejects_assignment_count_mismatch() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
+            assignment_indexes: vec![0, 1],
+        };
+
+        let error = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                assignments: vec![assignment_input(10, 1)],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("assignment count"));
+        assert_eq!(pid_allocator.next_pid(), SPIRE_FIRST_PID);
+        assert_eq!(
+            local_vec_id_allocator.next_local_vec_seq(),
+            SPIRE_FIRST_LOCAL_VEC_SEQ
+        );
     }
 
     #[test]
