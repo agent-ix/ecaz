@@ -194,6 +194,8 @@ pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) placement_directory: SpirePlacementDirectory,
     pub(super) root_pid: u64,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    // TODO: these are not persisted separately; diagnostics rebuild them with
+    // centroid_records_from_routing until durable centroid objects land.
     pub(super) centroid_records: Vec<SpireRecursiveCentroidRecord>,
     pub(super) next_pid: u64,
 }

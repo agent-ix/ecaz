@@ -1396,6 +1396,9 @@ fn load_snapshot_routing_hierarchy(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
 ) -> Result<SpireLoadedRoutingHierarchy, String> {
+    // This loader only applies snapshot visibility and kind filtering. Recursive
+    // level and parent/child coherence is validated by require_recursive_internal_child
+    // during descent, where the expected parent context is available.
     let mut root = None;
     let mut internal_objects_by_pid = HashMap::new();
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -4355,6 +4358,89 @@ mod tests {
                 .parent_pid,
             SPIRE_FIRST_PID
         );
+    }
+
+    #[test]
+    fn recursive_routed_leaf_rows_skip_degraded_unavailable_unselected_internal() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let available_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let unavailable_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let root_placement = object_store.insert_routing_object(7, &root).unwrap();
+        let available_internal_placement = object_store
+            .insert_routing_object(7, &available_internal)
+            .unwrap();
+        let mut unavailable_internal_placement = object_store
+            .insert_routing_object(7, &unavailable_internal)
+            .unwrap();
+        unavailable_internal_placement.state = SpirePlacementState::Unavailable;
+        let available_leaf_placement = object_store
+            .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 11, 1, SPIRE_FIRST_PID + 10, &[])
+            .unwrap();
+        let unavailable_leaf_placement = object_store
+            .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 21, 1, SPIRE_FIRST_PID + 20, &[])
+            .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Degraded,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let placements = vec![
+            root_placement,
+            available_internal_placement,
+            unavailable_internal_placement,
+            available_leaf_placement,
+            unavailable_leaf_placement,
+        ];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let routed =
+            collect_snapshot_routed_probe_leaf_rows(&snapshot, &object_store, &[1.0, 0.0], 1)
+                .expect("degraded recursive route should skip unselected unavailable internal");
+
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].root_pid, SPIRE_FIRST_PID);
+        assert_eq!(routed[0].leaf_pid, SPIRE_FIRST_PID + 11);
     }
 
     #[test]
