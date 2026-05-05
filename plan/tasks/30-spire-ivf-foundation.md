@@ -920,6 +920,10 @@ diagnostics without scoring assignments.
   has focused PG18 coverage for a populated merge publish, including empty
   affected leaves, proving the run publishes epoch 2, reports merge/published
   status, and reduces a three-leaf fixture to two active leaves.
+- [x] **Maintenance merge rerun no-op smoke.** The merge publish smoke now also
+  immediately runs the manual scheduler a second time, proving the post-merge
+  active epoch reports `no_action` / `no_candidate`, does not publish another
+  epoch, and keeps the merged two-leaf shape stable.
 - [x] **Maintenance split publish smoke.** The manual scheduler entrypoint now
   has focused PG18 coverage for a populated split publish over a skewed
   heap-source fixture, proving the run publishes epoch 2, reports split/published
