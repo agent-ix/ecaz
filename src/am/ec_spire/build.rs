@@ -15,7 +15,7 @@ use super::meta::{
     SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectKind,
+    SpireLeafPartitionObject, SpireLocalObjectStore, SpireObjectReader, SpirePartitionObjectKind,
     SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
@@ -155,6 +155,34 @@ pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) root_pid: u64,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
     pub(super) next_pid: u64,
+}
+
+trait SpireRecursiveRoutingEpochObjectStore: SpireObjectReader {
+    fn write_recursive_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String>;
+}
+
+impl SpireRecursiveRoutingEpochObjectStore for SpireLocalObjectStore {
+    fn write_recursive_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_routing_object(epoch, object)
+    }
+}
+
+impl SpireRecursiveRoutingEpochObjectStore for SpireRelationObjectStore {
+    fn write_recursive_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe { self.insert_routing_object(epoch, object) }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1173,6 +1201,20 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut SpireLocalObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_routing_epoch_draft_with_store(input, object_store)
+}
+
+pub(super) unsafe fn build_relation_recursive_routing_epoch_draft(
+    input: SpireRecursiveRoutingEpochInput,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_routing_epoch_draft_with_store(input, object_store)
+}
+
+fn build_recursive_routing_epoch_draft_with_store(
+    input: SpireRecursiveRoutingEpochInput,
+    object_store: &mut impl SpireRecursiveRoutingEpochObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     validate_recursive_routing_build_draft(&input.routing_draft)?;
 
     let epoch_manifest = SpireEpochManifest {
@@ -1190,7 +1232,7 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
     let mut placements =
         Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
     for object in &input.routing_draft.routing_objects {
-        placements.push(object_store.insert_routing_object(input.epoch, object)?);
+        placements.push(object_store.write_recursive_routing_object(input.epoch, object)?);
     }
     placements.extend(input.leaf_placements);
 
@@ -1228,7 +1270,7 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
 
 fn validate_recursive_epoch_leaf_placements(
     input: &SpireRecursiveRoutingEpochInput,
-    object_store: &SpireLocalObjectStore,
+    object_store: &impl SpireObjectReader,
 ) -> Result<(), String> {
     let expected_leaf_parents = recursive_routing_leaf_parent_pids(&input.routing_draft)?;
     let expected_leaf_pids = expected_leaf_parents
