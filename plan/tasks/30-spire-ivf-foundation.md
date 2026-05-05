@@ -911,7 +911,9 @@ diagnostics without scoring assignments.
   `ec_spire_index_maintenance_run(index_oid)`, which takes the publish lock,
   reloads and rechecks the active candidate, builds merge or heap-source split
   execution input, publishes the scheduled replacement epoch, and returns the
-  maintenance run result row with `published = true`.
+  maintenance run result row with `published = true`. The SQL function is
+  marked `VOLATILE` so PostgreSQL treats the manual scheduler as a mutating
+  maintenance entrypoint.
 - [x] **Maintenance run empty SQL smoke.** The manual scheduler entrypoint now
   has focused PG18 coverage for the empty-index no-action row, proving the SQL
   binding returns `maintenance_status = 'no_action'`, `planned_action = 'none'`,
