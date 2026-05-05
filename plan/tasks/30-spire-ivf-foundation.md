@@ -1040,7 +1040,10 @@ diagnostics without scoring assignments.
   `route_routing_object_to_child_pids` primitive that accepts root or internal
   routing objects, applies the existing bounded route heap and deterministic
   score/ordinal/PID ordering, and leaves the existing root-to-leaf wrapper's
-  root-kind guard intact for the current single-level scan path.
+  root-kind guard intact for the current single-level scan path. A pure
+  recursive routing coordinator now composes that primitive over already-loaded
+  routing objects, validates internal child kind/parent/level shape while
+  descending, and returns selected leaf PIDs without relation I/O.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE.
 
