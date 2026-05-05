@@ -5959,6 +5959,76 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_recursive_fanout_build_hierarchy() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_build_idx \
+             ON ec_spire_recursive_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        let hierarchy_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy status should exist");
+        let internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("internal count should exist");
+        let leaf_count = Spi::get_one::<i64>(
+            "SELECT leaf_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("leaf count should exist");
+        let hierarchy_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy depth should exist");
+        let root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("root routing snapshot query should succeed")
+        .expect("root row count should exist");
+
+        assert_eq!(hierarchy_status, "hierarchy_metadata_present");
+        assert_eq!(internal_count, 2);
+        assert_eq!(leaf_count, 4);
+        assert_eq!(hierarchy_depth, 2);
+        assert_eq!(root_rows, 2);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_recursive_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered recursive ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_insert_after_build_delta_epoch() {
         Spi::run(
             "CREATE TABLE ec_spire_insert_after_build (id bigint primary key, embedding ecvector)",

@@ -2466,6 +2466,11 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             );
             let index_tuples = if state.scanned_tuples == 0 {
                 0.0
+            } else if let Some(recursive_fanout) = options.recursive_fanout() {
+                publish_relation_recursive_routing_build(index_relation, &state, recursive_fanout)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
+                    }) as f64
             } else {
                 publish_relation_partitioned_single_level_build(index_relation, &state)
                     .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
