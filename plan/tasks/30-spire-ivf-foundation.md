@@ -889,6 +889,11 @@ diagnostics without scoring assignments.
   no-write preflight that takes the shared SPIRE publish lock before loading
   the active epoch snapshot and deriving the same checked maintenance plan the
   live manual scheduler entrypoint will re-use.
+- [x] **Maintenance run result shape.** Live scheduler orchestration now has a
+  shared result row shape plus no-op/projected/published helpers for SQL
+  entrypoints, preserving planned action, affected/replacement PIDs, publish
+  epoch, allocator cursors, and whether a replacement epoch was actually
+  published.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
