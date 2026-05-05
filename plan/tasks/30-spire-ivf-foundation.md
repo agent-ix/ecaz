@@ -916,6 +916,10 @@ diagnostics without scoring assignments.
   has focused PG18 coverage for the empty-index no-action row, proving the SQL
   binding returns `maintenance_status = 'no_action'`, `planned_action = 'none'`,
   `planned_reason = 'empty_index'`, `published = false`, and active epoch 0.
+- [x] **Maintenance populated no-candidate SQL smoke.** The manual scheduler
+  entrypoint now has focused PG18 coverage for a populated healthy two-leaf
+  fixture, proving it reports `no_action` / `no_candidate`, leaves active epoch
+  1 and the leaf count unchanged, and does not publish a replacement epoch.
 - [x] **Maintenance merge publish smoke.** The manual scheduler entrypoint now
   has focused PG18 coverage for a populated merge publish, including empty
   affected leaves, proving the run publishes epoch 2, reports merge/published
