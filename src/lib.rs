@@ -5216,6 +5216,58 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_maintenance_run_empty_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_empty_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_empty_idx \
+             ON ec_spire_maintenance_run_empty_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("action row should exist");
+        let reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("reason row should exist");
+        let published = Spi::get_one::<bool>(
+            "SELECT published FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("published row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("active epoch row should exist");
+
+        assert_eq!(status, "no_action");
+        assert_eq!(action, "none");
+        assert_eq!(reason, "empty_index");
+        assert!(!published);
+        assert_eq!(active_epoch_after, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_leaf_snapshot_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_leaf_snapshot_sql \
