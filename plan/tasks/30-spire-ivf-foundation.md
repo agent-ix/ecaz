@@ -1088,6 +1088,17 @@ diagnostics without scoring assignments.
 
 ## Phase 8 — Product-Scale Measurement Gate
 
+- [ ] **Background maintenance scheduler.** Add automatic scheduling around the
+  existing manual `ec_spire_index_maintenance_run(index_oid)` machinery, such
+  as a background worker, VACUUM-time hook, or operator-controlled periodic
+  job. Any automated scheduler must keep the Phase 2 lock-time reload/recheck
+  contract and reuse the same publish path rather than inventing a second
+  split/merge implementation.
+- [ ] **Old-epoch physical reclamation.** Physically reclaim or reuse retained
+  old epoch object/manifest tuples only after active-query and retention rules
+  prove they are no longer needed. Phase 2 preserves retired epochs for
+  correctness and exposes cleanup-candidate debt, but tuple/page reclamation is
+  a later space-management phase.
 - [ ] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
 - [ ] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
