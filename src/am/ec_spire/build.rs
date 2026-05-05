@@ -194,6 +194,7 @@ pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) placement_directory: SpirePlacementDirectory,
     pub(super) root_pid: u64,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    pub(super) centroid_records: Vec<SpireRecursiveCentroidRecord>,
     pub(super) next_pid: u64,
 }
 
@@ -1492,6 +1493,7 @@ fn build_recursive_routing_epoch_draft_with_store(
         object_manifest,
         placement_directory,
         root_pid: input.routing_draft.root_pid,
+        centroid_records: input.routing_draft.centroid_records.clone(),
         routing_objects: input.routing_draft.routing_objects,
         next_pid,
     };
@@ -2840,6 +2842,7 @@ mod tests {
 
         assert_eq!(draft.root_pid, SPIRE_FIRST_PID + 2);
         assert_eq!(draft.routing_objects.len(), 3);
+        assert_eq!(draft.centroid_records.len(), 6);
         assert_eq!(draft.object_manifest.entries.len(), 7);
         assert_eq!(draft.placement_directory.entries.len(), 7);
         assert!(draft.next_pid >= 15);
@@ -2982,6 +2985,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(draft.object_manifest.entries.len(), 3);
+        assert_eq!(draft.centroid_records.len(), 2);
         let first_leaf_placement = draft.placement_directory.get(11).unwrap();
         let first_leaf = object_store
             .read_leaf_object_v2(first_leaf_placement)
@@ -3126,6 +3130,7 @@ mod tests {
         .unwrap();
         assert_eq!(epoch_draft.root_pid, SPIRE_FIRST_PID + 6);
         assert_eq!(epoch_draft.object_manifest.entries.len(), 7);
+        assert_eq!(epoch_draft.centroid_records.len(), 6);
         assert_eq!(pid_allocator.next_pid(), next_pid);
         assert_eq!(
             local_vec_id_allocator.next_local_vec_seq(),
