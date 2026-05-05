@@ -1048,6 +1048,10 @@ diagnostics without scoring assignments.
   that consume the local vector allocator cursor explicitly, so the upcoming
   relation publisher can use the same publish coordinator path as single-level
   builds without hiding cursor ownership inside the recursive epoch draft.
+  Relation publishing now has a recursive epoch bridge that writes placement
+  directory entries, rebuilds the object manifest with durable placement-entry
+  TIDs, writes the manifest bundle, and installs root/control state through the
+  same publish coordinator used by the existing build path.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
