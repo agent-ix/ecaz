@@ -1027,7 +1027,7 @@ diagnostics without scoring assignments.
   plus whether the relation is using the recursive build path, and options /
   scan-sanity active leaf counts now traverse recursive hierarchies instead of
   treating root-to-internal edges as leaves.
-- [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
+- [x] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
   it accepts child PID/centroid records, preserves the single-level root shape
@@ -1050,10 +1050,10 @@ diagnostics without scoring assignments.
   centroid plan, allocates leaf PIDs, groups primary assignment rows by
   centroid, builds the recursive routing hierarchy over those leaf centroids,
   attaches each leaf input to its routed parent PID, and returns the recursive
-  epoch object input plus allocator cursors for the later relation publisher.
+  epoch object input plus allocator cursors for relation publishing.
   Recursive epoch drafts now expose manifest/root-control publish bundle helpers
-  that consume the local vector allocator cursor explicitly, so the upcoming
-  relation publisher can use the same publish coordinator path as single-level
+  that consume the local vector allocator cursor explicitly, so relation
+  publishing can use the same publish coordinator path as single-level
   builds without hiding cursor ownership inside the recursive epoch draft.
   Relation publishing now has a recursive epoch bridge that writes placement
   directory entries, rebuilds the object manifest with durable placement-entry
@@ -1064,8 +1064,7 @@ diagnostics without scoring assignments.
   input, writes recursive leaf/routing objects through the relation store,
   checks allocator cursor agreement, and invokes the recursive relation publish
   bridge. SPIRE now has an explicit `recursive_fanout` reloption: the default
-  `0` preserves
-  single-level build behavior, while values `>= 2` are reserved as the opt-in
+  `0` preserves single-level build behavior, while values `>= 2` opt into
   recursive routing fanout. Live populated `ambuild` now switches to recursive
   relation build when `recursive_fanout >= 2`, preserving default single-level
   builds while publishing root/internal/leaf hierarchy metadata and routing
@@ -1082,7 +1081,7 @@ diagnostics without scoring assignments.
   `ec_spire_index_routing_centroid_snapshot(index_oid)` now exposes those
   persisted centroid vectors, levels, ordinals, child kinds, placement state,
   and parent links through SQL diagnostics.
-- [ ] **Level-local scan primitive.** Given an input query and a parent
+- [x] **Level-local scan primitive.** Given an input query and a parent
   partition, return child partitions to probe. Scan now has a pure
   `route_routing_object_to_child_pids` primitive that accepts root or internal
   routing objects, applies the existing bounded route heap and deterministic
