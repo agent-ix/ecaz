@@ -74,6 +74,73 @@ pub(super) unsafe fn lock_publish_relation(
     }
 }
 
+struct SpireHeapRelationGuard {
+    relation: pg_sys::Relation,
+}
+
+impl SpireHeapRelationGuard {
+    unsafe fn open_for_index(index_relation: pg_sys::Relation) -> Result<Self, String> {
+        let index_oid = unsafe { (*index_relation).rd_id };
+        let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+        if heap_oid == pg_sys::InvalidOid {
+            return Err("ec_spire maintenance could not resolve heap relation".to_owned());
+        }
+        let relation =
+            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            return Err("ec_spire maintenance failed to open heap relation".to_owned());
+        }
+        Ok(Self { relation })
+    }
+
+    fn relation(&self) -> pg_sys::Relation {
+        self.relation
+    }
+}
+
+impl Drop for SpireHeapRelationGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::table_close(self.relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
+struct SpireHeapSlotGuard {
+    slot: *mut pg_sys::TupleTableSlot,
+}
+
+impl SpireHeapSlotGuard {
+    unsafe fn new(heap_relation: pg_sys::Relation) -> Result<Self, String> {
+        let slot = unsafe {
+            pg_sys::MakeSingleTupleTableSlot(
+                (*heap_relation).rd_att,
+                pg_sys::table_slot_callbacks(heap_relation),
+            )
+        };
+        if slot.is_null() {
+            return Err("ec_spire maintenance failed to allocate a heap tuple slot".to_owned());
+        }
+        Ok(Self { slot })
+    }
+
+    fn as_ptr(&self) -> *mut pg_sys::TupleTableSlot {
+        self.slot
+    }
+}
+
+impl Drop for SpireHeapSlotGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+    }
+}
+
+unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        return Err("ec_spire maintenance requires an active heap snapshot".to_owned());
+    }
+    Ok(snapshot)
+}
+
 pub(crate) fn register_gucs() {
     options::register_gucs();
 }
@@ -1484,6 +1551,70 @@ fn maintenance_run_result_from_rows(
     )
 }
 
+unsafe fn build_relation_selected_scheduled_maintenance_input(
+    index_relation: pg_sys::Relation,
+    snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
+    object_store: &storage::SpireRelationObjectStore,
+    selected: &update::SpireSelectedScheduledReplacementPublishLockPlan,
+    rows: &[SpireIndexLeafSnapshotRow],
+) -> Result<update::SpireRelationScheduledReplacementExecutionInput, String> {
+    let parent = update::load_selected_scheduled_replacement_parent_routing(
+        snapshot,
+        object_store,
+        selected,
+    )?;
+    let object_versions =
+        scheduled_replacement_object_version_plan(selected, parent.header.object_version, rows)?;
+    let (published_at_micros, retain_until_micros) =
+        unsafe { build::current_epoch_publish_times()? };
+
+    match selected.decision.mode {
+        update::SpireLeafReplacementScheduleMode::Split => {
+            let heap_relation = unsafe { SpireHeapRelationGuard::open_for_index(index_relation)? };
+            let heap_snapshot = unsafe { active_spire_maintenance_snapshot()? };
+            let indexed_attribute = unsafe {
+                crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+                    heap_relation.relation(),
+                    index_relation,
+                    "ec_spire maintenance split replacement source vector",
+                )
+            };
+            let slot = unsafe { SpireHeapSlotGuard::new(heap_relation.relation())? };
+            let relation_options = options::relation_options(index_relation);
+            unsafe {
+                update::build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
+                    heap_relation.relation(),
+                    heap_snapshot,
+                    slot.as_ptr(),
+                    indexed_attribute,
+                    snapshot,
+                    object_store,
+                    selected,
+                    usize::from(parent.dimensions),
+                    relation_options.seed as u64,
+                    build::SPIRE_DEFAULT_KMEANS_ITERATIONS,
+                    object_versions.parent_object_version,
+                    object_versions.leaf_object_version,
+                    published_at_micros,
+                    retain_until_micros,
+                )
+            }
+        }
+        update::SpireLeafReplacementScheduleMode::Merge => {
+            update::build_relation_selected_scheduled_merge_replacement_execution_input_from_snapshot(
+                snapshot,
+                object_store,
+                selected,
+                rows,
+                object_versions.parent_object_version,
+                object_versions.leaf_object_version,
+                published_at_micros,
+                retain_until_micros,
+            )
+        }
+    }
+}
+
 fn maintenance_plan_snapshot_from_rows(
     root_control: meta::SpireRootControlState,
     active_epoch_manifest: &meta::SpireEpochManifest,
@@ -1599,6 +1730,78 @@ pub(crate) unsafe fn index_locked_maintenance_run_plan(
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
         let rows = collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)?;
         maintenance_run_result_from_rows(root_control, &epoch_manifest, &rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn index_maintenance_run(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexMaintenanceRunResult {
+    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let result = (|| -> Result<SpireIndexMaintenanceRunResult, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(no_maintenance_run_result(
+                root_control,
+                0,
+                "empty_index",
+                "build or insert rows to publish the first SPIRE epoch",
+            ));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let published_snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let validated_snapshot =
+            meta::SpireValidatedEpochSnapshot::from_snapshot(published_snapshot)?;
+        let mut object_store =
+            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let rows = collect_leaf_snapshot_rows(root_control, &validated_snapshot, &object_store)?;
+        let mut pid_allocator = assign::SpirePidAllocator::new(root_control.next_pid)?;
+        let Some(selected) = update::choose_scheduled_replacement_publish_lock_plan(
+            &rows,
+            &root_control,
+            &epoch_manifest,
+            &mut pid_allocator,
+        )?
+        else {
+            return Ok(no_maintenance_run_result(
+                root_control,
+                epoch_manifest.epoch,
+                "no_candidate",
+                "active leaves are within split/merge thresholds",
+            ));
+        };
+        let input = unsafe {
+            build_relation_selected_scheduled_maintenance_input(
+                index_relation,
+                &published_snapshot,
+                &object_store,
+                &selected,
+                &rows,
+            )?
+        };
+        unsafe {
+            update::publish_relation_selected_scheduled_replacement_epoch(
+                index_relation,
+                epoch_manifest,
+                &published_snapshot,
+                &selected,
+                input,
+                &mut object_store,
+            )?;
+        }
+
+        selected_maintenance_run_result(
+            selected,
+            "published",
+            true,
+            "scheduled replacement epoch was published",
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }

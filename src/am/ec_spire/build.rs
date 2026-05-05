@@ -23,7 +23,7 @@ use crate::am::common::training as common_training;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
 
-const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
+pub(super) const SPIRE_DEFAULT_KMEANS_ITERATIONS: usize = 8;
 const SPIRE_DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 pub(super) const SPIRE_INITIAL_EPOCH: u64 = 1;
 pub(super) const SPIRE_INITIAL_OBJECT_VERSION: u64 = 1;

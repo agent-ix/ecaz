@@ -1886,6 +1886,53 @@ fn ec_spire_index_locked_maintenance_run_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_run(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch_before, i64),
+        name!(active_epoch_after, i64),
+        name!(maintenance_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(published, bool),
+        name!(maintenance_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_run") };
+    let result = unsafe { am::spire_index_maintenance_run(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
+        i64::try_from(result.active_epoch_after).expect("active epoch should fit in i64"),
+        result.maintenance_status.to_owned(),
+        result.planned_action.to_owned(),
+        result.planned_reason.to_owned(),
+        i64::try_from(result.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&result.affected_leaf_pids),
+        i64::try_from(result.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&result.replacement_leaf_pids),
+        i64::try_from(result.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(result.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(result.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        result.published,
+        result.maintenance_message.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_delta_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
