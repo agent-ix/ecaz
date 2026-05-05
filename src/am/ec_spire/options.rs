@@ -6,11 +6,12 @@ use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 use super::quantizer::SpireAssignmentPayloadFormat;
 use super::{
     EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE, EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
-    EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED, EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
-    EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE, EC_SPIRE_MAX_PQ_GROUP_SIZE,
-    EC_SPIRE_MAX_RERANK_WIDTH, EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
-    EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE, EC_SPIRE_MIN_PQ_GROUP_SIZE,
-    EC_SPIRE_MIN_RERANK_WIDTH, EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_DEFAULT_RECURSIVE_FANOUT, EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED,
+    EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS, EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE,
+    EC_SPIRE_MAX_PQ_GROUP_SIZE, EC_SPIRE_MAX_RECURSIVE_FANOUT, EC_SPIRE_MAX_RERANK_WIDTH,
+    EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS, EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE,
+    EC_SPIRE_MIN_PQ_GROUP_SIZE, EC_SPIRE_MIN_RECURSIVE_FANOUT, EC_SPIRE_MIN_RERANK_WIDTH,
+    EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
@@ -25,6 +26,7 @@ static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
 struct EcSpireReloptions {
     vl_len_: i32,
     nlists: i32,
+    recursive_fanout: i32,
     nprobe: i32,
     rerank_width: i32,
     training_sample_rows: i32,
@@ -77,6 +79,7 @@ impl SpireStorageFormat {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct EcSpireOptions {
     pub(super) nlists: i32,
+    pub(super) recursive_fanout: i32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
     pub(super) training_sample_rows: i32,
@@ -88,6 +91,7 @@ pub(super) struct EcSpireOptions {
 impl EcSpireOptions {
     const DEFAULT: Self = Self {
         nlists: EC_SPIRE_DEFAULT_NLISTS,
+        recursive_fanout: EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
         nprobe: EC_SPIRE_DEFAULT_NPROBE,
         rerank_width: EC_SPIRE_DEFAULT_RERANK_WIDTH,
         training_sample_rows: EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
@@ -106,6 +110,16 @@ impl EcSpireOptions {
 
     pub(super) fn assignment_payload_format(self) -> SpireAssignmentPayloadFormat {
         self.storage_format.assignment_payload_format()
+    }
+
+    pub(super) fn recursive_fanout(self) -> Option<u32> {
+        match self.recursive_fanout {
+            0 => None,
+            value if value >= 2 => Some(value as u32),
+            _ => {
+                pgrx::error!("ec_spire recursive_fanout reloption must be 0 or at least 2")
+            }
+        }
     }
 }
 
@@ -310,6 +324,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
             );
             pg_sys::add_local_int_reloption(
                 &mut relopts,
+                c"recursive_fanout".as_ptr(),
+                c"Opt-in recursive SPIRE routing fanout; 0 keeps single-level build behavior."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
+                EC_SPIRE_MIN_RECURSIVE_FANOUT,
+                EC_SPIRE_MAX_RECURSIVE_FANOUT,
+                offset_of!(EcSpireReloptions, recursive_fanout) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
                 c"nprobe".as_ptr(),
                 c"Number of SPIRE leaf PIDs to probe during scan; 0 chooses an automatic value."
                     .as_ptr(),
@@ -442,6 +466,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 
     EcSpireOptions {
         nlists: reloptions.nlists,
+        recursive_fanout: reloptions.recursive_fanout,
         nprobe: reloptions.nprobe,
         rerank_width: reloptions.rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
@@ -525,6 +550,8 @@ mod tests {
         let options = EcSpireOptions::DEFAULT;
 
         assert_eq!(options.nlists, 0);
+        assert_eq!(options.recursive_fanout, 0);
+        assert_eq!(options.recursive_fanout(), None);
         assert_eq!(options.nprobe, 0);
         assert_eq!(options.rerank_width, 0);
         assert_eq!(options.training_sample_rows, 0);
@@ -541,6 +568,7 @@ mod tests {
     fn single_level_scan_plan_resolves_runtime_knobs() {
         let options = EcSpireOptions {
             nlists: 17,
+            recursive_fanout: 4,
             nprobe: 3,
             rerank_width: 128,
             training_sample_rows: 1000,
@@ -562,12 +590,14 @@ mod tests {
             plan.dedupe_mode,
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         );
+        assert_eq!(options.recursive_fanout(), Some(4));
     }
 
     #[test]
     fn single_level_scan_plan_uses_session_overrides_and_full_rerank() {
         let options = EcSpireOptions {
             nlists: 17,
+            recursive_fanout: 0,
             nprobe: 0,
             rerank_width: 128,
             training_sample_rows: 0,
@@ -597,6 +627,7 @@ mod tests {
     fn single_level_scan_plan_rejects_invalid_manual_options() {
         let invalid = EcSpireOptions {
             nlists: 0,
+            recursive_fanout: 0,
             nprobe: -1,
             rerank_width: 0,
             training_sample_rows: 0,

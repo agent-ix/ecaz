@@ -27,6 +27,9 @@ pub(crate) use self::vacuum::{
 pub(super) const EC_SPIRE_DEFAULT_NLISTS: i32 = 0;
 pub(super) const EC_SPIRE_MIN_NLISTS: i32 = 0;
 pub(super) const EC_SPIRE_MAX_NLISTS: i32 = 1_000_000;
+pub(super) const EC_SPIRE_DEFAULT_RECURSIVE_FANOUT: i32 = 0;
+pub(super) const EC_SPIRE_MIN_RECURSIVE_FANOUT: i32 = 0;
+pub(super) const EC_SPIRE_MAX_RECURSIVE_FANOUT: i32 = 1_000_000;
 pub(super) const EC_SPIRE_DEFAULT_NPROBE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_NPROBE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_NPROBE: i32 = 1_000_000;

@@ -2566,6 +2566,7 @@ mod tests {
     fn options(training_sample_rows: i32) -> super::options::EcSpireOptions {
         super::options::EcSpireOptions {
             nlists: 2,
+            recursive_fanout: 0,
             nprobe: 0,
             rerank_width: 0,
             training_sample_rows,
