@@ -912,6 +912,10 @@ diagnostics without scoring assignments.
   has focused PG18 coverage for the empty-index no-action row, proving the SQL
   binding returns `maintenance_status = 'no_action'`, `planned_action = 'none'`,
   `planned_reason = 'empty_index'`, `published = false`, and active epoch 0.
+- [x] **Maintenance merge publish smoke.** The manual scheduler entrypoint now
+  has focused PG18 coverage for a populated merge publish, including empty
+  affected leaves, proving the run publishes epoch 2, reports merge/published
+  status, and reduces a three-leaf fixture to two active leaves.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
