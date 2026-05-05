@@ -899,6 +899,10 @@ diagnostics without scoring assignments.
   SQL surface that holds the publish lock, loads the active snapshot, chooses
   the same selected replacement candidate as the live scheduler, and reports
   the run-result row with `published = false`.
+- [x] **Scheduled replacement object-version plan.** Live scheduler
+  orchestration now derives successor object versions for replacement parent
+  routing and replacement leaves from active snapshot metadata, rejecting zero,
+  overflow, duplicate, or missing affected-leaf versions before relation writes.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
