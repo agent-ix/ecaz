@@ -1520,6 +1520,8 @@ fn ec_spire_index_options_snapshot(
     'static,
     (
         name!(nlists, i32),
+        name!(recursive_fanout, i32),
+        name!(recursive_build_enabled, bool),
         name!(active_leaf_count, i64),
         name!(relation_nprobe, i32),
         name!(session_nprobe, Option<i32>),
@@ -1546,6 +1548,8 @@ fn ec_spire_index_options_snapshot(
 
     TableIterator::once((
         snapshot.nlists,
+        snapshot.recursive_fanout,
+        snapshot.recursive_build_enabled,
         i64::from(snapshot.active_leaf_count),
         snapshot.relation_nprobe,
         snapshot.session_nprobe,
@@ -4737,6 +4741,18 @@ mod tests {
         )
         .expect("options query should succeed")
         .expect("options row should exist");
+        let recursive_fanout = Spi::get_one::<i32>(
+            "SELECT recursive_fanout FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let recursive_build_enabled = Spi::get_one::<bool>(
+            "SELECT recursive_build_enabled FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
         let session_nprobe = Spi::get_one::<i32>(
             "SELECT session_nprobe FROM \
              ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
@@ -4769,6 +4785,8 @@ mod tests {
         .expect("options row should exist");
 
         assert_eq!(nlists, 3);
+        assert_eq!(recursive_fanout, 0);
+        assert!(!recursive_build_enabled);
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");
@@ -4810,6 +4828,49 @@ mod tests {
         assert_eq!(effective_nprobe_source, "session");
         assert_eq!(effective_rerank_width, 9);
         assert_eq!(effective_rerank_width_source, "session");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_options_recursive_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("recursive options table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_options_recursive_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("recursive options insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_recursive_sql_idx \
+             ON ec_spire_options_recursive_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive options ec_spire index creation should succeed");
+        let recursive_fanout = Spi::get_one::<i32>(
+            "SELECT recursive_fanout FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_build_enabled = Spi::get_one::<bool>(
+            "SELECT recursive_build_enabled FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+
+        assert_eq!(recursive_fanout, 2);
+        assert!(recursive_build_enabled);
+        assert_eq!(recursive_active_leaf_count, 4);
 
         Spi::run(
             "CREATE TABLE ec_spire_options_pq_empty \

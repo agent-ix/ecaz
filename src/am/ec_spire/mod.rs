@@ -189,6 +189,8 @@ pub(crate) struct SpireIndexAllocatorSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) nlists: i32,
+    pub(crate) recursive_fanout: i32,
+    pub(crate) recursive_build_enabled: bool,
     pub(crate) active_leaf_count: u32,
     pub(crate) relation_nprobe: i32,
     pub(crate) session_nprobe: Option<i32>,
@@ -616,6 +618,18 @@ fn assignment_payload_scannability(
             SPIRE_ASSIGNMENT_PAYLOAD_STATUS_DEFERRED_MODEL_METADATA,
             "persist grouped-PQ model metadata before using pq_fastscan with SPIRE",
         ),
+    }
+}
+
+fn count_snapshot_options_leaf_pids(
+    snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+    recursive_build_enabled: bool,
+) -> Result<u32, String> {
+    if recursive_build_enabled {
+        scan::count_snapshot_recursive_leaf_pids(snapshot, object_store)
+    } else {
+        scan::count_snapshot_single_level_leaf_pids(snapshot, object_store)
     }
 }
 
@@ -1163,6 +1177,7 @@ pub(crate) unsafe fn index_options_snapshot(
 ) -> SpireIndexOptionsSnapshot {
     let result = (|| -> Result<SpireIndexOptionsSnapshot, String> {
         let relation_options = unsafe { options::relation_options(index_relation) };
+        let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let active_leaf_count = if root_control.active_epoch == 0 {
             0
@@ -1176,7 +1191,7 @@ pub(crate) unsafe fn index_options_snapshot(
             )?;
             let object_store =
                 unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-            scan::count_snapshot_single_level_leaf_pids(&snapshot, &object_store)?
+            count_snapshot_options_leaf_pids(&snapshot, &object_store, recursive_build_enabled)?
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -1191,6 +1206,8 @@ pub(crate) unsafe fn index_options_snapshot(
 
         Ok(SpireIndexOptionsSnapshot {
             nlists: relation_options.nlists,
+            recursive_fanout: relation_options.recursive_fanout,
+            recursive_build_enabled,
             active_leaf_count,
             relation_nprobe: relation_options.nprobe,
             session_nprobe: nprobe
@@ -1220,6 +1237,7 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
 ) -> SpireIndexScanSanitySnapshot {
     let result = (|| -> Result<SpireIndexScanSanitySnapshot, String> {
         let relation_options = unsafe { options::relation_options(index_relation) };
+        let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let active_leaf_count = if root_control.active_epoch == 0 {
             0
@@ -1233,7 +1251,7 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
             )?;
             let object_store =
                 unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-            scan::count_snapshot_single_level_leaf_pids(&snapshot, &object_store)?
+            count_snapshot_options_leaf_pids(&snapshot, &object_store, recursive_build_enabled)?
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
