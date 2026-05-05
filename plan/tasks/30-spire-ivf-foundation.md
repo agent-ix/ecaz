@@ -903,6 +903,11 @@ diagnostics without scoring assignments.
   surface now has focused PG18 coverage proving a populated merge candidate is
   reported as planned/projected, while active epoch, allocator cursor, and leaf
   count remain unchanged after the locked call returns.
+- [x] **Locked run-plan to publish consistency smoke.** The locked run-plan SQL
+  smoke now immediately invokes the live maintenance entrypoint after the
+  no-write assertion, proving the actual publish reuses the projected action,
+  affected PIDs, replacement PIDs, publish epoch, and allocator cursor when the
+  active snapshot has not changed.
 - [x] **Scheduled replacement object-version plan.** Live scheduler
   orchestration now derives successor object versions for replacement parent
   routing and replacement leaves from active snapshot metadata, rejecting zero,
