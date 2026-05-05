@@ -1068,8 +1068,11 @@ diagnostics without scoring assignments.
   flat root and a two-level recursive root/internal shape route the same query
   to the same best leaf. The quantized candidate tests now also build matching
   flat and recursive local object-store snapshots over the same four V2 leaf
-  objects and verify the same top candidate is returned. Relation-backed SQL
-  smoke remains open for the final Phase 3 comparison packet.
+  objects and verify the same top candidate is returned. A follow-up proof now
+  materializes a recursive routing epoch through the build helper and scans the
+  resulting snapshot through the quantized recursive candidate path.
+  Relation-backed SQL smoke remains open for the final Phase 3 comparison
+  packet.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
