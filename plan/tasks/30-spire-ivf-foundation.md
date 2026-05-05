@@ -546,16 +546,16 @@ diagnostics without scoring assignments.
   parent-routing centroid remains byte-equal. The row-folding helper reads the
   active epoch snapshot, folds active insert/delete deltas into replacement
   base-leaf rows, clears delta-insert flags on surviving rows, and fails closed
-  if an affected PID is not an active leaf. Routing-object rewrite and scheduler
-  execution remain open.
+  if an affected PID is not an active leaf. Later Phase 2 slices wired this
+  into routing-object rewrite and live scheduler execution.
 - [x] **Replacement routing rewrite helper.** Phase 2 now has a pure helper for
   rewriting a parent routing object after replacement leaf planning. It removes
   affected child PIDs, inserts the replacement child PIDs and centroids at the
   first affected position, preserves unaffected child order, reassigns
   sequential centroid ordinals, carries root/internal parent identity, and
-  rejects replacement PIDs that collide with unaffected children. Live
-  split/merge scheduler execution and relation-backed publish wiring remain
-  open.
+  rejects replacement PIDs that collide with unaffected children. The live
+  split/merge scheduler now consumes this through relation-backed publish
+  wiring.
 - [x] **Replacement placement-directory helper.** Phase 2 now has a pure helper
   for planning the new active placement directory for a replacement epoch. It
   carries unaffected active placements with the new epoch, drops the replaced
@@ -578,29 +578,29 @@ diagnostics without scoring assignments.
   replacement V2 leaf objects for a planned replacement epoch. It validates
   replacement leaf inputs, writes routing and leaf objects with published-epoch
   backrefs through the local store, and returns placements ordered by
-  replacement routing children. Live relation-backed object writes and
-  scheduler execution remain open.
+  replacement routing children. Relation-backed object writes and scheduler
+  execution now share the same validation contract.
 - [x] **Relation replacement object write helper.** The replacement object
   writer now uses a shared validation and placement-ordering path for local and
   relation-backed object stores. The relation wrapper writes the rewritten
   parent routing object and replacement V2 leaves through
   `SpireRelationObjectStore`, so relation publish wiring can consume the same
   replacement-object placement bundle as the local helper. Scheduler execution
-  and root/control publication wiring remain open.
+  and root/control publication now consume this relation path.
 - [x] **Replacement publish assembly helper.** Phase 2 now has a helper that
   turns replacement object placements plus placement-write evidence into the
   final replacement epoch draft. It plans the new active placement directory,
   drops the affected old leaves and their deltas, validates the object
   manifest/root-control publish shape, and preserves root/control allocator
   cursors supplied by the caller. Live scheduler execution and root/control
-  relation publication remain open.
+  relation publication now reuse this assembly path.
 - [x] **Relation replacement publish helper.** Replacement epoch publication now
   has a relation wrapper that accepts already-written replacement object
   placements, writes the new placement-directory rows to the index relation,
   builds the validated replacement epoch draft, retires the previous epoch
   manifest through the existing publish coordinator, writes the new manifest
-  bundle, and advances root/control. Live split/merge scheduler execution
-  remains open.
+  bundle, and advances root/control. Live split/merge scheduler execution now
+  invokes this relation publisher under the SPIRE publish lock.
 - [x] **Replacement scheduler-choice helper.** Phase 2 now has a pure selector
   over the existing leaf snapshot diagnostics. It validates that candidate rows
   come from one active epoch, rejects duplicate or ambiguous split+merge rows,
@@ -680,8 +680,8 @@ diagnostics without scoring assignments.
   decision shape, PID count, centroid count, fresh/unique replacement PIDs, and
   PID cursor advancement plus finite non-empty centroid vectors before handing
   exact parent-dimension validation to the existing routing rewrite helper.
-  Live centroid
-  recomputation and relation execution remain open.
+  Later selected split/merge builders now supply recomputed centroids and
+  relation execution inputs.
 - [x] **Scheduled merge replacement centroid helper.** Scheduler execution now
   has a pure helper that recomputes the single merge replacement centroid from
   the affected parent-routing child centroids and active leaf snapshot
@@ -757,14 +757,14 @@ diagnostics without scoring assignments.
   non-successor publish epochs, consistency-mode drift, and replacement
   leaf-placement count mismatches before delegating placement directory,
   manifest, and root/control validation to the existing publish-draft helper.
-  Live relation execution remains open.
+  Relation selected publish now consumes this checked draft path.
 - [x] **Scheduled replacement object-write helper.** Scheduler execution now
   has local and relation object-write wrappers that bind a checked split/merge
   decision to the rewritten parent routing object, replacement children, and
   leaf inputs before writing replacement objects. They reject non-successor
   object epochs, parent-PID mismatches, and replacement-child count mismatches
-  before reusing the existing routing/leaf object writer validation. Live
-  scheduler invocation remains open.
+  before reusing the existing routing/leaf object writer validation. The live
+  scheduler now uses the relation variant through selected publish.
 - [x] **Scheduled replacement PID-plan output validator.** Scheduler execution
   now has a pure guard that checks written replacement object placements and
   final `next_pid` against the fresh PID plan selected under the publish lock.
@@ -803,7 +803,7 @@ diagnostics without scoring assignments.
   validates written placements against the scheduled PID plan, writes the
   replacement placement directory, builds the scheduled replacement epoch draft,
   and publishes root/control through the existing replacement epoch publisher.
-  Live scheduler invocation remains open.
+  The manual scheduler now invokes this under the shared publish lock.
 - [x] **Relation selected scheduled replacement publish helper.** Scheduler
   execution now has a selected-plan preflight and relation publish wrapper that
   keep decision, PID plan, and publish plan bundled through relation publish
@@ -967,13 +967,14 @@ diagnostics without scoring assignments.
   split candidate when its effective assignment count is at least
   `max(SPIRE_LEAF_SPLIT_MIN_ASSIGNMENTS,
   SPIRE_LEAF_SPLIT_AVERAGE_MULTIPLIER *
-  ceil(total_effective_assignments / active_leaf_count))`; the actual split
-  scheduler remains open.
+  ceil(total_effective_assignments / active_leaf_count))`; the manual
+  scheduler now uses that candidate to publish selected split replacements.
 - [x] **Merge trigger.** Define the sparse/low-quality partition threshold that
   schedules a merge. The first read-only trigger marks a leaf as a merge
   candidate when its effective assignment count is at or below
   `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`; the
-  actual merge scheduler remains open.
+  manual scheduler now uses those candidates to publish selected merge
+  replacements.
 - [ ] **Concurrency validation.** Add a stress harness for insert/delete/scan
   overlap against leaf assignment rows and partition-object storage. Concurrent
   same-leaf post-build inserts now have a focused PG18 external-session test
