@@ -1110,7 +1110,10 @@ diagnostics without scoring assignments.
   objects and distinguishes actual leaf-level children from root child count.
   Recursive route descent now uses the Phase 3 conservative per-level `nprobe`
   policy: configured relation/session `nprobe` applies at level 1, while higher
-  routing levels probe one child until durable per-level control lands.
+  routing levels probe one child until durable per-level control lands. Pure
+  scan coverage now includes a three-routing-level hierarchy to verify upper
+  levels select one internal child per level before applying leaf-level
+  `nprobe`.
 - [x] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE. The
   pure scan helper tests now include a four-leaf synthetic hierarchy where a
