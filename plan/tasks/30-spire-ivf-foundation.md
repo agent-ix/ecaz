@@ -1013,16 +1013,16 @@ diagnostics without scoring assignments.
   centroid dimensions, per-level `nprobe`, and build parameters. The
   single-level foundation now persists root/leaf levels, parent/child PIDs, and
   root centroid dimensions, and exposes them through
-  `ec_spire_index_hierarchy_snapshot(index_oid)`. The diagnostic explicitly
-  reports that recursive routing and per-level `nprobe` are unsupported until
-  the recursive build coordinator lands. The hierarchy diagnostic now also
-  runs a pure recursive shape validator over active root/internal/leaf/delta
+  `ec_spire_index_hierarchy_snapshot(index_oid)`. The hierarchy diagnostic now
+  also runs a pure recursive shape validator over active root/internal/leaf/delta
   metadata, preserving the single-level status while reporting malformed
   recursive parent/child level shapes as invalid before level-aware scan
   routing descends through them. Now that opt-in recursive `ambuild` publishes
   internal routing objects and recursive scan routing is live, the hierarchy
   diagnostic reports `recursive_routing_supported = true` for valid hierarchies
   with internal routing objects while leaving single-level indexes unsupported.
+  Per-level `nprobe` metadata remains deferred; the current live routing policy
+  applies configured `nprobe` at level 1 and probes one child above that.
 - [ ] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
@@ -1036,12 +1036,12 @@ diagnostics without scoring assignments.
   manifest/directory snapshot, rejects missing leaf placement coverage, and
   verifies each leaf object's stored parent PID against its level-1 routing
   parent. The materializer now uses a shared object-store writer seam with a
-  relation-backed entry point for writing recursive routing objects. Live
-  relation-backed recursive build orchestration remains open. The same seam now
-  also accepts recursive leaf inputs as assignment rows, validates duplicate /
-  missing / unexpected leaf PID coverage and parent alignment before writing,
-  writes V2 leaf objects through the local or relation object store, and then
-  materializes the recursive routing snapshot from those fresh placements. The
+  relation-backed entry point for writing recursive routing objects. The same
+  seam now also accepts recursive leaf inputs as assignment rows, validates
+  duplicate, missing, and unexpected leaf PID coverage plus parent alignment
+  before writing, writes V2 leaf objects through the local or relation object
+  store, and then materializes the recursive routing snapshot from those fresh
+  placements. The
   build side now has a coordinator input assembler that takes the first-level
   centroid plan, allocates leaf PIDs, groups primary assignment rows by
   centroid, builds the recursive routing hierarchy over those leaf centroids,
@@ -1055,12 +1055,12 @@ diagnostics without scoring assignments.
   directory entries, rebuilds the object manifest with durable placement-entry
   TIDs, writes the manifest bundle, and installs root/control state through the
   same publish coordinator used by the existing build path. The build module now
-  also has a non-activated relation recursive build composer that trains the
+  also has a relation recursive build composer that trains the
   first-level centroid plan from `SpireBuildState`, assembles recursive epoch
   input, writes recursive leaf/routing objects through the relation store,
   checks allocator cursor agreement, and invokes the recursive relation publish
-  bridge. Live `ambuild` selection remains intentionally unchanged. SPIRE now
-  has an explicit `recursive_fanout` reloption: the default `0` preserves
+  bridge. SPIRE now has an explicit `recursive_fanout` reloption: the default
+  `0` preserves
   single-level build behavior, while values `>= 2` are reserved as the opt-in
   recursive routing fanout. Live populated `ambuild` now switches to recursive
   relation build when `recursive_fanout >= 2`, preserving default single-level
@@ -1097,7 +1097,7 @@ diagnostics without scoring assignments.
   Recursive route descent now uses the Phase 3 conservative per-level `nprobe`
   policy: configured relation/session `nprobe` applies at level 1, while higher
   routing levels probe one child until durable per-level control lands.
-- [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
+- [x] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE. The
   pure scan helper tests now include a four-leaf synthetic hierarchy where a
   flat root and a two-level recursive root/internal shape route the same query
@@ -1109,8 +1109,10 @@ diagnostics without scoring assignments.
   Relation-backed SQL smoke now covers an opt-in `recursive_fanout = 2`
   populated build: hierarchy diagnostics report internal routing objects and
   depth 2, root-routing diagnostics report root-to-internal children, and an
-  ordered scan returns the expected nearest row. The final comparison packet can
-  build on that live relation-backed path.
+  ordered scan returns the expected nearest row. The final SQL comparison now
+  builds flat and recursive relation-backed SPIRE indexes over the same four
+  rows, confirms their hierarchy/root diagnostics differ as expected, and
+  verifies both ordered scans return the same nearest row.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
