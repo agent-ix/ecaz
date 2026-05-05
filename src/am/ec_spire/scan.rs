@@ -1309,16 +1309,29 @@ fn route_root_object_to_leaf_pids(
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire scan routing requires a root routing object".to_owned());
     }
+    route_routing_object_to_child_pids(root_object, query_vector, nprobe)
+}
+
+fn route_routing_object_to_child_pids(
+    routing_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+    nprobe: u32,
+) -> Result<Vec<u64>, String> {
+    if routing_object.header.kind != SpirePartitionObjectKind::Root
+        && routing_object.header.kind != SpirePartitionObjectKind::Internal
+    {
+        return Err("ec_spire scan routing requires a routing object".to_owned());
+    }
     if nprobe == 0 {
         return Err("ec_spire routed scan requires nprobe > 0".to_owned());
     }
-    validate_routing_query_vector(query_vector, usize::from(root_object.dimensions))?;
+    validate_routing_query_vector(query_vector, usize::from(routing_object.dimensions))?;
 
     let requested = usize::try_from(nprobe)
         .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
 
-    let mut heap = BinaryHeap::with_capacity(requested.min(root_object.child_count()));
-    for child in root_object.children() {
+    let mut heap = BinaryHeap::with_capacity(requested.min(routing_object.child_count()));
+    for child in routing_object.children() {
         let entry = SpireRouteCandidateHeapEntry {
             candidate: SpireRouteCandidate {
                 centroid_index: child.centroid_index,
@@ -1935,9 +1948,9 @@ mod tests {
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_single_level_leaf_pids, prepare_single_level_snapshot_scan_candidates,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
-        route_root_object_to_leaf_pids, SpireLeafScanRow, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
-        SpireScoredScanCandidate,
+        route_root_object_to_leaf_pids, route_routing_object_to_child_pids, SpireLeafScanRow,
+        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
+        SpireScanQuery, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -3367,6 +3380,45 @@ mod tests {
                 SPIRE_FIRST_PID + 2
             ]
         );
+    }
+
+    #[test]
+    fn route_routing_object_to_child_pids_routes_internal_level() {
+        let internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![0.0, 1.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![1.0, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![0.5, 0.0]),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            route_routing_object_to_child_pids(&internal, &[1.0, 0.0], 2).unwrap(),
+            vec![SPIRE_FIRST_PID + 2, SPIRE_FIRST_PID + 3]
+        );
+    }
+
+    #[test]
+    fn route_root_object_to_leaf_pids_still_rejects_internal_parent() {
+        let internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0])],
+        )
+        .unwrap();
+
+        let error = route_root_object_to_leaf_pids(&internal, &[1.0, 0.0], 1).unwrap_err();
+
+        assert!(error.contains("root routing object"));
     }
 
     #[test]

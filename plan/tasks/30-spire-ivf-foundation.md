@@ -1036,7 +1036,11 @@ diagnostics without scoring assignments.
   ordinal, dimensions, centroid vector, and source count. Durable relation
   storage and SQL diagnostics for these records remain open.
 - [ ] **Level-local scan primitive.** Given an input query and a parent
-  partition, return child partitions to probe.
+  partition, return child partitions to probe. Scan now has a pure
+  `route_routing_object_to_child_pids` primitive that accepts root or internal
+  routing objects, applies the existing bounded route heap and deterministic
+  score/ordinal/PID ordering, and leaves the existing root-to-leaf wrapper's
+  root-kind guard intact for the current single-level scan path.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the
   same dataset can be queried as flat single-level IVF and recursive SPIRE.
 
