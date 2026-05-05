@@ -5452,6 +5452,16 @@ mod tests {
         assert!(published);
         assert_eq!(post_leaf_count, 2);
 
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let post_merge_first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_maintenance_run_merge_sql \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered post-merge ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(post_merge_first_id, 1);
+
         Spi::run(
             "CREATE TEMP TABLE ec_spire_maintenance_run_merge_second_result AS \
              SELECT * FROM \
@@ -5566,6 +5576,18 @@ mod tests {
         assert_eq!(active_epoch_after, 2);
         assert!(published);
         assert_eq!(post_leaf_count, 11);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let post_split_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_maintenance_run_split_sql \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 20 \
+             ) ranked",
+        )
+        .expect("ordered post-split ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(post_split_rows_returned, 20);
     }
 
     #[pg_test]
