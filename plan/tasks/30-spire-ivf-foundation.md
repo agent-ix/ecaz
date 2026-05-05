@@ -990,12 +990,15 @@ diagnostics without scoring assignments.
   `floor(ceil(total_effective_assignments / active_leaf_count) / 4)`; the
   manual scheduler now uses those candidates to publish selected merge
   replacements.
-- [ ] **Concurrency validation.** Add a stress harness for insert/delete/scan
-  overlap against leaf assignment rows and partition-object storage. Concurrent
-  same-leaf post-build inserts now have a focused PG18 external-session test
-  that verifies root-control epoch/allocator serialization, active
-  leaf/delta-assignment accounting, and scan visibility. Delete overlap and
-  longer-running mixed insert/delete/scan stress remain open.
+- [x] **Concurrency validation.** Concurrent same-leaf post-build inserts have
+  a focused PG18 external-session test that verifies root-control
+  epoch/allocator serialization, active leaf/delta-assignment accounting, and
+  scan visibility. Mixed insert/delete/VACUUM/scan overlap now also has a
+  focused PG18 external-session test that releases insert, VACUUM, and scan
+  workers from the same advisory-lock barrier, then verifies live-row
+  visibility, deleted-row invisibility, and bounded active delta debt.
+  Longer-running soak-style stress remains a later hardening/measurement item,
+  not a Phase 2 local scheduler landing blocker.
 
 ## Phase 3 — SPIRE Recursion
 
