@@ -525,19 +525,48 @@ pub(super) fn collect_quantized_routed_probe_candidates(
     limit: Option<usize>,
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
-    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
     let mut observer = SpireNoopRoutedScanObserver;
-    collect_validated_quantized_routed_probe_candidates(
+    collect_validated_recursive_quantized_routed_probe_candidates(
         &snapshot,
         object_store,
         query_vector,
-        root_pid,
-        &root_object,
+        &hierarchy,
         nprobe,
         payload_format,
         dedupe_mode,
         limit,
         &mut observer,
+    )
+}
+
+fn collect_validated_recursive_quantized_routed_probe_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    nprobe: u32,
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let leaf_routes = route_recursive_routing_objects_to_leaf_routes(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        query_vector,
+        nprobe,
+    )?;
+    collect_validated_quantized_leaf_route_candidates(
+        snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        dedupe_mode,
+        limit,
+        observer,
     )
 }
 
@@ -555,7 +584,33 @@ fn collect_validated_quantized_routed_probe_candidates(
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
-    let leaf_pids = route_root_object_to_leaf_pids(root_object, query_vector, nprobe)?;
+    let leaf_routes = route_root_object_to_leaf_pids(root_object, query_vector, nprobe)?
+        .into_iter()
+        .map(|leaf_pid| SpireRecursiveLeafRoute {
+            leaf_pid,
+            parent_pid: root_pid,
+        })
+        .collect();
+    collect_validated_quantized_leaf_route_candidates(
+        snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        dedupe_mode,
+        limit,
+        observer,
+    )
+}
+
+fn collect_validated_quantized_leaf_route_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+    scorer: &SpirePreparedAssignmentScorer,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
     if limit == Some(0) {
         return Ok(Vec::new());
     }
@@ -565,15 +620,16 @@ fn collect_validated_quantized_routed_probe_candidates(
         SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
         SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
     };
-    for leaf_pid in leaf_pids {
+    for route in leaf_routes {
+        let leaf_pid = route.leaf_pid;
         let deleted_vec_ids =
             collect_delta_delete_vec_ids_for_base_pid(snapshot, object_store, leaf_pid, observer)?;
         append_quantized_leaf_candidates_for_pid(
             snapshot,
             object_store,
             leaf_pid,
-            root_pid,
-            &scorer,
+            route.parent_pid,
+            scorer,
             &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
@@ -583,7 +639,7 @@ fn collect_validated_quantized_routed_probe_candidates(
             snapshot,
             object_store,
             leaf_pid,
-            &scorer,
+            scorer,
             &deleted_vec_ids,
             &mut candidates,
             &mut candidates_by_vec_id,
@@ -898,7 +954,7 @@ fn append_quantized_leaf_candidates_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     leaf_pid: u64,
-    root_pid: u64,
+    expected_parent_pid: u64,
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
@@ -918,10 +974,10 @@ fn append_quantized_leaf_candidates_for_pid(
             "ec_spire quantized routed scan pid {leaf_pid} is not a leaf object"
         ));
     }
-    if header.parent_pid != root_pid {
+    if header.parent_pid != expected_parent_pid {
         return Err(format!(
-            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match root pid {root_pid}",
-            header.parent_pid
+            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {expected_parent_pid}",
+            header.parent_pid,
         ));
     }
     observer.scanned_leaf(snapshot.epoch_manifest().epoch, placement);
@@ -3096,6 +3152,112 @@ mod tests {
             assert_eq!(observed, expected);
             assert_eq!(observed.len(), 2);
         }
+    }
+
+    #[test]
+    fn collect_quantized_routed_probe_candidates_accepts_recursive_leaf_parent() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root_pid = SPIRE_FIRST_PID;
+        let internal_pid = SPIRE_FIRST_PID + 1;
+        let first_leaf_pid = SPIRE_FIRST_PID + 2;
+        let second_leaf_pid = SPIRE_FIRST_PID + 3;
+        let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
+        let root = SpireRoutingPartitionObject::root_at_level(
+            root_pid,
+            1,
+            2,
+            2,
+            vec![routing_child(0, internal_pid, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let internal = SpireRoutingPartitionObject::internal(
+            internal_pid,
+            1,
+            1,
+            root_pid,
+            2,
+            vec![
+                routing_child(0, first_leaf_pid, vec![0.5, 0.0]),
+                routing_child(1, second_leaf_pid, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let first_input = quantized_assignment_input(10, 1, payload_format, &[-1.0, 0.0]);
+        let second_input = quantized_assignment_input(10, 2, payload_format, &[1.0, 0.0]);
+        let first_leaf_rows = vec![SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(1),
+            heap_tid: first_input.heap_tid,
+            payload_format: first_input.payload_format,
+            gamma: first_input.gamma,
+            encoded_payload: first_input.encoded_payload,
+        }];
+        let second_leaf_rows = vec![SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(2),
+            heap_tid: second_input.heap_tid,
+            payload_format: second_input.payload_format,
+            gamma: second_input.gamma,
+            encoded_payload: second_input.encoded_payload,
+        }];
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store.insert_routing_object(7, &internal).unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    first_leaf_pid,
+                    1,
+                    internal_pid,
+                    &first_leaf_rows,
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    second_leaf_pid,
+                    1,
+                    internal_pid,
+                    &second_leaf_rows,
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let observed = collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            1,
+            payload_format,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].pid, second_leaf_pid);
+        assert_eq!(observed[0].heap_tid, tid(10, 2));
+        assert_eq!(observed[0].vec_id.local_sequence(), Some(2));
     }
 
     #[test]
