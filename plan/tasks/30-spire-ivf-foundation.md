@@ -903,6 +903,11 @@ diagnostics without scoring assignments.
   orchestration now derives successor object versions for replacement parent
   routing and replacement leaves from active snapshot metadata, rejecting zero,
   overflow, duplicate, or missing affected-leaf versions before relation writes.
+- [x] **Maintenance run entrypoint.** Scheduler execution now exposes
+  `ec_spire_index_maintenance_run(index_oid)`, which takes the publish lock,
+  reloads and rechecks the active candidate, builds merge or heap-source split
+  execution input, publishes the scheduled replacement epoch, and returns the
+  maintenance run result row with `published = true`.
 - [x] **Insert path.** Assign new vectors to one partition in the single-level
   path, update assignment rows, and make inserted rows visible to scans.
   Populated strict local indexes now route post-build inserts to one leaf PID,
