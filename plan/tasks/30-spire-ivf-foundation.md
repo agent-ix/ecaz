@@ -1038,7 +1038,12 @@ diagnostics without scoring assignments.
   also accepts recursive leaf inputs as assignment rows, validates duplicate /
   missing / unexpected leaf PID coverage and parent alignment before writing,
   writes V2 leaf objects through the local or relation object store, and then
-  materializes the recursive routing snapshot from those fresh placements.
+  materializes the recursive routing snapshot from those fresh placements. The
+  build side now has a coordinator input assembler that takes the first-level
+  centroid plan, allocates leaf PIDs, groups primary assignment rows by
+  centroid, builds the recursive routing hierarchy over those leaf centroids,
+  attaches each leaf input to its routed parent PID, and returns the recursive
+  epoch object input plus allocator cursors for the later relation publisher.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
   diagnostics, and query routing can inspect them. The pure recursive routing
   hierarchy draft now emits materialized centroid records for every routing
