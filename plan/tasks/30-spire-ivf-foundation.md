@@ -1030,7 +1030,11 @@ diagnostics without scoring assignments.
   level-aware root/internal routing objects without relation I/O. Live
   relation-backed recursive build remains open.
 - [ ] **Centroid materialization.** Persist each level's centroids so rebuild,
-  diagnostics, and query routing can inspect them.
+  diagnostics, and query routing can inspect them. The pure recursive routing
+  hierarchy draft now emits materialized centroid records for every routing
+  parent/child edge, including parent PID, child PID, child level, centroid
+  ordinal, dimensions, centroid vector, and source count. Durable relation
+  storage and SQL diagnostics for these records remain open.
 - [ ] **Level-local scan primitive.** Given an input query and a parent
   partition, return child partitions to probe.
 - [ ] **Review packet.** Demonstrate a small multi-level hierarchy where the

@@ -122,7 +122,19 @@ pub(super) struct SpireRecursiveRoutingBuildDraft {
     pub(super) root_pid: u64,
     pub(super) root_level: u16,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    pub(super) centroid_records: Vec<SpireRecursiveCentroidRecord>,
     pub(super) next_pid: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveCentroidRecord {
+    pub(super) parent_pid: u64,
+    pub(super) child_pid: u64,
+    pub(super) child_level: u16,
+    pub(super) centroid_ordinal: u32,
+    pub(super) dimensions: u16,
+    pub(super) centroid: Vec<f32>,
+    pub(super) source_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -873,6 +885,7 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
         .map(|node| (node.pid, node))
         .collect::<HashMap<_, _>>();
     let mut routing_objects = Vec::with_capacity(pending_nodes.len() + 1);
+    let mut centroid_records = Vec::new();
     routing_objects.push(SpireRoutingPartitionObject::root_at_level(
         root_pid,
         input.object_version,
@@ -880,6 +893,12 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
         input.dimensions,
         routing_child_entries(&current_children)?,
     )?);
+    extend_recursive_centroid_records(
+        &mut centroid_records,
+        root_pid,
+        input.dimensions,
+        &current_children,
+    )?;
     let mut visited_internal_pids = HashSet::with_capacity(pending_nodes.len());
     for child in &current_children {
         materialize_pending_recursive_child(
@@ -890,6 +909,7 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
             &pending_by_pid,
             &mut visited_internal_pids,
             &mut routing_objects,
+            &mut centroid_records,
         )?;
     }
     if visited_internal_pids.len() != pending_nodes.len() {
@@ -900,6 +920,7 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
         root_pid,
         root_level,
         routing_objects,
+        centroid_records,
         next_pid: pid_cursor.next_pid(),
     };
     validate_recursive_routing_build_draft(&draft)?;
@@ -997,6 +1018,27 @@ fn routing_child_entries(
         .collect()
 }
 
+fn extend_recursive_centroid_records(
+    centroid_records: &mut Vec<SpireRecursiveCentroidRecord>,
+    parent_pid: u64,
+    dimensions: u16,
+    children: &[SpireRecursiveRoutingChildInput],
+) -> Result<(), String> {
+    for (index, child) in children.iter().enumerate() {
+        centroid_records.push(SpireRecursiveCentroidRecord {
+            parent_pid,
+            child_pid: child.child_pid,
+            child_level: child.child_level,
+            centroid_ordinal: u32::try_from(index)
+                .map_err(|_| "ec_spire recursive centroid ordinal exceeds u32".to_owned())?,
+            dimensions,
+            centroid: child.centroid.clone(),
+            source_count: child.source_count,
+        });
+    }
+    Ok(())
+}
+
 fn materialize_pending_recursive_child(
     child: &SpireRecursiveRoutingChildInput,
     parent_pid: u64,
@@ -1005,6 +1047,7 @@ fn materialize_pending_recursive_child(
     pending_by_pid: &HashMap<u64, &SpirePendingRecursiveRoutingNode>,
     visited_internal_pids: &mut HashSet<u64>,
     routing_objects: &mut Vec<SpireRoutingPartitionObject>,
+    centroid_records: &mut Vec<SpireRecursiveCentroidRecord>,
 ) -> Result<(), String> {
     if child.child_level == 0 {
         return Ok(());
@@ -1047,6 +1090,7 @@ fn materialize_pending_recursive_child(
         dimensions,
         routing_child_entries(&node.children)?,
     )?);
+    extend_recursive_centroid_records(centroid_records, node.pid, dimensions, &node.children)?;
     for child in &node.children {
         materialize_pending_recursive_child(
             child,
@@ -1056,6 +1100,7 @@ fn materialize_pending_recursive_child(
             pending_by_pid,
             visited_internal_pids,
             routing_objects,
+            centroid_records,
         )?;
     }
     Ok(())
@@ -1082,6 +1127,22 @@ fn validate_recursive_routing_build_draft(
             return Err(format!(
                 "ec_spire recursive routing draft duplicate routing pid {}",
                 object.header.pid
+            ));
+        }
+    }
+    let mut centroid_keys = HashSet::with_capacity(draft.centroid_records.len());
+    for record in &draft.centroid_records {
+        validate_recursive_centroid(record.dimensions, record.child_pid, &record.centroid)?;
+        if !centroid_keys.insert((record.parent_pid, record.child_pid)) {
+            return Err(format!(
+                "ec_spire recursive routing draft duplicate centroid record parent {} child {}",
+                record.parent_pid, record.child_pid
+            ));
+        }
+        if record.source_count == 0 {
+            return Err(format!(
+                "ec_spire recursive routing draft centroid record child {} source_count 0",
+                record.child_pid
             ));
         }
     }
@@ -2153,6 +2214,7 @@ mod tests {
         assert_eq!(draft.next_pid, SPIRE_FIRST_PID + 1);
         assert_eq!(pid_allocator.next_pid(), draft.next_pid);
         assert_eq!(draft.routing_objects.len(), 1);
+        assert_eq!(draft.centroid_records.len(), 2);
         let root = &draft.routing_objects[0];
         assert_eq!(root.header.pid, draft.root_pid);
         assert_eq!(root.header.level, 1);
@@ -2161,6 +2223,19 @@ mod tests {
                 .map(|child| child.child_pid)
                 .collect::<Vec<_>>(),
             vec![11, 12]
+        );
+        assert_eq!(
+            draft
+                .centroid_records
+                .iter()
+                .map(|record| (
+                    record.parent_pid,
+                    record.child_pid,
+                    record.child_level,
+                    record.centroid_ordinal
+                ))
+                .collect::<Vec<_>>(),
+            vec![(draft.root_pid, 11, 0, 0), (draft.root_pid, 12, 0, 1)]
         );
     }
 
@@ -2187,6 +2262,7 @@ mod tests {
 
         assert_eq!(draft.root_level, 2);
         assert_eq!(draft.routing_objects.len(), 3);
+        assert_eq!(draft.centroid_records.len(), 6);
         let root = &draft.routing_objects[0];
         assert_eq!(root.header.pid, draft.root_pid);
         assert_eq!(root.header.level, 2);
@@ -2213,6 +2289,20 @@ mod tests {
                 .children()
                 .all(|child| [11, 12, 13, 14].contains(&child.child_pid)));
         }
+        let root_centroid_records = draft
+            .centroid_records
+            .iter()
+            .filter(|record| record.parent_pid == draft.root_pid)
+            .collect::<Vec<_>>();
+        assert_eq!(root_centroid_records.len(), 2);
+        assert!(root_centroid_records
+            .iter()
+            .all(|record| record.child_level == 1 && record.source_count >= 1));
+        assert!(draft
+            .centroid_records
+            .iter()
+            .filter(|record| record.child_level == 0)
+            .all(|record| [11, 12, 13, 14].contains(&record.child_pid)));
     }
 
     #[test]
