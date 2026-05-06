@@ -84,7 +84,11 @@ recommendations while actual insert batching remains open. Packet
 SPIRE recall/latency evidence for the single-store `nlists=32`,
 `rerank_width=25` foundation: recall@10 is `0.9985` at `nprobe=8` and
 `1.0000` from `nprobe=16` through `32`, with latency p50/p95 `62.1/70.2 ms`
-at `nprobe=8`.
+at `nprobe=8`. Phase 4 relation-backed live insert, delete-delta publication,
+delta compaction, and live-assignment counting now route through the active
+local store set instead of falling back to the root/control relation store;
+packet `review/30531-spire-mutation-local-store-routing/` covers that
+checkpoint.
 PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
 remain open. Real SQL VACUUM
 coverage now reaches insert-delta compaction plus deleted-row scan
@@ -1248,6 +1252,14 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   partition objects by `hash(pid) % local_store_count`. Multi-store builds now
   write those objects into physically distinct auxiliary store relations, while
   single-store builds continue to use the root/control index relation.
+- [x] **Mutation-path local store routing.** Relation-backed live insert,
+  delete-delta publication, delta compaction, and live-assignment counting now
+  open relation object-store sets from the active local-store config or
+  placement directory. Insert and delete deltas are written into the base
+  leaf's local store, preserving store-local leaf/delta grouping after the
+  initial build. PG18 coverage now proves a post-build insert into a two-store
+  index publishes one delta without adding a root-relation fallback placement
+  and that ordered scan still returns the inserted row.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
   keep scoring close to the partition object bytes.
 - [x] **Scan leaf-route store grouping primitive.** The quantized routed scan
