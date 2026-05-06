@@ -1,7 +1,7 @@
 # Review Request: SPIRE Scan Leaf Route Store Grouping
 
 - Branch: `task30-spire-partition-object-spec`
-- Code commit: `3d66fea4`
+- Code commit: `7cb8298d`
 - Scope: Phase 4 scan grouping boundary for local multi-store fetch
 
 ## Summary
@@ -22,6 +22,9 @@ It:
 - adds a two-store write + scan-fetch fixture that builds a hash-routed
   two-store partitioned draft, reads through the multi-store object-reader set,
   and proves candidates are fetched from leaves placed in both local stores;
+- opens relation-backed scan stores from the active placement directory and
+  dispatches reads by `(local_store_id, store_relid)` for future auxiliary
+  store relations;
 - leaves global candidate ranking and reranking unchanged.
 
 This does not open auxiliary store relations, perform parallel reads, or make
@@ -70,12 +73,17 @@ remaining store-fetch gap is now relation-backed auxiliary store creation/open
 plus measured parallel fetch, not the logical write/read path through the
 store set.
 
+Follow-up commit `7cb8298d` closes the scan-side relation-open part of that
+gap. Remaining work is auxiliary store DDL, relation-backed multi-store build
+publication, and measured parallel fetch.
+
 ## Validation
 
 - `cargo test group_leaf_and_delta_reads_by_local_store --lib`
 - `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo test collect_scan_placement_diagnostics --lib`
+- `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
 - `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
 - `cargo fmt --check`
 - `git diff --check`

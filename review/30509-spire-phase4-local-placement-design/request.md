@@ -97,7 +97,7 @@ Addressed reviewer feedback:
 Still open from the design feedback:
 
 - measured Task 30 recall/latency packet;
-- store-relation DDL/open/discovery implementation;
+- store-relation DDL and relation-backed multi-store build publication;
 - eventual multi-NVMe benchmark packet with packet-local raw artifacts.
 
 Closed since this follow-up:
@@ -106,6 +106,11 @@ Closed since this follow-up:
   a hash-routed two-store partitioned draft, reads through the multi-store
   object-reader set, and proves scan candidates come from leaves in both local
   stores. Relation-backed auxiliary store DDL remains open.
+- `7cb8298d` adds relation-backed scan store discovery/opening from the active
+  placement directory, so scans dispatch reads by `(local_store_id,
+  store_relid)` instead of assuming all object bytes live in the root/control
+  index relation. Relation creation and relation-backed multi-store build
+  publication remain open.
 
 Follow-up validation:
 
@@ -120,6 +125,7 @@ Additional validation for `3d66fea4`:
 
 - `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
 - `cargo test collect_quantized_routed_probe_candidates --lib`
+- `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
