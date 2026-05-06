@@ -92,7 +92,10 @@ checkpoint. Packet `review/30533-spire-local-placement-benchmark/` now records
 the first local placement benchmark: same-device two-store and `/mnt/e`
 two-store lanes preserve recall, keep build time near the one-store baseline,
 and show comparable local latency while explicitly stopping short of production
-multi-NVMe claims.
+multi-NVMe claims. Relation-backed scan prefetch now batches selected leaf and
+delta placements through the object-reader contract and uses PG18 `ReadStream`
+per local store relation before scoring, giving Phase 4 a real asynchronous
+store-local fetch surface without backend worker threads.
 PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
 remain open. Real SQL VACUUM
 coverage now reaches insert-delta compaction plus deleted-row scan
@@ -1264,8 +1267,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   initial build. PG18 coverage now proves a post-build insert into a two-store
   index publishes one delta without adding a root-relation fallback placement
   and that ordered scan still returns the inserted row.
-- [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
-  keep scoring close to the partition object bytes.
+- [x] **Parallel local fetch.** Relation-backed scan prefetch now collects all
+  selected leaf/delta placements, batches them through
+  `SpireObjectReader::prefetch_objects`, groups relation-backed placements by
+  `(local_store_id, store_relid)`, and uses PG18 `ReadStream` over each store
+  relation's object blocks before scoring. This is async read-ahead within the
+  PostgreSQL backend, not backend-thread parallelism.
 - [x] **Scan leaf-route store grouping primitive.** The quantized routed scan
   path now groups selected leaf routes by `(node_id, local_store_id)` before
   fetching leaf/delta object bytes and scoring candidates. Execution remains
