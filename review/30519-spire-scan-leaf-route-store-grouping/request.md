@@ -1,7 +1,7 @@
 # Review Request: SPIRE Scan Leaf Route Store Grouping
 
 - Branch: `task30-spire-partition-object-spec`
-- Code commit: `e582739a`
+- Code commit: `3d66fea4`
 - Scope: Phase 4 scan grouping boundary for local multi-store fetch
 
 ## Summary
@@ -19,6 +19,9 @@ It:
   candidate-scoring flow;
 - records delta routes whose parent leaf was not selected through scan
   placement diagnostics instead of dropping them silently;
+- adds a two-store write + scan-fetch fixture that builds a hash-routed
+  two-store partitioned draft, reads through the multi-store object-reader set,
+  and proves candidates are fetched from leaves placed in both local stores;
 - leaves global candidate ranking and reranking unchanged.
 
 This does not open auxiliary store relations, perform parallel reads, or make
@@ -62,9 +65,16 @@ Addressed feedback from `feedback/2026-05-05-01-reviewer.md`:
 - kept the two-store end-to-end write/fetch fixture as an explicit open gate
   rather than adding more inert grouping helpers.
 
+Follow-up commit `3d66fea4` closes that in-memory end-to-end fixture gate. The
+remaining store-fetch gap is now relation-backed auxiliary store creation/open
+plus measured parallel fetch, not the logical write/read path through the
+store set.
+
 ## Validation
 
 - `cargo test group_leaf_and_delta_reads_by_local_store --lib`
+- `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
+- `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo test collect_scan_placement_diagnostics --lib`
 - `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
 - `cargo fmt --check`

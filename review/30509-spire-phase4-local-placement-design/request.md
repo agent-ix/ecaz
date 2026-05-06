@@ -97,9 +97,15 @@ Addressed reviewer feedback:
 Still open from the design feedback:
 
 - measured Task 30 recall/latency packet;
-- real hash-routed multi-store write + fetch coverage;
 - store-relation DDL/open/discovery implementation;
 - eventual multi-NVMe benchmark packet with packet-local raw artifacts.
+
+Closed since this follow-up:
+
+- `3d66fea4` adds an in-memory two-store write + scan-fetch fixture. It builds
+  a hash-routed two-store partitioned draft, reads through the multi-store
+  object-reader set, and proves scan candidates come from leaves in both local
+  stores. Relation-backed auxiliary store DDL remains open.
 
 Follow-up validation:
 
@@ -107,5 +113,13 @@ Follow-up validation:
 - `cargo test collect_scan_placement_diagnostics --lib`
 - `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
 - `cargo fmt`
+- `git diff --check`
+- `git diff --cached --check`
+
+Additional validation for `3d66fea4`:
+
+- `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
+- `cargo test collect_quantized_routed_probe_candidates --lib`
+- `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
