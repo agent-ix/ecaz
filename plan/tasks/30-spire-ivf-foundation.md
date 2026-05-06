@@ -1186,8 +1186,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   store generation, validate placement entries against the active store set,
   and explicitly allow repeated tablespace OIDs so same-device baseline runs
   are distinguishable from future true multi-NVMe measurements.
-- [ ] **Hash placement.** Place leaf and internal partition objects by
-  `hash(pid) % local_store_count`.
+- [x] **Hash placement planning primitive.** `meta.rs` now has a fixed
+  SplitMix64-style `spire_pid_hash(pid)` and
+  `SpireLocalStoreConfig::store_for_pid` helper with stable-value coverage.
+  This defines the cross-platform placement rule before object writes move to
+  auxiliary stores.
+- [ ] **Hash-routed object writes.** Place leaf and internal partition objects
+  by `hash(pid) % local_store_count` in the relation-backed writer path.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
   keep scoring close to the partition object bytes.
 - [ ] **Placement diagnostics.** Expose per-store object count, bytes,

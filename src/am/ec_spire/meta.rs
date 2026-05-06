@@ -371,6 +371,19 @@ impl SpireLocalStoreConfig {
             .map(|index| &self.stores[index])
     }
 
+    pub(super) fn store_for_pid(&self, pid: u64) -> Result<&SpireLocalStoreDescriptor, String> {
+        if pid == 0 {
+            return Err("ec_spire cannot place pid 0 in a local store".to_owned());
+        }
+        let store_count = u64::try_from(self.stores.len())
+            .map_err(|_| "ec_spire local store count exceeds u64".to_owned())?;
+        let store_index = usize::try_from(spire_pid_hash(pid) % store_count)
+            .map_err(|_| "ec_spire local store index exceeds usize".to_owned())?;
+        self.stores
+            .get(store_index)
+            .ok_or_else(|| "ec_spire local store hash index out of bounds".to_owned())
+    }
+
     pub(super) fn validate_placement(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
         if placement.node_id != SPIRE_LOCAL_NODE_ID {
             return Err(format!(
@@ -423,6 +436,13 @@ impl SpireLocalStoreConfig {
         }
         Ok(())
     }
+}
+
+pub(super) fn spire_pid_hash(pid: u64) -> u64 {
+    let mut value = pid;
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 #[repr(u8)]
@@ -1337,13 +1357,13 @@ fn validate_format_version(input: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        plan_epoch_cleanup, SpireConsistencyMode, SpireEpochManifest, SpireEpochState,
-        SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState, SpireManifestEntry,
-        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-        SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
-        SPIRE_DEFAULT_LOCAL_STORE_GENERATION, SPIRE_FAILED_EPOCH_RETENTION_SECS,
-        SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
-        SPIRE_SINGLE_LOCAL_STORE_ID,
+        plan_epoch_cleanup, spire_pid_hash, SpireConsistencyMode, SpireEpochManifest,
+        SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
+        SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
+        SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
+        SpireValidatedEpochSnapshot, SPIRE_DEFAULT_LOCAL_STORE_GENERATION,
+        SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS,
+        SPIRE_MIN_EPOCH_RETENTION_SECS, SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
     use crate::storage::page::ItemPointer;
@@ -1571,6 +1591,34 @@ mod tests {
         )
         .unwrap();
         assert!(unavailable_config.validate_placement(&placement).is_err());
+    }
+
+    #[test]
+    fn spire_pid_hash_has_stable_cross_platform_values() {
+        assert_eq!(spire_pid_hash(1), 0x5692_161d_100b_05e5);
+        assert_eq!(spire_pid_hash(2), 0xdbd2_3897_3a2b_148a);
+        assert_eq!(spire_pid_hash(11), 0x3462_d848_f53a_bb6d);
+        assert_eq!(spire_pid_hash(123_456_789), 0xf21c_87d4_233f_fd60);
+    }
+
+    #[test]
+    fn local_store_config_places_pid_by_stable_hash_mod_store_count() {
+        let config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![
+                SpireLocalStoreDescriptor::available(0, 12345, 900).unwrap(),
+                SpireLocalStoreDescriptor::available(1, 12346, 901).unwrap(),
+                SpireLocalStoreDescriptor::available(2, 12347, 902).unwrap(),
+                SpireLocalStoreDescriptor::available(3, 12348, 903).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(config.store_for_pid(1).unwrap().local_store_id, 1);
+        assert_eq!(config.store_for_pid(2).unwrap().local_store_id, 2);
+        assert_eq!(config.store_for_pid(3).unwrap().local_store_id, 0);
+        assert_eq!(config.store_for_pid(11).unwrap().local_store_id, 1);
+        assert!(config.store_for_pid(0).is_err());
     }
 
     #[test]
