@@ -1,0 +1,7 @@
+lane	local_store_id	relation_name	tablespace	tablespace_location	relation_filepath
+one_store_pgdefault	0	task30_spire_real10k_tq_turboquant_idx	pg_default		base/5/7900318
+two_store_pgdefault_e	0	task30_spire_real10k_tq_2e_turboquant_idx	pg_default		base/5/7940763
+two_store_pgdefault_e	1	ec_spire_store_7940763_1	ecaz_spire_e	/mnt/e/ecaz_pg_tblspc/spire_e	pg_tblspc/7900319/PG_18_202506291/5/7940767
+two_store_same_pgdefault	0	task30_spire_real10k_tq_2same_turboquant_idx	pg_default		base/5/7920538
+two_store_same_pgdefault	1	ec_spire_store_7920538_1	pg_default		base/5/7920542
+(5 rows)
