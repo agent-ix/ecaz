@@ -200,6 +200,11 @@ pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) next_pid: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireRecursiveDraftInvariants {
+    leaf_parent_pids: HashMap<u64, u64>,
+}
+
 trait SpireRecursiveRoutingEpochObjectStore: SpireObjectReader {
     fn write_recursive_routing_object(
         &mut self,
@@ -1047,7 +1052,7 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
         centroid_records,
         next_pid: pid_cursor.next_pid(),
     };
-    validate_recursive_routing_build_draft(&draft)?;
+    assert_recursive_draft_invariants(&draft)?;
     *pid_allocator = pid_cursor;
     Ok(draft)
 }
@@ -1100,7 +1105,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
         },
         &mut pid_cursor,
     )?;
-    let leaf_parent_pids = recursive_routing_leaf_parent_pids(&routing_draft)?;
+    let leaf_parent_pids = assert_recursive_draft_invariants(&routing_draft)?.leaf_parent_pids;
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
     for (pid, assignments) in leaf_pids
         .iter()
@@ -1379,6 +1384,15 @@ fn validate_recursive_routing_build_draft(
     Ok(())
 }
 
+fn assert_recursive_draft_invariants(
+    draft: &SpireRecursiveRoutingBuildDraft,
+) -> Result<SpireRecursiveDraftInvariants, String> {
+    validate_recursive_routing_build_draft(draft)?;
+    Ok(SpireRecursiveDraftInvariants {
+        leaf_parent_pids: recursive_routing_leaf_parent_pids(draft)?,
+    })
+}
+
 pub(super) fn build_local_recursive_routing_epoch_draft(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut SpireLocalObjectStore,
@@ -1411,8 +1425,8 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
     input: SpireRecursiveRoutingEpochObjectInput,
     object_store: &mut impl SpireRecursiveRoutingEpochObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
-    validate_recursive_routing_build_draft(&input.routing_draft)?;
-    let expected_leaf_parents = recursive_routing_leaf_parent_pids(&input.routing_draft)?;
+    let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
+    let expected_leaf_parents = invariants.leaf_parent_pids;
     let mut seen_leaf_pids = HashSet::with_capacity(input.leaf_inputs.len());
     let mut leaf_placements = Vec::with_capacity(input.leaf_inputs.len());
     for leaf_input in input.leaf_inputs {
@@ -1477,7 +1491,7 @@ fn build_recursive_routing_epoch_draft_with_store(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut impl SpireRecursiveRoutingEpochObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
-    validate_recursive_routing_build_draft(&input.routing_draft)?;
+    let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
 
     let epoch_manifest = SpireEpochManifest {
         epoch: input.epoch,
@@ -1489,7 +1503,7 @@ fn build_recursive_routing_epoch_draft_with_store(
     };
     epoch_manifest.validate()?;
 
-    validate_recursive_epoch_leaf_placements(&input, object_store)?;
+    validate_recursive_epoch_leaf_placements(&input, &invariants.leaf_parent_pids, object_store)?;
 
     let mut placements =
         Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
@@ -1533,9 +1547,9 @@ fn build_recursive_routing_epoch_draft_with_store(
 
 fn validate_recursive_epoch_leaf_placements(
     input: &SpireRecursiveRoutingEpochInput,
+    expected_leaf_parents: &HashMap<u64, u64>,
     object_store: &impl SpireObjectReader,
 ) -> Result<(), String> {
-    let expected_leaf_parents = recursive_routing_leaf_parent_pids(&input.routing_draft)?;
     let expected_leaf_pids = expected_leaf_parents
         .keys()
         .copied()
