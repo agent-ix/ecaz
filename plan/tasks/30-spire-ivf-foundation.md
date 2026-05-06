@@ -1035,7 +1035,11 @@ diagnostics without scoring assignments.
   rows, training iterations, centroid dimensions, distance semantics, and
   assignment payload format. Recursive hierarchy snapshots now report
   `per_level_nprobe_supported = true` for valid recursive hierarchies that have
-  this per-level diagnostic metadata.
+  this per-level diagnostic metadata. Deferred hierarchy-metadata follow-ups
+  are durable per-level `nprobe` storage/configuration, a durable per-level
+  parameter table rather than diagnostic reconstruction, and explicit
+  user-facing per-level fanout configuration beyond the current diagnostic
+  `target_fanout` exposure.
 - [x] **Recursive build coordinator.** Run single-level IVF on input vectors,
   take resulting centroids as the next-level input, and repeat to target depth.
   Phase 3 now has a pure in-memory recursive routing hierarchy draft helper:
@@ -1133,6 +1137,34 @@ diagnostics without scoring assignments.
   rows, confirms their hierarchy/root diagnostics differ as expected, and
   verifies both ordered scans return the same nearest row across multiple query
   vectors and top-k set checks.
+
+### Phase 3 Closeout Follow-ups
+
+These items came out of the Phase 3 closeout review and are carried forward
+explicitly so the boundary between Phase 3 and Phase 4 stays durable:
+
+- [ ] Durable per-level `nprobe` metadata/configuration. Phase 3 exposes the
+  effective policy through diagnostics, but still uses configured
+  relation/session `nprobe` at level 1 and a conservative one-child probe above
+  level 1.
+- [ ] Durable per-level parameter storage. Phase 3 exposes level parameters
+  through diagnostics reconstructed from active routing objects and reloptions.
+- [ ] Explicit user-facing per-level fanout configuration. Phase 3 exposes
+  effective target fanout diagnostics, while relation configuration remains the
+  single `recursive_fanout` reloption.
+- [x] Three-routing-level recursive descent coverage.
+- [x] Degraded-placement recursive descent coverage.
+- [x] `effective_nprobe_per_level` and `nprobe_policy_per_level` on
+  `ec_spire_index_options_snapshot(index_oid)`.
+- [x] Pre-Phase-4 guard that refuses split/merge maintenance on recursive
+  hierarchies until recursive update propagation lands.
+- [x] Parse-time rejection of `recursive_fanout = 1`.
+- [x] Conservative recursive nprobe policy naming plus TODO beside the
+  hardcoded one-child upper-level policy.
+- [x] Dense centroid ordinal assertion for materialized recursive centroid
+  records.
+- [x] Validation-layering comment naming the in-memory draft, post-write
+  placement, and snapshot-time hierarchy barriers.
 
 ## Phase 4 — Local Multi-NVMe Placement
 
