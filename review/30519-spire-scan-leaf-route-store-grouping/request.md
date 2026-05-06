@@ -1,7 +1,7 @@
 # Review Request: SPIRE Scan Leaf Route Store Grouping
 
 - Branch: `task30-spire-partition-object-spec`
-- Code commit: `7cb8298d`
+- Code commit: `5b358440`
 - Scope: Phase 4 scan grouping boundary for local multi-store fetch
 
 ## Summary
@@ -25,6 +25,9 @@ It:
 - opens relation-backed scan stores from the active placement directory and
   dispatches reads by `(local_store_id, store_relid)` for future auxiliary
   store relations;
+- adds a PG18 real-relation fixture that writes SPIRE objects across root and
+  auxiliary `ec_spire` relation files, publishes mixed-store placements, and
+  verifies scan fetch from both relation-backed stores;
 - leaves global candidate ranking and reranking unchanged.
 
 This does not open auxiliary store relations, perform parallel reads, or make
@@ -77,6 +80,10 @@ Follow-up commit `7cb8298d` closes the scan-side relation-open part of that
 gap. Remaining work is auxiliary store DDL, relation-backed multi-store build
 publication, and measured parallel fetch.
 
+Follow-up commit `5b358440` closes the explicit "write one object to a second
+store relation and fetch it" proof using real relation pages. Remaining work is
+now the user-facing DDL/build-publication path and measurement.
+
 ## Validation
 
 - `cargo test group_leaf_and_delta_reads_by_local_store --lib`
@@ -84,6 +91,7 @@ publication, and measured parallel fetch.
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo test collect_scan_placement_diagnostics --lib`
 - `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
+- `cargo pgrx test pg18 test_ec_spire_relation_two_store_scan_roundtrip`
 - `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
 - `cargo fmt --check`
 - `git diff --check`

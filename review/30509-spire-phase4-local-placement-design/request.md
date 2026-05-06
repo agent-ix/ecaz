@@ -111,6 +111,12 @@ Closed since this follow-up:
   store_relid)` instead of assuming all object bytes live in the root/control
   index relation. Relation creation and relation-backed multi-store build
   publication remain open.
+- `5b358440` adds PG18 coverage for a real two-relation write + scan-fetch
+  path. The test uses two actual `ec_spire` index relations as root/control and
+  auxiliary local store surfaces, writes objects across both relation files,
+  publishes mixed-`store_relid` placements, and scans through
+  placement-directed relation reads. User-facing auxiliary-store DDL remains
+  open, but the second-store relation through-path is now lit.
 
 Follow-up validation:
 
@@ -126,6 +132,7 @@ Additional validation for `3d66fea4`:
 - `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
+- `cargo pgrx test pg18 test_ec_spire_relation_two_store_scan_roundtrip`
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
