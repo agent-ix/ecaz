@@ -27,7 +27,7 @@ impl SpireRelationObjectStore {
         ))
     }
 
-    fn for_store_relation_id(
+    pub(super) fn for_store_relation_id(
         store_relation: pg_sys::Relation,
         local_store_id: u32,
         store_relid: u32,

@@ -151,6 +151,206 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
+    root_index_oid: pg_sys::Oid,
+    aux_store_oid: pg_sys::Oid,
+) -> (u32, u32, u32, u32, u64, u64) {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let root_relation = unsafe { pg_sys::index_open(root_index_oid, lockmode) };
+    let aux_relation = unsafe { pg_sys::index_open(aux_store_oid, lockmode) };
+    let result = (|| -> Result<(u32, u32, u32, u32, u64, u64), String> {
+        let root_relid: u32 = root_index_oid.into();
+        let aux_relid: u32 = aux_store_oid.into();
+        let root_store = storage::SpireRelationObjectStore::for_store_relation_id(
+            root_relation,
+            meta::SPIRE_SINGLE_LOCAL_STORE_ID,
+            root_relid,
+        );
+        let aux_store =
+            storage::SpireRelationObjectStore::for_store_relation_id(aux_relation, 1, aux_relid);
+
+        let root_pid = assign::SPIRE_FIRST_PID;
+        let left_leaf_pid = assign::SPIRE_FIRST_PID + 1;
+        let right_leaf_pid = assign::SPIRE_FIRST_PID + 8;
+        let root_object = storage::SpireRoutingPartitionObject::root(
+            root_pid,
+            1,
+            2,
+            vec![
+                storage::SpireRoutingChildEntry {
+                    centroid_index: 0,
+                    child_pid: left_leaf_pid,
+                    centroid: vec![1.0, 0.0],
+                },
+                storage::SpireRoutingChildEntry {
+                    centroid_index: 1,
+                    child_pid: right_leaf_pid,
+                    centroid: vec![-1.0, 0.0],
+                },
+            ],
+        )?;
+        let left_assignment = quantizer::encode_assignment_input(
+            quantizer::SpireAssignmentPayloadFormat::TurboQuant,
+            crate::storage::page::ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            &[1.0, 0.0],
+        )?;
+        let right_assignment = quantizer::encode_assignment_input(
+            quantizer::SpireAssignmentPayloadFormat::TurboQuant,
+            crate::storage::page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+            &[-1.0, 0.0],
+        )?;
+        let left_row = storage::SpireLeafAssignmentRow {
+            flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: storage::SpireVecId::local(1),
+            heap_tid: left_assignment.heap_tid,
+            payload_format: left_assignment.payload_format,
+            gamma: left_assignment.gamma,
+            encoded_payload: left_assignment.encoded_payload,
+        };
+        let right_row = storage::SpireLeafAssignmentRow {
+            flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: storage::SpireVecId::local(2),
+            heap_tid: right_assignment.heap_tid,
+            payload_format: right_assignment.payload_format,
+            gamma: right_assignment.gamma,
+            encoded_payload: right_assignment.encoded_payload,
+        };
+
+        let placements = vec![
+            unsafe { aux_store.insert_routing_object(1, &root_object)? },
+            unsafe {
+                root_store.insert_leaf_object_v2_from_rows(
+                    1,
+                    left_leaf_pid,
+                    1,
+                    root_pid,
+                    &[left_row],
+                )?
+            },
+            unsafe {
+                aux_store.insert_leaf_object_v2_from_rows(
+                    1,
+                    right_leaf_pid,
+                    1,
+                    root_pid,
+                    &[right_row],
+                )?
+            },
+        ];
+        let placement_directory = meta::SpirePlacementDirectory::from_entries(1, placements)?;
+        let placement_evidence = unsafe {
+            build::write_placement_entries_to_relation(root_relation, &placement_directory)?
+        };
+        let object_manifest = build::object_manifest_from_placement_writes(
+            1,
+            &placement_directory,
+            &placement_evidence,
+        )?;
+        let epoch_manifest = meta::SpireEpochManifest {
+            epoch: 1,
+            state: meta::SpireEpochState::Published,
+            consistency_mode: meta::SpireConsistencyMode::Strict,
+            published_at_micros: 1,
+            retain_until_micros: 600_000_001,
+            active_query_count: 0,
+        };
+        let input = build::SpirePublishCoordinatorInput {
+            epoch_manifest: &epoch_manifest,
+            object_manifest: &object_manifest,
+            placement_directory: &placement_directory,
+            next_pid: assign::SPIRE_FIRST_PID + 9,
+            next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ + 2,
+        };
+        let manifests = build::encode_manifest_bundle_for_publish(input)?;
+        let locators =
+            unsafe { build::write_manifest_bundle_to_relation(root_relation, &manifests)? };
+        let root_control = build::root_control_state_for_publish(input, locators)?;
+        unsafe { page::initialize_root_control_page(root_relation, root_control) };
+
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let relation_store_set = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                root_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let candidates = scan::collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &relation_store_set,
+            &[1.0, 0.0],
+            2,
+            quantizer::SpireAssignmentPayloadFormat::TurboQuant,
+            options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            Some(2),
+        )?;
+        if candidates.len() != 2 {
+            return Err(format!(
+                "ec_spire debug two-store scan expected 2 candidates, got {}",
+                candidates.len()
+            ));
+        }
+        let mut candidate_store_ids = candidates
+            .iter()
+            .map(|candidate| {
+                placement_directory
+                    .get(candidate.pid)
+                    .ok_or_else(|| {
+                        format!("ec_spire debug candidate pid {} missing placement", candidate.pid)
+                    })
+                    .map(|placement| placement.local_store_id)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        candidate_store_ids.sort_unstable();
+        candidate_store_ids.dedup();
+        if candidate_store_ids != [0, 1] {
+            return Err(format!(
+                "ec_spire debug two-store scan touched stores {:?}",
+                candidate_store_ids
+            ));
+        }
+        let root_placement = placement_directory
+            .get(root_pid)
+            .ok_or_else(|| "ec_spire debug root placement missing".to_owned())?;
+        let left_placement = placement_directory
+            .get(left_leaf_pid)
+            .ok_or_else(|| "ec_spire debug left leaf placement missing".to_owned())?;
+        let right_placement = placement_directory
+            .get(right_leaf_pid)
+            .ok_or_else(|| "ec_spire debug right leaf placement missing".to_owned())?;
+
+        Ok((
+            root_placement.local_store_id,
+            left_placement.local_store_id,
+            right_placement.local_store_id,
+            u32::try_from(candidates.len())
+                .map_err(|_| "ec_spire debug candidate count exceeds u32".to_owned())?,
+            candidates[0]
+                .vec_id
+                .local_sequence()
+                .ok_or_else(|| "ec_spire debug first candidate lost vec_id".to_owned())?,
+            candidates[1]
+                .vec_id
+                .local_sequence()
+                .ok_or_else(|| "ec_spire debug second candidate lost vec_id".to_owned())?,
+        ))
+    })();
+    unsafe { pg_sys::index_close(aux_relation, lockmode) };
+    unsafe { pg_sys::index_close(root_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
     let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };

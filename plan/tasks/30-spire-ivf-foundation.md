@@ -1247,6 +1247,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   object reads by `(local_store_id, store_relid)` instead of assuming every
   placement lives in the root/control index relation. Auxiliary store DDL and
   relation-backed multi-store build publication remain open.
+- [x] **Real two-relation write+scan-fetch fixture.** PG18 coverage now uses
+  two real `ec_spire` index relations as root/control and auxiliary local
+  store relations, writes routing and leaf objects across both relation files,
+  publishes root metadata with mixed `store_relid` placements, and scans
+  through placement-directed relation reads. This closes the "write one object
+  to a second store relation and fetch it" design proof without claiming that
+  user-facing auxiliary-store DDL is complete.
 - [ ] **Placement diagnostics.** Expose per-store object count, bytes,
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
   reports active per-store placement counts, placement-state counts,

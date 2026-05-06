@@ -6343,6 +6343,37 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_relation_two_store_scan_roundtrip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_two_store_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_root_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("root ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_aux_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("auxiliary ec_spire index creation should succeed");
+
+        let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = unsafe {
+            am::debug_spire_relation_two_store_scan_roundtrip(
+                index_oid("ec_spire_two_store_scan_root_idx"),
+                index_oid("ec_spire_two_store_scan_aux_idx"),
+            )
+        };
+
+        assert_eq!(root_store_id, 1);
+        assert_eq!(left_store_id, 0);
+        assert_eq!(right_store_id, 1);
+        assert_eq!(candidate_count, 2);
+        assert_eq!((first_vec, second_vec), (1, 2));
+    }
+
+    #[pg_test]
     #[should_panic(expected = "ec_spire recursive_fanout reloption must be 0 or at least 2")]
     fn test_ec_spire_recursive_fanout_one_rejected() {
         Spi::run(
