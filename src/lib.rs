@@ -6543,6 +6543,85 @@ mod tests {
         assert!(post_insert_cleanup_candidate_count > 0);
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_ec_spire_aux_store_relcache_disables_autovacuum() {
+        Spi::run(
+            "CREATE TABLE ec_spire_aux_autovacuum_guard \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_aux_autovacuum_guard (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_aux_autovacuum_guard_idx \
+             ON ec_spire_aux_autovacuum_guard USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+
+        let aux_store_relids = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT c.oid::int \
+                     FROM pg_class c \
+                     WHERE c.relname LIKE 'ec_spire_store_%' \
+                     AND c.relkind = 'r' \
+                     ORDER BY c.relname",
+                    None,
+                    &[],
+                )
+                .expect("auxiliary store relid query should succeed");
+            rows.into_iter()
+                .map(|row| {
+                    let oid = row["oid"]
+                        .value::<i32>()
+                        .expect("auxiliary store oid should decode")
+                        .expect("auxiliary store oid should be non-null");
+                    u32::try_from(oid).expect("auxiliary store oid should be non-negative")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(aux_store_relids.len(), 2);
+
+        for relid in aux_store_relids {
+            let autovacuum_enabled = unsafe {
+                let relation = pg_sys::relation_open(
+                    pg_sys::Oid::from(relid),
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                );
+                assert!(
+                    !relation.is_null(),
+                    "auxiliary relation {relid} should open"
+                );
+                let rd_options = (*relation).rd_options;
+                assert!(
+                    !rd_options.is_null(),
+                    "auxiliary relation {relid} should have parsed reloptions"
+                );
+                let enabled = (*rd_options.cast::<pg_sys::StdRdOptions>())
+                    .autovacuum
+                    .enabled;
+                pg_sys::relation_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+                enabled
+            };
+            assert!(
+                !autovacuum_enabled,
+                "auxiliary relation {relid} should be disabled in relcache autovacuum options"
+            );
+        }
+    }
+
     #[pg_test]
     fn test_ec_spire_multistore_large_fixture_routes_all_stores() {
         Spi::run(

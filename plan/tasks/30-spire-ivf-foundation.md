@@ -1200,8 +1200,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   store relation naming/discovery, tablespace mapping, single-store
   compatibility, placement-entry validation, hash placement policy, lock
   ordering, strict/degraded failure semantics, store-grouped fetch boundary,
-  and authoritative placement diagnostics. Implementation and measurement
-  remain open below.
+  and authoritative placement diagnostics. The implementation and measurement
+  checkpoints below now close the local multi-store placement slice.
 - [x] **Partition-store relation layout.** Multi-store populated builds now
   create the planned bounded auxiliary store relations, initialize their
   SPIRE object-page metadata block, record internal catalog dependencies on
@@ -1223,8 +1223,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - [x] **Local store count reloption surface.** `ec_spire` now parses a bounded
   `local_store_count` reloption, exposes it through
   `ec_spire_index_options_snapshot`, and allows populated builds to publish a
-  logical multi-store baseline using the root relation as the current physical
-  store surface until auxiliary partition-store relation creation lands.
+  logical multi-store baseline; later Phase 4 checkpoints route those stores
+  into auxiliary relations.
 - [x] **Local store tablespace reloption surface.** `ec_spire` now parses and
   normalizes `local_store_tablespaces`, requires the name count to match
   `local_store_count`, permits repeated names for same-device baseline runs,
@@ -1232,12 +1232,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - [x] **Local store tablespace OID planning.** The build path now resolves the
   normalized tablespace names to OIDs, preserves repeated names as repeated
   OIDs for same-device baselines, and defaults omitted names to the index
-  relation tablespace before the multi-store relation DDL slice lands.
+  relation tablespace for the multi-store relation DDL helper.
 - [x] **Local store relation-name planning.** The build path now derives a
   deterministic auxiliary store relation plan named
   `ec_spire_store_<index_oid>_<store_id>` from the resolved tablespace plan,
-  preserving repeated tablespace OIDs for same-device baseline runs while
-  store relation DDL remains deferred.
+  preserving repeated tablespace OIDs for same-device baseline runs and feeding
+  the auxiliary relation creation helper.
 - [x] **Local store descriptor publish planning.** The relation planning layer
   can now combine a resolved relation/tablespace plan with created store relids
   into a validated `SpireLocalStoreConfig`, preserving repeated tablespace OIDs
@@ -1310,8 +1310,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   a relation object-store set from the active placement directory, opens
   non-root `store_relid` values in ascending `local_store_id`, and dispatches
   object reads by `(local_store_id, store_relid)` instead of assuming every
-  placement lives in the root/control index relation. Auxiliary store DDL and
-  relation-backed multi-store build publication remain open.
+  placement lives in the root/control index relation. Later Phase 4 checkpoints
+  now create and publish those auxiliary store relations.
 - [x] **Real two-relation write+scan-fetch fixture.** PG18 coverage now uses
   two real `ec_spire` index relations as root/control and auxiliary local
   store relations, writes routing and leaf objects across both relation files,
@@ -1344,6 +1344,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   fixture asserts placements span all four local stores, routing object bytes
   exceed a single page, relation storage diagnostics see multiple relation
   blocks, and ordered scan still returns a full top-10 result.
+- [x] **Auxiliary-store autovacuum behavior guard.** PG18 coverage now opens
+  the created auxiliary heap relations and asserts PostgreSQL relcache parsed
+  `rd_options.autovacuum.enabled = false`, proving the catalog reloption is
+  visible at the boundary autovacuum uses rather than only present as raw
+  `pg_class.reloptions` text.
 - [x] **Explicit multi-store REINDEX rejection.** Multi-store REINDEX now
   fails with a clear unsupported-lifecycle error while single-store REINDEX
   remains allowed and covered. A future full lifecycle must create and publish
