@@ -95,11 +95,14 @@ and show comparable local latency while explicitly stopping short of production
 multi-NVMe claims. Relation-backed scan prefetch now batches selected leaf and
 delta placements through the object-reader contract and uses PG18 `ReadStream`
 per local store relation before scoring, giving Phase 4 a real asynchronous
-store-local fetch surface without backend worker threads.
+store-local fetch surface without backend worker threads. PG18 SQL VACUUM
+coverage now exercises a two-store relation-backed index through post-build
+insert, delete, PostgreSQL's real `VACUUM` callback path, placement
+diagnostics, and ordered scan after cleanup, proving both local store relation
+placements survive while the deleted row stays invisible and the inserted row
+remains fetchable.
 PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
-remain open. Real SQL VACUUM
-coverage now reaches insert-delta compaction plus deleted-row scan
-invisibility through PostgreSQL's normal callback path. Task 30 implements
+remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
 SPIRE-compatible partition-object storage, then recursive SPIRE routing, local
 multi-NVMe placement, and later multi-machine placement.
@@ -1273,6 +1276,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `(local_store_id, store_relid)`, and uses PG18 `ReadStream` over each store
   relation's object blocks before scoring. This is async read-ahead within the
   PostgreSQL backend, not backend-thread parallelism.
+- [x] **Multi-store SQL VACUUM coverage.** PG18 coverage now builds a
+  relation-backed two-store index, performs a post-build insert and delete,
+  runs PostgreSQL SQL `VACUUM`, and then asserts active placement diagnostics
+  still span both local store ids and both store relation OIDs. The same test
+  disables seqscan for ordered scan and verifies the deleted row is not
+  returned while the inserted row remains fetchable after cleanup.
 - [x] **Scan leaf-route store grouping primitive.** The quantized routed scan
   path now groups selected leaf routes by `(node_id, local_store_id)` before
   fetching leaf/delta object bytes and scoring candidates. Execution remains

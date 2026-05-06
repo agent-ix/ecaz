@@ -7581,6 +7581,111 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
+    fn test_pg18_ec_spire_multistore_sql_vacuum_routes_local_stores() {
+        const TABLE_NAME: &str = "ec_spire_multistore_sql_vacuum";
+        const INDEX_NAME: &str = "ec_spire_multistore_sql_vacuum_idx";
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding) VALUES
+                   (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+                   (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)),
+                   (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)),
+                   (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (
+                       nlists = 2,
+                       nprobe = 2,
+                       training_sample_rows = 4,
+                       local_store_count = 2,
+                       local_store_tablespaces = 'pg_default,pg_default'
+                   );",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum insert",
+            &format!(
+                "INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (5, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42));",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum delete",
+            &format!("DELETE FROM {TABLE_NAME} WHERE id = 2;"),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum VACUUM",
+            &format!("VACUUM {TABLE_NAME};"),
+        );
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let placement_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_relid_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let scan_selected_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 '{INDEX_NAME}'::regclass, \
+                 ARRAY[0.9, 0.1]::real[])"
+        ))
+        .expect("scan placement snapshot should succeed")
+        .expect("count should exist");
+        let delta_object_count = ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count");
+        let delta_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 4 \
+             ) ranked WHERE id = 2"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let inserted_row_returned = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[0.9, 0.1]::real[] \
+                 LIMIT 4 \
+             ) ranked WHERE id = 5"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(heap_count, 4);
+        assert_eq!(placement_store_count, 2);
+        assert_eq!(placement_store_relid_count, 2);
+        assert!(scan_selected_store_count >= 1);
+        assert_eq!(delta_object_count, 0);
+        assert_eq!(delta_assignment_count, 0);
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(inserted_row_returned, 1);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
     fn test_pg18_ec_spire_concurrent_insert_vacuum_scan() {
         const TABLE_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan";
         const INDEX_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan_idx";
