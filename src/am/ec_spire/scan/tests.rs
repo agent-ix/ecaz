@@ -30,7 +30,8 @@ mod tests {
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+        SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireObjectManifest,
+        SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
         SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
     };
     use crate::am::ec_spire::options::{
@@ -39,10 +40,10 @@ mod tests {
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
     };
-    use crate::am::ec_spire::storage::SpireLocalObjectStore;
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireRoutingChildEntry,
+        SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -51,7 +52,7 @@ mod tests {
         build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
     };
     use crate::storage::page::ItemPointer;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
         ItemPointer {

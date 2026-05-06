@@ -1221,6 +1221,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   through a local object-store set that chooses the target store by
   `SpireLocalStoreConfig::store_for_pid(pid)`, with coverage proving root and
   leaf placements carry the hashed store IDs and relation OIDs.
+- [x] **Two-store write+scan-fetch fixture.** The quantized routed scan tests
+  now build a hash-routed two-store partitioned draft, read through the
+  multi-store object-reader set, and prove scan candidates are fetched from
+  leaves placed in both local stores. This closes the in-memory end-to-end
+  correctness gap before relation-backed auxiliary store DDL lands.
 - [ ] **Hash-routed object writes.** Place leaf and internal partition objects
   by `hash(pid) % local_store_count` in the relation-backed writer path.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and

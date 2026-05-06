@@ -103,6 +103,102 @@
     }
 
     #[test]
+    fn collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build() {
+        let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
+        let store_config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![
+                SpireLocalStoreDescriptor::available(0, 12345, 10).unwrap(),
+                SpireLocalStoreDescriptor::available(1, 12346, 10).unwrap(),
+            ],
+        )
+        .unwrap();
+        let mut object_store =
+            SpireLocalObjectStoreSet::from_config(store_config.clone(), 8192).unwrap();
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_count = 8;
+        let assignments = (0..centroid_count)
+            .map(|index| {
+                quantized_assignment_input(
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    payload_format,
+                    &[index as f32, 0.0],
+                )
+            })
+            .collect::<Vec<_>>();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: (0..centroid_count)
+                .map(|index| vec![index as f32, 0.0])
+                .collect(),
+            assignment_indexes: (0..centroid_count)
+                .map(|index| u32::try_from(index).unwrap())
+                .collect(),
+        };
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            SpirePartitionedSingleLevelBuildInput {
+                epoch: 7,
+                object_version: 1,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                root_placement_tid: tid(60, 100),
+                placement_tids: (0..centroid_count)
+                    .map(|index| tid(60, u16::try_from(index + 1).unwrap()))
+                    .collect(),
+                assignments,
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+
+        let observed = collect_quantized_routed_probe_candidates(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            u32::try_from(centroid_count).unwrap(),
+            payload_format,
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            Some(centroid_count),
+        )
+        .unwrap();
+
+        let root_placement = draft.placement_directory.get(draft.root_pid).unwrap();
+        assert_eq!(
+            root_placement.local_store_id,
+            store_config
+                .store_for_pid(draft.root_pid)
+                .unwrap()
+                .local_store_id
+        );
+        assert_eq!(root_placement.local_store_id, 1);
+        assert_eq!(observed.len(), centroid_count);
+
+        let candidate_store_ids = observed
+            .iter()
+            .map(|candidate| {
+                draft
+                    .placement_directory
+                    .get(candidate.pid)
+                    .unwrap()
+                    .local_store_id
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(candidate_store_ids, HashSet::from([0, 1]));
+    }
+
+    #[test]
     fn collect_quantized_routed_probe_candidates_accepts_recursive_leaf_parent() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root_pid = SPIRE_FIRST_PID;
