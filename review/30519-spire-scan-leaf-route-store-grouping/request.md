@@ -31,11 +31,14 @@ It:
 - allows populated builds to publish hash-routed logical multi-store placements
   through a writable relation object-store set backed by the root relation,
   giving same-device baseline coverage before auxiliary store DDL lands;
+- prefetches selected relation-backed leaf/delta object tuple blocks by store
+  group before decoding and candidate scoring;
 - leaves global candidate ranking and reranking unchanged.
 
-This does not open auxiliary store relations, perform parallel reads, or make
-any multi-NVMe performance claim. It only makes the scan path's selected PID to
-store-group boundary explicit.
+This does not create auxiliary store relations, spawn parallel backend worker
+reads, or make any multi-NVMe performance claim. It makes the scan path's
+selected PID to store-group boundary explicit and adds PostgreSQL buffer
+prefetch as the first relation-backed I/O overlap boundary.
 
 ## Files
 
@@ -44,6 +47,8 @@ store-group boundary explicit.
 - `src/am/ec_spire/scan/tests.rs`
 - `src/am/ec_spire/scan/tests/candidates.rs`
 - `src/am/ec_spire/scan/tests/diagnostics.rs`
+- `src/am/ec_spire/storage/routing_delta.rs`
+- `src/am/ec_spire/storage/relation_store.rs`
 - `src/am/ec_spire/root/types.rs`
 - `src/am/ec_spire/root/hierarchy_snapshots.rs`
 - `src/lib.rs`
@@ -93,9 +98,18 @@ read them through placement-directed store sets. Remaining work is auxiliary
 store DDL for physically separate relation files, measured parallel fetch, and
 the multi-NVMe benchmark packet.
 
+Follow-up commit `98d5cbc5` adds the first live relation-backed fetch consumer:
+the quantized routed scan path discovers delta routes once, groups selected
+leaf and delta reads by local store, and calls the object-reader prefetch hook
+for each selected placement before decoding/scoring that store group.
+Relation-backed stores issue `PrefetchBuffer` for the object tuple block;
+in-memory stores remain no-op. This is not measured parallel fetch evidence.
+
 ## Validation
 
 - `cargo test group_leaf_and_delta_reads_by_local_store --lib`
+- `cargo test group_leaf_and_delta_reads_by_local_store_groups_deltas_by_own_store --lib`
+- `cargo test prefetch_store_object_read_group_prefetches_leaf_and_delta_routes --lib`
 - `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo test collect_scan_placement_diagnostics --lib`
