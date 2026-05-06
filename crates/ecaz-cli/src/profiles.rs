@@ -20,7 +20,7 @@
 //! Profiles describe access methods, not corpora. One corpus can be indexed
 //! by many profiles when their `embedding_type` matches — today `ec_hnsw`,
 //! `ec_ivf`, and `ec_diskann` all use `ecvector`, so one
-//! `<prefix>_corpus` table supports all three.
+//! `<prefix>_corpus` table supports all four.
 
 use regex::Regex;
 use std::sync::OnceLock;
@@ -170,10 +170,36 @@ pub const EC_IVF: IndexProfile = IndexProfile {
         "quantizer",
         "rerank",
     ],
-    default_sweep: &[],
+    default_sweep: &[8, 16, 24, 32, 48, 64],
 };
 
-const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN, &EC_IVF];
+pub const EC_SPIRE: IndexProfile = IndexProfile {
+    name: "ec_spire",
+    access_method: "ec_spire",
+    operator_class: "ecvector_spire_ip_ops",
+    embedding_type: "ecvector",
+    encoder_function: "encode_to_ecvector",
+    encode_scan_query: false,
+    ef_search_guc: Some("ec_spire.nprobe"),
+    build_source_column: None,
+    sweep_axis: SweepAxis::None,
+    known_reloptions: &[
+        "nlists",
+        "recursive_fanout",
+        "local_store_count",
+        "local_store_tablespaces",
+        "nprobe",
+        "rerank_width",
+        "training_sample_rows",
+        "seed",
+        "pq_group_size",
+        "storage_format",
+        "quantizer",
+    ],
+    default_sweep: &[8, 16, 24, 32],
+};
+
+const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN, &EC_IVF, &EC_SPIRE];
 
 pub fn resolve(name: &str) -> Option<&'static IndexProfile> {
     REGISTRY.iter().find(|p| p.name == name).copied()
@@ -253,7 +279,7 @@ mod tests {
 
     #[test]
     fn names_are_sorted_and_complete() {
-        assert_eq!(names(), vec!["ec_diskann", "ec_hnsw", "ec_ivf"]);
+        assert_eq!(names(), vec!["ec_diskann", "ec_hnsw", "ec_ivf", "ec_spire"]);
     }
 
     #[test]
@@ -307,6 +333,8 @@ mod tests {
         assert_eq!(EC_HNSW.encoder_function, EC_DISKANN.encoder_function);
         assert_eq!(EC_HNSW.embedding_type, EC_IVF.embedding_type);
         assert_eq!(EC_HNSW.encoder_function, EC_IVF.encoder_function);
+        assert_eq!(EC_HNSW.embedding_type, EC_SPIRE.embedding_type);
+        assert_eq!(EC_HNSW.encoder_function, EC_SPIRE.encoder_function);
     }
 
     #[test]
@@ -316,6 +344,17 @@ mod tests {
         assert_eq!(p.ef_search_guc, Some("ec_ivf.nprobe"));
         assert_eq!(p.build_source_column, None);
         assert!(!p.encode_scan_query);
+    }
+
+    #[test]
+    fn ec_spire_profile_uses_spire_opclass_and_raw_real_scan_query() {
+        let p = &EC_SPIRE;
+        assert_eq!(p.access_method, "ec_spire");
+        assert_eq!(p.operator_class, "ecvector_spire_ip_ops");
+        assert_eq!(p.ef_search_guc, Some("ec_spire.nprobe"));
+        assert_eq!(p.build_source_column, None);
+        assert!(!p.encode_scan_query);
+        assert!(p.known_reloptions.contains(&"local_store_count"));
     }
 
     #[test]
