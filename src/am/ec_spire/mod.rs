@@ -196,6 +196,8 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) session_nprobe: Option<i32>,
     pub(crate) effective_nprobe: u32,
     pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_nprobe_per_level: Vec<u32>,
+    pub(crate) nprobe_policy_per_level: Vec<&'static str>,
     pub(crate) relation_rerank_width: i32,
     pub(crate) session_rerank_width: Option<i32>,
     pub(crate) effective_rerank_width: i32,
@@ -1247,6 +1249,7 @@ pub(crate) unsafe fn index_options_snapshot(
         let relation_options = unsafe { options::relation_options(index_relation) };
         let recursive_build_enabled = relation_options.recursive_fanout().is_some();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let mut recursive_level_parameters = Vec::new();
         let active_leaf_count = if root_control.active_epoch == 0 {
             0
         } else {
@@ -1259,11 +1262,50 @@ pub(crate) unsafe fn index_options_snapshot(
             )?;
             let object_store =
                 unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-            count_snapshot_options_leaf_pids(&snapshot, &object_store, recursive_build_enabled)?
+            let active_leaf_count = count_snapshot_options_leaf_pids(
+                &snapshot,
+                &object_store,
+                recursive_build_enabled,
+            )?;
+            if recursive_build_enabled {
+                let validated_snapshot =
+                    meta::SpireValidatedEpochSnapshot::from_snapshot(snapshot)?;
+                recursive_level_parameters = collect_level_parameter_snapshot_rows(
+                    &validated_snapshot,
+                    &object_store,
+                    relation_options,
+                )?;
+            }
+            active_leaf_count
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
         let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
+        let (effective_nprobe_per_level, nprobe_policy_per_level) =
+            if recursive_level_parameters.is_empty() {
+                let per_level = if root_control.active_epoch == 0 {
+                    Vec::new()
+                } else {
+                    vec![nprobe.effective_nprobe]
+                };
+                let policies = if root_control.active_epoch == 0 {
+                    Vec::new()
+                } else {
+                    vec!["single_level"]
+                };
+                (per_level, policies)
+            } else {
+                (
+                    recursive_level_parameters
+                        .iter()
+                        .map(|row| row.effective_nprobe)
+                        .collect(),
+                    recursive_level_parameters
+                        .iter()
+                        .map(|row| row.nprobe_policy)
+                        .collect(),
+                )
+            };
         let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
         let assignment_payload_format = relation_options.assignment_payload_format();
         let (
@@ -1283,6 +1325,8 @@ pub(crate) unsafe fn index_options_snapshot(
                 .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
             effective_nprobe: nprobe.effective_nprobe,
             effective_nprobe_source: nprobe.source,
+            effective_nprobe_per_level,
+            nprobe_policy_per_level,
             relation_rerank_width: relation_options.rerank_width,
             session_rerank_width: rerank_width.session_rerank_width,
             effective_rerank_width: rerank_width.effective_rerank_width,

@@ -1527,6 +1527,8 @@ fn ec_spire_index_options_snapshot(
         name!(session_nprobe, Option<i32>),
         name!(effective_nprobe, i64),
         name!(effective_nprobe_source, String),
+        name!(effective_nprobe_per_level, Vec<i64>),
+        name!(nprobe_policy_per_level, Vec<String>),
         name!(relation_rerank_width, i32),
         name!(session_rerank_width, Option<i32>),
         name!(effective_rerank_width, i32),
@@ -1555,6 +1557,16 @@ fn ec_spire_index_options_snapshot(
         snapshot.session_nprobe,
         i64::from(snapshot.effective_nprobe),
         snapshot.effective_nprobe_source.to_owned(),
+        snapshot
+            .effective_nprobe_per_level
+            .into_iter()
+            .map(i64::from)
+            .collect(),
+        snapshot
+            .nprobe_policy_per_level
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
         snapshot.relation_rerank_width,
         snapshot.session_rerank_width,
         snapshot.effective_rerank_width,
@@ -4861,6 +4873,18 @@ mod tests {
         )
         .expect("options query should succeed")
         .expect("options row should exist");
+        let effective_nprobe_per_level = Spi::get_one::<Vec<i64>>(
+            "SELECT effective_nprobe_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let nprobe_policy_per_level = Spi::get_one::<Vec<String>>(
+            "SELECT nprobe_policy_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
         let effective_rerank_width = Spi::get_one::<i32>(
             "SELECT effective_rerank_width FROM \
              ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
@@ -4877,6 +4901,8 @@ mod tests {
         assert_eq!(active_leaf_count, 3);
         assert_eq!(effective_nprobe, 3);
         assert_eq!(effective_nprobe_source, "session");
+        assert_eq!(effective_nprobe_per_level, vec![3]);
+        assert_eq!(nprobe_policy_per_level, vec!["single_level"]);
         assert_eq!(effective_rerank_width, 9);
         assert_eq!(effective_rerank_width_source, "session");
 
@@ -4918,10 +4944,27 @@ mod tests {
         )
         .expect("recursive options query should succeed")
         .expect("recursive options row should exist");
+        let recursive_effective_nprobe_per_level = Spi::get_one::<Vec<i64>>(
+            "SELECT effective_nprobe_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_nprobe_policy_per_level = Spi::get_one::<Vec<String>>(
+            "SELECT nprobe_policy_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
 
         assert_eq!(recursive_fanout, 2);
         assert!(recursive_build_enabled);
         assert_eq!(recursive_active_leaf_count, 4);
+        assert_eq!(recursive_effective_nprobe_per_level, vec![4, 1]);
+        assert_eq!(
+            recursive_nprobe_policy_per_level,
+            vec!["relation_or_session_leaf_level", "one_child_above_level_1"]
+        );
 
         Spi::run(
             "CREATE TABLE ec_spire_options_pq_empty \
