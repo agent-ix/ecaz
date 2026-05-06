@@ -88,7 +88,11 @@ at `nprobe=8`. Phase 4 relation-backed live insert, delete-delta publication,
 delta compaction, and live-assignment counting now route through the active
 local store set instead of falling back to the root/control relation store;
 packet `review/30531-spire-mutation-local-store-routing/` covers that
-checkpoint.
+checkpoint. Packet `review/30533-spire-local-placement-benchmark/` now records
+the first local placement benchmark: same-device two-store and `/mnt/e`
+two-store lanes preserve recall, keep build time near the one-store baseline,
+and show comparable local latency while explicitly stopping short of production
+multi-NVMe claims.
 PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
 remain open. Real SQL VACUUM
 coverage now reaches insert-delta compaction plus deleted-row scan
@@ -1302,11 +1306,15 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `local_store_id = 0`, and the same-relation two-store baseline has focused
   PG18 coverage across those surfaces. The query-specific SQL scan placement
   snapshot reports scan-touched leaf/delta PID counts and candidate rows per
-  local store; auxiliary relation DDL, parallel local fetch, and
-  benchmark-backed local placement claims remain open.
-- [ ] **Local placement benchmark.** Measure one-store vs multi-store behavior
-  on a machine with multiple physical NVMe devices before making any product
-  claim.
+  local store; auxiliary relation DDL and parallel local fetch remain open.
+- [x] **Local placement benchmark.** Packet
+  `review/30533-spire-local-placement-benchmark/` measures one-store,
+  same-device two-store, and `/mnt/e` two-store behavior on the local real 10k
+  fixture. The same-device two-store lane uses repeated `pg_default`
+  tablespace selection, and the extra-drive lane places store 1 in
+  `ecaz_spire_e` at `/mnt/e/ecaz_pg_tblspc/spire_e`. Treat this as local
+  placement/regression evidence; product claims still require future
+  production/cloud hardware.
 
 ## Phase 5 — Boundary Replication
 
