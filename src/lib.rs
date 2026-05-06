@@ -6545,23 +6545,32 @@ mod tests {
         assert_eq!(recursive_root_rows, 2);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
-        let flat_first_id = Spi::get_one::<i64>(
-            "SELECT id FROM ec_spire_flat_compare \
-             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
-             LIMIT 1",
-        )
-        .expect("ordered flat comparison ec_spire query should succeed")
-        .expect("flat comparison query should return a row");
-        let recursive_first_id = Spi::get_one::<i64>(
-            "SELECT id FROM ec_spire_recursive_compare \
-             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
-             LIMIT 1",
-        )
-        .expect("ordered recursive comparison ec_spire query should succeed")
-        .expect("recursive comparison query should return a row");
+        fn top_ids(table_name: &str, query: &str, limit: i64) -> Vec<i64> {
+            Spi::get_one::<Vec<i64>>(&format!(
+                "SELECT array_agg(id ORDER BY id) FROM (\
+                 SELECT id FROM {table_name} \
+                 ORDER BY embedding <#> {query}::real[] \
+                 LIMIT {limit}) ids"
+            ))
+            .expect("ordered comparison ec_spire query should succeed")
+            .expect("comparison query should return rows")
+        }
 
-        assert_eq!(flat_first_id, 1);
-        assert_eq!(recursive_first_id, flat_first_id);
+        for (query, expected_top2_ids) in [
+            ("ARRAY[1.0, 0.0]", vec![1, 2]),
+            ("ARRAY[0.8, 0.2]", vec![1, 2]),
+            ("ARRAY[-1.0, 0.0]", vec![3, 4]),
+            ("ARRAY[-0.8, 0.2]", vec![3, 4]),
+        ] {
+            let flat_top2_ids = top_ids("ec_spire_flat_compare", query, 2);
+            let recursive_top2_ids = top_ids("ec_spire_recursive_compare", query, 2);
+            assert_eq!(flat_top2_ids, expected_top2_ids);
+            assert_eq!(recursive_top2_ids, flat_top2_ids);
+
+            let flat_top1_id = top_ids("ec_spire_flat_compare", query, 1);
+            let recursive_top1_id = top_ids("ec_spire_recursive_compare", query, 1);
+            assert_eq!(recursive_top1_id, flat_top1_id);
+        }
     }
 
     #[pg_test]
