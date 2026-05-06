@@ -79,10 +79,14 @@ partial-publish retired/bundle residue, and cleanup eligibility blockers; leaf
 diagnostics now expose per-leaf base/delta/effective assignment counts plus
 read-only split/merge threshold recommendations for follow-up scheduling;
 insert-debt diagnostics now expose per-leaf delta fanout and batching
-recommendations while actual insert batching remains open. Measured
-recall/latency evidence remains open.
-PQ-FastScan scorer binding, measured recall/latency summary evidence, and
-physical object reclamation/old-epoch cleanup remain open. Real SQL VACUUM
+recommendations while actual insert batching remains open. Packet
+`review/30530-spire-phase1-recall-latency-gate/` now records local real 10k
+SPIRE recall/latency evidence for the single-store `nlists=32`,
+`rerank_width=25` foundation: recall@10 is `0.9985` at `nprobe=8` and
+`1.0000` from `nprobe=16` through `32`, with latency p50/p95 `62.1/70.2 ms`
+at `nprobe=8`.
+PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
+remain open. Real SQL VACUUM
 coverage now reaches insert-delta compaction plus deleted-row scan
 invisibility through PostgreSQL's normal callback path. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
@@ -447,9 +451,10 @@ diagnostics without scoring assignments.
   active readable delta object with parent leaf PID, object version,
   published-epoch back-reference, store placement, assignment count, and
   insert/delete assignment counts. Operator-facing diagnostic guidance now
-  lives in `docs/SPIRE_DIAGNOSTICS.md`. Measured recall/latency summary rows
-  remain open under the review/measurement gate rather than the Phase 1 admin
-  diagnostic surface.
+  lives in `docs/SPIRE_DIAGNOSTICS.md`. Packet
+  `review/30530-spire-phase1-recall-latency-gate/` now carries the Phase 1
+  measured recall/latency summary; those rows remain intentionally packet-local
+  rather than part of the Phase 1 admin diagnostic surface.
 - [x] **Validation.** Add focused PG18 behavior tests for build, scan, empty
   index, insert-after-build, delete/vacuum cleanup, and leaf-assignment
   cardinality. Empty-build, populated-build publication, and populated
@@ -517,9 +522,9 @@ diagnostics without scoring assignments.
   populated no-delta, post-insert delta, and pre-cleanup delete-delta active
   epochs. Real SQL VACUUM end-to-end coverage now exercises insert-delta
   compaction and deleted-row routed scan suppression; physical page reclamation
-  and old-epoch cleanup remain open. Final packet-local recall/latency sanity
-  evidence remains tracked by the Phase 1 review packet item below rather than
-  by this behavior-validation checklist item.
+  and old-epoch cleanup remain open. Packet-local recall/latency evidence now
+  lives in `review/30530-spire-phase1-recall-latency-gate/` rather than in this
+  behavior-validation checklist item.
 - [x] **Review packet.** Land the single-level foundation with packet-local
   logs and a small recall/latency sanity row. Review packet
   `review/30361-spire-phase1-landing/request.md` records the Phase 1 landing
