@@ -209,7 +209,7 @@
     }
 
     #[test]
-    fn group_leaf_routes_by_local_store_orders_stores_and_preserves_route_order() {
+    fn group_leaf_and_delta_reads_by_local_store_orders_stores_and_preserves_leaf_route_order() {
         let epoch_manifest = SpireEpochManifest {
             epoch: 7,
             state: SpireEpochState::Published,
@@ -257,7 +257,8 @@
             snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
         let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
 
-        let groups = group_leaf_routes_by_local_store(
+        let mut observer = SpireNoopRoutedScanObserver;
+        let groups = group_leaf_and_delta_reads_by_local_store(
             &snapshot,
             vec![
                 SpireRecursiveLeafRoute {
@@ -273,6 +274,8 @@
                     parent_pid: SPIRE_FIRST_PID,
                 },
             ],
+            Vec::new(),
+            &mut observer,
         )
         .unwrap();
 
@@ -281,7 +284,7 @@
         assert_eq!(groups[0].local_store_id, 0);
         assert_eq!(
             groups[0]
-                .routes
+                .leaf_routes
                 .iter()
                 .map(|route| route.leaf_pid)
                 .collect::<Vec<_>>(),
@@ -291,7 +294,7 @@
         assert_eq!(groups[1].local_store_id, 1);
         assert_eq!(
             groups[1]
-                .routes
+                .leaf_routes
                 .iter()
                 .map(|route| route.leaf_pid)
                 .collect::<Vec<_>>(),
@@ -361,6 +364,7 @@
             snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
         let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
 
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
         let groups = group_leaf_and_delta_reads_by_local_store(
             &snapshot,
             vec![SpireRecursiveLeafRoute {
@@ -377,8 +381,14 @@
                     parent_leaf_pid: other_leaf_pid,
                 },
             ],
+            &mut observer,
         )
         .unwrap();
+
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].local_store_id, 1);
+        assert_eq!(stores[0].dropped_unselected_delta_route_count, 1);
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].local_store_id, 0);
@@ -899,4 +909,3 @@
         .unwrap_err()
         .contains("non-finite"));
     }
-

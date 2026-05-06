@@ -221,8 +221,10 @@ fn collect_validated_quantized_leaf_route_candidates(
         SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
         SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
     };
-    for route_group in group_leaf_routes_by_local_store(snapshot, leaf_routes)? {
-        for route in route_group.routes {
+    for route_group in
+        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, Vec::new(), observer)?
+    {
+        for route in route_group.leaf_routes {
             let leaf_pid = route.leaf_pid;
             let deleted_vec_ids = collect_delta_delete_vec_ids_for_base_pid(
                 snapshot,
@@ -261,26 +263,11 @@ fn collect_validated_quantized_leaf_route_candidates(
     Ok(rank_bounded_scored_candidates(candidates, limit))
 }
 
-fn group_leaf_routes_by_local_store(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    leaf_routes: Vec<SpireRecursiveLeafRoute>,
-) -> Result<Vec<SpireStoreLeafRouteGroup>, String> {
-    Ok(
-        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, Vec::new())?
-            .into_iter()
-            .map(|group| SpireStoreLeafRouteGroup {
-                node_id: group.node_id,
-                local_store_id: group.local_store_id,
-                routes: group.leaf_routes,
-            })
-            .collect(),
-    )
-}
-
 fn group_leaf_and_delta_reads_by_local_store(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     leaf_routes: Vec<SpireRecursiveLeafRoute>,
     delta_routes: Vec<SpireDeltaObjectRoute>,
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<Vec<SpireStoreObjectReadGroup>, String> {
     let selected_leaf_pids = leaf_routes
         .iter()
@@ -288,6 +275,8 @@ fn group_leaf_and_delta_reads_by_local_store(
         .collect::<HashSet<_>>();
     let mut reads_by_store = BTreeMap::<(u32, u32), SpireStoreObjectReadGroup>::new();
 
+    // Output order is store-keyed by (node_id, local_store_id), not scan phase-keyed.
+    // Callers that need phase order must traverse leaf_routes and delta_routes explicitly.
     for route in leaf_routes {
         let lookup = snapshot.require_lookup(route.leaf_pid, "scan leaf route grouping")?;
         let placement = lookup.placement;
@@ -304,11 +293,12 @@ fn group_leaf_and_delta_reads_by_local_store(
     }
 
     for route in delta_routes {
-        if !selected_leaf_pids.contains(&route.parent_leaf_pid) {
-            continue;
-        }
         let lookup = snapshot.require_lookup(route.delta_pid, "scan delta route grouping")?;
         let placement = lookup.placement;
+        if !selected_leaf_pids.contains(&route.parent_leaf_pid) {
+            observer.dropped_unselected_delta_route(snapshot.epoch_manifest().epoch, placement);
+            continue;
+        }
         reads_by_store
             .entry((placement.node_id, placement.local_store_id))
             .or_insert_with(|| SpireStoreObjectReadGroup {

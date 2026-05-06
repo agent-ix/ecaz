@@ -111,13 +111,6 @@ struct SpireDeltaObjectRoute {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SpireStoreLeafRouteGroup {
-    node_id: u32,
-    local_store_id: u32,
-    routes: Vec<SpireRecursiveLeafRoute>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireStoreObjectReadGroup {
     node_id: u32,
     local_store_id: u32,
@@ -181,6 +174,7 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) leaf_candidate_row_count: usize,
     pub(super) delta_candidate_row_count: usize,
     pub(super) delete_delta_row_count: usize,
+    pub(super) dropped_unselected_delta_route_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,6 +189,8 @@ trait SpireRoutedScanObserver {
     fn scanned_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn delete_delta_row(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn dropped_unselected_delta_route(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn visible_leaf_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
@@ -238,6 +234,7 @@ impl SpireScanPlacementDiagnosticsObserver {
                 leaf_candidate_row_count: 0,
                 delta_candidate_row_count: 0,
                 delete_delta_row_count: 0,
+                dropped_unselected_delta_route_count: 0,
             })
     }
 }
@@ -257,6 +254,11 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
 
     fn delete_delta_row(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
         self.entry(epoch, placement).delete_delta_row_count += 1;
+    }
+
+    fn dropped_unselected_delta_route(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        self.entry(epoch, placement)
+            .dropped_unselected_delta_route_count += 1;
     }
 
     fn visible_leaf_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {

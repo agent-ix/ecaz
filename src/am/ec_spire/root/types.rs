@@ -320,6 +320,7 @@ pub(crate) struct SpireIndexScanPlacementSnapshotRow {
     pub(crate) leaf_candidate_row_count: u64,
     pub(crate) delta_candidate_row_count: u64,
     pub(crate) delete_delta_row_count: u64,
+    pub(crate) dropped_unselected_delta_route_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -175,6 +175,10 @@ local_store_id = spire_pid_hash(pid) % local_store_count
 hasher. A SplitMix64-style finalizer over the little-endian PID is sufficient
 and deterministic across platforms.
 
+The configured `local_store_count` is fixed for a built index. Changing the
+count changes the modulo home for existing object PIDs, so it requires REINDEX
+or a future explicit object rewrite/rebalance path.
+
 The root routing object is still a partition object and follows the same hash
 rule when a multi-store index uses dedicated store relations. Root/control
 metadata, epoch manifests, object manifests, placement directories, and store

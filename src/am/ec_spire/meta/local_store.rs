@@ -176,6 +176,8 @@ impl SpireLocalStoreConfig {
         if pid == 0 {
             return Err("ec_spire cannot place pid 0 in a local store".to_owned());
         }
+        // Store count is part of built-index placement. Changing it remaps
+        // existing object PIDs and requires REINDEX or an explicit rewrite.
         let store_count = u64::try_from(self.stores.len())
             .map_err(|_| "ec_spire local store count exceeds u64".to_owned())?;
         let store_index = usize::try_from(spire_pid_hash(pid) % store_count)
@@ -239,6 +241,8 @@ impl SpireLocalStoreConfig {
     }
 }
 
+// SplitMix64 finalizer over the PID. This is durable placement format; do not
+// replace it without migration coverage and updated stable-value tests.
 pub(super) fn spire_pid_hash(pid: u64) -> u64 {
     let mut value = pid;
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);

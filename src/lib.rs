@@ -1253,6 +1253,7 @@ fn ec_spire_index_scan_placement_snapshot(
         name!(leaf_candidate_row_count, i64),
         name!(delta_candidate_row_count, i64),
         name!(delete_delta_row_count, i64),
+        name!(dropped_unselected_delta_route_count, i64),
     ),
 > {
     let index_relation =
@@ -1280,6 +1281,8 @@ fn ec_spire_index_scan_placement_snapshot(
                 .expect("delta candidate row count should fit in i64"),
             i64::try_from(row.delete_delta_row_count)
                 .expect("delete delta row count should fit in i64"),
+            i64::try_from(row.dropped_unselected_delta_route_count)
+                .expect("dropped unselected delta route count should fit in i64"),
         )
     }))
 }
@@ -4222,6 +4225,13 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let dropped_unselected_delta_route_count = Spi::get_one::<i64>(
+            "SELECT dropped_unselected_delta_route_count FROM \
+             ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
 
         assert_eq!(delta_scanned_pid_count, 2);
         assert_eq!(delta_leaf_pid_count, 1);
@@ -4230,6 +4240,7 @@ mod tests {
         assert_eq!(delta_leaf_candidate_row_count, 1);
         assert_eq!(delta_delta_candidate_row_count, 1);
         assert_eq!(delete_delta_row_count, 0);
+        assert_eq!(dropped_unselected_delta_route_count, 0);
     }
 
     #[pg_test]

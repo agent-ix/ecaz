@@ -91,6 +91,7 @@
         assert_eq!(store.leaf_candidate_row_count, 0);
         assert_eq!(store.delta_candidate_row_count, 1);
         assert_eq!(store.delete_delta_row_count, 1);
+        assert_eq!(store.dropped_unselected_delta_route_count, 0);
 
         let zero_nprobe_plan = SpireSingleLevelScanPlan {
             nprobe: 0,
@@ -345,4 +346,3 @@
             3
         );
     }
-

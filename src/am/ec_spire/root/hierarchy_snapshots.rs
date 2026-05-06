@@ -372,6 +372,8 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
                 leaf_candidate_row_count: store.leaf_candidate_row_count as u64,
                 delta_candidate_row_count: store.delta_candidate_row_count as u64,
                 delete_delta_row_count: store.delete_delta_row_count as u64,
+                dropped_unselected_delta_route_count: store
+                    .dropped_unselected_delta_route_count as u64,
             })
             .collect();
         Ok(rows)
