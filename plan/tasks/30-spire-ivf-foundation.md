@@ -1159,6 +1159,9 @@ diagnostics without scoring assignments.
   rows, confirms their hierarchy/root diagnostics differ as expected, and
   verifies both ordered scans return the same nearest row across multiple query
   vectors and top-k set checks.
+- Phase 1 recall/latency gate evidence in packet `30530` was measured on the
+  single-store surface; packet `30533` covers same-device and `/mnt/e`
+  two-store recall parity.
 
 ### Phase 3 Closeout Follow-ups
 
@@ -1336,6 +1339,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ecaz_spire_e` at `/mnt/e/ecaz_pg_tblspc/spire_e`. Treat this as local
   placement/regression evidence; product claims still require future
   production/cloud hardware.
+- [ ] **Explicit multi-store REINDEX lifecycle.** Multi-store REINDEX must
+  create and publish a fresh auxiliary-store relation set, then retire stale
+  auxiliary store relations. Internal dependencies are not enough to make
+  existing auxiliary stores participate correctly in PostgreSQL REINDEX.
 
 ## Phase 5 — Boundary Replication
 

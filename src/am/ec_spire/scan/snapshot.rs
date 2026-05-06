@@ -314,15 +314,6 @@ fn collect_snapshot_delta_object_routes(
     Ok(delta_routes)
 }
 
-fn prefetch_store_object_read_group(
-    object_store: &impl SpireObjectReader,
-    route_group: &SpireStoreObjectReadGroup,
-) -> Result<(), String> {
-    let mut placements = Vec::new();
-    collect_store_object_read_group_prefetch_placements(route_group, &mut placements);
-    object_store.prefetch_objects(&placements)
-}
-
 fn collect_store_object_read_group_prefetch_placements(
     route_group: &SpireStoreObjectReadGroup,
     placements: &mut Vec<SpirePlacementEntry>,

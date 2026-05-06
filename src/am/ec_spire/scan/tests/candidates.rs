@@ -519,7 +519,7 @@
     }
 
     #[test]
-    fn prefetch_store_object_read_group_prefetches_leaf_and_delta_routes() {
+    fn prefetch_store_object_read_groups_prefetches_leaf_and_delta_routes() {
         struct RecordingPrefetchReader {
             prefetched_pids: RefCell<Vec<u64>>,
         }
@@ -635,7 +635,7 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_group(&reader, &groups[0]).unwrap();
+        prefetch_store_object_read_groups(&reader, std::slice::from_ref(&groups[0])).unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
     }

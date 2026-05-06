@@ -179,6 +179,11 @@ The configured `local_store_count` is fixed for a built index. Changing the
 count changes the modulo home for existing object PIDs, so it requires REINDEX
 or a future explicit object rewrite/rebalance path.
 
+Multi-store REINDEX is also an explicit implementation boundary: auxiliary
+store relations need a dedicated rebuild lifecycle that creates the new store
+set, publishes matching descriptors, and retires the old auxiliary relations.
+Internal catalog dependencies alone are not the reindex contract.
+
 The root routing object is still a partition object and follows the same hash
 rule when a multi-store index uses dedicated store relations. Root/control
 metadata, epoch manifests, object manifests, placement directories, and store

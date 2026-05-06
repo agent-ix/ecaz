@@ -19,6 +19,17 @@ pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
+    unsafe { initialize_spire_metadata_block_zero(index_relation, root_control) };
+}
+
+pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
+    unsafe { initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty()) };
+}
+
+unsafe fn initialize_spire_metadata_block_zero(
+    index_relation: pg_sys::Relation,
+    root_control: SpireRootControlState,
+) {
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };

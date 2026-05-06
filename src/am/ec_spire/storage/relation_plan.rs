@@ -127,6 +127,25 @@ pub(super) fn local_store_config_from_relation_plan(
     SpireLocalStoreConfig::from_stores(generation, descriptors)
 }
 
+unsafe fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
+    let option = std::ffi::CString::new("autovacuum_enabled=false")
+        .map_err(|_| "ec_spire auxiliary store reloption contains NUL".to_owned())?;
+    let text = unsafe { pg_sys::cstring_to_text(option.as_ptr()) };
+    if text.is_null() {
+        return Err("ec_spire failed to allocate auxiliary store reloption text".to_owned());
+    }
+
+    let mut elems = [unsafe { pg_sys::PointerGetDatum(text.cast()) }];
+    let array = unsafe {
+        pg_sys::construct_array_builtin(elems.as_mut_ptr(), elems.len() as i32, pg_sys::TEXTOID)
+    };
+    if array.is_null() {
+        return Err("ec_spire failed to allocate auxiliary store reloptions array".to_owned());
+    }
+
+    Ok(unsafe { pg_sys::PointerGetDatum(array.cast()) })
+}
+
 pub(super) unsafe fn create_local_store_relations_for_build(
     index_relation: pg_sys::Relation,
     relation_plan: &[SpireLocalStoreRelationPlanEntry],
@@ -170,6 +189,7 @@ pub(super) unsafe fn create_local_store_relations_for_build(
         if tuple_desc.is_null() {
             return Err("ec_spire failed to allocate local store tuple descriptor".to_owned());
         }
+        let reloptions = unsafe { spire_aux_store_reloptions()? };
 
         let store_relid = unsafe {
             pg_sys::heap_create_with_catalog(
@@ -188,7 +208,7 @@ pub(super) unsafe fn create_local_store_relations_for_build(
                 false,
                 false,
                 pg_sys::OnCommitAction::ONCOMMIT_NOOP,
-                pg_sys::Datum::from(0),
+                reloptions,
                 false,
                 false,
                 true,
@@ -233,10 +253,7 @@ pub(super) unsafe fn create_local_store_relations_for_build(
             ));
         }
         unsafe {
-            page::initialize_root_control_page(
-                store_relation,
-                super::meta::SpireRootControlState::empty(),
-            );
+            page::initialize_aux_store_metadata_page(store_relation);
             pg_sys::relation_close(store_relation, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE);
         }
         created.push((entry.local_store_id, store_relid.into()));
