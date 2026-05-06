@@ -1230,6 +1230,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   fetching leaf/delta object bytes and scoring candidates. Execution remains
   synchronous and uses the current object-reader abstraction until auxiliary
   store relation opening and measured parallel fetch land.
+- [x] **Scan leaf/delta read grouping primitive.** The scan grouping layer can
+  now combine selected leaf routes with matching delta object routes and group
+  both by their own `(node_id, local_store_id)`, filtering deltas whose parent
+  leaf was not selected. This keeps the future store-local fetch plan explicit
+  before delta header discovery and auxiliary store readers are wired into live
+  execution.
 - [ ] **Placement diagnostics.** Expose per-store object count, bytes,
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
   reports active per-store placement counts, placement-state counts,

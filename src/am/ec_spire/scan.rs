@@ -132,11 +132,25 @@ struct SpireRecursiveLeafRoute {
     parent_pid: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireDeltaObjectRoute {
+    delta_pid: u64,
+    parent_leaf_pid: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireStoreLeafRouteGroup {
     node_id: u32,
     local_store_id: u32,
     routes: Vec<SpireRecursiveLeafRoute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireStoreObjectReadGroup {
+    node_id: u32,
+    local_store_id: u32,
+    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+    delta_routes: Vec<SpireDeltaObjectRoute>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -703,26 +717,63 @@ fn group_leaf_routes_by_local_store(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     leaf_routes: Vec<SpireRecursiveLeafRoute>,
 ) -> Result<Vec<SpireStoreLeafRouteGroup>, String> {
-    let mut routes_by_store = BTreeMap::<(u32, u32), Vec<SpireRecursiveLeafRoute>>::new();
+    Ok(
+        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, Vec::new())?
+            .into_iter()
+            .map(|group| SpireStoreLeafRouteGroup {
+                node_id: group.node_id,
+                local_store_id: group.local_store_id,
+                routes: group.leaf_routes,
+            })
+            .collect(),
+    )
+}
+
+fn group_leaf_and_delta_reads_by_local_store(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+    delta_routes: Vec<SpireDeltaObjectRoute>,
+) -> Result<Vec<SpireStoreObjectReadGroup>, String> {
+    let selected_leaf_pids = leaf_routes
+        .iter()
+        .map(|route| route.leaf_pid)
+        .collect::<HashSet<_>>();
+    let mut reads_by_store = BTreeMap::<(u32, u32), SpireStoreObjectReadGroup>::new();
+
     for route in leaf_routes {
         let lookup = snapshot.require_lookup(route.leaf_pid, "scan leaf route grouping")?;
         let placement = lookup.placement;
-        routes_by_store
+        reads_by_store
             .entry((placement.node_id, placement.local_store_id))
-            .or_default()
+            .or_insert_with(|| SpireStoreObjectReadGroup {
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                leaf_routes: Vec::new(),
+                delta_routes: Vec::new(),
+            })
+            .leaf_routes
             .push(route);
     }
 
-    Ok(routes_by_store
-        .into_iter()
-        .map(
-            |((node_id, local_store_id), routes)| SpireStoreLeafRouteGroup {
-                node_id,
-                local_store_id,
-                routes,
-            },
-        )
-        .collect())
+    for route in delta_routes {
+        if !selected_leaf_pids.contains(&route.parent_leaf_pid) {
+            continue;
+        }
+        let lookup = snapshot.require_lookup(route.delta_pid, "scan delta route grouping")?;
+        let placement = lookup.placement;
+        reads_by_store
+            .entry((placement.node_id, placement.local_store_id))
+            .or_insert_with(|| SpireStoreObjectReadGroup {
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                leaf_routes: Vec::new(),
+                delta_routes: Vec::new(),
+            })
+            .delta_routes
+            .push(route);
+    }
+
+    Ok(reads_by_store.into_values().collect())
 }
 
 pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
@@ -2303,10 +2354,11 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
-        group_leaf_routes_by_local_store, load_snapshot_routing_hierarchy,
-        prepare_single_level_snapshot_scan_candidates, rank_routed_leaf_rows_by_ip,
-        rerank_scored_candidates_by_ip, route_recursive_routing_objects_to_leaf_pids,
-        route_root_object_to_leaf_pids, route_routing_object_to_child_pids, SpireLeafScanRow,
+        group_leaf_and_delta_reads_by_local_store, group_leaf_routes_by_local_store,
+        load_snapshot_routing_hierarchy, prepare_single_level_snapshot_scan_candidates,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
+        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
+        route_routing_object_to_child_pids, SpireDeltaObjectRoute, SpireLeafScanRow,
         SpireRecursiveLeafRoute, SpireRoutedLeafScanRows, SpireScanCandidateCursor,
         SpireScanOpaque, SpireScanOutput, SpireScanQuery, SpireScoredScanCandidate,
     };
@@ -3604,6 +3656,99 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![SPIRE_FIRST_PID + 3, SPIRE_FIRST_PID + 2]
         );
+    }
+
+    #[test]
+    fn group_leaf_and_delta_reads_by_local_store_groups_deltas_by_own_store() {
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let selected_leaf_pid = SPIRE_FIRST_PID + 1;
+        let other_leaf_pid = SPIRE_FIRST_PID + 2;
+        let selected_delta_pid = SPIRE_FIRST_PID + 11;
+        let other_delta_pid = SPIRE_FIRST_PID + 12;
+        let placements = vec![
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                selected_leaf_pid,
+                0,
+                500,
+                1,
+                tid(60, 1),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                other_leaf_pid,
+                1,
+                501,
+                1,
+                tid(60, 2),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                selected_delta_pid,
+                2,
+                502,
+                1,
+                tid(60, 3),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                other_delta_pid,
+                1,
+                501,
+                1,
+                tid(60, 4),
+                100,
+            ),
+        ];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+
+        let groups = group_leaf_and_delta_reads_by_local_store(
+            &snapshot,
+            vec![SpireRecursiveLeafRoute {
+                leaf_pid: selected_leaf_pid,
+                parent_pid: SPIRE_FIRST_PID,
+            }],
+            vec![
+                SpireDeltaObjectRoute {
+                    delta_pid: selected_delta_pid,
+                    parent_leaf_pid: selected_leaf_pid,
+                },
+                SpireDeltaObjectRoute {
+                    delta_pid: other_delta_pid,
+                    parent_leaf_pid: other_leaf_pid,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].local_store_id, 0);
+        assert_eq!(groups[0].leaf_routes.len(), 1);
+        assert_eq!(groups[0].leaf_routes[0].leaf_pid, selected_leaf_pid);
+        assert!(groups[0].delta_routes.is_empty());
+        assert_eq!(groups[1].local_store_id, 2);
+        assert!(groups[1].leaf_routes.is_empty());
+        assert_eq!(groups[1].delta_routes.len(), 1);
+        assert_eq!(groups[1].delta_routes[0].delta_pid, selected_delta_pid);
+        assert_eq!(groups[1].delta_routes[0].parent_leaf_pid, selected_leaf_pid);
     }
 
     #[test]
