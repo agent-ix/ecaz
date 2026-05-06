@@ -195,6 +195,7 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) recursive_fanout: i32,
     pub(crate) recursive_build_enabled: bool,
     pub(crate) local_store_count: i32,
+    pub(crate) local_store_tablespaces: Option<String>,
     pub(crate) active_leaf_count: u32,
     pub(crate) relation_nprobe: i32,
     pub(crate) session_nprobe: Option<i32>,
@@ -660,7 +661,7 @@ fn count_snapshot_options_leaf_pids(
 
 fn level_target_fanout(
     level: u16,
-    relation_options: options::EcSpireOptions,
+    relation_options: &options::EcSpireOptions,
     observed_child_count: u64,
 ) -> Result<u32, String> {
     if level == 1 && relation_options.nlists > 0 {
@@ -679,7 +680,7 @@ fn level_target_fanout(
 fn level_nprobe_resolution(
     level: u16,
     leaf_count: u32,
-    relation_options: options::EcSpireOptions,
+    relation_options: &options::EcSpireOptions,
 ) -> Result<(Option<i32>, u32, &'static str, &'static str), String> {
     let relation_nprobe = u32::try_from(relation_options.nprobe)
         .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
@@ -1277,7 +1278,7 @@ pub(crate) unsafe fn index_options_snapshot(
                 recursive_level_parameters = collect_level_parameter_snapshot_rows(
                     &validated_snapshot,
                     &object_store,
-                    relation_options,
+                    &relation_options,
                 )?;
             }
             active_leaf_count
@@ -1323,6 +1324,7 @@ pub(crate) unsafe fn index_options_snapshot(
             recursive_fanout: relation_options.recursive_fanout,
             recursive_build_enabled,
             local_store_count: relation_options.local_store_count,
+            local_store_tablespaces: relation_options.local_store_tablespaces.clone(),
             active_leaf_count,
             relation_nprobe: relation_options.nprobe,
             session_nprobe: nprobe
@@ -1375,7 +1377,7 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
         )?;
         let object_store =
             unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
-        collect_level_parameter_snapshot_rows(&snapshot, &object_store, relation_options)
+        collect_level_parameter_snapshot_rows(&snapshot, &object_store, &relation_options)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -1383,7 +1385,7 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
 fn collect_level_parameter_snapshot_rows(
     snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
     object_store: &impl storage::SpireObjectReader,
-    relation_options: options::EcSpireOptions,
+    relation_options: &options::EcSpireOptions,
 ) -> Result<Vec<SpireIndexLevelParameterSnapshotRow>, String> {
     let mut active_leaf_count = 0_u32;
     let mut levels = BTreeMap::<u16, SpireLevelParameterAccumulator>::new();

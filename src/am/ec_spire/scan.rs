@@ -3697,6 +3697,7 @@ mod tests {
             seed: 0,
             pq_group_size: 0,
             storage_format: SpireStorageFormat::TurboQuant,
+            local_store_tablespaces: None,
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 

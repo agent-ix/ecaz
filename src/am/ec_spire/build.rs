@@ -2495,6 +2495,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                     "ec_spire local_store_count > 1 is parsed but store relation creation is not implemented yet"
                 );
             }
+            let recursive_fanout = options.recursive_fanout();
             page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
             let indexed_vector_kind =
                 resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
@@ -2511,7 +2512,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             );
             let index_tuples = if state.scanned_tuples == 0 {
                 0.0
-            } else if let Some(recursive_fanout) = options.recursive_fanout() {
+            } else if let Some(recursive_fanout) = recursive_fanout {
                 publish_relation_recursive_routing_build(index_relation, &state, recursive_fanout)
                     .unwrap_or_else(|e| {
                         pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
@@ -2624,6 +2625,7 @@ mod tests {
             seed: 7,
             pq_group_size: 0,
             storage_format: super::options::SpireStorageFormat::TurboQuant,
+            local_store_tablespaces: None,
         }
     }
 

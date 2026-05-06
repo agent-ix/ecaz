@@ -1523,6 +1523,7 @@ fn ec_spire_index_options_snapshot(
         name!(recursive_fanout, i32),
         name!(recursive_build_enabled, bool),
         name!(local_store_count, i32),
+        name!(local_store_tablespaces, Option<String>),
         name!(active_leaf_count, i64),
         name!(relation_nprobe, i32),
         name!(session_nprobe, Option<i32>),
@@ -1554,6 +1555,7 @@ fn ec_spire_index_options_snapshot(
         snapshot.recursive_fanout,
         snapshot.recursive_build_enabled,
         snapshot.local_store_count,
+        snapshot.local_store_tablespaces,
         i64::from(snapshot.active_leaf_count),
         snapshot.relation_nprobe,
         snapshot.session_nprobe,
@@ -4793,6 +4795,7 @@ mod tests {
                  training_sample_rows = 11, \
                  seed = 13, \
                  local_store_count = 1, \
+                 local_store_tablespaces = 'pg_default', \
                  pq_group_size = 4, \
                  storage_format = 'rabitq' \
              )",
@@ -4821,6 +4824,12 @@ mod tests {
         .expect("options row should exist");
         let local_store_count = Spi::get_one::<i32>(
             "SELECT local_store_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let local_store_tablespaces = Spi::get_one::<String>(
+            "SELECT local_store_tablespaces FROM \
              ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
         )
         .expect("options query should succeed")
@@ -4860,6 +4869,7 @@ mod tests {
         assert_eq!(recursive_fanout, 0);
         assert!(!recursive_build_enabled);
         assert_eq!(local_store_count, 1);
+        assert_eq!(local_store_tablespaces, "pg_default");
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");

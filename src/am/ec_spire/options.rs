@@ -37,6 +37,7 @@ struct EcSpireReloptions {
     pq_group_size: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
+    local_store_tablespaces_offset: i32,
 }
 
 #[repr(u8)]
@@ -79,7 +80,7 @@ impl SpireStorageFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct EcSpireOptions {
     pub(super) nlists: i32,
     pub(super) recursive_fanout: i32,
@@ -90,6 +91,7 @@ pub(super) struct EcSpireOptions {
     pub(super) seed: i32,
     pub(super) pq_group_size: i32,
     pub(super) storage_format: SpireStorageFormat,
+    pub(super) local_store_tablespaces: Option<String>,
 }
 
 impl EcSpireOptions {
@@ -103,9 +105,10 @@ impl EcSpireOptions {
         seed: EC_SPIRE_DEFAULT_SEED,
         pq_group_size: EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
         storage_format: SpireStorageFormat::Auto,
+        local_store_tablespaces: None,
     };
 
-    pub(super) fn requested_pq_group_size(self) -> Option<usize> {
+    pub(super) fn requested_pq_group_size(&self) -> Option<usize> {
         if self.pq_group_size > 0 {
             Some(self.pq_group_size as usize)
         } else {
@@ -113,11 +116,11 @@ impl EcSpireOptions {
         }
     }
 
-    pub(super) fn assignment_payload_format(self) -> SpireAssignmentPayloadFormat {
+    pub(super) fn assignment_payload_format(&self) -> SpireAssignmentPayloadFormat {
         self.storage_format.assignment_payload_format()
     }
 
-    pub(super) fn recursive_fanout(self) -> Option<u32> {
+    pub(super) fn recursive_fanout(&self) -> Option<u32> {
         validate_recursive_fanout_value(self.recursive_fanout)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         match self.recursive_fanout {
@@ -144,6 +147,28 @@ fn validate_local_store_count_value(value: i32) -> Result<(), String> {
             "ec_spire local_store_count reloption must be between {EC_SPIRE_MIN_LOCAL_STORE_COUNT} and {EC_SPIRE_MAX_LOCAL_STORE_COUNT}, got {value}"
         ))
     }
+}
+
+fn normalize_local_store_tablespaces_reloption(
+    value: &str,
+    local_store_count: i32,
+) -> Result<String, String> {
+    validate_local_store_count_value(local_store_count)?;
+    let names = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if names.iter().any(|name| name.is_empty()) {
+        return Err(
+            "ec_spire local_store_tablespaces reloption must not contain empty names".to_owned(),
+        );
+    }
+    let expected_count = usize::try_from(local_store_count)
+        .map_err(|_| "ec_spire local_store_count must be non-negative".to_owned())?;
+    if names.len() != expected_count {
+        return Err(format!(
+            "ec_spire local_store_tablespaces reloption must name exactly {expected_count} tablespace(s), got {}",
+            names.len()
+        ));
+    }
+    Ok(names.join(","))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -434,6 +459,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, quantizer_offset) as i32,
             );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                c"local_store_tablespaces".as_ptr(),
+                c"Comma-separated tablespace names for local SPIRE stores; repeated names are allowed for same-device baselines."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcSpireReloptions, local_store_tablespaces_offset) as i32,
+            );
             pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
         })
     }
@@ -500,6 +535,17 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
             SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
         })
         .unwrap_or(SpireStorageFormat::Auto);
+    let local_store_tablespaces = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.local_store_tablespaces_offset,
+            "local_store_tablespaces",
+        )
+    }
+    .map(|value| {
+        normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+    });
 
     EcSpireOptions {
         nlists: reloptions.nlists,
@@ -511,16 +557,17 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
         storage_format,
+        local_store_tablespaces,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, validate_local_store_count_value,
-        validate_recursive_fanout_value, EcSpireOptions, SpireCandidateDedupeMode,
-        SpireStorageFormat,
+        normalize_local_store_tablespaces_reloption, resolve_scan_nprobe_values,
+        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
+        validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
+        SpireCandidateDedupeMode, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -571,6 +618,20 @@ mod tests {
     }
 
     #[test]
+    fn local_store_tablespaces_normalizes_and_allows_repeated_names() {
+        assert_eq!(
+            normalize_local_store_tablespaces_reloption("fast_a, fast_a", 2).unwrap(),
+            "fast_a,fast_a"
+        );
+        assert_eq!(
+            normalize_local_store_tablespaces_reloption("fast_a", 1).unwrap(),
+            "fast_a"
+        );
+        assert!(normalize_local_store_tablespaces_reloption("fast_a", 2).is_err());
+        assert!(normalize_local_store_tablespaces_reloption("fast_a,", 2).is_err());
+    }
+
+    #[test]
     fn scan_nprobe_resolution_uses_session_relation_and_auto_sources() {
         assert_eq!(resolve_scan_nprobe_values(0, 5, -1).effective_nprobe, 0);
 
@@ -614,6 +675,7 @@ mod tests {
         assert_eq!(options.seed, 42);
         assert_eq!(options.requested_pq_group_size(), None);
         assert_eq!(options.storage_format, SpireStorageFormat::Auto);
+        assert_eq!(options.local_store_tablespaces, None);
         assert_eq!(
             options.assignment_payload_format(),
             SpireAssignmentPayloadFormat::TurboQuant
@@ -632,9 +694,10 @@ mod tests {
             seed: 7,
             pq_group_size: 0,
             storage_format: SpireStorageFormat::RaBitQ,
+            local_store_tablespaces: Some("fast_a".to_owned()),
         };
 
-        let plan = resolve_single_level_scan_plan_values(17, options, -1, -1).unwrap();
+        let plan = resolve_single_level_scan_plan_values(17, options.clone(), -1, -1).unwrap();
 
         assert_eq!(plan.leaf_count, 17);
         assert_eq!(plan.nprobe, 3);
@@ -662,6 +725,7 @@ mod tests {
             seed: 42,
             pq_group_size: 0,
             storage_format: SpireStorageFormat::Auto,
+            local_store_tablespaces: None,
         };
 
         let plan = resolve_single_level_scan_plan_values(17, options, 99, 0).unwrap();
@@ -693,8 +757,9 @@ mod tests {
             seed: 42,
             pq_group_size: 0,
             storage_format: SpireStorageFormat::Auto,
+            local_store_tablespaces: None,
         };
-        assert!(resolve_single_level_scan_plan_values(1, invalid, -1, -1).is_err());
+        assert!(resolve_single_level_scan_plan_values(1, invalid.clone(), -1, -1).is_err());
 
         let invalid = EcSpireOptions {
             nprobe: 0,
