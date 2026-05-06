@@ -471,10 +471,30 @@
                 SpireDeltaObjectRoute {
                     delta_pid: selected_delta_pid,
                     parent_leaf_pid: selected_leaf_pid,
+                    placement: SpirePlacementEntry::local_store_available_by_id(
+                        7,
+                        selected_delta_pid,
+                        2,
+                        502,
+                        1,
+                        tid(60, 3),
+                        100,
+                    ),
+                    object_version: 1,
                 },
                 SpireDeltaObjectRoute {
                     delta_pid: other_delta_pid,
                     parent_leaf_pid: other_leaf_pid,
+                    placement: SpirePlacementEntry::local_store_available_by_id(
+                        7,
+                        other_delta_pid,
+                        1,
+                        501,
+                        1,
+                        tid(60, 4),
+                        100,
+                    ),
+                    object_version: 1,
                 },
             ],
             &mut observer,
@@ -597,6 +617,16 @@
             vec![SpireDeltaObjectRoute {
                 delta_pid,
                 parent_leaf_pid: leaf_pid,
+                placement: SpirePlacementEntry::local_store_available_by_id(
+                    7,
+                    delta_pid,
+                    0,
+                    500,
+                    1,
+                    tid(61, 1),
+                    100,
+                ),
+                object_version: 1,
             }],
             &mut observer,
         )
@@ -605,7 +635,107 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_group(&snapshot, &reader, &groups[0]).unwrap();
+        prefetch_store_object_read_group(&reader, &groups[0]).unwrap();
+
+        assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+    }
+
+    #[test]
+    fn prefetch_store_object_read_groups_prefetches_every_store_before_scoring() {
+        struct RecordingPrefetchReader {
+            prefetched_pids: RefCell<Vec<u64>>,
+        }
+
+        impl SpireObjectReader for RecordingPrefetchReader {
+            fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
+                self.prefetched_pids.borrow_mut().push(placement.pid);
+                Ok(())
+            }
+
+            fn read_object_header(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpirePartitionObjectHeader, String> {
+                unreachable!("prefetch-all test should not read object headers")
+            }
+
+            fn read_routing_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireRoutingPartitionObject, String> {
+                unreachable!("prefetch-all test should not read routing objects")
+            }
+
+            fn read_leaf_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireLeafPartitionObject, String> {
+                unreachable!("prefetch-all test should not read leaf objects")
+            }
+
+            fn read_leaf_object_v2(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<crate::am::ec_spire::storage::SpireLeafPartitionObjectV2, String>
+            {
+                unreachable!("prefetch-all test should not read leaf V2 objects")
+            }
+
+            fn read_delta_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireDeltaPartitionObject, String> {
+                unreachable!("prefetch-all test should not read delta objects")
+            }
+        }
+
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let delta_pid = SPIRE_FIRST_PID + 11;
+        let groups = vec![
+            SpireStoreObjectReadGroup {
+                node_id: 0,
+                local_store_id: 0,
+                leaf_routes: vec![SpireLeafObjectReadRoute {
+                    leaf_pid,
+                    parent_pid: SPIRE_FIRST_PID,
+                    placement: SpirePlacementEntry::local_store_available_by_id(
+                        7,
+                        leaf_pid,
+                        0,
+                        500,
+                        1,
+                        tid(60, 1),
+                        100,
+                    ),
+                    object_version: 1,
+                }],
+                delta_routes: Vec::new(),
+            },
+            SpireStoreObjectReadGroup {
+                node_id: 0,
+                local_store_id: 2,
+                leaf_routes: Vec::new(),
+                delta_routes: vec![SpireDeltaObjectRoute {
+                    delta_pid,
+                    parent_leaf_pid: leaf_pid,
+                    placement: SpirePlacementEntry::local_store_available_by_id(
+                        7,
+                        delta_pid,
+                        2,
+                        502,
+                        1,
+                        tid(61, 1),
+                        100,
+                    ),
+                    object_version: 1,
+                }],
+            },
+        ];
+        let reader = RecordingPrefetchReader {
+            prefetched_pids: RefCell::new(Vec::new()),
+        };
+
+        prefetch_store_object_read_groups(&reader, &groups).unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
     }

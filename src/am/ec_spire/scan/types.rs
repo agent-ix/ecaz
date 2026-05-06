@@ -108,13 +108,23 @@ struct SpireRecursiveLeafRoute {
 struct SpireDeltaObjectRoute {
     delta_pid: u64,
     parent_leaf_pid: u64,
+    placement: SpirePlacementEntry,
+    object_version: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireLeafObjectReadRoute {
+    leaf_pid: u64,
+    parent_pid: u64,
+    placement: SpirePlacementEntry,
+    object_version: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireStoreObjectReadGroup {
     node_id: u32,
     local_store_id: u32,
-    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+    leaf_routes: Vec<SpireLeafObjectReadRoute>,
     delta_routes: Vec<SpireDeltaObjectRoute>,
 }
 

@@ -297,17 +297,15 @@ pub(super) fn collect_validated_snapshot_visible_primary_rows(
 fn append_quantized_leaf_candidates_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
-    leaf_pid: u64,
-    expected_parent_pid: u64,
+    route: SpireLeafObjectReadRoute,
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
-    let lookup = snapshot.require_lookup(leaf_pid, "quantized routed scan leaf")?;
-    let manifest_entry = lookup.manifest_entry;
-    let placement = lookup.placement;
+    let leaf_pid = route.leaf_pid;
+    let placement = &route.placement;
     if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
         return Ok(());
     }
@@ -318,13 +316,14 @@ fn append_quantized_leaf_candidates_for_pid(
             "ec_spire quantized routed scan pid {leaf_pid} is not a leaf object"
         ));
     }
-    if header.parent_pid != expected_parent_pid {
+    if header.parent_pid != route.parent_pid {
         return Err(format!(
-            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {expected_parent_pid}",
+            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {}",
             header.parent_pid,
+            route.parent_pid,
         ));
     }
-    observer.scanned_leaf(snapshot.epoch_manifest().epoch, placement);
+    observer.scanned_leaf(snapshot.epoch_manifest().epoch, &route.placement);
 
     match object_store.read_leaf_object_v2(placement) {
         Ok(leaf_object) => {
@@ -334,12 +333,12 @@ fn append_quantized_leaf_candidates_for_pid(
                     columns,
                     snapshot.epoch_manifest().epoch,
                     leaf_pid,
-                    manifest_entry.object_version,
+                    route.object_version,
                     scorer,
                     deleted_vec_ids,
                     candidates,
                     candidates_by_vec_id,
-                    placement,
+                    &route.placement,
                     observer,
                 )?;
             }
@@ -355,12 +354,12 @@ fn append_quantized_leaf_candidates_for_pid(
                 leaf_object,
                 snapshot.epoch_manifest().epoch,
                 leaf_pid,
-                manifest_entry.object_version,
+                route.object_version,
                 scorer,
                 deleted_vec_ids,
                 candidates,
                 candidates_by_vec_id,
-                placement,
+                &route.placement,
                 observer,
             )
         }
@@ -438,8 +437,7 @@ fn append_quantized_delta_candidates_for_routes(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     for route in delta_routes {
-        let lookup = snapshot.require_lookup(route.delta_pid, "quantized routed scan delta")?;
-        let placement = lookup.placement;
+        let placement = &route.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
@@ -472,8 +470,8 @@ fn append_quantized_delta_candidates_for_routes(
             observer.visible_delta_candidate(snapshot.epoch_manifest().epoch, placement);
             let candidate = SpireScoredScanCandidate {
                 epoch: snapshot.epoch_manifest().epoch,
-                pid: lookup.manifest_entry.pid,
-                object_version: lookup.manifest_entry.object_version,
+                pid: route.delta_pid,
+                object_version: route.object_version,
                 row_index,
                 assignment_flags: assignment.flags,
                 vec_id: assignment.vec_id,
@@ -494,8 +492,7 @@ fn collect_delta_delete_vec_ids_for_routes(
 ) -> Result<HashSet<SpireVecId>, String> {
     let mut deleted_vec_ids = HashSet::new();
     for route in delta_routes {
-        let lookup = snapshot.require_lookup(route.delta_pid, "quantized routed scan delete delta")?;
-        let placement = lookup.placement;
+        let placement = &route.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
