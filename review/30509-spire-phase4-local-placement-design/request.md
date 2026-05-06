@@ -72,3 +72,40 @@ Tests were not run because this is a documentation-only checkpoint.
 No measurement claims. The design explicitly defers one-store versus
 multi-store benchmark claims until packet-local artifacts exist from a host
 with multiple physical NVMe devices.
+
+## Reviewer Follow-Up: 2026-05-06
+
+- Follow-up code/docs commit: `e582739a`
+  (`Address SPIRE phase 4 review feedback`)
+- Kept this as an update to the existing Phase 4 design packet instead of
+  opening another narrow helper packet.
+
+Addressed reviewer feedback:
+
+- `plan/status.md` now has a Task 30 SPIRE IVF row with Phase 4 status and
+  remaining gates.
+- `plan/design/spire-local-multistore-placement.md` now documents that
+  `local_store_count` is fixed for a built index because changing it remaps
+  existing object PIDs.
+- `src/am/ec_spire/meta/local_store.rs` now documents the fixed store-count
+  constraint next to `store_for_pid` and identifies `spire_pid_hash` as the
+  durable SplitMix64-finalizer placement format.
+- The scan grouping packet now collapses the leaf-only wrapper/type and
+  surfaces filtered delta routes through diagnostics; see
+  `review/30519-spire-scan-leaf-route-store-grouping/request.md`.
+
+Still open from the design feedback:
+
+- measured Task 30 recall/latency packet;
+- real hash-routed multi-store write + fetch coverage;
+- store-relation DDL/open/discovery implementation;
+- eventual multi-NVMe benchmark packet with packet-local raw artifacts.
+
+Follow-up validation:
+
+- `cargo test group_leaf_and_delta_reads_by_local_store --lib`
+- `cargo test collect_scan_placement_diagnostics --lib`
+- `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
+- `cargo fmt`
+- `git diff --check`
+- `git diff --cached --check`
