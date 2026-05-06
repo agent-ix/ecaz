@@ -1208,6 +1208,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_store_<index_oid>_<store_id>` from the resolved tablespace plan,
   preserving repeated tablespace OIDs for same-device baseline runs while
   store relation DDL remains blocked behind the current executable guard.
+- [x] **Local store descriptor publish planning.** The relation planning layer
+  can now combine a resolved relation/tablespace plan with created store relids
+  into a validated `SpireLocalStoreConfig`, preserving repeated tablespace OIDs
+  and rejecting missing, duplicate, or unexpected created store relids before
+  the catalog DDL helper publishes an active store generation.
 - [x] **Object store local-store-id surface.** The SPIRE object-store wrappers
   now carry their `local_store_id` when creating and validating placement
   entries, so the next writer slice can select a store descriptor instead of

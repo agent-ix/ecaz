@@ -1,6 +1,9 @@
 //! PID-addressed partition-object storage codecs.
 
-use std::{collections::HashSet, mem::size_of};
+use std::{
+    collections::{BTreeMap, HashSet},
+    mem::size_of,
+};
 
 use pgrx::pg_sys;
 
@@ -321,6 +324,54 @@ pub(super) fn plan_local_store_relations(
     }
 
     Ok(entries)
+}
+
+pub(super) fn local_store_config_from_relation_plan(
+    generation: u64,
+    relation_plan: &[SpireLocalStoreRelationPlanEntry],
+    store_relids: impl IntoIterator<Item = (u32, u32)>,
+) -> Result<SpireLocalStoreConfig, String> {
+    if relation_plan.is_empty() {
+        return Err(
+            "ec_spire local store relation plan must include at least one store".to_owned(),
+        );
+    }
+
+    let mut relids_by_store_id = BTreeMap::new();
+    for (local_store_id, store_relid) in store_relids {
+        if relids_by_store_id
+            .insert(local_store_id, store_relid)
+            .is_some()
+        {
+            return Err(format!(
+                "ec_spire local store relation plan duplicate created relid for local_store_id {local_store_id}"
+            ));
+        }
+    }
+
+    let mut descriptors = Vec::with_capacity(relation_plan.len());
+    for entry in relation_plan {
+        let store_relid = relids_by_store_id
+            .remove(&entry.local_store_id)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire local store relation plan missing created relid for local_store_id {}",
+                    entry.local_store_id
+                )
+            })?;
+        descriptors.push(SpireLocalStoreDescriptor::available(
+            entry.local_store_id,
+            store_relid,
+            entry.tablespace_oid,
+        )?);
+    }
+    if let Some((local_store_id, _)) = relids_by_store_id.iter().next() {
+        return Err(format!(
+            "ec_spire local store relation plan has unexpected created relid for local_store_id {local_store_id}"
+        ));
+    }
+
+    SpireLocalStoreConfig::from_stores(generation, descriptors)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3339,11 +3390,12 @@ mod tests {
     };
     use super::{
         decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
-        is_visible_primary_assignment_ref, plan_local_store_relations,
-        spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-        SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
-        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SpireVecIdKind, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
+        is_visible_primary_assignment_ref, local_store_config_from_relation_plan,
+        plan_local_store_relations, spire_local_store_relation_name, SpireDeltaPartitionObject,
+        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
+        SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireRoutingChildEntry,
+        SpireRoutingPartitionObject, SpireVecId, SpireVecIdKind,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
         SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
@@ -3527,6 +3579,46 @@ mod tests {
 
         assert!(plan_local_store_relations(12345, []).is_err());
         assert!(plan_local_store_relations(12345, [(0, 10), (0, 11)]).is_err());
+    }
+
+    #[test]
+    fn local_store_relation_plan_builds_store_config_from_created_relids() {
+        let relation_plan = plan_local_store_relations(12345, [(1, 10), (0, 10), (2, 11)]).unwrap();
+
+        let config = local_store_config_from_relation_plan(
+            7,
+            &relation_plan,
+            [(2, 502), (0, 500), (1, 501)],
+        )
+        .unwrap();
+
+        assert_eq!(config.generation, 7);
+        assert_eq!(config.stores.len(), 3);
+        assert_eq!(config.stores[0].local_store_id, 0);
+        assert_eq!(config.stores[0].store_relid, 500);
+        assert_eq!(config.stores[0].tablespace_oid, 10);
+        assert_eq!(config.stores[1].local_store_id, 1);
+        assert_eq!(config.stores[1].store_relid, 501);
+        assert_eq!(config.stores[1].tablespace_oid, 10);
+        assert_eq!(config.stores[2].local_store_id, 2);
+        assert_eq!(config.stores[2].store_relid, 502);
+        assert_eq!(config.stores[2].tablespace_oid, 11);
+
+        assert!(
+            local_store_config_from_relation_plan(7, &relation_plan, [(0, 500), (1, 501)]).is_err()
+        );
+        assert!(local_store_config_from_relation_plan(
+            7,
+            &relation_plan,
+            [(0, 500), (1, 501), (2, 502), (3, 503)]
+        )
+        .is_err());
+        assert!(local_store_config_from_relation_plan(
+            7,
+            &relation_plan,
+            [(0, 500), (1, 501), (1, 511), (2, 502)]
+        )
+        .is_err());
     }
 
     #[test]
