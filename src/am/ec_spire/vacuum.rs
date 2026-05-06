@@ -237,6 +237,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
 ) -> Result<bool, String> {
     let (active_epoch_manifest, object_manifest, placement_directory) =
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+    let local_store_config =
+        unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
     let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
         &active_epoch_manifest,
         &object_manifest,
@@ -363,6 +365,7 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
         placement_directory: &placement_directory,
+        local_store_config,
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
@@ -453,6 +456,8 @@ fn publish_delete_delta_epoch(
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
     let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let local_store_config =
+        unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
 
     let mut placement_entries = placement_directory
         .entries
@@ -495,6 +500,7 @@ fn publish_delete_delta_epoch(
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
         placement_directory: &placement_directory,
+        local_store_config,
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };

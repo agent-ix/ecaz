@@ -14,13 +14,15 @@ use super::build::{
     SpirePublishPlacementWriteEvidence, SpirePublishedManifestLocators,
 };
 use super::meta::{
-    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
-    SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
+    SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
+    SpireValidatedEpochSnapshot,
 };
+use super::page;
 use super::scan::{
     collect_validated_snapshot_visible_primary_rows, load_indexed_source_vector_from_heap_row,
-    SpireLeafScanRow,
+    load_relation_local_store_config, SpireLeafScanRow,
 };
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,

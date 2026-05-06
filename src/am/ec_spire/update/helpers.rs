@@ -12,6 +12,10 @@ fn manifest_locators_for_validation() -> SpirePublishedManifestLocators {
             block_number: 1,
             offset_number: 3,
         },
+        local_store_config_tid: ItemPointer {
+            block_number: 1,
+            offset_number: 4,
+        },
     }
 }
 

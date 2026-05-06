@@ -63,11 +63,20 @@ pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
             next_local_vec_seq: input.next_local_vec_seq,
         },
     )?;
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch != previous_epoch_manifest.epoch {
+        return Err(format!(
+            "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
+            root_control.active_epoch, previous_epoch_manifest.epoch
+        ));
+    }
+    let local_store_config =
+        unsafe { load_relation_local_store_config(index_relation, root_control)? };
     unsafe {
         publish_replacement_epoch_to_relation(
             index_relation,
             previous_epoch_manifest,
-            draft.publish_input(),
+            draft.publish_input_with_local_store_config(local_store_config),
         )?;
     }
     Ok(draft)
@@ -134,11 +143,20 @@ pub(super) unsafe fn publish_relation_replacement_epoch_from_object_placements(
         next_pid: input.next_pid,
         next_local_vec_seq: input.next_local_vec_seq,
     })?;
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch != previous_epoch_manifest.epoch {
+        return Err(format!(
+            "ec_spire replacement publish root/control epoch {} does not match previous epoch {}",
+            root_control.active_epoch, previous_epoch_manifest.epoch
+        ));
+    }
+    let local_store_config =
+        unsafe { load_relation_local_store_config(index_relation, root_control)? };
     unsafe {
         publish_replacement_epoch_to_relation(
             index_relation,
             previous_epoch_manifest,
-            draft.publish_input(),
+            draft.publish_input_with_local_store_config(local_store_config),
         )?;
     }
     Ok(draft)

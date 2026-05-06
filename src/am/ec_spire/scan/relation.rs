@@ -51,6 +51,8 @@ pub(super) unsafe fn load_relation_epoch_manifests(
         unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
     let placement_bytes =
         unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let local_store_config =
+        unsafe { load_relation_local_store_config(index_relation, root_control)? };
     let epoch_manifest = SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -61,7 +63,20 @@ pub(super) unsafe fn load_relation_epoch_manifests(
         ));
     }
     SpireValidatedEpochSnapshot::new(&epoch_manifest, &object_manifest, &placement_directory)?;
+    local_store_config.validate_placement_directory(&placement_directory)?;
     Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
+pub(super) unsafe fn load_relation_local_store_config(
+    index_relation: pg_sys::Relation,
+    root_control: SpireRootControlState,
+) -> Result<SpireLocalStoreConfig, String> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load local store config for empty active epoch".to_owned());
+    }
+    let bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.local_store_config_tid)? };
+    SpireLocalStoreConfig::decode(&bytes)
 }
 
 unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireScanQuery, String> {

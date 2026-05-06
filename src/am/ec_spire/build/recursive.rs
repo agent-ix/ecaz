@@ -718,6 +718,11 @@ impl SpireSingleLevelBuildDraft {
             epoch_manifest: &self.epoch_manifest,
             object_manifest: &self.object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config: SpireLocalStoreConfig::from_placement_directory(
+                self.epoch_manifest.epoch,
+                &self.placement_directory,
+            )
+            .expect("single-level draft placements should form a local store config"),
             next_pid: self.next_pid,
             next_local_vec_seq: self.next_local_vec_seq,
         }
@@ -748,6 +753,11 @@ impl SpirePartitionedSingleLevelBuildDraft {
             epoch_manifest: &self.epoch_manifest,
             object_manifest: &self.object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config: SpireLocalStoreConfig::from_placement_directory(
+                self.epoch_manifest.epoch,
+                &self.placement_directory,
+            )
+            .expect("partitioned draft placements should form a local store config"),
             next_pid: self.next_pid,
             next_local_vec_seq: self.next_local_vec_seq,
         }
@@ -778,6 +788,11 @@ impl SpireRecursiveRoutingEpochDraft {
             epoch_manifest: &self.epoch_manifest,
             object_manifest: &self.object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config: SpireLocalStoreConfig::from_placement_directory(
+                self.epoch_manifest.epoch,
+                &self.placement_directory,
+            )
+            .expect("recursive draft placements should form a local store config"),
             next_pid: self.next_pid,
             next_local_vec_seq,
         }
@@ -810,11 +825,13 @@ impl SpireRecursiveRoutingEpochDraft {
         &'a self,
         object_manifest: &'a SpireObjectManifest,
         next_local_vec_seq: u64,
+        local_store_config: SpireLocalStoreConfig,
     ) -> SpirePublishCoordinatorInput<'a> {
         SpirePublishCoordinatorInput {
             epoch_manifest: &self.epoch_manifest,
             object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config,
             next_pid: self.next_pid,
             next_local_vec_seq,
         }
@@ -825,6 +842,7 @@ pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
     index_relation: pg_sys::Relation,
     draft: &SpireRecursiveRoutingEpochDraft,
     next_local_vec_seq: u64,
+    local_store_config: SpireLocalStoreConfig,
 ) -> Result<(), String> {
     let placement_evidence =
         unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory)? };
@@ -833,8 +851,8 @@ pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
         &draft.placement_directory,
         &placement_evidence,
     )?;
-    let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq);
-    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq, local_store_config);
+    let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };

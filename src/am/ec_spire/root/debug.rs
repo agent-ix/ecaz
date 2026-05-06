@@ -124,10 +124,14 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
             epoch_manifest: &epoch_manifest,
             object_manifest: &object_manifest,
             placement_directory: &placement_directory,
+            local_store_config: meta::SpireLocalStoreConfig::embedded_single_store(
+                unsafe { (*index_relation).rd_id }.into(),
+                unsafe { (*(*index_relation).rd_rel).reltablespace }.into(),
+            )?,
             next_pid: assign::SPIRE_FIRST_PID,
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ,
         };
-        let manifests = build::encode_manifest_bundle_for_publish(input)?;
+        let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
         let locators =
             unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
         let root_control = build::root_control_state_for_publish(input, locators)?;
@@ -264,10 +268,14 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
             epoch_manifest: &epoch_manifest,
             object_manifest: &object_manifest,
             placement_directory: &placement_directory,
+            local_store_config: meta::SpireLocalStoreConfig::from_placement_directory(
+                epoch_manifest.epoch,
+                &placement_directory,
+            )?,
             next_pid: assign::SPIRE_FIRST_PID + 9,
             next_local_vec_seq: assign::SPIRE_FIRST_LOCAL_VEC_SEQ + 2,
         };
-        let manifests = build::encode_manifest_bundle_for_publish(input)?;
+        let manifests = build::encode_manifest_bundle_for_publish(input.clone())?;
         let locators =
             unsafe { build::write_manifest_bundle_to_relation(root_relation, &manifests)? };
         let root_control = build::root_control_state_for_publish(input, locators)?;

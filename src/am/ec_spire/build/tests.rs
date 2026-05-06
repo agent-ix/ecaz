@@ -154,6 +154,7 @@ mod tests {
             epoch_manifest_tid: tid(70, 1),
             object_manifest_tid: tid(70, 2),
             placement_directory_tid: tid(70, 3),
+            local_store_config_tid: tid(70, 4),
         }
     }
 

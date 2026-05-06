@@ -10,7 +10,8 @@ use super::build::{
     write_placement_entries_to_relation, SpirePublishCoordinatorInput,
 };
 use super::meta::{
-    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpirePlacementDirectory,
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpirePlacementDirectory,
 };
 use super::storage::{
     SpireDeltaPartitionObject, SpireRelationObjectStore, SpireRoutingChildEntry,
@@ -75,6 +76,8 @@ unsafe fn publish_insert_delta_epoch(
         };
     }
 
+    let local_store_config =
+        unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
     let (active_epoch_manifest, object_manifest, placement_directory) =
         unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
     let active_snapshot = super::meta::SpirePublishedEpochSnapshot::new(
@@ -134,6 +137,7 @@ unsafe fn publish_insert_delta_epoch(
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
         placement_directory: &placement_directory,
+        local_store_config,
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
@@ -174,6 +178,10 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
     )?;
 
     let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let local_store_config = SpireLocalStoreConfig::embedded_single_store(
+        unsafe { (*index_relation).rd_id }.into(),
+        unsafe { (*(*index_relation).rd_rel).reltablespace }.into(),
+    )?;
     let placements = vec![
         unsafe { store.insert_routing_object(new_epoch, &routing_object)? },
         unsafe {
@@ -208,10 +216,11 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
         placement_directory: &placement_directory,
+        local_store_config,
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
-    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };

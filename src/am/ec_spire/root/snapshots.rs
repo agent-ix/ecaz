@@ -368,6 +368,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             active_tids.insert(root_control.epoch_manifest_tid);
             active_tids.insert(root_control.object_manifest_tid);
             active_tids.insert(root_control.placement_directory_tid);
+            active_tids.insert(root_control.local_store_config_tid);
 
             let (_epoch_manifest, object_manifest, placement_directory) =
                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };

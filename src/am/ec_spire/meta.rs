@@ -1,6 +1,6 @@
 //! Root/control metadata, epoch, and placement-map codecs.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
 use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
@@ -14,7 +14,7 @@ pub(super) const SPIRE_MAX_RETAINED_RETIRED_EPOCHS: u16 = 2;
 
 const META_FORMAT_VERSION: u16 = 1;
 const ROOT_CONTROL_MAGIC: u32 = 0x4352_5345; // "ESRC" as little-endian bytes.
-const ROOT_CONTROL_STATE_BYTES: usize = 4 + 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES * 3;
+const ROOT_CONTROL_STATE_BYTES: usize = 4 + 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES * 4;
 const LOCAL_STORE_CONFIG_MAGIC: u32 = 0x534c_5345; // "ESLS" as little-endian bytes.
 const LOCAL_STORE_CONFIG_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const LOCAL_STORE_DESCRIPTOR_BYTES: usize = 4 + 4 + 4 + 1 + 3;

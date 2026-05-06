@@ -101,6 +101,56 @@ impl SpireLocalStoreConfig {
         )
     }
 
+    pub(super) fn from_placement_directory_with_tablespaces(
+        generation: u64,
+        placement_directory: &SpirePlacementDirectory,
+        mut tablespace_oid_for_relid: impl FnMut(u32) -> Result<u32, String>,
+    ) -> Result<Self, String> {
+        let mut relid_by_store_id = BTreeMap::<u32, u32>::new();
+        for placement in &placement_directory.entries {
+            if let Some(existing_relid) =
+                relid_by_store_id.insert(placement.local_store_id, placement.store_relid)
+            {
+                if existing_relid != placement.store_relid {
+                    return Err(format!(
+                        "ec_spire placement directory maps local_store_id {} to relids {} and {}",
+                        placement.local_store_id, existing_relid, placement.store_relid
+                    ));
+                }
+            }
+        }
+        if relid_by_store_id.is_empty() {
+            return Err("ec_spire local store config needs at least one placement".to_owned());
+        }
+
+        let mut stores = Vec::with_capacity(relid_by_store_id.len());
+        for (local_store_id, store_relid) in relid_by_store_id {
+            stores.push(SpireLocalStoreDescriptor::available(
+                local_store_id,
+                store_relid,
+                tablespace_oid_for_relid(store_relid)?,
+            )?);
+        }
+        Self::from_stores(generation, stores)
+    }
+
+    pub(super) fn from_placement_directory(
+        generation: u64,
+        placement_directory: &SpirePlacementDirectory,
+    ) -> Result<Self, String> {
+        Self::from_placement_directory_with_tablespaces(generation, placement_directory, |_| Ok(0))
+    }
+
+    pub(super) fn validate_placement_directory(
+        &self,
+        placement_directory: &SpirePlacementDirectory,
+    ) -> Result<(), String> {
+        for placement in &placement_directory.entries {
+            self.validate_placement(placement)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
         let store_count = u32::try_from(self.stores.len())

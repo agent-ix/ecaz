@@ -280,7 +280,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let mut store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_config(
             index_relation,
-            local_store_config,
+            local_store_config.clone(),
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
@@ -315,10 +315,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
         placement_directory: &placement_directory,
+        local_store_config,
         next_pid: pid_allocator.next_pid(),
         next_local_vec_seq: local_vec_id_allocator.next_local_vec_seq(),
     };
-    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
@@ -357,7 +358,7 @@ unsafe fn publish_relation_recursive_routing_build(
     let mut store = unsafe {
         SpireRelationObjectStoreSet::for_index_relation_and_config(
             index_relation,
-            local_store_config,
+            local_store_config.clone(),
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
@@ -376,6 +377,7 @@ unsafe fn publish_relation_recursive_routing_build(
             index_relation,
             &draft,
             coordinator.next_local_vec_seq,
+            local_store_config,
         )?
     };
     Ok(state.scanned_tuples)

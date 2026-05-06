@@ -3,6 +3,7 @@ pub(super) struct SpireEncodedManifestBundle {
     pub(super) epoch_manifest: Vec<u8>,
     pub(super) object_manifest: Vec<u8>,
     pub(super) placement_directory: Vec<u8>,
+    pub(super) local_store_config: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +17,7 @@ pub(super) struct SpirePublishedManifestLocators {
     pub(super) epoch_manifest_tid: ItemPointer,
     pub(super) object_manifest_tid: ItemPointer,
     pub(super) placement_directory_tid: ItemPointer,
+    pub(super) local_store_config_tid: ItemPointer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,26 +62,27 @@ impl SpirePublishFailed {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct SpirePublishCoordinatorInput<'a> {
     pub(super) epoch_manifest: &'a SpireEpochManifest,
     pub(super) object_manifest: &'a SpireObjectManifest,
     pub(super) placement_directory: &'a SpirePlacementDirectory,
+    pub(super) local_store_config: SpireLocalStoreConfig,
     pub(super) next_pid: u64,
     pub(super) next_local_vec_seq: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct SpirePublishWritingObjects<'a> {
     input: SpirePublishCoordinatorInput<'a>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct SpirePublishWritingPlacements<'a> {
     input: SpirePublishCoordinatorInput<'a>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct SpirePublishWritingManifest<'a> {
     input: SpirePublishCoordinatorInput<'a>,
 }
@@ -141,6 +144,9 @@ impl<'a> SpirePublishWritingManifest<'a> {
             placement_directory: self.input.placement_directory.encode().map_err(|error| {
                 SpirePublishFailed::at(SpirePublishStage::WritingManifest, error)
             })?,
+            local_store_config: self.input.local_store_config.encode().map_err(|error| {
+                SpirePublishFailed::at(SpirePublishStage::WritingManifest, error)
+            })?,
         };
         Ok(SpirePublishValidating {
             input: self.input,
@@ -159,6 +165,10 @@ impl<'a> SpirePublishValidating<'a> {
             self.input.placement_directory,
         )
         .map_err(|error| SpirePublishFailed::at(SpirePublishStage::Validating, error))?;
+        self.input
+            .local_store_config
+            .validate_placement_directory(self.input.placement_directory)
+            .map_err(|error| SpirePublishFailed::at(SpirePublishStage::Validating, error))?;
         Ok(SpirePublishPublishingActiveEpoch {
             input: self.input,
             manifests: self.manifests,
@@ -176,13 +186,14 @@ impl SpirePublishPublishingActiveEpoch<'_> {
         &self,
         locators: SpirePublishedManifestLocators,
     ) -> Result<SpireRootControlState, SpirePublishFailed> {
-        SpireRootControlState::published(
+        SpireRootControlState::published_with_store_config(
             self.snapshot.epoch_manifest().epoch,
             self.input.next_pid,
             self.input.next_local_vec_seq,
             locators.epoch_manifest_tid,
             locators.object_manifest_tid,
             locators.placement_directory_tid,
+            locators.local_store_config_tid,
         )
         .map_err(|error| SpirePublishFailed::at(SpirePublishStage::PublishingActiveEpoch, error))
     }
@@ -443,10 +454,13 @@ pub(super) unsafe fn write_manifest_bundle_to_relation(
         unsafe { page::append_object_tuple(index_relation, &manifests.object_manifest)? };
     let placement_directory_tid =
         unsafe { page::append_object_tuple(index_relation, &manifests.placement_directory)? };
+    let local_store_config_tid =
+        unsafe { page::append_object_tuple(index_relation, &manifests.local_store_config)? };
     Ok(SpirePublishedManifestLocators {
         epoch_manifest_tid,
         object_manifest_tid,
         placement_directory_tid,
+        local_store_config_tid,
     })
 }
 
@@ -482,7 +496,7 @@ pub(super) unsafe fn publish_replacement_epoch_to_relation(
     previous_epoch_manifest: SpireEpochManifest,
     input: SpirePublishCoordinatorInput<'_>,
 ) -> Result<(), String> {
-    let manifests = encode_manifest_bundle_for_publish(input)?;
+    let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     unsafe { write_retired_epoch_manifest_to_relation(index_relation, previous_epoch_manifest)? };
     let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
     let root_control = root_control_state_for_publish(input, locators)?;
@@ -505,4 +519,3 @@ pub(super) unsafe fn write_placement_entries_to_relation(
     }
     Ok(evidence)
 }
-

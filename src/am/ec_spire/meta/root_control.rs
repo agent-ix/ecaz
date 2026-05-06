@@ -6,6 +6,7 @@ pub(super) struct SpireRootControlState {
     pub(super) epoch_manifest_tid: ItemPointer,
     pub(super) object_manifest_tid: ItemPointer,
     pub(super) placement_directory_tid: ItemPointer,
+    pub(super) local_store_config_tid: ItemPointer,
 }
 
 impl SpireRootControlState {
@@ -21,9 +22,11 @@ impl SpireRootControlState {
             epoch_manifest_tid: ItemPointer::INVALID,
             object_manifest_tid: ItemPointer::INVALID,
             placement_directory_tid: ItemPointer::INVALID,
+            local_store_config_tid: ItemPointer::INVALID,
         }
     }
 
+    #[cfg(test)]
     pub(super) fn published(
         active_epoch: u64,
         next_pid: u64,
@@ -32,6 +35,26 @@ impl SpireRootControlState {
         object_manifest_tid: ItemPointer,
         placement_directory_tid: ItemPointer,
     ) -> Result<Self, String> {
+        Self::published_with_store_config(
+            active_epoch,
+            next_pid,
+            next_local_vec_seq,
+            epoch_manifest_tid,
+            object_manifest_tid,
+            placement_directory_tid,
+            placement_directory_tid,
+        )
+    }
+
+    pub(super) fn published_with_store_config(
+        active_epoch: u64,
+        next_pid: u64,
+        next_local_vec_seq: u64,
+        epoch_manifest_tid: ItemPointer,
+        object_manifest_tid: ItemPointer,
+        placement_directory_tid: ItemPointer,
+        local_store_config_tid: ItemPointer,
+    ) -> Result<Self, String> {
         let state = Self {
             active_epoch,
             next_pid,
@@ -39,6 +62,7 @@ impl SpireRootControlState {
             epoch_manifest_tid,
             object_manifest_tid,
             placement_directory_tid,
+            local_store_config_tid,
         };
         state.validate()?;
         Ok(state)
@@ -57,6 +81,7 @@ impl SpireRootControlState {
         self.epoch_manifest_tid.encode_into(&mut out);
         self.object_manifest_tid.encode_into(&mut out);
         self.placement_directory_tid.encode_into(&mut out);
+        self.local_store_config_tid.encode_into(&mut out);
         debug_assert_eq!(out.len(), ROOT_CONTROL_STATE_BYTES);
         Ok(out)
     }
@@ -91,6 +116,7 @@ impl SpireRootControlState {
             epoch_manifest_tid: ItemPointer::decode(&input[32..38])?,
             object_manifest_tid: ItemPointer::decode(&input[38..44])?,
             placement_directory_tid: ItemPointer::decode(&input[44..50])?,
+            local_store_config_tid: ItemPointer::decode(&input[50..56])?,
         };
         state.validate()?;
         Ok(state)
@@ -107,6 +133,7 @@ impl SpireRootControlState {
             if self.epoch_manifest_tid != ItemPointer::INVALID
                 || self.object_manifest_tid != ItemPointer::INVALID
                 || self.placement_directory_tid != ItemPointer::INVALID
+                || self.local_store_config_tid != ItemPointer::INVALID
             {
                 return Err(
                     "ec_spire empty root/control state must not reference active manifests"
@@ -124,6 +151,11 @@ impl SpireRootControlState {
         if self.placement_directory_tid == ItemPointer::INVALID {
             return Err(
                 "ec_spire active root/control state needs a placement directory".to_owned(),
+            );
+        }
+        if self.local_store_config_tid == ItemPointer::INVALID {
+            return Err(
+                "ec_spire active root/control state needs a local store config".to_owned(),
             );
         }
         Ok(())

@@ -52,6 +52,7 @@
         assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
         assert_eq!(root_control.object_manifest_tid, tid(70, 2));
         assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+        assert_eq!(root_control.local_store_config_tid, tid(70, 4));
     }
 
     #[test]
@@ -182,6 +183,14 @@
             SpirePlacementDirectory::decode(&encoded.placement_directory).unwrap(),
             draft.placement_directory
         );
+        assert_eq!(
+            SpireLocalStoreConfig::decode(&encoded.local_store_config).unwrap(),
+            SpireLocalStoreConfig::from_placement_directory(
+                draft.epoch_manifest.epoch,
+                &draft.placement_directory
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -201,6 +210,7 @@
         assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
         assert_eq!(root_control.object_manifest_tid, tid(70, 2));
         assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+        assert_eq!(root_control.local_store_config_tid, tid(70, 4));
     }
 
     #[test]

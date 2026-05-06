@@ -23,10 +23,24 @@ pub(super) struct SpireDeltaEpochDraft {
 
 impl SpireDeltaEpochDraft {
     fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        self.publish_input_with_local_store_config(
+            SpireLocalStoreConfig::from_placement_directory(
+                self.epoch_manifest.epoch,
+                &self.placement_directory,
+            )
+            .expect("delta draft placements should form a local store config"),
+        )
+    }
+
+    fn publish_input_with_local_store_config(
+        &self,
+        local_store_config: SpireLocalStoreConfig,
+    ) -> SpirePublishCoordinatorInput<'_> {
         SpirePublishCoordinatorInput {
             epoch_manifest: &self.epoch_manifest,
             object_manifest: &self.object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config,
             next_pid: self.next_pid,
             next_local_vec_seq: self.next_local_vec_seq,
         }
@@ -113,10 +127,24 @@ pub(super) struct SpireReplacementEpochDraft {
 
 impl SpireReplacementEpochDraft {
     fn publish_input(&self) -> SpirePublishCoordinatorInput<'_> {
+        self.publish_input_with_local_store_config(
+            SpireLocalStoreConfig::from_placement_directory(
+                self.epoch_manifest.epoch,
+                &self.placement_directory,
+            )
+            .expect("replacement draft placements should form a local store config"),
+        )
+    }
+
+    fn publish_input_with_local_store_config(
+        &self,
+        local_store_config: SpireLocalStoreConfig,
+    ) -> SpirePublishCoordinatorInput<'_> {
         SpirePublishCoordinatorInput {
             epoch_manifest: &self.epoch_manifest,
             object_manifest: &self.object_manifest,
             placement_directory: &self.placement_directory,
+            local_store_config,
             next_pid: self.next_pid,
             next_local_vec_seq: self.next_local_vec_seq,
         }

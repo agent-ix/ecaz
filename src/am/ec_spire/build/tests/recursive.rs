@@ -580,6 +580,7 @@
         assert_eq!(root_control.epoch_manifest_tid, tid(70, 1));
         assert_eq!(root_control.object_manifest_tid, tid(70, 2));
         assert_eq!(root_control.placement_directory_tid, tid(70, 3));
+        assert_eq!(root_control.local_store_config_tid, tid(70, 4));
     }
 
     #[test]
@@ -632,7 +633,15 @@
         .unwrap();
 
         let encoded = encode_publish_bundle_for_publish(
-            draft.relation_publish_input(&durable_manifest, next_local_vec_seq),
+            draft.relation_publish_input(
+                &durable_manifest,
+                next_local_vec_seq,
+                SpireLocalStoreConfig::from_placement_directory(
+                    draft.epoch_manifest.epoch,
+                    &draft.placement_directory,
+                )
+                .unwrap(),
+            ),
             manifest_locators(),
         )
         .unwrap();

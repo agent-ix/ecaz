@@ -1214,6 +1214,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   into a validated `SpireLocalStoreConfig`, preserving repeated tablespace OIDs
   and rejecting missing, duplicate, or unexpected created store relids before
   the catalog DDL helper publishes an active store generation.
+- [x] **Active local store config persistence.** The publish coordinator now
+  writes the active `SpireLocalStoreConfig` as a manifest-bundle tuple and
+  records its TID in root/control. Active manifest loading decodes that config
+  and validates every placement against it; insert, vacuum, and relation
+  replacement publishes carry the existing config forward instead of
+  re-deriving and losing tablespace metadata. Root/control snapshots now treat
+  the active config tuple as live.
 - [x] **Object store local-store-id surface.** The SPIRE object-store wrappers
   now carry their `local_store_id` when creating and validating placement
   entries, so the next writer slice can select a store descriptor instead of

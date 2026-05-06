@@ -5,9 +5,9 @@ use std::mem::size_of;
 use std::ptr;
 
 use super::meta::{
-    SpireConsistencyMode, SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory,
-    SpirePlacementEntry, SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
-    SpireValidatedEpochSnapshot,
+    SpireConsistencyMode, SpireEpochManifest, SpireLocalStoreConfig, SpireObjectManifest,
+    SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, SpirePublishedEpochSnapshot,
+    SpireRootControlState, SpireValidatedEpochSnapshot,
 };
 use super::options::{
     relation_options, resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
