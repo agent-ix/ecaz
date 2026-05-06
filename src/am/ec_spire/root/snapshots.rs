@@ -15,7 +15,13 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
             &placement_directory,
         )?;
         let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            unsafe {
+                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                    index_relation,
+                    &placement_directory,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                )?
+            };
         let diagnostics = diagnostics::collect_snapshot_diagnostics(&snapshot, &object_store)?;
 
         Ok(SpireActiveSnapshotDiagnostics {
@@ -85,8 +91,13 @@ pub(crate) unsafe fn index_options_snapshot(
                 &object_manifest,
                 &placement_directory,
             )?;
-            let object_store =
-                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            let object_store = unsafe {
+                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                    index_relation,
+                    &placement_directory,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                )?
+            };
             let active_leaf_count = count_snapshot_options_leaf_pids(
                 &snapshot,
                 &object_store,
@@ -195,8 +206,13 @@ pub(crate) unsafe fn index_level_parameter_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
         collect_level_parameter_snapshot_rows(&snapshot, &object_store, &relation_options)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -295,8 +311,13 @@ pub(crate) unsafe fn index_scan_sanity_snapshot(
                 &object_manifest,
                 &placement_directory,
             )?;
-            let object_store =
-                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            let object_store = unsafe {
+                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                    index_relation,
+                    &placement_directory,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                )?
+            };
             count_snapshot_options_leaf_pids(&snapshot, &object_store, recursive_build_enabled)?
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe)
@@ -354,8 +375,13 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 active_tids.insert(entry.placement_tid);
             }
 
-            let object_store =
-                unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+            let object_store = unsafe {
+                storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                    index_relation,
+                    &placement_directory,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                )?
+            };
             for placement in &placement_directory.entries {
                 for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
                     active_tids.insert(tid);
@@ -464,14 +490,20 @@ pub(crate) unsafe fn index_placement_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
         let rows = diagnostics::collect_store_placement_diagnostics(&snapshot, &object_store)?
             .into_iter()
             .map(|row| SpireIndexPlacementSnapshotRow {
                 active_epoch: row.epoch,
                 node_id: row.node_id,
                 local_store_id: row.local_store_id,
+                store_relid: row.store_relid,
                 placement_count: row.placement_count as u64,
                 available_placement_count: row.available_placement_count as u64,
                 stale_placement_count: row.stale_placement_count as u64,

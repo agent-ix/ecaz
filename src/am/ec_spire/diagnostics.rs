@@ -38,6 +38,7 @@ pub(super) struct SpireStorePlacementDiagnostics {
     pub(super) epoch: u64,
     pub(super) node_id: u32,
     pub(super) local_store_id: u32,
+    pub(super) store_relid: u32,
     pub(super) placement_count: usize,
     pub(super) available_placement_count: usize,
     pub(super) stale_placement_count: usize,
@@ -195,15 +196,20 @@ pub(super) fn collect_store_placement_diagnostics(
 ) -> Result<Vec<SpireStorePlacementDiagnostics>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let epoch = snapshot.epoch_manifest().epoch;
-    let mut by_store = BTreeMap::<(u32, u32), SpireStorePlacementDiagnostics>::new();
+    let mut by_store = BTreeMap::<(u32, u32, u32), SpireStorePlacementDiagnostics>::new();
 
     for placement in &snapshot.placement_directory().entries {
         let entry = by_store
-            .entry((placement.node_id, placement.local_store_id))
+            .entry((
+                placement.node_id,
+                placement.local_store_id,
+                placement.store_relid,
+            ))
             .or_insert_with(|| SpireStorePlacementDiagnostics {
                 epoch,
                 node_id: placement.node_id,
                 local_store_id: placement.local_store_id,
+                store_relid: placement.store_relid,
                 placement_count: 0,
                 available_placement_count: 0,
                 stale_placement_count: 0,

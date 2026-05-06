@@ -734,6 +734,16 @@ impl SpireRelationObjectStoreSet {
         }
     }
 
+    pub(super) unsafe fn active_object_tuple_locators(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<Vec<ItemPointer>, String> {
+        unsafe {
+            self.store_for_placement(placement)?
+                .active_object_tuple_locators(placement)
+        }
+    }
+
     fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireRelationObjectStore, String> {
         let config = self
             .config

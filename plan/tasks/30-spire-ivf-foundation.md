@@ -403,9 +403,9 @@ diagnostics without scoring assignments.
   active-epoch health status, recommendation text, delta compaction
   recommendation flag, placement-state counts, and assignment counts.
   SQL function `ec_spire_index_placement_snapshot(index_oid)` now reports
-  one row per active `(node_id, local_store_id)` with placement counts,
-  placement-state counts, object-kind counts, assignment counts, routing-child
-  counts, and object-byte buckets. SQL function
+  one row per active `(node_id, local_store_id, store_relid)` with placement
+  counts, placement-state counts, object-kind counts, assignment counts,
+  routing-child counts, and object-byte buckets. SQL function
   `ec_spire_index_scan_placement_snapshot(index_oid, query)` now reports one
   row per scan-touched `(node_id, local_store_id)` with resolved scan-option
   labels, scanned PID counts, leaf/delta PID counts, candidate-row counts, and
@@ -1259,13 +1259,16 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   through placement-directed relation reads. This closes the "write one object
   to a second store relation and fetch it" design proof without claiming that
   user-facing auxiliary-store DDL is complete.
-- [ ] **Placement diagnostics.** Expose per-store object count, bytes,
+- [x] **Placement diagnostics.** Expose per-store object count, bytes,
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
-  reports active per-store placement counts, placement-state counts,
-  object-kind counts, assignment counts, routing-child counts, and object bytes
-  for the local single-store path. The query-specific SQL scan placement
-  snapshot now reports scan-touched leaf/delta PID counts and candidate rows
-  per local store; multi-store physical placement, parallel local fetch, and
+  reports active per-store placement counts, store relids, placement-state
+  counts, object-kind counts, assignment counts, routing-child counts, and
+  object bytes. Active/options/scan-sanity/relation-storage diagnostics now
+  read placement-routed logical store sets instead of assuming
+  `local_store_id = 0`, and the same-relation two-store baseline has focused
+  PG18 coverage across those surfaces. The query-specific SQL scan placement
+  snapshot reports scan-touched leaf/delta PID counts and candidate rows per
+  local store; auxiliary relation DDL, parallel local fetch, and
   benchmark-backed local placement claims remain open.
 - [ ] **Local placement benchmark.** Measure one-store vs multi-store behavior
   on a machine with multiple physical NVMe devices before making any product

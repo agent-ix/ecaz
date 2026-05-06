@@ -1173,6 +1173,7 @@ fn ec_spire_index_placement_snapshot(
         name!(active_epoch, i64),
         name!(node_id, i64),
         name!(local_store_id, i64),
+        name!(store_relid, pg_sys::Oid),
         name!(placement_count, i64),
         name!(available_placement_count, i64),
         name!(stale_placement_count, i64),
@@ -1202,6 +1203,7 @@ fn ec_spire_index_placement_snapshot(
             i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
             i64::from(row.node_id),
             i64::from(row.local_store_id),
+            pg_sys::Oid::from(row.store_relid),
             i64::try_from(row.placement_count).expect("placement count should fit in i64"),
             i64::try_from(row.available_placement_count)
                 .expect("available placement count should fit in i64"),
@@ -6350,6 +6352,44 @@ mod tests {
         )
         .expect("object snapshot should succeed")
         .expect("count should exist");
+        let placement_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let active_diag_store_count = Spi::get_one::<i64>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let options_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("options snapshot should succeed")
+        .expect("options row should exist");
+        let scan_sanity_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("scan sanity snapshot should succeed")
+        .expect("scan sanity row should exist");
+        let active_referenced_tuple_count = Spi::get_one::<i64>(
+            "SELECT active_referenced_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
         let candidate_count = Spi::get_one::<i64>(
             "SELECT coalesce(sum(candidate_row_count), 0)::bigint FROM \
              ec_spire_index_scan_placement_snapshot( \
@@ -6361,6 +6401,12 @@ mod tests {
 
         assert_eq!(first_id, 1);
         assert_eq!(placed_store_count, 2);
+        assert_eq!(placement_store_count, 2);
+        assert_eq!(placement_store_relid_count, 1);
+        assert_eq!(active_diag_store_count, 2);
+        assert_eq!(options_active_leaf_count, 2);
+        assert_eq!(scan_sanity_active_leaf_count, 2);
+        assert!(active_referenced_tuple_count > 0);
         assert!(candidate_count >= 1);
     }
 
