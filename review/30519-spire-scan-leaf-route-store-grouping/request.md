@@ -1,7 +1,7 @@
 # Review Request: SPIRE Scan Leaf Route Store Grouping
 
 - Branch: `task30-spire-partition-object-spec`
-- Code commit: `5b358440`
+- Code commit: `852fe923`
 - Scope: Phase 4 scan grouping boundary for local multi-store fetch
 
 ## Summary
@@ -28,6 +28,9 @@ It:
 - adds a PG18 real-relation fixture that writes SPIRE objects across root and
   auxiliary `ec_spire` relation files, publishes mixed-store placements, and
   verifies scan fetch from both relation-backed stores;
+- allows populated builds to publish hash-routed logical multi-store placements
+  through a writable relation object-store set backed by the root relation,
+  giving same-device baseline coverage before auxiliary store DDL lands;
 - leaves global candidate ranking and reranking unchanged.
 
 This does not open auxiliary store relations, perform parallel reads, or make
@@ -81,8 +84,14 @@ gap. Remaining work is auxiliary store DDL, relation-backed multi-store build
 publication, and measured parallel fetch.
 
 Follow-up commit `5b358440` closes the explicit "write one object to a second
-store relation and fetch it" proof using real relation pages. Remaining work is
-now the user-facing DDL/build-publication path and measurement.
+store relation and fetch it" proof using real relation pages.
+
+Follow-up commit `852fe923` closes the relation-backed logical multi-store
+build-publication gap for same-device baselines: `local_store_count > 1` builds
+now hash-route placements into distinct logical stores and scans/diagnostics
+read them through placement-directed store sets. Remaining work is auxiliary
+store DDL for physically separate relation files, measured parallel fetch, and
+the multi-NVMe benchmark packet.
 
 ## Validation
 
@@ -91,8 +100,11 @@ now the user-facing DDL/build-publication path and measurement.
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo test collect_scan_placement_diagnostics --lib`
 - `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
+- `cargo pgrx test pg18 test_ec_spire_populated_build_hash_routes_logical_store_set`
 - `cargo pgrx test pg18 test_ec_spire_relation_two_store_scan_roundtrip`
 - `cargo pgrx test pg18 test_ec_spire_scan_placement_snapshot_sql`
+- `cargo pgrx test pg18 test_ec_spire_object_snapshot_sql`
+- `cargo pgrx test pg18 test_ec_spire_hierarchy_snapshot_sql`
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`

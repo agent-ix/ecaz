@@ -97,7 +97,8 @@ Addressed reviewer feedback:
 Still open from the design feedback:
 
 - measured Task 30 recall/latency packet;
-- store-relation DDL and relation-backed multi-store build publication;
+- auxiliary store-relation DDL and physically separate relation-backed
+  multi-store build publication;
 - eventual multi-NVMe benchmark packet with packet-local raw artifacts.
 
 Closed since this follow-up:
@@ -117,6 +118,14 @@ Closed since this follow-up:
   publishes mixed-`store_relid` placements, and scans through
   placement-directed relation reads. User-facing auxiliary-store DDL remains
   open, but the second-store relation through-path is now lit.
+- `852fe923` removes the executable `local_store_count > 1` build guard for
+  same-relation logical store baselines. Populated relation builds now create a
+  writable relation object-store set, hash-route root/internal/leaf objects by
+  `SpireLocalStoreConfig::store_for_pid`, publish distinct logical
+  `local_store_id` placements, and scan/read diagnostics through placement-
+  directed store sets. This supports repeated-tablespace same-device baseline
+  testing without claiming auxiliary relation DDL or physical multi-NVMe
+  striping is complete.
 
 Follow-up validation:
 
@@ -133,6 +142,9 @@ Additional validation for `3d66fea4`:
 - `cargo test collect_quantized_routed_probe_candidates --lib`
 - `cargo pgrx test pg18 test_ec_spire_populated_build_publishes_root_control`
 - `cargo pgrx test pg18 test_ec_spire_relation_two_store_scan_roundtrip`
+- `cargo pgrx test pg18 test_ec_spire_populated_build_hash_routes_logical_store_set`
+- `cargo pgrx test pg18 test_ec_spire_object_snapshot_sql`
+- `cargo pgrx test pg18 test_ec_spire_hierarchy_snapshot_sql`
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
