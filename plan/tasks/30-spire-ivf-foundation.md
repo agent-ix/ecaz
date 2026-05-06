@@ -1021,12 +1021,14 @@ diagnostics without scoring assignments.
   internal routing objects and recursive scan routing is live, the hierarchy
   diagnostic reports `recursive_routing_supported = true` for valid hierarchies
   with internal routing objects while leaving single-level indexes unsupported.
-  Per-level `nprobe` metadata remains deferred; the current live routing policy
-  applies configured `nprobe` at level 1 and probes one child above that.
+  Durable per-level `nprobe` configuration remains deferred; the current live
+  routing policy applies configured `nprobe` at level 1 and probes one child
+  above that.
   `ec_spire_index_options_snapshot(index_oid)` now reports `recursive_fanout`
-  plus whether the relation is using the recursive build path, and options /
-  scan-sanity active leaf counts now traverse recursive hierarchies instead of
-  treating root-to-internal edges as leaves.
+  plus whether the relation is using the recursive build path, effective
+  nprobe-per-level and policy arrays, and options / scan-sanity active leaf
+  counts now traverse recursive hierarchies instead of treating
+  root-to-internal edges as leaves.
   `ec_spire_index_level_parameter_snapshot(index_oid)` now exposes one row per
   active routing level with routing object/child counts, target fanout,
   effective `nprobe`, the current per-level `nprobe` policy, training sample
@@ -1129,7 +1131,8 @@ diagnostics without scoring assignments.
   ordered scan returns the expected nearest row. The final SQL comparison now
   builds flat and recursive relation-backed SPIRE indexes over the same four
   rows, confirms their hierarchy/root diagnostics differ as expected, and
-  verifies both ordered scans return the same nearest row.
+  verifies both ordered scans return the same nearest row across multiple query
+  vectors and top-k set checks.
 
 ## Phase 4 — Local Multi-NVMe Placement
 

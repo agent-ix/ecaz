@@ -48,6 +48,13 @@ scannability with these `assignment_payload_status` values:
 | `supported` | The configured assignment payload format can be scored by current SPIRE scans. Today this covers TurboQuant and RaBitQ. |
 | `deferred_model_metadata` | The configured format is recognized, but SPIRE does not yet persist the additional grouped-PQ model metadata needed to scan it. Today this covers PQ-FastScan. |
 
+`ec_spire_index_options_snapshot(index_oid)` also reports
+`effective_nprobe_per_level` and `nprobe_policy_per_level`. Single-level
+indexes report one `single_level` entry. Recursive indexes report one entry per
+active routing level, ordered from level 1 upward. Phase 3 recursive routing is
+conservative: relation or session `nprobe` applies at level 1, and levels above
+1 probe one child until durable per-level nprobe configuration lands.
+
 ## Reading Notes
 
 - These functions inspect SPIRE partition-object storage, not PostgreSQL
