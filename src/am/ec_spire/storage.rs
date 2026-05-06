@@ -1,8 +1,9 @@
 //! PID-addressed partition-object storage codecs.
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     mem::size_of,
+    ptr,
 };
 
 use pgrx::pg_sys;

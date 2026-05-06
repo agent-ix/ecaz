@@ -1,15 +1,16 @@
 #[cfg(test)]
 mod tests {
     use super::super::meta::{
-        SpireLocalStoreDescriptor, SpireLocalStoreState, SpirePlacementState,
+        SpireLocalStoreDescriptor, SpireLocalStoreState, SpirePlacementEntry, SpirePlacementState,
     };
     use super::{
         decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
         is_visible_primary_assignment_ref, local_store_config_from_relation_plan,
-        plan_local_store_relations, spire_local_store_relation_name, SpireDeltaPartitionObject,
-        SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
-        SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireRoutingChildEntry,
-        SpireRoutingPartitionObject, SpireVecId, SpireVecIdKind,
+        plan_local_store_relations, relation_object_prefetch_groups,
+        spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
+        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        SpireVecIdKind,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -55,4 +56,5 @@ mod tests {
     include!("tests/leaf.rs");
     include!("tests/delta.rs");
     include!("tests/local_store.rs");
+    include!("tests/relation_prefetch.rs");
 }

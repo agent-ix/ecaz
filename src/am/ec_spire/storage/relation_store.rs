@@ -504,6 +504,43 @@ impl SpireRelationObjectStore {
         Ok(())
     }
 
+    pub(super) unsafe fn prefetch_object_tuples(
+        &self,
+        placements: &[SpirePlacementEntry],
+    ) -> Result<(), String> {
+        let store_keys = [(self.local_store_id, self.store_relid)];
+        let groups = relation_object_prefetch_groups(&store_keys, placements)?;
+        for group in groups {
+            unsafe { self.prefetch_object_blocks(&group.block_numbers)? };
+        }
+        Ok(())
+    }
+
+    unsafe fn prefetch_object_blocks(
+        &self,
+        block_numbers: &[pg_sys::BlockNumber],
+    ) -> Result<(), String> {
+        #[cfg(feature = "pg18")]
+        unsafe {
+            prefetch_relation_blocks_with_read_stream(self.store_relation, block_numbers);
+        }
+
+        #[cfg(not(feature = "pg18"))]
+        {
+            for block_number in block_numbers {
+                unsafe {
+                    pg_sys::PrefetchBuffer(
+                        self.store_relation,
+                        pg_sys::ForkNumber::MAIN_FORKNUM,
+                        *block_number,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) unsafe fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -918,9 +955,101 @@ fn decode_relation_routing_chain_segment(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRelationObjectPrefetchGroup {
+    local_store_id: u32,
+    store_relid: u32,
+    block_numbers: Vec<pg_sys::BlockNumber>,
+}
+
+fn relation_object_prefetch_groups(
+    store_keys: &[(u32, u32)],
+    placements: &[SpirePlacementEntry],
+) -> Result<Vec<SpireRelationObjectPrefetchGroup>, String> {
+    let available_store_keys = store_keys.iter().copied().collect::<BTreeSet<_>>();
+    let mut blocks_by_store = BTreeMap::<(u32, u32), BTreeSet<pg_sys::BlockNumber>>::new();
+
+    for placement in placements {
+        if placement.node_id != SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire relation object prefetch cannot read node_id {}",
+                placement.node_id
+            ));
+        }
+        if placement.state != SpirePlacementState::Available {
+            return Err(format!(
+                "ec_spire relation object prefetch cannot read {:?} placement",
+                placement.state
+            ));
+        }
+
+        let store_key = (placement.local_store_id, placement.store_relid);
+        if !available_store_keys.contains(&store_key) {
+            return Err(format!(
+                "ec_spire relation object prefetch is missing local_store_id {} relid {}",
+                placement.local_store_id, placement.store_relid
+            ));
+        }
+
+        blocks_by_store
+            .entry(store_key)
+            .or_default()
+            .insert(placement.object_tid.block_number);
+    }
+
+    Ok(blocks_by_store
+        .into_iter()
+        .map(
+            |((local_store_id, store_relid), block_numbers)| SpireRelationObjectPrefetchGroup {
+                local_store_id,
+                store_relid,
+                block_numbers: block_numbers.into_iter().collect(),
+            },
+        )
+        .collect())
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn prefetch_relation_blocks_with_read_stream(
+    relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+) {
+    if block_numbers.is_empty() {
+        return;
+    }
+
+    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            ptr::null_mut(),
+            relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
+            size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+    }
+
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
 impl SpireObjectReader for SpireRelationObjectStore {
     fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
         unsafe { SpireRelationObjectStore::prefetch_object_tuple(self, placement) }
+    }
+
+    fn prefetch_objects(&self, placements: &[SpirePlacementEntry]) -> Result<(), String> {
+        unsafe { SpireRelationObjectStore::prefetch_object_tuples(self, placements) }
     }
 
     fn read_object_header(
@@ -1139,6 +1268,35 @@ impl SpireRelationObjectStoreSet {
         }
     }
 
+    pub(super) unsafe fn prefetch_objects(
+        &self,
+        placements: &[SpirePlacementEntry],
+    ) -> Result<(), String> {
+        let store_keys = self
+            .stores
+            .iter()
+            .map(|store| (store.local_store_id, store.store_relid))
+            .collect::<Vec<_>>();
+        let groups = relation_object_prefetch_groups(&store_keys, placements)?;
+        for group in groups {
+            let store = self
+                .stores
+                .iter()
+                .find(|store| {
+                    store.local_store_id == group.local_store_id
+                        && store.store_relid == group.store_relid
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire relation object store set is missing local_store_id {} relid {}",
+                        group.local_store_id, group.store_relid
+                    )
+                })?;
+            unsafe { store.prefetch_object_blocks(&group.block_numbers)? };
+        }
+        Ok(())
+    }
+
     fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireRelationObjectStore, String> {
         let config = self
             .config
@@ -1210,6 +1368,10 @@ impl Drop for SpireRelationObjectStoreSet {
 impl SpireObjectReader for SpireRelationObjectStoreSet {
     fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
         unsafe { SpireRelationObjectStoreSet::prefetch_object(self, placement) }
+    }
+
+    fn prefetch_objects(&self, placements: &[SpirePlacementEntry]) -> Result<(), String> {
+        unsafe { SpireRelationObjectStoreSet::prefetch_objects(self, placements) }
     }
 
     fn read_object_header(

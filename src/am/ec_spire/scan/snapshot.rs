@@ -282,10 +282,11 @@ fn prefetch_store_object_read_groups(
     object_store: &impl SpireObjectReader,
     route_groups: &[SpireStoreObjectReadGroup],
 ) -> Result<(), String> {
+    let mut placements = Vec::new();
     for route_group in route_groups {
-        prefetch_store_object_read_group(object_store, route_group)?;
+        collect_store_object_read_group_prefetch_placements(route_group, &mut placements);
     }
-    Ok(())
+    object_store.prefetch_objects(&placements)
 }
 
 fn collect_snapshot_delta_object_routes(
@@ -317,13 +318,21 @@ fn prefetch_store_object_read_group(
     object_store: &impl SpireObjectReader,
     route_group: &SpireStoreObjectReadGroup,
 ) -> Result<(), String> {
+    let mut placements = Vec::new();
+    collect_store_object_read_group_prefetch_placements(route_group, &mut placements);
+    object_store.prefetch_objects(&placements)
+}
+
+fn collect_store_object_read_group_prefetch_placements(
+    route_group: &SpireStoreObjectReadGroup,
+    placements: &mut Vec<SpirePlacementEntry>,
+) {
     for route in &route_group.leaf_routes {
-        object_store.prefetch_object(&route.placement)?;
+        placements.push(route.placement);
     }
     for route in &route_group.delta_routes {
-        object_store.prefetch_object(&route.placement)?;
+        placements.push(route.placement);
     }
-    Ok(())
 }
 
 fn group_leaf_and_delta_reads_by_local_store(
