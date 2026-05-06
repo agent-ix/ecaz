@@ -50,6 +50,7 @@ const LEAF_V2_SEGMENT_FLAG: u32 = 0x0000_0002;
 const LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = 16;
 const LEAF_V2_META_BODY_BYTES: usize = 1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
 const LEAF_V2_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + 4 + ITEM_POINTER_BYTES;
+const SPIRE_STORE_RELATION_NAME_PREFIX: &str = "ec_spire_store";
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -260,6 +261,66 @@ impl SpirePartitionObjectKind {
             other => Err(format!("ec_spire invalid partition object kind: {other}")),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireLocalStoreRelationPlanEntry {
+    pub(super) local_store_id: u32,
+    pub(super) relation_name: String,
+    pub(super) tablespace_oid: u32,
+}
+
+pub(super) fn spire_local_store_relation_name(
+    index_relid: u32,
+    local_store_id: u32,
+) -> Result<String, String> {
+    if index_relid == 0 {
+        return Err("ec_spire local store relation name needs a valid index relid".to_owned());
+    }
+
+    let relation_name =
+        format!("{SPIRE_STORE_RELATION_NAME_PREFIX}_{index_relid}_{local_store_id}");
+    let max_identifier_bytes = usize::try_from(pg_sys::NAMEDATALEN)
+        .map_err(|_| "ec_spire NAMEDATALEN exceeds usize".to_owned())?
+        .saturating_sub(1);
+    if relation_name.len() > max_identifier_bytes {
+        return Err(format!(
+            "ec_spire local store relation name '{relation_name}' exceeds PostgreSQL identifier limit {max_identifier_bytes}"
+        ));
+    }
+
+    Ok(relation_name)
+}
+
+pub(super) fn plan_local_store_relations(
+    index_relid: u32,
+    tablespace_plan: impl IntoIterator<Item = (u32, u32)>,
+) -> Result<Vec<SpireLocalStoreRelationPlanEntry>, String> {
+    let mut entries = Vec::new();
+    for (local_store_id, tablespace_oid) in tablespace_plan {
+        entries.push(SpireLocalStoreRelationPlanEntry {
+            local_store_id,
+            relation_name: spire_local_store_relation_name(index_relid, local_store_id)?,
+            tablespace_oid,
+        });
+    }
+    if entries.is_empty() {
+        return Err(
+            "ec_spire local store relation plan must include at least one store".to_owned(),
+        );
+    }
+
+    entries.sort_by_key(|entry| entry.local_store_id);
+    for window in entries.windows(2) {
+        if window[0].local_store_id == window[1].local_store_id {
+            return Err(format!(
+                "ec_spire local store relation plan duplicate local_store_id {}",
+                window[0].local_store_id
+            ));
+        }
+    }
+
+    Ok(entries)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3278,7 +3339,8 @@ mod tests {
     };
     use super::{
         decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
-        is_visible_primary_assignment_ref, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
+        is_visible_primary_assignment_ref, plan_local_store_relations,
+        spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
         SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
         SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SpireVecIdKind, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
@@ -3435,6 +3497,36 @@ mod tests {
         assert_eq!(decoded.header.kind, SpirePartitionObjectKind::Internal);
         assert_eq!(decoded.header.level, 2);
         assert_eq!(decoded.header.parent_pid, 11);
+    }
+
+    #[test]
+    fn local_store_relation_name_is_deterministic() {
+        assert_eq!(
+            spire_local_store_relation_name(12345, 0).unwrap(),
+            "ec_spire_store_12345_0"
+        );
+        assert_eq!(
+            spire_local_store_relation_name(u32::MAX, 16).unwrap(),
+            "ec_spire_store_4294967295_16"
+        );
+        assert!(spire_local_store_relation_name(0, 0).is_err());
+    }
+
+    #[test]
+    fn local_store_relation_plan_sorts_and_preserves_tablespaces() {
+        let plan = plan_local_store_relations(12345, [(1, 10), (0, 10), (2, 11)]).unwrap();
+
+        assert_eq!(plan.len(), 3);
+        assert_eq!(plan[0].local_store_id, 0);
+        assert_eq!(plan[0].relation_name, "ec_spire_store_12345_0");
+        assert_eq!(plan[0].tablespace_oid, 10);
+        assert_eq!(plan[1].local_store_id, 1);
+        assert_eq!(plan[1].tablespace_oid, 10);
+        assert_eq!(plan[2].local_store_id, 2);
+        assert_eq!(plan[2].tablespace_oid, 11);
+
+        assert!(plan_local_store_relations(12345, []).is_err());
+        assert!(plan_local_store_relations(12345, [(0, 10), (0, 11)]).is_err());
     }
 
     #[test]

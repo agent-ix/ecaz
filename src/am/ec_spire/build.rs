@@ -15,8 +15,8 @@ use super::meta::{
     SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
-    SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
+    plan_local_store_relations, SpireLeafAssignmentRow, SpireLeafPartitionObject,
+    SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
     SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
@@ -2511,9 +2511,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
-            let _local_store_tablespace_plan =
+            let local_store_tablespace_plan =
                 options::resolve_local_store_tablespace_plan(index_relation, &options)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let _local_store_relation_plan = plan_local_store_relations(
+                (*index_relation).rd_id.into(),
+                local_store_tablespace_plan
+                    .iter()
+                    .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
             if options.local_store_count != 1 {
                 pgrx::error!(
                     "ec_spire local_store_count > 1 is parsed but store relation creation is not implemented yet"

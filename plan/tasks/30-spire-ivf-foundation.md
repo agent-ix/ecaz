@@ -1203,6 +1203,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   normalized tablespace names to OIDs, preserves repeated names as repeated
   OIDs for same-device baselines, and defaults omitted names to the index
   relation tablespace before the multi-store relation DDL slice lands.
+- [x] **Local store relation-name planning.** The build path now derives a
+  deterministic auxiliary store relation plan named
+  `ec_spire_store_<index_oid>_<store_id>` from the resolved tablespace plan,
+  preserving repeated tablespace OIDs for same-device baseline runs while
+  store relation DDL remains blocked behind the current executable guard.
 - [x] **Object store local-store-id surface.** The SPIRE object-store wrappers
   now carry their `local_store_id` when creating and validating placement
   entries, so the next writer slice can select a store descriptor instead of
