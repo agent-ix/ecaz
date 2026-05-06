@@ -1168,9 +1168,18 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 4 — Local Multi-NVMe Placement
 
-- [ ] **Partition-store relation layout.** Define bounded store relations and
-  how each maps to a PostgreSQL tablespace expected to live on a physical NVMe
-  device.
+- [x] **Local multi-store placement design checkpoint.** Phase 4 now has a
+  local placement design in
+  `plan/design/spire-local-multistore-placement.md`. The note defines the
+  bounded store count/configuration surface, root/control active store set,
+  store relation naming/discovery, tablespace mapping, single-store
+  compatibility, placement-entry validation, hash placement policy, lock
+  ordering, strict/degraded failure semantics, store-grouped fetch boundary,
+  and authoritative placement diagnostics. Implementation and measurement
+  remain open below.
+- [ ] **Partition-store relation layout.** Implement bounded store relations
+  and how each maps to a PostgreSQL tablespace expected to live on a physical
+  NVMe device.
 - [ ] **Hash placement.** Place leaf and internal partition objects by
   `hash(pid) % local_store_count`.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
