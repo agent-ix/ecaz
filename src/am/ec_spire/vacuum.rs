@@ -14,8 +14,8 @@ use super::build::{
 use super::meta::{SpireEpochManifest, SpireEpochState, SpirePlacementDirectory};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, SpireDeltaPartitionObject,
-    SpireLeafAssignmentRow, SpireObjectReader, SpirePartitionObjectKind, SpireRelationObjectStore,
-    SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+    SpireLeafAssignmentRow, SpireObjectReader, SpirePartitionObjectKind,
+    SpireRelationObjectStoreSet, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
 use super::{lock_publish_relation, page, scan};
 use crate::storage::page::ItemPointer;
@@ -113,7 +113,13 @@ unsafe fn run_bulkdelete(
         &object_manifest,
         &placement_directory,
     )?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            index_relation,
+            &placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?
+    };
     let visible = collect_visible_assignments(&active_snapshot, &store)?;
     let mut deletes_by_base_pid: HashMap<u64, Vec<SpireDeleteDeltaInput>> = HashMap::new();
     for assignment in &visible {
@@ -174,7 +180,13 @@ fn collect_live_assignment_count(index_relation: pg_sys::Relation) -> Result<u64
         &object_manifest,
         &placement_directory,
     )?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            index_relation,
+            &placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?
+    };
     let visible = collect_visible_assignments(&snapshot, &store)?;
     u64::try_from(visible.len())
         .map_err(|_| "ec_spire vacuum live assignment count exceeds u64".to_owned())
@@ -245,7 +257,13 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
         &placement_directory,
     )?;
     let snapshot = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let mut store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            index_relation,
+            local_store_config.clone(),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        )?
+    };
 
     let mut affected_base_pids = HashSet::new();
     for manifest_entry in &snapshot.object_manifest().entries {
@@ -440,6 +458,17 @@ fn read_leaf_assignments(
     }
 }
 
+fn require_base_placement(
+    placement_directory: &SpirePlacementDirectory,
+    base_pid: u64,
+) -> Result<&super::meta::SpirePlacementEntry, String> {
+    placement_directory
+        .entries
+        .iter()
+        .find(|entry| entry.pid == base_pid)
+        .ok_or_else(|| format!("ec_spire vacuum missing base placement for pid {base_pid}"))
+}
+
 fn publish_delete_delta_epoch(
     index_relation: pg_sys::Relation,
     root_control: super::meta::SpireRootControlState,
@@ -455,9 +484,15 @@ fn publish_delete_delta_epoch(
         unsafe { build::current_epoch_publish_times()? };
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
     let local_store_config =
         unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+    let mut store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            index_relation,
+            local_store_config.clone(),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        )?
+    };
 
     let mut placement_entries = placement_directory
         .entries
@@ -475,7 +510,14 @@ fn publish_delete_delta_epoch(
         let assignments = build_delete_delta_assignments(deletes)?;
         let delta_object =
             SpireDeltaPartitionObject::new(delta_pid, new_epoch, base_pid, assignments)?;
-        placement_entries.push(unsafe { store.insert_delta_object(new_epoch, &delta_object)? });
+        let base_placement = require_base_placement(&placement_directory, base_pid)?;
+        placement_entries.push(unsafe {
+            store.insert_delta_object_for_base_placement(
+                new_epoch,
+                base_placement,
+                &delta_object,
+            )?
+        });
     }
 
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;

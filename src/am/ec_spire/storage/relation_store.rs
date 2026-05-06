@@ -1107,6 +1107,18 @@ impl SpireRelationObjectStoreSet {
         }
     }
 
+    pub(super) unsafe fn insert_delta_object_for_base_placement(
+        &mut self,
+        epoch: u64,
+        base_placement: &SpirePlacementEntry,
+        object: &SpireDeltaPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.store_mut_for_placement(base_placement)?
+                .insert_delta_object(epoch, object)
+        }
+    }
+
     pub(super) unsafe fn active_object_tuple_locators(
         &self,
         placement: &SpirePlacementEntry,
@@ -1160,6 +1172,27 @@ impl SpireRelationObjectStoreSet {
             .ok_or_else(|| {
                 format!(
                     "ec_spire relation object store set is missing local_store_id {} relid {}",
+                    placement.local_store_id, placement.store_relid
+                )
+            })
+    }
+
+    fn store_mut_for_placement(
+        &mut self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<&mut SpireRelationObjectStore, String> {
+        if let Some(config) = &self.config {
+            config.validate_placement(placement)?;
+        }
+        self.stores
+            .iter_mut()
+            .find(|store| {
+                store.local_store_id == placement.local_store_id
+                    && store.store_relid == placement.store_relid
+            })
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire relation object store set is missing writable local_store_id {} relid {}",
                     placement.local_store_id, placement.store_relid
                 )
             })

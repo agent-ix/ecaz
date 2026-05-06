@@ -14,8 +14,8 @@ use super::meta::{
     SpirePlacementDirectory,
 };
 use super::storage::{
-    SpireDeltaPartitionObject, SpireRelationObjectStore, SpireRoutingChildEntry,
-    SpireRoutingPartitionObject,
+    SpireDeltaPartitionObject, SpireRelationObjectStore, SpireRelationObjectStoreSet,
+    SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{lock_publish_relation, options, page, scan};
 
@@ -85,10 +85,18 @@ unsafe fn publish_insert_delta_epoch(
         &object_manifest,
         &placement_directory,
     )?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let active_lookup = super::meta::SpireValidatedEpochSnapshot::from_snapshot(active_snapshot)?;
+    let mut store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            index_relation,
+            local_store_config.clone(),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        )?
+    };
     let routed =
         scan::collect_snapshot_routed_leaf_rows(&active_snapshot, &store, &tuple.source_vector)?;
     let base_pid = routed.leaf_pid;
+    let base_lookup = active_lookup.require_lookup(base_pid, "insert delta base leaf")?;
     let new_epoch = root_control
         .active_epoch
         .checked_add(1)
@@ -103,7 +111,13 @@ unsafe fn publish_insert_delta_epoch(
     let assignments =
         build_insert_delta_assignments(&mut local_vec_id_allocator, vec![tuple.assignment])?;
     let delta_object = SpireDeltaPartitionObject::new(delta_pid, new_epoch, base_pid, assignments)?;
-    let delta_placement = unsafe { store.insert_delta_object(new_epoch, &delta_object)? };
+    let delta_placement = unsafe {
+        store.insert_delta_object_for_base_placement(
+            new_epoch,
+            base_lookup.placement,
+            &delta_object,
+        )?
+    };
 
     let mut placement_entries = placement_directory
         .entries

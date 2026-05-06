@@ -6468,6 +6468,38 @@ mod tests {
         assert_eq!(scan_sanity_active_leaf_count, 2);
         assert!(active_referenced_tuple_count > 0);
         assert!(candidate_count >= 1);
+
+        Spi::run(
+            "INSERT INTO ec_spire_logical_store_build (id, embedding) VALUES \
+             (5, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42))",
+        )
+        .expect("multi-store post-build insert should succeed");
+        let post_insert_delta_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_logical_store_build_idx'::regclass) \
+             WHERE object_kind = 'delta'",
+        )
+        .expect("object snapshot should succeed")
+        .expect("delta count should exist");
+        let post_insert_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let post_insert_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_logical_store_build \
+                 ORDER BY embedding <#> ARRAY[0.9, 0.1]::real[] \
+                 LIMIT 5 \
+             ) ranked",
+        )
+        .expect("ordered post-insert ec_spire query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(post_insert_delta_count, 1);
+        assert_eq!(post_insert_store_relid_count, 2);
+        assert_eq!(post_insert_rows_returned, 5);
     }
 
     #[pg_test]
