@@ -123,9 +123,14 @@ Closed since this follow-up:
   writable relation object-store set, hash-route root/internal/leaf objects by
   `SpireLocalStoreConfig::store_for_pid`, publish distinct logical
   `local_store_id` placements, and scan/read diagnostics through placement-
-  directed store sets. This supports repeated-tablespace same-device baseline
-  testing without claiming auxiliary relation DDL or physical multi-NVMe
-  striping is complete.
+  directed store sets.
+- `408b87cf` extends the same placement-directed reader rule across the
+  remaining active/options/scan-sanity/relation-storage diagnostics and adds
+  `store_relid` to `ec_spire_index_placement_snapshot`, so the
+  same-relation two-store baseline reports distinct logical stores without
+  assuming `local_store_id = 0`. This supports repeated-tablespace
+  same-device baseline testing without claiming auxiliary relation DDL or
+  physical multi-NVMe striping is complete.
 
 Follow-up validation:
 
@@ -136,7 +141,7 @@ Follow-up validation:
 - `git diff --check`
 - `git diff --cached --check`
 
-Additional validation for `3d66fea4`:
+Additional validation through `408b87cf`:
 
 - `cargo test collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build --lib`
 - `cargo test collect_quantized_routed_probe_candidates --lib`
@@ -145,6 +150,7 @@ Additional validation for `3d66fea4`:
 - `cargo pgrx test pg18 test_ec_spire_populated_build_hash_routes_logical_store_set`
 - `cargo pgrx test pg18 test_ec_spire_object_snapshot_sql`
 - `cargo pgrx test pg18 test_ec_spire_hierarchy_snapshot_sql`
+- `cargo pgrx test pg18 test_ec_spire_placement_snapshot_sql`
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
