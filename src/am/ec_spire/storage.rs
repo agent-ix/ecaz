@@ -8,8 +8,9 @@ use std::{
 use pgrx::pg_sys;
 
 use super::meta::{
-    SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState, SpirePlacementEntry,
-    SpirePlacementState, SPIRE_LOCAL_NODE_ID, SPIRE_SINGLE_LOCAL_STORE_ID,
+    SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
+    SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, SPIRE_LOCAL_NODE_ID,
+    SPIRE_SINGLE_LOCAL_STORE_ID,
 };
 use super::page;
 use crate::storage::page::{

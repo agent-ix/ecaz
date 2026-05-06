@@ -1241,6 +1241,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   leaf was not selected. This keeps the future store-local fetch plan explicit
   before delta header discovery and auxiliary store readers are wired into live
   execution.
+- [x] **Relation-backed scan store opener.** The relation scan path now builds
+  a relation object-store set from the active placement directory, opens
+  non-root `store_relid` values in ascending `local_store_id`, and dispatches
+  object reads by `(local_store_id, store_relid)` instead of assuming every
+  placement lives in the root/control index relation. Auxiliary store DDL and
+  relation-backed multi-store build publication remain open.
 - [ ] **Placement diagnostics.** Expose per-store object count, bytes,
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
   reports active per-store placement counts, placement-state counts,

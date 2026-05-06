@@ -83,7 +83,7 @@ unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireSc
 unsafe fn prepare_single_level_relation_snapshot_scan_candidates(
     scan: pg_sys::IndexScanDesc,
     snapshot: &SpirePublishedEpochSnapshot<'_>,
-    object_store: &SpireRelationObjectStore,
+    object_store: &impl SpireObjectReader,
     query: &SpireScanQuery,
     options: EcSpireOptions,
 ) -> Result<SpirePreparedScanCandidates, String> {

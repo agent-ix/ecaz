@@ -585,3 +585,125 @@ impl SpireObjectReader for SpireRelationObjectStore {
         unsafe { SpireRelationObjectStore::read_delta_object(self, placement) }
     }
 }
+
+pub(super) struct SpireRelationObjectStoreSet {
+    stores: Vec<SpireRelationObjectStore>,
+    opened_relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
+}
+
+impl SpireRelationObjectStoreSet {
+    pub(super) unsafe fn for_index_relation_and_placements(
+        index_relation: pg_sys::Relation,
+        placement_directory: &SpirePlacementDirectory,
+        lockmode: pg_sys::LOCKMODE,
+    ) -> Result<Self, String> {
+        if index_relation.is_null() {
+            return Err("ec_spire relation object store set needs a valid index relation".to_owned());
+        }
+        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let mut relid_by_store_id = BTreeMap::<u32, u32>::new();
+        for placement in &placement_directory.entries {
+            if let Some(existing_relid) =
+                relid_by_store_id.insert(placement.local_store_id, placement.store_relid)
+            {
+                if existing_relid != placement.store_relid {
+                    return Err(format!(
+                        "ec_spire placement directory maps local_store_id {} to relids {} and {}",
+                        placement.local_store_id, existing_relid, placement.store_relid
+                    ));
+                }
+            }
+        }
+
+        let mut stores = Vec::with_capacity(relid_by_store_id.len());
+        let mut opened_relations = Vec::new();
+        for (local_store_id, store_relid) in relid_by_store_id {
+            let store_relation = if store_relid == index_relid {
+                index_relation
+            } else {
+                let relid = pg_sys::Oid::from(store_relid);
+                let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
+                if relation.is_null() {
+                    return Err(format!(
+                        "ec_spire failed to open local_store_id {local_store_id} relation {store_relid}"
+                    ));
+                }
+                opened_relations.push((relation, lockmode));
+                relation
+            };
+            stores.push(SpireRelationObjectStore::for_store_relation_id(
+                store_relation,
+                local_store_id,
+                store_relid,
+            ));
+        }
+
+        Ok(Self {
+            stores,
+            opened_relations,
+        })
+    }
+
+    fn store_for_placement(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<&SpireRelationObjectStore, String> {
+        self.stores
+            .iter()
+            .find(|store| {
+                store.local_store_id == placement.local_store_id
+                    && store.store_relid == placement.store_relid
+            })
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire relation object store set is missing local_store_id {} relid {}",
+                    placement.local_store_id, placement.store_relid
+                )
+            })
+    }
+}
+
+impl Drop for SpireRelationObjectStoreSet {
+    fn drop(&mut self) {
+        for (relation, lockmode) in self.opened_relations.drain(..).rev() {
+            unsafe { pg_sys::relation_close(relation, lockmode) };
+        }
+    }
+}
+
+impl SpireObjectReader for SpireRelationObjectStoreSet {
+    fn read_object_header(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpirePartitionObjectHeader, String> {
+        unsafe { self.store_for_placement(placement)?.read_object_header(placement) }
+    }
+
+    fn read_routing_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireRoutingPartitionObject, String> {
+        unsafe { self.store_for_placement(placement)?.read_routing_object(placement) }
+    }
+
+    fn read_leaf_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObject, String> {
+        unsafe { self.store_for_placement(placement)?.read_leaf_object(placement) }
+    }
+
+    fn read_leaf_object_v2(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2, String> {
+        unsafe { self.store_for_placement(placement)?.read_leaf_object_v2(placement) }
+    }
+
+    fn read_delta_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireDeltaPartitionObject, String> {
+        unsafe { self.store_for_placement(placement)?.read_delta_object(placement) }
+    }
+}

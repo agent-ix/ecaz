@@ -70,8 +70,12 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amrescan(
                 &placement_directory,
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let object_store = SpireRelationObjectStore::for_index_relation((*scan).indexRelation)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let object_store = SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                (*scan).indexRelation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
             let prepared = prepare_single_level_relation_snapshot_scan_candidates(
                 scan,
                 &snapshot,
@@ -139,4 +143,3 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amendscan(scan: pg_sys::IndexSca
         })
     }
 }
-
