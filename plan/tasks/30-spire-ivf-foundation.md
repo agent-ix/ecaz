@@ -1199,6 +1199,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   normalizes `local_store_tablespaces`, requires the name count to match
   `local_store_count`, permits repeated names for same-device baseline runs,
   and exposes the normalized string through `ec_spire_index_options_snapshot`.
+- [x] **Local store tablespace OID planning.** The build path now resolves the
+  normalized tablespace names to OIDs, preserves repeated names as repeated
+  OIDs for same-device baselines, and defaults omitted names to the index
+  relation tablespace before the multi-store relation DDL slice lands.
 - [x] **Object store local-store-id surface.** The SPIRE object-store wrappers
   now carry their `local_store_id` when creating and validating placement
   entries, so the next writer slice can select a store descriptor instead of

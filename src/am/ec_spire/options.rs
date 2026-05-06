@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
@@ -94,6 +95,12 @@ pub(super) struct EcSpireOptions {
     pub(super) local_store_tablespaces: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireLocalStoreTablespacePlanEntry {
+    pub(super) local_store_id: u32,
+    pub(super) tablespace_oid: u32,
+}
+
 impl EcSpireOptions {
     const DEFAULT: Self = Self {
         nlists: EC_SPIRE_DEFAULT_NLISTS,
@@ -169,6 +176,69 @@ fn normalize_local_store_tablespaces_reloption(
         ));
     }
     Ok(names.join(","))
+}
+
+pub(super) fn plan_local_store_tablespaces_with_resolver(
+    local_store_count: i32,
+    index_tablespace_oid: u32,
+    local_store_tablespaces: Option<&str>,
+    mut resolve_tablespace: impl FnMut(&str) -> Result<u32, String>,
+) -> Result<Vec<SpireLocalStoreTablespacePlanEntry>, String> {
+    validate_local_store_count_value(local_store_count)?;
+    let store_count = usize::try_from(local_store_count)
+        .map_err(|_| "ec_spire local_store_count must be non-negative".to_owned())?;
+    let tablespace_oids = if let Some(local_store_tablespaces) = local_store_tablespaces {
+        let normalized = normalize_local_store_tablespaces_reloption(
+            local_store_tablespaces,
+            local_store_count,
+        )?;
+        normalized
+            .split(',')
+            .map(&mut resolve_tablespace)
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![index_tablespace_oid; store_count]
+    };
+    tablespace_oids
+        .into_iter()
+        .enumerate()
+        .map(|(index, tablespace_oid)| {
+            let local_store_id = u32::try_from(index)
+                .map_err(|_| "ec_spire local_store_id exceeds u32".to_owned())?;
+            Ok(SpireLocalStoreTablespacePlanEntry {
+                local_store_id,
+                tablespace_oid,
+            })
+        })
+        .collect()
+}
+
+pub(super) unsafe fn resolve_local_store_tablespace_plan(
+    index_relation: pg_sys::Relation,
+    options: &EcSpireOptions,
+) -> Result<Vec<SpireLocalStoreTablespacePlanEntry>, String> {
+    if index_relation.is_null() {
+        return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
+    }
+    let index_tablespace_oid = unsafe { (*(*index_relation).rd_rel).reltablespace }.into();
+    plan_local_store_tablespaces_with_resolver(
+        options.local_store_count,
+        index_tablespace_oid,
+        options.local_store_tablespaces.as_deref(),
+        |name| unsafe { resolve_tablespace_name(name) },
+    )
+}
+
+unsafe fn resolve_tablespace_name(name: &str) -> Result<u32, String> {
+    let c_name = CString::new(name)
+        .map_err(|_| "ec_spire local_store_tablespaces cannot contain NUL bytes".to_owned())?;
+    let oid = unsafe { pg_sys::get_tablespace_oid(c_name.as_ptr(), true) };
+    if oid == pg_sys::InvalidOid {
+        return Err(format!(
+            "ec_spire local_store_tablespaces names unknown tablespace '{name}'"
+        ));
+    }
+    Ok(oid.into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -564,10 +634,11 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_local_store_tablespaces_reloption, resolve_scan_nprobe_values,
-        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
-        validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireStorageFormat,
+        normalize_local_store_tablespaces_reloption, plan_local_store_tablespaces_with_resolver,
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
+        resolve_single_level_scan_plan_values, validate_local_store_count_value,
+        validate_recursive_fanout_value, EcSpireOptions, SpireCandidateDedupeMode,
+        SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -629,6 +700,54 @@ mod tests {
         );
         assert!(normalize_local_store_tablespaces_reloption("fast_a", 2).is_err());
         assert!(normalize_local_store_tablespaces_reloption("fast_a,", 2).is_err());
+    }
+
+    #[test]
+    fn local_store_tablespace_plan_resolves_names_and_repeats() {
+        let plan = plan_local_store_tablespaces_with_resolver(
+            3,
+            999,
+            Some("fast_a,fast_a,fast_b"),
+            |name| match name {
+                "fast_a" => Ok(10),
+                "fast_b" => Ok(11),
+                other => Err(format!("unknown tablespace {other}")),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.len(), 3);
+        assert_eq!(plan[0].local_store_id, 0);
+        assert_eq!(plan[0].tablespace_oid, 10);
+        assert_eq!(plan[1].local_store_id, 1);
+        assert_eq!(plan[1].tablespace_oid, 10);
+        assert_eq!(plan[2].local_store_id, 2);
+        assert_eq!(plan[2].tablespace_oid, 11);
+    }
+
+    #[test]
+    fn local_store_tablespace_plan_inherits_index_tablespace_by_default() {
+        let plan =
+            plan_local_store_tablespaces_with_resolver(2, 999, None, |_| unreachable!()).unwrap();
+
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].local_store_id, 0);
+        assert_eq!(plan[0].tablespace_oid, 999);
+        assert_eq!(plan[1].local_store_id, 1);
+        assert_eq!(plan[1].tablespace_oid, 999);
+    }
+
+    #[test]
+    fn local_store_tablespace_plan_rejects_unknown_or_mismatched_names() {
+        assert!(
+            plan_local_store_tablespaces_with_resolver(2, 999, Some("fast_a"), |_| Ok(10)).is_err()
+        );
+        assert!(
+            plan_local_store_tablespaces_with_resolver(1, 999, Some("missing"), |name| Err(
+                format!("unknown tablespace {name}")
+            ),)
+            .is_err()
+        );
     }
 
     #[test]

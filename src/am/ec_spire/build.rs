@@ -2511,6 +2511,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
+            let _local_store_tablespace_plan =
+                options::resolve_local_store_tablespace_plan(index_relation, &options)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
             if options.local_store_count != 1 {
                 pgrx::error!(
                     "ec_spire local_store_count > 1 is parsed but store relation creation is not implemented yet"
