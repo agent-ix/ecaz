@@ -1191,6 +1191,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `SpireLocalStoreConfig::store_for_pid` helper with stable-value coverage.
   This defines the cross-platform placement rule before object writes move to
   auxiliary stores.
+- [x] **Local store count reloption surface.** `ec_spire` now parses a bounded
+  `local_store_count` reloption, exposes it through
+  `ec_spire_index_options_snapshot`, and keeps executable builds blocked at the
+  current default `1` until auxiliary partition-store relation creation lands.
 - [ ] **Hash-routed object writes.** Place leaf and internal partition objects
   by `hash(pid) % local_store_count` in the relation-backed writer path.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and

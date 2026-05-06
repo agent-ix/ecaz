@@ -55,6 +55,11 @@ active routing level, ordered from level 1 upward. Phase 3 recursive routing is
 conservative: relation or session `nprobe` applies at level 1, and levels above
 1 probe one child until durable per-level nprobe configuration lands.
 
+`ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` as the
+requested local placement store count. Phase 4 currently parses the reloption
+and keeps the default value `1` executable; values above `1` remain blocked
+until auxiliary partition-store relation creation lands.
+
 ## Reading Notes
 
 - These functions inspect SPIRE partition-object storage, not PostgreSQL

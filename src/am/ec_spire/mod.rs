@@ -30,6 +30,9 @@ pub(super) const EC_SPIRE_MAX_NLISTS: i32 = 1_000_000;
 pub(super) const EC_SPIRE_DEFAULT_RECURSIVE_FANOUT: i32 = 0;
 pub(super) const EC_SPIRE_MIN_RECURSIVE_FANOUT: i32 = 0;
 pub(super) const EC_SPIRE_MAX_RECURSIVE_FANOUT: i32 = 1_000_000;
+pub(super) const EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT: i32 = 1;
+pub(super) const EC_SPIRE_MIN_LOCAL_STORE_COUNT: i32 = 1;
+pub(super) const EC_SPIRE_MAX_LOCAL_STORE_COUNT: i32 = 16;
 pub(super) const EC_SPIRE_DEFAULT_NPROBE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_NPROBE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_NPROBE: i32 = 1_000_000;
@@ -191,6 +194,7 @@ pub(crate) struct SpireIndexOptionsSnapshot {
     pub(crate) nlists: i32,
     pub(crate) recursive_fanout: i32,
     pub(crate) recursive_build_enabled: bool,
+    pub(crate) local_store_count: i32,
     pub(crate) active_leaf_count: u32,
     pub(crate) relation_nprobe: i32,
     pub(crate) session_nprobe: Option<i32>,
@@ -1318,6 +1322,7 @@ pub(crate) unsafe fn index_options_snapshot(
             nlists: relation_options.nlists,
             recursive_fanout: relation_options.recursive_fanout,
             recursive_build_enabled,
+            local_store_count: relation_options.local_store_count,
             active_leaf_count,
             relation_nprobe: relation_options.nprobe,
             session_nprobe: nprobe

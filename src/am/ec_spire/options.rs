@@ -5,13 +5,15 @@ use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::quantizer::SpireAssignmentPayloadFormat;
 use super::{
-    EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE, EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
-    EC_SPIRE_DEFAULT_RECURSIVE_FANOUT, EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED,
-    EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS, EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE,
+    EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT, EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE,
+    EC_SPIRE_DEFAULT_PQ_GROUP_SIZE, EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
+    EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED, EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MAX_LOCAL_STORE_COUNT, EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE,
     EC_SPIRE_MAX_PQ_GROUP_SIZE, EC_SPIRE_MAX_RECURSIVE_FANOUT, EC_SPIRE_MAX_RERANK_WIDTH,
-    EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS, EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE,
-    EC_SPIRE_MIN_PQ_GROUP_SIZE, EC_SPIRE_MIN_RECURSIVE_FANOUT, EC_SPIRE_MIN_RERANK_WIDTH,
-    EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS, EC_SPIRE_MIN_LOCAL_STORE_COUNT,
+    EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE, EC_SPIRE_MIN_PQ_GROUP_SIZE,
+    EC_SPIRE_MIN_RECURSIVE_FANOUT, EC_SPIRE_MIN_RERANK_WIDTH, EC_SPIRE_MIN_SEED,
+    EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
@@ -27,6 +29,7 @@ struct EcSpireReloptions {
     vl_len_: i32,
     nlists: i32,
     recursive_fanout: i32,
+    local_store_count: i32,
     nprobe: i32,
     rerank_width: i32,
     training_sample_rows: i32,
@@ -80,6 +83,7 @@ impl SpireStorageFormat {
 pub(super) struct EcSpireOptions {
     pub(super) nlists: i32,
     pub(super) recursive_fanout: i32,
+    pub(super) local_store_count: i32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
     pub(super) training_sample_rows: i32,
@@ -92,6 +96,7 @@ impl EcSpireOptions {
     const DEFAULT: Self = Self {
         nlists: EC_SPIRE_DEFAULT_NLISTS,
         recursive_fanout: EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
+        local_store_count: EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
         nprobe: EC_SPIRE_DEFAULT_NPROBE,
         rerank_width: EC_SPIRE_DEFAULT_RERANK_WIDTH,
         training_sample_rows: EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
@@ -128,6 +133,16 @@ fn validate_recursive_fanout_value(value: i32) -> Result<(), String> {
         Ok(())
     } else {
         Err("ec_spire recursive_fanout reloption must be 0 or at least 2".to_owned())
+    }
+}
+
+fn validate_local_store_count_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_LOCAL_STORE_COUNT..=EC_SPIRE_MAX_LOCAL_STORE_COUNT).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire local_store_count reloption must be between {EC_SPIRE_MIN_LOCAL_STORE_COUNT} and {EC_SPIRE_MAX_LOCAL_STORE_COUNT}, got {value}"
+        ))
     }
 }
 
@@ -342,6 +357,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
             );
             pg_sys::add_local_int_reloption(
                 &mut relopts,
+                c"local_store_count".as_ptr(),
+                c"Number of local SPIRE partition-store relations to plan for; 1 keeps embedded single-store behavior."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
+                EC_SPIRE_MIN_LOCAL_STORE_COUNT,
+                EC_SPIRE_MAX_LOCAL_STORE_COUNT,
+                offset_of!(EcSpireReloptions, local_store_count) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
                 c"nprobe".as_ptr(),
                 c"Number of SPIRE leaf PIDs to probe during scan; 0 chooses an automatic value."
                     .as_ptr(),
@@ -447,6 +472,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
     let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
     validate_recursive_fanout_value(reloptions.recursive_fanout)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_local_store_count_value(reloptions.local_store_count)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let storage_format_reloption = unsafe {
         read_string_reloption(
             rd_options,
@@ -477,6 +504,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
     EcSpireOptions {
         nlists: reloptions.nlists,
         recursive_fanout: reloptions.recursive_fanout,
+        local_store_count: reloptions.local_store_count,
         nprobe: reloptions.nprobe,
         rerank_width: reloptions.rerank_width,
         training_sample_rows: reloptions.training_sample_rows,
@@ -490,8 +518,9 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 mod tests {
     use super::{
         resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireStorageFormat,
+        resolve_single_level_scan_plan_values, validate_local_store_count_value,
+        validate_recursive_fanout_value, EcSpireOptions, SpireCandidateDedupeMode,
+        SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -534,6 +563,14 @@ mod tests {
     }
 
     #[test]
+    fn local_store_count_validation_bounds_phase4_surface() {
+        assert!(validate_local_store_count_value(1).is_ok());
+        assert!(validate_local_store_count_value(16).is_ok());
+        assert!(validate_local_store_count_value(0).is_err());
+        assert!(validate_local_store_count_value(17).is_err());
+    }
+
+    #[test]
     fn scan_nprobe_resolution_uses_session_relation_and_auto_sources() {
         assert_eq!(resolve_scan_nprobe_values(0, 5, -1).effective_nprobe, 0);
 
@@ -570,6 +607,7 @@ mod tests {
         assert_eq!(options.nlists, 0);
         assert_eq!(options.recursive_fanout, 0);
         assert_eq!(options.recursive_fanout(), None);
+        assert_eq!(options.local_store_count, 1);
         assert_eq!(options.nprobe, 0);
         assert_eq!(options.rerank_width, 0);
         assert_eq!(options.training_sample_rows, 0);
@@ -587,6 +625,7 @@ mod tests {
         let options = EcSpireOptions {
             nlists: 17,
             recursive_fanout: 4,
+            local_store_count: 1,
             nprobe: 3,
             rerank_width: 128,
             training_sample_rows: 1000,
@@ -616,6 +655,7 @@ mod tests {
         let options = EcSpireOptions {
             nlists: 17,
             recursive_fanout: 0,
+            local_store_count: 1,
             nprobe: 0,
             rerank_width: 128,
             training_sample_rows: 0,
@@ -646,6 +686,7 @@ mod tests {
         let invalid = EcSpireOptions {
             nlists: 0,
             recursive_fanout: 0,
+            local_store_count: 1,
             nprobe: -1,
             rerank_width: 0,
             training_sample_rows: 0,

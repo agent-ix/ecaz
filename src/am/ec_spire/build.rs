@@ -2490,6 +2490,11 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
+            if options.local_store_count != 1 {
+                pgrx::error!(
+                    "ec_spire local_store_count > 1 is parsed but store relation creation is not implemented yet"
+                );
+            }
             page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
             let indexed_vector_kind =
                 resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
@@ -2612,6 +2617,7 @@ mod tests {
         super::options::EcSpireOptions {
             nlists: 2,
             recursive_fanout: 0,
+            local_store_count: 1,
             nprobe: 0,
             rerank_width: 0,
             training_sample_rows,
