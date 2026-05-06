@@ -3909,6 +3909,58 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_large_routing_object_builds_and_scans() {
+        Spi::run(
+            "CREATE TABLE ec_spire_large_routing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_large_routing_sql (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * d) % 97)::real / 97.0)::real \
+                     FROM generate_series(1, 1536) AS d), \
+               4, 42) \
+             FROM generate_series(1, 32) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_large_routing_idx ON ec_spire_large_routing_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 32, nprobe = 8, rerank_width = 25)",
+        )
+        .expect("large routing ec_spire index creation should succeed");
+
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_routing_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let routing_object_bytes = Spi::get_one::<i64>(
+            "SELECT routing_object_bytes FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_routing_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_large_routing_sql \
+               ORDER BY embedding <#> \
+                 ARRAY(SELECT (((7 * d) % 97)::real / 97.0)::real \
+                       FROM generate_series(1, 1536) AS d) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(routing_child_count, 32);
+        assert!(routing_object_bytes > 8192);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
     fn test_ec_spire_allocator_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_alloc_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

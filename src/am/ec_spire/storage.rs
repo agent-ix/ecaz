@@ -14,8 +14,8 @@ use super::meta::{
 };
 use super::page;
 use crate::storage::page::{
-    element_or_neighbor_tuple_fits, usable_page_bytes, DataPageChain, ItemPointer,
-    DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
+    element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, usable_page_bytes, DataPageChain,
+    ItemPointer, DEFAULT_PAGE_SIZE, ITEM_POINTER_BYTES,
 };
 
 include!("storage/vec_id.rs");

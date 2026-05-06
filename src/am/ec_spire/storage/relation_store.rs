@@ -52,7 +52,11 @@ impl SpireRelationObjectStore {
         let encoded = durable_object.encode()?;
         let object_bytes = u32::try_from(encoded.len())
             .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
-        let object_tid = unsafe { page::append_object_tuple(self.store_relation, &encoded)? };
+        let object_tid = if relation_object_tuple_fits(encoded.len()) {
+            unsafe { page::append_object_tuple(self.store_relation, &encoded)? }
+        } else {
+            unsafe { self.insert_large_routing_object_chain(&durable_object, &encoded)? }
+        };
         let placement = SpirePlacementEntry::local_store_available_by_id(
             epoch,
             durable_object.header.pid,
@@ -222,32 +226,43 @@ impl SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireRoutingPartitionObject, String> {
-        unsafe {
-            self.with_single_tuple_object_bytes(placement, |raw| {
-                let object = SpireRoutingPartitionObject::decode(raw)?;
-                if object.header.pid != placement.pid {
-                    return Err(format!(
-                        "ec_spire placement pid {} does not match object pid {}",
-                        placement.pid, object.header.pid
-                    ));
-                }
-                if object.header.object_version != placement.object_version {
-                    return Err(format!(
-                        "ec_spire placement object_version {} does not match object version {}",
-                        placement.object_version, object.header.object_version
-                    ));
-                }
-                if object.header.published_epoch_backref == 0
-                    || object.header.published_epoch_backref > placement.epoch
-                {
-                    return Err(format!(
-                        "ec_spire object published epoch backref {} is not valid for placement epoch {}",
-                        object.header.published_epoch_backref, placement.epoch
-                    ));
-                }
-                Ok(object)
-            })
+        self.validate_local_available_placement(placement)?;
+        let meta = unsafe {
+            page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
+                decode_relation_routing_chain_meta(raw)
+            })?
+        };
+        let object = if let Some(meta) = meta {
+            let raw = unsafe { self.read_large_routing_object_bytes(placement, &meta)? };
+            SpireRoutingPartitionObject::decode(&raw)?
+        } else {
+            unsafe {
+                self.with_single_tuple_object_bytes(placement, |raw| {
+                    SpireRoutingPartitionObject::decode(raw)
+                })?
+            }
+        };
+        if object.header.pid != placement.pid {
+            return Err(format!(
+                "ec_spire placement pid {} does not match object pid {}",
+                placement.pid, object.header.pid
+            ));
         }
+        if object.header.object_version != placement.object_version {
+            return Err(format!(
+                "ec_spire placement object_version {} does not match object version {}",
+                placement.object_version, object.header.object_version
+            ));
+        }
+        if object.header.published_epoch_backref == 0
+            || object.header.published_epoch_backref > placement.epoch
+        {
+            return Err(format!(
+                "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                object.header.published_epoch_backref, placement.epoch
+            ));
+        }
+        Ok(object)
     }
 
     pub(super) unsafe fn read_leaf_object_v2(
@@ -333,14 +348,38 @@ impl SpireRelationObjectStore {
                         }
                     }
                     PARTITION_OBJECT_FORMAT_VERSION_V2 => {
-                        let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
-                        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                        if header.kind == SpirePartitionObjectKind::Leaf
+                            && header.flags & LEAF_V2_META_FLAG != 0
+                        {
+                            let meta = SpireLeafPartitionObjectV2Meta::decode(raw)?;
+                            if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                                return Err(format!(
+                                    "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+                                    placement.object_bytes, meta.object_bytes_total
+                                ));
+                            }
+                            header = meta.header;
+                        } else if (header.kind == SpirePartitionObjectKind::Root
+                            || header.kind == SpirePartitionObjectKind::Internal)
+                            && header.flags & ROUTING_V2_CHAIN_META_FLAG != 0
+                        {
+                            let meta = decode_relation_routing_chain_meta(raw)?.ok_or_else(|| {
+                                "ec_spire routing V2 chain meta decode returned no meta"
+                                    .to_owned()
+                            })?;
+                            if u64::from(placement.object_bytes) != meta.object_bytes_total {
+                                return Err(format!(
+                                    "ec_spire placement object_bytes {} does not match routing V2 total {}",
+                                    placement.object_bytes, meta.object_bytes_total
+                                ));
+                            }
+                            header = meta.header;
+                        } else {
                             return Err(format!(
-                                "ec_spire placement object_bytes {} does not match leaf V2 total {}",
-                                placement.object_bytes, meta.object_bytes_total
+                                "ec_spire unsupported partition object V2 header kind {:?} flags {}",
+                                header.kind, header.flags
                             ));
                         }
-                        header = meta.header;
                     }
                     other => {
                         return Err(format!(
@@ -379,6 +418,35 @@ impl SpireRelationObjectStore {
         self.validate_local_available_placement(placement)?;
         let header = unsafe { self.read_object_header(placement)? };
         let mut locators = vec![placement.object_tid];
+        if (header.kind == SpirePartitionObjectKind::Root
+            || header.kind == SpirePartitionObjectKind::Internal)
+            && header.flags & ROUTING_V2_CHAIN_META_FLAG != 0
+        {
+            let meta = unsafe {
+                page::with_pinned_object_tuple(self.store_relation, placement.object_tid, |raw| {
+                    decode_relation_routing_chain_meta(raw)
+                })?
+            }
+            .ok_or_else(|| "ec_spire routing V2 chain meta missing".to_owned())?;
+            let mut next_locator = meta.first_segment_locator;
+            for _ in 0..meta.segment_count {
+                if next_locator == ItemPointer::INVALID {
+                    return Err("ec_spire routing V2 segment chain ended early".to_owned());
+                }
+                locators.push(next_locator);
+                let segment = unsafe {
+                    page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
+                        decode_relation_routing_chain_segment(raw, &meta)
+                    })?
+                };
+                next_locator = segment.next_segment_locator;
+            }
+            if next_locator != ItemPointer::INVALID {
+                return Err("ec_spire routing V2 segment chain has trailing locator".to_owned());
+            }
+            return Ok(locators);
+        }
+
         if header.kind != SpirePartitionObjectKind::Leaf || header.flags & LEAF_V2_META_FLAG == 0 {
             return Ok(locators);
         }
@@ -562,6 +630,292 @@ impl SpireRelationObjectStore {
         }
         Ok(())
     }
+
+    unsafe fn insert_large_routing_object_chain(
+        &self,
+        object: &SpireRoutingPartitionObject,
+        encoded: &[u8],
+    ) -> Result<ItemPointer, String> {
+        let chunk_bytes = max_routing_chain_segment_payload_bytes()?;
+        let segment_count = encoded
+            .len()
+            .checked_add(chunk_bytes - 1)
+            .and_then(|value| value.checked_div(chunk_bytes))
+            .ok_or_else(|| "ec_spire routing V2 segment count overflow".to_owned())?;
+        let segment_count_u32 = u32::try_from(segment_count)
+            .map_err(|_| "ec_spire routing V2 segment count exceeds u32".to_owned())?;
+
+        let mut next_segment_locator = ItemPointer::INVALID;
+        for segment_index in (0..segment_count).rev() {
+            let byte_base = segment_index
+                .checked_mul(chunk_bytes)
+                .ok_or_else(|| "ec_spire routing V2 byte_base overflow".to_owned())?;
+            let byte_end = encoded.len().min(byte_base + chunk_bytes);
+            let segment_no = u32::try_from(segment_index)
+                .map_err(|_| "ec_spire routing V2 segment index exceeds u32".to_owned())?;
+            let encoded_segment = encode_relation_routing_chain_segment(
+                object,
+                segment_no,
+                u32::try_from(byte_base)
+                    .map_err(|_| "ec_spire routing V2 byte_base exceeds u32".to_owned())?,
+                next_segment_locator,
+                &encoded[byte_base..byte_end],
+            )?;
+            next_segment_locator =
+                unsafe { page::append_object_tuple(self.store_relation, &encoded_segment)? };
+        }
+
+        let encoded_meta = encode_relation_routing_chain_meta(
+            object,
+            segment_count_u32,
+            next_segment_locator,
+            u64::try_from(encoded.len())
+                .map_err(|_| "ec_spire routing V2 object length exceeds u64".to_owned())?,
+        )?;
+        unsafe { page::append_object_tuple(self.store_relation, &encoded_meta) }
+    }
+
+    unsafe fn read_large_routing_object_bytes(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &RelationRoutingChainMeta,
+    ) -> Result<Vec<u8>, String> {
+        if u64::from(placement.object_bytes) != meta.object_bytes_total {
+            return Err(format!(
+                "ec_spire placement object_bytes {} does not match routing V2 total {}",
+                placement.object_bytes, meta.object_bytes_total
+            ));
+        }
+        let expected_len = usize::try_from(meta.object_bytes_total)
+            .map_err(|_| "ec_spire routing V2 object length exceeds usize".to_owned())?;
+        let mut out = Vec::with_capacity(expected_len);
+        let mut next_locator = meta.first_segment_locator;
+        for expected_segment_no in 0..meta.segment_count {
+            if next_locator == ItemPointer::INVALID {
+                return Err("ec_spire routing V2 segment chain ended early".to_owned());
+            }
+            let segment = unsafe {
+                page::with_pinned_object_tuple(self.store_relation, next_locator, |raw| {
+                    decode_relation_routing_chain_segment(raw, meta)
+                })?
+            };
+            if segment.segment_no != expected_segment_no {
+                return Err(format!(
+                    "ec_spire routing V2 segment number mismatch: got {}, expected {expected_segment_no}",
+                    segment.segment_no
+                ));
+            }
+            if usize::try_from(segment.byte_base)
+                .map_err(|_| "ec_spire routing V2 byte_base exceeds usize".to_owned())?
+                != out.len()
+            {
+                return Err(format!(
+                    "ec_spire routing V2 byte_base mismatch: got {}, expected {}",
+                    segment.byte_base,
+                    out.len()
+                ));
+            }
+            out.extend_from_slice(&segment.payload);
+            next_locator = segment.next_segment_locator;
+        }
+        if next_locator != ItemPointer::INVALID {
+            return Err("ec_spire routing V2 segment chain has trailing locator".to_owned());
+        }
+        if out.len() != expected_len {
+            return Err(format!(
+                "ec_spire routing V2 byte length mismatch: got {}, expected {expected_len}",
+                out.len()
+            ));
+        }
+        Ok(out)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RelationRoutingChainMeta {
+    header: SpirePartitionObjectHeader,
+    dimensions: u16,
+    segment_count: u32,
+    first_segment_locator: ItemPointer,
+    object_bytes_total: u64,
+}
+
+#[derive(Debug, Clone)]
+struct RelationRoutingChainSegment {
+    segment_no: u32,
+    byte_base: u32,
+    next_segment_locator: ItemPointer,
+    payload: Vec<u8>,
+}
+
+fn relation_object_tuple_fits(payload_len: usize) -> bool {
+    raw_tuple_storage_bytes(payload_len) <= usable_page_bytes(pg_sys::BLCKSZ as usize)
+}
+
+fn max_routing_chain_segment_payload_bytes() -> Result<usize, String> {
+    let max_tuple_payload = max_relation_object_tuple_payload_bytes(pg_sys::BLCKSZ as usize)?;
+    max_tuple_payload
+        .checked_sub(PARTITION_OBJECT_HEADER_BYTES)
+        .and_then(|value| value.checked_sub(ROUTING_V2_CHAIN_SEGMENT_PREFIX_BYTES))
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "ec_spire routing V2 segment payload capacity is zero".to_owned())
+}
+
+fn max_relation_object_tuple_payload_bytes(page_size: usize) -> Result<usize, String> {
+    let usable = usable_page_bytes(page_size).min(7_000);
+    for payload_len in (1..=usable).rev() {
+        if raw_tuple_storage_bytes(payload_len) <= usable {
+            return Ok(payload_len);
+        }
+    }
+    Err("ec_spire relation object tuple capacity is zero".to_owned())
+}
+
+fn encode_relation_routing_chain_meta(
+    object: &SpireRoutingPartitionObject,
+    segment_count: u32,
+    first_segment_locator: ItemPointer,
+    object_bytes_total: u64,
+) -> Result<Vec<u8>, String> {
+    if segment_count == 0 {
+        return Err("ec_spire routing V2 chain meta requires at least one segment".to_owned());
+    }
+    if first_segment_locator == ItemPointer::INVALID {
+        return Err("ec_spire routing V2 chain meta requires first segment".to_owned());
+    }
+    let mut header = object.header;
+    header.flags |= ROUTING_V2_CHAIN_META_FLAG;
+    let mut out = header.encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V2);
+    out.extend_from_slice(&object.dimensions.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&segment_count.to_le_bytes());
+    first_segment_locator.encode_into(&mut out);
+    out.extend_from_slice(&object_bytes_total.to_le_bytes());
+    debug_assert_eq!(
+        out.len(),
+        PARTITION_OBJECT_HEADER_BYTES + ROUTING_V2_CHAIN_META_BODY_BYTES
+    );
+    Ok(out)
+}
+
+fn decode_relation_routing_chain_meta(
+    input: &[u8],
+) -> Result<Option<RelationRoutingChainMeta>, String> {
+    let (header, format_version, tail) =
+        SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
+    if format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
+        || header.flags & ROUTING_V2_CHAIN_META_FLAG == 0
+    {
+        return Ok(None);
+    }
+    if header.kind != SpirePartitionObjectKind::Root
+        && header.kind != SpirePartitionObjectKind::Internal
+    {
+        return Err(format!(
+            "ec_spire routing V2 chain meta kind must be Root or Internal, got {:?}",
+            header.kind
+        ));
+    }
+    if tail.len() != ROUTING_V2_CHAIN_META_BODY_BYTES {
+        return Err(format!(
+            "ec_spire routing V2 chain meta length mismatch: got {}, expected {ROUTING_V2_CHAIN_META_BODY_BYTES}",
+            tail.len()
+        ));
+    }
+    let dimensions = u16::from_le_bytes(tail[0..2].try_into().expect("routing dimensions"));
+    let reserved = u16::from_le_bytes(tail[2..4].try_into().expect("routing reserved"));
+    if reserved != 0 {
+        return Err(format!(
+            "ec_spire routing V2 chain meta reserved bytes must be zero, got {reserved}"
+        ));
+    }
+    let segment_count = u32::from_le_bytes(tail[4..8].try_into().expect("segment count"));
+    let first_segment_locator = ItemPointer::decode(&tail[8..14])?;
+    let object_bytes_total =
+        u64::from_le_bytes(tail[14..22].try_into().expect("object bytes total"));
+    if dimensions == 0 {
+        return Err("ec_spire routing V2 chain meta dimensions 0 is invalid".to_owned());
+    }
+    if segment_count == 0 {
+        return Err("ec_spire routing V2 chain meta segment_count 0 is invalid".to_owned());
+    }
+    if first_segment_locator == ItemPointer::INVALID {
+        return Err("ec_spire routing V2 chain meta first segment is invalid".to_owned());
+    }
+    if object_bytes_total == 0 {
+        return Err("ec_spire routing V2 chain meta object_bytes_total 0 is invalid".to_owned());
+    }
+    Ok(Some(RelationRoutingChainMeta {
+        header,
+        dimensions,
+        segment_count,
+        first_segment_locator,
+        object_bytes_total,
+    }))
+}
+
+fn encode_relation_routing_chain_segment(
+    object: &SpireRoutingPartitionObject,
+    segment_no: u32,
+    byte_base: u32,
+    next_segment_locator: ItemPointer,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    if payload.is_empty() {
+        return Err("ec_spire routing V2 chain segment payload must not be empty".to_owned());
+    }
+    let mut header = object.header;
+    header.child_count = 0;
+    header.flags = ROUTING_V2_CHAIN_SEGMENT_FLAG;
+    let mut out = header.encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V2);
+    out.extend_from_slice(&segment_no.to_le_bytes());
+    out.extend_from_slice(&byte_base.to_le_bytes());
+    next_segment_locator.encode_into(&mut out);
+    out.extend_from_slice(payload);
+    Ok(out)
+}
+
+fn decode_relation_routing_chain_segment(
+    input: &[u8],
+    meta: &RelationRoutingChainMeta,
+) -> Result<RelationRoutingChainSegment, String> {
+    let (header, format_version, tail) =
+        SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
+    if format_version != PARTITION_OBJECT_FORMAT_VERSION_V2 {
+        return Err(format!(
+            "ec_spire routing V2 chain segment format version must be 2, got {format_version}"
+        ));
+    }
+    if header.flags & ROUTING_V2_CHAIN_SEGMENT_FLAG == 0 {
+        return Err(format!(
+            "ec_spire routing V2 chain segment missing segment flag: {}",
+            header.flags
+        ));
+    }
+    if header.kind != meta.header.kind
+        || header.pid != meta.header.pid
+        || header.object_version != meta.header.object_version
+        || header.published_epoch_backref != meta.header.published_epoch_backref
+        || header.level != meta.header.level
+        || header.parent_pid != meta.header.parent_pid
+    {
+        return Err("ec_spire routing V2 chain segment header does not match meta".to_owned());
+    }
+    if tail.len() <= ROUTING_V2_CHAIN_SEGMENT_PREFIX_BYTES {
+        return Err(format!(
+            "ec_spire routing V2 chain segment too short: got {}, expected more than {ROUTING_V2_CHAIN_SEGMENT_PREFIX_BYTES}",
+            tail.len()
+        ));
+    }
+    let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
+    let byte_base = u32::from_le_bytes(tail[4..8].try_into().expect("byte base"));
+    let next_segment_locator = ItemPointer::decode(&tail[8..14])?;
+    Ok(RelationRoutingChainSegment {
+        segment_no,
+        byte_base,
+        next_segment_locator,
+        payload: tail[ROUTING_V2_CHAIN_SEGMENT_PREFIX_BYTES..].to_vec(),
+    })
 }
 
 impl SpireObjectReader for SpireRelationObjectStore {
