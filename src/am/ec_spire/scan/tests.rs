@@ -9,9 +9,10 @@ mod tests {
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
         group_leaf_and_delta_reads_by_local_store, load_snapshot_routing_hierarchy,
-        prepare_single_level_snapshot_scan_candidates, rank_routed_leaf_rows_by_ip,
-        rerank_scored_candidates_by_ip, route_recursive_routing_objects_to_leaf_pids,
-        route_root_object_to_leaf_pids, route_routing_object_to_child_pids,
+        prefetch_store_object_read_group, prepare_single_level_snapshot_scan_candidates,
+        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
+        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
+        route_routing_object_to_child_pids,
         SpireDeltaObjectRoute, SpireLeafScanRow, SpireNoopRoutedScanObserver,
         SpireRecursiveLeafRoute, SpireRoutedLeafScanRows, SpireScanCandidateCursor,
         SpireScanOpaque, SpireScanOutput, SpireScanPlacementDiagnosticsObserver, SpireScanQuery,
@@ -42,8 +43,9 @@ mod tests {
     };
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireRoutingChildEntry,
-        SpireRoutingPartitionObject, SpireVecId,
+        SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
+        SpirePartitionObjectHeader, SpireRoutingChildEntry, SpireRoutingPartitionObject,
+        SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -52,6 +54,7 @@ mod tests {
         build_delta_epoch_draft_from_snapshot, SpireDeltaEpochInput,
     };
     use crate::storage::page::ItemPointer;
+    use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {

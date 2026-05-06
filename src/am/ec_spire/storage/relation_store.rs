@@ -421,6 +421,21 @@ impl SpireRelationObjectStore {
         Ok(locators)
     }
 
+    pub(super) unsafe fn prefetch_object_tuple(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<(), String> {
+        self.validate_local_available_placement(placement)?;
+        unsafe {
+            pg_sys::PrefetchBuffer(
+                self.store_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                placement.object_tid.block_number,
+            );
+        }
+        Ok(())
+    }
+
     pub(super) unsafe fn read_leaf_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -550,6 +565,10 @@ impl SpireRelationObjectStore {
 }
 
 impl SpireObjectReader for SpireRelationObjectStore {
+    fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
+        unsafe { SpireRelationObjectStore::prefetch_object_tuple(self, placement) }
+    }
+
     fn read_object_header(
         &self,
         placement: &SpirePlacementEntry,
@@ -744,6 +763,16 @@ impl SpireRelationObjectStoreSet {
         }
     }
 
+    pub(super) unsafe fn prefetch_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<(), String> {
+        unsafe {
+            self.store_for_placement(placement)?
+                .prefetch_object_tuple(placement)
+        }
+    }
+
     fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireRelationObjectStore, String> {
         let config = self
             .config
@@ -792,6 +821,10 @@ impl Drop for SpireRelationObjectStoreSet {
 }
 
 impl SpireObjectReader for SpireRelationObjectStoreSet {
+    fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
+        unsafe { SpireRelationObjectStoreSet::prefetch_object(self, placement) }
+    }
+
     fn read_object_header(
         &self,
         placement: &SpirePlacementEntry,

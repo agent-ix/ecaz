@@ -499,6 +499,118 @@
     }
 
     #[test]
+    fn prefetch_store_object_read_group_prefetches_leaf_and_delta_routes() {
+        struct RecordingPrefetchReader {
+            prefetched_pids: RefCell<Vec<u64>>,
+        }
+
+        impl SpireObjectReader for RecordingPrefetchReader {
+            fn prefetch_object(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
+                self.prefetched_pids.borrow_mut().push(placement.pid);
+                Ok(())
+            }
+
+            fn read_object_header(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpirePartitionObjectHeader, String> {
+                unreachable!("prefetch test should not read object headers")
+            }
+
+            fn read_routing_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireRoutingPartitionObject, String> {
+                unreachable!("prefetch test should not read routing objects")
+            }
+
+            fn read_leaf_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireLeafPartitionObject, String> {
+                unreachable!("prefetch test should not read leaf objects")
+            }
+
+            fn read_leaf_object_v2(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<crate::am::ec_spire::storage::SpireLeafPartitionObjectV2, String>
+            {
+                unreachable!("prefetch test should not read leaf V2 objects")
+            }
+
+            fn read_delta_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireDeltaPartitionObject, String> {
+                unreachable!("prefetch test should not read delta objects")
+            }
+        }
+
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let delta_pid = SPIRE_FIRST_PID + 11;
+        let placements = vec![
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                leaf_pid,
+                0,
+                500,
+                1,
+                tid(60, 1),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                delta_pid,
+                0,
+                500,
+                1,
+                tid(61, 1),
+                100,
+            ),
+        ];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+
+        let mut observer = SpireNoopRoutedScanObserver;
+        let groups = group_leaf_and_delta_reads_by_local_store(
+            &snapshot,
+            vec![SpireRecursiveLeafRoute {
+                leaf_pid,
+                parent_pid: SPIRE_FIRST_PID,
+            }],
+            vec![SpireDeltaObjectRoute {
+                delta_pid,
+                parent_leaf_pid: leaf_pid,
+            }],
+            &mut observer,
+        )
+        .unwrap();
+        let reader = RecordingPrefetchReader {
+            prefetched_pids: RefCell::new(Vec::new()),
+        };
+
+        prefetch_store_object_read_group(&snapshot, &reader, &groups[0]).unwrap();
+
+        assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+    }
+
+    #[test]
     fn collect_quantized_routed_probe_candidates_rejects_deferred_and_bad_payloads() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();

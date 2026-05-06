@@ -427,29 +427,30 @@ fn append_quantized_v2_column_candidates(
     Ok(())
 }
 
-fn append_quantized_delta_candidates_for_base_pid(
+fn append_quantized_delta_candidates_for_routes(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
-    base_pid: u64,
+    delta_routes: &[SpireDeltaObjectRoute],
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
-    for manifest_entry in &snapshot.object_manifest().entries {
-        let lookup = snapshot.require_lookup(manifest_entry.pid, "quantized routed scan delta")?;
+    for route in delta_routes {
+        let lookup = snapshot.require_lookup(route.delta_pid, "quantized routed scan delta")?;
         let placement = lookup.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
 
-        let header = object_store.read_object_header(placement)?;
-        if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
-            continue;
-        }
-
         let delta_object = object_store.read_delta_object(placement)?;
+        if delta_object.header.parent_pid != route.parent_leaf_pid {
+            return Err(format!(
+                "ec_spire delta route parent {} does not match object parent {}",
+                route.parent_leaf_pid, delta_object.header.parent_pid
+            ));
+        }
         for (row_index, assignment) in delta_object.assignments.into_iter().enumerate() {
             if is_delete_delta_assignment(&assignment) {
                 continue;
@@ -471,8 +472,8 @@ fn append_quantized_delta_candidates_for_base_pid(
             observer.visible_delta_candidate(snapshot.epoch_manifest().epoch, placement);
             let candidate = SpireScoredScanCandidate {
                 epoch: snapshot.epoch_manifest().epoch,
-                pid: manifest_entry.pid,
-                object_version: manifest_entry.object_version,
+                pid: lookup.manifest_entry.pid,
+                object_version: lookup.manifest_entry.object_version,
                 row_index,
                 assignment_flags: assignment.flags,
                 vec_id: assignment.vec_id,
@@ -485,28 +486,29 @@ fn append_quantized_delta_candidates_for_base_pid(
     Ok(())
 }
 
-fn collect_delta_delete_vec_ids_for_base_pid(
+fn collect_delta_delete_vec_ids_for_routes(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
-    base_pid: u64,
+    delta_routes: &[SpireDeltaObjectRoute],
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<HashSet<SpireVecId>, String> {
     let mut deleted_vec_ids = HashSet::new();
-    for manifest_entry in &snapshot.object_manifest().entries {
-        let lookup =
-            snapshot.require_lookup(manifest_entry.pid, "quantized routed scan delete delta")?;
+    for route in delta_routes {
+        let lookup = snapshot.require_lookup(route.delta_pid, "quantized routed scan delete delta")?;
         let placement = lookup.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
             continue;
         }
 
-        let header = object_store.read_object_header(placement)?;
-        if header.kind != SpirePartitionObjectKind::Delta || header.parent_pid != base_pid {
-            continue;
-        }
         observer.scanned_delta(snapshot.epoch_manifest().epoch, placement);
 
         let delta_object = object_store.read_delta_object(placement)?;
+        if delta_object.header.parent_pid != route.parent_leaf_pid {
+            return Err(format!(
+                "ec_spire delete delta route parent {} does not match object parent {}",
+                route.parent_leaf_pid, delta_object.header.parent_pid
+            ));
+        }
         for assignment in delta_object.assignments {
             if is_delete_delta_assignment(&assignment) {
                 observer.delete_delta_row(snapshot.epoch_manifest().epoch, placement);

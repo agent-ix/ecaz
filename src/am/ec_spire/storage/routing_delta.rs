@@ -1,4 +1,8 @@
 pub(super) trait SpireObjectReader {
+    fn prefetch_object(&self, _placement: &SpirePlacementEntry) -> Result<(), String> {
+        Ok(())
+    }
+
     fn read_object_header(
         &self,
         placement: &SpirePlacementEntry,

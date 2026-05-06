@@ -221,15 +221,28 @@ fn collect_validated_quantized_leaf_route_candidates(
         SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
         SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
     };
+    let delta_routes = collect_snapshot_delta_object_routes(snapshot, object_store)?;
+    let mut delta_routes_by_parent = HashMap::<u64, Vec<SpireDeltaObjectRoute>>::new();
+    for route in &delta_routes {
+        delta_routes_by_parent
+            .entry(route.parent_leaf_pid)
+            .or_default()
+            .push(*route);
+    }
     for route_group in
-        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, Vec::new(), observer)?
+        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, delta_routes, observer)?
     {
+        prefetch_store_object_read_group(snapshot, object_store, &route_group)?;
         for route in route_group.leaf_routes {
             let leaf_pid = route.leaf_pid;
-            let deleted_vec_ids = collect_delta_delete_vec_ids_for_base_pid(
+            let leaf_delta_routes = delta_routes_by_parent
+                .get(&leaf_pid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let deleted_vec_ids = collect_delta_delete_vec_ids_for_routes(
                 snapshot,
                 object_store,
-                leaf_pid,
+                leaf_delta_routes,
                 observer,
             )?;
             append_quantized_leaf_candidates_for_pid(
@@ -243,10 +256,10 @@ fn collect_validated_quantized_leaf_route_candidates(
                 &mut candidates_by_vec_id,
                 observer,
             )?;
-            append_quantized_delta_candidates_for_base_pid(
+            append_quantized_delta_candidates_for_routes(
                 snapshot,
                 object_store,
-                leaf_pid,
+                leaf_delta_routes,
                 scorer,
                 &deleted_vec_ids,
                 &mut candidates,
@@ -261,6 +274,45 @@ fn collect_validated_quantized_leaf_route_candidates(
     }
 
     Ok(rank_bounded_scored_candidates(candidates, limit))
+}
+
+fn collect_snapshot_delta_object_routes(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<Vec<SpireDeltaObjectRoute>, String> {
+    let mut delta_routes = Vec::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "scan delta route discovery")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind == SpirePartitionObjectKind::Delta {
+            delta_routes.push(SpireDeltaObjectRoute {
+                delta_pid: manifest_entry.pid,
+                parent_leaf_pid: header.parent_pid,
+            });
+        }
+    }
+    Ok(delta_routes)
+}
+
+fn prefetch_store_object_read_group(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route_group: &SpireStoreObjectReadGroup,
+) -> Result<(), String> {
+    for route in &route_group.leaf_routes {
+        let lookup = snapshot.require_lookup(route.leaf_pid, "scan leaf route prefetch")?;
+        object_store.prefetch_object(lookup.placement)?;
+    }
+    for route in &route_group.delta_routes {
+        let lookup = snapshot.require_lookup(route.delta_pid, "scan delta route prefetch")?;
+        object_store.prefetch_object(lookup.placement)?;
+    }
+    Ok(())
 }
 
 fn group_leaf_and_delta_reads_by_local_store(

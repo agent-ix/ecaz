@@ -1246,6 +1246,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   leaf was not selected. This keeps the future store-local fetch plan explicit
   before delta header discovery and auxiliary store readers are wired into live
   execution.
+- [x] **Store-grouped relation prefetch.** The live quantized routed scan path
+  now discovers selected delta routes from object headers, groups leaf and
+  delta object reads by local store, and calls the object-reader prefetch hook
+  for each selected placement before decoding/scoring that store group.
+  Relation-backed stores issue PostgreSQL `PrefetchBuffer` requests for the
+  target object tuple block, while in-memory stores keep the default no-op
+  behavior. This is an I/O overlap boundary, not measured multi-NVMe evidence.
 - [x] **Relation-backed scan store opener.** The relation scan path now builds
   a relation object-store set from the active placement directory, opens
   non-root `store_relid` values in ascending `local_store_id`, and dispatches
