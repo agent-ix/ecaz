@@ -154,3 +154,26 @@ Additional validation through `408b87cf`:
 - `cargo fmt --check`
 - `git diff --check`
 - `git diff --cached --check`
+
+Additional closeout through `21e184e1`:
+
+- Persists the active `SpireLocalStoreConfig` as part of each publish manifest
+  bundle and records its tuple TID in root/control.
+- Makes active manifest loading decode the persisted config and validate every
+  placement against the active store set.
+- Carries the existing active config through insert, vacuum, and relation
+  replacement publishes instead of re-deriving it from placements and dropping
+  tablespace metadata.
+- Marks the active local-store config tuple live in relation-storage
+  diagnostics and updates the Phase 4 task tracker.
+
+Additional validation through `21e184e1`:
+
+- `cargo test root_control_published_state_round_trips --lib`
+- `cargo test local_store_config --lib`
+- `cargo test single_level_draft_encodes_manifest_bundle --lib`
+- `cargo pgrx test pg18 test_ec_spire_populated_build_hash_routes_logical_store_set`
+- `cargo pgrx test pg18 test_ec_spire_relation_storage_snapshot_sql`
+- `cargo fmt --check`
+- `git diff --check`
+- `git diff --cached --check`
