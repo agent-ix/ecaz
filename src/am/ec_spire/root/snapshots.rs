@@ -362,18 +362,23 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexRelationStorageSnapshot {
     let result = (|| -> Result<SpireIndexRelationStorageSnapshot, String> {
+        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
-        let mut active_tids = HashSet::new();
+        let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
+        let mut storage_relids = HashSet::from([index_relid]);
         if root_control.active_epoch != 0 {
-            active_tids.insert(root_control.epoch_manifest_tid);
-            active_tids.insert(root_control.object_manifest_tid);
-            active_tids.insert(root_control.placement_directory_tid);
-            active_tids.insert(root_control.local_store_config_tid);
+            active_tids.insert((index_relid, root_control.epoch_manifest_tid));
+            active_tids.insert((index_relid, root_control.object_manifest_tid));
+            active_tids.insert((index_relid, root_control.placement_directory_tid));
+            active_tids.insert((index_relid, root_control.local_store_config_tid));
 
             let (_epoch_manifest, object_manifest, placement_directory) =
                 unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
             for entry in &object_manifest.entries {
-                active_tids.insert(entry.placement_tid);
+                active_tids.insert((index_relid, entry.placement_tid));
+            }
+            for placement in &placement_directory.entries {
+                storage_relids.insert(placement.store_relid);
             }
 
             let object_store = unsafe {
@@ -385,23 +390,47 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             };
             for placement in &placement_directory.entries {
                 for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
-                    active_tids.insert(tid);
+                    active_tids.insert((placement.store_relid, tid));
                 }
             }
         }
 
-        let relation_block_count = unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            )
-        };
+        let mut sorted_storage_relids = storage_relids.into_iter().collect::<Vec<_>>();
+        sorted_storage_relids.sort_unstable();
+        let mut relation_block_count = 0_u64;
         let mut relation_object_tuple_count = 0_u64;
         let mut relation_object_tuple_bytes = 0_u64;
         let mut active_referenced_tuple_count = 0_u64;
         let mut active_referenced_tuple_bytes = 0_u64;
-        unsafe {
-            page::scan_object_tuples(index_relation, |tid, tuple| {
+        for storage_relid in sorted_storage_relids {
+            let (storage_relation, opened) = if storage_relid == index_relid {
+                (index_relation, false)
+            } else {
+                let relation = unsafe {
+                    pg_sys::relation_open(
+                        pg_sys::Oid::from(storage_relid),
+                        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                    )
+                };
+                if relation.is_null() {
+                    return Err(format!(
+                        "ec_spire failed to open local store relation {storage_relid}"
+                    ));
+                }
+                (relation, true)
+            };
+
+            let storage_block_count = unsafe {
+                pg_sys::RelationGetNumberOfBlocksInFork(
+                    storage_relation,
+                    pg_sys::ForkNumber::MAIN_FORKNUM,
+                )
+            };
+            relation_block_count = relation_block_count
+                .checked_add(u64::from(storage_block_count))
+                .ok_or_else(|| "ec_spire relation block count overflow".to_owned())?;
+
+            let scan_result = unsafe { page::scan_object_tuples(storage_relation, |tid, tuple| {
                 relation_object_tuple_count = relation_object_tuple_count
                     .checked_add(1)
                     .ok_or_else(|| "ec_spire relation object tuple count overflow".to_owned())?;
@@ -410,7 +439,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                 relation_object_tuple_bytes = relation_object_tuple_bytes
                     .checked_add(tuple_bytes)
                     .ok_or_else(|| "ec_spire relation object tuple bytes overflow".to_owned())?;
-                if active_tids.contains(&tid) {
+                if active_tids.contains(&(storage_relid, tid)) {
                     active_referenced_tuple_count = active_referenced_tuple_count
                         .checked_add(1)
                         .ok_or_else(|| {
@@ -423,8 +452,17 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
                         })?;
                 }
                 Ok(())
-            })?
-        };
+            }) };
+            if opened {
+                unsafe {
+                    pg_sys::relation_close(
+                        storage_relation,
+                        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                    )
+                };
+            }
+            scan_result?;
+        }
 
         let cleanup_candidate_tuple_count =
             relation_object_tuple_count.saturating_sub(active_referenced_tuple_count);
@@ -438,7 +476,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
 
         Ok(SpireIndexRelationStorageSnapshot {
             active_epoch: root_control.active_epoch,
-            relation_block_count: u64::from(relation_block_count),
+            relation_block_count,
             relation_object_tuple_count,
             relation_object_tuple_bytes,
             active_referenced_tuple_count,

@@ -100,7 +100,10 @@ coverage now exercises a two-store relation-backed index through post-build
 insert, delete, PostgreSQL's real `VACUUM` callback path, placement
 diagnostics, and ordered scan after cleanup, proving both local store relation
 placements survive while the deleted row stays invisible and the inserted row
-remains fetchable.
+remains fetchable. Relation storage-debt diagnostics now aggregate the
+root/control relation and all auxiliary local store relations referenced by
+the active placement directory, so cleanup-candidate tuple counts and bytes
+reflect the full local store set instead of only the root relation.
 PQ-FastScan scorer binding and physical object reclamation/old-epoch cleanup
 remain open. Task 30 implements
 ADR-049 in stages: first a debuggable single-level IVF foundation with
@@ -1320,9 +1323,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   object bytes. Active/options/scan-sanity/relation-storage diagnostics now
   read placement-routed logical store sets instead of assuming
   `local_store_id = 0`, and the same-relation two-store baseline has focused
-  PG18 coverage across those surfaces. The query-specific SQL scan placement
-  snapshot reports scan-touched leaf/delta PID counts and candidate rows per
-  local store; auxiliary relation DDL and parallel local fetch remain open.
+  PG18 coverage across those surfaces. Relation storage-debt diagnostics now
+  aggregate object tuple/block counts and cleanup-candidate debt across the
+  root/control relation plus auxiliary local store relations. The
+  query-specific SQL scan placement snapshot reports scan-touched leaf/delta
+  PID counts and candidate rows per local store.
 - [x] **Local placement benchmark.** Packet
   `review/30533-spire-local-placement-benchmark/` measures one-store,
   same-device two-store, and `/mnt/e` two-store behavior on the local real 10k

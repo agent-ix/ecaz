@@ -6449,6 +6449,27 @@ mod tests {
         )
         .expect("relation storage snapshot should succeed")
         .expect("storage row should exist");
+        let storage_relation_block_count = Spi::get_one::<i64>(
+            "SELECT relation_block_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let storage_object_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let storage_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
         let candidate_count = Spi::get_one::<i64>(
             "SELECT coalesce(sum(candidate_row_count), 0)::bigint FROM \
              ec_spire_index_scan_placement_snapshot( \
@@ -6467,6 +6488,9 @@ mod tests {
         assert_eq!(options_active_leaf_count, 2);
         assert_eq!(scan_sanity_active_leaf_count, 2);
         assert!(active_referenced_tuple_count > 0);
+        assert!(storage_relation_block_count >= auxiliary_store_relation_count + 1);
+        assert_eq!(active_referenced_tuple_count, storage_object_tuple_count);
+        assert_eq!(storage_cleanup_candidate_count, 0);
         assert!(candidate_count >= 1);
 
         Spi::run(
@@ -6496,10 +6520,18 @@ mod tests {
         )
         .expect("ordered post-insert ec_spire query should succeed")
         .expect("count should exist");
+        let post_insert_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
 
         assert_eq!(post_insert_delta_count, 1);
         assert_eq!(post_insert_store_relid_count, 2);
         assert_eq!(post_insert_rows_returned, 5);
+        assert!(post_insert_cleanup_candidate_count > 0);
     }
 
     #[pg_test]
