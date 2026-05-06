@@ -139,18 +139,22 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             let local_store_tablespace_plan =
                 options::resolve_local_store_tablespace_plan(index_relation, &options)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let _local_store_relation_plan = plan_local_store_relations(
+            let local_store_relation_plan = plan_local_store_relations(
                 (*index_relation).rd_id.into(),
                 local_store_tablespace_plan
                     .iter()
                     .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if options.local_store_count != 1 {
-                pgrx::error!(
-                    "ec_spire local_store_count > 1 is parsed but store relation creation is not implemented yet"
-                );
-            }
+            let index_relid: u32 = (*index_relation).rd_id.into();
+            let local_store_config = local_store_config_from_relation_plan(
+                SPIRE_INITIAL_EPOCH,
+                &local_store_relation_plan,
+                local_store_relation_plan
+                    .iter()
+                    .map(|entry| (entry.local_store_id, index_relid)),
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
             let recursive_fanout = options.recursive_fanout();
             page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
             let indexed_vector_kind =
@@ -169,13 +173,22 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             let index_tuples = if state.scanned_tuples == 0 {
                 0.0
             } else if let Some(recursive_fanout) = recursive_fanout {
-                publish_relation_recursive_routing_build(index_relation, &state, recursive_fanout)
-                    .unwrap_or_else(|e| {
-                        pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
-                    }) as f64
+                publish_relation_recursive_routing_build(
+                    index_relation,
+                    &state,
+                    recursive_fanout,
+                    local_store_config,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
+                }) as f64
             } else {
-                publish_relation_partitioned_single_level_build(index_relation, &state)
-                    .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
+                publish_relation_partitioned_single_level_build(
+                    index_relation,
+                    &state,
+                    local_store_config,
+                )
+                .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
                     as f64
             };
 

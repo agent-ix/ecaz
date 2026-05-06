@@ -587,11 +587,59 @@ impl SpireObjectReader for SpireRelationObjectStore {
 }
 
 pub(super) struct SpireRelationObjectStoreSet {
+    config: Option<SpireLocalStoreConfig>,
     stores: Vec<SpireRelationObjectStore>,
     opened_relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
 }
 
 impl SpireRelationObjectStoreSet {
+    pub(super) unsafe fn for_index_relation_and_config(
+        index_relation: pg_sys::Relation,
+        config: SpireLocalStoreConfig,
+        lockmode: pg_sys::LOCKMODE,
+    ) -> Result<Self, String> {
+        if index_relation.is_null() {
+            return Err("ec_spire relation object store set needs a valid index relation".to_owned());
+        }
+        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let mut stores = Vec::with_capacity(config.stores.len());
+        let mut opened_relations = Vec::new();
+
+        for descriptor in &config.stores {
+            if descriptor.state != SpireLocalStoreState::Available {
+                return Err(format!(
+                    "ec_spire cannot open unavailable local_store_id {} for writes",
+                    descriptor.local_store_id
+                ));
+            }
+            let store_relation = if descriptor.store_relid == index_relid {
+                index_relation
+            } else {
+                let relid = pg_sys::Oid::from(descriptor.store_relid);
+                let relation = unsafe { pg_sys::relation_open(relid, lockmode) };
+                if relation.is_null() {
+                    return Err(format!(
+                        "ec_spire failed to open local_store_id {} relation {}",
+                        descriptor.local_store_id, descriptor.store_relid
+                    ));
+                }
+                opened_relations.push((relation, lockmode));
+                relation
+            };
+            stores.push(SpireRelationObjectStore::for_store_relation_id(
+                store_relation,
+                descriptor.local_store_id,
+                descriptor.store_relid,
+            ));
+        }
+
+        Ok(Self {
+            config: Some(config),
+            stores,
+            opened_relations,
+        })
+    }
+
     pub(super) unsafe fn for_index_relation_and_placements(
         index_relation: pg_sys::Relation,
         placement_directory: &SpirePlacementDirectory,
@@ -639,9 +687,71 @@ impl SpireRelationObjectStoreSet {
         }
 
         Ok(Self {
+            config: None,
             stores,
             opened_relations,
         })
+    }
+
+    pub(super) unsafe fn insert_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.store_mut_for_pid(object.header.pid)?
+                .insert_routing_object(epoch, object)
+        }
+    }
+
+    pub(super) unsafe fn insert_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.store_mut_for_pid(pid)?.insert_leaf_object_v2_from_rows(
+                epoch,
+                pid,
+                object_version,
+                parent_pid,
+                assignments,
+            )
+        }
+    }
+
+    pub(super) unsafe fn insert_delta_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireDeltaPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.store_mut_for_pid(object.header.pid)?
+                .insert_delta_object(epoch, object)
+        }
+    }
+
+    fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireRelationObjectStore, String> {
+        let config = self
+            .config
+            .as_ref()
+            .ok_or_else(|| "ec_spire relation object store set was opened read-only".to_owned())?;
+        let descriptor = *config.store_for_pid(pid)?;
+        self.stores
+            .iter_mut()
+            .find(|store| {
+                store.local_store_id == descriptor.local_store_id
+                    && store.store_relid == descriptor.store_relid
+            })
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire relation object store set is missing writable local_store_id {} relid {}",
+                    descriptor.local_store_id, descriptor.store_relid
+                )
+            })
     }
 
     fn store_for_placement(

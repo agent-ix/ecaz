@@ -6311,6 +6311,60 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_populated_build_hash_routes_logical_store_set() {
+        Spi::run(
+            "CREATE TABLE ec_spire_logical_store_build \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_logical_store_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_logical_store_build_idx \
+             ON ec_spire_logical_store_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store logical baseline build should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_logical_store_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire query should succeed")
+        .expect("query should return a row");
+        let placed_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_object_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("object snapshot should succeed")
+        .expect("count should exist");
+        let candidate_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(candidate_row_count), 0)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_logical_store_build_idx'::regclass, \
+                 ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement snapshot should succeed")
+        .expect("sum should exist");
+
+        assert_eq!(first_id, 1);
+        assert_eq!(placed_store_count, 2);
+        assert!(candidate_count >= 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_tqvector_populated_build_scans_with_heap_rerank() {
         Spi::run(
             "CREATE TABLE ec_spire_tqvector_populated_build \

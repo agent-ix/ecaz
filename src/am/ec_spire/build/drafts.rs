@@ -212,6 +212,7 @@ fn group_assignments_by_centroid(
 unsafe fn publish_relation_partitioned_single_level_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
+    local_store_config: SpireLocalStoreConfig,
 ) -> Result<usize, String> {
     if state.scanned_tuples == 0 {
         return Ok(0);
@@ -276,7 +277,13 @@ unsafe fn publish_relation_partitioned_single_level_build(
         )?);
     }
 
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let mut store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            index_relation,
+            local_store_config,
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        )?
+    };
     let mut placements = Vec::with_capacity(centroid_count + 1);
     placements.push(unsafe { store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)? });
     for (pid, assignments) in centroid_pids
@@ -322,6 +329,7 @@ unsafe fn publish_relation_recursive_routing_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
     target_fanout: u32,
+    local_store_config: SpireLocalStoreConfig,
 ) -> Result<usize, String> {
     if state.scanned_tuples == 0 {
         return Ok(0);
@@ -346,14 +354,17 @@ unsafe fn publish_relation_recursive_routing_build(
         &mut pid_allocator,
         &mut local_vec_id_allocator,
     )?;
-    let store = unsafe { SpireRelationObjectStore::for_index_relation(index_relation)? };
-    let mut store = store;
-    let draft = unsafe {
-        build_relation_recursive_routing_epoch_from_leaf_inputs(
-            coordinator.epoch_input,
-            &mut store,
+    let mut store = unsafe {
+        SpireRelationObjectStoreSet::for_index_relation_and_config(
+            index_relation,
+            local_store_config,
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
+    let draft = build_recursive_routing_epoch_from_leaf_inputs_with_store(
+        coordinator.epoch_input,
+        &mut store,
+    )?;
     if draft.next_pid != coordinator.next_pid {
         return Err(format!(
             "ec_spire recursive relation build next_pid {} does not match coordinator next_pid {}",

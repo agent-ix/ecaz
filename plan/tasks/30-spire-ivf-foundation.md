@@ -1193,8 +1193,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   auxiliary stores.
 - [x] **Local store count reloption surface.** `ec_spire` now parses a bounded
   `local_store_count` reloption, exposes it through
-  `ec_spire_index_options_snapshot`, and keeps executable builds blocked at the
-  current default `1` until auxiliary partition-store relation creation lands.
+  `ec_spire_index_options_snapshot`, and allows populated builds to publish a
+  logical multi-store baseline using the root relation as the current physical
+  store surface until auxiliary partition-store relation creation lands.
 - [x] **Local store tablespace reloption surface.** `ec_spire` now parses and
   normalizes `local_store_tablespaces`, requires the name count to match
   `local_store_count`, permits repeated names for same-device baseline runs,
@@ -1207,7 +1208,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   deterministic auxiliary store relation plan named
   `ec_spire_store_<index_oid>_<store_id>` from the resolved tablespace plan,
   preserving repeated tablespace OIDs for same-device baseline runs while
-  store relation DDL remains blocked behind the current executable guard.
+  store relation DDL remains deferred.
 - [x] **Local store descriptor publish planning.** The relation planning layer
   can now combine a resolved relation/tablespace plan with created store relids
   into a validated `SpireLocalStoreConfig`, preserving repeated tablespace OIDs
@@ -1226,8 +1227,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   multi-store object-reader set, and prove scan candidates are fetched from
   leaves placed in both local stores. This closes the in-memory end-to-end
   correctness gap before relation-backed auxiliary store DDL lands.
-- [ ] **Hash-routed object writes.** Place leaf and internal partition objects
-  by `hash(pid) % local_store_count` in the relation-backed writer path.
+- [x] **Hash-routed object writes.** Relation-backed populated builds now open
+  a writable relation object-store set and place root, internal, and leaf
+  partition objects by `hash(pid) % local_store_count`. The current user-facing
+  path maps each logical store to the root index relation so same-device
+  baseline tests can exercise the placement and scan path before auxiliary
+  store relation DDL creates physically separate relation files.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
   keep scoring close to the partition object bytes.
 - [x] **Scan leaf-route store grouping primitive.** The quantized routed scan

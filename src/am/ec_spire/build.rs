@@ -10,14 +10,15 @@ use super::assign::{
     SpirePidAllocator,
 };
 use super::meta::{
-    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,
-    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpireRootControlState,
-    SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+    SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
+    SpireRootControlState, SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    plan_local_store_relations, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-    SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject,
+    local_store_config_from_relation_plan, plan_local_store_relations, SpireLeafAssignmentRow,
+    SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
+    SpirePartitionObjectKind, SpireRelationObjectStore, SpireRelationObjectStoreSet,
+    SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};

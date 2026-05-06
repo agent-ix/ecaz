@@ -80,8 +80,13 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
 
         let mut root_pid = 0_u64;
         let mut root_level = 0_u16;
@@ -102,11 +107,12 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             if placement.state != meta::SpirePlacementState::Available {
                 continue;
             }
-            let header = unsafe { object_store.read_object_header(placement)? };
+            let header = storage::SpireObjectReader::read_object_header(&object_store, placement)?;
             max_observed_level = max_observed_level.max(header.level);
             match header.kind {
                 storage::SpirePartitionObjectKind::Root => {
-                    let routing_object = unsafe { object_store.read_routing_object(placement)? };
+                    let routing_object =
+                        storage::SpireObjectReader::read_routing_object(&object_store, placement)?;
                     routing_object_count =
                         routing_object_count.checked_add(1).ok_or_else(|| {
                             "ec_spire hierarchy snapshot routing object count overflow".to_owned()
@@ -137,7 +143,8 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                         .ok_or_else(|| {
                             "ec_spire hierarchy snapshot internal object count overflow".to_owned()
                         })?;
-                    let routing_object = unsafe { object_store.read_routing_object(placement)? };
+                    let routing_object =
+                        storage::SpireObjectReader::read_routing_object(&object_store, placement)?;
                     hierarchy_objects.push(hierarchy_object_summary(
                         &routing_object.header,
                         routing_object.child_pids.clone(),
@@ -215,8 +222,13 @@ pub(crate) unsafe fn index_object_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
         let mut rows = Vec::with_capacity(snapshot.object_manifest().entries.len());
 
         for manifest_entry in &snapshot.object_manifest().entries {
@@ -240,7 +252,8 @@ pub(crate) unsafe fn index_object_snapshot(
                 object_readable: false,
             };
             if placement.state == meta::SpirePlacementState::Available {
-                let header = unsafe { object_store.read_object_header(placement)? };
+                let header =
+                    storage::SpireObjectReader::read_object_header(&object_store, placement)?;
                 row.object_kind = partition_object_kind_name(header.kind);
                 row.object_version = header.object_version;
                 row.published_epoch_backref = header.published_epoch_backref;
@@ -275,8 +288,13 @@ pub(crate) unsafe fn index_delta_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
         let mut rows = Vec::new();
 
         for manifest_entry in &snapshot.object_manifest().entries {
@@ -285,11 +303,12 @@ pub(crate) unsafe fn index_delta_snapshot(
             if placement.state != meta::SpirePlacementState::Available {
                 continue;
             }
-            let header = unsafe { object_store.read_object_header(placement)? };
+            let header = storage::SpireObjectReader::read_object_header(&object_store, placement)?;
             if header.kind != storage::SpirePartitionObjectKind::Delta {
                 continue;
             }
-            let delta_object = unsafe { object_store.read_delta_object(placement)? };
+            let delta_object =
+                storage::SpireObjectReader::read_delta_object(&object_store, placement)?;
             let mut insert_assignment_count = 0_u64;
             let mut delete_assignment_count = 0_u64;
             for assignment in &delta_object.assignments {
@@ -346,8 +365,13 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
             &object_manifest,
             &placement_directory,
         )?;
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
         let diagnostics = scan::collect_single_level_scan_placement_diagnostics(
             &snapshot,
             &object_store,
