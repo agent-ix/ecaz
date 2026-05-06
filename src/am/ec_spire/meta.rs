@@ -621,12 +621,32 @@ impl SpirePlacementEntry {
         object_tid: ItemPointer,
         object_bytes: u32,
     ) -> Self {
+        Self::local_store_available_by_id(
+            epoch,
+            pid,
+            store.local_store_id,
+            store.store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+        )
+    }
+
+    pub(super) fn local_store_available_by_id(
+        epoch: u64,
+        pid: u64,
+        local_store_id: u32,
+        store_relid: u32,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
         Self {
             epoch,
             pid,
             node_id: SPIRE_LOCAL_NODE_ID,
-            local_store_id: store.local_store_id,
-            store_relid: store.store_relid,
+            local_store_id,
+            store_relid,
             object_version,
             object_tid,
             object_bytes,
