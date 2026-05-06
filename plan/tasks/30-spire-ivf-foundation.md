@@ -1339,6 +1339,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ecaz_spire_e` at `/mnt/e/ecaz_pg_tblspc/spire_e`. Treat this as local
   placement/regression evidence; product claims still require future
   production/cloud hardware.
+- [x] **Larger multi-store regression fixture.** PG18 coverage now includes a
+  256-row, 384-dimension, 32-list, four-local-store relation-backed build. The
+  fixture asserts placements span all four local stores, routing object bytes
+  exceed a single page, relation storage diagnostics see multiple relation
+  blocks, and ordered scan still returns a full top-10 result.
 - [x] **Explicit multi-store REINDEX rejection.** Multi-store REINDEX now
   fails with a clear unsupported-lifecycle error while single-store REINDEX
   remains allowed and covered. A future full lifecycle must create and publish

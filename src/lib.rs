@@ -6544,6 +6544,98 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_multistore_large_fixture_routes_all_stores() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_large_fixture \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_large_fixture (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 384) AS d), \
+               4, 42) \
+             FROM generate_series(1, 256) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_large_fixture_idx \
+             ON ec_spire_multistore_large_fixture USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 32, \
+                 nprobe = 8, \
+                 rerank_width = 25, \
+                 local_store_count = 4, \
+                 local_store_tablespaces = 'pg_default,pg_default,pg_default,pg_default' \
+             )",
+        )
+        .expect("large multi-store ec_spire index creation should succeed");
+
+        let local_store_count = Spi::get_one::<i64>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let object_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_object_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("object snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let routing_object_bytes = Spi::get_one::<i64>(
+            "SELECT routing_object_bytes FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let storage_relation_block_count = Spi::get_one::<i64>(
+            "SELECT relation_block_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_multistore_large_fixture \
+               ORDER BY embedding <#> \
+                 ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                       FROM generate_series(1, 384) AS d) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(local_store_count, 4);
+        assert_eq!(object_store_count, 4);
+        assert_eq!(placement_store_count, 4);
+        assert_eq!(routing_child_count, 32);
+        assert!(routing_object_bytes > 8192);
+        assert!(storage_relation_block_count >= 5);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
     fn test_ec_spire_singlestore_reindex_succeeds() {
         Spi::run(
             "CREATE TABLE ec_spire_singlestore_reindex \
