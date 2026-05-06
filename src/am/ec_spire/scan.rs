@@ -132,6 +132,13 @@ struct SpireRecursiveLeafRoute {
     parent_pid: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireStoreLeafRouteGroup {
+    node_id: u32,
+    local_store_id: u32,
+    routes: Vec<SpireRecursiveLeafRoute>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireConservativeRecursiveNprobePolicy {
     leaf_level_nprobe: u32,
@@ -652,31 +659,37 @@ fn collect_validated_quantized_leaf_route_candidates(
         SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
         SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
     };
-    for route in leaf_routes {
-        let leaf_pid = route.leaf_pid;
-        let deleted_vec_ids =
-            collect_delta_delete_vec_ids_for_base_pid(snapshot, object_store, leaf_pid, observer)?;
-        append_quantized_leaf_candidates_for_pid(
-            snapshot,
-            object_store,
-            leaf_pid,
-            route.parent_pid,
-            scorer,
-            &deleted_vec_ids,
-            &mut candidates,
-            &mut candidates_by_vec_id,
-            observer,
-        )?;
-        append_quantized_delta_candidates_for_base_pid(
-            snapshot,
-            object_store,
-            leaf_pid,
-            scorer,
-            &deleted_vec_ids,
-            &mut candidates,
-            &mut candidates_by_vec_id,
-            observer,
-        )?;
+    for route_group in group_leaf_routes_by_local_store(snapshot, leaf_routes)? {
+        for route in route_group.routes {
+            let leaf_pid = route.leaf_pid;
+            let deleted_vec_ids = collect_delta_delete_vec_ids_for_base_pid(
+                snapshot,
+                object_store,
+                leaf_pid,
+                observer,
+            )?;
+            append_quantized_leaf_candidates_for_pid(
+                snapshot,
+                object_store,
+                leaf_pid,
+                route.parent_pid,
+                scorer,
+                &deleted_vec_ids,
+                &mut candidates,
+                &mut candidates_by_vec_id,
+                observer,
+            )?;
+            append_quantized_delta_candidates_for_base_pid(
+                snapshot,
+                object_store,
+                leaf_pid,
+                scorer,
+                &deleted_vec_ids,
+                &mut candidates,
+                &mut candidates_by_vec_id,
+                observer,
+            )?;
+        }
     }
 
     if let Some(candidates_by_vec_id) = candidates_by_vec_id {
@@ -684,6 +697,32 @@ fn collect_validated_quantized_leaf_route_candidates(
     }
 
     Ok(rank_bounded_scored_candidates(candidates, limit))
+}
+
+fn group_leaf_routes_by_local_store(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+) -> Result<Vec<SpireStoreLeafRouteGroup>, String> {
+    let mut routes_by_store = BTreeMap::<(u32, u32), Vec<SpireRecursiveLeafRoute>>::new();
+    for route in leaf_routes {
+        let lookup = snapshot.require_lookup(route.leaf_pid, "scan leaf route grouping")?;
+        let placement = lookup.placement;
+        routes_by_store
+            .entry((placement.node_id, placement.local_store_id))
+            .or_default()
+            .push(route);
+    }
+
+    Ok(routes_by_store
+        .into_iter()
+        .map(
+            |((node_id, local_store_id), routes)| SpireStoreLeafRouteGroup {
+                node_id,
+                local_store_id,
+                routes,
+            },
+        )
+        .collect())
 }
 
 pub(super) fn collect_reranked_quantized_routed_probe_candidates<F>(
@@ -2264,12 +2303,12 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_visible_primary_rows,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
-        load_snapshot_routing_hierarchy, prepare_single_level_snapshot_scan_candidates,
-        rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
-        route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
-        route_routing_object_to_child_pids, SpireLeafScanRow, SpireRoutedLeafScanRows,
-        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanQuery,
-        SpireScoredScanCandidate,
+        group_leaf_routes_by_local_store, load_snapshot_routing_hierarchy,
+        prepare_single_level_snapshot_scan_candidates, rank_routed_leaf_rows_by_ip,
+        rerank_scored_candidates_by_ip, route_recursive_routing_objects_to_leaf_pids,
+        route_root_object_to_leaf_pids, route_routing_object_to_child_pids, SpireLeafScanRow,
+        SpireRecursiveLeafRoute, SpireRoutedLeafScanRows, SpireScanCandidateCursor,
+        SpireScanOpaque, SpireScanOutput, SpireScanQuery, SpireScoredScanCandidate,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -3474,6 +3513,97 @@ mod tests {
         assert_eq!(observed[0].pid, second_leaf_pid);
         assert_eq!(observed[0].heap_tid, tid(10, 2));
         assert_eq!(observed[0].vec_id.local_sequence(), Some(2));
+    }
+
+    #[test]
+    fn group_leaf_routes_by_local_store_orders_stores_and_preserves_route_order() {
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let placements = vec![
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                SPIRE_FIRST_PID + 3,
+                1,
+                501,
+                1,
+                tid(60, 3),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                SPIRE_FIRST_PID + 1,
+                0,
+                500,
+                1,
+                tid(60, 1),
+                100,
+            ),
+            SpirePlacementEntry::local_store_available_by_id(
+                7,
+                SPIRE_FIRST_PID + 2,
+                1,
+                501,
+                1,
+                tid(60, 2),
+                100,
+            ),
+        ];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+
+        let groups = group_leaf_routes_by_local_store(
+            &snapshot,
+            vec![
+                SpireRecursiveLeafRoute {
+                    leaf_pid: SPIRE_FIRST_PID + 3,
+                    parent_pid: SPIRE_FIRST_PID,
+                },
+                SpireRecursiveLeafRoute {
+                    leaf_pid: SPIRE_FIRST_PID + 1,
+                    parent_pid: SPIRE_FIRST_PID,
+                },
+                SpireRecursiveLeafRoute {
+                    leaf_pid: SPIRE_FIRST_PID + 2,
+                    parent_pid: SPIRE_FIRST_PID,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].node_id, 0);
+        assert_eq!(groups[0].local_store_id, 0);
+        assert_eq!(
+            groups[0]
+                .routes
+                .iter()
+                .map(|route| route.leaf_pid)
+                .collect::<Vec<_>>(),
+            vec![SPIRE_FIRST_PID + 1]
+        );
+        assert_eq!(groups[1].node_id, 0);
+        assert_eq!(groups[1].local_store_id, 1);
+        assert_eq!(
+            groups[1]
+                .routes
+                .iter()
+                .map(|route| route.leaf_pid)
+                .collect::<Vec<_>>(),
+            vec![SPIRE_FIRST_PID + 3, SPIRE_FIRST_PID + 2]
+        );
     }
 
     #[test]

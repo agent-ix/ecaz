@@ -1225,6 +1225,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   by `hash(pid) % local_store_count` in the relation-backed writer path.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
   keep scoring close to the partition object bytes.
+- [x] **Scan leaf-route store grouping primitive.** The quantized routed scan
+  path now groups selected leaf routes by `(node_id, local_store_id)` before
+  fetching leaf/delta object bytes and scoring candidates. Execution remains
+  synchronous and uses the current object-reader abstraction until auxiliary
+  store relation opening and measured parallel fetch land.
 - [ ] **Placement diagnostics.** Expose per-store object count, bytes,
   candidate rows, and scanned PID counts. The first SQL placement snapshot now
   reports active per-store placement counts, placement-state counts,
