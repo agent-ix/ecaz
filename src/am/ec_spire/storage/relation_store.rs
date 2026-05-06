@@ -1094,6 +1094,34 @@ pub(super) struct SpireRelationObjectStoreSet {
     opened_relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
 }
 
+struct OpenedRelationsGuard {
+    relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
+}
+
+impl OpenedRelationsGuard {
+    fn new() -> Self {
+        Self {
+            relations: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, relation: pg_sys::Relation, lockmode: pg_sys::LOCKMODE) {
+        self.relations.push((relation, lockmode));
+    }
+
+    fn into_inner(mut self) -> Vec<(pg_sys::Relation, pg_sys::LOCKMODE)> {
+        std::mem::take(&mut self.relations)
+    }
+}
+
+impl Drop for OpenedRelationsGuard {
+    fn drop(&mut self) {
+        for (relation, lockmode) in self.relations.drain(..).rev() {
+            unsafe { pg_sys::relation_close(relation, lockmode) };
+        }
+    }
+}
+
 impl SpireRelationObjectStoreSet {
     pub(super) unsafe fn for_index_relation_and_config(
         index_relation: pg_sys::Relation,
@@ -1105,7 +1133,7 @@ impl SpireRelationObjectStoreSet {
         }
         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
         let mut stores = Vec::with_capacity(config.stores.len());
-        let mut opened_relations = Vec::new();
+        let mut opened_relations = OpenedRelationsGuard::new();
 
         for descriptor in &config.stores {
             if descriptor.state != SpireLocalStoreState::Available {
@@ -1125,7 +1153,7 @@ impl SpireRelationObjectStoreSet {
                         descriptor.local_store_id, descriptor.store_relid
                     ));
                 }
-                opened_relations.push((relation, lockmode));
+                opened_relations.push(relation, lockmode);
                 relation
             };
             stores.push(SpireRelationObjectStore::for_store_relation_id(
@@ -1138,7 +1166,7 @@ impl SpireRelationObjectStoreSet {
         Ok(Self {
             config: Some(config),
             stores,
-            opened_relations,
+            opened_relations: opened_relations.into_inner(),
         })
     }
 
@@ -1166,7 +1194,7 @@ impl SpireRelationObjectStoreSet {
         }
 
         let mut stores = Vec::with_capacity(relid_by_store_id.len());
-        let mut opened_relations = Vec::new();
+        let mut opened_relations = OpenedRelationsGuard::new();
         for (local_store_id, store_relid) in relid_by_store_id {
             let store_relation = if store_relid == index_relid {
                 index_relation
@@ -1178,7 +1206,7 @@ impl SpireRelationObjectStoreSet {
                         "ec_spire failed to open local_store_id {local_store_id} relation {store_relid}"
                     ));
                 }
-                opened_relations.push((relation, lockmode));
+                opened_relations.push(relation, lockmode);
                 relation
             };
             stores.push(SpireRelationObjectStore::for_store_relation_id(
@@ -1191,7 +1219,7 @@ impl SpireRelationObjectStoreSet {
         Ok(Self {
             config: None,
             stores,
-            opened_relations,
+            opened_relations: opened_relations.into_inner(),
         })
     }
 

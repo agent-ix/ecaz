@@ -180,7 +180,7 @@ pub(super) unsafe fn create_local_store_relations_for_build(
         let existing = unsafe { pg_sys::get_relname_relid(relname.as_ptr(), namespace_oid) };
         if existing != pg_sys::InvalidOid {
             return Err(format!(
-                "ec_spire local store relation '{}' already exists in the index namespace",
+                "ec_spire multi-store REINDEX is not supported yet: auxiliary local store relation '{}' already exists; drop and recreate the index until auxiliary store rebuild lifecycle lands",
                 entry.relation_name
             ));
         }

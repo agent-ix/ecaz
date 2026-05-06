@@ -182,7 +182,8 @@ or a future explicit object rewrite/rebalance path.
 Multi-store REINDEX is also an explicit implementation boundary: auxiliary
 store relations need a dedicated rebuild lifecycle that creates the new store
 set, publishes matching descriptors, and retires the old auxiliary relations.
-Internal catalog dependencies alone are not the reindex contract.
+Internal catalog dependencies alone are not the reindex contract, so Phase 4
+rejects multi-store REINDEX explicitly until that lifecycle lands.
 
 The root routing object is still a partition object and follows the same hash
 rule when a multi-store index uses dedicated store relations. Root/control
