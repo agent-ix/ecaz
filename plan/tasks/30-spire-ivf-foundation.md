@@ -1180,6 +1180,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - [ ] **Partition-store relation layout.** Implement bounded store relations
   and how each maps to a PostgreSQL tablespace expected to live on a physical
   NVMe device.
+- [x] **Local store configuration metadata codec.** `meta.rs` now has
+  `SpireLocalStoreDescriptor` and `SpireLocalStoreConfig` primitives that
+  preserve the embedded single-store default, encode/decode a versioned active
+  store generation, validate placement entries against the active store set,
+  and explicitly allow repeated tablespace OIDs so same-device baseline runs
+  are distinguishable from future true multi-NVMe measurements.
 - [ ] **Hash placement.** Place leaf and internal partition objects by
   `hash(pid) % local_store_count`.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and

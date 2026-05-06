@@ -7,6 +7,7 @@ use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 
 pub(super) const SPIRE_LOCAL_NODE_ID: u32 = 0;
 pub(super) const SPIRE_SINGLE_LOCAL_STORE_ID: u32 = 0;
+pub(super) const SPIRE_DEFAULT_LOCAL_STORE_GENERATION: u64 = 0;
 pub(super) const SPIRE_MIN_EPOCH_RETENTION_SECS: u32 = 10 * 60;
 pub(super) const SPIRE_FAILED_EPOCH_RETENTION_SECS: u32 = 60 * 60;
 pub(super) const SPIRE_MAX_RETAINED_RETIRED_EPOCHS: u16 = 2;
@@ -14,6 +15,9 @@ pub(super) const SPIRE_MAX_RETAINED_RETIRED_EPOCHS: u16 = 2;
 const META_FORMAT_VERSION: u16 = 1;
 const ROOT_CONTROL_MAGIC: u32 = 0x4352_5345; // "ESRC" as little-endian bytes.
 const ROOT_CONTROL_STATE_BYTES: usize = 4 + 2 + 2 + 8 + 8 + 8 + ITEM_POINTER_BYTES * 3;
+const LOCAL_STORE_CONFIG_MAGIC: u32 = 0x534c_5345; // "ESLS" as little-endian bytes.
+const LOCAL_STORE_CONFIG_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
+const LOCAL_STORE_DESCRIPTOR_BYTES: usize = 4 + 4 + 4 + 1 + 3;
 const PLACEMENT_DIRECTORY_MAGIC: u32 = 0x4450_5345; // "ESPD" as little-endian bytes.
 const PLACEMENT_DIRECTORY_HEADER_BYTES: usize = 4 + 2 + 2 + 8 + 4;
 const OBJECT_MANIFEST_MAGIC: u32 = 0x4d4f_5345; // "ESOM" as little-endian bytes.
@@ -173,6 +177,251 @@ impl SpirePlacementState {
             4 => Ok(Self::Skipped),
             other => Err(format!("ec_spire invalid placement state: {other}")),
         }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireLocalStoreState {
+    Available = 1,
+    Unavailable = 2,
+}
+
+impl SpireLocalStoreState {
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            1 => Ok(Self::Available),
+            2 => Ok(Self::Unavailable),
+            other => Err(format!("ec_spire invalid local store state: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireLocalStoreDescriptor {
+    pub(super) local_store_id: u32,
+    pub(super) store_relid: u32,
+    pub(super) tablespace_oid: u32,
+    pub(super) state: SpireLocalStoreState,
+}
+
+impl SpireLocalStoreDescriptor {
+    pub(super) fn available(
+        local_store_id: u32,
+        store_relid: u32,
+        tablespace_oid: u32,
+    ) -> Result<Self, String> {
+        let descriptor = Self {
+            local_store_id,
+            store_relid,
+            tablespace_oid,
+            state: SpireLocalStoreState::Available,
+        };
+        descriptor.validate()?;
+        Ok(descriptor)
+    }
+
+    pub(super) fn embedded_single_store(
+        store_relid: u32,
+        tablespace_oid: u32,
+    ) -> Result<Self, String> {
+        Self::available(SPIRE_SINGLE_LOCAL_STORE_ID, store_relid, tablespace_oid)
+    }
+
+    fn encode_into(&self, out: &mut Vec<u8>) -> Result<(), String> {
+        self.validate()?;
+        out.extend_from_slice(&self.local_store_id.to_le_bytes());
+        out.extend_from_slice(&self.store_relid.to_le_bytes());
+        out.extend_from_slice(&self.tablespace_oid.to_le_bytes());
+        out.push(self.state as u8);
+        out.extend_from_slice(&[0_u8; 3]);
+        Ok(())
+    }
+
+    fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() != LOCAL_STORE_DESCRIPTOR_BYTES {
+            return Err(format!(
+                "ec_spire local store descriptor length mismatch: got {}, expected {LOCAL_STORE_DESCRIPTOR_BYTES}",
+                input.len()
+            ));
+        }
+        if input[13..16] != [0_u8; 3] {
+            return Err("ec_spire local store descriptor reserved bytes must be zero".to_owned());
+        }
+        let descriptor = Self {
+            local_store_id: u32::from_le_bytes(
+                input[0..4].try_into().expect("local store id bytes"),
+            ),
+            store_relid: u32::from_le_bytes(input[4..8].try_into().expect("store relid bytes")),
+            tablespace_oid: u32::from_le_bytes(
+                input[8..12].try_into().expect("tablespace oid bytes"),
+            ),
+            state: SpireLocalStoreState::decode(input[12])?,
+        };
+        descriptor.validate()?;
+        Ok(descriptor)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.store_relid == 0 {
+            return Err("ec_spire local store descriptor store_relid 0 is invalid".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireLocalStoreConfig {
+    pub(super) generation: u64,
+    pub(super) stores: Vec<SpireLocalStoreDescriptor>,
+}
+
+impl SpireLocalStoreConfig {
+    pub(super) fn from_stores(
+        generation: u64,
+        mut stores: Vec<SpireLocalStoreDescriptor>,
+    ) -> Result<Self, String> {
+        stores.sort_by_key(|store| store.local_store_id);
+        let config = Self { generation, stores };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub(super) fn embedded_single_store(
+        store_relid: u32,
+        tablespace_oid: u32,
+    ) -> Result<Self, String> {
+        Self::from_stores(
+            SPIRE_DEFAULT_LOCAL_STORE_GENERATION,
+            vec![SpireLocalStoreDescriptor::embedded_single_store(
+                store_relid,
+                tablespace_oid,
+            )?],
+        )
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let store_count = u32::try_from(self.stores.len())
+            .map_err(|_| "ec_spire local store count exceeds u32".to_owned())?;
+        let mut out = Vec::with_capacity(
+            LOCAL_STORE_CONFIG_HEADER_BYTES + self.stores.len() * LOCAL_STORE_DESCRIPTOR_BYTES,
+        );
+        out.extend_from_slice(&LOCAL_STORE_CONFIG_MAGIC.to_le_bytes());
+        out.extend_from_slice(&META_FORMAT_VERSION.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.generation.to_le_bytes());
+        out.extend_from_slice(&store_count.to_le_bytes());
+        for store in &self.stores {
+            store.encode_into(&mut out)?;
+        }
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < LOCAL_STORE_CONFIG_HEADER_BYTES {
+            return Err(format!(
+                "ec_spire local store config too short: got {}, expected at least {LOCAL_STORE_CONFIG_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        let magic = u32::from_le_bytes(input[0..4].try_into().expect("store config magic bytes"));
+        if magic != LOCAL_STORE_CONFIG_MAGIC {
+            return Err(format!(
+                "ec_spire invalid local store config magic: {magic:#x}"
+            ));
+        }
+        validate_format_version(&input[4..6])?;
+        let reserved = u16::from_le_bytes(input[6..8].try_into().expect("reserved bytes"));
+        if reserved != 0 {
+            return Err(format!(
+                "ec_spire local store config reserved bytes must be zero, got {reserved}"
+            ));
+        }
+        let generation =
+            u64::from_le_bytes(input[8..16].try_into().expect("store generation bytes"));
+        let store_count =
+            u32::from_le_bytes(input[16..20].try_into().expect("store count bytes")) as usize;
+        let expected_len = store_count
+            .checked_mul(LOCAL_STORE_DESCRIPTOR_BYTES)
+            .and_then(|store_bytes| store_bytes.checked_add(LOCAL_STORE_CONFIG_HEADER_BYTES))
+            .ok_or_else(|| "ec_spire local store config length overflow".to_owned())?;
+        if input.len() != expected_len {
+            return Err(format!(
+                "ec_spire local store config length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+
+        let mut stores = Vec::with_capacity(store_count);
+        let mut cursor = LOCAL_STORE_CONFIG_HEADER_BYTES;
+        for _ in 0..store_count {
+            stores.push(SpireLocalStoreDescriptor::decode(
+                &input[cursor..cursor + LOCAL_STORE_DESCRIPTOR_BYTES],
+            )?);
+            cursor += LOCAL_STORE_DESCRIPTOR_BYTES;
+        }
+        Self::from_stores(generation, stores)
+    }
+
+    pub(super) fn get(&self, local_store_id: u32) -> Option<&SpireLocalStoreDescriptor> {
+        self.stores
+            .binary_search_by_key(&local_store_id, |store| store.local_store_id)
+            .ok()
+            .map(|index| &self.stores[index])
+    }
+
+    pub(super) fn validate_placement(&self, placement: &SpirePlacementEntry) -> Result<(), String> {
+        if placement.node_id != SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire local store config cannot validate remote node_id {}",
+                placement.node_id
+            ));
+        }
+        let store = self.get(placement.local_store_id).ok_or_else(|| {
+            format!(
+                "ec_spire placement local_store_id {} is not in active local store config",
+                placement.local_store_id
+            )
+        })?;
+        if store.store_relid != placement.store_relid {
+            return Err(format!(
+                "ec_spire placement store_relid {} does not match local_store_id {} relid {}",
+                placement.store_relid, placement.local_store_id, store.store_relid
+            ));
+        }
+        if store.state != SpireLocalStoreState::Available
+            && placement.state == SpirePlacementState::Available
+        {
+            return Err(format!(
+                "ec_spire placement local_store_id {} is available but store state is {:?}",
+                placement.local_store_id, store.state
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.stores.is_empty() {
+            return Err("ec_spire local store config must include at least one store".to_owned());
+        }
+        let mut previous_store_id = None;
+        for store in &self.stores {
+            store.validate()?;
+            if let Some(previous_store_id) = previous_store_id {
+                if store.local_store_id == previous_store_id {
+                    return Err(format!(
+                        "ec_spire local store config duplicate local_store_id: {}",
+                        store.local_store_id
+                    ));
+                }
+                if store.local_store_id < previous_store_id {
+                    return Err("ec_spire local store config entries must be sorted".to_owned());
+                }
+            }
+            previous_store_id = Some(store.local_store_id);
+        }
+        Ok(())
     }
 }
 
@@ -341,6 +590,27 @@ impl SpirePlacementEntry {
             object_tid,
             object_bytes,
             state,
+        }
+    }
+
+    pub(super) fn local_store_available(
+        epoch: u64,
+        pid: u64,
+        store: &SpireLocalStoreDescriptor,
+        object_version: u64,
+        object_tid: ItemPointer,
+        object_bytes: u32,
+    ) -> Self {
+        Self {
+            epoch,
+            pid,
+            node_id: SPIRE_LOCAL_NODE_ID,
+            local_store_id: store.local_store_id,
+            store_relid: store.store_relid,
+            object_version,
+            object_tid,
+            object_bytes,
+            state: SpirePlacementState::Available,
         }
     }
 
@@ -1068,10 +1338,11 @@ fn validate_format_version(input: &[u8]) -> Result<(), String> {
 mod tests {
     use super::{
         plan_epoch_cleanup, SpireConsistencyMode, SpireEpochManifest, SpireEpochState,
-        SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry,
-        SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
-        SpireValidatedEpochSnapshot, SPIRE_FAILED_EPOCH_RETENTION_SECS, SPIRE_LOCAL_NODE_ID,
-        SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
+        SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState, SpireManifestEntry,
+        SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+        SpirePublishedEpochSnapshot, SpireRootControlState, SpireValidatedEpochSnapshot,
+        SPIRE_DEFAULT_LOCAL_STORE_GENERATION, SPIRE_FAILED_EPOCH_RETENTION_SECS,
+        SPIRE_LOCAL_NODE_ID, SPIRE_MAX_RETAINED_RETIRED_EPOCHS, SPIRE_MIN_EPOCH_RETENTION_SECS,
         SPIRE_SINGLE_LOCAL_STORE_ID,
     };
     use crate::am::ec_spire::assign::{SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID};
@@ -1220,6 +1491,86 @@ mod tests {
         encoded = state.encode().unwrap();
         encoded[6] = 1;
         assert!(SpireRootControlState::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn embedded_single_store_config_preserves_current_store_shape() {
+        let config = SpireLocalStoreConfig::embedded_single_store(12345, 0)
+            .expect("default tablespace oid 0 should be allowed");
+
+        assert_eq!(config.generation, SPIRE_DEFAULT_LOCAL_STORE_GENERATION);
+        assert_eq!(config.stores.len(), 1);
+        assert_eq!(config.stores[0].local_store_id, SPIRE_SINGLE_LOCAL_STORE_ID);
+        assert_eq!(config.stores[0].store_relid, 12345);
+        assert_eq!(config.stores[0].tablespace_oid, 0);
+        assert_eq!(config.stores[0].state, SpireLocalStoreState::Available);
+
+        let decoded = SpireLocalStoreConfig::decode(&config.encode().unwrap()).unwrap();
+        assert_eq!(decoded, config);
+    }
+
+    #[test]
+    fn local_store_config_allows_repeated_tablespaces_for_baselines() {
+        let config = SpireLocalStoreConfig::from_stores(
+            2,
+            vec![
+                SpireLocalStoreDescriptor::available(1, 12346, 987).unwrap(),
+                SpireLocalStoreDescriptor::available(0, 12345, 987).unwrap(),
+            ],
+        )
+        .expect("repeated tablespace oid should be accepted");
+
+        assert_eq!(config.stores[0].local_store_id, 0);
+        assert_eq!(config.stores[1].local_store_id, 1);
+        assert_eq!(
+            config.stores[0].tablespace_oid,
+            config.stores[1].tablespace_oid
+        );
+
+        let decoded = SpireLocalStoreConfig::decode(&config.encode().unwrap()).unwrap();
+        assert_eq!(decoded, config);
+    }
+
+    #[test]
+    fn local_store_config_rejects_empty_duplicate_or_invalid_store_relid() {
+        assert!(SpireLocalStoreConfig::from_stores(1, Vec::new()).is_err());
+        assert!(SpireLocalStoreDescriptor::available(0, 0, 42).is_err());
+        assert!(SpireLocalStoreConfig::from_stores(
+            1,
+            vec![
+                SpireLocalStoreDescriptor::available(0, 12345, 42).unwrap(),
+                SpireLocalStoreDescriptor::available(0, 12346, 43).unwrap(),
+            ],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn local_store_config_validates_placements_against_active_store_set() {
+        let store = SpireLocalStoreDescriptor::available(2, 12347, 987).unwrap();
+        let config = SpireLocalStoreConfig::from_stores(4, vec![store]).unwrap();
+        let placement =
+            SpirePlacementEntry::local_store_available(7, 11, &store, 3, tid(44, 2), 4096);
+
+        config.validate_placement(&placement).unwrap();
+
+        let mut wrong_store_id = placement;
+        wrong_store_id.local_store_id = 3;
+        assert!(config.validate_placement(&wrong_store_id).is_err());
+
+        let mut wrong_relid = placement;
+        wrong_relid.store_relid = 99999;
+        assert!(config.validate_placement(&wrong_relid).is_err());
+
+        let unavailable_config = SpireLocalStoreConfig::from_stores(
+            4,
+            vec![SpireLocalStoreDescriptor {
+                state: SpireLocalStoreState::Unavailable,
+                ..store
+            }],
+        )
+        .unwrap();
+        assert!(unavailable_config.validate_placement(&placement).is_err());
     }
 
     #[test]
