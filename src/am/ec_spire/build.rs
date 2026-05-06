@@ -15,10 +15,11 @@ use super::meta::{
     SpireRootControlState, SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    local_store_config_from_relation_plan, plan_local_store_relations, SpireLeafAssignmentRow,
-    SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
-    SpirePartitionObjectKind, SpireRelationObjectStore, SpireRelationObjectStoreSet,
-    SpireRoutingChildEntry, SpireRoutingPartitionObject,
+    create_local_store_relations_for_build, local_store_config_from_relation_plan,
+    plan_local_store_relations, SpireLeafAssignmentRow, SpireLeafPartitionObject,
+    SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
+    SpireRelationObjectStore, SpireRelationObjectStoreSet, SpireRoutingChildEntry,
+    SpireRoutingPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};

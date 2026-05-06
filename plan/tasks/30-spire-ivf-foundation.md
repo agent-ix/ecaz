@@ -1177,9 +1177,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   ordering, strict/degraded failure semantics, store-grouped fetch boundary,
   and authoritative placement diagnostics. Implementation and measurement
   remain open below.
-- [ ] **Partition-store relation layout.** Implement bounded store relations
-  and how each maps to a PostgreSQL tablespace expected to live on a physical
-  NVMe device.
+- [x] **Partition-store relation layout.** Multi-store populated builds now
+  create the planned bounded auxiliary store relations, initialize their
+  SPIRE object-page metadata block, record internal catalog dependencies on
+  the root/control index relation, and publish the created store relids in the
+  active `SpireLocalStoreConfig`. The single-store path preserves store 0 as
+  the root/control index relation. The relation plan still preserves repeated
+  tablespace OIDs for same-device baseline runs.
 - [x] **Local store configuration metadata codec.** `meta.rs` now has
   `SpireLocalStoreDescriptor` and `SpireLocalStoreConfig` primitives that
   preserve the embedded single-store default, encode/decode a versioned active
@@ -1236,10 +1240,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   correctness gap before relation-backed auxiliary store DDL lands.
 - [x] **Hash-routed object writes.** Relation-backed populated builds now open
   a writable relation object-store set and place root, internal, and leaf
-  partition objects by `hash(pid) % local_store_count`. The current user-facing
-  path maps each logical store to the root index relation so same-device
-  baseline tests can exercise the placement and scan path before auxiliary
-  store relation DDL creates physically separate relation files.
+  partition objects by `hash(pid) % local_store_count`. Multi-store builds now
+  write those objects into physically distinct auxiliary store relations, while
+  single-store builds continue to use the root/control index relation.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
   keep scoring close to the partition object bytes.
 - [x] **Scan leaf-route store grouping primitive.** The quantized routed scan

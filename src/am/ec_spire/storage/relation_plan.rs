@@ -126,3 +126,121 @@ pub(super) fn local_store_config_from_relation_plan(
 
     SpireLocalStoreConfig::from_stores(generation, descriptors)
 }
+
+pub(super) unsafe fn create_local_store_relations_for_build(
+    index_relation: pg_sys::Relation,
+    relation_plan: &[SpireLocalStoreRelationPlanEntry],
+) -> Result<Vec<(u32, u32)>, String> {
+    if index_relation.is_null() {
+        return Err("ec_spire local store relation creation needs a valid index relation".to_owned());
+    }
+    if relation_plan.is_empty() {
+        return Err(
+            "ec_spire local store relation creation needs at least one planned store".to_owned(),
+        );
+    }
+
+    let index_relid = unsafe { (*index_relation).rd_id };
+    if index_relid == pg_sys::InvalidOid {
+        return Err("ec_spire local store relation creation needs a valid index relid".to_owned());
+    }
+
+    if relation_plan.len() == 1 {
+        return Ok(vec![(relation_plan[0].local_store_id, index_relid.into())]);
+    }
+
+    let index_class = unsafe { &*(*index_relation).rd_rel };
+    let namespace_oid = index_class.relnamespace;
+    let owner_oid = index_class.relowner;
+    let relpersistence = index_class.relpersistence;
+    let mut created = Vec::with_capacity(relation_plan.len());
+
+    for entry in relation_plan {
+        let relname = std::ffi::CString::new(entry.relation_name.as_str())
+            .map_err(|_| "ec_spire local store relation name contains NUL".to_owned())?;
+        let existing = unsafe { pg_sys::get_relname_relid(relname.as_ptr(), namespace_oid) };
+        if existing != pg_sys::InvalidOid {
+            return Err(format!(
+                "ec_spire local store relation '{}' already exists in the index namespace",
+                entry.relation_name
+            ));
+        }
+
+        let tuple_desc = unsafe { pg_sys::CreateTupleDescCopy((*index_relation).rd_att) };
+        if tuple_desc.is_null() {
+            return Err("ec_spire failed to allocate local store tuple descriptor".to_owned());
+        }
+
+        let store_relid = unsafe {
+            pg_sys::heap_create_with_catalog(
+                relname.as_ptr(),
+                namespace_oid,
+                pg_sys::Oid::from(entry.tablespace_oid),
+                pg_sys::InvalidOid,
+                pg_sys::InvalidOid,
+                pg_sys::InvalidOid,
+                owner_oid,
+                pg_sys::HEAP_TABLE_AM_OID,
+                tuple_desc,
+                std::ptr::null_mut(),
+                pg_sys::RELKIND_RELATION as std::ffi::c_char,
+                relpersistence,
+                false,
+                false,
+                pg_sys::OnCommitAction::ONCOMMIT_NOOP,
+                pg_sys::Datum::from(0),
+                false,
+                false,
+                true,
+                pg_sys::InvalidOid,
+                std::ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::FreeTupleDesc(tuple_desc) };
+        if store_relid == pg_sys::InvalidOid {
+            return Err(format!(
+                "ec_spire failed to create local_store_id {} relation '{}'",
+                entry.local_store_id, entry.relation_name
+            ));
+        }
+
+        let store_object = pg_sys::ObjectAddress {
+            classId: pg_sys::RelationRelationId,
+            objectId: store_relid,
+            objectSubId: 0,
+        };
+        let index_object = pg_sys::ObjectAddress {
+            classId: pg_sys::RelationRelationId,
+            objectId: index_relid,
+            objectSubId: 0,
+        };
+        unsafe {
+            pg_sys::recordDependencyOn(
+                &store_object,
+                &index_object,
+                pg_sys::DependencyType::DEPENDENCY_INTERNAL,
+            )
+        };
+        unsafe { pg_sys::CommandCounterIncrement() };
+
+        let store_relation = unsafe {
+            pg_sys::relation_open(store_relid, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE)
+        };
+        if store_relation.is_null() {
+            return Err(format!(
+                "ec_spire failed to open created local_store_id {} relation {}",
+                entry.local_store_id, store_relid
+            ));
+        }
+        unsafe {
+            page::initialize_root_control_page(
+                store_relation,
+                super::meta::SpireRootControlState::empty(),
+            );
+            pg_sys::relation_close(store_relation, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE);
+        }
+        created.push((entry.local_store_id, store_relid.into()));
+    }
+
+    Ok(created)
+}

@@ -146,13 +146,13 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                     .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let index_relid: u32 = (*index_relation).rd_id.into();
+            let store_relids =
+                create_local_store_relations_for_build(index_relation, &local_store_relation_plan)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
             let local_store_config = local_store_config_from_relation_plan(
                 SPIRE_INITIAL_EPOCH,
                 &local_store_relation_plan,
-                local_store_relation_plan
-                    .iter()
-                    .map(|entry| (entry.local_store_id, index_relid)),
+                store_relids,
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             let recursive_fanout = options.recursive_fanout();

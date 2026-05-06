@@ -6364,6 +6364,13 @@ mod tests {
         )
         .expect("placement snapshot should succeed")
         .expect("count should exist");
+        let auxiliary_store_relation_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_class \
+             WHERE relname LIKE 'ec_spire_store_%' \
+             AND relkind = 'r'",
+        )
+        .expect("store relation query should succeed")
+        .expect("count should exist");
         let active_diag_store_count = Spi::get_one::<i64>(
             "SELECT local_store_count FROM \
              ec_spire_index_active_snapshot_diagnostics(\
@@ -6402,7 +6409,8 @@ mod tests {
         assert_eq!(first_id, 1);
         assert_eq!(placed_store_count, 2);
         assert_eq!(placement_store_count, 2);
-        assert_eq!(placement_store_relid_count, 1);
+        assert_eq!(placement_store_relid_count, 2);
+        assert_eq!(auxiliary_store_relation_count, 2);
         assert_eq!(active_diag_store_count, 2);
         assert_eq!(options_active_leaf_count, 2);
         assert_eq!(scan_sanity_active_leaf_count, 2);
