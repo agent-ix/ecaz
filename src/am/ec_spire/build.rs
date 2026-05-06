@@ -15,9 +15,9 @@ use super::meta::{
     SpireValidatedEpochSnapshot, SPIRE_MIN_EPOCH_RETENTION_SECS,
 };
 use super::storage::{
-    SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore, SpireObjectReader,
-    SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
-    SpireRoutingPartitionObject,
+    SpireLeafAssignmentRow, SpireLeafPartitionObject, SpireLocalObjectStore,
+    SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
+    SpireRelationObjectStore, SpireRoutingChildEntry, SpireRoutingPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
@@ -205,14 +205,14 @@ struct SpireRecursiveDraftInvariants {
     leaf_parent_pids: HashMap<u64, u64>,
 }
 
-trait SpireRecursiveRoutingEpochObjectStore: SpireObjectReader {
-    fn write_recursive_routing_object(
+pub(super) trait SpireBuildObjectStore: SpireObjectReader {
+    fn write_routing_object(
         &mut self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
     ) -> Result<SpirePlacementEntry, String>;
 
-    fn write_recursive_leaf_object_v2_from_rows(
+    fn write_leaf_object_v2_from_rows(
         &mut self,
         epoch: u64,
         pid: u64,
@@ -222,8 +222,8 @@ trait SpireRecursiveRoutingEpochObjectStore: SpireObjectReader {
     ) -> Result<SpirePlacementEntry, String>;
 }
 
-impl SpireRecursiveRoutingEpochObjectStore for SpireLocalObjectStore {
-    fn write_recursive_routing_object(
+impl SpireBuildObjectStore for SpireLocalObjectStore {
+    fn write_routing_object(
         &mut self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
@@ -231,7 +231,7 @@ impl SpireRecursiveRoutingEpochObjectStore for SpireLocalObjectStore {
         self.insert_routing_object(epoch, object)
     }
 
-    fn write_recursive_leaf_object_v2_from_rows(
+    fn write_leaf_object_v2_from_rows(
         &mut self,
         epoch: u64,
         pid: u64,
@@ -243,8 +243,29 @@ impl SpireRecursiveRoutingEpochObjectStore for SpireLocalObjectStore {
     }
 }
 
-impl SpireRecursiveRoutingEpochObjectStore for SpireRelationObjectStore {
-    fn write_recursive_routing_object(
+impl SpireBuildObjectStore for SpireLocalObjectStoreSet {
+    fn write_routing_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireRoutingPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_routing_object(epoch, object)
+    }
+
+    fn write_leaf_object_v2_from_rows(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String> {
+        self.insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, rows)
+    }
+}
+
+impl SpireBuildObjectStore for SpireRelationObjectStore {
+    fn write_routing_object(
         &mut self,
         epoch: u64,
         object: &SpireRoutingPartitionObject,
@@ -252,7 +273,7 @@ impl SpireRecursiveRoutingEpochObjectStore for SpireRelationObjectStore {
         unsafe { self.insert_routing_object(epoch, object) }
     }
 
-    fn write_recursive_leaf_object_v2_from_rows(
+    fn write_leaf_object_v2_from_rows(
         &mut self,
         epoch: u64,
         pid: u64,
@@ -1423,7 +1444,7 @@ pub(super) unsafe fn build_relation_recursive_routing_epoch_from_leaf_inputs(
 
 fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
     input: SpireRecursiveRoutingEpochObjectInput,
-    object_store: &mut impl SpireRecursiveRoutingEpochObjectStore,
+    object_store: &mut impl SpireBuildObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
     let expected_leaf_parents = invariants.leaf_parent_pids;
@@ -1448,7 +1469,7 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
                 leaf_input.pid, leaf_input.parent_pid, expected_parent_pid
             ));
         }
-        leaf_placements.push(object_store.write_recursive_leaf_object_v2_from_rows(
+        leaf_placements.push(object_store.write_leaf_object_v2_from_rows(
             input.epoch,
             leaf_input.pid,
             leaf_input.object_version,
@@ -1489,7 +1510,7 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
 
 fn build_recursive_routing_epoch_draft_with_store(
     input: SpireRecursiveRoutingEpochInput,
-    object_store: &mut impl SpireRecursiveRoutingEpochObjectStore,
+    object_store: &mut impl SpireBuildObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
 
@@ -1508,7 +1529,7 @@ fn build_recursive_routing_epoch_draft_with_store(
     let mut placements =
         Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
     for object in &input.routing_draft.routing_objects {
-        placements.push(object_store.write_recursive_routing_object(input.epoch, object)?);
+        placements.push(object_store.write_routing_object(input.epoch, object)?);
     }
     placements.extend(input.leaf_placements);
 
@@ -1942,7 +1963,7 @@ pub(super) fn build_single_level_leaf_epoch_draft(
     input: SpireSingleLevelBuildInput,
     pid_allocator: &mut SpirePidAllocator,
     local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
-    object_store: &mut SpireLocalObjectStore,
+    object_store: &mut impl SpireBuildObjectStore,
 ) -> Result<SpireSingleLevelBuildDraft, String> {
     let epoch_manifest = SpireEpochManifest {
         epoch: input.epoch,
@@ -1968,7 +1989,7 @@ pub(super) fn build_single_level_leaf_epoch_draft(
     )?;
     let assignments = build_primary_leaf_assignments(&mut local_vec_id_cursor, input.assignments)?;
     let leaf_object = SpireLeafPartitionObject::new(pid, input.object_version, 0, assignments)?;
-    let placement = object_store.insert_leaf_object_v2_from_rows(
+    let placement = object_store.write_leaf_object_v2_from_rows(
         input.epoch,
         leaf_object.header.pid,
         leaf_object.header.object_version,
@@ -2000,7 +2021,7 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
     input: SpirePartitionedSingleLevelBuildInput,
     pid_allocator: &mut SpirePidAllocator,
     local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
-    object_store: &mut SpireLocalObjectStore,
+    object_store: &mut impl SpireBuildObjectStore,
 ) -> Result<SpirePartitionedSingleLevelBuildDraft, String> {
     let epoch_manifest = SpireEpochManifest {
         epoch: input.epoch,
@@ -2088,9 +2109,9 @@ pub(super) fn build_partitioned_single_level_leaf_epoch_draft(
         leaf_objects.push(leaf_object);
     }
     let mut placements = Vec::with_capacity(centroid_count + 1);
-    placements.push(object_store.insert_routing_object(input.epoch, &routing_object)?);
+    placements.push(object_store.write_routing_object(input.epoch, &routing_object)?);
     for leaf_object in &leaf_objects {
-        placements.push(object_store.insert_leaf_object_v2_from_rows(
+        placements.push(object_store.write_leaf_object_v2_from_rows(
             input.epoch,
             leaf_object.header.pid,
             leaf_object.header.object_version,
@@ -2589,12 +2610,13 @@ mod tests {
         SpireConsistencyMode, SpireEpochState, SpirePublishedEpochSnapshot,
     };
     use crate::am::ec_spire::meta::{
-        SpireEpochManifest, SpireObjectManifest, SpirePlacementDirectory, SpireRootControlState,
+        SpireEpochManifest, SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireObjectManifest,
+        SpirePlacementDirectory, SpireRootControlState,
     };
     use crate::am::ec_spire::quantizer::{self, SpireAssignmentPayloadFormat};
     use crate::am::ec_spire::storage::{
-        SpireLeafAssignmentRow, SpireLocalObjectStore, SpirePartitionObjectKind, SpireVecId,
-        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SpireLeafAssignmentRow, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
+        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
     };
     use crate::storage::page::ItemPointer;
 
@@ -3885,6 +3907,50 @@ mod tests {
         assert_eq!(
             local_vec_id_allocator.next_local_vec_seq(),
             draft.next_local_vec_seq
+        );
+    }
+
+    #[test]
+    fn partitioned_single_level_draft_hash_routes_object_writes_by_pid() {
+        let source_vectors = vec![vec![1.0, 0.0], vec![-1.0, 0.0]];
+        let centroid_plan = train_single_level_centroid_plan(2, &source_vectors, 2, 42).unwrap();
+        let store_config = SpireLocalStoreConfig::from_stores(
+            1,
+            vec![
+                SpireLocalStoreDescriptor::available(0, 12345, 10).unwrap(),
+                SpireLocalStoreDescriptor::available(1, 12346, 10).unwrap(),
+            ],
+        )
+        .unwrap();
+        let mut object_store =
+            SpireLocalObjectStoreSet::from_config(store_config.clone(), 8192).unwrap();
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                centroid_plan,
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+
+        for placement in &draft.placement_directory.entries {
+            let expected_store = store_config.store_for_pid(placement.pid).unwrap();
+            assert_eq!(placement.local_store_id, expected_store.local_store_id);
+            assert_eq!(placement.store_relid, expected_store.store_relid);
+        }
+        let root_placement = draft.placement_directory.get(draft.root_pid).unwrap();
+        assert_eq!(
+            object_store
+                .read_routing_object(root_placement)
+                .unwrap()
+                .header
+                .pid,
+            draft.root_pid
         );
     }
 

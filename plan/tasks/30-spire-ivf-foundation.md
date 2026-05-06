@@ -1203,6 +1203,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   now carry their `local_store_id` when creating and validating placement
   entries, so the next writer slice can select a store descriptor instead of
   relying on hardcoded store `0`.
+- [x] **Hash-routed build writer surface.** The build draft path can now write
+  through a local object-store set that chooses the target store by
+  `SpireLocalStoreConfig::store_for_pid(pid)`, with coverage proving root and
+  leaf placements carry the hashed store IDs and relation OIDs.
 - [ ] **Hash-routed object writes.** Place leaf and internal partition objects
   by `hash(pid) % local_store_count` in the relation-backed writer path.
 - [ ] **Parallel local fetch.** Fetch selected PIDs grouped by local store and
