@@ -4,6 +4,7 @@
   - `014cb947` (`Build SPIRE top graph drafts`)
   - `c48a96df` (`Build SPIRE top graphs from routing roots`)
   - `6623bc41` (`Route SPIRE top graphs over routing roots`)
+  - `6feba1da` (`Add SPIRE top graph object codec`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -31,9 +32,12 @@ graph:
 - adds a pure scan-side top-graph route helper that validates graph/root
   compatibility, runs Vamana greedy search, and returns deterministic selected
   child PIDs without wiring live scan callbacks yet.
+- adds a durable `TopGraph` partition-object kind and V1 codec carrying root
+  PID, dimensions, graph degree, build list size, alpha, entry node, child
+  PIDs, centroid ordinals, and neighbor ordinals.
 
-This is intentionally still in-memory graph build/routing plumbing. It does not
-persist graph object bytes, add reloptions, or replace live scan routing yet.
+This still does not publish graph object bytes into live epochs, add reloptions,
+or replace live scan routing yet.
 
 ## Files
 
@@ -45,6 +49,10 @@ persist graph object bytes, add reloptions, or replace live scan routing yet.
 - `src/am/ec_spire/scan/routing.rs`
 - `src/am/ec_spire/scan/tests.rs`
 - `src/am/ec_spire/scan/tests/routing.rs`
+- `src/am/ec_spire/storage/top_graph.rs`
+- `src/am/ec_spire/storage/tests/top_graph.rs`
+- `src/am/ec_spire/storage/relation_plan.rs`
+- `src/am/ec_spire/storage/vec_id.rs`
 
 ## Review Focus
 
@@ -66,6 +74,10 @@ persist graph object bytes, add reloptions, or replace live scan routing yet.
    bounds, and search-list versus route-count constraints.
 7. Confirm deterministic route ordering should sort by graph distance,
    centroid ordinal, child PID, then graph node ordinal.
+8. Review the `TopGraph` partition-object byte format and validation: root
+   linkage via `parent_pid`, node count in `child_count`, entry-node bounds,
+   duplicate child/centroid rejection, neighbor bounds, no self-neighbors, and
+   neighbor-count <= graph degree.
 
 ## Validation
 
