@@ -7585,6 +7585,103 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "requested consistency_mode 'degraded' does not match active epoch consistency mode 'strict'"
+    )]
+    fn test_ec_spire_remote_search_mode_mismatch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_search_mode_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_search_mode_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_search_mode_sql_idx \
+             ON ec_spire_remote_search_mode_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_search_mode_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_search_mode_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+
+        Spi::run(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search(\
+             'ec_spire_remote_search_mode_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}]::bigint[], 1, 'degraded')",
+            selected_pids[0],
+        ))
+        .expect("remote search consistency mismatch should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "strict published snapshot requires available placement")]
+    fn test_ec_spire_remote_search_strict_unavailable_leaf() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_search_unavailable_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_search_unavailable_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_search_unavailable_sql_idx \
+             ON ec_spire_remote_search_unavailable_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_search_unavailable_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_search_unavailable_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_search_unavailable_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable")
+        };
+        Spi::run(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search(\
+             'ec_spire_remote_search_unavailable_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'strict')",
+        ))
+        .expect("strict remote search over unavailable placement should fail");
+    }
+
+    #[pg_test]
     fn test_ec_spire_flat_recursive_same_candidate() {
         Spi::run("CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)")
             .expect("flat comparison table creation should succeed");
