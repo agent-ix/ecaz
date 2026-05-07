@@ -13,6 +13,7 @@
   - `6175e6b0` (`Add inert SPIRE top graph options`)
   - `4f9ddf1e` (`Bind SPIRE top graph recursive builds`)
   - `073ae555` (`Bind SPIRE top graph scan candidates`)
+  - `0179b53d` (`Expose SPIRE top graph diagnostics`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -78,6 +79,10 @@ graph:
   load the durable graph object, route through graph-selected recursive leaves,
   then reuse the existing quantized scoring, vec-id dedupe, and exact rerank
   pipeline.
+- exposes `ec_spire_index_top_graph_snapshot(index_oid)` as a read-only SQL
+  diagnostic for active top-graph presence, graph size/degree/build params,
+  configured/effective scan fanout, object bytes, and fail-closed status rows
+  for missing or duplicated visible graph objects.
 
 This still does not enable graph publishing or graph scan by default.
 Relation-store top-graph writes currently require the encoded graph to fit in
@@ -100,6 +105,8 @@ one object tuple; multi-tuple graph storage is not part of this checkpoint.
 - `src/am/ec_spire/scan/tests.rs`
 - `src/am/ec_spire/scan/tests/routing.rs`
 - `src/am/ec_spire/scan/tests/candidates.rs`
+- `src/am/ec_spire/root/hierarchy_snapshots.rs`
+- `src/am/ec_spire/root/types.rs`
 - `src/am/ec_spire/storage/top_graph.rs`
 - `src/am/ec_spire/storage/tests/top_graph.rs`
 - `src/am/ec_spire/storage/local_store.rs`
@@ -111,6 +118,9 @@ one object tuple; multi-tuple graph storage is not part of this checkpoint.
 - `src/am/ec_spire/storage/vec_id.rs`
 - `src/am/ec_spire/update/leaf_rows.rs`
 - `src/am/ec_spire/vacuum.rs`
+- `src/am/mod.rs`
+- `src/lib.rs`
+- `plan/tasks/30-spire-ivf-foundation.md`
 
 ## Review Focus
 
@@ -168,10 +178,15 @@ one object tuple; multi-tuple graph storage is not part of this checkpoint.
 18. Review the opt-in scan binding: enabled scans must fail closed if the graph
     object is missing or malformed, must use graph-selected recursive leaf rows,
     and must leave scoring/dedupe/rerank behavior consistent with the flat path.
+19. Review the SQL diagnostic contract: `ec_spire_index_top_graph_snapshot`
+    should report default-off/empty/missing/ready/multiple states without
+    mutating the active epoch, and its effective fanout should match scan
+    option resolution for `nprobe` plus `top_graph_search_list_size`.
 
 ## Validation
 
-- `cargo test --lib top_graph --no-default-features --features pg18` (31 tests)
+- `cargo test --lib top_graph --no-default-features --features pg18` (32 tests,
+  including `pg_test_ec_spire_top_graph_snapshot_sql`)
 - `cargo test --lib top_graph_option --no-default-features --features pg18`
 - `cargo test --lib recursive_top_graph --no-default-features --features pg18`
 - `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`

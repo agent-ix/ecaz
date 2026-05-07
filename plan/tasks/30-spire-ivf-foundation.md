@@ -1405,12 +1405,18 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_diskann` AM or introducing a selectable graph abstraction. HNSW and
   build-time graph algorithm selection remain deferred until there is a second
   SPIRE graph implementation.
-- [ ] **Build integration.** Build the top-level graph over top-level
-  centroids after recursive centroid materialization.
-- [ ] **Routing integration.** Replace flat top-level centroid scan with graph
-  lookup, then descend through SPIRE levels.
-- [ ] **Diagnostics.** Expose top-level graph size, degree, recall sanity rows,
-  and routing fanout.
+- [x] **Build integration.** Opt-in recursive builds now publish a durable
+  `TopGraph` partition object over the root routing centroids when
+  `top_graph_enabled = 1`; the build path rejects top-graph publication unless
+  `recursive_fanout >= 2`.
+- [x] **Routing integration.** Opt-in scans now load the active top-graph object,
+  route from graph-selected root children through recursive SPIRE levels, and
+  then reuse the existing quantized scoring, `vec_id` dedupe, and exact-rerank
+  pipeline. The default remains flat because `top_graph_enabled = 0`.
+- [x] **Diagnostics.** SQL function `ec_spire_index_top_graph_snapshot(index_oid)`
+  now exposes active top-graph presence, size, degree/build parameters,
+  configured/effective scan fanout, object bytes, and fail-closed status rows
+  for missing or duplicated visible graph objects.
 
 ## Phase 7 — Multi-Machine Placement
 
