@@ -1235,6 +1235,67 @@ fn ec_spire_index_placement_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(node_kind, &'static str),
+        name!(descriptor_generation, i64),
+        name!(descriptor_state, &'static str),
+        name!(placement_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(local_store_count, i64),
+        name!(last_seen_at_micros, i64),
+        name!(last_served_epoch, i64),
+        name!(min_retained_epoch, i64),
+        name!(extension_version, &'static str),
+        name!(last_error, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_node_snapshot") };
+    let rows = unsafe { am::spire_remote_node_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.node_kind,
+            i64::try_from(row.descriptor_generation)
+                .expect("descriptor generation should fit in i64"),
+            row.descriptor_state,
+            i64::try_from(row.placement_count).expect("placement count should fit in i64"),
+            i64::try_from(row.available_placement_count)
+                .expect("available placement count should fit in i64"),
+            i64::try_from(row.stale_placement_count)
+                .expect("stale placement count should fit in i64"),
+            i64::try_from(row.unavailable_placement_count)
+                .expect("unavailable placement count should fit in i64"),
+            i64::try_from(row.skipped_placement_count)
+                .expect("skipped placement count should fit in i64"),
+            i64::try_from(row.local_store_count).expect("local store count should fit in i64"),
+            row.last_seen_at_micros,
+            i64::try_from(row.last_served_epoch).expect("last served epoch should fit in i64"),
+            i64::try_from(row.min_retained_epoch).expect("min retained epoch should fit in i64"),
+            row.extension_version,
+            row.last_error,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_placement_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -8816,6 +8877,119 @@ mod tests {
         assert_eq!(skipped_pid_count, 1);
         assert_eq!(executable_pid_count, 0);
         assert_eq!(consistency_mode, "degraded");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_snapshot_local() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_local_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_local_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_local_sql_idx \
+             ON ec_spire_remote_node_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
+             'ec_spire_remote_node_local_sql_idx'::regclass)";
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {snapshot_from}"))
+            .expect("remote node snapshot count query should succeed")
+            .expect("remote node snapshot count should exist");
+        let node_kind = Spi::get_one::<String>(&format!("SELECT node_kind {snapshot_from}"))
+            .expect("remote node snapshot kind query should succeed")
+            .expect("remote node snapshot kind should exist");
+        let descriptor_state =
+            Spi::get_one::<String>(&format!("SELECT descriptor_state {snapshot_from}"))
+                .expect("remote node snapshot state query should succeed")
+                .expect("remote node snapshot state should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {snapshot_from}"))
+            .expect("remote node snapshot status query should succeed")
+            .expect("remote node snapshot status should exist");
+        let served_epoch_matches = Spi::get_one::<bool>(&format!(
+            "SELECT last_served_epoch = active_epoch AND min_retained_epoch = active_epoch \
+             {snapshot_from}"
+        ))
+        .expect("remote node snapshot epoch query should succeed")
+        .expect("remote node snapshot epoch check should exist");
+
+        assert_eq!(row_count, 1);
+        assert_eq!(node_kind, "local");
+        assert_eq!(descriptor_state, "active");
+        assert_eq!(status, "ready");
+        assert!(served_epoch_matches);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_snapshot_missing_descriptor() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_missing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_missing_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_missing_sql_idx \
+             ON ec_spire_remote_node_missing_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_missing_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_node_missing_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
+             'ec_spire_remote_node_missing_sql_idx'::regclass)";
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {snapshot_from}"))
+            .expect("remote node snapshot count query should succeed")
+            .expect("remote node snapshot count should exist");
+        let remote_status =
+            Spi::get_one::<String>(&format!("SELECT status {snapshot_from} WHERE node_id = 2"))
+                .expect("remote node snapshot status query should succeed")
+                .expect("remote node snapshot status should exist");
+        let remote_error = Spi::get_one::<String>(&format!(
+            "SELECT last_error {snapshot_from} WHERE node_id = 2"
+        ))
+        .expect("remote node snapshot error query should succeed")
+        .expect("remote node snapshot error should exist");
+        let remote_placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT placement_count {snapshot_from} WHERE node_id = 2"
+        ))
+        .expect("remote node snapshot placement query should succeed")
+        .expect("remote node snapshot placement should exist");
+        let local_status =
+            Spi::get_one::<String>(&format!("SELECT status {snapshot_from} WHERE node_id = 0"))
+                .expect("local node snapshot status query should succeed")
+                .expect("local node snapshot status should exist");
+
+        assert_eq!(row_count, 2);
+        assert_eq!(remote_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_error, "missing_remote_node_descriptor");
+        assert_eq!(remote_placement_count, 1);
+        assert_eq!(local_status, "ready");
     }
 
     #[pg_test]

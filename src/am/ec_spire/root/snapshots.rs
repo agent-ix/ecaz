@@ -575,6 +575,129 @@ pub(crate) unsafe fn index_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_node_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireRemoteNodeSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
+        let mut rows_by_node = BTreeMap::<u32, SpireRemoteNodeSnapshotRow>::new();
+        let mut local_stores_by_node = BTreeMap::<u32, HashSet<u32>>::new();
+        for placement in &placement_directory.entries {
+            let row =
+                rows_by_node
+                    .entry(placement.node_id)
+                    .or_insert_with(|| remote_node_snapshot_empty_row(
+                        root_control.active_epoch,
+                        placement.node_id,
+                    ));
+            row.placement_count = row.placement_count.checked_add(1).ok_or_else(|| {
+                "ec_spire remote node snapshot placement count overflow".to_owned()
+            })?;
+            match placement.state {
+                meta::SpirePlacementState::Available => {
+                    row.available_placement_count =
+                        row.available_placement_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire remote node snapshot available placement count overflow"
+                                .to_owned()
+                        })?;
+                }
+                meta::SpirePlacementState::Stale => {
+                    row.stale_placement_count =
+                        row.stale_placement_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire remote node snapshot stale placement count overflow"
+                                .to_owned()
+                        })?;
+                }
+                meta::SpirePlacementState::Unavailable => {
+                    row.unavailable_placement_count =
+                        row.unavailable_placement_count
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                "ec_spire remote node snapshot unavailable placement count overflow"
+                                    .to_owned()
+                            })?;
+                }
+                meta::SpirePlacementState::Skipped => {
+                    row.skipped_placement_count =
+                        row.skipped_placement_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire remote node snapshot skipped placement count overflow"
+                                .to_owned()
+                        })?;
+                }
+            }
+            local_stores_by_node
+                .entry(placement.node_id)
+                .or_default()
+                .insert(placement.local_store_id);
+        }
+
+        for (node_id, stores) in local_stores_by_node {
+            let row = rows_by_node
+                .get_mut(&node_id)
+                .expect("node row should exist for local stores");
+            row.local_store_count = u64::try_from(stores.len()).map_err(|_| {
+                "ec_spire remote node snapshot local store count exceeds u64".to_owned()
+            })?;
+        }
+
+        Ok(rows_by_node.into_values().collect())
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemoteNodeSnapshotRow {
+    if node_id == meta::SPIRE_LOCAL_NODE_ID {
+        SpireRemoteNodeSnapshotRow {
+            active_epoch,
+            node_id,
+            node_kind: "local",
+            descriptor_generation: 0,
+            descriptor_state: "active",
+            placement_count: 0,
+            available_placement_count: 0,
+            stale_placement_count: 0,
+            unavailable_placement_count: 0,
+            skipped_placement_count: 0,
+            local_store_count: 0,
+            last_seen_at_micros: 0,
+            last_served_epoch: active_epoch,
+            min_retained_epoch: active_epoch,
+            extension_version: env!("CARGO_PKG_VERSION"),
+            last_error: "none",
+            status: "ready",
+            recommendation: "none",
+        }
+    } else {
+        SpireRemoteNodeSnapshotRow {
+            active_epoch,
+            node_id,
+            node_kind: "remote",
+            descriptor_generation: 0,
+            descriptor_state: "missing",
+            placement_count: 0,
+            available_placement_count: 0,
+            stale_placement_count: 0,
+            unavailable_placement_count: 0,
+            skipped_placement_count: 0,
+            local_store_count: 0,
+            last_seen_at_micros: 0,
+            last_served_epoch: 0,
+            min_retained_epoch: 0,
+            extension_version: "unknown",
+            last_error: "missing_remote_node_descriptor",
+            status: "requires_remote_node_descriptor",
+            recommendation: "register remote node descriptor before libpq fanout execution",
+        }
+    }
+}
+
 pub(crate) unsafe fn index_leaf_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexLeafSnapshotRow> {

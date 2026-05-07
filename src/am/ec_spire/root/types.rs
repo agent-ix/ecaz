@@ -416,6 +416,28 @@ pub(crate) struct SpireIndexPlacementSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) node_kind: &'static str,
+    pub(crate) descriptor_generation: u64,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) placement_count: u64,
+    pub(crate) available_placement_count: u64,
+    pub(crate) stale_placement_count: u64,
+    pub(crate) unavailable_placement_count: u64,
+    pub(crate) skipped_placement_count: u64,
+    pub(crate) local_store_count: u64,
+    pub(crate) last_seen_at_micros: i64,
+    pub(crate) last_served_epoch: u64,
+    pub(crate) min_retained_epoch: u64,
+    pub(crate) extension_version: &'static str,
+    pub(crate) last_error: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexScanPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) effective_nprobe: u32,

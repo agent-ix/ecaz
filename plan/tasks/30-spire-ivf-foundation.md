@@ -1457,7 +1457,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   transport lands. `ec_spire_remote_search_coordinator_local_summary(...)`
   exposes the same path's fanout counts, skipped-placement count, merge input
   count, duplicate vec-id count, returned candidate count, and transport status
-  for local-ready and remote-target plans.
+  for local-ready and remote-target plans. `ec_spire_remote_node_snapshot(...)`
+  now exposes node-level diagnostic rows derived from active placement metadata:
+  local node readiness is explicit, and nonzero node IDs are reported as
+  remote placements that require durable remote-node descriptors before libpq
+  fanout execution can be enabled.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
