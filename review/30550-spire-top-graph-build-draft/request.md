@@ -10,6 +10,7 @@
   - `da6b8321` (`Route SPIRE scans from top graph objects`)
   - `46e55ada` (`Load SPIRE top graph objects for scan`)
   - `e37771e7` (`Route SPIRE top graphs through recursive leaves`)
+  - `6175e6b0` (`Add inert SPIRE top graph options`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -65,11 +66,14 @@ graph:
   internal parents to leaf routes.
 - adds a snapshot collector that loads the durable graph object and returns
   routed leaf rows through the graph-backed path.
+- adds inert top-graph reloptions and pure option resolution:
+  `top_graph_enabled`, degree, build-list size, alpha, and search-list size.
+  The default remains disabled and live build/scan behavior is unchanged.
 
 This still does not enable graph publishing in the default live build path, add
-reloptions, or replace live scan routing yet. Relation-store top-graph writes
-currently require the encoded graph to fit in one object tuple; multi-tuple
-graph storage is not part of this checkpoint.
+live graph build/scan binding, or replace live scan routing yet.
+Relation-store top-graph writes currently require the encoded graph to fit in
+one object tuple; multi-tuple graph storage is not part of this checkpoint.
 
 ## Files
 
@@ -81,10 +85,13 @@ graph storage is not part of this checkpoint.
 - `src/am/ec_spire/build/tests/recursive.rs`
 - `src/am/ec_spire/build.rs`
 - `src/am/ec_spire/build/tests.rs`
+- `src/am/ec_spire/mod.rs`
+- `src/am/ec_spire/options.rs`
 - `src/am/ec_spire/scan.rs`
 - `src/am/ec_spire/scan/routing.rs`
 - `src/am/ec_spire/scan/tests.rs`
 - `src/am/ec_spire/scan/tests/routing.rs`
+- `src/am/ec_spire/scan/tests/candidates.rs`
 - `src/am/ec_spire/storage/top_graph.rs`
 - `src/am/ec_spire/storage/tests/top_graph.rs`
 - `src/am/ec_spire/storage/local_store.rs`
@@ -143,10 +150,15 @@ graph storage is not part of this checkpoint.
 15. Check the graph-backed snapshot row collector for parent-PID validation,
     missing graph behavior, and consistency with the existing flat recursive
     routed-row path.
+16. Review the top-graph reloption defaults and bounds. The intended contract
+    is inert by default: `top_graph_enabled = 0`, search-list `0` means derive
+    later from scan `nprobe`, and the options are parsed without changing live
+    build/scan behavior yet.
 
 ## Validation
 
-- `cargo test --lib top_graph --no-default-features --features pg18` (27 tests)
+- `cargo test --lib top_graph --no-default-features --features pg18` (29 tests)
+- `cargo test --lib top_graph_option --no-default-features --features pg18`
 - `cargo test --lib recursive_top_graph --no-default-features --features pg18`
 - `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`
 - `git diff --check`
