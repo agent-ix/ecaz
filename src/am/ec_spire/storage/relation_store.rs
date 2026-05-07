@@ -222,6 +222,39 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
+    pub(super) unsafe fn insert_top_graph_object(
+        &self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        if epoch == 0 {
+            return Err("ec_spire relation object store epoch 0 is invalid".to_owned());
+        }
+        let mut durable_object = object.clone();
+        durable_object.header.published_epoch_backref = epoch;
+        let encoded = durable_object.encode()?;
+        if !relation_object_tuple_fits(encoded.len()) {
+            return Err(format!(
+                "ec_spire top graph object length {} exceeds single-tuple relation object capacity",
+                encoded.len()
+            ));
+        }
+        let object_bytes = u32::try_from(encoded.len())
+            .map_err(|_| "ec_spire partition object length exceeds u32".to_owned())?;
+        let object_tid = unsafe { page::append_object_tuple(self.store_relation, &encoded)? };
+        let placement = SpirePlacementEntry::local_store_available_by_id(
+            epoch,
+            durable_object.header.pid,
+            self.local_store_id,
+            self.store_relid,
+            durable_object.header.object_version,
+            object_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) unsafe fn read_routing_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -597,6 +630,38 @@ impl SpireRelationObjectStore {
                 {
                     return Err(format!(
                         "ec_spire object published epoch backref {} is not valid for placement epoch {}",
+                        object.header.published_epoch_backref, placement.epoch
+                    ));
+                }
+                Ok(object)
+            })
+        }
+    }
+
+    pub(super) unsafe fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        unsafe {
+            self.with_single_tuple_object_bytes(placement, |raw| {
+                let object = SpireTopGraphPartitionObject::decode(raw)?;
+                if object.header.pid != placement.pid {
+                    return Err(format!(
+                        "ec_spire placement pid {} does not match top graph pid {}",
+                        placement.pid, object.header.pid
+                    ));
+                }
+                if object.header.object_version != placement.object_version {
+                    return Err(format!(
+                        "ec_spire placement object_version {} does not match top graph version {}",
+                        placement.object_version, object.header.object_version
+                    ));
+                }
+                if object.header.published_epoch_backref == 0
+                    || object.header.published_epoch_backref > placement.epoch
+                {
+                    return Err(format!(
+                        "ec_spire top graph published epoch backref {} is not valid for placement epoch {}",
                         object.header.published_epoch_backref, placement.epoch
                     ));
                 }
@@ -1086,6 +1151,13 @@ impl SpireObjectReader for SpireRelationObjectStore {
     ) -> Result<SpireDeltaPartitionObject, String> {
         unsafe { SpireRelationObjectStore::read_delta_object(self, placement) }
     }
+
+    fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        unsafe { SpireRelationObjectStore::read_top_graph_object(self, placement) }
+    }
 }
 
 pub(super) struct SpireRelationObjectStoreSet {
@@ -1264,6 +1336,17 @@ impl SpireRelationObjectStoreSet {
         }
     }
 
+    pub(super) unsafe fn insert_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        unsafe {
+            self.store_mut_for_pid(object.header.pid)?
+                .insert_top_graph_object(epoch, object)
+        }
+    }
+
     pub(super) unsafe fn insert_delta_object_for_base_placement(
         &mut self,
         epoch: u64,
@@ -1435,5 +1518,15 @@ impl SpireObjectReader for SpireRelationObjectStoreSet {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
         unsafe { self.store_for_placement(placement)?.read_delta_object(placement) }
+    }
+
+    fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        unsafe {
+            self.store_for_placement(placement)?
+                .read_top_graph_object(placement)
+        }
     }
 }

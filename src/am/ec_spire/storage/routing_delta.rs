@@ -34,6 +34,13 @@ pub(super) trait SpireObjectReader {
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String>;
+
+    fn read_top_graph_object(
+        &self,
+        _placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        Err("ec_spire object reader does not support top graph objects".to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

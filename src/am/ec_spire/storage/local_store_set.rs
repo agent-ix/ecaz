@@ -48,6 +48,15 @@ impl SpireLocalObjectStoreSet {
             .insert_delta_object(epoch, object)
     }
 
+    pub(super) fn insert_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.store_mut_for_pid(object.header.pid)?
+            .insert_top_graph_object(epoch, object)
+    }
+
     fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireLocalObjectStore, String> {
         let descriptor = *self.config.store_for_pid(pid)?;
         self.stores
@@ -118,6 +127,14 @@ impl SpireObjectReader for SpireLocalObjectStoreSet {
         self.store_for_placement(placement)?
             .read_delta_object(placement)
     }
+
+    fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        self.store_for_placement(placement)?
+            .read_top_graph_object(placement)
+    }
 }
 
 impl SpireObjectReader for SpireLocalObjectStore {
@@ -154,5 +171,12 @@ impl SpireObjectReader for SpireLocalObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireDeltaPartitionObject, String> {
         SpireLocalObjectStore::read_delta_object(self, placement)
+    }
+
+    fn read_top_graph_object(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireTopGraphPartitionObject, String> {
+        SpireLocalObjectStore::read_top_graph_object(self, placement)
     }
 }

@@ -273,6 +273,8 @@ impl SpireTopGraphPartitionObject {
                     node.centroid_ordinal
                 ));
             }
+            // Bound checks against the root routing object's child array happen
+            // when the top graph is bound to that root object.
             if node.neighbors.len() > max_degree {
                 return Err(format!(
                     "ec_spire top graph node {node_index} neighbor count {} exceeds graph degree {max_degree}",

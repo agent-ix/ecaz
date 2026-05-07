@@ -233,6 +233,8 @@ pub(super) fn plan_replacement_epoch_placement_directory(
             | SpirePartitionObjectKind::Leaf
             | SpirePartitionObjectKind::Delta
             | SpirePartitionObjectKind::TopGraph => {
+                // TODO(phase6): invalidate or rebuild top graphs when a
+                // replacement rewrites routing centroids rather than only leaf rows.
                 let mut carried = *placement;
                 carried.epoch = new_epoch;
                 entries.push(carried);

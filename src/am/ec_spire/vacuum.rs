@@ -236,8 +236,9 @@ fn collect_visible_assignments(
                     });
                 }
             }
-            SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal => {}
-            SpirePartitionObjectKind::TopGraph => {}
+            SpirePartitionObjectKind::Root
+            | SpirePartitionObjectKind::Internal
+            | SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -340,6 +341,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
             | SpirePartitionObjectKind::Internal
             | SpirePartitionObjectKind::Leaf
             | SpirePartitionObjectKind::TopGraph => {
+                // TODO(phase6): invalidate or rebuild top graphs when compaction
+                // starts rewriting routing centroids rather than only leaf rows.
                 let mut carried = placement.clone();
                 carried.epoch = new_epoch;
                 placement_entries.push(carried);
