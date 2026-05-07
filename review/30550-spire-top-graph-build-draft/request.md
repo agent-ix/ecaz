@@ -9,6 +9,7 @@
   - `8048f81f` (`Publish SPIRE recursive top graph drafts`)
   - `da6b8321` (`Route SPIRE scans from top graph objects`)
   - `46e55ada` (`Load SPIRE top graph objects for scan`)
+  - `e37771e7` (`Route SPIRE top graphs through recursive leaves`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -59,6 +60,11 @@ graph:
 - adds a snapshot loader for available `TopGraph` objects in the epoch manifest,
   so later live scan binding can load the durable graph object before invoking
   object-backed routing.
+- adds a graph-backed recursive leaf-route helper: the top graph selects root
+  children, then existing recursive routing continues from those selected
+  internal parents to leaf routes.
+- adds a snapshot collector that loads the durable graph object and returns
+  routed leaf rows through the graph-backed path.
 
 This still does not enable graph publishing in the default live build path, add
 reloptions, or replace live scan routing yet. Relation-store top-graph writes
@@ -130,10 +136,17 @@ graph storage is not part of this checkpoint.
 13. Check the top-graph snapshot loader behavior: placement visibility under
     strict/degraded consistency, duplicate top-graph rejection, and manifest
     lookup/read dispatch through `SpireObjectReader`.
+14. Review graph-backed recursive descent: selected top-graph child PIDs must
+    be interpreted as root children, level-1 roots map directly to leaves, and
+    higher-level roots must require matching internal routing objects before
+    continuing normal recursive descent.
+15. Check the graph-backed snapshot row collector for parent-PID validation,
+    missing graph behavior, and consistency with the existing flat recursive
+    routed-row path.
 
 ## Validation
 
-- `cargo test --lib top_graph --no-default-features --features pg18`
+- `cargo test --lib top_graph --no-default-features --features pg18` (27 tests)
 - `cargo test --lib recursive_top_graph --no-default-features --features pg18`
 - `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`
 - `git diff --check`
