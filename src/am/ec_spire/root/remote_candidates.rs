@@ -1301,6 +1301,28 @@ pub(crate) fn remote_search_row_locator_contract_rows(
     ]
 }
 
+pub(crate) fn remote_search_heap_resolution_contract_rows(
+) -> Vec<SpireRemoteSearchHeapResolutionContractRow> {
+    vec![
+        SpireRemoteSearchHeapResolutionContractRow {
+            resolution_scope: "local",
+            candidate_source: "coordinator_local_candidate_batch",
+            heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            row_locator_policy: SPIRE_REMOTE_ROW_LOCATOR_POLICY,
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchHeapResolutionContractRow {
+            resolution_scope: "remote",
+            candidate_source: "libpq_candidate_batch",
+            heap_lookup_owner: SPIRE_REMOTE_HEAP_RESOLUTION,
+            row_locator_policy: SPIRE_REMOTE_ROW_LOCATOR_POLICY,
+            status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
+            recommendation: "resolve remote row locators on the origin storage node",
+        },
+    ]
+}
+
 pub(crate) unsafe fn remote_search_finalization_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,

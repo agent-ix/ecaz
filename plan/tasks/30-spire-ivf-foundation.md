@@ -1512,6 +1512,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_coordinator_gate_summary(...)` now ties execution,
   merge, and final heap-fetch readiness into one coordinator integration gate
   with the next unresolved blocker.
+  `ec_spire_remote_search_heap_resolution_contract()` now makes the local vs.
+  origin-node heap lookup boundary explicit.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

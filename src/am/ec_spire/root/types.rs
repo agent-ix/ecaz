@@ -376,6 +376,16 @@ pub(crate) struct SpireRemoteSearchFinalizationSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchHeapResolutionContractRow {
+    pub(crate) resolution_scope: &'static str,
+    pub(crate) candidate_source: &'static str,
+    pub(crate) heap_lookup_owner: &'static str,
+    pub(crate) row_locator_policy: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

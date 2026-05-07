@@ -3013,6 +3013,32 @@ fn ec_spire_remote_search_row_locator_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_heap_resolution_contract() -> TableIterator<
+    'static,
+    (
+        name!(resolution_scope, &'static str),
+        name!(candidate_source, &'static str),
+        name!(heap_lookup_owner, &'static str),
+        name!(row_locator_policy, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_heap_resolution_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            row.resolution_scope,
+            row.candidate_source,
+            row.heap_lookup_owner,
+            row.row_locator_policy,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_finalization_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11275,26 +11301,50 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_remote_search_final_contract() {
-        let contract_from = "FROM ec_spire_remote_search_row_locator_contract()";
-        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
+        let locator_contract_from = "FROM ec_spire_remote_search_row_locator_contract()";
+        let heap_contract_from = "FROM ec_spire_remote_search_heap_resolution_contract()";
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {locator_contract_from}"))
             .expect("row locator contract count query should succeed")
             .expect("row locator contract count should exist");
         let interpretation = Spi::get_one::<String>(&format!(
-            "SELECT contract_value {contract_from} \
+            "SELECT contract_value {locator_contract_from} \
              WHERE contract_item = 'coordinator_interpretation'"
         ))
         .expect("row locator interpretation query should succeed")
         .expect("row locator interpretation should exist");
         let remote_resolution_status = Spi::get_one::<String>(&format!(
-            "SELECT status {contract_from} \
+            "SELECT status {locator_contract_from} \
              WHERE contract_item = 'remote_heap_resolution'"
         ))
         .expect("row locator remote resolution status query should succeed")
         .expect("row locator remote resolution status should exist");
+        let heap_resolution_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {heap_contract_from}"))
+                .expect("heap resolution contract count query should succeed")
+                .expect("heap resolution contract count should exist");
+        let local_heap_owner = Spi::get_one::<String>(&format!(
+            "SELECT heap_lookup_owner {heap_contract_from} WHERE resolution_scope = 'local'"
+        ))
+        .expect("local heap resolution owner query should succeed")
+        .expect("local heap resolution owner should exist");
+        let remote_heap_status = Spi::get_one::<String>(&format!(
+            "SELECT status {heap_contract_from} WHERE resolution_scope = 'remote'"
+        ))
+        .expect("remote heap resolution status query should succeed")
+        .expect("remote heap resolution status should exist");
+        let remote_locator_policy = Spi::get_one::<String>(&format!(
+            "SELECT row_locator_policy {heap_contract_from} WHERE resolution_scope = 'remote'"
+        ))
+        .expect("remote heap resolution locator query should succeed")
+        .expect("remote heap resolution locator should exist");
 
         assert_eq!(row_count, 4);
         assert_eq!(interpretation, "opaque_bytes");
         assert_eq!(remote_resolution_status, "deferred_until_remote_heap_fetch");
+        assert_eq!(heap_resolution_count, 2);
+        assert_eq!(local_heap_owner, "coordinator_local_heap");
+        assert_eq!(remote_heap_status, "requires_remote_heap_resolution");
+        assert_eq!(remote_locator_policy, "opaque_origin_node_bytes");
     }
 
     #[pg_test]
