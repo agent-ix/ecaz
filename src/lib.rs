@@ -1322,6 +1322,89 @@ fn ec_spire_remote_node_descriptor_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_descriptor_readiness(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(field_ordinal, i64),
+        name!(field_name, &'static str),
+        name!(semantic_role, &'static str),
+        name!(required, bool),
+        name!(validator, &'static str),
+        name!(descriptor_state, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_node_descriptor_readiness")
+    };
+    let rows = unsafe { am::spire_remote_node_descriptor_readiness(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.field_ordinal).expect("field ordinal should fit in i64"),
+            row.field_name,
+            row.semantic_role,
+            row.required,
+            row.validator,
+            row.descriptor_state,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_descriptor_readiness_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(remote_node_count, i64),
+        name!(descriptor_field_count, i64),
+        name!(required_field_count, i64),
+        name!(ready_field_count, i64),
+        name!(blocked_field_count, i64),
+        name!(missing_required_field_count, i64),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_node_descriptor_readiness_summary",
+        )
+    };
+    let row = unsafe { am::spire_remote_node_descriptor_readiness_summary(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.descriptor_field_count)
+            .expect("descriptor field count should fit in i64"),
+        i64::try_from(row.required_field_count).expect("required field count should fit in i64"),
+        i64::try_from(row.ready_field_count).expect("ready field count should fit in i64"),
+        i64::try_from(row.blocked_field_count).expect("blocked field count should fit in i64"),
+        i64::try_from(row.missing_required_field_count)
+            .expect("missing required field count should fit in i64"),
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_capability_plan(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -11240,6 +11323,96 @@ mod tests {
         assert_eq!(secret_validator, "must_be_nonempty_secret_reference");
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(required_epoch_fields, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_descriptor_readiness_missing() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_desc_ready_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_desc_ready_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_desc_ready_sql_idx \
+             ON ec_spire_remote_node_desc_ready_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_desc_ready_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_node_desc_ready_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let readiness_from = "FROM ec_spire_remote_node_descriptor_readiness(\
+             'ec_spire_remote_node_desc_ready_sql_idx'::regclass)";
+        let summary_from = "FROM ec_spire_remote_node_descriptor_readiness_summary(\
+             'ec_spire_remote_node_desc_ready_sql_idx'::regclass)";
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {readiness_from}"))
+            .expect("descriptor readiness count query should succeed")
+            .expect("descriptor readiness count should exist");
+        let raw_conninfo_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {readiness_from} \
+             WHERE field_name = 'conninfo' OR semantic_role = 'raw_connection_string'"
+        ))
+        .expect("descriptor readiness raw conninfo query should succeed")
+        .expect("descriptor readiness raw conninfo count should exist");
+        let secret_status = Spi::get_one::<String>(&format!(
+            "SELECT status {readiness_from} \
+             WHERE node_id = 2 AND field_name = 'conninfo_secret_name'"
+        ))
+        .expect("descriptor readiness secret status query should succeed")
+        .expect("descriptor readiness secret status should exist");
+        let optional_status = Spi::get_one::<String>(&format!(
+            "SELECT status {readiness_from} \
+             WHERE node_id = 2 AND field_name = 'last_error'"
+        ))
+        .expect("descriptor readiness optional status query should succeed")
+        .expect("descriptor readiness optional status should exist");
+        let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("descriptor readiness summary status query should succeed")
+            .expect("descriptor readiness summary status should exist");
+        let remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_node_count {summary_from}"))
+                .expect("descriptor readiness summary node count query should succeed")
+                .expect("descriptor readiness summary node count should exist");
+        let required_field_count =
+            Spi::get_one::<i64>(&format!("SELECT required_field_count {summary_from}"))
+                .expect("descriptor readiness summary required count query should succeed")
+                .expect("descriptor readiness summary required count should exist");
+        let blocked_field_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_field_count {summary_from}"))
+                .expect("descriptor readiness summary blocked count query should succeed")
+                .expect("descriptor readiness summary blocked count should exist");
+        let missing_required_field_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_required_field_count {summary_from}"
+        ))
+        .expect("descriptor readiness summary missing required query should succeed")
+        .expect("descriptor readiness summary missing required count should exist");
+
+        assert_eq!(row_count, 12);
+        assert_eq!(raw_conninfo_count, 0);
+        assert_eq!(secret_status, "missing_descriptor");
+        assert_eq!(optional_status, "optional_descriptor_missing");
+        assert_eq!(summary_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_node_count, 1);
+        assert_eq!(required_field_count, 10);
+        assert_eq!(blocked_field_count, 10);
+        assert_eq!(missing_required_field_count, 10);
     }
 
     #[pg_test]

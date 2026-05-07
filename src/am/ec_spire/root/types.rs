@@ -638,6 +638,33 @@ pub(crate) struct SpireRemoteNodeDescriptorContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeDescriptorReadinessRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) field_ordinal: u64,
+    pub(crate) field_name: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) required: bool,
+    pub(crate) validator: &'static str,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeDescriptorReadinessSummaryRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) remote_node_count: u64,
+    pub(crate) descriptor_field_count: u64,
+    pub(crate) required_field_count: u64,
+    pub(crate) ready_field_count: u64,
+    pub(crate) blocked_field_count: u64,
+    pub(crate) missing_required_field_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteNodeCapabilityPlanRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,

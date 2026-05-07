@@ -49,6 +49,8 @@ pub(crate) use self::ec_spire::{
     remote_node_capability_plan as spire_remote_node_capability_plan,
     remote_node_capability_summary as spire_remote_node_capability_summary,
     remote_node_descriptor_contract_rows as spire_remote_node_descriptor_contract_rows,
+    remote_node_descriptor_readiness as spire_remote_node_descriptor_readiness,
+    remote_node_descriptor_readiness_summary as spire_remote_node_descriptor_readiness_summary,
     remote_node_snapshot as spire_remote_node_snapshot,
     remote_search_candidates as spire_remote_search_candidates,
     remote_search_coordinator_local_candidates as spire_remote_search_coordinator_local_candidates,

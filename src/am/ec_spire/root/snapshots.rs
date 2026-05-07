@@ -754,6 +754,126 @@ pub(crate) fn remote_node_descriptor_contract_rows(
     ]
 }
 
+pub(crate) unsafe fn remote_node_descriptor_readiness(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireRemoteNodeDescriptorReadinessRow> {
+    let mut rows = Vec::new();
+    let contract_rows = remote_node_descriptor_contract_rows();
+    for node in unsafe { remote_node_snapshot(index_relation) } {
+        if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            continue;
+        }
+        for contract in &contract_rows {
+            let (status, recommendation) = if node.descriptor_state == "missing" {
+                if contract.required {
+                    (
+                        "missing_descriptor",
+                        "register remote node descriptor before libpq fanout execution",
+                    )
+                } else {
+                    ("optional_descriptor_missing", SPIRE_REMOTE_NONE)
+                }
+            } else if node.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+                (
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+                    "repair remote node descriptor before libpq fanout execution",
+                )
+            } else {
+                (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+            };
+            rows.push(SpireRemoteNodeDescriptorReadinessRow {
+                active_epoch: node.active_epoch,
+                node_id: node.node_id,
+                field_ordinal: contract.field_ordinal,
+                field_name: contract.field_name,
+                semantic_role: contract.semantic_role,
+                required: contract.required,
+                validator: contract.validator,
+                descriptor_state: node.descriptor_state,
+                status,
+                recommendation,
+            });
+        }
+    }
+    rows
+}
+
+pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteNodeDescriptorReadinessSummaryRow {
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let mut summary = SpireRemoteNodeDescriptorReadinessSummaryRow {
+        active_epoch: root_control.active_epoch,
+        remote_node_count: 0,
+        descriptor_field_count: 0,
+        required_field_count: 0,
+        ready_field_count: 0,
+        blocked_field_count: 0,
+        missing_required_field_count: 0,
+        status: "empty",
+        recommendation: "build index before remote descriptor readiness check",
+    };
+    if root_control.active_epoch == 0 {
+        return summary;
+    }
+
+    let mut seen_nodes = HashSet::new();
+    for row in unsafe { remote_node_descriptor_readiness(index_relation) } {
+        if seen_nodes.insert(row.node_id) {
+            summary.remote_node_count =
+                summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!("ec_spire remote node descriptor readiness node count overflow")
+                });
+        }
+        summary.descriptor_field_count = summary
+            .descriptor_field_count
+            .checked_add(1)
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_spire remote node descriptor readiness field count overflow")
+            });
+        if row.required {
+            summary.required_field_count = summary
+                .required_field_count
+                .checked_add(1)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node descriptor readiness required field count overflow"
+                    )
+                });
+        }
+        if row.status == SPIRE_REMOTE_STATUS_READY {
+            summary.ready_field_count =
+                summary.ready_field_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!("ec_spire remote node descriptor readiness ready count overflow")
+                });
+        } else if row.required {
+            summary.blocked_field_count =
+                summary.blocked_field_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!("ec_spire remote node descriptor readiness blocked count overflow")
+                });
+            if row.status == "missing_descriptor" {
+                summary.missing_required_field_count = summary
+                    .missing_required_field_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote node descriptor readiness missing required count overflow"
+                        )
+                    });
+            }
+        }
+    }
+
+    if summary.blocked_field_count == 0 {
+        summary.status = SPIRE_REMOTE_STATUS_READY;
+        summary.recommendation = SPIRE_REMOTE_NONE;
+    } else {
+        summary.status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
+        summary.recommendation = "register remote node descriptors before libpq fanout execution";
+    }
+    summary
+}
+
 pub(crate) unsafe fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {

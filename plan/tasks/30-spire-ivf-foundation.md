@@ -1477,6 +1477,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_node_descriptor_contract()` now exposes the durable
   descriptor fields required before real libpq fanout can run; conninfo remains
   an indirect secret reference rather than a raw connection string.
+  `ec_spire_remote_node_descriptor_readiness(...)` and
+  `ec_spire_remote_node_descriptor_readiness_summary(...)` now project that
+  contract onto remote nodes so required missing descriptor fields are visible
+  as the precise pre-libpq blocker.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
