@@ -156,6 +156,14 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             let recursive_fanout = options.recursive_fanout();
+            let top_graph_plan = options
+                .top_graph_plan()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            if top_graph_plan.enabled && recursive_fanout.is_none() {
+                pgrx::error!(
+                    "ec_spire top_graph_enabled requires recursive_fanout >= 2 during build"
+                );
+            }
             page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
             let indexed_vector_kind =
                 resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");

@@ -394,14 +394,36 @@ unsafe fn publish_relation_recursive_routing_build(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
-    let draft = build_recursive_routing_epoch_from_leaf_inputs_with_store(
-        coordinator.epoch_input,
-        &mut store,
-    )?;
-    if draft.next_pid != coordinator.next_pid {
+    let top_graph_plan = state.options.top_graph_plan()?;
+    let expected_next_pid = if top_graph_plan.enabled {
+        coordinator
+            .next_pid
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire recursive top graph next_pid overflow".to_owned())?
+    } else {
+        coordinator.next_pid
+    };
+    let draft = if top_graph_plan.enabled {
+        build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+            coordinator.epoch_input,
+            SpireTopGraphBuildParams {
+                graph_degree: top_graph_plan.graph_degree,
+                build_list_size: top_graph_plan.build_list_size,
+                alpha: top_graph_plan.alpha,
+                seed: state.options.seed as u64,
+            },
+            &mut store,
+        )?
+    } else {
+        build_recursive_routing_epoch_from_leaf_inputs_with_store(
+            coordinator.epoch_input,
+            &mut store,
+        )?
+    };
+    if draft.next_pid != expected_next_pid {
         return Err(format!(
-            "ec_spire recursive relation build next_pid {} does not match coordinator next_pid {}",
-            draft.next_pid, coordinator.next_pid
+            "ec_spire recursive relation build next_pid {} does not match expected next_pid {}",
+            draft.next_pid, expected_next_pid
         ));
     }
     unsafe {

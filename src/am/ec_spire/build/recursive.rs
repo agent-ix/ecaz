@@ -621,6 +621,76 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
     )
 }
 
+fn build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+    input: SpireRecursiveRoutingEpochObjectInput,
+    top_graph_params: SpireTopGraphBuildParams,
+    object_store: &mut impl SpireBuildObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
+    let expected_leaf_parents = invariants.leaf_parent_pids;
+    let mut seen_leaf_pids = HashSet::with_capacity(input.leaf_inputs.len());
+    let mut leaf_placements = Vec::with_capacity(input.leaf_inputs.len());
+    for leaf_input in input.leaf_inputs {
+        if !seen_leaf_pids.insert(leaf_input.pid) {
+            return Err(format!(
+                "ec_spire recursive routing epoch duplicate leaf object input pid {}",
+                leaf_input.pid
+            ));
+        }
+        let expected_parent_pid = expected_leaf_parents.get(&leaf_input.pid).ok_or_else(|| {
+            format!(
+                "ec_spire recursive routing epoch unexpected leaf object input pid {}",
+                leaf_input.pid
+            )
+        })?;
+        if leaf_input.parent_pid != *expected_parent_pid {
+            return Err(format!(
+                "ec_spire recursive routing epoch leaf object input pid {} parent {} does not match routing parent {}",
+                leaf_input.pid, leaf_input.parent_pid, expected_parent_pid
+            ));
+        }
+        leaf_placements.push(object_store.write_leaf_object_v2_from_rows(
+            input.epoch,
+            leaf_input.pid,
+            leaf_input.object_version,
+            leaf_input.parent_pid,
+            &leaf_input.rows,
+        )?);
+    }
+    let expected_leaf_pids = expected_leaf_parents
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
+    if seen_leaf_pids != expected_leaf_pids {
+        let missing = expected_leaf_pids
+            .difference(&seen_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        let extra = seen_leaf_pids
+            .difference(&expected_leaf_pids)
+            .copied()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "ec_spire recursive routing epoch leaf object input mismatch: missing {missing:?}, extra {extra:?}"
+        ));
+    }
+
+    build_recursive_top_graph_epoch_draft_with_store(
+        SpireRecursiveTopGraphEpochInput {
+            epoch_input: SpireRecursiveRoutingEpochInput {
+                epoch: input.epoch,
+                published_at_micros: input.published_at_micros,
+                retain_until_micros: input.retain_until_micros,
+                consistency_mode: input.consistency_mode,
+                routing_draft: input.routing_draft,
+                leaf_placements,
+            },
+            top_graph_params,
+        },
+        object_store,
+    )
+}
+
 fn build_recursive_routing_epoch_draft_with_store(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut impl SpireBuildObjectStore,

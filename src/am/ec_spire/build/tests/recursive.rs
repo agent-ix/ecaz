@@ -292,6 +292,88 @@
     }
 
     #[test]
+    fn recursive_top_graph_epoch_from_leaf_inputs_writes_leaves_and_graph() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let routing_draft = super::build_recursive_routing_hierarchy_draft(
+            SpireRecursiveRoutingBuildInput {
+                object_version: 3,
+                dimensions: 2,
+                target_fanout: 4,
+                seed: 42,
+                children: vec![
+                    recursive_child(11, vec![1.0, 0.0]),
+                    recursive_child(12, vec![0.8, 0.2]),
+                ],
+            },
+            &mut pid_allocator,
+        )
+        .expect("recursive routing draft should build");
+        let root_pid = routing_draft.root_pid;
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+
+        let draft = super::build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+            SpireRecursiveRoutingEpochObjectInput {
+                epoch: 7,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                routing_draft,
+                leaf_inputs: vec![
+                    SpireRecursiveLeafObjectInput {
+                        pid: 11,
+                        object_version: 3,
+                        parent_pid: root_pid,
+                        rows: vec![primary_row(1, 10, 1)],
+                    },
+                    SpireRecursiveLeafObjectInput {
+                        pid: 12,
+                        object_version: 3,
+                        parent_pid: root_pid,
+                        rows: vec![primary_row(2, 10, 2)],
+                    },
+                ],
+            },
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+            &mut object_store,
+        )
+        .unwrap();
+
+        let top_graph = draft
+            .top_graph_object
+            .as_ref()
+            .expect("top graph object should be included");
+        assert_eq!(draft.object_manifest.entries.len(), 4);
+        assert_eq!(top_graph.header.parent_pid, root_pid);
+        assert_eq!(top_graph.node_count(), 2);
+        let top_graph_placement = draft
+            .placement_directory
+            .get(top_graph.header.pid)
+            .unwrap();
+        assert_eq!(
+            object_store
+                .read_top_graph_object(top_graph_placement)
+                .unwrap()
+                .header
+                .published_epoch_backref,
+            7
+        );
+        assert_eq!(
+            object_store
+                .read_leaf_object_v2(draft.placement_directory.get(11).unwrap())
+                .unwrap()
+                .assignment_rows()
+                .unwrap()[0]
+                .heap_tid,
+            tid(10, 1)
+        );
+    }
+
+    #[test]
     fn local_recursive_routing_epoch_draft_rejects_missing_leaf_placement() {
         let mut pid_allocator = SpirePidAllocator::default();
         let routing_draft = super::build_recursive_routing_hierarchy_draft(
