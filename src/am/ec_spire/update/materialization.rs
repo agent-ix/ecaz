@@ -390,6 +390,7 @@ pub(super) fn build_split_replacement_leaf_materialization(
     for source_row in source_rows {
         let routed_indexes = route_split_replacement_boundary_indexes(
             &model.centroids,
+            &pid_plan.replacement_pids,
             &source_row.source_vector,
             boundary_replica_count,
         )?;
@@ -421,6 +422,7 @@ pub(super) fn build_split_replacement_leaf_materialization(
 
 fn route_split_replacement_boundary_indexes(
     centroids: &[Vec<f32>],
+    replacement_pids: &[u64],
     source_vector: &[f32],
     boundary_replica_count: u32,
 ) -> Result<Vec<usize>, String> {
@@ -429,64 +431,47 @@ fn route_split_replacement_boundary_indexes(
             "ec_spire split replacement boundary routing requires centroids".to_owned(),
         );
     }
-    validate_split_replacement_route_vector(source_vector)?;
-    let mut scored = centroids
+    if replacement_pids.len() != centroids.len() {
+        return Err(format!(
+            "ec_spire split replacement boundary routing pid count {} does not match centroid count {}",
+            replacement_pids.len(),
+            centroids.len()
+        ));
+    }
+    if centroids.len() > u32::MAX as usize {
+        return Err(
+            "ec_spire split replacement boundary routing centroid count exceeds u32".to_owned(),
+        );
+    }
+    let ranked = rank_centroid_routes_by_ip(
+        "ec_spire split replacement boundary routing",
+        source_vector,
+        source_vector.len(),
+        centroids
         .iter()
         .enumerate()
-        .map(|(index, centroid)| {
-            if centroid.len() != source_vector.len() {
-                return Err(format!(
-                    "ec_spire split replacement boundary routing centroid dimensions mismatch: got {}, expected {}",
-                    centroid.len(),
-                    source_vector.len()
-                ));
-            }
-            validate_split_replacement_route_vector(centroid)?;
-            let score = source_vector
-                .iter()
-                .zip(centroid.iter())
-                .map(|(left, right)| left * right)
-                .sum::<f32>();
-            Ok((index, score))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    scored.sort_by(|left, right| {
-        right
-            .1
-            .total_cmp(&left.1)
-            .then_with(|| left.0.cmp(&right.0))
-    });
+        .zip(replacement_pids.iter().copied())
+        .map(|((index, centroid), pid)| SpireCentroidRouteInput {
+            centroid_index: index as u32,
+            pid,
+            centroid,
+        }),
+    )?;
     let limit = usize::try_from(boundary_replica_count)
         .unwrap_or(usize::MAX)
         .saturating_add(1)
-        .min(scored.len());
-    let selected = scored
+        .min(ranked.len());
+    let selected = ranked
         .into_iter()
         .take(limit)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+        .map(|route| {
+            usize::try_from(route.centroid_index).map_err(|_| {
+                "ec_spire split replacement boundary routing centroid index exceeds usize"
+                    .to_owned()
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     Ok(selected)
-}
-
-fn validate_split_replacement_route_vector(vector: &[f32]) -> Result<(), String> {
-    if vector.is_empty() {
-        return Err("ec_spire split replacement boundary routing vector is empty".to_owned());
-    }
-    if vector.iter().any(|value| !value.is_finite()) {
-        return Err(
-            "ec_spire split replacement boundary routing vector must be finite".to_owned(),
-        );
-    }
-    let norm_sq = vector
-        .iter()
-        .map(|value| (*value as f64) * (*value as f64))
-        .sum::<f64>();
-    if norm_sq <= f64::EPSILON {
-        return Err(
-            "ec_spire split replacement boundary routing vector must be non-zero".to_owned(),
-        );
-    }
-    Ok(())
 }
 
 fn split_replacement_assignment_with_flags(

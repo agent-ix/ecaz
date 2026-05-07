@@ -192,6 +192,14 @@ replica rows, total assignment rows, and physical object bytes. Local results
 are implementation evidence only; they are not product-scale or multi-machine
 claims.
 
+The Phase 5 real-10k local study showed the expected conservative tradeoff:
+`boundary_replica_count = 1` roughly doubled assignment rows and local query
+time while only improving recall at low `nprobe`. Keep the default off for
+local single-store indexes on that evidence. The likely product value remains
+Phase 7 remote availability and read-throughput, where replicas can make a
+vector reachable from more machines or stores instead of simply trying to
+improve local recall.
+
 ## Implementation Order
 
 1. Add parsed reloption metadata and diagnostics that always report zero

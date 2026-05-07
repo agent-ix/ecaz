@@ -24,6 +24,20 @@ pub(super) struct SpireBoundaryAssignmentPlan {
     pub(super) replica_pids: Vec<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireCentroidRouteInput<'a> {
+    pub(super) centroid_index: u32,
+    pub(super) pid: u64,
+    pub(super) centroid: &'a [f32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireRankedCentroidRoute {
+    pub(super) centroid_index: u32,
+    pub(super) pid: u64,
+    pub(super) score: f32,
+}
+
 impl SpireSingleLevelCentroidPlan {
     pub(super) fn centroid_count(&self) -> usize {
         self.centroids.len()
@@ -109,18 +123,17 @@ impl SpireSingleLevelRouteMap {
         boundary_replica_count: u32,
     ) -> Result<SpireBoundaryAssignmentPlan, String> {
         self.validate()?;
-        validate_route_vector(vector, usize::from(self.dimensions))?;
 
-        let mut scored_entries = self
-            .entries
-            .iter()
-            .map(|entry| SpireScoredRouteEntry {
-                score: inner_product(vector, &entry.centroid),
+        let scored_entries = rank_centroid_routes_by_ip(
+            "ec_spire route map",
+            vector,
+            usize::from(self.dimensions),
+            self.entries.iter().map(|entry| SpireCentroidRouteInput {
                 centroid_index: entry.centroid_index,
                 pid: entry.pid,
-            })
-            .collect::<Vec<_>>();
-        scored_entries.sort_by(route_entry_cmp);
+                centroid: &entry.centroid,
+            }),
+        )?;
 
         let mut selected_pids = Vec::with_capacity(
             usize::try_from(boundary_replica_count)
@@ -200,14 +213,44 @@ impl SpireSingleLevelRouteMap {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct SpireScoredRouteEntry {
-    score: f32,
-    centroid_index: u32,
-    pid: u64,
+pub(super) fn rank_centroid_routes_by_ip<'a>(
+    label: &str,
+    vector: &[f32],
+    dimensions: usize,
+    routes: impl IntoIterator<Item = SpireCentroidRouteInput<'a>>,
+) -> Result<Vec<SpireRankedCentroidRoute>, String> {
+    validate_route_vector(vector, dimensions)?;
+    let mut ranked = routes
+        .into_iter()
+        .map(|route| {
+            if route.centroid.len() != dimensions {
+                return Err(format!(
+                    "{label} centroid {} dimensions mismatch: got {}, expected {dimensions}",
+                    route.centroid_index,
+                    route.centroid.len()
+                ));
+            }
+            if route.centroid.iter().any(|component| !component.is_finite()) {
+                return Err(format!(
+                    "{label} centroid {} must be finite",
+                    route.centroid_index
+                ));
+            }
+            Ok(SpireRankedCentroidRoute {
+                centroid_index: route.centroid_index,
+                pid: route.pid,
+                score: inner_product(vector, route.centroid),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    ranked.sort_by(ranked_centroid_route_cmp);
+    Ok(ranked)
 }
 
-fn route_entry_cmp(left: &SpireScoredRouteEntry, right: &SpireScoredRouteEntry) -> std::cmp::Ordering {
+fn ranked_centroid_route_cmp(
+    left: &SpireRankedCentroidRoute,
+    right: &SpireRankedCentroidRoute,
+) -> std::cmp::Ordering {
     right
         .score
         .total_cmp(&left.score)

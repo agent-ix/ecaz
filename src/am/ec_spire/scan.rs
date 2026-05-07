@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
 
-use super::build::SpireTopGraphBuildDraft;
+use super::build::{rank_centroid_routes_by_ip, SpireCentroidRouteInput, SpireTopGraphBuildDraft};
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireLocalStoreConfig, SpireObjectManifest,
     SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, SpirePublishedEpochSnapshot,

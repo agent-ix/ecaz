@@ -164,39 +164,28 @@ fn route_routing_object_to_child_pids(
     let requested = usize::try_from(nprobe)
         .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
 
-    let mut heap = BinaryHeap::with_capacity(requested.min(routing_object.child_count()));
-    for child in routing_object.children() {
-        let entry = SpireRouteCandidateHeapEntry {
-            candidate: SpireRouteCandidate {
-                centroid_index: child.centroid_index,
-                child_pid: child.child_pid,
-                ip_score: inner_product(query_vector, child.centroid),
-            },
-        };
-        if heap.len() < requested {
-            heap.push(entry);
+    let scored_children = rank_centroid_routes_by_ip(
+        "ec_spire scan routing",
+        query_vector,
+        usize::from(routing_object.dimensions),
+        routing_object.children().map(|child| SpireCentroidRouteInput {
+            centroid_index: child.centroid_index,
+            pid: child.child_pid,
+            centroid: child.centroid,
+        }),
+    )?;
+
+    let mut selected_pids = Vec::with_capacity(requested.min(scored_children.len()));
+    for child in scored_children {
+        if selected_pids.contains(&child.pid) {
             continue;
         }
-
-        if heap
-            .peek()
-            .is_some_and(|worst| route_candidate_cmp(&entry.candidate, &worst.candidate).is_lt())
-        {
-            heap.pop();
-            heap.push(entry);
+        selected_pids.push(child.pid);
+        if selected_pids.len() == requested {
+            break;
         }
     }
-
-    let mut scored_children = heap
-        .into_iter()
-        .map(|entry| entry.candidate)
-        .collect::<Vec<_>>();
-    scored_children.sort_by(route_candidate_cmp);
-
-    Ok(scored_children
-        .into_iter()
-        .map(|candidate| candidate.child_pid)
-        .collect())
+    Ok(selected_pids)
 }
 
 fn route_recursive_routing_objects_to_leaf_pids(
@@ -488,14 +477,6 @@ fn top_graph_route_cmp(left: &SpireTopGraphRoute, right: &SpireTopGraphRoute) ->
         .then_with(|| left.centroid_ordinal.cmp(&right.centroid_ordinal))
         .then_with(|| left.child_pid.cmp(&right.child_pid))
         .then_with(|| left.node_ordinal.cmp(&right.node_ordinal))
-}
-
-fn route_candidate_cmp(left: &SpireRouteCandidate, right: &SpireRouteCandidate) -> Ordering {
-    right
-        .ip_score
-        .total_cmp(&left.ip_score)
-        .then_with(|| left.centroid_index.cmp(&right.centroid_index))
-        .then_with(|| left.child_pid.cmp(&right.child_pid))
 }
 
 fn validate_routing_query_vector(query_vector: &[f32], dimensions: usize) -> Result<(), String> {

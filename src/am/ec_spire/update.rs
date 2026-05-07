@@ -19,6 +19,7 @@ use super::meta::{
     SpirePlacementState, SpirePublishedEpochSnapshot, SpireRootControlState,
     SpireValidatedEpochSnapshot,
 };
+use super::build::{rank_centroid_routes_by_ip, SpireCentroidRouteInput};
 use super::page;
 use super::scan::{
     collect_validated_snapshot_visible_primary_rows, load_indexed_source_vector_from_heap_row,

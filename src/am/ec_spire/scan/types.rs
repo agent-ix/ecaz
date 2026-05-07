@@ -59,38 +59,6 @@ impl Ord for SpireScoredScanCandidateHeapEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct SpireRouteCandidate {
-    centroid_index: u32,
-    child_pid: u64,
-    ip_score: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SpireRouteCandidateHeapEntry {
-    candidate: SpireRouteCandidate,
-}
-
-impl PartialEq for SpireRouteCandidateHeapEntry {
-    fn eq(&self, other: &Self) -> bool {
-        route_candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
-    }
-}
-
-impl Eq for SpireRouteCandidateHeapEntry {}
-
-impl PartialOrd for SpireRouteCandidateHeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SpireRouteCandidateHeapEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        route_candidate_cmp(&self.candidate, &other.candidate)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct SpireLoadedRoutingHierarchy {
     root_pid: u64,
