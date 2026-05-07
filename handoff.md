@@ -1,113 +1,126 @@
-# Task 30 Phase 4 Handoff
+# Task 30 Phase 5 Handoff
 
-You are continuing Task 30 SPIRE on branch
-`task30-spire-partition-object-spec`.
+You are continuing Task 30 SPIRE after Phase 4 has merged to `main`.
 
 ## Current State
 
-- Starting point before this handoff: `59e37fa2c2628a9efa33b8f85ecd4ab585f234c5`.
-- Worktree was clean before writing this handoff.
-- Phase 3 recursion is complete for the current milestone.
-- Reviewer closeout feedback was handled in:
-  - `9a00540d` - reconciled Phase 3 plan follow-ups.
-  - `da8b4e4e` - updated the Phase 3 closeout review packet.
-  - `59e37fa2` - normalized the reviewer feedback file layout.
-- Recursive split/merge maintenance is deliberately guarded until recursive
-  update propagation is designed and implemented.
-- Deferred post-Phase-3 recursion items are carried forward in
-  `plan/tasks/30-spire-ivf-foundation.md`:
-  - durable per-level `nprobe` configuration/storage
-  - durable per-level parameter storage
-  - explicit user-facing per-level fanout configuration
+- Phase 4 merge commit on `main`: `8172d7cc` (`Merge SPIRE Phase 4`).
+- Source branch that landed Phase 4: `task30-spire-partition-object-spec`.
+- Reviewer merge-readiness verdict: `review/30509-spire-phase4-local-placement-design/feedback/2026-05-06-06-reviewer.md`.
+- Phase 4 is closed for local multi-store placement:
+  - auxiliary local store relations are created and published;
+  - mutation paths route through the active local store set;
+  - scan prefetch resolves placements and batches PG18 `ReadStream` reads per
+    local store relation;
+  - SQL `VACUUM` has two-store coverage;
+  - storage-debt diagnostics aggregate root/control plus auxiliary stores;
+  - same-device and `/mnt/e` two-store benchmark evidence is packet-local;
+  - multi-store REINDEX rejects explicitly until a full lifecycle exists;
+  - auxiliary store autovacuum is disabled at the parsed relcache options
+    boundary.
+- `plan/status.md` has Task 30 at 94%. Remaining Task 30 gates are
+  PQ-FastScan scorer binding and physical object reclamation / old-epoch
+  cleanup. Those are not Phase 5 boundary-replication prerequisites unless the
+  task explicitly scopes them in.
 
 ## Repo Workflow
 
-- At turn start, scan `review/` for new feedback and handle owned actionable
-  feedback before new implementation.
+- Start each turn by scanning `review/` for new feedback. Process owned,
+  actionable feedback before new implementation work.
 - Work in narrow, testable slices.
 - Commit each code/docs checkpoint and push immediately.
-- Add/update the matching review packet in a separate commit and push.
+- Add or update the matching review packet in a separate commit and push.
 - Do not run tests by default. For risky SPIRE/PostgreSQL behavior, prefer the
   narrowest PG18-focused validation.
 - Do not run PG17 unless explicitly asked.
 - Do not revert unrelated changes.
 
-## Phase 4 Objective
+## Phase 5 Objective
 
-Implement local multi-NVMe placement while staying on the local-node SPIRE
-surface.
+Implement boundary replication for SPIRE.
 
-The durable shape is still:
+The durable storage shape already supports multiple assignment rows per vector:
 
 ```text
+vec_id -> one or more pid assignments
 pid -> local_store_id -> object location
 ```
 
-Phase 4 should move from the Phase 1/2/3 single relation-backed local store to
-bounded partition-store relations that can each map to a PostgreSQL tablespace
-expected to live on a physical NVMe device. The root/control index relation
-remains authoritative. Do not make product claims about multi-NVMe performance
-until benchmark-backed evidence exists.
+Phase 5 should turn that latent shape into controlled behavior: a vector can be
+assigned to its primary partition and one or more nearby boundary partitions,
+then scans must deduplicate replicated `vec_id`s before final top-k output.
 
 ## Read First
 
-- `plan/tasks/30-spire-ivf-foundation.md`, especially Phase 4 and the Phase 3
-  closeout follow-ups.
+- `plan/tasks/30-spire-ivf-foundation.md`, especially Phase 5 and the open
+  PQ-FastScan / old-epoch cleanup notes.
 - `plan/design/spire-phase0-partition-object-storage.md`
 - `plan/design/spire-recursive-hierarchy.md`
 - `plan/design/spire-update-mechanics.md`
+- `plan/design/spire-local-multistore-placement.md`
 - `docs/SPIRE_DIAGNOSTICS.md`
-- `src/am/ec_spire/{build,storage,meta,scan,update}.rs`
+- `src/am/ec_spire/{assign,build,scan,update,storage,meta}.rs`
+- Phase 4 review packets `30531` through `30540` for local-store behavior that
+  boundary replication must preserve.
 
-## Phase 4 Checklist
+## Phase 5 Checklist
 
-- Partition-store relation layout: define bounded store relations and how each
-  maps to a PostgreSQL tablespace expected to live on a physical NVMe device.
-- Hash placement: place leaf and internal partition objects by
-  `hash(pid) % local_store_count`.
-- Parallel local fetch: fetch selected PIDs grouped by local store and keep
-  scoring close to partition object bytes.
-- Placement diagnostics: expose per-store object count, bytes, candidate rows,
-  and scanned PID counts. Existing single-store placement diagnostics are only a
-  starting point.
-- Local placement benchmark: measure one-store versus multi-store behavior on a
-  machine with multiple physical NVMe devices before any product claim.
+- Boundary predicate: define the threshold/rule for assigning a vector to
+  multiple nearby partitions.
+- Assignment fanout: extend the assignment writer from one row per vector to
+  multiple `(vec_id, pid)` rows.
+- Duplicate control: ensure scans deduplicate replicated vector IDs before
+  final top-k.
+- Recall study: measure recall delta with boundary replication off/on at fixed
+  storage overhead.
+- Storage accounting: report leaf-assignment and posting-list growth from
+  replication.
 
 ## Suggested First Slice
 
-Start with a Phase 4 design checkpoint before code.
+Start with a design checkpoint before changing build behavior.
 
 Define:
 
-- the bounded store count/configuration surface
-- how store relations are named, created, opened, and discovered
-- how each store maps to a tablespace
-- where root/control metadata records the active store set
-- how single-store indexes continue to work without migration surprises
-- how placement entries represent `local_store_id` and object location
-- lock ordering and publish atomicity across multiple store relations
-- failure/degraded semantics when one local store is unavailable
-- which diagnostics become authoritative for placement state
+- the reloption/GUC surface for enabling boundary replication, including a
+  conservative default-off path;
+- the boundary predicate, such as top-N nearby leaves or distance-margin based
+  fanout;
+- hard caps for assignment fanout so storage growth is bounded;
+- how the existing explicit scan dedupe mode transitions from primary-only to
+  replicated-assignment mode;
+- how diagnostics expose primary assignment count, boundary replica count,
+  total assignment rows, and estimated overhead;
+- how local multi-store placement remains hash-by-PID and does not need a new
+  store placement rule.
 
 Recommended artifact:
 
-- Add `plan/design/spire-local-multistore-placement.md`.
+- Add `plan/design/spire-boundary-replication.md`.
 - Add a review packet such as
-  `review/30509-spire-phase4-local-placement-design/`.
+  `review/30541-spire-boundary-replication-design/`.
 - Commit the design checkpoint, push, then commit the review packet and push.
 
-## Follow-On Slices
+## Implementation Slices
 
-After the design checkpoint, proceed in narrow implementation slices:
+1. Add parsed options and diagnostics for boundary replication while preserving
+   default primary-only behavior.
+2. Extend assignment planning to compute bounded secondary PIDs without writing
+   them yet.
+3. Publish multiple assignment rows per vector in a small PG18 fixture.
+4. Switch scan dedupe to the replicated-assignment mode when fanout is enabled.
+5. Add storage-accounting diagnostics for primary rows, replica rows, and
+   growth ratio.
+6. Run a small recall/storage comparison packet with replication off/on at a
+   fixed target overhead.
 
-1. Add local store configuration metadata and diagnostics.
-2. Add store relation create/open helpers with default single-store behavior.
-3. Add deterministic hash placement planning for leaf and internal PIDs.
-4. Route object writes by `local_store_id`.
-5. Group scan reads by local store before candidate scoring.
-6. Extend placement diagnostics for multi-store placement and query touches.
-7. Add benchmark harness and measurement packet only after correctness is
-   stable.
+## Guardrails
 
-Keep Phase 4 conservative: preserve the current single-store behavior and
-diagnostics while adding multi-store placement as an extension.
+- Preserve existing single-store and multi-store Phase 4 behavior.
+- Do not make product claims from local recall/latency data.
+- Do not implement full multi-store REINDEX lifecycle in Phase 5 unless the
+  user explicitly asks; it is recorded as later lifecycle work.
+- Do not pull in repo-wide hardening items from the Phase 4 review deferral
+  list unless explicitly scoped.
+- Keep PQ-FastScan populated-index scorer binding separate unless the boundary
+  replication change directly touches assignment payload scoring.
