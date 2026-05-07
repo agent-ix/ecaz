@@ -319,6 +319,52 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_request_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchRequestPlanRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchRequestPlanRow>, String> {
+        let query = scan::SpireScanQuery::new(query)?;
+        let query_dimension = u64::try_from(query.values().len())
+            .map_err(|_| "ec_spire remote search request plan query dimension exceeds u64")?;
+        let top_k = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search request plan top_k exceeds u64")?;
+        let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let rows = unsafe {
+            remote_search_target_plan_rows(
+                index_relation,
+                requested_epoch,
+                selected_pids,
+                consistency_mode,
+            )
+        };
+        Ok(rows
+            .into_iter()
+            .map(|row| SpireRemoteSearchRequestPlanRow {
+                requested_epoch: row.requested_epoch,
+                target_kind: row.target_kind,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids,
+                pid_count: row.pid_count,
+                query_dimension,
+                top_k,
+                consistency_mode: consistency_mode_name(requested_consistency_mode),
+                endpoint_function: if row.target_kind == "skipped" {
+                    "none"
+                } else {
+                    "ec_spire_remote_search"
+                },
+                status: row.status,
+            })
+            .collect())
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the

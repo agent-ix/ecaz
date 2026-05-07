@@ -1646,6 +1646,81 @@ fn ec_spire_remote_search_target_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_request_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(target_kind, &'static str),
+        name!(node_id, i64),
+        name!(selected_pids, Vec<i64>),
+        name!(pid_count, i64),
+        name!(query_dimension, i64),
+        name!(top_k, i64),
+        name!(consistency_mode, &'static str),
+        name!(endpoint_function, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!("ec_spire_remote_search_request_plan requested_epoch must be greater than 0");
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_request_plan top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!("ec_spire_remote_search_request_plan selected PID {pid} is negative")
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_request_plan") };
+    let rows = unsafe {
+        am::spire_remote_search_request_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            row.target_kind,
+            i64::from(row.node_id),
+            row.selected_pids
+                .into_iter()
+                .map(|pid| i64::try_from(pid).expect("pid should fit in i64"))
+                .collect::<Vec<_>>(),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            i64::try_from(row.query_dimension).expect("query dimension should fit in i64"),
+            i64::try_from(row.top_k).expect("top_k should fit in i64"),
+            row.consistency_mode,
+            row.endpoint_function,
+            row.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -8361,6 +8436,149 @@ mod tests {
         assert_eq!(status, "degraded_skipped");
         assert_eq!(placement_state, "unavailable");
         assert_eq!(selected_pids, vec![selected_pid]);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_request_plan_contract() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_request_plan_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_request_plan_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_request_plan_sql_idx \
+             ON ec_spire_remote_request_plan_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_request_plan_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_request_plan_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_request_plan_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        let request_from = format!(
+            "FROM ec_spire_remote_search_request_plan(\
+             'ec_spire_remote_request_plan_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {request_from}"))
+            .expect("request plan count query should succeed")
+            .expect("request plan count should exist");
+        let query_dimension =
+            Spi::get_one::<i64>(&format!("SELECT min(query_dimension) {request_from}"))
+                .expect("request plan dimension query should succeed")
+                .expect("request plan dimension should exist");
+        let top_k = Spi::get_one::<i64>(&format!("SELECT min(top_k) {request_from}"))
+            .expect("request plan top_k query should succeed")
+            .expect("request plan top_k should exist");
+        let endpoint_ok = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(endpoint_function = 'ec_spire_remote_search') {request_from}"
+        ))
+        .expect("request plan endpoint query should succeed")
+        .expect("request plan endpoint aggregate should exist");
+        let remote_status = Spi::get_one::<String>(&format!(
+            "SELECT status {request_from} WHERE target_kind = 'remote'"
+        ))
+        .expect("request plan remote status query should succeed")
+        .expect("request plan remote status should exist");
+
+        assert_eq!(row_count, 2);
+        assert_eq!(query_dimension, 2);
+        assert_eq!(top_k, 3);
+        assert!(endpoint_ok);
+        assert_eq!(remote_status, "requires_libpq_transport");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_request_plan_degraded_skip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_request_skip_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_request_skip_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_request_skip_sql_idx \
+             ON ec_spire_remote_request_skip_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_request_skip_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_request_skip_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_request_skip_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "skipped");
+        }
+        let request_from = format!(
+            "FROM ec_spire_remote_search_request_plan(\
+             'ec_spire_remote_request_skip_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'degraded')",
+        );
+        let target_kind = Spi::get_one::<String>(&format!("SELECT target_kind {request_from}"))
+            .expect("request skip target kind query should succeed")
+            .expect("request skip target kind should exist");
+        let endpoint = Spi::get_one::<String>(&format!("SELECT endpoint_function {request_from}"))
+            .expect("request skip endpoint query should succeed")
+            .expect("request skip endpoint should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {request_from}"))
+            .expect("request skip status query should succeed")
+            .expect("request skip status should exist");
+        let consistency_mode =
+            Spi::get_one::<String>(&format!("SELECT consistency_mode {request_from}"))
+                .expect("request skip mode query should succeed")
+                .expect("request skip mode should exist");
+
+        assert_eq!(target_kind, "skipped");
+        assert_eq!(endpoint, "none");
+        assert_eq!(status, "degraded_skipped");
+        assert_eq!(consistency_mode, "degraded");
     }
 
     #[pg_test]
