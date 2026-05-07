@@ -95,6 +95,14 @@ fn remote_search_row_locator(heap_tid: crate::storage::page::ItemPointer) -> Vec
     row_locator
 }
 
+fn remote_search_coordinator_ready_status(skipped_placement_count: u64) -> &'static str {
+    if skipped_placement_count > 0 {
+        "degraded_ready"
+    } else {
+        "ready"
+    }
+}
+
 unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
@@ -501,7 +509,7 @@ unsafe fn remote_search_coordinator_local_summary_result(
         candidate_input_count: merged.input_count,
         duplicate_vec_id_count: merged.duplicate_vec_id_count,
         returned_candidate_count,
-        status: "ready",
+        status: remote_search_coordinator_ready_status(skipped_placement_count),
     })
 }
 

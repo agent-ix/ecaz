@@ -314,7 +314,10 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
                 placement_directory
                     .get(candidate.pid)
                     .ok_or_else(|| {
-                        format!("ec_spire debug candidate pid {} missing placement", candidate.pid)
+                        format!(
+                            "ec_spire debug candidate pid {} missing placement",
+                            candidate.pid
+                        )
                     })
                     .map(|placement| placement.local_store_id)
             })
@@ -447,6 +450,53 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_node(
             .ok_or_else(|| format!("ec_spire debug placement node rewrite missing pid {pid}"))?;
         placement.node_id = node_id;
         placement.local_store_id = node_id;
+
+        let manifests = build::SpireEncodedManifestBundle {
+            epoch_manifest: epoch_manifest.encode()?,
+            object_manifest: object_manifest.encode()?,
+            placement_directory: placement_directory.encode()?,
+            local_store_config: local_store_config.encode()?,
+        };
+        let locators =
+            unsafe { build::write_manifest_bundle_to_relation(index_relation, &manifests)? };
+        let root_control = meta::SpireRootControlState::published_with_store_config(
+            root_control.active_epoch,
+            root_control.next_pid,
+            root_control.next_local_vec_seq,
+            locators.epoch_manifest_tid,
+            locators.object_manifest_tid,
+            locators.placement_directory_tid,
+            locators.local_store_config_tid,
+        )?;
+        unsafe { page::initialize_root_control_page(index_relation, root_control) };
+        Ok(root_control.active_epoch)
+    })();
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
+    index_oid: pg_sys::Oid,
+    mode: &str,
+) -> u64 {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let result = (|| -> Result<u64, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let local_store_config =
+            unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
+        let (mut epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        epoch_manifest.consistency_mode = match mode {
+            "strict" => meta::SpireConsistencyMode::Strict,
+            "degraded" => meta::SpireConsistencyMode::Degraded,
+            other => {
+                return Err(format!(
+                    "ec_spire debug consistency mode rewrite unknown mode '{other}'"
+                ))
+            }
+        };
 
         let manifests = build::SpireEncodedManifestBundle {
             epoch_manifest: epoch_manifest.encode()?,

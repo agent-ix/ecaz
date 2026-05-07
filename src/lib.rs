@@ -8018,6 +8018,86 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_remote_search_coord_summary_degraded_skips() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_coord_degraded_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_coord_degraded_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_coord_degraded_sql_idx \
+             ON ec_spire_remote_coord_degraded_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_coord_degraded_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_coord_degraded_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_coord_degraded_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable");
+        }
+
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_local_summary(\
+             'ec_spire_remote_coord_degraded_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'degraded')",
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("degraded summary status query should succeed")
+            .expect("degraded summary status should exist");
+        let skipped_placement_count =
+            Spi::get_one::<i64>(&format!("SELECT skipped_placement_count {summary_from}"))
+                .expect("degraded skipped placement count query should succeed")
+                .expect("degraded skipped placement count should exist");
+        let candidate_input_count =
+            Spi::get_one::<i64>(&format!("SELECT candidate_input_count {summary_from}"))
+                .expect("degraded candidate input count query should succeed")
+                .expect("degraded candidate input count should exist");
+        let returned_candidate_count =
+            Spi::get_one::<i64>(&format!("SELECT returned_candidate_count {summary_from}"))
+                .expect("degraded returned candidate count query should succeed")
+                .expect("degraded returned candidate count should exist");
+        let coordinator_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search_coordinator_local(\
+             'ec_spire_remote_coord_degraded_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'degraded')",
+        ))
+        .expect("degraded coordinator query should succeed")
+        .expect("degraded coordinator count should exist");
+
+        assert_eq!(status, "degraded_ready");
+        assert_eq!(skipped_placement_count, 1);
+        assert_eq!(candidate_input_count, 0);
+        assert_eq!(returned_candidate_count, 0);
+        assert_eq!(coordinator_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_search_fanout_plan_sql_reports_local_pids() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_fanout_sql \
