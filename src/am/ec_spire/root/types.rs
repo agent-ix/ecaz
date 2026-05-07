@@ -135,6 +135,19 @@ pub(crate) struct SpireRemoteSearchFanoutPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_target_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_placement_count: u64,
+    pub(crate) candidate_input_count: u64,
+    pub(crate) duplicate_vec_id_count: u64,
+    pub(crate) returned_candidate_count: u64,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) active_epoch: u64,
     pub(crate) consistency_mode: &'static str,

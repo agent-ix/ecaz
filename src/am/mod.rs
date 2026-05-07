@@ -47,6 +47,7 @@ pub(crate) use self::ec_spire::{
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     remote_search_candidates as spire_remote_search_candidates,
     remote_search_coordinator_local_candidates as spire_remote_search_coordinator_local_candidates,
+    remote_search_coordinator_local_summary as spire_remote_search_coordinator_local_summary,
     remote_search_fanout_plan_rows as spire_remote_search_fanout_plan_rows,
 };
 

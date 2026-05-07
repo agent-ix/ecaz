@@ -1659,6 +1659,85 @@ fn ec_spire_remote_search_coordinator_local(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_local_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(local_pid_count, i64),
+        name!(remote_target_count, i64),
+        name!(remote_pid_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(candidate_input_count, i64),
+        name!(duplicate_vec_id_count, i64),
+        name!(returned_candidate_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_coordinator_local_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_local_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_coordinator_local_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_coordinator_local_summary(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_target_count).expect("remote target count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.skipped_placement_count)
+            .expect("skipped placement count should fit in i64"),
+        i64::try_from(row.candidate_input_count).expect("candidate input count should fit in i64"),
+        i64::try_from(row.duplicate_vec_id_count)
+            .expect("duplicate vec_id count should fit in i64"),
+        i64::try_from(row.returned_candidate_count)
+            .expect("returned candidate count should fit in i64"),
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -7838,6 +7917,104 @@ mod tests {
              ARRAY[{selected_pid}]::bigint[], 1, 'strict')",
         ))
         .expect("coordinator-local search with remote target should fail before transport");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_coord_summary_counts() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_coord_summary_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_coord_summary_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_coord_summary_sql_idx \
+             ON ec_spire_remote_coord_summary_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_coord_summary_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_coord_summary_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_coord_summary_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_local_summary(\
+             'ec_spire_remote_coord_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 1, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("summary status query should succeed")
+            .expect("summary status should exist");
+        let local_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT local_pid_count {summary_from}"))
+                .expect("summary local pid count query should succeed")
+                .expect("local pid count should exist");
+        let candidate_input_count =
+            Spi::get_one::<i64>(&format!("SELECT candidate_input_count {summary_from}"))
+                .expect("summary candidate input count query should succeed")
+                .expect("candidate input count should exist");
+        let returned_candidate_count =
+            Spi::get_one::<i64>(&format!("SELECT returned_candidate_count {summary_from}"))
+                .expect("summary returned candidate count query should succeed")
+                .expect("returned candidate count should exist");
+
+        assert_eq!(status, "ready");
+        assert_eq!(local_pid_count, 2);
+        assert_eq!(candidate_input_count, 1);
+        assert_eq!(returned_candidate_count, 1);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[0] as u64, 2) };
+        let remote_summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_local_summary(\
+             'ec_spire_remote_coord_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}]::bigint[], 1, 'strict')",
+            selected_pids[0],
+        );
+        let remote_status = Spi::get_one::<String>(&format!("SELECT status {remote_summary_from}"))
+            .expect("remote summary status query should succeed")
+            .expect("remote summary status should exist");
+        let remote_target_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_target_count {remote_summary_from}"))
+                .expect("remote target count query should succeed")
+                .expect("remote target count should exist");
+        let remote_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_pid_count {remote_summary_from}"))
+                .expect("remote pid count query should succeed")
+                .expect("remote pid count should exist");
+        let remote_candidate_input_count = Spi::get_one::<i64>(&format!(
+            "SELECT candidate_input_count {remote_summary_from}"
+        ))
+        .expect("remote candidate input count query should succeed")
+        .expect("remote candidate input count should exist");
+
+        assert_eq!(remote_status, "requires_libpq_transport");
+        assert_eq!(remote_target_count, 1);
+        assert_eq!(remote_pid_count, 1);
+        assert_eq!(remote_candidate_input_count, 0);
     }
 
     #[pg_test]
