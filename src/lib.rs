@@ -1721,6 +1721,86 @@ fn ec_spire_remote_search_request_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_request_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(request_count, i64),
+        name!(local_request_count, i64),
+        name!(remote_request_count, i64),
+        name!(skipped_request_count, i64),
+        name!(executable_pid_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(skipped_pid_count, i64),
+        name!(query_dimension, i64),
+        name!(top_k, i64),
+        name!(consistency_mode, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_request_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_request_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_request_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_request_summary") };
+    let row = unsafe {
+        am::spire_remote_search_request_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.request_count).expect("request count should fit in i64"),
+        i64::try_from(row.local_request_count).expect("local request count should fit in i64"),
+        i64::try_from(row.remote_request_count).expect("remote request count should fit in i64"),
+        i64::try_from(row.skipped_request_count).expect("skipped request count should fit in i64"),
+        i64::try_from(row.executable_pid_count).expect("executable pid count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.skipped_pid_count).expect("skipped pid count should fit in i64"),
+        i64::try_from(row.query_dimension).expect("query dimension should fit in i64"),
+        i64::try_from(row.top_k).expect("top_k should fit in i64"),
+        row.consistency_mode,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -8578,6 +8658,163 @@ mod tests {
         assert_eq!(target_kind, "skipped");
         assert_eq!(endpoint, "none");
         assert_eq!(status, "degraded_skipped");
+        assert_eq!(consistency_mode, "degraded");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_req_summary_counts() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_request_summary_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_request_summary_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_request_summary_sql_idx \
+             ON ec_spire_remote_request_summary_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_request_summary_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_request_summary_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_request_summary_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_request_summary(\
+             'ec_spire_remote_request_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("request summary status query should succeed")
+            .expect("request summary status should exist");
+        let request_count = Spi::get_one::<i64>(&format!("SELECT request_count {summary_from}"))
+            .expect("request summary count query should succeed")
+            .expect("request count should exist");
+        let local_request_count =
+            Spi::get_one::<i64>(&format!("SELECT local_request_count {summary_from}"))
+                .expect("local request count query should succeed")
+                .expect("local request count should exist");
+        let remote_request_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_request_count {summary_from}"))
+                .expect("remote request count query should succeed")
+                .expect("remote request count should exist");
+        let executable_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT executable_pid_count {summary_from}"))
+                .expect("executable pid count query should succeed")
+                .expect("executable pid count should exist");
+        let query_dimension =
+            Spi::get_one::<i64>(&format!("SELECT query_dimension {summary_from}"))
+                .expect("query dimension query should succeed")
+                .expect("query dimension should exist");
+        let top_k = Spi::get_one::<i64>(&format!("SELECT top_k {summary_from}"))
+            .expect("top_k query should succeed")
+            .expect("top_k should exist");
+
+        assert_eq!(status, "requires_libpq_transport");
+        assert_eq!(request_count, 2);
+        assert_eq!(local_request_count, 1);
+        assert_eq!(remote_request_count, 1);
+        assert_eq!(executable_pid_count, 2);
+        assert_eq!(query_dimension, 2);
+        assert_eq!(top_k, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_req_summary_degraded() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_request_summary_skip_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_request_summary_skip_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_request_summary_skip_sql_idx \
+             ON ec_spire_remote_request_summary_skip_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_request_summary_skip_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_request_summary_skip_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_request_summary_skip_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable");
+        }
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_request_summary(\
+             'ec_spire_remote_request_summary_skip_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'degraded')",
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("request summary skip status query should succeed")
+            .expect("request summary skip status should exist");
+        let skipped_request_count =
+            Spi::get_one::<i64>(&format!("SELECT skipped_request_count {summary_from}"))
+                .expect("skipped request count query should succeed")
+                .expect("skipped request count should exist");
+        let skipped_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT skipped_pid_count {summary_from}"))
+                .expect("skipped pid count query should succeed")
+                .expect("skipped pid count should exist");
+        let executable_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT executable_pid_count {summary_from}"))
+                .expect("executable pid count query should succeed")
+                .expect("executable pid count should exist");
+        let consistency_mode =
+            Spi::get_one::<String>(&format!("SELECT consistency_mode {summary_from}"))
+                .expect("consistency mode query should succeed")
+                .expect("consistency mode should exist");
+
+        assert_eq!(status, "degraded_ready");
+        assert_eq!(skipped_request_count, 1);
+        assert_eq!(skipped_pid_count, 1);
+        assert_eq!(executable_pid_count, 0);
         assert_eq!(consistency_mode, "degraded");
     }
 

@@ -50,6 +50,7 @@ pub(crate) use self::ec_spire::{
     remote_search_coordinator_local_summary as spire_remote_search_coordinator_local_summary,
     remote_search_fanout_plan_rows as spire_remote_search_fanout_plan_rows,
     remote_search_request_plan_rows as spire_remote_search_request_plan_rows,
+    remote_search_request_summary_row as spire_remote_search_request_summary_row,
     remote_search_target_plan_rows as spire_remote_search_target_plan_rows,
 };
 

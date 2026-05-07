@@ -160,6 +160,23 @@ pub(crate) struct SpireRemoteSearchRequestPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchRequestSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) request_count: u64,
+    pub(crate) local_request_count: u64,
+    pub(crate) remote_request_count: u64,
+    pub(crate) skipped_request_count: u64,
+    pub(crate) executable_pid_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

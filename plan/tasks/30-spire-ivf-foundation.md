@@ -1445,7 +1445,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   transport status. Request-level planning is SQL-visible through
   `ec_spire_remote_search_request_plan(...)`, which binds target groups to the
   storage-node endpoint contract: query dimension, top-k budget, consistency
-  mode, endpoint function, and transport status.
+  mode, endpoint function, and transport status. Request readiness is also
+  SQL-visible through `ec_spire_remote_search_request_summary(...)`, which
+  aggregates request counts, local/remote/skipped PID counts, executable PID
+  count, query dimension, top-k budget, consistency mode, and the effective
+  transport/degraded status into one coordinator gating row.
   `ec_spire_remote_search_coordinator_local(...)` now exercises the planned
   coordinator path for local-only fanout by planning selected leaves, executing
   the local target batch, validating the batch, and applying the coordinator
