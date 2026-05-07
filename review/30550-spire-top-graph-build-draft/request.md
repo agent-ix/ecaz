@@ -7,6 +7,7 @@
   - `6feba1da` (`Add SPIRE top graph object codec`)
   - `8e087c90` (`Wire SPIRE top graph object stores`)
   - `8048f81f` (`Publish SPIRE recursive top graph drafts`)
+  - `da6b8321` (`Route SPIRE scans from top graph objects`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -51,6 +52,9 @@ graph:
 - assigns the graph object PID after supplied leaf placements, so the explicit
   graph-publish variant does not assume leaf PIDs came from the same allocator
   state as the routing draft.
+- teaches the scan-side graph router to consume the durable `TopGraph`
+  partition object directly, using a shared routing view for build drafts and
+  stored graph objects.
 
 This still does not enable graph publishing in the default live build path, add
 reloptions, or replace live scan routing yet. Relation-store top-graph writes
@@ -116,6 +120,9 @@ graph storage is not part of this checkpoint.
 11. Review the explicit recursive top-graph epoch builder: graph object PID
     selection, manifest inclusion, build-store trait boundary, and keeping the
     default live build path unchanged until reloptions/scan binding land.
+12. Check the scan routing view abstraction now shared by top-graph build drafts
+    and durable top-graph objects, including root/object compatibility checks
+    and deterministic route ordering.
 
 ## Validation
 
