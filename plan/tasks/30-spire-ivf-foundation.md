@@ -1453,6 +1453,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_request_readiness(...)`, which binds query/top-k and
   endpoint metadata to target/node readiness so missing remote descriptors are
   visible at the same granularity a future libpq request executor will consume.
+  Descriptor-aware request readiness is summarized through
+  `ec_spire_remote_search_readiness_summary(...)`, which reports one gating row
+  with ready/blocked/skipped request counts, blocked PID counts, missing
+  descriptor counts, transport counts, and the effective readiness status.
   Request readiness is also
   SQL-visible through `ec_spire_remote_search_request_summary(...)`, which
   aggregates request counts, local/remote/skipped PID counts, executable PID

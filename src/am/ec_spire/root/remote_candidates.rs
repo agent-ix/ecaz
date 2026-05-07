@@ -569,6 +569,162 @@ pub(crate) unsafe fn remote_search_request_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_readiness_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchReadinessSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchReadinessSummaryRow, String> {
+        let query_for_empty_plan = query.clone();
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search readiness summary top_k exceeds u64")?;
+        let rows = unsafe {
+            remote_search_request_readiness_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut ready_request_count = 0_u64;
+        let mut blocked_request_count = 0_u64;
+        let mut local_request_count = 0_u64;
+        let mut remote_request_count = 0_u64;
+        let mut skipped_request_count = 0_u64;
+        let mut executable_pid_count = 0_u64;
+        let mut ready_pid_count = 0_u64;
+        let mut blocked_pid_count = 0_u64;
+        let mut skipped_pid_count = 0_u64;
+        let mut missing_descriptor_request_count = 0_u64;
+        let mut missing_descriptor_pid_count = 0_u64;
+        let mut transport_request_count = 0_u64;
+        let mut transport_pid_count = 0_u64;
+        let mut query_dimension = 0_u64;
+        let mut top_k = 0_u64;
+        let mut parsed_consistency_mode = "";
+
+        for row in &rows {
+            query_dimension = row.query_dimension;
+            top_k = row.top_k;
+            parsed_consistency_mode = row.consistency_mode;
+            match row.target_kind {
+                "local" => {
+                    local_request_count += 1;
+                    executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary executable PID count overflowed",
+                    )?;
+                }
+                "remote" => {
+                    remote_request_count += 1;
+                    executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary executable PID count overflowed",
+                    )?;
+                }
+                "skipped" => {
+                    skipped_request_count += 1;
+                    skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary skipped PID count overflowed",
+                    )?;
+                }
+                target_kind => {
+                    return Err(format!(
+                        "ec_spire remote search readiness summary found unknown target_kind '{target_kind}'"
+                    ));
+                }
+            }
+
+            match row.status {
+                "ready" => {
+                    ready_request_count += 1;
+                    ready_pid_count = ready_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary ready PID count overflowed",
+                    )?;
+                }
+                "degraded_skipped" => {}
+                "requires_remote_node_descriptor" => {
+                    blocked_request_count += 1;
+                    missing_descriptor_request_count += 1;
+                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary blocked PID count overflowed",
+                    )?;
+                    missing_descriptor_pid_count = missing_descriptor_pid_count
+                        .checked_add(row.pid_count)
+                        .ok_or(
+                            "ec_spire remote search readiness summary missing descriptor PID count overflowed",
+                        )?;
+                }
+                "requires_libpq_transport" => {
+                    blocked_request_count += 1;
+                    transport_request_count += 1;
+                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary blocked PID count overflowed",
+                    )?;
+                    transport_pid_count = transport_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search readiness summary transport PID count overflowed",
+                    )?;
+                }
+                status => {
+                    return Err(format!(
+                        "ec_spire remote search readiness summary found unknown status '{status}'"
+                    ));
+                }
+            }
+        }
+
+        if rows.is_empty() {
+            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
+                "ec_spire remote search readiness summary query dimension exceeds u64"
+            })?;
+            top_k = top_k_for_empty_plan;
+            parsed_consistency_mode =
+                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        }
+
+        let request_count = u64::try_from(rows.len())
+            .map_err(|_| "ec_spire remote search readiness summary request count exceeds u64")?;
+        let status = if top_k == 0 {
+            "empty_top_k"
+        } else if missing_descriptor_request_count > 0 {
+            "requires_remote_node_descriptor"
+        } else if transport_request_count > 0 {
+            "requires_libpq_transport"
+        } else if skipped_request_count > 0 {
+            "degraded_ready"
+        } else {
+            "ready"
+        };
+
+        Ok(SpireRemoteSearchReadinessSummaryRow {
+            requested_epoch,
+            request_count,
+            ready_request_count,
+            blocked_request_count,
+            local_request_count,
+            remote_request_count,
+            skipped_request_count,
+            executable_pid_count,
+            ready_pid_count,
+            blocked_pid_count,
+            skipped_pid_count,
+            missing_descriptor_request_count,
+            missing_descriptor_pid_count,
+            transport_request_count,
+            transport_pid_count,
+            query_dimension,
+            top_k,
+            consistency_mode: parsed_consistency_mode,
+            status,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the
