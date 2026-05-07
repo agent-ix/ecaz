@@ -1585,6 +1585,80 @@ fn ec_spire_remote_search_fanout_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_local(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(score, f32),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_local requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_coordinator_local top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_local selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_coordinator_local") };
+    let rows = unsafe {
+        am::spire_remote_search_coordinator_local_candidates(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            row.score,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -7636,6 +7710,85 @@ mod tests {
         assert!(selected_pid);
         assert!(has_vec_id);
         assert!(row_locator_len);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_coord_local_matches_storage() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_coord_local_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_coord_local_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_coord_local_sql_idx \
+             ON ec_spire_remote_coord_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_coord_local_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_coord_local_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let args = format!(
+            "'ec_spire_remote_coord_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 1, 'strict'",
+            selected_pids[0], selected_pids[1],
+        );
+        let coordinator_from = format!("FROM ec_spire_remote_search_coordinator_local({args})");
+        let storage_from = format!("FROM ec_spire_remote_search({args})");
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {coordinator_from}"))
+            .expect("coordinator count query should succeed")
+            .expect("coordinator count should exist");
+        let local_node =
+            Spi::get_one::<bool>(&format!("SELECT bool_and(node_id = 0) {coordinator_from}"))
+                .expect("coordinator node query should succeed")
+                .expect("node aggregate should exist");
+        let selected_pid = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(pid = ANY(ARRAY[{}, {}]::bigint[])) {coordinator_from}",
+            selected_pids[0], selected_pids[1]
+        ))
+        .expect("coordinator pid query should succeed")
+        .expect("pid aggregate should exist");
+        let matches_storage = Spi::get_one::<bool>(&format!(
+            "WITH coordinator AS (SELECT * {coordinator_from}), \
+                  storage AS (SELECT * {storage_from}) \
+             SELECT bool_and(\
+                coordinator.served_epoch = storage.served_epoch AND \
+                coordinator.node_id = storage.node_id AND \
+                coordinator.pid = storage.pid AND \
+                coordinator.object_version = storage.object_version AND \
+                coordinator.row_index = storage.row_index AND \
+                coordinator.assignment_flags = storage.assignment_flags AND \
+                coordinator.vec_id = storage.vec_id AND \
+                coordinator.row_locator = storage.row_locator AND \
+                coordinator.score = storage.score) \
+             FROM coordinator JOIN storage USING (vec_id)"
+        ))
+        .expect("coordinator/storage comparison should succeed")
+        .expect("comparison aggregate should exist");
+
+        assert_eq!(row_count, 1);
+        assert!(local_node);
+        assert!(selected_pid);
+        assert!(matches_storage);
     }
 
     #[pg_test]
