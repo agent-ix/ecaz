@@ -652,6 +652,59 @@ pub(crate) unsafe fn remote_node_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_node_capability_plan(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
+    unsafe { remote_node_snapshot(index_relation) }
+        .into_iter()
+        .map(remote_node_capability_plan_row)
+        .collect()
+}
+
+fn remote_node_capability_plan_row(
+    node: SpireRemoteNodeSnapshotRow,
+) -> SpireRemoteNodeCapabilityPlanRow {
+    if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
+        SpireRemoteNodeCapabilityPlanRow {
+            active_epoch: node.active_epoch,
+            node_id: node.node_id,
+            node_kind: node.node_kind,
+            descriptor_generation: node.descriptor_generation,
+            descriptor_state: node.descriptor_state,
+            required_last_served_epoch: node.active_epoch,
+            required_min_retained_epoch: node.active_epoch,
+            required_candidate_format: "local",
+            required_extension_version: env!("CARGO_PKG_VERSION"),
+            conninfo_source: "local",
+            remote_index_identity_status: "not_required",
+            epoch_window_status: "ready",
+            candidate_format_status: "not_required",
+            extension_version_status: "ready",
+            status: "ready",
+            recommendation: "none",
+        }
+    } else {
+        SpireRemoteNodeCapabilityPlanRow {
+            active_epoch: node.active_epoch,
+            node_id: node.node_id,
+            node_kind: node.node_kind,
+            descriptor_generation: node.descriptor_generation,
+            descriptor_state: node.descriptor_state,
+            required_last_served_epoch: node.active_epoch,
+            required_min_retained_epoch: node.active_epoch,
+            required_candidate_format: "ec_spire_remote_search_v1",
+            required_extension_version: env!("CARGO_PKG_VERSION"),
+            conninfo_source: "remote_node_descriptor",
+            remote_index_identity_status: "missing_descriptor",
+            epoch_window_status: "missing_descriptor",
+            candidate_format_status: "missing_descriptor",
+            extension_version_status: "missing_descriptor",
+            status: "requires_remote_node_descriptor",
+            recommendation: "register remote node descriptor before capability check",
+        }
+    }
+}
+
 fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemoteNodeSnapshotRow {
     if node_id == meta::SPIRE_LOCAL_NODE_ID {
         SpireRemoteNodeSnapshotRow {

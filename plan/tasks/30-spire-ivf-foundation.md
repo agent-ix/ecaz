@@ -1473,7 +1473,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   now exposes node-level diagnostic rows derived from active placement metadata:
   local node readiness is explicit, and nonzero node IDs are reported as
   remote placements that require durable remote-node descriptors before libpq
-  fanout execution can be enabled.
+  fanout execution can be enabled. `ec_spire_remote_node_capability_plan(...)`
+  now exposes the pre-libpq capability-check contract per node: required epoch
+  window, candidate format, extension version, conninfo source, identity status,
+  and readiness status.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
