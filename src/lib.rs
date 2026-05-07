@@ -1843,10 +1843,14 @@ fn ec_spire_index_leaf_snapshot(
         name!(local_store_id, i64),
         name!(placement_state, String),
         name!(base_assignment_count, i64),
+        name!(base_primary_assignment_count, i64),
+        name!(base_boundary_replica_assignment_count, i64),
         name!(delta_object_count, i64),
         name!(delta_insert_assignment_count, i64),
+        name!(delta_boundary_replica_insert_assignment_count, i64),
         name!(delta_delete_assignment_count, i64),
         name!(effective_assignment_count, i64),
+        name!(effective_boundary_replica_assignment_count, i64),
         name!(split_assignment_threshold, i64),
         name!(merge_assignment_threshold, i64),
         name!(split_recommended, bool),
@@ -1873,13 +1877,21 @@ fn ec_spire_index_leaf_snapshot(
             row.placement_state.to_owned(),
             i64::try_from(row.base_assignment_count)
                 .expect("base assignment count should fit in i64"),
+            i64::try_from(row.base_primary_assignment_count)
+                .expect("base primary assignment count should fit in i64"),
+            i64::try_from(row.base_boundary_replica_assignment_count)
+                .expect("base boundary replica assignment count should fit in i64"),
             i64::try_from(row.delta_object_count).expect("delta object count should fit in i64"),
             i64::try_from(row.delta_insert_assignment_count)
                 .expect("delta insert assignment count should fit in i64"),
+            i64::try_from(row.delta_boundary_replica_insert_assignment_count)
+                .expect("delta boundary replica insert assignment count should fit in i64"),
             i64::try_from(row.delta_delete_assignment_count)
                 .expect("delta delete assignment count should fit in i64"),
             i64::try_from(row.effective_assignment_count)
                 .expect("effective assignment count should fit in i64"),
+            i64::try_from(row.effective_boundary_replica_assignment_count)
+                .expect("effective boundary replica assignment count should fit in i64"),
             i64::try_from(row.split_assignment_threshold)
                 .expect("split assignment threshold should fit in i64"),
             i64::try_from(row.merge_assignment_threshold)
@@ -5166,6 +5178,18 @@ mod tests {
         )
         .expect("leaf snapshot should succeed")
         .expect("sum row should exist");
+        let base_primary_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(base_primary_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
+        let base_boundary_replica_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(base_boundary_replica_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
         let scan_dedupe_mode = Spi::get_one::<String>(
             "SELECT scan_dedupe_mode FROM \
              ec_spire_index_options_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
@@ -5195,6 +5219,8 @@ mod tests {
 
         assert_eq!(leaf_assignment_count, 6);
         assert_eq!(base_assignment_count, 6);
+        assert_eq!(base_primary_assignment_count, 3);
+        assert_eq!(base_boundary_replica_assignment_count, 3);
         assert_eq!(scan_dedupe_mode, "vec_id");
         assert_eq!(returned_rows, 3);
         assert_eq!(distinct_rows, 3);
@@ -5206,6 +5232,18 @@ mod tests {
         .expect("post-build insert should succeed");
         let delta_insert_assignment_count = Spi::get_one::<i64>(
             "SELECT coalesce(sum(delta_insert_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
+        let delta_boundary_replica_insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_boundary_replica_insert_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
+        let effective_boundary_replica_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(effective_boundary_replica_assignment_count), 0)::bigint FROM \
              ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
         )
         .expect("leaf snapshot should succeed")
@@ -5230,6 +5268,8 @@ mod tests {
         .expect("count row should exist");
 
         assert_eq!(delta_insert_assignment_count, 2);
+        assert_eq!(delta_boundary_replica_insert_assignment_count, 1);
+        assert_eq!(effective_boundary_replica_assignment_count, 4);
         assert_eq!(post_insert_rows, 4);
         assert_eq!(post_insert_distinct_rows, 4);
     }

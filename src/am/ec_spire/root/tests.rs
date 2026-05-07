@@ -325,10 +325,14 @@ mod tests {
             local_store_id: meta::SPIRE_SINGLE_LOCAL_STORE_ID,
             placement_state: "available",
             base_assignment_count: effective_assignment_count,
+            base_primary_assignment_count: effective_assignment_count,
+            base_boundary_replica_assignment_count: 0,
             delta_object_count: 0,
             delta_insert_assignment_count: 0,
+            delta_boundary_replica_insert_assignment_count: 0,
             delta_delete_assignment_count: 0,
             effective_assignment_count,
+            effective_boundary_replica_assignment_count: 0,
             split_assignment_threshold: 32,
             merge_assignment_threshold: 1,
             split_recommended,
@@ -638,10 +642,14 @@ mod tests {
                 local_store_id: meta::SPIRE_SINGLE_LOCAL_STORE_ID,
                 placement_state: "missing_base_leaf",
                 base_assignment_count: 0,
+                base_primary_assignment_count: 0,
+                base_boundary_replica_assignment_count: 0,
                 delta_object_count: 2,
                 delta_insert_assignment_count: 3,
+                delta_boundary_replica_insert_assignment_count: 0,
                 delta_delete_assignment_count: 1,
                 effective_assignment_count: 0,
+                effective_boundary_replica_assignment_count: 0,
                 split_assignment_threshold: 0,
                 merge_assignment_threshold: 0,
                 split_recommended: false,
@@ -675,12 +683,14 @@ mod tests {
             88,
         );
 
-        apply_leaf_snapshot_base_row(&mut rows_by_leaf_pid, 7, &header, &placement);
+        apply_leaf_snapshot_base_row(&mut rows_by_leaf_pid, 7, &header, &placement, 4, 1);
 
         let row = rows_by_leaf_pid.get(&20).expect("leaf row should exist");
         assert_eq!(row.parent_pid, 10);
         assert_eq!(row.object_version, 9);
         assert_eq!(row.base_assignment_count, 5);
+        assert_eq!(row.base_primary_assignment_count, 4);
+        assert_eq!(row.base_boundary_replica_assignment_count, 1);
         assert_eq!(row.leaf_object_bytes, 88);
         assert_eq!(row.placement_state, "available");
         assert_eq!(row.maintenance_reason, "not_evaluated");

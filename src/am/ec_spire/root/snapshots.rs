@@ -613,11 +613,15 @@ fn collect_leaf_snapshot_rows(
         let header = object_store.read_object_header(placement)?;
         match header.kind {
             storage::SpirePartitionObjectKind::Leaf => {
+                let (base_primary_count, base_boundary_replica_count) =
+                    count_leaf_snapshot_base_assignment_roles(object_store, placement)?;
                 apply_leaf_snapshot_base_row(
                     &mut rows_by_leaf_pid,
                     root_control.active_epoch,
                     &header,
                     placement,
+                    base_primary_count,
+                    base_boundary_replica_count,
                 );
             }
             storage::SpirePartitionObjectKind::Delta => {
@@ -633,10 +637,14 @@ fn collect_leaf_snapshot_rows(
                         local_store_id: placement.local_store_id,
                         placement_state: "missing_base_leaf",
                         base_assignment_count: 0,
+                        base_primary_assignment_count: 0,
+                        base_boundary_replica_assignment_count: 0,
                         delta_object_count: 0,
                         delta_insert_assignment_count: 0,
+                        delta_boundary_replica_insert_assignment_count: 0,
                         delta_delete_assignment_count: 0,
                         effective_assignment_count: 0,
+                        effective_boundary_replica_assignment_count: 0,
                         split_assignment_threshold: 0,
                         merge_assignment_threshold: 0,
                         split_recommended: false,
@@ -671,6 +679,15 @@ fn collect_leaf_snapshot_rows(
                             .ok_or_else(|| {
                                 "ec_spire leaf snapshot delta insert count overflow".to_owned()
                             })?;
+                        if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+                            row.delta_boundary_replica_insert_assignment_count = row
+                                .delta_boundary_replica_insert_assignment_count
+                                .checked_add(1)
+                                .ok_or_else(|| {
+                                    "ec_spire leaf snapshot delta boundary replica insert count overflow"
+                                        .to_owned()
+                                })?;
+                        }
                     }
                 }
             }
@@ -685,6 +702,9 @@ fn collect_leaf_snapshot_rows(
             .base_assignment_count
             .saturating_add(row.delta_insert_assignment_count)
             .saturating_sub(row.delta_delete_assignment_count);
+        row.effective_boundary_replica_assignment_count = row
+            .base_boundary_replica_assignment_count
+            .saturating_add(row.delta_boundary_replica_insert_assignment_count);
     }
     let effective_total = rows
         .iter()
@@ -713,4 +733,36 @@ fn collect_leaf_snapshot_rows(
     }
     rows.sort_by_key(|row| row.leaf_pid);
     Ok(rows)
+}
+
+fn count_leaf_snapshot_base_assignment_roles(
+    object_store: &impl storage::SpireObjectReader,
+    placement: &meta::SpirePlacementEntry,
+) -> Result<(u64, u64), String> {
+    let assignments = match object_store.read_leaf_object(placement) {
+        Ok(leaf_object) => leaf_object.assignments,
+        Err(v1_error) => object_store
+            .read_leaf_object_v2(placement)
+            .map_err(|v2_error| {
+                format!(
+                    "ec_spire leaf snapshot failed to read leaf object: v1 error: {v1_error}; v2 error: {v2_error}"
+                )
+            })?
+            .assignment_rows()?,
+    };
+    let mut primary_count = 0_u64;
+    let mut boundary_replica_count = 0_u64;
+    for assignment in assignments {
+        if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
+            primary_count = primary_count.checked_add(1).ok_or_else(|| {
+                "ec_spire leaf snapshot base primary count overflow".to_owned()
+            })?;
+        }
+        if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+            boundary_replica_count = boundary_replica_count.checked_add(1).ok_or_else(|| {
+                "ec_spire leaf snapshot base boundary replica count overflow".to_owned()
+            })?;
+        }
+    }
+    Ok((primary_count, boundary_replica_count))
 }

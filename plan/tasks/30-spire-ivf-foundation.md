@@ -1385,8 +1385,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   primary-only path still resolves to `NoReplicaDedupeDisabled`.
 - [ ] **Recall study.** Measure recall delta with boundary replication off/on
   at fixed storage overhead.
-- [ ] **Storage accounting.** Report leaf-assignment and posting-list growth
-  from replication.
+- [x] **Storage accounting.** Leaf snapshot diagnostics now report base
+  primary rows, base boundary-replica rows, delta boundary-replica insert rows,
+  and effective boundary-replica rows so physical assignment growth from
+  replication is visible separately from logical row count.
 
 ## Phase 6 — Top-Level Graph
 

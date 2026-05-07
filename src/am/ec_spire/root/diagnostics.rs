@@ -378,6 +378,8 @@ fn apply_leaf_snapshot_base_row(
     active_epoch: u64,
     header: &storage::SpirePartitionObjectHeader,
     placement: &meta::SpirePlacementEntry,
+    base_primary_assignment_count: u64,
+    base_boundary_replica_assignment_count: u64,
 ) {
     let row = rows_by_leaf_pid
         .entry(header.pid)
@@ -390,10 +392,14 @@ fn apply_leaf_snapshot_base_row(
             local_store_id: placement.local_store_id,
             placement_state: placement_state_name(placement.state),
             base_assignment_count: 0,
+            base_primary_assignment_count: 0,
+            base_boundary_replica_assignment_count: 0,
             delta_object_count: 0,
             delta_insert_assignment_count: 0,
+            delta_boundary_replica_insert_assignment_count: 0,
             delta_delete_assignment_count: 0,
             effective_assignment_count: 0,
+            effective_boundary_replica_assignment_count: 0,
             split_assignment_threshold: 0,
             merge_assignment_threshold: 0,
             split_recommended: false,
@@ -412,7 +418,10 @@ fn apply_leaf_snapshot_base_row(
     row.local_store_id = placement.local_store_id;
     row.placement_state = placement_state_name(placement.state);
     row.base_assignment_count = u64::from(header.assignment_count);
+    row.base_primary_assignment_count = base_primary_assignment_count;
+    row.base_boundary_replica_assignment_count = base_boundary_replica_assignment_count;
     row.effective_assignment_count = u64::from(header.assignment_count);
+    row.effective_boundary_replica_assignment_count = base_boundary_replica_assignment_count;
     row.maintenance_action = "none";
     row.maintenance_reason = "not_evaluated";
     row.leaf_object_bytes = u64::from(placement.object_bytes);
