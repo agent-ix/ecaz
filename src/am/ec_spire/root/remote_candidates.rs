@@ -20,6 +20,31 @@ fn remote_search_candidate_cmp(
         .then_with(|| left.row_locator.cmp(&right.row_locator))
 }
 
+const SPIRE_REMOTE_TARGET_LOCAL: &str = "local";
+const SPIRE_REMOTE_TARGET_REMOTE: &str = "remote";
+const SPIRE_REMOTE_TARGET_SKIPPED: &str = "skipped";
+const SPIRE_REMOTE_STATUS_READY: &str = "ready";
+const SPIRE_REMOTE_STATUS_EMPTY_TOP_K: &str = "empty_top_k";
+const SPIRE_REMOTE_STATUS_DEGRADED_READY: &str = "degraded_ready";
+const SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED: &str = "degraded_skipped";
+const SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR: &str = "requires_remote_node_descriptor";
+const SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ: &str = "requires_libpq_transport";
+const SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT: &str = "local_direct";
+const SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE: &str = "libpq_pipeline";
+const SPIRE_REMOTE_NONE: &str = "none";
+const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
+const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
+const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
+const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
+const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
+const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
+const SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION: &str = "coordinator_local_heap";
+const SPIRE_REMOTE_HEAP_RESOLUTION: &str = "origin_node_row_locator";
+const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
+const SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES: &str = "no_candidate_batches";
+const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP: &str = "requires_remote_heap_resolution";
+const SPIRE_REMOTE_FINAL_STATUS_BLOCKED: &str = "blocked";
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireRemoteSearchMergeResult {
     pub(crate) candidates: Vec<SpireRemoteSearchCandidateRow>,
@@ -204,7 +229,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             );
             rows.push(SpireRemoteSearchFanoutPlanRow {
                 requested_epoch: plan.requested_epoch,
-                target_kind: "local",
+                target_kind: SPIRE_REMOTE_TARGET_LOCAL,
                 node_id: meta::SPIRE_LOCAL_NODE_ID,
                 pid,
                 placement_state,
@@ -220,7 +245,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
                 );
                 rows.push(SpireRemoteSearchFanoutPlanRow {
                     requested_epoch: plan.requested_epoch,
-                    target_kind: "remote",
+                    target_kind: SPIRE_REMOTE_TARGET_REMOTE,
                     node_id: target.node_id,
                     pid,
                     placement_state,
@@ -230,7 +255,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
         rows.extend(plan.skipped_placements.into_iter().map(|skipped| {
             SpireRemoteSearchFanoutPlanRow {
                 requested_epoch: plan.requested_epoch,
-                target_kind: "skipped",
+                target_kind: SPIRE_REMOTE_TARGET_SKIPPED,
                 node_id: skipped.node_id,
                 pid: skipped.pid,
                 placement_state: skipped.state,
@@ -284,12 +309,12 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
                 .map_err(|_| "ec_spire remote search target plan local PID count exceeds u64")?;
             rows.push(SpireRemoteSearchTargetPlanRow {
                 requested_epoch: plan.requested_epoch,
-                target_kind: "local",
+                target_kind: SPIRE_REMOTE_TARGET_LOCAL,
                 node_id: meta::SPIRE_LOCAL_NODE_ID,
                 selected_pids: plan.local_selected_pids,
                 pid_count,
                 placement_state: "available",
-                status: "ready",
+                status: SPIRE_REMOTE_STATUS_READY,
             });
         }
         for target in plan.remote_targets {
@@ -297,12 +322,12 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
                 .map_err(|_| "ec_spire remote search target plan remote PID count exceeds u64")?;
             rows.push(SpireRemoteSearchTargetPlanRow {
                 requested_epoch: plan.requested_epoch,
-                target_kind: "remote",
+                target_kind: SPIRE_REMOTE_TARGET_REMOTE,
                 node_id: target.node_id,
                 selected_pids: target.selected_pids,
                 pid_count,
                 placement_state: "available",
-                status: "requires_libpq_transport",
+                status: SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
             });
         }
 
@@ -318,12 +343,12 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
                 .map_err(|_| "ec_spire remote search target plan skipped PID count exceeds u64")?;
             rows.push(SpireRemoteSearchTargetPlanRow {
                 requested_epoch: plan.requested_epoch,
-                target_kind: "skipped",
+                target_kind: SPIRE_REMOTE_TARGET_SKIPPED,
                 node_id,
                 selected_pids,
                 pid_count,
                 placement_state,
-                status: "degraded_skipped",
+                status: SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             });
         }
 
@@ -361,9 +386,9 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                         target.node_id
                     )
                 })?;
-                let status = if target.target_kind == "skipped" {
+                let status = if target.target_kind == SPIRE_REMOTE_TARGET_SKIPPED {
                     target.status
-                } else if node.status != "ready" {
+                } else if node.status != SPIRE_REMOTE_STATUS_READY {
                     node.status
                 } else {
                     target.status
@@ -420,10 +445,10 @@ pub(crate) unsafe fn remote_search_request_plan_rows(
                 query_dimension,
                 top_k,
                 consistency_mode: consistency_mode_name(requested_consistency_mode),
-                endpoint_function: if row.target_kind == "skipped" {
-                    "none"
+                endpoint_function: if row.target_kind == SPIRE_REMOTE_TARGET_SKIPPED {
+                    SPIRE_REMOTE_NONE
                 } else {
-                    "ec_spire_remote_search"
+                    SPIRE_REMOTE_ENDPOINT_SEARCH
                 },
                 status: row.status,
             })
@@ -466,10 +491,10 @@ pub(crate) unsafe fn remote_search_request_readiness_rows(
                 query_dimension,
                 top_k,
                 consistency_mode: consistency_mode_name(requested_consistency_mode),
-                endpoint_function: if row.target_kind == "skipped" {
-                    "none"
+                endpoint_function: if row.target_kind == SPIRE_REMOTE_TARGET_SKIPPED {
+                    SPIRE_REMOTE_NONE
                 } else {
-                    "ec_spire_remote_search"
+                    SPIRE_REMOTE_ENDPOINT_SEARCH
                 },
                 node_kind: row.node_kind,
                 descriptor_state: row.descriptor_state,
@@ -518,15 +543,15 @@ pub(crate) unsafe fn remote_search_request_summary_row(
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
             match row.target_kind {
-                "local" => {
+                SPIRE_REMOTE_TARGET_LOCAL => {
                     local_request_count += 1;
                     local_pid_count += row.pid_count;
                 }
-                "remote" => {
+                SPIRE_REMOTE_TARGET_REMOTE => {
                     remote_request_count += 1;
                     remote_pid_count += row.pid_count;
                 }
-                "skipped" => {
+                SPIRE_REMOTE_TARGET_SKIPPED => {
                     skipped_request_count += 1;
                     skipped_pid_count += row.pid_count;
                 }
@@ -554,13 +579,13 @@ pub(crate) unsafe fn remote_search_request_summary_row(
             .checked_add(remote_pid_count)
             .ok_or("ec_spire remote search request summary executable PID count overflowed")?;
         let status = if top_k == 0 {
-            "empty_top_k"
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if remote_request_count > 0 {
-            "requires_libpq_transport"
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
         } else if skipped_request_count > 0 {
-            "degraded_ready"
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         };
 
         Ok(SpireRemoteSearchRequestSummaryRow {
@@ -626,19 +651,19 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
             match row.target_kind {
-                "local" => {
+                SPIRE_REMOTE_TARGET_LOCAL => {
                     local_request_count += 1;
                     executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search readiness summary executable PID count overflowed",
                     )?;
                 }
-                "remote" => {
+                SPIRE_REMOTE_TARGET_REMOTE => {
                     remote_request_count += 1;
                     executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search readiness summary executable PID count overflowed",
                     )?;
                 }
-                "skipped" => {
+                SPIRE_REMOTE_TARGET_SKIPPED => {
                     skipped_request_count += 1;
                     skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search readiness summary skipped PID count overflowed",
@@ -652,14 +677,14 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
             }
 
             match row.status {
-                "ready" => {
+                SPIRE_REMOTE_STATUS_READY => {
                     ready_request_count += 1;
                     ready_pid_count = ready_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search readiness summary ready PID count overflowed",
                     )?;
                 }
-                "degraded_skipped" => {}
-                "requires_remote_node_descriptor" => {
+                SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED => {}
+                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
                     blocked_request_count += 1;
                     missing_descriptor_request_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
@@ -671,7 +696,7 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
                             "ec_spire remote search readiness summary missing descriptor PID count overflowed",
                         )?;
                 }
-                "requires_libpq_transport" => {
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
                     blocked_request_count += 1;
                     transport_request_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
@@ -702,15 +727,15 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search readiness summary request count exceeds u64")?;
         let status = if top_k == 0 {
-            "empty_top_k"
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if missing_descriptor_request_count > 0 {
-            "requires_remote_node_descriptor"
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         } else if transport_request_count > 0 {
-            "requires_libpq_transport"
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
         } else if skipped_request_count > 0 {
-            "degraded_ready"
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         };
 
         Ok(SpireRemoteSearchReadinessSummaryRow {
@@ -760,14 +785,24 @@ pub(crate) unsafe fn remote_search_execution_plan_rows(
         .map(|row| {
             let (execution_transport, remote_index_source, conninfo_source, candidate_format) =
                 match row.target_kind {
-                    "local" => ("local_direct", "local_index_oid", "local", "local"),
-                    "remote" => (
-                        "libpq_pipeline",
-                        "remote_node_descriptor",
-                        "remote_node_descriptor",
-                        "ec_spire_remote_search_v1",
+                    SPIRE_REMOTE_TARGET_LOCAL => (
+                        SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT,
+                        SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID,
+                        SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
+                        SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
                     ),
-                    "skipped" => ("none", "none", "none", "none"),
+                    SPIRE_REMOTE_TARGET_REMOTE => (
+                        SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+                        SPIRE_REMOTE_DESCRIPTOR_SOURCE,
+                        SPIRE_REMOTE_DESCRIPTOR_SOURCE,
+                        SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
+                    ),
+                    SPIRE_REMOTE_TARGET_SKIPPED => (
+                        SPIRE_REMOTE_NONE,
+                        SPIRE_REMOTE_NONE,
+                        SPIRE_REMOTE_NONE,
+                        SPIRE_REMOTE_NONE,
+                    ),
                     _ => ("unknown", "unknown", "unknown", "unknown"),
                 };
             SpireRemoteSearchExecutionPlanRow {
@@ -833,19 +868,19 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
             match row.target_kind {
-                "local" => {
+                SPIRE_REMOTE_TARGET_LOCAL => {
                     local_plan_count += 1;
                     local_pid_count = local_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search execution summary local PID count overflowed",
                     )?;
                 }
-                "remote" => {
+                SPIRE_REMOTE_TARGET_REMOTE => {
                     remote_plan_count += 1;
                     remote_pid_count = remote_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search execution summary remote PID count overflowed",
                     )?;
                 }
-                "skipped" => {
+                SPIRE_REMOTE_TARGET_SKIPPED => {
                     skipped_plan_count += 1;
                     skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search execution summary skipped PID count overflowed",
@@ -859,20 +894,20 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
             }
 
             match row.status {
-                "ready" => {
+                SPIRE_REMOTE_STATUS_READY => {
                     ready_plan_count += 1;
                 }
-                "degraded_skipped" => {
+                SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED => {
                     degraded_skipped_plan_count += 1;
                 }
-                "requires_remote_node_descriptor" => {
+                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
                     blocked_plan_count += 1;
                     missing_descriptor_plan_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search execution summary blocked PID count overflowed",
                     )?;
                 }
-                "requires_libpq_transport" => {
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
                     blocked_plan_count += 1;
                     transport_plan_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
@@ -900,15 +935,15 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
         let plan_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
         let status = if top_k == 0 {
-            "empty_top_k"
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if missing_descriptor_plan_count > 0 {
-            "requires_remote_node_descriptor"
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         } else if transport_plan_count > 0 {
-            "requires_libpq_transport"
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
         } else if degraded_skipped_plan_count > 0 {
-            "degraded_ready"
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         };
 
         Ok(SpireRemoteSearchExecutionSummaryRow {
@@ -964,7 +999,7 @@ pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
         )
     };
     rows.into_iter()
-        .filter(|row| row.target_kind == "remote")
+        .filter(|row| row.target_kind == SPIRE_REMOTE_TARGET_REMOTE)
         .map(|row| SpireRemoteSearchLibpqRequestPlanRow {
             requested_epoch: row.requested_epoch,
             node_id: row.node_id,
@@ -1025,17 +1060,17 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
                 "ec_spire remote search libpq request summary remote PID count overflowed",
             )?;
             match row.status {
-                "ready" => {
+                SPIRE_REMOTE_STATUS_READY => {
                     ready_request_count += 1;
                 }
-                "requires_remote_node_descriptor" => {
+                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
                     blocked_request_count += 1;
                     missing_descriptor_request_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
                         "ec_spire remote search libpq request summary blocked PID count overflowed",
                     )?;
                 }
-                "requires_libpq_transport" => {
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
                     blocked_request_count += 1;
                     transport_request_count += 1;
                     blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
@@ -1063,13 +1098,13 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search libpq request summary request count exceeds u64")?;
         let status = if top_k == 0 {
-            "empty_top_k"
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if missing_descriptor_request_count > 0 {
-            "requires_remote_node_descriptor"
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         } else if transport_request_count > 0 {
-            "requires_libpq_transport"
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
         } else {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         };
 
         Ok(SpireRemoteSearchLibpqRequestSummaryRow {
@@ -1195,7 +1230,7 @@ pub(crate) unsafe fn remote_search_receive_plan_rows(
             expected_candidate_format: row.candidate_format,
             expected_result_column_count: row.result_column_count,
             validator_function: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
-            row_locator_policy: "opaque_origin_node_bytes",
+            row_locator_policy: SPIRE_REMOTE_ROW_LOCATOR_POLICY,
             status: row.status,
         })
         .collect()
@@ -1226,15 +1261,15 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
         let ready_batch_count = execution_summary.ready_plan_count;
         let blocked_batch_count = execution_summary.blocked_plan_count;
         let status = if execution_summary.top_k == 0 {
-            "empty_top_k"
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if blocked_batch_count > 0 {
             execution_summary.status
         } else if remote_batch_count > 0 || local_batch_count > 0 {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         } else if skipped_batch_count > 0 {
-            "degraded_ready"
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
-            "ready"
+            SPIRE_REMOTE_STATUS_READY
         };
 
         Ok(SpireRemoteSearchMergeInputSummaryRow {
@@ -1302,23 +1337,31 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
         )
     };
     let (final_heap_fetch_status, status, recommendation) = if merge_summary.status
-        == "requires_remote_node_descriptor"
+        == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
     {
         (
-            "blocked",
-            "requires_remote_node_descriptor",
+            SPIRE_REMOTE_FINAL_STATUS_BLOCKED,
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             "register remote node descriptors before remote candidate finalization",
         )
     } else if merge_summary.remote_batch_count > 0 {
         (
-            "requires_remote_heap_resolution",
-            "requires_remote_heap_resolution",
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
             "add origin-node row locator resolution before returning remote heap rows",
         )
     } else if merge_summary.local_batch_count > 0 {
-        ("local_ready", "ready", "none")
+        (
+            SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+            SPIRE_REMOTE_STATUS_READY,
+            SPIRE_REMOTE_NONE,
+        )
     } else {
-        ("no_candidate_batches", merge_summary.status, "none")
+        (
+            SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+            merge_summary.status,
+            SPIRE_REMOTE_NONE,
+        )
     };
 
     SpireRemoteSearchFinalizationSummaryRow {
@@ -1327,9 +1370,9 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
         local_batch_count: merge_summary.local_batch_count,
         skipped_batch_count: merge_summary.skipped_batch_count,
         merge_status: merge_summary.status,
-        row_locator_policy: "opaque_origin_node_bytes",
-        local_heap_resolution: "coordinator_local_heap",
-        remote_heap_resolution: "origin_node_row_locator",
+        row_locator_policy: SPIRE_REMOTE_ROW_LOCATOR_POLICY,
+        local_heap_resolution: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        remote_heap_resolution: SPIRE_REMOTE_HEAP_RESOLUTION,
         final_heap_fetch_status,
         status,
         recommendation,
