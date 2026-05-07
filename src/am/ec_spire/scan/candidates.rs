@@ -52,6 +52,76 @@ where
     )
 }
 
+pub(super) fn collect_quantized_selected_leaf_candidates(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    selected_leaf_pids: &[u64],
+    payload_format: SpireAssignmentPayloadFormat,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    if selected_leaf_pids.is_empty() || limit == Some(0) {
+        return Ok(Vec::new());
+    }
+
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let scorer =
+        SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
+    let leaf_routes =
+        selected_leaf_routes_from_snapshot(&snapshot, object_store, selected_leaf_pids)?;
+    let mut observer = SpireNoopRoutedScanObserver;
+    collect_validated_quantized_leaf_route_candidates(
+        &snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        dedupe_mode,
+        limit,
+        &mut observer,
+    )
+}
+
+fn selected_leaf_routes_from_snapshot(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    selected_leaf_pids: &[u64],
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    let mut seen = HashSet::new();
+    let mut routes = Vec::with_capacity(selected_leaf_pids.len());
+
+    for &leaf_pid in selected_leaf_pids {
+        if leaf_pid == 0 {
+            return Err("ec_spire remote search selected PID 0 is invalid".to_owned());
+        }
+        if !seen.insert(leaf_pid) {
+            return Err(format!(
+                "ec_spire remote search selected PID {leaf_pid} appears more than once"
+            ));
+        }
+
+        let lookup = snapshot.require_lookup(leaf_pid, "remote search selected leaf")?;
+        if should_skip_placement(
+            snapshot.epoch_manifest().consistency_mode,
+            lookup.placement.state,
+        )? {
+            continue;
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind != SpirePartitionObjectKind::Leaf {
+            return Err(format!(
+                "ec_spire remote search selected PID {leaf_pid} is not a leaf object"
+            ));
+        }
+        routes.push(SpireRecursiveLeafRoute {
+            leaf_pid,
+            parent_pid: header.parent_pid,
+        });
+    }
+
+    Ok(routes)
+}
+
 fn collect_top_graph_scan_plan_reranked_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

@@ -112,6 +112,19 @@ pub(crate) struct SpireIndexTopGraphSnapshot {
     pub(crate) recommendation: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteSearchCandidateRow {
+    pub(crate) served_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) pid: u64,
+    pub(crate) object_version: u64,
+    pub(crate) row_index: u32,
+    pub(crate) assignment_flags: u16,
+    pub(crate) vec_id: Vec<u8>,
+    pub(crate) row_locator: Vec<u8>,
+    pub(crate) score: f32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) active_epoch: u64,
