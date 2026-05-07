@@ -80,6 +80,47 @@ pub(super) fn collect_snapshot_routed_probe_leaf_rows(
     Ok(routed)
 }
 
+pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    search_list_size: u32,
+    top_route_count: u32,
+    leaf_nprobe: u32,
+) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
+        .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
+    let leaf_routes = route_top_graph_object_to_leaf_routes(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        &top_graph,
+        query_vector,
+        search_list_size,
+        top_route_count,
+        leaf_nprobe,
+    )?;
+    let epoch = snapshot.epoch_manifest().epoch;
+
+    let mut routed = Vec::with_capacity(leaf_routes.len());
+    for route in leaf_routes {
+        let rows = collect_snapshot_leaf_rows_for_pid(
+            &snapshot,
+            object_store,
+            route.leaf_pid,
+            route.parent_pid,
+        )?;
+        routed.push(SpireRoutedLeafScanRows {
+            epoch,
+            root_pid: hierarchy.root_pid,
+            leaf_pid: route.leaf_pid,
+            rows,
+        });
+    }
+    Ok(routed)
+}
+
 pub(super) fn count_snapshot_single_level_leaf_pids(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

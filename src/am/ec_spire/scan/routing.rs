@@ -227,6 +227,49 @@ fn route_top_graph_object_to_child_pids(
     .collect())
 }
 
+fn route_top_graph_object_to_leaf_routes(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    top_graph: &SpireTopGraphPartitionObject,
+    query_vector: &[f32],
+    search_list_size: u32,
+    top_route_count: u32,
+    leaf_nprobe: u32,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    let selected_child_pids = route_top_graph_object_to_child_pids(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        top_route_count,
+    )?;
+    if root_object.header.level == 1 {
+        return Ok(selected_child_pids
+            .into_iter()
+            .map(|leaf_pid| SpireRecursiveLeafRoute {
+                leaf_pid,
+                parent_pid: root_object.header.pid,
+            })
+            .collect());
+    }
+
+    let mut current_parents = Vec::with_capacity(selected_child_pids.len());
+    for child_pid in selected_child_pids {
+        let child = require_recursive_internal_child(
+            routing_objects_by_pid,
+            child_pid,
+            root_object,
+        )?;
+        current_parents.push((*child).clone());
+    }
+    route_recursive_parent_objects_to_leaf_routes(
+        current_parents,
+        routing_objects_by_pid,
+        query_vector,
+        SpireConservativeRecursiveNprobePolicy::new(leaf_nprobe)?,
+    )
+}
+
 fn route_top_graph_to_routes(
     root_object: &SpireRoutingPartitionObject,
     top_graph: &SpireTopGraphBuildDraft,
@@ -376,7 +419,23 @@ fn route_recursive_routing_objects_to_leaf_routes(
         .collect());
     }
 
-    let mut current_parents = vec![root_object.clone()];
+    route_recursive_parent_objects_to_leaf_routes(
+        vec![root_object.clone()],
+        routing_objects_by_pid,
+        query_vector,
+        nprobe_policy,
+    )
+}
+
+fn route_recursive_parent_objects_to_leaf_routes(
+    mut current_parents: Vec<SpireRoutingPartitionObject>,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe_policy: SpireConservativeRecursiveNprobePolicy,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    if current_parents.is_empty() {
+        return Err("ec_spire recursive scan routing produced no parent routes".to_owned());
+    }
     loop {
         let parent_level = current_parents[0].header.level;
         if parent_level == 1 {

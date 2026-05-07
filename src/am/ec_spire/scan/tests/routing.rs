@@ -566,6 +566,195 @@
     }
 
     #[test]
+    fn top_graph_object_routes_recursive_children_to_leaf_routes() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .unwrap();
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 90,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+        let positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![0.8, 0.2]),
+            ],
+        )
+        .unwrap();
+        let negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (positive_internal.header.pid, positive_internal),
+            (negative_internal.header.pid, negative_internal),
+        ]);
+
+        let leaf_routes = route_top_graph_object_to_leaf_routes(
+            &root,
+            &routing_objects_by_pid,
+            &top_graph_object,
+            &[1.0, 0.0],
+            2,
+            1,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            leaf_routes
+                .iter()
+                .map(|route| (route.parent_pid, route.leaf_pid))
+                .collect::<Vec<_>>(),
+            vec![(SPIRE_FIRST_PID + 10, SPIRE_FIRST_PID + 11)]
+        );
+    }
+
+    #[test]
+    fn collect_snapshot_top_graph_routed_probe_leaf_rows_uses_loaded_graph() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .unwrap();
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 90,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+        let positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store
+                .insert_routing_object(7, &positive_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(7, &negative_internal)
+                .unwrap(),
+            object_store
+                .insert_top_graph_object(7, &top_graph_object)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 11,
+                    1,
+                    SPIRE_FIRST_PID + 10,
+                    &[assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 1)],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 21,
+                    1,
+                    SPIRE_FIRST_PID + 20,
+                    &[assignment_row(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 2)],
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+
+        let routed = collect_snapshot_top_graph_routed_probe_leaf_rows(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+            1,
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].root_pid, SPIRE_FIRST_PID);
+        assert_eq!(routed[0].leaf_pid, SPIRE_FIRST_PID + 11);
+        assert_eq!(routed[0].rows.len(), 1);
+        assert_eq!(routed[0].rows[0].assignment.heap_tid, tid(10, 1));
+    }
+
+    #[test]
     fn recursive_routed_leaf_rows_skip_degraded_unavailable_unselected_internal() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root = SpireRoutingPartitionObject::root_at_level(
