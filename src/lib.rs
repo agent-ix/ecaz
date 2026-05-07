@@ -7792,6 +7792,55 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "requires libpq transport for 1 remote target")]
+    fn test_ec_spire_remote_search_coord_local_rejects_remote_target() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_coord_remote_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_coord_remote_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_coord_remote_sql_idx \
+             ON ec_spire_remote_coord_remote_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_coord_remote_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_coord_remote_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_coord_remote_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        Spi::run(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search_coordinator_local(\
+             'ec_spire_remote_coord_remote_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'strict')",
+        ))
+        .expect("coordinator-local search with remote target should fail before transport");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_search_fanout_plan_sql_reports_local_pids() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_fanout_sql \

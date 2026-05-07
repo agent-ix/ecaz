@@ -95,6 +95,43 @@ fn remote_search_row_locator(heap_tid: crate::storage::page::ItemPointer) -> Vec
     row_locator
 }
 
+unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
+    index_relation: pg_sys::Relation,
+    root_control: meta::SpireRootControlState,
+) -> Result<
+    (
+        meta::SpireEpochManifest,
+        meta::SpireObjectManifest,
+        meta::SpirePlacementDirectory,
+    ),
+    String,
+> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+    }
+    let epoch_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+    let object_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+    let placement_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
+    let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
+    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+    if epoch_manifest.epoch != root_control.active_epoch {
+        return Err(format!(
+            "ec_spire root/control active epoch {} does not match epoch manifest {}",
+            root_control.active_epoch, epoch_manifest.epoch
+        ));
+    }
+    meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
 pub(crate) unsafe fn remote_search_candidates(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -241,8 +278,9 @@ unsafe fn remote_search_coordinator_local_candidates_result(
         ));
     }
 
-    let (epoch_manifest, object_manifest, placement_directory) =
-        unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+    };
     if epoch_manifest.consistency_mode != requested_consistency_mode {
         return Err(format!(
             "ec_spire remote search coordinator requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
