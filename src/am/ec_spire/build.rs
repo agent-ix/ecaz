@@ -20,7 +20,7 @@ use super::storage::{
     plan_local_store_relations, SpireLeafAssignmentRow, SpireLeafPartitionObject,
     SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader, SpirePartitionObjectKind,
     SpireRelationObjectStore, SpireRelationObjectStoreSet, SpireRoutingChildEntry,
-    SpireRoutingPartitionObject,
+    SpireRoutingPartitionObject, SpireTopGraphNodeRecord, SpireTopGraphPartitionObject,
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};

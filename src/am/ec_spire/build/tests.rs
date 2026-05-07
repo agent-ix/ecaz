@@ -11,9 +11,10 @@ mod tests {
         SpirePublishStage, SpirePublishWritingObjects, SpireRecursiveBuildCoordinatorInput,
         SpireRecursiveLeafObjectInput, SpireRecursiveRoutingBuildInput,
         SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
-        SpireRecursiveRoutingEpochObjectInput, SpireSingleLevelBuildInput,
-        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry, SpireSingleLevelRouteMap,
-        SpireTopGraphBuildInput, SpireTopGraphBuildParams, SpireTopGraphNodeInput,
+        SpireRecursiveRoutingEpochObjectInput, SpireRecursiveTopGraphEpochInput,
+        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry,
+        SpireSingleLevelRouteMap, SpireTopGraphBuildInput, SpireTopGraphBuildParams,
+        SpireTopGraphNodeInput,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{

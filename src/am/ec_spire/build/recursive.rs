@@ -527,6 +527,20 @@ pub(super) unsafe fn build_relation_recursive_routing_epoch_draft(
     build_recursive_routing_epoch_draft_with_store(input, object_store)
 }
 
+pub(super) fn build_local_recursive_top_graph_epoch_draft(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut SpireLocalObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_top_graph_epoch_draft_with_store(input, object_store)
+}
+
+pub(super) unsafe fn build_relation_recursive_top_graph_epoch_draft(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut SpireRelationObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_top_graph_epoch_draft_with_store(input, object_store)
+}
+
 pub(super) fn build_local_recursive_routing_epoch_from_leaf_inputs(
     input: SpireRecursiveRoutingEpochObjectInput,
     object_store: &mut SpireLocalObjectStore,
@@ -611,6 +625,54 @@ fn build_recursive_routing_epoch_draft_with_store(
     input: SpireRecursiveRoutingEpochInput,
     object_store: &mut impl SpireBuildObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    build_recursive_routing_epoch_draft_with_extra_placements(input, object_store, Vec::new(), None)
+}
+
+fn build_recursive_top_graph_epoch_draft_with_store(
+    input: SpireRecursiveTopGraphEpochInput,
+    object_store: &mut impl SpireBuildObjectStore,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
+    let invariants = assert_recursive_draft_invariants(&input.epoch_input.routing_draft)?;
+    validate_recursive_epoch_leaf_placements(
+        &input.epoch_input,
+        &invariants.leaf_parent_pids,
+        object_store,
+    )?;
+    let root_object = input
+        .epoch_input
+        .routing_draft
+        .routing_objects
+        .iter()
+        .find(|object| object.header.kind == SpirePartitionObjectKind::Root)
+        .ok_or_else(|| "ec_spire top graph epoch requires a root routing object".to_owned())?;
+    let top_graph_draft =
+        build_spire_top_graph_draft_from_routing_object(root_object, input.top_graph_params)?;
+    let top_graph_pid = next_recursive_epoch_pid(
+        input.epoch_input.routing_draft.next_pid,
+        &input.epoch_input.leaf_placements,
+    )?;
+    let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+        top_graph_pid,
+        root_object.header.object_version,
+        root_object.header.level,
+        &top_graph_draft,
+    )?;
+    let top_graph_placement =
+        object_store.write_top_graph_object(input.epoch_input.epoch, &top_graph_object)?;
+    build_recursive_routing_epoch_draft_with_extra_placements(
+        input.epoch_input,
+        object_store,
+        vec![top_graph_placement],
+        Some(top_graph_object),
+    )
+}
+
+fn build_recursive_routing_epoch_draft_with_extra_placements(
+    input: SpireRecursiveRoutingEpochInput,
+    object_store: &mut impl SpireBuildObjectStore,
+    extra_placements: Vec<SpirePlacementEntry>,
+    top_graph_object: Option<SpireTopGraphPartitionObject>,
+) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     let invariants = assert_recursive_draft_invariants(&input.routing_draft)?;
 
     let epoch_manifest = SpireEpochManifest {
@@ -626,11 +688,16 @@ fn build_recursive_routing_epoch_draft_with_store(
     validate_recursive_epoch_leaf_placements(&input, &invariants.leaf_parent_pids, object_store)?;
 
     let mut placements =
-        Vec::with_capacity(input.routing_draft.routing_objects.len() + input.leaf_placements.len());
+        Vec::with_capacity(
+            input.routing_draft.routing_objects.len()
+                + input.leaf_placements.len()
+                + extra_placements.len(),
+        );
     for object in &input.routing_draft.routing_objects {
         placements.push(object_store.write_routing_object(input.epoch, object)?);
     }
     placements.extend(input.leaf_placements);
+    placements.extend(extra_placements);
 
     let object_manifest = SpireObjectManifest::from_entries(
         input.epoch,
@@ -655,6 +722,7 @@ fn build_recursive_routing_epoch_draft_with_store(
         root_pid: input.routing_draft.root_pid,
         centroid_records: input.routing_draft.centroid_records.clone(),
         routing_objects: input.routing_draft.routing_objects,
+        top_graph_object,
         next_pid,
     };
     SpireValidatedEpochSnapshot::new(

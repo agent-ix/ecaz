@@ -158,12 +158,19 @@ pub(super) struct SpireRecursiveRoutingEpochInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireRecursiveTopGraphEpochInput {
+    pub(super) epoch_input: SpireRecursiveRoutingEpochInput,
+    pub(super) top_graph_params: SpireTopGraphBuildParams,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireRecursiveRoutingEpochDraft {
     pub(super) epoch_manifest: SpireEpochManifest,
     pub(super) object_manifest: SpireObjectManifest,
     pub(super) placement_directory: SpirePlacementDirectory,
     pub(super) root_pid: u64,
     pub(super) routing_objects: Vec<SpireRoutingPartitionObject>,
+    pub(super) top_graph_object: Option<SpireTopGraphPartitionObject>,
     // TODO: these are not persisted separately; diagnostics rebuild them with
     // centroid_records_from_routing until durable centroid objects land.
     pub(super) centroid_records: Vec<SpireRecursiveCentroidRecord>,
@@ -189,5 +196,11 @@ pub(super) trait SpireBuildObjectStore: SpireObjectReader {
         object_version: u64,
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String>;
+
+    fn write_top_graph_object(
+        &mut self,
+        epoch: u64,
+        object: &SpireTopGraphPartitionObject,
     ) -> Result<SpirePlacementEntry, String>;
 }

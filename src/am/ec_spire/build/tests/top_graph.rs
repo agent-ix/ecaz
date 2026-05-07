@@ -107,6 +107,70 @@
     }
 
     #[test]
+    fn top_graph_build_draft_materializes_partition_object() {
+        let draft = super::build_spire_top_graph_draft(SpireTopGraphBuildInput {
+            root_pid: 50,
+            dimensions: 2,
+            graph_degree: 2,
+            build_list_size: 4,
+            alpha: 1.2,
+            seed: 42,
+            nodes: vec![
+                top_graph_node(11, 0, vec![1.0, 0.0]),
+                top_graph_node(12, 1, vec![0.8, 0.2]),
+                top_graph_node(13, 2, vec![-1.0, 0.0]),
+            ],
+        })
+        .expect("top graph should build");
+
+        let object =
+            super::spire_top_graph_partition_object_from_build_draft(90, 7, 2, &draft).unwrap();
+
+        assert_eq!(object.header.kind, SpirePartitionObjectKind::TopGraph);
+        assert_eq!(object.header.pid, 90);
+        assert_eq!(object.header.object_version, 7);
+        assert_eq!(object.header.level, 2);
+        assert_eq!(object.header.parent_pid, 50);
+        assert_eq!(object.root_pid, 50);
+        assert_eq!(object.dimensions, 2);
+        assert_eq!(object.graph_degree, 2);
+        assert_eq!(object.build_list_size, 4);
+        assert_eq!(object.alpha, 1.2);
+        assert_eq!(object.entry_node, draft.entry_node);
+        assert_eq!(
+            object
+                .nodes
+                .iter()
+                .map(|node| (node.child_pid, node.centroid_ordinal))
+                .collect::<Vec<_>>(),
+            vec![(11, 0), (12, 1), (13, 2)]
+        );
+    }
+
+    #[test]
+    fn top_graph_build_draft_partition_object_rejects_node_count_drift() {
+        let mut draft = super::build_spire_top_graph_draft(SpireTopGraphBuildInput {
+            root_pid: 50,
+            dimensions: 2,
+            graph_degree: 2,
+            build_list_size: 4,
+            alpha: 1.2,
+            seed: 42,
+            nodes: vec![
+                top_graph_node(11, 0, vec![1.0, 0.0]),
+                top_graph_node(12, 1, vec![0.8, 0.2]),
+            ],
+        })
+        .expect("top graph should build");
+        draft.node_count = 9;
+
+        let error =
+            super::spire_top_graph_partition_object_from_build_draft(90, 7, 2, &draft).unwrap_err();
+
+        assert!(error.contains("draft node count mismatch"));
+    }
+
+    #[test]
     fn top_graph_rejects_internal_routing_object_adapter_input() {
         let internal = SpireRoutingPartitionObject::internal(
             60,

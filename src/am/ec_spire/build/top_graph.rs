@@ -73,6 +73,42 @@ pub(super) fn build_spire_top_graph_draft_from_routing_object(
     })
 }
 
+pub(super) fn spire_top_graph_partition_object_from_build_draft(
+    pid: u64,
+    object_version: u64,
+    root_level: u16,
+    draft: &SpireTopGraphBuildDraft,
+) -> Result<SpireTopGraphPartitionObject, String> {
+    let node_count = u32::try_from(draft.nodes.len())
+        .map_err(|_| "ec_spire top graph node count exceeds u32".to_owned())?;
+    if draft.node_count != node_count {
+        return Err(format!(
+            "ec_spire top graph draft node count mismatch: header {}, nodes {node_count}",
+            draft.node_count
+        ));
+    }
+    SpireTopGraphPartitionObject::new(
+        pid,
+        object_version,
+        draft.root_pid,
+        root_level,
+        draft.dimensions,
+        draft.graph_degree,
+        draft.build_list_size,
+        draft.alpha,
+        draft.entry_node,
+        draft
+            .nodes
+            .iter()
+            .map(|node| SpireTopGraphNodeRecord {
+                child_pid: node.child_pid,
+                centroid_ordinal: node.centroid_ordinal,
+                neighbors: node.neighbors.clone(),
+            })
+            .collect(),
+    )
+}
+
 pub(super) fn build_spire_top_graph_draft(
     input: SpireTopGraphBuildInput,
 ) -> Result<SpireTopGraphBuildDraft, String> {
