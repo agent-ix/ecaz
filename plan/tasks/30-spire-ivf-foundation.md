@@ -1398,9 +1398,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 6 — Top-Level Graph
 
-- [ ] **Graph choice.** Decide whether the top-level centroid graph uses HNSW,
-  DiskANN, or a build-time-selectable option. Do not introduce a generic graph
-  abstraction until there are two real consumers.
+- [x] **Graph choice.** Phase 6 now has a design checkpoint in
+  `plan/design/spire-top-level-graph.md`. The first top-level graph is a
+  single-layer Vamana/DiskANN-style graph over top-level SPIRE routing
+  centroids, reusing the pure `ec_diskann` graph core rather than nesting an
+  `ec_diskann` AM or introducing a selectable graph abstraction. HNSW and
+  build-time graph algorithm selection remain deferred until there is a second
+  SPIRE graph implementation.
 - [ ] **Build integration.** Build the top-level graph over top-level
   centroids after recursive centroid materialization.
 - [ ] **Routing integration.** Replace flat top-level centroid scan with graph
