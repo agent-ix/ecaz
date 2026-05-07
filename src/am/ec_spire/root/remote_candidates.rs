@@ -27,6 +27,13 @@ pub(crate) struct SpireRemoteSearchMergeResult {
     pub(crate) duplicate_vec_id_count: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteSearchCandidateBatch {
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) candidates: Vec<SpireRemoteSearchCandidateRow>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireRemoteSearchFanoutTarget {
     node_id: u32,
@@ -351,4 +358,28 @@ where
         input_count,
         duplicate_vec_id_count,
     })
+}
+
+/// Validates each target-scoped receive batch before global candidate merge.
+///
+/// The same global-vec-id precondition as `merge_remote_search_candidates`
+/// applies when batches span more than one node.
+pub(crate) fn merge_validated_remote_search_candidate_batches(
+    requested_epoch: u64,
+    batches: Vec<SpireRemoteSearchCandidateBatch>,
+    limit: Option<usize>,
+) -> Result<SpireRemoteSearchMergeResult, String> {
+    for batch in &batches {
+        validate_remote_search_candidate_batch(
+            requested_epoch,
+            batch.node_id,
+            &batch.selected_pids,
+            &batch.candidates,
+        )?;
+    }
+
+    merge_remote_search_candidates(
+        batches.into_iter().flat_map(|batch| batch.candidates),
+        limit,
+    )
 }

@@ -249,6 +249,63 @@ mod tests {
     }
 
     #[test]
+    fn remote_candidate_batch_merge_validates_batches_before_merge() {
+        let first = remote_candidate(2, 10, 0, b"a", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let duplicate_best = remote_candidate(
+            3,
+            20,
+            0,
+            b"dup",
+            0.3,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        let duplicate_worse = remote_candidate(
+            3,
+            21,
+            0,
+            b"dup",
+            0.9,
+            storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        );
+        let batches = vec![
+            SpireRemoteSearchCandidateBatch {
+                node_id: 2,
+                selected_pids: vec![10],
+                candidates: vec![first.clone()],
+            },
+            SpireRemoteSearchCandidateBatch {
+                node_id: 3,
+                selected_pids: vec![20, 21],
+                candidates: vec![duplicate_worse, duplicate_best.clone()],
+            },
+        ];
+
+        let merged = merge_validated_remote_search_candidate_batches(7, batches, Some(2))
+            .expect("validated candidate batches should merge");
+
+        assert_eq!(merged.input_count, 3);
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates, vec![duplicate_best, first]);
+    }
+
+    #[test]
+    fn remote_candidate_batch_merge_rejects_invalid_batch_before_merge() {
+        let mut invalid =
+            remote_candidate(2, 10, 0, b"a", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        invalid.node_id = 9;
+        let batches = vec![SpireRemoteSearchCandidateBatch {
+            node_id: 2,
+            selected_pids: vec![10],
+            candidates: vec![invalid],
+        }];
+
+        let error = merge_validated_remote_search_candidate_batches(7, batches, Some(1))
+            .expect_err("invalid candidate batch should fail before merge");
+
+        assert!(error.contains("does not match expected node_id"));
+    }
+
+    #[test]
     fn remote_search_fanout_groups_selected_pids_by_local_and_remote_node() {
         let placements = vec![
             fanout_placement(
