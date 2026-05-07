@@ -21,10 +21,11 @@ relationships:
 | Object class | Required objects |
 | --- | --- |
 | Types | `ecvector`, `tqvector` |
-| Access methods | `ec_hnsw`, `ec_ivf`, `ec_diskann` |
+| Access methods | `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire` scaffold |
 | HNSW opclasses | `ecvector_ip_ops`, `tqvector_ip_ops` |
 | IVF opclasses | `ecvector_ip_ops`, `tqvector_ip_ops` scoped to `ec_ivf` |
 | DiskANN opclasses | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` |
+| SPIRE opclasses | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` scoped to `ec_spire` |
 | Operators | `<#>` for supported type/query combinations |
 | Functions | encode, scoring, casts, AM handlers, diagnostics, and stats surfaces exposed by bootstrap SQL |
 
@@ -32,7 +33,7 @@ relationships:
 
 ### FR-029-AC-1
 
-After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, and `ec_diskann`.
+After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, `ec_diskann`, and the `ec_spire` scaffold.
 
 ### FR-029-AC-2
 
@@ -41,3 +42,7 @@ An `ecvector` column can be indexed by all three implemented AMs with the docume
 ### FR-029-AC-3
 
 `DROP EXTENSION ecaz CASCADE` removes the extension-owned SQL objects.
+
+### FR-029-AC-4
+
+The `ec_spire` scaffold registers its AM handler and SPIRE-specific opclasses while build, scan, insert, and vacuum callbacks remain explicitly unsupported until the Phase 1 persistence path lands.

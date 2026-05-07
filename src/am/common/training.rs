@@ -8,6 +8,243 @@ use crate::quant::{
     rotation,
 };
 
+const DEFAULT_AUTO_NLISTS_MAX: usize = 4096;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SphericalKMeansModel {
+    pub(crate) dimensions: usize,
+    pub(crate) centroids: Vec<Vec<f32>>,
+}
+
+impl SphericalKMeansModel {
+    pub(crate) fn centroid_count(&self) -> usize {
+        self.centroids.len()
+    }
+}
+
+pub(crate) fn resolve_auto_nlists(requested_nlists: u32, row_count: usize) -> usize {
+    if row_count == 0 {
+        return 0;
+    }
+    if requested_nlists > 0 {
+        return requested_nlists as usize;
+    }
+
+    let sqrt_rows = (row_count as f64).sqrt().ceil() as usize;
+    sqrt_rows.clamp(1, DEFAULT_AUTO_NLISTS_MAX.min(row_count))
+}
+
+pub(crate) fn deterministic_sample_indices(
+    row_count: usize,
+    sample_limit: usize,
+    seed: u64,
+) -> Vec<usize> {
+    if sample_limit >= row_count {
+        return (0..row_count).collect();
+    }
+    if sample_limit == 0 {
+        return Vec::new();
+    }
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut indices = (0..row_count).collect::<Vec<_>>();
+    for i in 0..sample_limit {
+        let swap_index = rng.gen_range(i..row_count);
+        indices.swap(i, swap_index);
+    }
+    indices.truncate(sample_limit);
+    indices
+}
+
+pub(crate) fn normalize_vector(
+    error_label: &str,
+    source: &[f32],
+    dimensions: usize,
+) -> Result<Vec<f32>, String> {
+    validate_assignable_vector(error_label, source, dimensions)?;
+
+    let norm_sq = vector_norm_sq(source);
+    let inv_norm = (norm_sq.sqrt() as f32).recip();
+    Ok(source.iter().map(|value| *value * inv_norm).collect())
+}
+
+pub(crate) fn train_spherical_kmeans(
+    error_label: &str,
+    source_vectors: &[&[f32]],
+    dimensions: usize,
+    nlists: usize,
+    seed: u64,
+    max_iterations: usize,
+) -> Result<SphericalKMeansModel, String> {
+    if dimensions == 0 {
+        return Err(format!(
+            "{error_label} spherical k-means requires dimensions > 0"
+        ));
+    }
+    if source_vectors.is_empty() {
+        return Err(format!(
+            "{error_label} spherical k-means requires at least one source vector"
+        ));
+    }
+    if nlists == 0 {
+        return Err(format!(
+            "{error_label} spherical k-means requires at least one list"
+        ));
+    }
+
+    let samples = source_vectors
+        .iter()
+        .map(|source| normalize_vector(error_label, source, dimensions))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut centroids = initial_centroids(&samples, nlists, seed);
+    let mut assignments = vec![usize::MAX; samples.len()];
+    let mut sums = vec![vec![0.0_f32; dimensions]; nlists];
+    let mut counts = vec![0_usize; nlists];
+
+    for iteration in 0..max_iterations {
+        sums.iter_mut().for_each(|sum| sum.fill(0.0));
+        counts.fill(0);
+
+        let mut changed = false;
+        for (sample_index, sample) in samples.iter().enumerate() {
+            let centroid_index = nearest_centroid(error_label, sample, &centroids)?;
+            if assignments[sample_index] != centroid_index {
+                assignments[sample_index] = centroid_index;
+                changed = true;
+            }
+            counts[centroid_index] += 1;
+            for (dst, value) in sums[centroid_index].iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
+
+        for centroid_index in 0..nlists {
+            if counts[centroid_index] == 0 {
+                let fallback_index =
+                    fallback_sample_index(seed, iteration, centroid_index, samples.len());
+                centroids[centroid_index].copy_from_slice(&samples[fallback_index]);
+                continue;
+            }
+
+            let normalized = normalize_vector(error_label, &sums[centroid_index], dimensions)?;
+            centroids[centroid_index].copy_from_slice(&normalized);
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    Ok(SphericalKMeansModel {
+        dimensions,
+        centroids,
+    })
+}
+
+pub(crate) fn assign_vector_to_centroid(
+    error_label: &str,
+    source: &[f32],
+    model: &SphericalKMeansModel,
+) -> Result<usize, String> {
+    validate_assignable_vector(error_label, source, model.dimensions)?;
+    nearest_centroid(error_label, source, &model.centroids)
+}
+
+fn initial_centroids(samples: &[Vec<f32>], centroid_count: usize, seed: u64) -> Vec<Vec<f32>> {
+    let mut centroids = Vec::with_capacity(centroid_count);
+    let seeded_count = centroid_count.min(samples.len());
+    let initial_indices = deterministic_sample_indices(samples.len(), seeded_count, seed);
+
+    for sample_index in initial_indices {
+        centroids.push(samples[sample_index].clone());
+    }
+    for centroid_index in centroids.len()..centroid_count {
+        let sample_index = fallback_sample_index(seed, 0, centroid_index, samples.len());
+        centroids.push(samples[sample_index].clone());
+    }
+    centroids
+}
+
+fn fallback_sample_index(
+    seed: u64,
+    iteration: usize,
+    centroid_index: usize,
+    sample_count: usize,
+) -> usize {
+    debug_assert!(sample_count > 0);
+    seed.wrapping_add(iteration as u64)
+        .wrapping_add((centroid_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) as usize
+        % sample_count
+}
+
+fn nearest_centroid(
+    error_label: &str,
+    vector: &[f32],
+    centroids: &[Vec<f32>],
+) -> Result<usize, String> {
+    if centroids.is_empty() {
+        return Err(format!(
+            "{error_label} centroid assignment requires at least one centroid"
+        ));
+    }
+
+    let mut best_index = 0;
+    let mut best_score = f32::NEG_INFINITY;
+    for (centroid_index, centroid) in centroids.iter().enumerate() {
+        if centroid.len() != vector.len() {
+            return Err(format!(
+                "{error_label} centroid dimensions mismatch: got {}, expected {}",
+                centroid.len(),
+                vector.len()
+            ));
+        }
+        let score = inner_product(vector, centroid);
+        if score > best_score {
+            best_score = score;
+            best_index = centroid_index;
+        }
+    }
+    Ok(best_index)
+}
+
+fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right.iter())
+        .map(|(left, right)| left * right)
+        .sum()
+}
+
+fn validate_assignable_vector(
+    error_label: &str,
+    source: &[f32],
+    dimensions: usize,
+) -> Result<(), String> {
+    if source.len() != dimensions {
+        return Err(format!(
+            "{error_label} vector dimensions mismatch: got {}, expected {dimensions}",
+            source.len()
+        ));
+    }
+    if source.iter().any(|value| !value.is_finite()) {
+        return Err(format!("{error_label} vector contains a non-finite value"));
+    }
+
+    let norm_sq = vector_norm_sq(source);
+    if norm_sq <= f64::EPSILON {
+        return Err(format!(
+            "{error_label} spherical k-means requires non-zero vectors"
+        ));
+    }
+    Ok(())
+}
+
+fn vector_norm_sq(source: &[f32]) -> f64 {
+    source
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SrhtForwardTransform {
     pub(crate) transform_dim: usize,

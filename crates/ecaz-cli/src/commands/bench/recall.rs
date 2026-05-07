@@ -870,7 +870,7 @@ pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
     use ndarray::arr2;
 
     // --- top_k_desc ---
@@ -1117,6 +1117,15 @@ mod tests {
     #[test]
     fn build_knn_sql_uses_raw_real_query_for_ivf() {
         let sql = build_knn_sql(&EC_IVF, "corpus");
+        assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
+        assert!(sql.contains("LIMIT $2"));
+        assert!(!sql.contains("encode_to_ecvector($1::real[]"));
+        assert!(!sql.contains("LIMIT $4"));
+    }
+
+    #[test]
+    fn build_knn_sql_uses_raw_real_query_for_spire() {
+        let sql = build_knn_sql(&EC_SPIRE, "corpus");
         assert!(sql.contains("ORDER BY embedding <#> $1::real[]"));
         assert!(sql.contains("LIMIT $2"));
         assert!(!sql.contains("encode_to_ecvector($1::real[]"));

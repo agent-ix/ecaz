@@ -27,7 +27,8 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | StR-003 | US-003, US-005, FR-008..FR-010, FR-030 | TC-004 | Partial: partition-specific evidence should be refreshed when next HNSW benchmark packet is opened |
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
-| StR-006 | US-015, US-016, US-017, FR-037, FR-038, NFR-007..NFR-009 | TC-015, TC-016, TC-019, TC-020 | Partial: product hardware gates are explicit gaps |
+| StR-005 SPIRE extension | US-017 SPIRE, US-018..US-020, FR-038 SPIRE, FR-039..FR-043 | TC-020 SPIRE, TC-021..TC-025 | Partial: SPIRE Phase 4 local multi-store implementation is landed; distributed and lifecycle follow-ons remain planned |
+| StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009 | TC-015, TC-016, TC-019, TC-020 benchmark suites | Partial: product hardware gates are explicit gaps |
 
 ### User Story Coverage
 
@@ -49,7 +50,11 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Complete for local DiskANN v1; product claims deferred |
 | US-015 | US-015-AC-1..3 | TC-015, TC-016 | Partial: product benchmark claim lane is a planned gate |
 | US-016 | US-016-AC-1..3 | TC-019 | Complete for docs/spec traceability; command execution tests run on demand |
-| US-017 | US-017-AC-1..4 | TC-020 | Complete for first auto-runner surface; tags/resume/results extraction implemented, richer thresholds deferred |
+| US-017 benchmark suites | US-017-AC-1..4 | TC-020 benchmark suites | Complete for first auto-runner surface; tags/resume/results extraction implemented, richer thresholds deferred |
+| US-017 SPIRE | US-017-AC-1..5 | TC-020 SPIRE, TC-022, TC-023, TC-025 | Partial: Phase 4 local placement has landed; distributed placement and full lifecycle cleanup remain planned |
+| US-018 | US-018-AC-1..6 | TC-021, TC-023 | Planned: local multi-store behavior after single-store SPIRE foundation |
+| US-019 | US-019-AC-1..6 | TC-023, TC-024 | Planned: distributed libpq coordinator after local placement |
+| US-020 | US-020-AC-1..6 | TC-023, TC-025 | Planned: epoch/update lifecycle after Phase 0 consistency decisions |
 
 ### Functional Requirement Coverage
 
@@ -67,7 +72,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-026 | PG18 module identity | TC-005, TC-014 | Complete for PG18 build surface |
 | FR-027 | pgrx PG18 support | TC-014 | Complete for current build configuration |
 | FR-028 | FR-028-AC-1..4 | TC-002, TC-003 | Complete for canonical `ecvector` surface |
-| FR-029 | FR-029-AC-1..3 | TC-003 | Complete for SQL bootstrap surface |
+| FR-029 | FR-029-AC-1..4 | TC-003 | Complete for SQL bootstrap surface, including the `ec_spire` scaffold |
 | FR-030 | FR-030-AC-1..4 | TC-004, TC-005, TC-006 | Partial: large-build measurement deferred |
 | FR-031 | FR-031-AC-1..3 | TC-007 | Complete for local IVF build/storage behavior |
 | FR-032 | FR-032-AC-1..3 | TC-008 | Complete for local IVF scan/rerank/cost behavior |
@@ -76,7 +81,13 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-035 | FR-035-AC-1..3 | TC-011 | Complete for local DiskANN scan/prefilter/rerank behavior |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Complete for local DiskANN insert/vacuum/diagnostics behavior |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Complete for docs/spec traceability; CLI unit execution not run in this docs checkpoint |
-| FR-038 | FR-038-AC-1..7 | TC-020 | Complete for first auto-runner surface |
+| FR-038 benchmark suites | FR-038-AC-1..7 | TC-020 benchmark suites | Complete for first auto-runner surface |
+| FR-038 SPIRE | FR-038-AC-1..7 | TC-020 SPIRE | Partial: Phase 4 relation-backed local multi-store storage is landed; remaining lifecycle work is tracked in Task 30 |
+| FR-039 | FR-039-AC-1..4 | TC-021 | Planned: local store config/diagnostics proof after storage layout decision |
+| FR-040 | FR-040-AC-1..3 | TC-022 | Planned: single-level and recursive SPIRE scan behavior tests |
+| FR-041 | FR-041-AC-1..5 | TC-023 | Planned: strict/degraded epoch tests after baseline epoch implementation |
+| FR-042 | FR-042-AC-1..4 | TC-024 | Planned: libpq coordinator tests after remote API exists |
+| FR-043 | FR-043-AC-1..5 | TC-025 | Planned: insert/delete, split/merge, cleanup, and failure-path tests |
 
 ### Non-Functional Requirement Coverage
 
@@ -115,7 +126,13 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-017 | ReadStream cold-cache speedup gate | Benchmark | P2 | NFR-006, FR-019 | Gap: deferred |
 | TC-018 | HNSW insert decontention follow-up | Benchmark / implementation | P2 | Future Task 13 | Gap: future work |
 | TC-019 | `ecaz` CLI command tree, profiles, logging, and docs links | Unit / docs audit | P1 | US-016, FR-037, NFR-009 | Implemented for docs traceability; CLI tests run on demand |
-| TC-020 | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017, FR-038, NFR-007, NFR-009 | Implemented for first auto-runner surface |
+| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, NFR-007, NFR-009 | Implemented for first auto-runner surface |
+| TC-020 SPIRE | SPIRE partition-object storage, identity, and placement shape | Design packet / pg_test | P0 | US-017 SPIRE, FR-038 SPIRE | Partial: Phase 4 relation-backed local multi-store storage is landed; full physical reclamation remains planned |
+| TC-021 | SPIRE local store configuration and diagnostics | SQL / pg_test | P1 | US-018, FR-039 | Planned: local multi-store proof after single-store foundation |
+| TC-022 | SPIRE routing, scoring, dedupe, and heap locator handling | pg_test | P0 | US-017, FR-040 | Planned: single-level scan first, recursive routing later |
+| TC-023 | SPIRE epoch consistency, degraded mode, retention, and failed publish | pg_test / fault injection | P0 | US-017..US-020, FR-041 | Planned: strict local default before distributed degraded mode |
+| TC-024 | SPIRE distributed libpq coordinator and remote strict/degraded behavior | Integration / pg_test | P2 | US-019, FR-042 | Planned: remote Postgres-node prototype |
+| TC-025 | SPIRE update, split/merge, rebalance, and cleanup lifecycle | pg_test / stress | P1 | US-017, US-020, FR-043 | Planned: post-Phase 0 update mechanics |
 
 ## Option Permutation Matrix
 
@@ -133,7 +150,9 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-019 | `ecaz` command groups | `corpus`, `bench`, `compare`, `dev`, `quant`, `stress` | Help tree, README tree, and dispatch modules stay aligned |
 | TC-019 | `ecaz` AM profiles | `ec_hnsw`, `ec_ivf`, `ec_diskann` | Profile metadata selects AM, opclass, embedding type, scan GUC, sweep axis, and reloption set |
 | TC-019 | `ecaz` logging | terminal output, `--log-file`, dev SQL `--log-output` | Review evidence can be stored under packet-local artifacts |
-| TC-020 | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl`, thresholds, threshold filters | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection, normalized result rows, threshold assertions, and strict resume safety |
+| TC-020 benchmark suites | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl`, thresholds, threshold filters | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection, normalized result rows, threshold assertions, and strict resume safety |
+| TC-021 | SPIRE local stores | single store, disabled store, two active stores | Configuration and diagnostics use one bounded store surface before multi-store placement |
+| TC-023 | SPIRE consistency mode | local strict default, explicit degraded, remote strict | Strict fails closed; degraded reports skipped placements |
 
 ## Constraint Boundary Tests
 
@@ -160,7 +179,9 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | EC-005 | Dead tuple cleanup during vacuum | FR-022, FR-033, FR-036 | TC-004, TC-009, TC-012 | Deleted rows returned or graph connectivity loss |
 | EC-006 | Product benchmark claim without controlled hardware | NFR-007, NFR-008 | TC-016 | Misleading docs or unsupported roadmap decisions |
 | EC-007 | CLI README command tree drifts from Clap tree | FR-037, NFR-009 | TC-019 | Operators run stale commands or miss supported workflows |
-| EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038, NFR-007, NFR-009 | TC-020 | Operators cannot audit what ran or identify missing artifacts |
+| EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038 benchmark suites, NFR-007, NFR-009 | TC-020 benchmark suites | Operators cannot audit what ran or identify missing artifacts |
+| EC-009 | SPIRE stored heap TID goes stale after UPDATE/HOT movement | FR-038 SPIRE, FR-040, FR-043 | TC-020 SPIRE, TC-022, TC-025 | Wrong tuple returned or candidate silently lost |
+| EC-010 | SPIRE epoch publish fails after some partition objects are durable | FR-041, FR-043 | TC-023, TC-025 | Active epoch may point at incompatible object versions |
 
 ## Integration Test Matrix
 
@@ -172,6 +193,7 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | INT-002 | PG17 fallback build/test lane | PostgreSQL 17 | database | TC-014 | Partial: run on demand |
 | INT-003 | Real-corpus benchmark surfaces | PostgreSQL plus local corpus files | database/filesystem | TC-015, TC-016, TC-017 | Partial: local evidence exists, product gates deferred |
 | INT-004 | CLI operator benchmark and stress workflows | PostgreSQL plus local corpus files | database/filesystem | TC-019 | Partial: docs/spec trace complete; execution run on demand |
+| INT-005 | SPIRE local and remote partition-store lifecycle | PostgreSQL 18 plus optional remote PostgreSQL nodes | database | TC-020..TC-025 | Planned: begins with Phase 0 design packet |
 
 ## Coverage Gaps
 
@@ -191,6 +213,6 @@ This checkpoint is a docs/spec cleanup. Tests were not run by default under the 
 
 | Category | Total Groups | Implemented / Evidenced | Partial | Gap |
 | --- | ---: | ---: | ---: | ---: |
-| Unit / pg_test behavior groups | 15 | 12 | 3 | 0 |
+| Unit / pg_test behavior groups | 21 | 12 | 9 | 0 |
 | Benchmark / measurement groups | 4 | 1 | 1 | 2 |
-| Integration groups | 4 | 0 | 4 | 0 |
+| Integration groups | 5 | 0 | 5 | 0 |

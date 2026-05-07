@@ -18,7 +18,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | HNSW graph quality | `ADR-018-hnsw-quantized-graph-quality.md` | DECIDED | HNSW remains default graph AM. |
 | Live insert lock ordering | `ADR-026-live-insert-backlink-lock-ordering.md` | ACCEPTED | HNSW insert lock ordering. |
 | Vacuum graph repair lock ordering | `ADR-027-vacuum-graph-repair-lock-ordering.md` | ACCEPTED | HNSW vacuum repair ordering. |
-| Module structure | `ADR-041-module-structure-for-multi-am-multi-quantizer-growth.md` | IMPLEMENTED | Current `src/am/{common,ec_hnsw,ec_ivf,ec_diskann}` layout. |
+| Module structure | `ADR-041-module-structure-for-multi-am-multi-quantizer-growth.md` | IMPLEMENTED | Current `src/am/{common,ec_hnsw,ec_ivf,ec_diskann,ec_spire}` layout. |
 | Native HNSW build | `ADR-042-native-hnsw-build-path.md` | DECIDED | Production build path no longer depends on `hnsw_rs`. |
 | Canonical `ecvector` row type | `ADR-043-native-ecvector-raw-f32-column-type.md` | IMPLEMENTED | `ecvector(dim)` is the canonical user row type. |
 | Extension identity rename | `ADR-047-rename-extension-identity-to-ecaz.md` | DECIDED | Supersedes old single `tqvector` extension identity direction. |
@@ -36,7 +36,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | GPU offline trainer | `ADR-046-gpu-accelerated-offline-build-trainer.md` | PROPOSED | Future/offline optimization lane. |
 | Vamana insert lock ordering | `ADR-046-vamana-insert-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
 | Vamana vacuum lock ordering | `ADR-047-vamana-vacuum-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
-| SPIRE on single-level IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Build and validate single-level IVF first; preserve SPIRE boundary replication through a `(vec_id, partition_id)` assignment table. |
+| SPIRE partition-object IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Phase 0 chooses relation-backed PID objects, epoch manifests, index-local `vec_id`s, and Phase 1 `ec_spire`; preserve boundary replication, local multi-NVMe stores, future node placement, and epoch publication. |
 | Configured benchmark suite runner | `ADR-050-configured-benchmark-suite-runner.md` | PROPOSED | Declarative long-running `ecaz bench suite` orchestration for index and architecture onboarding. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |

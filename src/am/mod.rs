@@ -4,6 +4,7 @@ pub(crate) mod common;
 mod ec_diskann;
 mod ec_hnsw;
 mod ec_ivf;
+mod ec_spire;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
@@ -21,11 +22,35 @@ pub(crate) use self::ec_ivf::{
     IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
     IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
 };
+pub(crate) use self::ec_spire::{
+    active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
+    index_allocator_snapshot as spire_index_allocator_snapshot,
+    index_delta_snapshot as spire_index_delta_snapshot,
+    index_epoch_snapshot as spire_index_epoch_snapshot,
+    index_health_snapshot as spire_index_health_snapshot,
+    index_hierarchy_snapshot as spire_index_hierarchy_snapshot,
+    index_insert_debt_snapshot as spire_index_insert_debt_snapshot,
+    index_leaf_snapshot as spire_index_leaf_snapshot,
+    index_level_parameter_snapshot as spire_index_level_parameter_snapshot,
+    index_locked_maintenance_plan_snapshot as spire_index_locked_maintenance_plan_snapshot,
+    index_locked_maintenance_run_plan as spire_index_locked_maintenance_run_plan,
+    index_maintenance_plan_snapshot as spire_index_maintenance_plan_snapshot,
+    index_maintenance_run as spire_index_maintenance_run,
+    index_object_snapshot as spire_index_object_snapshot,
+    index_options_snapshot as spire_index_options_snapshot,
+    index_placement_snapshot as spire_index_placement_snapshot,
+    index_relation_storage_snapshot as spire_index_relation_storage_snapshot,
+    index_root_routing_snapshot as spire_index_root_routing_snapshot,
+    index_routing_centroid_snapshot as spire_index_routing_centroid_snapshot,
+    index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
+    index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
+};
 
 pub(crate) fn register_gucs() {
     ec_diskann::register_gucs();
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
+    ec_spire::register_gucs();
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -43,6 +68,14 @@ pub(crate) use self::ec_ivf::{
     debug_ec_ivf_quantizer_cache_ptr, debug_ec_ivf_rerank_mode, debug_ec_ivf_rescan_query_prep,
     debug_ec_ivf_vacuum_remove_heap_tids, debug_ec_ivf_vacuum_stats,
     debug_ec_ivf_validate_no_duplicate_heap_tid,
+};
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::{
+    debug_spire_active_snapshot_diagnostics, debug_spire_empty_manifest_publish_roundtrip,
+    debug_spire_relation_leaf_v2_roundtrip, debug_spire_relation_object_tuple_roundtrip,
+    debug_spire_relation_two_store_scan_roundtrip, debug_spire_root_control,
+    debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

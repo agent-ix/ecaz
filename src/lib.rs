@@ -201,6 +201,12 @@ fn ec_ivf_access_method_oid() -> pg_sys::Oid {
         .expect("ec_ivf access method should exist")
 }
 
+fn ec_spire_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_spire'")
+        .expect("SPI query should succeed")
+        .expect("ec_spire access method should exist")
+}
+
 fn ec_diskann_access_method_oid() -> pg_sys::Oid {
     Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_diskann'")
         .expect("SPI query should succeed")
@@ -247,6 +253,28 @@ unsafe fn open_valid_ec_ivf_index(
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("{caller_name} requires a ec_ivf index, got relation \"{relation_name}\"");
+    }
+    index_relation
+}
+
+unsafe fn open_valid_ec_spire_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != ec_spire_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires a ec_spire index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -493,6 +521,15 @@ fn parse_raw_f32_text(input: &str, label: &str) -> Result<Vec<f32>, String> {
 }
 
 fn format_raw_f32_text(values: &[f32]) -> String {
+    let body = values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{body}]")
+}
+
+fn format_u64_array_text(values: &[u64]) -> String {
     let body = values
         .iter()
         .map(|value| value.to_string())
@@ -1006,6 +1043,1118 @@ fn ec_ivf_index_admin_snapshot(
         i64::from(snapshot.empty_lists),
         snapshot.reindex_recommended,
         snapshot.reindex_reason.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_active_snapshot_diagnostics(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(consistency_mode, String),
+        name!(object_count, i64),
+        name!(placement_count, i64),
+        name!(local_store_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(root_object_count, i64),
+        name!(internal_object_count, i64),
+        name!(leaf_object_count, i64),
+        name!(delta_object_count, i64),
+        name!(routing_child_count, i64),
+        name!(leaf_assignment_count, i64),
+        name!(delta_assignment_count, i64),
+        name!(available_object_bytes, i64),
+        name!(routing_object_bytes, i64),
+        name!(leaf_object_bytes, i64),
+        name!(delta_object_bytes, i64),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_active_snapshot_diagnostics")
+    };
+    let diagnostics = unsafe { am::spire_active_snapshot_diagnostics(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(diagnostics.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(diagnostics.next_local_vec_seq)
+            .expect("next local vec sequence should fit in i64"),
+        diagnostics.consistency_mode.to_owned(),
+        i64::try_from(diagnostics.object_count).expect("object count should fit in i64"),
+        i64::try_from(diagnostics.placement_count).expect("placement count should fit in i64"),
+        i64::try_from(diagnostics.local_store_count).expect("local store count should fit in i64"),
+        i64::try_from(diagnostics.available_placement_count)
+            .expect("available placement count should fit in i64"),
+        i64::try_from(diagnostics.stale_placement_count)
+            .expect("stale placement count should fit in i64"),
+        i64::try_from(diagnostics.unavailable_placement_count)
+            .expect("unavailable placement count should fit in i64"),
+        i64::try_from(diagnostics.skipped_placement_count)
+            .expect("skipped placement count should fit in i64"),
+        i64::try_from(diagnostics.root_object_count).expect("root object count should fit in i64"),
+        i64::try_from(diagnostics.internal_object_count)
+            .expect("internal object count should fit in i64"),
+        i64::try_from(diagnostics.leaf_object_count).expect("leaf object count should fit in i64"),
+        i64::try_from(diagnostics.delta_object_count)
+            .expect("delta object count should fit in i64"),
+        i64::try_from(diagnostics.routing_child_count)
+            .expect("routing child count should fit in i64"),
+        i64::try_from(diagnostics.leaf_assignment_count)
+            .expect("leaf assignment count should fit in i64"),
+        i64::try_from(diagnostics.delta_assignment_count)
+            .expect("delta assignment count should fit in i64"),
+        i64::try_from(diagnostics.available_object_bytes)
+            .expect("available object bytes should fit in i64"),
+        i64::try_from(diagnostics.routing_object_bytes)
+            .expect("routing object bytes should fit in i64"),
+        i64::try_from(diagnostics.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
+        i64::try_from(diagnostics.delta_object_bytes)
+            .expect("delta object bytes should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_allocator_snapshot(
+    index_oid: pg_sys::Oid,
+    warn_within: i64,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(warn_within, i64),
+        name!(next_pid, i64),
+        name!(remaining_pid_allocations, String),
+        name!(pid_near_exhaustion, bool),
+        name!(next_local_vec_seq, i64),
+        name!(remaining_local_vec_id_allocations, String),
+        name!(local_vec_id_near_exhaustion, bool),
+    ),
+> {
+    if warn_within < 0 {
+        pgrx::error!("ec_spire allocator warning threshold must be non-negative");
+    }
+    let warn_within =
+        u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_allocator_snapshot") };
+    let snapshot = unsafe { am::spire_index_allocator_snapshot(index_relation, warn_within) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.warn_within).expect("warning threshold should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        snapshot.remaining_pid_allocations.to_string(),
+        snapshot.pid_near_exhaustion,
+        i64::try_from(snapshot.next_local_vec_seq)
+            .expect("next local vec sequence should fit in i64"),
+        snapshot.remaining_local_vec_id_allocations.to_string(),
+        snapshot.local_vec_id_near_exhaustion,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_placement_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, pg_sys::Oid),
+        name!(placement_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(object_count, i64),
+        name!(root_object_count, i64),
+        name!(internal_object_count, i64),
+        name!(leaf_object_count, i64),
+        name!(delta_object_count, i64),
+        name!(routing_child_count, i64),
+        name!(assignment_count, i64),
+        name!(placement_object_bytes, i64),
+        name!(available_object_bytes, i64),
+        name!(routing_object_bytes, i64),
+        name!(leaf_object_bytes, i64),
+        name!(delta_object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_placement_snapshot") };
+    let rows = unsafe { am::spire_index_placement_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            pg_sys::Oid::from(row.store_relid),
+            i64::try_from(row.placement_count).expect("placement count should fit in i64"),
+            i64::try_from(row.available_placement_count)
+                .expect("available placement count should fit in i64"),
+            i64::try_from(row.stale_placement_count)
+                .expect("stale placement count should fit in i64"),
+            i64::try_from(row.unavailable_placement_count)
+                .expect("unavailable placement count should fit in i64"),
+            i64::try_from(row.skipped_placement_count)
+                .expect("skipped placement count should fit in i64"),
+            i64::try_from(row.object_count).expect("object count should fit in i64"),
+            i64::try_from(row.root_object_count).expect("root object count should fit in i64"),
+            i64::try_from(row.internal_object_count)
+                .expect("internal object count should fit in i64"),
+            i64::try_from(row.leaf_object_count).expect("leaf object count should fit in i64"),
+            i64::try_from(row.delta_object_count).expect("delta object count should fit in i64"),
+            i64::try_from(row.routing_child_count).expect("routing child count should fit in i64"),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::try_from(row.placement_object_bytes)
+                .expect("placement object bytes should fit in i64"),
+            i64::try_from(row.available_object_bytes)
+                .expect("available object bytes should fit in i64"),
+            i64::try_from(row.routing_object_bytes)
+                .expect("routing object bytes should fit in i64"),
+            i64::try_from(row.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
+            i64::try_from(row.delta_object_bytes).expect("delta object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_placement_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_rerank_width, i64),
+        name!(effective_rerank_width_source, String),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(scanned_pid_count, i64),
+        name!(leaf_pid_count, i64),
+        name!(delta_pid_count, i64),
+        name!(candidate_row_count, i64),
+        name!(leaf_candidate_row_count, i64),
+        name!(delta_candidate_row_count, i64),
+        name!(delete_delta_row_count, i64),
+        name!(dropped_unselected_delta_route_count, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_placement_snapshot") };
+    let rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            i64::try_from(row.effective_rerank_width)
+                .expect("effective rerank width should fit in i64"),
+            row.effective_rerank_width_source.to_owned(),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::try_from(row.scanned_pid_count).expect("scanned pid count should fit in i64"),
+            i64::try_from(row.leaf_pid_count).expect("leaf pid count should fit in i64"),
+            i64::try_from(row.delta_pid_count).expect("delta pid count should fit in i64"),
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.leaf_candidate_row_count)
+                .expect("leaf candidate row count should fit in i64"),
+            i64::try_from(row.delta_candidate_row_count)
+                .expect("delta candidate row count should fit in i64"),
+            i64::try_from(row.delete_delta_row_count)
+                .expect("delete delta row count should fit in i64"),
+            i64::try_from(row.dropped_unselected_delta_route_count)
+                .expect("dropped unselected delta route count should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_root_routing_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(root_pid, i64),
+        name!(root_object_version, i64),
+        name!(root_level, i32),
+        name!(root_child_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(centroid_index, i64),
+        name!(child_pid, i64),
+        name!(child_kind, String),
+        name!(child_object_version, i64),
+        name!(child_level, i32),
+        name!(child_parent_pid, i64),
+        name!(child_assignment_count, i64),
+        name!(child_node_id, i64),
+        name!(child_local_store_id, i64),
+        name!(child_store_relid, i64),
+        name!(child_placement_state, String),
+        name!(child_object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_root_routing_snapshot") };
+    let rows = unsafe { am::spire_index_root_routing_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.root_pid).expect("root pid should fit in i64"),
+            i64::try_from(row.root_object_version).expect("root object version should fit in i64"),
+            i32::from(row.root_level),
+            i64::try_from(row.root_child_count).expect("root child count should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            i64::from(row.centroid_index),
+            i64::try_from(row.child_pid).expect("child pid should fit in i64"),
+            row.child_kind.to_owned(),
+            i64::try_from(row.child_object_version)
+                .expect("child object version should fit in i64"),
+            i32::from(row.child_level),
+            i64::try_from(row.child_parent_pid).expect("child parent pid should fit in i64"),
+            i64::try_from(row.child_assignment_count)
+                .expect("child assignment count should fit in i64"),
+            i64::from(row.child_node_id),
+            i64::from(row.child_local_store_id),
+            i64::from(row.child_store_relid),
+            row.child_placement_state.to_owned(),
+            i64::try_from(row.child_object_bytes).expect("child object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_routing_centroid_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(parent_pid, i64),
+        name!(parent_kind, String),
+        name!(parent_object_version, i64),
+        name!(parent_level, i32),
+        name!(parent_child_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(centroid_index, i64),
+        name!(child_pid, i64),
+        name!(child_kind, String),
+        name!(child_object_version, i64),
+        name!(child_level, i32),
+        name!(child_parent_pid, i64),
+        name!(child_assignment_count, i64),
+        name!(child_node_id, i64),
+        name!(child_local_store_id, i64),
+        name!(child_store_relid, i64),
+        name!(child_placement_state, String),
+        name!(child_object_bytes, i64),
+        name!(centroid, Vec<f32>),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_routing_centroid_snapshot") };
+    let rows = unsafe { am::spire_index_routing_centroid_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            row.parent_kind.to_owned(),
+            i64::try_from(row.parent_object_version)
+                .expect("parent object version should fit in i64"),
+            i32::from(row.parent_level),
+            i64::try_from(row.parent_child_count).expect("parent child count should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            i64::from(row.centroid_index),
+            i64::try_from(row.child_pid).expect("child pid should fit in i64"),
+            row.child_kind.to_owned(),
+            i64::try_from(row.child_object_version)
+                .expect("child object version should fit in i64"),
+            i32::from(row.child_level),
+            i64::try_from(row.child_parent_pid).expect("child parent pid should fit in i64"),
+            i64::try_from(row.child_assignment_count)
+                .expect("child assignment count should fit in i64"),
+            i64::from(row.child_node_id),
+            i64::from(row.child_local_store_id),
+            i64::from(row.child_store_relid),
+            row.child_placement_state.to_owned(),
+            i64::try_from(row.child_object_bytes).expect("child object bytes should fit in i64"),
+            row.centroid,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_hierarchy_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(root_pid, i64),
+        name!(root_level, i32),
+        name!(max_observed_level, i32),
+        name!(hierarchy_depth, i32),
+        name!(routing_object_count, i64),
+        name!(root_routing_object_count, i64),
+        name!(internal_routing_object_count, i64),
+        name!(leaf_object_count, i64),
+        name!(delta_object_count, i64),
+        name!(centroid_dimensions, i32),
+        name!(root_child_count, i64),
+        name!(distinct_leaf_parent_count, i64),
+        name!(recursive_routing_supported, bool),
+        name!(per_level_nprobe_supported, bool),
+        name!(status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_hierarchy_snapshot") };
+    let snapshot = unsafe { am::spire_index_hierarchy_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.root_pid).expect("root pid should fit in i64"),
+        i32::from(snapshot.root_level),
+        i32::from(snapshot.max_observed_level),
+        i32::from(snapshot.hierarchy_depth),
+        i64::try_from(snapshot.routing_object_count)
+            .expect("routing object count should fit in i64"),
+        i64::try_from(snapshot.root_routing_object_count)
+            .expect("root routing object count should fit in i64"),
+        i64::try_from(snapshot.internal_routing_object_count)
+            .expect("internal routing object count should fit in i64"),
+        i64::try_from(snapshot.leaf_object_count).expect("leaf object count should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i32::from(snapshot.centroid_dimensions),
+        i64::try_from(snapshot.root_child_count).expect("root child count should fit in i64"),
+        i64::try_from(snapshot.distinct_leaf_parent_count)
+            .expect("distinct leaf parent count should fit in i64"),
+        snapshot.recursive_routing_supported,
+        snapshot.per_level_nprobe_supported,
+        snapshot.status.to_owned(),
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_object_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(pid, i64),
+        name!(object_kind, String),
+        name!(object_version, i64),
+        name!(published_epoch_backref, i64),
+        name!(level, i32),
+        name!(parent_pid, i64),
+        name!(child_count, i64),
+        name!(assignment_count, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, i64),
+        name!(placement_state, String),
+        name!(object_bytes, i64),
+        name!(object_readable, bool),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_object_snapshot") };
+    let rows = unsafe { am::spire_index_object_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            row.object_kind.to_owned(),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.published_epoch_backref)
+                .expect("published epoch backref should fit in i64"),
+            i32::from(row.level),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            i64::try_from(row.child_count).expect("child count should fit in i64"),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::from(row.store_relid),
+            row.placement_state.to_owned(),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+            row.object_readable,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_options_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(nlists, i32),
+        name!(recursive_fanout, i32),
+        name!(recursive_build_enabled, bool),
+        name!(local_store_count, i32),
+        name!(local_store_tablespaces, Option<String>),
+        name!(active_leaf_count, i64),
+        name!(relation_nprobe, i32),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_nprobe_per_level, Vec<i64>),
+        name!(nprobe_policy_per_level, Vec<String>),
+        name!(relation_rerank_width, i32),
+        name!(session_rerank_width, Option<i32>),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
+        name!(training_sample_rows, i32),
+        name!(seed, i32),
+        name!(pq_group_size, i32),
+        name!(storage_format, String),
+        name!(assignment_payload_format, String),
+        name!(assignment_payload_scannable, bool),
+        name!(assignment_payload_status, String),
+        name!(assignment_payload_recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_options_snapshot") };
+    let snapshot = unsafe { am::spire_index_options_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.nlists,
+        snapshot.recursive_fanout,
+        snapshot.recursive_build_enabled,
+        snapshot.local_store_count,
+        snapshot.local_store_tablespaces,
+        i64::from(snapshot.active_leaf_count),
+        snapshot.relation_nprobe,
+        snapshot.session_nprobe,
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        snapshot
+            .effective_nprobe_per_level
+            .into_iter()
+            .map(i64::from)
+            .collect(),
+        snapshot
+            .nprobe_policy_per_level
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        snapshot.relation_rerank_width,
+        snapshot.session_rerank_width,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
+        snapshot.training_sample_rows,
+        snapshot.seed,
+        snapshot.pq_group_size,
+        snapshot.storage_format.to_owned(),
+        snapshot.assignment_payload_format.to_owned(),
+        snapshot.assignment_payload_scannable,
+        snapshot.assignment_payload_status.to_owned(),
+        snapshot.assignment_payload_recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_level_parameter_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(level, i32),
+        name!(routing_object_count, i64),
+        name!(routing_child_count, i64),
+        name!(target_fanout, i64),
+        name!(relation_nprobe, i32),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(nprobe_policy, String),
+        name!(training_sample_rows, i32),
+        name!(training_iterations, i64),
+        name!(centroid_dimensions, i32),
+        name!(distance_operator, String),
+        name!(assignment_payload_format, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_level_parameter_snapshot") };
+    let rows = unsafe { am::spire_index_level_parameter_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i32::from(row.level),
+            i64::try_from(row.routing_object_count)
+                .expect("routing object count should fit in i64"),
+            i64::try_from(row.routing_child_count).expect("routing child count should fit in i64"),
+            i64::from(row.target_fanout),
+            row.relation_nprobe,
+            row.session_nprobe,
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            row.nprobe_policy.to_owned(),
+            row.training_sample_rows,
+            i64::try_from(row.training_iterations).expect("training iterations should fit in i64"),
+            i32::from(row.centroid_dimensions),
+            row.distance_operator.to_owned(),
+            row.assignment_payload_format.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_sanity_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(active_leaf_count, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(exact_leaf_coverage, bool),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
+        name!(full_frontier_rerank, bool),
+        name!(recall_sanity_status, String),
+        name!(latency_risk_status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_sanity_snapshot") };
+    let snapshot = unsafe { am::spire_index_scan_sanity_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::from(snapshot.active_leaf_count),
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        snapshot.exact_leaf_coverage,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
+        snapshot.full_frontier_rerank,
+        snapshot.recall_sanity_status.to_owned(),
+        snapshot.latency_risk_status.to_owned(),
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_health_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(consistency_mode, String),
+        name!(status, String),
+        name!(healthy, bool),
+        name!(recommendation, String),
+        name!(compaction_recommended, bool),
+        name!(object_count, i64),
+        name!(leaf_assignment_count, i64),
+        name!(delta_assignment_count, i64),
+        name!(delta_object_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_health_snapshot") };
+    let snapshot = unsafe { am::spire_index_health_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.consistency_mode.to_owned(),
+        snapshot.status.to_owned(),
+        snapshot.healthy,
+        snapshot.recommendation.to_owned(),
+        snapshot.compaction_recommended,
+        i64::try_from(snapshot.object_count).expect("object count should fit in i64"),
+        i64::try_from(snapshot.leaf_assignment_count)
+            .expect("leaf assignment count should fit in i64"),
+        i64::try_from(snapshot.delta_assignment_count)
+            .expect("delta assignment count should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i64::try_from(snapshot.available_placement_count)
+            .expect("available placement count should fit in i64"),
+        i64::try_from(snapshot.stale_placement_count)
+            .expect("stale placement count should fit in i64"),
+        i64::try_from(snapshot.unavailable_placement_count)
+            .expect("unavailable placement count should fit in i64"),
+        i64::try_from(snapshot.skipped_placement_count)
+            .expect("skipped placement count should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_relation_storage_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(relation_block_count, i64),
+        name!(relation_object_tuple_count, i64),
+        name!(relation_object_tuple_bytes, i64),
+        name!(active_referenced_tuple_count, i64),
+        name!(active_referenced_tuple_bytes, i64),
+        name!(cleanup_candidate_tuple_count, i64),
+        name!(cleanup_candidate_tuple_bytes, i64),
+        name!(physical_cleanup_supported, bool),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_relation_storage_snapshot") };
+    let snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.relation_block_count).expect("block count should fit in i64"),
+        i64::try_from(snapshot.relation_object_tuple_count)
+            .expect("object tuple count should fit in i64"),
+        i64::try_from(snapshot.relation_object_tuple_bytes)
+            .expect("object tuple bytes should fit in i64"),
+        i64::try_from(snapshot.active_referenced_tuple_count)
+            .expect("active referenced tuple count should fit in i64"),
+        i64::try_from(snapshot.active_referenced_tuple_bytes)
+            .expect("active referenced tuple bytes should fit in i64"),
+        i64::try_from(snapshot.cleanup_candidate_tuple_count)
+            .expect("cleanup candidate tuple count should fit in i64"),
+        i64::try_from(snapshot.cleanup_candidate_tuple_bytes)
+            .expect("cleanup candidate tuple bytes should fit in i64"),
+        snapshot.physical_cleanup_supported,
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_epoch_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(epoch, i64),
+        name!(state, String),
+        name!(consistency_mode, String),
+        name!(published_at_micros, i64),
+        name!(retain_until_micros, i64),
+        name!(active_query_count, i64),
+        name!(manifest_block, i64),
+        name!(manifest_offset, i32),
+        name!(is_active_root_manifest, bool),
+        name!(cleanup_eligible_now, bool),
+        name!(cleanup_blocked_reason, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_snapshot") };
+    let rows = unsafe { am::spire_index_epoch_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.epoch).expect("epoch should fit in i64"),
+            row.state.to_owned(),
+            row.consistency_mode.to_owned(),
+            row.published_at_micros,
+            row.retain_until_micros,
+            i64::try_from(row.active_query_count).expect("active query count should fit in i64"),
+            i64::from(row.manifest_block),
+            i32::from(row.manifest_offset),
+            row.is_active_root_manifest,
+            row.cleanup_eligible_now,
+            row.cleanup_blocked_reason.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_leaf_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(leaf_pid, i64),
+        name!(parent_pid, i64),
+        name!(object_version, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(placement_state, String),
+        name!(base_assignment_count, i64),
+        name!(delta_object_count, i64),
+        name!(delta_insert_assignment_count, i64),
+        name!(delta_delete_assignment_count, i64),
+        name!(effective_assignment_count, i64),
+        name!(split_assignment_threshold, i64),
+        name!(merge_assignment_threshold, i64),
+        name!(split_recommended, bool),
+        name!(merge_recommended, bool),
+        name!(maintenance_action, String),
+        name!(maintenance_reason, String),
+        name!(leaf_object_bytes, i64),
+        name!(delta_object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_leaf_snapshot") };
+    let rows = unsafe { am::spire_index_leaf_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.leaf_pid).expect("leaf pid should fit in i64"),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            row.placement_state.to_owned(),
+            i64::try_from(row.base_assignment_count)
+                .expect("base assignment count should fit in i64"),
+            i64::try_from(row.delta_object_count).expect("delta object count should fit in i64"),
+            i64::try_from(row.delta_insert_assignment_count)
+                .expect("delta insert assignment count should fit in i64"),
+            i64::try_from(row.delta_delete_assignment_count)
+                .expect("delta delete assignment count should fit in i64"),
+            i64::try_from(row.effective_assignment_count)
+                .expect("effective assignment count should fit in i64"),
+            i64::try_from(row.split_assignment_threshold)
+                .expect("split assignment threshold should fit in i64"),
+            i64::try_from(row.merge_assignment_threshold)
+                .expect("merge assignment threshold should fit in i64"),
+            row.split_recommended,
+            row.merge_recommended,
+            row.maintenance_action.to_owned(),
+            row.maintenance_reason.to_owned(),
+            i64::try_from(row.leaf_object_bytes).expect("leaf object bytes should fit in i64"),
+            i64::try_from(row.delta_object_bytes).expect("delta object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_plan_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(planner_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(planner_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_plan_snapshot") };
+    let snapshot = unsafe { am::spire_index_maintenance_plan_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.planner_status.to_owned(),
+        snapshot.planned_action.to_owned(),
+        snapshot.planned_reason.to_owned(),
+        i64::try_from(snapshot.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&snapshot.affected_leaf_pids),
+        i64::try_from(snapshot.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&snapshot.replacement_leaf_pids),
+        i64::try_from(snapshot.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(snapshot.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        snapshot.planner_message.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_locked_maintenance_plan_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(planner_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(planner_message, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_locked_maintenance_plan_snapshot")
+    };
+    let snapshot = unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.planner_status.to_owned(),
+        snapshot.planned_action.to_owned(),
+        snapshot.planned_reason.to_owned(),
+        i64::try_from(snapshot.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&snapshot.affected_leaf_pids),
+        i64::try_from(snapshot.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&snapshot.replacement_leaf_pids),
+        i64::try_from(snapshot.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(snapshot.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        snapshot.planner_message.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_locked_maintenance_run_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch_before, i64),
+        name!(active_epoch_after, i64),
+        name!(maintenance_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(published, bool),
+        name!(maintenance_message, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_locked_maintenance_run_plan")
+    };
+    let result = unsafe { am::spire_index_locked_maintenance_run_plan(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
+        i64::try_from(result.active_epoch_after).expect("active epoch should fit in i64"),
+        result.maintenance_status.to_owned(),
+        result.planned_action.to_owned(),
+        result.planned_reason.to_owned(),
+        i64::try_from(result.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&result.affected_leaf_pids),
+        i64::try_from(result.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&result.replacement_leaf_pids),
+        i64::try_from(result.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(result.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(result.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        result.published,
+        result.maintenance_message.to_owned(),
+    ))
+}
+
+#[pg_extern(volatile, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_run(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch_before, i64),
+        name!(active_epoch_after, i64),
+        name!(maintenance_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(published, bool),
+        name!(maintenance_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_run") };
+    let result = unsafe { am::spire_index_maintenance_run(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
+        i64::try_from(result.active_epoch_after).expect("active epoch should fit in i64"),
+        result.maintenance_status.to_owned(),
+        result.planned_action.to_owned(),
+        result.planned_reason.to_owned(),
+        i64::try_from(result.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&result.affected_leaf_pids),
+        i64::try_from(result.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&result.replacement_leaf_pids),
+        i64::try_from(result.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(result.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(result.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        result.published,
+        result.maintenance_message.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_delta_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(delta_pid, i64),
+        name!(parent_leaf_pid, i64),
+        name!(object_version, i64),
+        name!(published_epoch_backref, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(store_relid, i64),
+        name!(placement_state, String),
+        name!(assignment_count, i64),
+        name!(insert_assignment_count, i64),
+        name!(delete_assignment_count, i64),
+        name!(object_bytes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_delta_snapshot") };
+    let rows = unsafe { am::spire_index_delta_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.delta_pid).expect("delta pid should fit in i64"),
+            i64::try_from(row.parent_leaf_pid).expect("parent leaf pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.published_epoch_backref)
+                .expect("published epoch backref should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::from(row.store_relid),
+            row.placement_state.to_owned(),
+            i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+            i64::try_from(row.insert_assignment_count)
+                .expect("insert assignment count should fit in i64"),
+            i64::try_from(row.delete_assignment_count)
+                .expect("delete assignment count should fit in i64"),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_insert_debt_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(active_leaf_count, i64),
+        name!(leaf_count_with_deltas, i64),
+        name!(delta_object_count, i64),
+        name!(delta_insert_assignment_count, i64),
+        name!(max_delta_objects_per_leaf, i64),
+        name!(insert_batching_supported, bool),
+        name!(batching_recommended, bool),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_insert_debt_snapshot") };
+    let snapshot = unsafe { am::spire_index_insert_debt_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(snapshot.active_leaf_count).expect("active leaf count should fit in i64"),
+        i64::try_from(snapshot.leaf_count_with_deltas)
+            .expect("leaf count with deltas should fit in i64"),
+        i64::try_from(snapshot.delta_object_count).expect("delta object count should fit in i64"),
+        i64::try_from(snapshot.delta_insert_assignment_count)
+            .expect("delta insert assignment count should fit in i64"),
+        i64::try_from(snapshot.max_delta_objects_per_leaf)
+            .expect("max delta objects per leaf should fit in i64"),
+        snapshot.insert_batching_supported,
+        snapshot.batching_recommended,
+        snapshot.recommendation.to_owned(),
     ))
 }
 
@@ -2625,10 +3774,4432 @@ mod tests {
         assert_eq!(opclasses, 2);
     }
 
-    fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
+    #[pg_test]
+    fn test_ec_spire_access_method_is_registered() {
+        let amname =
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'ec_spire'")
+                .expect("SPI query should succeed")
+                .expect("access method should exist");
+        assert_eq!(amname, "ec_spire");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_operator_classes_are_registered() {
+        let opclasses = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_opclass opc \
+             JOIN pg_am am ON am.oid = opc.opcmethod \
+             WHERE am.amname = 'ec_spire' \
+             AND opc.opcname IN ('tqvector_spire_ip_ops', 'ecvector_spire_ip_ops')",
+        )
+        .expect("SPI query should succeed")
+        .expect("operator class count should exist");
+        assert_eq!(opclasses, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_empty_build_scan_no_rows() {
+        Spi::run("CREATE TABLE ec_spire_empty_scan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_empty_scan_idx ON ec_spire_empty_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                SELECT id FROM ec_spire_empty_scan \
+                ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                LIMIT 1 \
+             ) AS ordered_empty",
+        )
+        .expect("ordered empty ec_spire query should succeed")
+        .expect("count should not be NULL");
+
+        assert_eq!(rows, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_empty_pq_fastscan_build_scan_no_rows() {
+        Spi::run("CREATE TABLE ec_spire_empty_pq_scan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_empty_pq_scan_idx ON ec_spire_empty_pq_scan USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("empty pq_fastscan ec_spire index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                SELECT id FROM ec_spire_empty_pq_scan \
+                ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                LIMIT 1 \
+             ) AS ordered_empty",
+        )
+        .expect("ordered empty pq_fastscan ec_spire query should succeed")
+        .expect("count should not be NULL");
+
+        assert_eq!(rows, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_active_snapshot_diagnostics_sql() {
+        Spi::run("CREATE TABLE ec_spire_diag_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_diag_sql_idx ON ec_spire_diag_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let consistency_mode = Spi::get_one::<String>(
+            "SELECT consistency_mode FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let object_count = Spi::get_one::<i64>(
+            "SELECT object_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+
+        assert_eq!(active_epoch, 0);
+        assert_eq!(consistency_mode, "none");
+        assert_eq!(object_count, 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_diag_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let leaf_assignment_count = Spi::get_one::<i64>(
+            "SELECT leaf_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let delta_assignment_count = Spi::get_one::<i64>(
+            "SELECT delta_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_diag_sql_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+
+        assert_eq!(leaf_assignment_count, 1);
+        assert_eq!(delta_assignment_count, 1);
+        assert_eq!(routing_child_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_large_routing_object_builds_and_scans() {
+        Spi::run(
+            "CREATE TABLE ec_spire_large_routing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_large_routing_sql (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * d) % 97)::real / 97.0)::real \
+                     FROM generate_series(1, 1536) AS d), \
+               4, 42) \
+             FROM generate_series(1, 32) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_large_routing_idx ON ec_spire_large_routing_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 32, nprobe = 8, rerank_width = 25)",
+        )
+        .expect("large routing ec_spire index creation should succeed");
+
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_routing_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let routing_object_bytes = Spi::get_one::<i64>(
+            "SELECT routing_object_bytes FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_routing_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_large_routing_sql \
+               ORDER BY embedding <#> \
+                 ARRAY(SELECT (((7 * d) % 97)::real / 97.0)::real \
+                       FROM generate_series(1, 1536) AS d) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(routing_child_count, 32);
+        assert!(routing_object_bytes > 8192);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_allocator_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_alloc_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_alloc_sql_idx ON ec_spire_alloc_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_local_vec_seq = Spi::get_one::<i64>(
+            "SELECT next_local_vec_seq FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let remaining_pid_allocations = Spi::get_one::<String>(
+            "SELECT remaining_pid_allocations FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 0)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+
+        assert_eq!(active_epoch, 0);
+        assert_eq!(next_pid, 1);
+        assert_eq!(next_local_vec_seq, 1);
+        assert_eq!(remaining_pid_allocations, (u64::MAX - 1).to_string());
+
+        Spi::run(
+            "INSERT INTO ec_spire_alloc_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let warn_within = Spi::get_one::<i64>(
+            "SELECT warn_within FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let next_local_vec_seq = Spi::get_one::<i64>(
+            "SELECT next_local_vec_seq FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let pid_near_exhaustion = Spi::get_one::<bool>(
+            "SELECT pid_near_exhaustion FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+        let local_vec_id_near_exhaustion = Spi::get_one::<bool>(
+            "SELECT local_vec_id_near_exhaustion FROM \
+             ec_spire_index_allocator_snapshot('ec_spire_alloc_sql_idx'::regclass, 42)",
+        )
+        .expect("allocator snapshot query should succeed")
+        .expect("allocator row should exist");
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(warn_within, 42);
+        assert_eq!(next_pid, 3);
+        assert_eq!(next_local_vec_seq, 2);
+        assert!(!pid_near_exhaustion);
+        assert!(!local_vec_id_near_exhaustion);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_placement_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_place_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_place_empty_idx ON ec_spire_place_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_empty_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_place_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_place_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_place_sql_idx ON ec_spire_place_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("count should exist");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT placement_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let root_object_count = Spi::get_one::<i64>(
+            "SELECT root_object_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let leaf_object_count = Spi::get_one::<i64>(
+            "SELECT leaf_object_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let assignment_count = Spi::get_one::<i64>(
+            "SELECT assignment_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let available_object_bytes = Spi::get_one::<i64>(
+            "SELECT available_object_bytes FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let placement_object_bytes = Spi::get_one::<i64>(
+            "SELECT placement_object_bytes FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+
+        assert_eq!(row_count, 1);
+        assert_eq!(placement_count, 3);
+        assert_eq!(root_object_count, 1);
+        assert_eq!(leaf_object_count, 2);
+        assert_eq!(assignment_count, 3);
+        assert!(available_object_bytes > 0);
+        assert_eq!(placement_object_bytes, available_object_bytes);
+
+        Spi::run(
+            "INSERT INTO ec_spire_place_sql (id, embedding) VALUES \
+             (4, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should publish delta placement");
+
+        let post_insert_placement_count = Spi::get_one::<i64>(
+            "SELECT placement_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let post_insert_delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let post_insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT assignment_count FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+        let delta_object_bytes = Spi::get_one::<i64>(
+            "SELECT delta_object_bytes FROM \
+             ec_spire_index_placement_snapshot('ec_spire_place_sql_idx'::regclass)",
+        )
+        .expect("placement query should succeed")
+        .expect("placement row should exist");
+
+        assert_eq!(post_insert_placement_count, 4);
+        assert_eq!(post_insert_delta_object_count, 1);
+        assert_eq!(post_insert_assignment_count, 4);
+        assert!(delta_object_bytes > 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_scan_placement_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_scan_place_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_place_sql_idx ON ec_spire_scan_place_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 10)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("count should exist");
+        let effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let leaf_pid_count = Spi::get_one::<i64>(
+            "SELECT leaf_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let scanned_pid_count = Spi::get_one::<i64>(
+            "SELECT scanned_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let candidate_row_count = Spi::get_one::<i64>(
+            "SELECT candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_pid_count = Spi::get_one::<i64>(
+            "SELECT delta_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+
+        assert_eq!(row_count, 1);
+        assert_eq!(effective_nprobe, 1);
+        assert_eq!(leaf_pid_count, 1);
+        assert_eq!(scanned_pid_count, 1);
+        assert_eq!(delta_pid_count, 0);
+        assert!(candidate_row_count > 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+        let delta_scanned_pid_count = Spi::get_one::<i64>(
+            "SELECT scanned_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_leaf_pid_count = Spi::get_one::<i64>(
+            "SELECT leaf_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_delta_pid_count = Spi::get_one::<i64>(
+            "SELECT delta_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_leaf_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT leaf_candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT delta_candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delete_delta_row_count = Spi::get_one::<i64>(
+            "SELECT delete_delta_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let dropped_unselected_delta_route_count = Spi::get_one::<i64>(
+            "SELECT dropped_unselected_delta_route_count FROM \
+             ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+
+        assert_eq!(delta_scanned_pid_count, 2);
+        assert_eq!(delta_leaf_pid_count, 1);
+        assert_eq!(delta_delta_pid_count, 1);
+        assert_eq!(delta_candidate_row_count, 2);
+        assert_eq!(delta_leaf_candidate_row_count, 1);
+        assert_eq!(delta_delta_candidate_row_count, 1);
+        assert_eq!(delete_delta_row_count, 0);
+        assert_eq!(dropped_unselected_delta_route_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_root_routing_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_route_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_route_empty_idx ON ec_spire_route_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_empty_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_route_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_route_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_route_sql_idx ON ec_spire_route_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT max(root_child_count) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("routing row should exist");
+        let centroid_dimensions = Spi::get_one::<i32>(
+            "SELECT max(centroid_dimensions) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("routing row should exist");
+        let leaf_children = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass) \
+             WHERE child_kind = 'leaf'",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+        let assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(child_assignment_count)::bigint, 0) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("sum should exist");
+        let parent_links_match = Spi::get_one::<bool>(
+            "SELECT bool_and(child_parent_pid = root_pid) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("bool aggregate should exist");
+        let child_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT child_store_relid) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_route_sql_idx'::regclass)",
+        )
+        .expect("routing snapshot query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(row_count, 2);
+        assert_eq!(root_child_count, 2);
+        assert_eq!(centroid_dimensions, 2);
+        assert_eq!(leaf_children, 2);
+        assert_eq!(assignment_count, 2);
+        assert!(parent_links_match);
+        assert_eq!(child_store_relid_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_routing_centroid_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_centroid_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_centroid_empty_idx ON ec_spire_centroid_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_empty_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_centroid_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_centroid_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_centroid_sql_idx ON ec_spire_centroid_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        let row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let root_parent_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE parent_kind = 'root'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let internal_parent_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE parent_kind = 'internal'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let internal_child_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE child_kind = 'internal'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let leaf_child_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass) \
+             WHERE child_kind = 'leaf'",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("count should exist");
+        let max_parent_level = Spi::get_one::<i32>(
+            "SELECT max(parent_level) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("max parent level should exist");
+        let min_child_level = Spi::get_one::<i32>(
+            "SELECT min(child_level) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("min child level should exist");
+        let centroid_lengths_match = Spi::get_one::<bool>(
+            "SELECT bool_and(cardinality(centroid) = centroid_dimensions) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("centroid length aggregate should exist");
+        let parent_links_match = Spi::get_one::<bool>(
+            "SELECT bool_and(child_parent_pid = parent_pid) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_centroid_sql_idx'::regclass)",
+        )
+        .expect("routing centroid snapshot query should succeed")
+        .expect("parent link aggregate should exist");
+
+        assert_eq!(row_count, 6);
+        assert_eq!(root_parent_rows, 2);
+        assert_eq!(internal_parent_rows, 4);
+        assert_eq!(internal_child_rows, 2);
+        assert_eq!(leaf_child_rows, 4);
+        assert_eq!(max_parent_level, 2);
+        assert_eq!(min_child_level, 0);
+        assert!(centroid_lengths_match);
+        assert!(parent_links_match);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_hierarchy_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_hierarchy_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_hierarchy_empty_idx ON ec_spire_hierarchy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let empty_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let empty_routing_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_empty_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+
+        assert_eq!(empty_status, "empty");
+        assert_eq!(empty_depth, 0);
+        assert!(!empty_routing_supported);
+
+        Spi::run("DROP INDEX ec_spire_hierarchy_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_hierarchy_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_hierarchy_sql_idx ON ec_spire_hierarchy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let root_routing_object_count = Spi::get_one::<i64>(
+            "SELECT root_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let internal_routing_object_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let leaf_object_count = Spi::get_one::<i64>(
+            "SELECT leaf_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT root_child_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let centroid_dimensions = Spi::get_one::<i32>(
+            "SELECT centroid_dimensions FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let hierarchy_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let leaf_parent_count = Spi::get_one::<i64>(
+            "SELECT distinct_leaf_parent_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+        let per_level_nprobe_supported = Spi::get_one::<bool>(
+            "SELECT per_level_nprobe_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_hierarchy_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy row should exist");
+
+        assert_eq!(status, "single_level_foundation");
+        assert_eq!(root_routing_object_count, 1);
+        assert_eq!(internal_routing_object_count, 0);
+        assert_eq!(leaf_object_count, 2);
+        assert_eq!(root_child_count, 2);
+        assert_eq!(centroid_dimensions, 2);
+        assert_eq!(hierarchy_depth, 1);
+        assert_eq!(leaf_parent_count, 1);
+        assert!(!recursive_supported);
+        assert!(!per_level_nprobe_supported);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_object_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_object_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_empty_idx ON ec_spire_object_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_empty_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_object_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_object_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_sql_idx ON ec_spire_object_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let object_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let root_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'root' AND level = 1 AND parent_pid = 0 AND child_count = 2",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'leaf' AND level = 0 AND assignment_count = 1",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let all_available = Spi::get_one::<bool>(
+            "SELECT bool_and(placement_state = 'available' AND object_readable) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("bool aggregate should exist");
+        let published_backrefs = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE published_epoch_backref = active_epoch",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(object_count, 3);
+        assert_eq!(root_count, 1);
+        assert_eq!(leaf_count, 2);
+        assert!(all_available);
+        assert_eq!(published_backrefs, 3);
+
+        Spi::run(
+            "INSERT INTO ec_spire_object_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+        let delta_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass) \
+             WHERE object_kind = 'delta' AND assignment_count = 1",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("count should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_object_snapshot('ec_spire_object_sql_idx'::regclass)",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_count, 1);
+        assert_eq!(active_epoch, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_delta_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_delta_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_empty_idx ON ec_spire_delta_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_empty_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(empty_rows, 0);
+
+        Spi::run("DROP INDEX ec_spire_delta_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_delta_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_sql_idx ON ec_spire_delta_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        let initial_delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        assert_eq!(initial_delta_rows, 0);
+
+        Spi::run(
+            "INSERT INTO ec_spire_delta_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+        let delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        let insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(insert_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let delete_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let parent_leaf_matches = Spi::get_one::<bool>(
+            "SELECT bool_and(parent_leaf_pid = leaf_pid) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass) d \
+             JOIN ec_spire_index_leaf_snapshot('ec_spire_delta_sql_idx'::regclass) l \
+             ON d.parent_leaf_pid = l.leaf_pid",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("join should produce a row");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_rows, 1);
+        assert_eq!(insert_assignment_count, 1);
+        assert_eq!(delete_assignment_count, 0);
+        assert!(parent_leaf_matches);
+        assert_eq!(active_epoch, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_delta_snapshot_sql_delete_delta() {
+        Spi::run(
+            "CREATE TABLE ec_spire_delta_delete_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_delta_delete_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_delta_delete_sql_idx ON ec_spire_delta_delete_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let deleted_tid = heap_tid_for_row("ec_spire_delta_delete_sql", 1);
+        Spi::run("DELETE FROM ec_spire_delta_delete_sql WHERE id = 1")
+            .expect("delete should succeed");
+        let index_oid = index_oid("ec_spire_delta_delete_sql_idx");
+        let stats =
+            unsafe { am::debug_spire_vacuum_bulkdelete_heap_tids(index_oid, &[deleted_tid]) };
+        assert_eq!(stats.tuples_removed as i64, 1);
+
+        let delta_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("count should exist");
+        let insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(insert_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let delete_assignment_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_assignment_count)::bigint FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("sum should exist");
+        let scan_delete_count = Spi::get_one::<i64>(
+            "SELECT sum(delete_delta_row_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_delta_delete_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("sum should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_delta_snapshot('ec_spire_delta_delete_sql_idx'::regclass)",
+        )
+        .expect("delta snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        assert_eq!(delta_rows, 1);
+        assert_eq!(insert_assignment_count, 0);
+        assert_eq!(delete_assignment_count, 1);
+        assert_eq!(scan_delete_count, 1);
+        assert_eq!(active_epoch, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_options_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_options_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_options_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_sql_idx ON ec_spire_options_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 3, \
+                 nprobe = 2, \
+                 rerank_width = 7, \
+                 training_sample_rows = 11, \
+                 seed = 13, \
+                 local_store_count = 1, \
+                 local_store_tablespaces = 'pg_default', \
+                 pq_group_size = 4, \
+                 storage_format = 'rabitq' \
+             )",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run("SET LOCAL ec_spire.nprobe = 5").expect("SET should succeed");
+        Spi::run("SET LOCAL ec_spire.rerank_width = 9").expect("SET should succeed");
+
+        let nlists = Spi::get_one::<i32>(
+            "SELECT nlists FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let recursive_fanout = Spi::get_one::<i32>(
+            "SELECT recursive_fanout FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let recursive_build_enabled = Spi::get_one::<bool>(
+            "SELECT recursive_build_enabled FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let local_store_count = Spi::get_one::<i32>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let local_store_tablespaces = Spi::get_one::<String>(
+            "SELECT local_store_tablespaces FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let session_nprobe = Spi::get_one::<i32>(
+            "SELECT session_nprobe FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let assignment_payload_format = Spi::get_one::<String>(
+            "SELECT assignment_payload_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let assignment_payload_scannable = Spi::get_one::<bool>(
+            "SELECT assignment_payload_scannable FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let assignment_payload_status = Spi::get_one::<String>(
+            "SELECT assignment_payload_status FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+
+        assert_eq!(nlists, 3);
+        assert_eq!(recursive_fanout, 0);
+        assert!(!recursive_build_enabled);
+        assert_eq!(local_store_count, 1);
+        assert_eq!(local_store_tablespaces, "pg_default");
+        assert_eq!(session_nprobe, 5);
+        assert_eq!(storage_format, "rabitq");
+        assert_eq!(assignment_payload_format, "rabitq");
+        assert!(assignment_payload_scannable);
+        assert_eq!(assignment_payload_status, "supported");
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_nprobe_per_level = Spi::get_one::<Vec<i64>>(
+            "SELECT effective_nprobe_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let nprobe_policy_per_level = Spi::get_one::<Vec<String>>(
+            "SELECT nprobe_policy_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_rerank_width = Spi::get_one::<i32>(
+            "SELECT effective_rerank_width FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let effective_rerank_width_source = Spi::get_one::<String>(
+            "SELECT effective_rerank_width_source FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+
+        assert_eq!(active_leaf_count, 3);
+        assert_eq!(effective_nprobe, 3);
+        assert_eq!(effective_nprobe_source, "session");
+        assert_eq!(effective_nprobe_per_level, vec![3]);
+        assert_eq!(nprobe_policy_per_level, vec!["single_level"]);
+        assert_eq!(effective_rerank_width, 9);
+        assert_eq!(effective_rerank_width_source, "session");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_options_recursive_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("recursive options table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_options_recursive_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("recursive options insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_recursive_sql_idx \
+             ON ec_spire_options_recursive_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive options ec_spire index creation should succeed");
+        let recursive_fanout = Spi::get_one::<i32>(
+            "SELECT recursive_fanout FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_build_enabled = Spi::get_one::<bool>(
+            "SELECT recursive_build_enabled FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_effective_nprobe_per_level = Spi::get_one::<Vec<i64>>(
+            "SELECT effective_nprobe_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+        let recursive_nprobe_policy_per_level = Spi::get_one::<Vec<String>>(
+            "SELECT nprobe_policy_per_level FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive options query should succeed")
+        .expect("recursive options row should exist");
+
+        assert_eq!(recursive_fanout, 2);
+        assert!(recursive_build_enabled);
+        assert_eq!(recursive_active_leaf_count, 4);
+        assert_eq!(recursive_effective_nprobe_per_level, vec![4, 1]);
+        assert_eq!(
+            recursive_nprobe_policy_per_level,
+            vec!["relation_or_session_leaf_level", "one_child_above_level_1"]
+        );
+
+        Spi::run(
+            "CREATE TABLE ec_spire_options_pq_empty \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("empty table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_options_pq_empty_idx ON ec_spire_options_pq_empty \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("empty pq_fastscan ec_spire index creation should succeed");
+        let pq_storage_format = Spi::get_one::<String>(
+            "SELECT storage_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_format = Spi::get_one::<String>(
+            "SELECT assignment_payload_format FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_scannable = Spi::get_one::<bool>(
+            "SELECT assignment_payload_scannable FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_status = Spi::get_one::<String>(
+            "SELECT assignment_payload_status FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+        let pq_assignment_payload_recommendation = Spi::get_one::<String>(
+            "SELECT assignment_payload_recommendation FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_pq_empty_idx'::regclass)",
+        )
+        .expect("pq_fastscan options query should succeed")
+        .expect("pq_fastscan options row should exist");
+
+        assert_eq!(pq_storage_format, "pq_fastscan");
+        assert_eq!(pq_assignment_payload_format, "pq_fastscan");
+        assert!(!pq_assignment_payload_scannable);
+        assert_eq!(pq_assignment_payload_status, "deferred_model_metadata");
+        assert!(pq_assignment_payload_recommendation.contains("grouped-PQ model"));
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire PQ-FastScan encoding requires a persisted grouped-PQ model"
+    )]
+    fn test_ec_spire_pq_fastscan_populated_build_reports_deferral() {
+        Spi::run(
+            "CREATE TABLE ec_spire_pq_build_deferral \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_pq_build_deferral (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX ec_spire_pq_build_deferral_idx ON ec_spire_pq_build_deferral \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (storage_format = 'pq_fastscan')",
+        )
+        .expect("populated pq_fastscan SPIRE build should report deferral");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_scan_sanity_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_scan_sanity_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_sanity_empty_idx ON ec_spire_scan_sanity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_empty_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        assert_eq!(empty_status, "empty");
+
+        Spi::run("DROP INDEX ec_spire_scan_sanity_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_scan_sanity_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_sanity_sql_idx ON ec_spire_scan_sanity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let exact_leaf_coverage = Spi::get_one::<bool>(
+            "SELECT exact_leaf_coverage FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let full_frontier_rerank = Spi::get_one::<bool>(
+            "SELECT full_frontier_rerank FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let recall_sanity_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+
+        assert_eq!(active_leaf_count, 2);
+        assert!(!exact_leaf_coverage);
+        assert!(!full_frontier_rerank);
+        assert_eq!(recall_sanity_status, "approximate_leaf_coverage");
+
+        Spi::run("SET LOCAL ec_spire.nprobe = 2").expect("SET should succeed");
+        Spi::run("SET LOCAL ec_spire.rerank_width = 0").expect("SET should succeed");
+        let exact_leaf_coverage = Spi::get_one::<bool>(
+            "SELECT exact_leaf_coverage FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let full_frontier_rerank = Spi::get_one::<bool>(
+            "SELECT full_frontier_rerank FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let recall_sanity_status = Spi::get_one::<String>(
+            "SELECT recall_sanity_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+        let latency_risk_status = Spi::get_one::<String>(
+            "SELECT latency_risk_status FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_scan_sanity_sql_idx'::regclass)",
+        )
+        .expect("scan sanity query should succeed")
+        .expect("scan sanity row should exist");
+
+        assert!(exact_leaf_coverage);
+        assert!(full_frontier_rerank);
+        assert_eq!(recall_sanity_status, "exact_leaf_and_frontier_coverage");
+        assert_eq!(latency_risk_status, "full_scan");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_health_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_health_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_health_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_health_sql_idx ON ec_spire_health_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let healthy = Spi::get_one::<bool>(
+            "SELECT healthy FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let compaction_recommended = Spi::get_one::<bool>(
+            "SELECT compaction_recommended FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+
+        assert_eq!(status, "ok");
+        assert!(healthy);
+        assert!(!compaction_recommended);
+
+        Spi::run(
+            "INSERT INTO ec_spire_health_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("delta insert should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let recommendation = Spi::get_one::<String>(
+            "SELECT recommendation FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let compaction_recommended = Spi::get_one::<bool>(
+            "SELECT compaction_recommended FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+        let delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_health_snapshot('ec_spire_health_sql_idx'::regclass)",
+        )
+        .expect("health query should succeed")
+        .expect("health row should exist");
+
+        assert_eq!(status, "maintenance_recommended");
+        assert_eq!(
+            recommendation,
+            "run VACUUM to compact active delta objects into V2 base leaves"
+        );
+        assert!(compaction_recommended);
+        assert_eq!(delta_object_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_storage_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_storage_debt_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_storage_debt_empty_idx ON ec_spire_storage_debt_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_storage_debt_empty_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        assert_eq!(empty_tuple_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_storage_debt_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_storage_debt_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_storage_debt_sql_idx ON ec_spire_storage_debt_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let build_active_tuple_count = Spi::get_one::<i64>(
+            "SELECT active_referenced_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let build_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let cleanup_supported = Spi::get_one::<bool>(
+            "SELECT physical_cleanup_supported FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert!(build_tuple_count > 0);
+        assert_eq!(build_active_tuple_count, build_tuple_count);
+        assert_eq!(build_cleanup_candidate_count, 0);
+        assert!(!cleanup_supported);
+
+        Spi::run(
+            "INSERT INTO ec_spire_storage_debt_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_insert_cleanup_candidate_bytes = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_bytes FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let recommendation = Spi::get_one::<String>(
+            "SELECT recommendation FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert_eq!(post_insert_active_epoch, 2);
+        assert!(post_insert_tuple_count > build_tuple_count);
+        assert!(post_insert_cleanup_candidate_count > 0);
+        assert!(post_insert_cleanup_candidate_bytes > 0);
+        assert!(recommendation.contains("cleanup candidates"));
+
+        let index_oid = index_oid("ec_spire_storage_debt_sql_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+
+        let post_compaction_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+        let post_compaction_cleanup_candidate_bytes = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_bytes FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("storage snapshot query should succeed")
+        .expect("storage snapshot row should exist");
+
+        assert_eq!(post_compaction_active_epoch, 3);
+        assert!(post_compaction_tuple_count > post_insert_tuple_count);
+        assert!(post_compaction_cleanup_candidate_count > post_insert_cleanup_candidate_count);
+        assert!(post_compaction_cleanup_candidate_bytes > post_insert_cleanup_candidate_bytes);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_epoch_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_epoch_snapshot_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_epoch_snapshot_empty_idx ON ec_spire_epoch_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_empty_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(empty_epoch_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_epoch_snapshot_empty_idx")
+            .expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_epoch_snapshot_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_epoch_snapshot_sql_idx ON ec_spire_epoch_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let build_active_root_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let build_state = Spi::get_one::<String>(
+            "SELECT state FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("epoch row should exist");
+        let build_cleanup_reason = Spi::get_one::<String>(
+            "SELECT cleanup_blocked_reason FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("epoch row should exist");
+        assert_eq!(build_epoch_count, 1);
+        assert_eq!(build_active_root_count, 1);
+        assert_eq!(build_state, "published");
+        assert_eq!(build_cleanup_reason, "active_root_manifest");
+
+        Spi::run(
+            "INSERT INTO ec_spire_epoch_snapshot_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_manifest_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_insert_distinct_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let retired_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE state = 'retired'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let superseded_manifest_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_blocked_reason = 'superseded_manifest'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("max row should exist");
+        let active_root_epoch = Spi::get_one::<i64>(
+            "SELECT epoch FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("active root row should exist");
+        let cleanup_eligible_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_eligible_now",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(post_insert_manifest_row_count, 3);
+        assert_eq!(post_insert_distinct_epoch_count, 2);
+        assert_eq!(retired_epoch_count, 1);
+        assert_eq!(superseded_manifest_count, 1);
+        assert_eq!(active_epoch, 2);
+        assert_eq!(active_root_epoch, 2);
+        assert_eq!(cleanup_eligible_count, 0);
+
+        let index_oid = index_oid("ec_spire_epoch_snapshot_sql_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+
+        let post_compaction_manifest_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_distinct_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_retired_epoch_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE state = 'retired'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_superseded_manifest_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE cleanup_blocked_reason = 'superseded_manifest'",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("count row should exist");
+        let post_compaction_active_epoch = Spi::get_one::<i64>(
+            "SELECT max(active_epoch) FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass)",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("max row should exist");
+        let post_compaction_active_root_epoch = Spi::get_one::<i64>(
+            "SELECT epoch FROM \
+             ec_spire_index_epoch_snapshot('ec_spire_epoch_snapshot_sql_idx'::regclass) \
+             WHERE is_active_root_manifest",
+        )
+        .expect("epoch snapshot query should succeed")
+        .expect("active root row should exist");
+
+        assert_eq!(post_compaction_manifest_row_count, 5);
+        assert_eq!(post_compaction_distinct_epoch_count, 3);
+        assert_eq!(post_compaction_retired_epoch_count, 2);
+        assert_eq!(post_compaction_superseded_manifest_count, 2);
+        assert_eq!(post_compaction_active_epoch, 3);
+        assert_eq!(post_compaction_active_root_epoch, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_maintenance_run_empty_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_empty_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_empty_idx \
+             ON ec_spire_maintenance_run_empty_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("action row should exist");
+        let reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("reason row should exist");
+        let published = Spi::get_one::<bool>(
+            "SELECT published FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("published row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("maintenance run should succeed")
+        .expect("active epoch row should exist");
+
+        assert_eq!(status, "no_action");
+        assert_eq!(action, "none");
+        assert_eq!(reason, "empty_index");
+        assert!(!published);
+        assert_eq!(active_epoch_after, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_locked_maintenance_run_plan_no_write_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_locked_maintenance_run_plan_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_locked_maintenance_run_plan_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_locked_maintenance_run_plan_idx \
+             ON ec_spire_locked_maintenance_run_plan_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let pre_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("next pid row should exist");
+        let pre_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_locked_maintenance_run_plan_result AS \
+             SELECT * FROM \
+             ec_spire_index_locked_maintenance_run_plan(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("locked maintenance run plan should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("action row should exist");
+        let active_epoch_before = Spi::get_one::<i64>(
+            "SELECT active_epoch_before FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("active epoch before row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("active epoch after row should exist");
+        let publish_epoch = Spi::get_one::<i64>(
+            "SELECT publish_epoch FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("publish epoch row should exist");
+        let affected_leaf_pids = Spi::get_one::<String>(
+            "SELECT affected_leaf_pids FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("affected leaf pids row should exist");
+        let replacement_leaf_pids = Spi::get_one::<String>(
+            "SELECT replacement_leaf_pids FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("replacement leaf pids row should exist");
+        let next_pid =
+            Spi::get_one::<i64>("SELECT next_pid FROM ec_spire_locked_maintenance_run_plan_result")
+                .expect("maintenance run plan result query should succeed")
+                .expect("next pid row should exist");
+        let published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_locked_maintenance_run_plan_result",
+        )
+        .expect("maintenance run plan result query should succeed")
+        .expect("published row should exist");
+        let post_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let post_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("next pid row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "planned");
+        assert_eq!(action, "merge");
+        assert_eq!(active_epoch_before, pre_active_epoch);
+        assert_eq!(active_epoch_after, pre_active_epoch);
+        assert_eq!(publish_epoch, pre_active_epoch + 1);
+        assert!(!published);
+        assert_eq!(post_active_epoch, pre_active_epoch);
+        assert_eq!(post_next_pid, pre_next_pid);
+        assert_eq!(post_leaf_count, pre_leaf_count);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_locked_maintenance_run_publish_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("maintenance run should publish the planned replacement");
+
+        let run_status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let run_action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let run_affected_leaf_pids = Spi::get_one::<String>(
+            "SELECT affected_leaf_pids FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("affected leaf pids row should exist");
+        let run_replacement_leaf_pids = Spi::get_one::<String>(
+            "SELECT replacement_leaf_pids FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("replacement leaf pids row should exist");
+        let run_publish_epoch = Spi::get_one::<i64>(
+            "SELECT publish_epoch FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("publish epoch row should exist");
+        let run_active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch after row should exist");
+        let run_next_pid = Spi::get_one::<i64>(
+            "SELECT next_pid FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("next pid row should exist");
+        let run_published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("published row should exist");
+
+        assert_eq!(run_status, "published");
+        assert_eq!(run_action, action);
+        assert_eq!(run_affected_leaf_pids, affected_leaf_pids);
+        assert_eq!(run_replacement_leaf_pids, replacement_leaf_pids);
+        assert_eq!(run_publish_epoch, publish_epoch);
+        assert_eq!(run_active_epoch_after, publish_epoch);
+        assert_eq!(run_next_pid, next_pid);
+        assert!(run_published);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_maintenance_run_no_candidate_sql() {
+        let maintenance_run_volatility = Spi::get_one::<String>(
+            "SELECT provolatile::text FROM pg_proc \
+             WHERE proname = 'ec_spire_index_maintenance_run' AND pronargs = 1",
+        )
+        .expect("pg_proc volatility query should succeed")
+        .expect("maintenance run function should exist");
+        assert_eq!(maintenance_run_volatility, "v");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_no_candidate_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_maintenance_run_no_candidate_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_no_candidate_idx \
+             ON ec_spire_maintenance_run_no_candidate_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_maintenance_run_no_candidate_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let pre_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_maintenance_run_no_candidate_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(pre_active_epoch, 1);
+        assert_eq!(pre_leaf_count, 2);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_no_candidate_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run(\
+             'ec_spire_maintenance_run_no_candidate_idx'::regclass)",
+        )
+        .expect("maintenance run should return no candidate");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("reason row should exist");
+        let active_epoch_before = Spi::get_one::<i64>(
+            "SELECT active_epoch_before FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch before row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch after row should exist");
+        let published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_maintenance_run_no_candidate_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("published row should exist");
+        let post_active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+             'ec_spire_maintenance_run_no_candidate_idx'::regclass)",
+        )
+        .expect("active snapshot query should succeed")
+        .expect("active epoch row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot(\
+             'ec_spire_maintenance_run_no_candidate_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "no_action");
+        assert_eq!(action, "none");
+        assert_eq!(reason, "no_candidate");
+        assert_eq!(active_epoch_before, pre_active_epoch);
+        assert_eq!(active_epoch_after, pre_active_epoch);
+        assert!(!published);
+        assert_eq!(post_active_epoch, pre_active_epoch);
+        assert_eq!(post_leaf_count, pre_leaf_count);
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire maintenance split/merge is deferred for recursive SPIRE indexes until recursive update propagation lands"
+    )]
+    fn test_ec_spire_recursive_maintenance_run_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_maintenance_rejected \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_maintenance_rejected (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_maintenance_rejected_idx \
+             ON ec_spire_recursive_maintenance_rejected \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_index_maintenance_run(\
+             'ec_spire_recursive_maintenance_rejected_idx'::regclass)",
+        )
+        .expect("recursive maintenance should be rejected");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_maintenance_run_merge_publish_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_merge_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_maintenance_run_merge_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_merge_idx \
+             ON ec_spire_maintenance_run_merge_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_merge_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass) \
+             WHERE merge_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(pre_merge_candidates, 2);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_merge_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("maintenance run should publish merge epoch");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("reason row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_merge_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch row should exist");
+        let published =
+            Spi::get_one::<bool>("SELECT published FROM ec_spire_maintenance_run_merge_result")
+                .expect("maintenance run result query should succeed")
+                .expect("published row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "published");
+        assert_eq!(action, "merge");
+        assert_eq!(reason, "sparsest_same_parent_merge_pair");
+        assert_eq!(active_epoch_after, 2);
+        assert!(published);
+        assert_eq!(post_leaf_count, 2);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let post_merge_first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_maintenance_run_merge_sql \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered post-merge ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(post_merge_first_id, 1);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_merge_second_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("second maintenance run should return no action");
+
+        let second_status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("status row should exist");
+        let second_reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("reason row should exist");
+        let second_active_epoch_before = Spi::get_one::<i64>(
+            "SELECT active_epoch_before FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("active epoch before row should exist");
+        let second_active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("active epoch after row should exist");
+        let second_published = Spi::get_one::<bool>(
+            "SELECT published FROM ec_spire_maintenance_run_merge_second_result",
+        )
+        .expect("second maintenance run result query should succeed")
+        .expect("published row should exist");
+        let second_post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_merge_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(second_status, "no_action");
+        assert_eq!(second_reason, "no_candidate");
+        assert_eq!(second_active_epoch_before, 2);
+        assert_eq!(second_active_epoch_after, 2);
+        assert!(!second_published);
+        assert_eq!(second_post_leaf_count, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_maintenance_run_split_publish_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_maintenance_run_split_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_maintenance_run_split_sql (id, embedding) \
+             SELECT gs, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42) \
+             FROM generate_series(1, 60) AS gs",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_maintenance_run_split_idx \
+             ON ec_spire_maintenance_run_split_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 10)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let pre_split_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_split_idx'::regclass) \
+             WHERE split_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(pre_split_candidates, 1);
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_maintenance_run_split_result AS \
+             SELECT * FROM \
+             ec_spire_index_maintenance_run('ec_spire_maintenance_run_split_idx'::regclass)",
+        )
+        .expect("maintenance run should publish split epoch");
+
+        let status = Spi::get_one::<String>(
+            "SELECT maintenance_status FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("status row should exist");
+        let action = Spi::get_one::<String>(
+            "SELECT planned_action FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("action row should exist");
+        let active_epoch_after = Spi::get_one::<i64>(
+            "SELECT active_epoch_after FROM ec_spire_maintenance_run_split_result",
+        )
+        .expect("maintenance run result query should succeed")
+        .expect("active epoch row should exist");
+        let published =
+            Spi::get_one::<bool>("SELECT published FROM ec_spire_maintenance_run_split_result")
+                .expect("maintenance run result query should succeed")
+                .expect("published row should exist");
+        let post_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_maintenance_run_split_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(status, "published");
+        assert_eq!(action, "split");
+        assert_eq!(active_epoch_after, 2);
+        assert!(published);
+        assert_eq!(post_leaf_count, 11);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let post_split_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_maintenance_run_split_sql \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 20 \
+             ) ranked",
+        )
+        .expect("ordered post-split ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(post_split_rows_returned, 20);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_leaf_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_leaf_snapshot_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_snapshot_empty_idx ON ec_spire_leaf_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_empty_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(empty_leaf_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_leaf_snapshot_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_leaf_snapshot_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_snapshot_sql_idx ON ec_spire_leaf_snapshot_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 3)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let build_leaf_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        let build_base_assignments = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(base_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let build_delta_objects = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_object_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let build_merge_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass) \
+             WHERE merge_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        let build_split_threshold = Spi::get_one::<i64>(
+            "SELECT min(split_assignment_threshold) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("threshold row should exist");
+        assert_eq!(build_leaf_count, 3);
+        assert_eq!(build_base_assignments, 2);
+        assert_eq!(build_delta_objects, 0);
+        assert_eq!(build_merge_candidates, 1);
+        assert_eq!(build_split_threshold, 32);
+
+        Spi::run(
+            "INSERT INTO ec_spire_leaf_snapshot_sql (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let post_insert_delta_objects = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_object_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let post_insert_delta_inserts = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_insert_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let post_insert_effective_assignments = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(effective_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("sum row should exist");
+        let post_insert_split_candidates = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_leaf_snapshot_sql_idx'::regclass) \
+             WHERE split_recommended",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("count row should exist");
+        assert_eq!(post_insert_delta_objects, 1);
+        assert_eq!(post_insert_delta_inserts, 1);
+        assert_eq!(post_insert_effective_assignments, 3);
+        assert_eq!(post_insert_split_candidates, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_populated_build_publishes_root_control() {
+        Spi::run(
+            "CREATE TABLE ec_spire_populated_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_populated_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_populated_build_idx ON ec_spire_populated_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_populated_build_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        let diagnostics = unsafe { am::debug_spire_active_snapshot_diagnostics(index_oid) };
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(diagnostics.epoch, 1);
+        assert_eq!(diagnostics.object_count, 3);
+        assert_eq!(diagnostics.placement_count, 3);
+        assert_eq!(diagnostics.local_store_count, 1);
+        assert_eq!(diagnostics.available_placement_count, 3);
+        assert_eq!(diagnostics.root_object_count, 1);
+        assert_eq!(diagnostics.leaf_object_count, 2);
+        assert_eq!(diagnostics.routing_child_count, 2);
+        assert_eq!(diagnostics.leaf_assignment_count, 3);
+        assert!(diagnostics.available_object_bytes > 0);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_populated_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_populated_build_hash_routes_logical_store_set() {
+        Spi::run(
+            "CREATE TABLE ec_spire_logical_store_build \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_logical_store_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_logical_store_build_idx \
+             ON ec_spire_logical_store_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store logical baseline build should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_logical_store_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire query should succeed")
+        .expect("query should return a row");
+        let placed_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_object_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("object snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let auxiliary_store_relation_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_class \
+             WHERE relname LIKE 'ec_spire_store_%' \
+             AND relkind = 'r'",
+        )
+        .expect("store relation query should succeed")
+        .expect("count should exist");
+        let autovacuum_disabled_auxiliary_relation_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM pg_class \
+             WHERE relname LIKE 'ec_spire_store_%' \
+             AND relkind = 'r' \
+             AND reloptions @> ARRAY['autovacuum_enabled=false']::text[]",
+        )
+        .expect("store relation reloptions query should succeed")
+        .expect("count should exist");
+        let active_diag_store_count = Spi::get_one::<i64>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let options_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("options snapshot should succeed")
+        .expect("options row should exist");
+        let scan_sanity_active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_scan_sanity_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("scan sanity snapshot should succeed")
+        .expect("scan sanity row should exist");
+        let active_referenced_tuple_count = Spi::get_one::<i64>(
+            "SELECT active_referenced_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let storage_relation_block_count = Spi::get_one::<i64>(
+            "SELECT relation_block_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let storage_object_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let storage_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let candidate_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(candidate_row_count), 0)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_logical_store_build_idx'::regclass, \
+                 ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement snapshot should succeed")
+        .expect("sum should exist");
+
+        assert_eq!(first_id, 1);
+        assert_eq!(placed_store_count, 2);
+        assert_eq!(placement_store_count, 2);
+        assert_eq!(placement_store_relid_count, 2);
+        assert_eq!(auxiliary_store_relation_count, 2);
+        assert_eq!(autovacuum_disabled_auxiliary_relation_count, 2);
+        assert_eq!(active_diag_store_count, 2);
+        assert_eq!(options_active_leaf_count, 2);
+        assert_eq!(scan_sanity_active_leaf_count, 2);
+        assert!(active_referenced_tuple_count > 0);
+        assert!(storage_relation_block_count >= auxiliary_store_relation_count + 1);
+        assert_eq!(active_referenced_tuple_count, storage_object_tuple_count);
+        assert_eq!(storage_cleanup_candidate_count, 0);
+        assert!(candidate_count >= 1);
+
+        Spi::run(
+            "INSERT INTO ec_spire_logical_store_build (id, embedding) VALUES \
+             (5, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42))",
+        )
+        .expect("multi-store post-build insert should succeed");
+        let post_insert_delta_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_object_snapshot('ec_spire_logical_store_build_idx'::regclass) \
+             WHERE object_kind = 'delta'",
+        )
+        .expect("object snapshot should succeed")
+        .expect("delta count should exist");
+        let post_insert_store_relid_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let post_insert_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_logical_store_build \
+                 ORDER BY embedding <#> ARRAY[0.9, 0.1]::real[] \
+                 LIMIT 5 \
+             ) ranked",
+        )
+        .expect("ordered post-insert ec_spire query should succeed")
+        .expect("count should exist");
+        let post_insert_cleanup_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_logical_store_build_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+
+        assert_eq!(post_insert_delta_count, 1);
+        assert_eq!(post_insert_store_relid_count, 2);
+        assert_eq!(post_insert_rows_returned, 5);
+        assert!(post_insert_cleanup_candidate_count > 0);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_ec_spire_aux_store_relcache_disables_autovacuum() {
+        Spi::run(
+            "CREATE TABLE ec_spire_aux_autovacuum_guard \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_aux_autovacuum_guard (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_aux_autovacuum_guard_idx \
+             ON ec_spire_aux_autovacuum_guard USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+
+        let aux_store_relids = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT c.oid::int \
+                     FROM pg_class c \
+                     WHERE c.relname LIKE 'ec_spire_store_%' \
+                     AND c.relkind = 'r' \
+                     ORDER BY c.relname",
+                    None,
+                    &[],
+                )
+                .expect("auxiliary store relid query should succeed");
+            rows.into_iter()
+                .map(|row| {
+                    let oid = row["oid"]
+                        .value::<i32>()
+                        .expect("auxiliary store oid should decode")
+                        .expect("auxiliary store oid should be non-null");
+                    u32::try_from(oid).expect("auxiliary store oid should be non-negative")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(aux_store_relids.len(), 2);
+
+        for relid in aux_store_relids {
+            let autovacuum_enabled = unsafe {
+                let relation = pg_sys::relation_open(
+                    pg_sys::Oid::from(relid),
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                );
+                assert!(
+                    !relation.is_null(),
+                    "auxiliary relation {relid} should open"
+                );
+                let rd_options = (*relation).rd_options;
+                assert!(
+                    !rd_options.is_null(),
+                    "auxiliary relation {relid} should have parsed reloptions"
+                );
+                let enabled = (*rd_options.cast::<pg_sys::StdRdOptions>())
+                    .autovacuum
+                    .enabled;
+                pg_sys::relation_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+                enabled
+            };
+            assert!(
+                !autovacuum_enabled,
+                "auxiliary relation {relid} should be disabled in relcache autovacuum options"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_spire_multistore_large_fixture_routes_all_stores() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_large_fixture \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_large_fixture (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                     FROM generate_series(1, 384) AS d), \
+               4, 42) \
+             FROM generate_series(1, 256) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_large_fixture_idx \
+             ON ec_spire_multistore_large_fixture USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 32, \
+                 nprobe = 8, \
+                 rerank_width = 25, \
+                 local_store_count = 4, \
+                 local_store_tablespaces = 'pg_default,pg_default,pg_default,pg_default' \
+             )",
+        )
+        .expect("large multi-store ec_spire index creation should succeed");
+
+        let local_store_count = Spi::get_one::<i64>(
+            "SELECT local_store_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let object_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_object_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("object snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_count = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let routing_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let routing_object_bytes = Spi::get_one::<i64>(
+            "SELECT routing_object_bytes FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let storage_relation_block_count = Spi::get_one::<i64>(
+            "SELECT relation_block_count FROM \
+             ec_spire_index_relation_storage_snapshot(\
+                 'ec_spire_multistore_large_fixture_idx'::regclass)",
+        )
+        .expect("relation storage snapshot should succeed")
+        .expect("storage row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_multistore_large_fixture \
+               ORDER BY embedding <#> \
+                 ARRAY(SELECT (((7 * 17 + d * 31) % 257)::real / 128.0 - 1.0)::real \
+                       FROM generate_series(1, 384) AS d) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(local_store_count, 4);
+        assert_eq!(object_store_count, 4);
+        assert_eq!(placement_store_count, 4);
+        assert_eq!(routing_child_count, 32);
+        assert!(routing_object_bytes > 8192);
+        assert!(storage_relation_block_count >= 5);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_singlestore_reindex_succeeds() {
+        Spi::run(
+            "CREATE TABLE ec_spire_singlestore_reindex \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_singlestore_reindex (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_singlestore_reindex_idx \
+             ON ec_spire_singlestore_reindex USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("single-store ec_spire index creation should succeed");
+
+        Spi::run("REINDEX INDEX ec_spire_singlestore_reindex_idx")
+            .expect("single-store REINDEX should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_singlestore_reindex \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered reindexed ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire multi-store REINDEX is not supported yet: auxiliary local store relation"
+    )]
+    fn test_ec_spire_multistore_reindex_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_multistore_reindex \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_multistore_reindex (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_multistore_reindex_idx \
+             ON ec_spire_multistore_reindex USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 2, \
+                 local_store_count = 2, \
+                 local_store_tablespaces = 'pg_default,pg_default' \
+             )",
+        )
+        .expect("multi-store ec_spire index creation should succeed");
+
+        Spi::run("REINDEX INDEX ec_spire_multistore_reindex_idx")
+            .expect("multi-store REINDEX should be rejected explicitly");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_tqvector_populated_build_scans_with_heap_rerank() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tqvector_populated_build \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tqvector_populated_build (id, embedding) VALUES \
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tqvector_populated_build_idx \
+             ON ec_spire_tqvector_populated_build USING ec_spire \
+             (embedding tqvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire tqvector index creation should succeed");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_tqvector_populated_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire tqvector query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_two_store_scan_roundtrip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_two_store_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_root_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("root ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_two_store_scan_aux_idx ON ec_spire_two_store_scan \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("auxiliary ec_spire index creation should succeed");
+
+        let (root_store_id, left_store_id, right_store_id, candidate_count, first_vec, second_vec) = unsafe {
+            am::debug_spire_relation_two_store_scan_roundtrip(
+                index_oid("ec_spire_two_store_scan_root_idx"),
+                index_oid("ec_spire_two_store_scan_aux_idx"),
+            )
+        };
+
+        assert_eq!(root_store_id, 1);
+        assert_eq!(left_store_id, 0);
+        assert_eq!(right_store_id, 1);
+        assert_eq!(candidate_count, 2);
+        assert_eq!((first_vec, second_vec), (1, 2));
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire recursive_fanout reloption must be 0 or at least 2")]
+    fn test_ec_spire_recursive_fanout_one_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_fanout_one \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_fanout_one_idx \
+             ON ec_spire_recursive_fanout_one USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 1)",
+        )
+        .expect("recursive_fanout = 1 should be rejected");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_recursive_fanout_build_hierarchy() {
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_build_idx \
+             ON ec_spire_recursive_build USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+
+        let hierarchy_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy status should exist");
+        let internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("internal count should exist");
+        let leaf_count = Spi::get_one::<i64>(
+            "SELECT leaf_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("leaf count should exist");
+        let hierarchy_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("hierarchy depth should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("recursive support flag should exist");
+        let per_level_nprobe_supported = Spi::get_one::<bool>(
+            "SELECT per_level_nprobe_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("per-level nprobe support flag should exist");
+        let root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("root routing snapshot query should succeed")
+        .expect("root row count should exist");
+        let level_parameter_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level parameter row count should exist");
+        let level_1_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_target_fanout = Spi::get_one::<i64>(
+            "SELECT target_fanout FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_1_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 1",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 1 row should exist");
+        let level_2_child_count = Spi::get_one::<i64>(
+            "SELECT routing_child_count FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_target_fanout = Spi::get_one::<i64>(
+            "SELECT target_fanout FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_2_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE level = 2",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level 2 row should exist");
+        let level_assignment_payloads = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_level_parameter_snapshot('ec_spire_recursive_build_idx'::regclass) \
+             WHERE assignment_payload_format = 'turboquant' \
+               AND distance_operator = 'inner_product' \
+               AND training_iterations = 8",
+        )
+        .expect("level parameter snapshot query should succeed")
+        .expect("level payload count should exist");
+
+        assert_eq!(hierarchy_status, "hierarchy_metadata_present");
+        assert_eq!(internal_count, 2);
+        assert_eq!(leaf_count, 4);
+        assert_eq!(hierarchy_depth, 2);
+        assert!(recursive_supported);
+        assert!(per_level_nprobe_supported);
+        assert_eq!(root_rows, 2);
+        assert_eq!(level_parameter_rows, 2);
+        assert_eq!(level_1_child_count, 4);
+        assert_eq!(level_1_target_fanout, 4);
+        assert_eq!(level_1_effective_nprobe, 2);
+        assert_eq!(level_1_nprobe_source, "auto");
+        assert_eq!(level_2_child_count, 2);
+        assert_eq!(level_2_target_fanout, 2);
+        assert_eq!(level_2_effective_nprobe, 1);
+        assert_eq!(level_2_nprobe_source, "conservative_upper_level");
+        assert_eq!(level_assignment_payloads, 2);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_recursive_build \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered recursive ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_flat_recursive_same_candidate() {
+        Spi::run("CREATE TABLE ec_spire_flat_compare (id bigint primary key, embedding ecvector)")
+            .expect("flat comparison table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_recursive_compare (id bigint primary key, embedding ecvector)",
+        )
+        .expect("recursive comparison table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_flat_compare (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("flat comparison insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_recursive_compare (id, embedding) \
+             SELECT id, embedding FROM ec_spire_flat_compare",
+        )
+        .expect("recursive comparison insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_flat_compare_idx \
+             ON ec_spire_flat_compare USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4)",
+        )
+        .expect("flat comparison ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_recursive_compare_idx \
+             ON ec_spire_recursive_compare USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive comparison ec_spire index creation should succeed");
+
+        let flat_internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat internal count should exist");
+        let recursive_internal_count = Spi::get_one::<i64>(
+            "SELECT internal_routing_object_count FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive internal count should exist");
+        let flat_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat hierarchy depth should exist");
+        let recursive_depth = Spi::get_one::<i32>(
+            "SELECT hierarchy_depth FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive hierarchy depth should exist");
+        let flat_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat hierarchy snapshot query should succeed")
+        .expect("flat recursive support flag should exist");
+        let recursive_supported = Spi::get_one::<bool>(
+            "SELECT recursive_routing_supported FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive hierarchy snapshot query should succeed")
+        .expect("recursive support flag should exist");
+        let flat_root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_flat_compare_idx'::regclass)",
+        )
+        .expect("flat root routing snapshot query should succeed")
+        .expect("flat root row count should exist");
+        let recursive_root_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM \
+             ec_spire_index_root_routing_snapshot('ec_spire_recursive_compare_idx'::regclass)",
+        )
+        .expect("recursive root routing snapshot query should succeed")
+        .expect("recursive root row count should exist");
+
+        assert_eq!(flat_internal_count, 0);
+        assert_eq!(recursive_internal_count, 2);
+        assert_eq!(flat_depth, 1);
+        assert_eq!(recursive_depth, 2);
+        assert!(!flat_supported);
+        assert!(recursive_supported);
+        assert_eq!(flat_root_rows, 4);
+        assert_eq!(recursive_root_rows, 2);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        fn top_ids(table_name: &str, query: &str, limit: i64) -> Vec<i64> {
+            Spi::get_one::<Vec<i64>>(&format!(
+                "SELECT array_agg(id ORDER BY id) FROM (\
+                 SELECT id FROM {table_name} \
+                 ORDER BY embedding <#> {query}::real[] \
+                 LIMIT {limit}) ids"
+            ))
+            .expect("ordered comparison ec_spire query should succeed")
+            .expect("comparison query should return rows")
+        }
+
+        for (query, expected_top2_ids) in [
+            ("ARRAY[1.0, 0.0]", vec![1, 2]),
+            ("ARRAY[0.8, 0.2]", vec![1, 2]),
+            ("ARRAY[-1.0, 0.0]", vec![3, 4]),
+            ("ARRAY[-0.8, 0.2]", vec![3, 4]),
+        ] {
+            let flat_top2_ids = top_ids("ec_spire_flat_compare", query, 2);
+            let recursive_top2_ids = top_ids("ec_spire_recursive_compare", query, 2);
+            assert_eq!(flat_top2_ids, expected_top2_ids);
+            assert_eq!(recursive_top2_ids, flat_top2_ids);
+
+            let flat_top1_id = top_ids("ec_spire_flat_compare", query, 1);
+            let recursive_top1_id = top_ids("ec_spire_recursive_compare", query, 1);
+            assert_eq!(recursive_top1_id, flat_top1_id);
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_after_build_delta_epoch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_after_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_after_build (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_after_build_idx ON ec_spire_insert_after_build \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_after_build (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+
+        let index_oid = index_oid("ec_spire_insert_after_build_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 2);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_insert_after_build \
+             ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered populated ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_after_build_multiple_same_leaf_deltas() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_multi_delta (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.5, 0.5], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_multi_delta_idx ON ec_spire_insert_multi_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.0, 0.9], 4, 42)), \
+             (5, encode_to_ecvector(ARRAY[0.0, 0.8], 4, 42))",
+        )
+        .expect("multi-row post-build insert should publish delta epochs");
+
+        let index_oid = index_oid("ec_spire_insert_multi_delta_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 6);
+        assert_eq!(next_local_vec_seq, 6);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_insert_multi_delta_idx", "delta_object_count"),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_insert_multi_delta_idx",
+                "delta_assignment_count"
+            ),
+            3
+        );
+
+        let delta_pid_count = Spi::get_one::<i64>(
+            "SELECT sum(delta_pid_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_insert_multi_delta_idx'::regclass, ARRAY[0.0, 1.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("delta pid aggregate should exist");
+        let delta_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT sum(delta_candidate_row_count)::bigint FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 'ec_spire_insert_multi_delta_idx'::regclass, ARRAY[0.0, 1.0]::real[])",
+        )
+        .expect("scan placement diagnostics query should succeed")
+        .expect("delta candidate aggregate should exist");
+        assert_eq!(delta_pid_count, 3);
+        assert_eq!(delta_candidate_row_count, 3);
+        let max_delta_objects_per_leaf = Spi::get_one::<i64>(
+            "SELECT max_delta_objects_per_leaf FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let leaf_count_with_deltas = Spi::get_one::<i64>(
+            "SELECT leaf_count_with_deltas FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let insert_batching_supported = Spi::get_one::<bool>(
+            "SELECT insert_batching_supported FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        let batching_recommended = Spi::get_one::<bool>(
+            "SELECT batching_recommended FROM \
+             ec_spire_index_insert_debt_snapshot('ec_spire_insert_multi_delta_idx'::regclass)",
+        )
+        .expect("insert debt query should succeed")
+        .expect("insert debt row should exist");
+        assert_eq!(max_delta_objects_per_leaf, 3);
+        assert_eq!(leaf_count_with_deltas, 1);
+        assert!(!insert_batching_supported);
+        assert!(batching_recommended);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let inserted_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_insert_multi_delta \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 5 \
+             ) ranked WHERE id IN (3, 4, 5)",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(inserted_rows_returned, 3);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_concurrent_same_leaf_inserts() {
+        const TABLE_NAME: &str = "ec_spire_concurrent_same_leaf_insert";
+        const INDEX_NAME: &str = "ec_spire_concurrent_same_leaf_insert_idx";
+        // Test-unique advisory-lock id; conventionally `<review-packet>0`.
+        const BARRIER_KEY: i64 = 303_360;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire same-leaf concurrent insert setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (0, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 1);",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let worker_sql = |id: i64, vector: &str| {
+            format!(
+                "SET lock_timeout = '10s';
+                 SET statement_timeout = '30s';
+                 SELECT pg_advisory_lock_shared({BARRIER_KEY});
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES ({id}, encode_to_ecvector({vector}::real[], 4, 42));
+                 SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
+            )
+        };
+        let workers = vec![
+            (
+                "spire same-leaf worker 1",
+                spawn_psql_script(
+                    &connection,
+                    "spire same-leaf worker 1",
+                    &worker_sql(1, "ARRAY[1.0, 0.1]"),
+                ),
+            ),
+            (
+                "spire same-leaf worker 2",
+                spawn_psql_script(
+                    &connection,
+                    "spire same-leaf worker 2",
+                    &worker_sql(2, "ARRAY[1.0, 0.2]"),
+                ),
+            ),
+        ];
+        wait_for_advisory_lock_waiters(BARRIER_KEY, 2);
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = index_oid(INDEX_NAME);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(heap_count, 3);
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "leaf_assignment_count"),
+            1
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count"),
+            2
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count"),
+            2
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let inserted_rows_returned = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[] \
+                 LIMIT 3 \
+             ) ranked WHERE id IN (1, 2)"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(inserted_rows_returned, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_after_build_multi_row_epoch_progression() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_multi_epoch (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_epoch (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_multi_epoch_idx ON ec_spire_insert_multi_epoch \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_multi_epoch (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (5, encode_to_ecvector(ARRAY[-0.9, 0.1], 4, 42)), \
+             (6, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42)), \
+             (7, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("multi-row post-build insert should publish one delta epoch per row");
+
+        let index_oid = index_oid("ec_spire_insert_multi_epoch_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        // This assertion documents the current no-batching contract: PostgreSQL
+        // invokes `aminsert` once per row, so each row publishes its own delta
+        // epoch. Insert batching should update this expectation deliberately.
+        assert_eq!(active_epoch, 6);
+        assert_eq!(next_pid, 9);
+        assert_eq!(next_local_vec_seq, 8);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_insert_multi_epoch_idx", "delta_object_count"),
+            5
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_insert_multi_epoch_idx",
+                "delta_assignment_count"
+            ),
+            5
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let inserted_rows_returned = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM ec_spire_insert_multi_epoch \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 7 \
+             ) ranked WHERE id BETWEEN 3 AND 7",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(inserted_rows_returned, 5);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire aminsert failed: ec_spire vector dimensions mismatch")]
+    fn test_ec_spire_insert_after_build_rejects_dimension_mismatch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_bad_dim (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_bad_dim (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_bad_dim_idx ON ec_spire_insert_bad_dim \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_bad_dim (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("dimension-mismatched post-build insert should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire does not support NULL indexed values")]
+    fn test_ec_spire_insert_after_build_rejects_null_value() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_null_value (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_null_value (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_null_value_idx ON ec_spire_insert_null_value \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        Spi::run("INSERT INTO ec_spire_insert_null_value (id, embedding) VALUES (3, NULL)")
+            .expect("NULL post-build insert should fail");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_bootstraps_empty_index_epoch() {
+        Spi::run("CREATE TABLE ec_spire_insert_empty (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_empty_idx ON ec_spire_insert_empty \
+             USING ec_spire (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_insert_empty_idx");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 0);
+        assert_eq!(next_pid, 1);
+        assert_eq!(next_local_vec_seq, 1);
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_empty (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("first insert should bootstrap the empty ec_spire index");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 3);
+        assert_eq!(next_local_vec_seq, 2);
+
+        Spi::run(
+            "INSERT INTO ec_spire_insert_empty (id, embedding) VALUES \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("second insert should publish a delta epoch");
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 2);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 3);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_insert_empty \
+             ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered empty-bootstrap ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_delete_delta_suppresses_visible_row() {
+        Spi::run("CREATE TABLE ec_spire_vacuum_delta (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_delta_idx ON ec_spire_vacuum_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_vacuum_delta_idx");
+        let deleted_tid = heap_tid_for_row("ec_spire_vacuum_delta", 2);
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 1.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 3);
+        let leaf_assignment_count = Spi::get_one::<i64>(
+            "SELECT leaf_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_vacuum_delta_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let delta_object_count = Spi::get_one::<i64>(
+            "SELECT delta_object_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_vacuum_delta_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        assert_eq!(leaf_assignment_count, 1);
+        assert_eq!(delta_object_count, 0);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_vacuum_delta \
+             ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_no_delta_is_noop() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_no_delta (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_no_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_no_delta_idx ON ec_spire_vacuum_no_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_vacuum_no_delta_idx");
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 3);
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_no_delta_idx", "leaf_assignment_count"),
+            2
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_no_delta_idx", "delta_object_count"),
+            0
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_compacts_insert_delta() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_insert_delta \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_insert_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_insert_delta_idx ON ec_spire_vacuum_insert_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_insert_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("post-build insert should publish a delta epoch");
+
+        let index_oid = index_oid("ec_spire_vacuum_insert_delta_idx");
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_insert_delta_idx", "delta_object_count"),
+            1
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_insert_delta_idx",
+                "delta_assignment_count"
+            ),
+            1
+        );
+
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.num_index_tuples, 3.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_insert_delta_idx",
+                "leaf_assignment_count"
+            ),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_insert_delta_idx", "delta_object_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_vacuum_insert_delta \
+             ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_vacuum_cleanup_compacts_mixed_delta_on_leaf() {
+        Spi::run(
+            "CREATE TABLE ec_spire_vacuum_mixed_delta \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_mixed_delta (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_vacuum_mixed_delta_idx ON ec_spire_vacuum_mixed_delta \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_vacuum_mixed_delta (id, embedding) VALUES \
+             (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42))",
+        )
+        .expect("post-build insert should publish an insert-delta epoch");
+
+        let index_oid = index_oid("ec_spire_vacuum_mixed_delta_idx");
+        let deleted_tid = heap_tid_for_row("ec_spire_vacuum_mixed_delta", 1);
+        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(
+                "ec_spire_vacuum_mixed_delta_idx",
+                "leaf_assignment_count"
+            ),
+            2
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64("ec_spire_vacuum_mixed_delta_idx", "delta_object_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let first_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_vacuum_mixed_delta \
+             ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("query should return a row");
+        assert_eq!(first_id, 3);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_sql_vacuum_mixed_delta() {
+        const TABLE_NAME: &str = "ec_spire_sql_vacuum_mixed_delta";
+        const INDEX_NAME: &str = "ec_spire_sql_vacuum_mixed_delta_idx";
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding) VALUES
+                   (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+                   (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 2);",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta insert",
+            &format!(
+                "INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (3, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42));",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta delete",
+            &format!("DELETE FROM {TABLE_NAME} WHERE id = 1;"),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire SQL vacuum mixed-delta VACUUM",
+            &format!("VACUUM {TABLE_NAME};"),
+        );
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = index_oid(INDEX_NAME);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(heap_count, 2);
+        assert_eq!(active_epoch, 3);
+        assert_eq!(next_pid, 4);
+        assert_eq!(next_local_vec_seq, 4);
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "leaf_assignment_count"),
+            3
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count"),
+            0
+        );
+        assert_eq!(
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count"),
+            0
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 2 \
+             ) ranked WHERE id = 1"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let inserted_row_returned = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[] \
+                 LIMIT 2 \
+             ) ranked WHERE id = 3"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(inserted_row_returned, 1);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_multistore_sql_vacuum_routes_local_stores() {
+        const TABLE_NAME: &str = "ec_spire_multistore_sql_vacuum";
+        const INDEX_NAME: &str = "ec_spire_multistore_sql_vacuum_idx";
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding) VALUES
+                   (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+                   (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)),
+                   (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)),
+                   (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (
+                       nlists = 2,
+                       nprobe = 2,
+                       training_sample_rows = 4,
+                       local_store_count = 2,
+                       local_store_tablespaces = 'pg_default,pg_default'
+                   );",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum insert",
+            &format!(
+                "INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (5, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42));",
+            ),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum delete",
+            &format!("DELETE FROM {TABLE_NAME} WHERE id = 2;"),
+        );
+        run_psql_script(
+            &connection,
+            "ec_spire multistore SQL vacuum VACUUM",
+            &format!("VACUUM {TABLE_NAME};"),
+        );
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let placement_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let placement_store_relid_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT store_relid) FROM \
+             ec_spire_index_placement_snapshot('{INDEX_NAME}'::regclass)"
+        ))
+        .expect("placement snapshot should succeed")
+        .expect("count should exist");
+        let scan_selected_store_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(DISTINCT local_store_id) FROM \
+             ec_spire_index_scan_placement_snapshot( \
+                 '{INDEX_NAME}'::regclass, \
+                 ARRAY[0.9, 0.1]::real[])"
+        ))
+        .expect("scan placement snapshot should succeed")
+        .expect("count should exist");
+        let delta_object_count = ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count");
+        let delta_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[0.0, 1.0]::real[] \
+                 LIMIT 4 \
+             ) ranked WHERE id = 2"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let inserted_row_returned = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[0.9, 0.1]::real[] \
+                 LIMIT 4 \
+             ) ranked WHERE id = 5"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+
+        assert_eq!(heap_count, 4);
+        assert_eq!(placement_store_count, 2);
+        assert_eq!(placement_store_relid_count, 2);
+        assert!(scan_selected_store_count >= 1);
+        assert_eq!(delta_object_count, 0);
+        assert_eq!(delta_assignment_count, 0);
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(inserted_row_returned, 1);
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_spire_concurrent_insert_vacuum_scan() {
+        const TABLE_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan";
+        const INDEX_NAME: &str = "ec_spire_concurrent_insert_vacuum_scan_idx";
+        // Test-unique advisory-lock id; conventionally `<review-packet>0`.
+        const BARRIER_KEY: i64 = 303_520;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_spire heterogeneous concurrency setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42));
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_spire
+                   (embedding ecvector_spire_ip_ops)
+                   WITH (nlists = 1, nprobe = 1, training_sample_rows = 1);
+                 INSERT INTO {TABLE_NAME} (id, embedding)
+                 VALUES (2, encode_to_ecvector(ARRAY[1.0, 0.1], 4, 42));
+                 DELETE FROM {TABLE_NAME} WHERE id = 1;",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let barrier_sql = format!(
+            "SET lock_timeout = '10s';
+             SET statement_timeout = '30s';
+             SELECT pg_advisory_lock_shared({BARRIER_KEY});
+             SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
+        );
+        let workers = vec![
+            (
+                "spire heterogeneous insert worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous insert worker",
+                    &[
+                        barrier_sql.clone(),
+                        format!(
+                            "INSERT INTO {TABLE_NAME} (id, embedding)
+                             VALUES (3, encode_to_ecvector(ARRAY[1.0, 0.2], 4, 42));"
+                        ),
+                    ],
+                ),
+            ),
+            (
+                "spire heterogeneous vacuum worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous vacuum worker",
+                    &[barrier_sql.clone(), format!("VACUUM {TABLE_NAME};")],
+                ),
+            ),
+            (
+                "spire heterogeneous scan worker",
+                spawn_psql_commands(
+                    &connection,
+                    "spire heterogeneous scan worker",
+                    &[
+                        barrier_sql,
+                        format!(
+                            "SET enable_seqscan = off;
+                             SELECT count(*) FROM (
+                                 SELECT id FROM {TABLE_NAME}
+                                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[]
+                                 LIMIT 3
+                             ) ranked;"
+                        ),
+                        format!(
+                            "SELECT count(*) FROM (
+                                 SELECT id FROM {TABLE_NAME}
+                                 ORDER BY embedding <#> ARRAY[1.0, 0.1]::real[]
+                                 LIMIT 3
+                             ) ranked;"
+                        ),
+                    ],
+                ),
+            ),
+        ];
+        wait_for_advisory_lock_waiters(BARRIER_KEY, 3);
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = index_oid(INDEX_NAME);
+        let (active_epoch, next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(heap_count, 2);
+        assert_eq!(active_epoch, 4);
+        assert_eq!(next_pid, 5);
+        assert_eq!(next_local_vec_seq, 4);
+
+        let leaf_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "leaf_assignment_count");
+        let delta_object_count = ec_spire_active_snapshot_i64(INDEX_NAME, "delta_object_count");
+        let delta_assignment_count =
+            ec_spire_active_snapshot_i64(INDEX_NAME, "delta_assignment_count");
+        assert_eq!(leaf_assignment_count + delta_assignment_count, 3);
+        assert!(delta_object_count <= 1);
+        assert!(delta_assignment_count <= 1);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_deleted_row = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                 LIMIT 3 \
+             ) ranked WHERE id = 1"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        let visible_live_rows = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ( \
+                 SELECT id FROM {TABLE_NAME} \
+                 ORDER BY embedding <#> ARRAY[1.0, 0.2]::real[] \
+                 LIMIT 3 \
+             ) ranked WHERE id IN (2, 3)"
+        ))
+        .expect("ordered ec_spire query should succeed")
+        .expect("count should exist");
+        assert_eq!(returned_deleted_row, 0);
+        assert_eq!(visible_live_rows, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_object_tuple_roundtrip() {
+        Spi::run("CREATE TABLE ec_spire_object_tuple (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_object_tuple_idx ON ec_spire_object_tuple USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_object_tuple_idx");
+        let (block, offset, active_epoch, store_relid, pid, object_version, child_count, child_pid) =
+            unsafe { am::debug_spire_relation_object_tuple_roundtrip(index_oid) };
+
+        assert!(block >= 1);
+        assert!(offset >= 1);
+        assert_eq!(active_epoch, 0);
+        assert_eq!(store_relid, u32::from(index_oid));
+        assert_eq!(pid, 10);
+        assert_eq!(object_version, 1);
+        assert_eq!(child_count, 1);
+        assert_eq!(child_pid, 11);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_relation_leaf_v2_roundtrip() {
+        Spi::run("CREATE TABLE ec_spire_leaf_v2_tuple (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_leaf_v2_tuple_idx ON ec_spire_leaf_v2_tuple USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_leaf_v2_tuple_idx");
+        let (block, offset, assignment_count, segment_count, first_local_seq, first_heap_block) =
+            unsafe { am::debug_spire_relation_leaf_v2_roundtrip(index_oid) };
+
+        assert!(block >= 1);
+        assert!(offset >= 1);
+        assert_eq!(assignment_count, 2);
+        assert_eq!(segment_count, 1);
+        assert_eq!(first_local_seq, 1);
+        assert_eq!(first_heap_block, 42);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_empty_manifest_publish_roundtrip() {
+        Spi::run(
+            "CREATE TABLE ec_spire_manifest_publish (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_manifest_publish_idx ON ec_spire_manifest_publish USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_manifest_publish_idx");
+        let (
+            active_epoch,
+            next_pid,
+            next_local_vec_seq,
+            epoch_block,
+            epoch_offset,
+            object_block,
+            object_offset,
+            placement_block,
+            placement_offset,
+        ) = unsafe { am::debug_spire_empty_manifest_publish_roundtrip(index_oid) };
+
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_pid, 1);
+        assert_eq!(next_local_vec_seq, 1);
+        assert!(epoch_block >= 1);
+        assert!(epoch_offset >= 1);
+        assert!(object_block >= 1);
+        assert!(object_offset >= 1);
+        assert!(placement_block >= 1);
+        assert!(placement_offset >= 1);
+    }
+
+    fn index_oid(index_name: &str) -> pg_sys::Oid {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn ec_spire_active_snapshot_i64(index_name: &str, column_name: &str) -> i64 {
+        Spi::get_one::<i64>(&format!(
+            "SELECT {column_name} FROM \
+             ec_spire_index_active_snapshot_diagnostics('{index_name}'::regclass)"
+        ))
+        .expect("SPI query should succeed")
+        .expect("diagnostics row should exist")
+    }
+
+    fn ec_ivf_index_oid(index_name: &str) -> pg_sys::Oid {
+        index_oid(index_name)
     }
 
     fn ec_ivf_index_blocks(index_name: &str) -> i64 {
@@ -2762,6 +8333,49 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"))
+    }
+
+    fn spawn_psql_commands(
+        connection: &PsqlTestConnection,
+        label: &str,
+        sql_commands: &[String],
+    ) -> Child {
+        let mut command = psql_command(connection);
+        for sql in sql_commands {
+            command.arg("-c").arg(sql);
+        }
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("{label} could not start psql: {e}"))
+    }
+
+    fn wait_for_advisory_lock_waiters(barrier_key: i64, expected_waiters: i64) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let waiters = Spi::get_one::<i64>(&format!(
+                "SELECT count(*)::bigint FROM pg_locks
+                 WHERE locktype = 'advisory'
+                   AND mode = 'ShareLock'
+                   AND classid = 0
+                   AND objid = {barrier_key}
+                   AND objsubid = 1
+                   AND NOT granted"
+            ))
+            .expect("pg_locks waiter query should succeed")
+            .expect("pg_locks waiter count should exist");
+            if waiters >= expected_waiters {
+                return;
+            }
+            if Instant::now() >= deadline {
+                panic!(
+                    "timed out waiting for {expected_waiters} advisory-lock waiters on key \
+                     {barrier_key}; observed {waiters}"
+                );
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn ec_ivf_insert_values(start_id: i64, count: usize, vector: &str) -> String {

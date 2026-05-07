@@ -222,7 +222,7 @@ pub fn build_create_index_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
 
     #[test]
     fn connection_options_config_sets_explicit_overrides() {
@@ -287,6 +287,27 @@ mod tests {
         assert!(sql.contains("USING ec_ivf (embedding ecvector_ip_ops)"));
         assert!(sql.contains("nlists = 128"));
         assert!(sql.contains("nprobe = 8"));
+        assert!(sql.contains("storage_format = 'turboquant'"));
+    }
+
+    #[test]
+    fn spire_index_sql_uses_spire_access_method_and_opclass() {
+        let opts = vec![
+            ("nlists".into(), "128".into()),
+            ("nprobe".into(), "16".into()),
+            ("local_store_count".into(), "1".into()),
+            ("storage_format".into(), "turboquant".into()),
+        ];
+        let sql = build_create_index_sql(
+            "dbpedia_10k_corpus",
+            "dbpedia_10k_spire_idx",
+            &EC_SPIRE,
+            &opts,
+        );
+        assert!(sql.contains("USING ec_spire (embedding ecvector_spire_ip_ops)"));
+        assert!(sql.contains("nlists = 128"));
+        assert!(sql.contains("nprobe = 16"));
+        assert!(sql.contains("local_store_count = 1"));
         assert!(sql.contains("storage_format = 'turboquant'"));
     }
 
