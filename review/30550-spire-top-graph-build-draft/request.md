@@ -6,6 +6,7 @@
   - `6623bc41` (`Route SPIRE top graphs over routing roots`)
   - `6feba1da` (`Add SPIRE top graph object codec`)
   - `8e087c90` (`Wire SPIRE top graph object stores`)
+  - `8048f81f` (`Publish SPIRE recursive top graph drafts`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -43,16 +44,27 @@ graph:
 - records the current carry-forward assumption for top-graph objects during
   leaf replacement/vacuum, with TODOs to invalidate or rebuild when a future
   routing rewrite changes top-level centroids.
+- converts build drafts into durable `TopGraph` partition objects.
+- adds `SpireBuildObjectStore::write_top_graph_object` and an explicit
+  recursive epoch build variant that writes the graph object and includes it in
+  the same epoch object manifest and placement directory.
+- assigns the graph object PID after supplied leaf placements, so the explicit
+  graph-publish variant does not assume leaf PIDs came from the same allocator
+  state as the routing draft.
 
-This still does not publish graph object bytes into live epochs, add reloptions,
-or replace live scan routing yet. Relation-store top-graph writes currently
-require the encoded graph to fit in one object tuple; multi-tuple graph storage
-is not part of this checkpoint.
+This still does not enable graph publishing in the default live build path, add
+reloptions, or replace live scan routing yet. Relation-store top-graph writes
+currently require the encoded graph to fit in one object tuple; multi-tuple
+graph storage is not part of this checkpoint.
 
 ## Files
 
 - `src/am/ec_spire/build/top_graph.rs`
+- `src/am/ec_spire/build/recursive.rs`
+- `src/am/ec_spire/build/object_store.rs`
+- `src/am/ec_spire/build/types.rs`
 - `src/am/ec_spire/build/tests/top_graph.rs`
+- `src/am/ec_spire/build/tests/recursive.rs`
 - `src/am/ec_spire/build.rs`
 - `src/am/ec_spire/build/tests.rs`
 - `src/am/ec_spire/scan.rs`
@@ -101,10 +113,14 @@ is not part of this checkpoint.
    top-graph method for test-only readers.
 10. Confirm the `centroid_ordinal` bound is correctly validated at bind time
     against the root routing object, not in the standalone codec.
+11. Review the explicit recursive top-graph epoch builder: graph object PID
+    selection, manifest inclusion, build-store trait boundary, and keeping the
+    default live build path unchanged until reloptions/scan binding land.
 
 ## Validation
 
 - `cargo test --lib top_graph --no-default-features --features pg18`
+- `cargo test --lib recursive_top_graph --no-default-features --features pg18`
 - `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`
 - `git diff --check`
 
