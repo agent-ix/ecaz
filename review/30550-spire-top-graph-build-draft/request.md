@@ -8,6 +8,7 @@
   - `8e087c90` (`Wire SPIRE top graph object stores`)
   - `8048f81f` (`Publish SPIRE recursive top graph drafts`)
   - `da6b8321` (`Route SPIRE scans from top graph objects`)
+  - `46e55ada` (`Load SPIRE top graph objects for scan`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -55,6 +56,9 @@ graph:
 - teaches the scan-side graph router to consume the durable `TopGraph`
   partition object directly, using a shared routing view for build drafts and
   stored graph objects.
+- adds a snapshot loader for available `TopGraph` objects in the epoch manifest,
+  so later live scan binding can load the durable graph object before invoking
+  object-backed routing.
 
 This still does not enable graph publishing in the default live build path, add
 reloptions, or replace live scan routing yet. Relation-store top-graph writes
@@ -123,6 +127,9 @@ graph storage is not part of this checkpoint.
 12. Check the scan routing view abstraction now shared by top-graph build drafts
     and durable top-graph objects, including root/object compatibility checks
     and deterministic route ordering.
+13. Check the top-graph snapshot loader behavior: placement visibility under
+    strict/degraded consistency, duplicate top-graph rejection, and manifest
+    lookup/read dispatch through `SpireObjectReader`.
 
 ## Validation
 
