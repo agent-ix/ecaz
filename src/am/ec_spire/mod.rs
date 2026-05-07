@@ -76,6 +76,7 @@ pub(super) const SPIRE_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
 
 include!("root/lifecycle.rs");
 include!("root/types.rs");
+include!("root/remote_candidates.rs");
 include!("root/diagnostics.rs");
 include!("root/hierarchy_shape.rs");
 include!("root/snapshots.rs");

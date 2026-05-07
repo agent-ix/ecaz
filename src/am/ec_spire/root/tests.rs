@@ -50,6 +50,27 @@ mod tests {
             .expect("empty leaf object should store")
     }
 
+    fn remote_candidate(
+        node_id: u32,
+        pid: u64,
+        row_index: u32,
+        vec_id: &[u8],
+        score: f32,
+        assignment_flags: u16,
+    ) -> SpireRemoteSearchCandidateRow {
+        SpireRemoteSearchCandidateRow {
+            served_epoch: 7,
+            node_id,
+            pid,
+            object_version: 11,
+            row_index,
+            assignment_flags,
+            vec_id: vec_id.to_vec(),
+            row_locator: vec![node_id as u8, row_index as u8],
+            score,
+        }
+    }
+
     #[test]
     fn scan_sanity_status_reports_empty_approximate_and_full_scan() {
         assert_eq!(
@@ -84,6 +105,68 @@ mod tests {
                 "use this configuration only for recall sanity checks or small indexes"
             )
         );
+    }
+
+    #[test]
+    fn remote_candidate_merge_dedupes_vec_ids_and_keeps_best_ranked_row() {
+        let boundary = remote_candidate(
+            2,
+            20,
+            0,
+            b"same",
+            1.0,
+            storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        );
+        let primary = remote_candidate(1, 10, 0, b"same", 1.0, 0);
+        let better_score = remote_candidate(3, 30, 0, b"other", 0.5, 0);
+
+        let merged = merge_remote_search_candidates(
+            vec![boundary, primary.clone(), better_score.clone()],
+            None,
+        )
+        .expect("remote candidates should merge");
+
+        assert_eq!(merged.input_count, 3);
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates, vec![better_score, primary]);
+    }
+
+    #[test]
+    fn remote_candidate_merge_applies_top_k_after_global_dedupe() {
+        let duplicate_worse = remote_candidate(1, 10, 0, b"a", 3.0, 0);
+        let duplicate_best = remote_candidate(1, 11, 0, b"a", 0.3, 0);
+        let second = remote_candidate(1, 12, 0, b"b", 0.4, 0);
+        let truncated = remote_candidate(1, 13, 0, b"c", 0.5, 0);
+
+        let merged = merge_remote_search_candidates(
+            vec![
+                duplicate_worse,
+                truncated,
+                second.clone(),
+                duplicate_best.clone(),
+            ],
+            Some(2),
+        )
+        .expect("remote candidates should merge");
+
+        assert_eq!(merged.input_count, 4);
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates, vec![duplicate_best, second]);
+    }
+
+    #[test]
+    fn remote_candidate_merge_rejects_invalid_candidate_envelope() {
+        let nan_error = merge_remote_search_candidates(
+            vec![remote_candidate(1, 10, 0, b"a", f32::NAN, 0)],
+            None,
+        )
+        .expect_err("nan scores should fail");
+        assert!(nan_error.contains("non-finite score"));
+
+        let empty_vec_id_error =
+            merge_remote_search_candidates(vec![remote_candidate(1, 10, 0, b"", 1.0, 0)], None)
+                .expect_err("empty vec_id should fail");
+        assert!(empty_vec_id_error.contains("empty vec_id"));
     }
 
     #[test]
