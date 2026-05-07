@@ -237,6 +237,7 @@ fn collect_visible_assignments(
                 }
             }
             SpirePartitionObjectKind::Root | SpirePartitionObjectKind::Internal => {}
+            SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -337,7 +338,8 @@ unsafe fn publish_compacted_delta_epoch_if_needed(
             }
             SpirePartitionObjectKind::Root
             | SpirePartitionObjectKind::Internal
-            | SpirePartitionObjectKind::Leaf => {
+            | SpirePartitionObjectKind::Leaf
+            | SpirePartitionObjectKind::TopGraph => {
                 let mut carried = placement.clone();
                 carried.epoch = new_epoch;
                 placement_entries.push(carried);

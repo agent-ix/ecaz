@@ -179,6 +179,7 @@ pub(super) fn collect_snapshot_diagnostics(
                 let object = object_reader.read_delta_object(placement)?;
                 diagnostics.delta_assignment_count += object.assignments.len();
             }
+            SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -318,6 +319,7 @@ pub(super) fn collect_store_placement_diagnostics(
                         "ec_spire placement diagnostics assignment count overflow".to_owned()
                     })?;
             }
+            SpirePartitionObjectKind::TopGraph => {}
         }
     }
 

@@ -163,6 +163,7 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                     })?;
                     hierarchy_objects.push(hierarchy_object_summary(&header, Vec::new()));
                 }
+                storage::SpirePartitionObjectKind::TopGraph => {}
             }
         }
 

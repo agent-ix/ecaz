@@ -263,7 +263,8 @@ fn collect_level_parameter_snapshot_rows(
                     "ec_spire level parameter active leaf count overflow".to_owned()
                 })?;
             }
-            storage::SpirePartitionObjectKind::Delta => {}
+            storage::SpirePartitionObjectKind::Delta
+            | storage::SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -613,8 +614,26 @@ fn collect_leaf_snapshot_rows(
         let header = object_store.read_object_header(placement)?;
         match header.kind {
             storage::SpirePartitionObjectKind::Leaf => {
-                let (base_primary_count, base_boundary_replica_count) =
+                let (base_row_count, base_primary_count, base_boundary_replica_count) =
                     count_leaf_snapshot_base_assignment_roles(object_store, placement)?;
+                let header_assignment_count = u64::from(header.assignment_count);
+                if base_row_count != header_assignment_count {
+                    return Err(format!(
+                        "ec_spire leaf snapshot base row count {base_row_count} does not match header assignment_count {header_assignment_count} for leaf pid {}",
+                        header.pid
+                    ));
+                }
+                let role_count = base_primary_count
+                    .checked_add(base_boundary_replica_count)
+                    .ok_or_else(|| {
+                        "ec_spire leaf snapshot base role count overflow".to_owned()
+                    })?;
+                if role_count != header_assignment_count {
+                    return Err(format!(
+                        "ec_spire leaf snapshot base role count {role_count} does not match header assignment_count {header_assignment_count} for leaf pid {}",
+                        header.pid
+                    ));
+                }
                 apply_leaf_snapshot_base_row(
                     &mut rows_by_leaf_pid,
                     root_control.active_epoch,
@@ -692,7 +711,8 @@ fn collect_leaf_snapshot_rows(
                 }
             }
             storage::SpirePartitionObjectKind::Root
-            | storage::SpirePartitionObjectKind::Internal => {}
+            | storage::SpirePartitionObjectKind::Internal
+            | storage::SpirePartitionObjectKind::TopGraph => {}
         }
     }
 
@@ -738,18 +758,20 @@ fn collect_leaf_snapshot_rows(
 fn count_leaf_snapshot_base_assignment_roles(
     object_store: &impl storage::SpireObjectReader,
     placement: &meta::SpirePlacementEntry,
-) -> Result<(u64, u64), String> {
-    let assignments = match object_store.read_leaf_object(placement) {
-        Ok(leaf_object) => leaf_object.assignments,
-        Err(v1_error) => object_store
-            .read_leaf_object_v2(placement)
-            .map_err(|v2_error| {
+) -> Result<(u64, u64, u64), String> {
+    let assignments = match object_store.read_leaf_object_v2(placement) {
+        Ok(leaf_object) => leaf_object.assignment_rows()?,
+        Err(v2_error) => object_store
+            .read_leaf_object(placement)
+            .map_err(|v1_error| {
                 format!(
-                    "ec_spire leaf snapshot failed to read leaf object: v1 error: {v1_error}; v2 error: {v2_error}"
+                    "ec_spire leaf snapshot failed to read leaf object: v2 error: {v2_error}; v1 error: {v1_error}"
                 )
             })?
-            .assignment_rows()?,
+            .assignments,
     };
+    let row_count = u64::try_from(assignments.len())
+        .map_err(|_| "ec_spire leaf snapshot base row count exceeds u64".to_owned())?;
     let mut primary_count = 0_u64;
     let mut boundary_replica_count = 0_u64;
     for assignment in assignments {
@@ -764,5 +786,5 @@ fn count_leaf_snapshot_base_assignment_roles(
             })?;
         }
     }
-    Ok((primary_count, boundary_replica_count))
+    Ok((row_count, primary_count, boundary_replica_count))
 }

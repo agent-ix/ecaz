@@ -226,7 +226,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
 fn build_recursive_leaf_rows_by_pid(
     assignments: Vec<SpireLeafAssignmentInput>,
     source_vectors: Vec<Vec<f32>>,
-    assignments_by_centroid: Vec<Vec<SpireLeafAssignmentInput>>,
+    _assignments_by_centroid: Vec<Vec<SpireLeafAssignmentInput>>,
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
     local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
@@ -236,14 +236,6 @@ fn build_recursive_leaf_rows_by_pid(
         .iter()
         .map(|entry| (entry.pid, Vec::new()))
         .collect::<HashMap<_, _>>();
-    if boundary_replica_count == 0 {
-        for (entry, assignments) in route_map.entries.iter().zip(assignments_by_centroid) {
-            let rows = build_primary_leaf_assignments(local_vec_id_cursor, assignments)?;
-            rows_by_leaf_pid.insert(entry.pid, rows);
-        }
-        return Ok(rows_by_leaf_pid);
-    }
-
     let boundary_inputs = assignments
         .into_iter()
         .zip(source_vectors.into_iter())

@@ -429,6 +429,7 @@ fn route_split_replacement_boundary_indexes(
             "ec_spire split replacement boundary routing requires centroids".to_owned(),
         );
     }
+    validate_split_replacement_route_vector(source_vector)?;
     let mut scored = centroids
         .iter()
         .enumerate()
@@ -440,6 +441,7 @@ fn route_split_replacement_boundary_indexes(
                     source_vector.len()
                 ));
             }
+            validate_split_replacement_route_vector(centroid)?;
             let score = source_vector
                 .iter()
                 .zip(centroid.iter())
@@ -464,6 +466,27 @@ fn route_split_replacement_boundary_indexes(
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     Ok(selected)
+}
+
+fn validate_split_replacement_route_vector(vector: &[f32]) -> Result<(), String> {
+    if vector.is_empty() {
+        return Err("ec_spire split replacement boundary routing vector is empty".to_owned());
+    }
+    if vector.iter().any(|value| !value.is_finite()) {
+        return Err(
+            "ec_spire split replacement boundary routing vector must be finite".to_owned(),
+        );
+    }
+    let norm_sq = vector
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>();
+    if norm_sq <= f64::EPSILON {
+        return Err(
+            "ec_spire split replacement boundary routing vector must be non-zero".to_owned(),
+        );
+    }
+    Ok(())
 }
 
 fn split_replacement_assignment_with_flags(

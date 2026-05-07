@@ -168,6 +168,7 @@ fn validate_recursive_hierarchy_shape(
                     ));
                 }
             }
+            storage::SpirePartitionObjectKind::TopGraph => {}
         }
     }
 

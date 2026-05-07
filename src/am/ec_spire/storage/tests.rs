@@ -11,7 +11,7 @@ mod tests {
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
         SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
         SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
-        SpireVecIdKind,
+        SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecIdKind,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
         SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
@@ -52,6 +52,7 @@ mod tests {
 
 
     include!("tests/vec_and_routing.rs");
+    include!("tests/top_graph.rs");
     include!("tests/local_store_plan.rs");
     include!("tests/assignment.rs");
     include!("tests/leaf.rs");

@@ -442,5 +442,6 @@ fn partition_object_kind_name(kind: storage::SpirePartitionObjectKind) -> &'stat
         storage::SpirePartitionObjectKind::Internal => "internal",
         storage::SpirePartitionObjectKind::Leaf => "leaf",
         storage::SpirePartitionObjectKind::Delta => "delta",
+        storage::SpirePartitionObjectKind::TopGraph => "top_graph",
     }
 }

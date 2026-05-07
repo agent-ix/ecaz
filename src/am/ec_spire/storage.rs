@@ -27,6 +27,7 @@ include!("storage/leaf_v1.rs");
 include!("storage/leaf_v2_parts.rs");
 include!("storage/leaf_v2.rs");
 include!("storage/routing_delta.rs");
+include!("storage/top_graph.rs");
 include!("storage/local_store.rs");
 include!("storage/local_store_set.rs");
 include!("storage/relation_store.rs");
