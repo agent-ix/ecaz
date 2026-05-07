@@ -1473,7 +1473,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   now exposes node-level diagnostic rows derived from active placement metadata:
   local node readiness is explicit, and nonzero node IDs are reported as
   remote placements that require durable remote-node descriptors before libpq
-  fanout execution can be enabled. `ec_spire_remote_node_capability_plan(...)`
+  fanout execution can be enabled.
+  `ec_spire_remote_node_descriptor_contract()` now exposes the durable
+  descriptor fields required before real libpq fanout can run; conninfo remains
+  an indirect secret reference rather than a raw connection string.
+  `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
   and readiness status. `ec_spire_remote_node_capability_summary(...)`

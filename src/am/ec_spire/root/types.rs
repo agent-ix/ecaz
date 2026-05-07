@@ -628,6 +628,16 @@ pub(crate) struct SpireRemoteNodeSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeDescriptorContractRow {
+    pub(crate) field_ordinal: u64,
+    pub(crate) field_name: &'static str,
+    pub(crate) pg_type: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) required: bool,
+    pub(crate) validator: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteNodeCapabilityPlanRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,

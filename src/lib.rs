@@ -1296,6 +1296,32 @@ fn ec_spire_remote_node_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_descriptor_contract() -> TableIterator<
+    'static,
+    (
+        name!(field_ordinal, i64),
+        name!(field_name, &'static str),
+        name!(pg_type, &'static str),
+        name!(semantic_role, &'static str),
+        name!(required, bool),
+        name!(validator, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_node_descriptor_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.field_ordinal).expect("field ordinal should fit in i64"),
+            row.field_name,
+            row.pg_type,
+            row.semantic_role,
+            row.required,
+            row.validator,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_capability_plan(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -11176,6 +11202,44 @@ mod tests {
         assert_eq!(remote_error, "missing_remote_node_descriptor");
         assert_eq!(remote_placement_count, 1);
         assert_eq!(local_status, "ready");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_descriptor_contract() {
+        let contract_from = "FROM ec_spire_remote_node_descriptor_contract()";
+        let field_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
+            .expect("descriptor contract count query should succeed")
+            .expect("descriptor contract count should exist");
+        let secret_role = Spi::get_one::<String>(&format!(
+            "SELECT semantic_role {contract_from} \
+             WHERE field_name = 'conninfo_secret_name'"
+        ))
+        .expect("descriptor secret role query should succeed")
+        .expect("descriptor secret role should exist");
+        let secret_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {contract_from} \
+             WHERE field_name = 'conninfo_secret_name'"
+        ))
+        .expect("descriptor secret validator query should succeed")
+        .expect("descriptor secret validator should exist");
+        let raw_conninfo_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {contract_from} \
+             WHERE field_name = 'conninfo' OR semantic_role = 'raw_connection_string'"
+        ))
+        .expect("descriptor raw conninfo query should succeed")
+        .expect("descriptor raw conninfo count should exist");
+        let required_epoch_fields = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {contract_from} \
+             WHERE required AND field_name IN ('last_served_epoch', 'min_retained_epoch')"
+        ))
+        .expect("descriptor epoch field query should succeed")
+        .expect("descriptor epoch field count should exist");
+
+        assert_eq!(field_count, 12);
+        assert_eq!(secret_role, "indirect_connection_secret");
+        assert_eq!(secret_validator, "must_be_nonempty_secret_reference");
+        assert_eq!(raw_conninfo_count, 0);
+        assert_eq!(required_epoch_fields, 2);
     }
 
     #[pg_test]

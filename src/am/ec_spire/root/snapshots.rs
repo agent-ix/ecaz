@@ -652,6 +652,108 @@ pub(crate) unsafe fn remote_node_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_node_descriptor_contract_rows(
+) -> Vec<SpireRemoteNodeDescriptorContractRow> {
+    vec![
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 1,
+            field_name: "coordinator_index_oid",
+            pg_type: "oid",
+            semantic_role: "coordinator_index_identity",
+            required: true,
+            validator: "must_equal_local_index_oid",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 2,
+            field_name: "node_id",
+            pg_type: "integer",
+            semantic_role: "coordinator_scoped_node",
+            required: true,
+            validator: "must_be_nonzero_remote_node",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 3,
+            field_name: "generation",
+            pg_type: "bigint",
+            semantic_role: "membership_generation",
+            required: true,
+            validator: "must_match_epoch_node_generation",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 4,
+            field_name: "conninfo_secret_name",
+            pg_type: "text",
+            semantic_role: "indirect_connection_secret",
+            required: true,
+            validator: "must_be_nonempty_secret_reference",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 5,
+            field_name: "remote_index_identity",
+            pg_type: "bytea",
+            semantic_role: "remote_index_identity",
+            required: true,
+            validator: "must_match_remote_capability_echo",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 6,
+            field_name: "remote_index_regclass",
+            pg_type: "text",
+            semantic_role: "remote_index_locator",
+            required: true,
+            validator: "must_resolve_on_remote_node",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 7,
+            field_name: "state",
+            pg_type: "text",
+            semantic_role: "remote_node_policy_state",
+            required: true,
+            validator: "must_be_active_or_draining_for_reads",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 8,
+            field_name: "last_seen_at",
+            pg_type: "timestamptz",
+            semantic_role: "health_check_timestamp",
+            required: false,
+            validator: "diagnostic_only",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 9,
+            field_name: "last_served_epoch",
+            pg_type: "bigint",
+            semantic_role: "max_served_epoch",
+            required: true,
+            validator: "must_cover_requested_epoch",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 10,
+            field_name: "min_retained_epoch",
+            pg_type: "bigint",
+            semantic_role: "retention_floor",
+            required: true,
+            validator: "must_not_exceed_requested_epoch",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 11,
+            field_name: "extension_version",
+            pg_type: "text",
+            semantic_role: "remote_extension_version",
+            required: true,
+            validator: "must_match_required_extension_version",
+        },
+        SpireRemoteNodeDescriptorContractRow {
+            field_ordinal: 12,
+            field_name: "last_error",
+            pg_type: "text",
+            semantic_role: "last_health_or_search_error",
+            required: false,
+            validator: "diagnostic_only",
+        },
+    ]
+}
+
 pub(crate) unsafe fn remote_node_capability_plan(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
