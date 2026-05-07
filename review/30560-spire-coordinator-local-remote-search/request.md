@@ -1,6 +1,8 @@
 # Review Request: SPIRE Coordinator Local Remote Search
 
-- Code commit: `a322b95d` (`Add SPIRE coordinator local remote search path`)
+- Code commits:
+  - `a322b95d` (`Add SPIRE coordinator local remote search path`)
+  - `154c5335` (`Add SPIRE coordinator remote-target fail-closed test`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 7 coordinator transport groundwork
 - Agent: coder1
@@ -25,6 +27,9 @@ limited intentionally to local-only fanout:
 - applies the validated coordinator batch merge helper before returning rows;
 - adds PG18 SQL coverage that compares the coordinator-local endpoint with the
   storage-node endpoint on the same local-only fanout request;
+- adds test-only placement-node rewrite support and PG18 coverage proving the
+  coordinator-local endpoint fails closed before transport when a selected leaf
+  is planned for a nonlocal node;
 - updates the Phase 7 task note to record the local-only coordinator path and
   the remaining libpq transport boundary.
 
@@ -35,6 +40,7 @@ multi-node candidate merge.
 ## Files
 
 - `src/am/ec_spire/root/hierarchy_snapshots.rs`
+- `src/am/ec_spire/root/debug.rs`
 - `src/am/mod.rs`
 - `src/lib.rs`
 - `plan/tasks/30-spire-ivf-foundation.md`
@@ -47,13 +53,15 @@ multi-node candidate merge.
    validation, and merge boundaries that the future libpq path should use.
 3. Check that the storage-node endpoint behavior remains unchanged after the
    result-helper refactor.
-4. Check whether the SQL name and row contract are acceptable as a diagnostic
+4. Check that the test-only remote placement fixture does not weaken production
+   local-store validation.
+5. Check whether the SQL name and row contract are acceptable as a diagnostic
    coordinator bridge before real transport lands.
 
 ## Validation
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo test --lib remote_search --no-default-features --features pg18`
-  - Result: passed; 8 tests passed, including the new coordinator-local SQL
-    endpoint test.
+  - Result: passed; 9 tests passed, including the coordinator-local SQL endpoint
+    test and the nonlocal remote-target fail-closed test.
 - `git diff --check`
