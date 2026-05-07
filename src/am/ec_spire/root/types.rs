@@ -389,6 +389,23 @@ pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchCoordinatorGateSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) local_plan_count: u64,
+    pub(crate) remote_plan_count: u64,
+    pub(crate) skipped_plan_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) execution_status: &'static str,
+    pub(crate) merge_status: &'static str,
+    pub(crate) final_heap_fetch_status: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) active_epoch: u64,
     pub(crate) consistency_mode: &'static str,

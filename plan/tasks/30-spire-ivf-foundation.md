@@ -1509,6 +1509,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   post-merge boundary: row locators remain origin-node opaque bytes, remote heap
   resolution stays deferred to origin-node lookup, and finalization reports
   whether remote heap fetch is blocked or ready.
+  `ec_spire_remote_search_coordinator_gate_summary(...)` now ties execution,
+  merge, and final heap-fetch readiness into one coordinator integration gate
+  with the next unresolved blocker.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

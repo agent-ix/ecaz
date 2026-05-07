@@ -3090,6 +3090,87 @@ fn ec_spire_remote_search_finalization_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_gate_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(local_plan_count, i64),
+        name!(remote_plan_count, i64),
+        name!(skipped_plan_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(skipped_pid_count, i64),
+        name!(execution_status, &'static str),
+        name!(merge_status, &'static str),
+        name!(final_heap_fetch_status, &'static str),
+        name!(next_blocker, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_gate_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_coordinator_gate_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_gate_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_coordinator_gate_summary")
+    };
+    let row = unsafe {
+        am::spire_remote_search_coordinator_gate_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.local_plan_count).expect("local plan count should fit in i64"),
+        i64::try_from(row.remote_plan_count).expect("remote plan count should fit in i64"),
+        i64::try_from(row.skipped_plan_count).expect("skipped plan count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.skipped_pid_count).expect("skipped pid count should fit in i64"),
+        row.execution_status,
+        row.merge_status,
+        row.final_heap_fetch_status,
+        row.next_blocker,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11278,6 +11359,102 @@ mod tests {
         assert_eq!(status, "requires_remote_node_descriptor");
         assert_eq!(final_heap_fetch_status, "blocked");
         assert_eq!(row_locator_policy, "opaque_origin_node_bytes");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_coordinator_gate_summary() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_coord_gate_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_coord_gate_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_coord_gate_sql_idx \
+             ON ec_spire_remote_coord_gate_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_coord_gate_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_coord_gate_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_coord_gate_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let local_gate_from = format!(
+            "FROM ec_spire_remote_search_coordinator_gate_summary(\
+             'ec_spire_remote_coord_gate_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}]::bigint[], 3, 'strict')",
+            selected_pids[0],
+        );
+        let local_status = Spi::get_one::<String>(&format!("SELECT status {local_gate_from}"))
+            .expect("local coordinator gate status query should succeed")
+            .expect("local coordinator gate status should exist");
+        let local_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {local_gate_from}"))
+                .expect("local coordinator gate blocker query should succeed")
+                .expect("local coordinator gate blocker should exist");
+        let local_final_heap_fetch_status =
+            Spi::get_one::<String>(&format!("SELECT final_heap_fetch_status {local_gate_from}"))
+                .expect("local coordinator gate heap query should succeed")
+                .expect("local coordinator gate heap should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        let remote_gate_from = format!(
+            "FROM ec_spire_remote_search_coordinator_gate_summary(\
+             'ec_spire_remote_coord_gate_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let remote_status = Spi::get_one::<String>(&format!("SELECT status {remote_gate_from}"))
+            .expect("remote coordinator gate status query should succeed")
+            .expect("remote coordinator gate status should exist");
+        let remote_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {remote_gate_from}"))
+                .expect("remote coordinator gate blocker query should succeed")
+                .expect("remote coordinator gate blocker should exist");
+        let remote_execution_status =
+            Spi::get_one::<String>(&format!("SELECT execution_status {remote_gate_from}"))
+                .expect("remote coordinator gate execution query should succeed")
+                .expect("remote coordinator gate execution should exist");
+        let remote_plan_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_plan_count {remote_gate_from}"))
+                .expect("remote coordinator gate remote plan query should succeed")
+                .expect("remote coordinator gate remote plan count should exist");
+        let remote_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_pid_count {remote_gate_from}"))
+                .expect("remote coordinator gate remote pid query should succeed")
+                .expect("remote coordinator gate remote pid count should exist");
+
+        assert_eq!(local_status, "ready");
+        assert_eq!(local_next_blocker, "none");
+        assert_eq!(local_final_heap_fetch_status, "local_ready");
+        assert_eq!(remote_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_next_blocker, "remote_node_descriptor");
+        assert_eq!(remote_execution_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_plan_count, 1);
+        assert_eq!(remote_pid_count, 1);
     }
 
     #[pg_test]

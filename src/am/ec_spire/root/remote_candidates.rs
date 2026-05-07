@@ -1362,6 +1362,83 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
     }
 }
 
+pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchCoordinatorGateSummaryRow {
+    let execution_summary = unsafe {
+        remote_search_execution_summary_row(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+    let finalization_summary = unsafe {
+        remote_search_finalization_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+
+    let (next_blocker, status, recommendation) =
+        if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+            (
+                "remote_node_descriptor",
+                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+                "register remote node descriptors before coordinator execution",
+            )
+        } else if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ {
+            (
+                "libpq_transport",
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
+                "add libpq pipeline execution before remote coordinator dispatch",
+            )
+        } else if finalization_summary.final_heap_fetch_status
+            == SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+        {
+            (
+                "remote_heap_resolution",
+                SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
+                "add origin-node row locator resolution before returning remote heap rows",
+            )
+        } else if finalization_summary.status == SPIRE_REMOTE_STATUS_EMPTY_TOP_K {
+            (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
+                SPIRE_REMOTE_NONE,
+            )
+        } else {
+            (SPIRE_REMOTE_NONE, finalization_summary.status, SPIRE_REMOTE_NONE)
+        };
+
+    SpireRemoteSearchCoordinatorGateSummaryRow {
+        requested_epoch,
+        local_plan_count: execution_summary.local_plan_count,
+        remote_plan_count: execution_summary.remote_plan_count,
+        skipped_plan_count: execution_summary.skipped_plan_count,
+        local_pid_count: execution_summary.local_pid_count,
+        remote_pid_count: execution_summary.remote_pid_count,
+        skipped_pid_count: execution_summary.skipped_pid_count,
+        execution_status: execution_summary.status,
+        merge_status: finalization_summary.merge_status,
+        final_heap_fetch_status: finalization_summary.final_heap_fetch_status,
+        next_blocker,
+        status,
+        recommendation,
+    }
+}
+
 /// Validates one target-scoped remote candidate receive batch.
 ///
 /// The batch must match the requested epoch, expected node, selected PID set,

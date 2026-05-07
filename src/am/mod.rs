@@ -55,6 +55,7 @@ pub(crate) use self::ec_spire::{
     remote_node_descriptor_readiness_summary as spire_remote_node_descriptor_readiness_summary,
     remote_node_snapshot as spire_remote_node_snapshot,
     remote_search_candidates as spire_remote_search_candidates,
+    remote_search_coordinator_gate_summary_row as spire_remote_search_coordinator_gate_summary_row,
     remote_search_coordinator_local_candidates as spire_remote_search_coordinator_local_candidates,
     remote_search_coordinator_local_summary as spire_remote_search_coordinator_local_summary,
     remote_search_execution_plan_rows as spire_remote_search_execution_plan_rows,
