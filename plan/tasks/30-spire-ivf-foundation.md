@@ -1448,9 +1448,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - [ ] **Merge semantics.** Remote candidate merge now has a production helper
   that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
   primary placements ahead of boundary replicas on score ties, validates
-  candidate envelopes, and applies the final top-k cap after dedupe. Coordinator
-  integration and local heap row resolution after remote candidate selection
-  remain open.
+  candidate envelopes, and applies the final top-k cap after dedupe. The
+  coordinator receive boundary now validates candidate batches against the
+  requested epoch, expected node, selected PIDs, object version, visible
+  assignment flags, vec-id, locator, and score before those batches can enter
+  the merge path. Coordinator integration and local heap row resolution after
+  remote candidate selection remain open.
 - [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
   PID. Recorded in the Phase 0 storage note as a future
