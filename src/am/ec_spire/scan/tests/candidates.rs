@@ -955,6 +955,7 @@
             nlists: 2,
             recursive_fanout: 0,
             local_store_count: 1,
+            boundary_replica_count: 0,
             nprobe: 2,
             rerank_width: 2,
             training_sample_rows: 0,

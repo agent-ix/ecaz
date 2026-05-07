@@ -1529,6 +1529,9 @@ fn ec_spire_index_options_snapshot(
         name!(recursive_build_enabled, bool),
         name!(local_store_count, i32),
         name!(local_store_tablespaces, Option<String>),
+        name!(boundary_replica_count, i32),
+        name!(boundary_replication_enabled, bool),
+        name!(scan_dedupe_mode, String),
         name!(active_leaf_count, i64),
         name!(relation_nprobe, i32),
         name!(session_nprobe, Option<i32>),
@@ -1561,6 +1564,9 @@ fn ec_spire_index_options_snapshot(
         snapshot.recursive_build_enabled,
         snapshot.local_store_count,
         snapshot.local_store_tablespaces,
+        snapshot.boundary_replica_count,
+        snapshot.boundary_replication_enabled,
+        snapshot.scan_dedupe_mode.to_owned(),
         i64::from(snapshot.active_leaf_count),
         snapshot.relation_nprobe,
         snapshot.session_nprobe,
@@ -4861,6 +4867,7 @@ mod tests {
                  seed = 13, \
                  local_store_count = 1, \
                  local_store_tablespaces = 'pg_default', \
+                 boundary_replica_count = 1, \
                  pq_group_size = 4, \
                  storage_format = 'rabitq' \
              )",
@@ -4895,6 +4902,24 @@ mod tests {
         .expect("options row should exist");
         let local_store_tablespaces = Spi::get_one::<String>(
             "SELECT local_store_tablespaces FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let boundary_replica_count = Spi::get_one::<i32>(
+            "SELECT boundary_replica_count FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let boundary_replication_enabled = Spi::get_one::<bool>(
+            "SELECT boundary_replication_enabled FROM \
+             ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
+        )
+        .expect("options query should succeed")
+        .expect("options row should exist");
+        let scan_dedupe_mode = Spi::get_one::<String>(
+            "SELECT scan_dedupe_mode FROM \
              ec_spire_index_options_snapshot('ec_spire_options_sql_idx'::regclass)",
         )
         .expect("options query should succeed")
@@ -4935,6 +4960,9 @@ mod tests {
         assert!(!recursive_build_enabled);
         assert_eq!(local_store_count, 1);
         assert_eq!(local_store_tablespaces, "pg_default");
+        assert_eq!(boundary_replica_count, 1);
+        assert!(boundary_replication_enabled);
+        assert_eq!(scan_dedupe_mode, "vec_id");
         assert_eq!(session_nprobe, 5);
         assert_eq!(storage_format, "rabitq");
         assert_eq!(assignment_payload_format, "rabitq");

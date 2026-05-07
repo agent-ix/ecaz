@@ -188,6 +188,7 @@ pub const EC_SPIRE: IndexProfile = IndexProfile {
         "recursive_fanout",
         "local_store_count",
         "local_store_tablespaces",
+        "boundary_replica_count",
         "nprobe",
         "rerank_width",
         "training_sample_rows",

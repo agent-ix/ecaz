@@ -45,6 +45,55 @@
     }
 
     #[test]
+    fn single_level_route_map_plans_bounded_boundary_replica_pids() {
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![0.9, 0.1], vec![-1.0, 0.0]],
+            assignment_indexes: Vec::new(),
+        };
+        let route_map =
+            SpireSingleLevelRouteMap::from_centroid_plan(&centroid_plan, &[11, 12, 13]).unwrap();
+
+        let plan = route_map
+            .route_boundary_assignment_for_vector(&[1.0, 0.0], 1)
+            .unwrap();
+
+        assert_eq!(plan.primary_pid, 11);
+        assert_eq!(plan.replica_pids, vec![12]);
+    }
+
+    #[test]
+    fn single_level_route_map_dedupes_duplicate_replica_pids() {
+        let route_map = SpireSingleLevelRouteMap {
+            dimensions: 2,
+            entries: vec![
+                SpireSingleLevelRouteEntry {
+                    centroid_index: 0,
+                    pid: 11,
+                    centroid: vec![1.0, 0.0],
+                },
+                SpireSingleLevelRouteEntry {
+                    centroid_index: 1,
+                    pid: 11,
+                    centroid: vec![0.9, 0.1],
+                },
+                SpireSingleLevelRouteEntry {
+                    centroid_index: 2,
+                    pid: 12,
+                    centroid: vec![0.8, 0.2],
+                },
+            ],
+        };
+
+        let plan = route_map
+            .route_boundary_assignment_for_vector(&[1.0, 0.0], 2)
+            .unwrap();
+
+        assert_eq!(plan.primary_pid, 11);
+        assert_eq!(plan.replica_pids, vec![12]);
+    }
+
+    #[test]
     fn build_state_collects_assignments_and_training_sample() {
         let mut state = SpireBuildState::new(options(1), SpireIndexedVectorKind::Ecvector);
 

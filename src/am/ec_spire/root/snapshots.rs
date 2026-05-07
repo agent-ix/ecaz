@@ -156,6 +156,13 @@ pub(crate) unsafe fn index_options_snapshot(
             recursive_build_enabled,
             local_store_count: relation_options.local_store_count,
             local_store_tablespaces: relation_options.local_store_tablespaces.clone(),
+            boundary_replica_count: relation_options.boundary_replica_count,
+            boundary_replication_enabled: relation_options.boundary_replica_count > 0,
+            scan_dedupe_mode: if relation_options.boundary_replica_count > 0 {
+                "vec_id"
+            } else {
+                "none"
+            },
             active_leaf_count,
             relation_nprobe: relation_options.nprobe,
             session_nprobe: nprobe

@@ -12,7 +12,7 @@ mod tests {
         SpireRecursiveLeafObjectInput, SpireRecursiveRoutingBuildInput,
         SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
         SpireRecursiveRoutingEpochObjectInput, SpireSingleLevelBuildInput,
-        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteMap,
+        SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry, SpireSingleLevelRouteMap,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -54,6 +54,7 @@ mod tests {
             nlists: 2,
             recursive_fanout: 0,
             local_store_count: 1,
+            boundary_replica_count: 0,
             nprobe: 0,
             rerank_width: 0,
             training_sample_rows,

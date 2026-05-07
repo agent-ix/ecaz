@@ -58,9 +58,16 @@ conservative: relation or session `nprobe` applies at level 1, and levels above
 `ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` and
 `local_store_tablespaces` as the requested local placement surface. Repeated
 tablespace names are allowed so same-device baseline runs can be configured and
-reported honestly. Phase 4 currently keeps the default count `1` executable;
-values above `1` remain blocked until auxiliary partition-store relation
-creation lands.
+reported honestly. Phase 4 supports auxiliary partition-store relations for
+local multi-store indexes, while multi-store REINDEX remains explicitly
+rejected until a full auxiliary-store rebuild lifecycle lands.
+
+`ec_spire_index_options_snapshot(index_oid)` reports Phase 5 boundary
+replication planning state through `boundary_replica_count`,
+`boundary_replication_enabled`, and `scan_dedupe_mode`. The default
+`boundary_replica_count = 0` keeps primary-only assignment and reports
+`scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
+can see when scan plans must deduplicate replicated vector identities.
 
 ## Reading Notes
 

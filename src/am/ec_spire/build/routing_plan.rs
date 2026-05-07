@@ -18,6 +18,12 @@ pub(super) struct SpireSingleLevelRouteMap {
     pub(super) entries: Vec<SpireSingleLevelRouteEntry>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireBoundaryAssignmentPlan {
+    pub(super) primary_pid: u64,
+    pub(super) replica_pids: Vec<u64>,
+}
+
 impl SpireSingleLevelCentroidPlan {
     pub(super) fn centroid_count(&self) -> usize {
         self.centroids.len()
@@ -94,18 +100,56 @@ impl SpireSingleLevelRouteMap {
     }
 
     pub(super) fn route_pid_for_vector(&self, vector: &[f32]) -> Result<u64, String> {
+        Ok(self.route_boundary_assignment_for_vector(vector, 0)?.primary_pid)
+    }
+
+    pub(super) fn route_boundary_assignment_for_vector(
+        &self,
+        vector: &[f32],
+        boundary_replica_count: u32,
+    ) -> Result<SpireBoundaryAssignmentPlan, String> {
         self.validate()?;
-        let model = common_training::SphericalKMeansModel {
-            dimensions: usize::from(self.dimensions),
-            centroids: self
-                .entries
-                .iter()
-                .map(|entry| entry.centroid.clone())
-                .collect(),
-        };
-        let centroid_index =
-            common_training::assign_vector_to_centroid("ec_spire", vector, &model)?;
-        Ok(self.entries[centroid_index].pid)
+        validate_route_vector(vector, usize::from(self.dimensions))?;
+
+        let mut scored_entries = self
+            .entries
+            .iter()
+            .map(|entry| SpireScoredRouteEntry {
+                score: inner_product(vector, &entry.centroid),
+                centroid_index: entry.centroid_index,
+                pid: entry.pid,
+            })
+            .collect::<Vec<_>>();
+        scored_entries.sort_by(route_entry_cmp);
+
+        let mut selected_pids = Vec::with_capacity(
+            usize::try_from(boundary_replica_count)
+                .unwrap_or(usize::MAX)
+                .saturating_add(1)
+                .min(scored_entries.len()),
+        );
+        for entry in scored_entries {
+            if selected_pids.contains(&entry.pid) {
+                continue;
+            }
+            selected_pids.push(entry.pid);
+            if selected_pids.len()
+                == usize::try_from(boundary_replica_count)
+                    .unwrap_or(usize::MAX)
+                    .saturating_add(1)
+            {
+                break;
+            }
+        }
+
+        let primary_pid = selected_pids
+            .first()
+            .copied()
+            .ok_or_else(|| "ec_spire boundary assignment needs at least one route".to_owned())?;
+        Ok(SpireBoundaryAssignmentPlan {
+            primary_pid,
+            replica_pids: selected_pids.into_iter().skip(1).collect(),
+        })
     }
 
     pub(super) fn get(&self, centroid_index: u32) -> Option<&SpireSingleLevelRouteEntry> {
@@ -154,4 +198,43 @@ impl SpireSingleLevelRouteMap {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpireScoredRouteEntry {
+    score: f32,
+    centroid_index: u32,
+    pid: u64,
+}
+
+fn route_entry_cmp(left: &SpireScoredRouteEntry, right: &SpireScoredRouteEntry) -> std::cmp::Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| left.centroid_index.cmp(&right.centroid_index))
+        .then_with(|| left.pid.cmp(&right.pid))
+}
+
+fn validate_route_vector(vector: &[f32], dimensions: usize) -> Result<(), String> {
+    if vector.len() != dimensions {
+        return Err(format!(
+            "ec_spire vector dimensions mismatch: got {}, expected {dimensions}",
+            vector.len()
+        ));
+    }
+    if vector.iter().any(|value| !value.is_finite()) {
+        return Err("ec_spire vector contains a non-finite value".to_owned());
+    }
+    let norm_sq = vector
+        .iter()
+        .map(|value| f64::from(*value) * f64::from(*value))
+        .sum::<f64>();
+    if norm_sq <= f64::EPSILON {
+        return Err("ec_spire route assignment requires non-zero vectors".to_owned());
+    }
+    Ok(())
+}
+
+fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter().zip(right.iter()).map(|(left, right)| left * right).sum()
 }

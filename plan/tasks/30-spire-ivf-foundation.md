@@ -1364,7 +1364,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   default-off through a bounded `boundary_replica_count` reloption, uses the
   existing top-N leaf route ordering as the first predicate, derives scan
   `VecIdDedupeEnabled` mode from active replica-capable metadata, and preserves
-  Phase 4 hash-by-PID local placement.
+  Phase 4 hash-by-PID local placement. The first implementation slice has
+  landed the parsed reloption, SQL options diagnostics, CLI profile key, and a
+  pure route-map helper that resolves primary plus bounded secondary leaf PIDs
+  without writing replica rows yet.
 - [ ] **Assignment fanout.** Extend the assignment writer from one row per
   vector to multiple `(vec_id, pid)` rows.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
