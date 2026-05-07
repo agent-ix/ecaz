@@ -1420,8 +1420,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 7 — Multi-Machine Placement
 
-- [ ] **Remote node model.** Define node identity, placement-map membership,
-  remote health, and stale-node behavior.
+- [x] **Remote node model.** Phase 7 now has a design checkpoint in
+  `plan/design/spire-remote-node-model.md`: `node_id = 0` remains the local
+  coordinator node, nonzero node IDs are coordinator-scoped remote SPIRE
+  storage nodes, remote placements stay in the existing
+  `pid -> node_id -> local_store_id` map, and strict/degraded behavior is
+  defined around explicit node health, epoch-serving evidence, and
+  stale/unavailable diagnostics before libpq execution lands.
 - [ ] **Remote search API.** Add a SPIRE remote search SQL function on storage
   nodes that accepts query vector, selected PIDs, requested epoch, and top-k
   budget, then returns compact candidate rows.
