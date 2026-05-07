@@ -81,6 +81,48 @@
     }
 
     #[test]
+    fn route_top_graph_object_to_child_pids_uses_durable_graph_object() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![0.8, 0.2]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![-1.0, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 4, vec![-0.8, 0.2]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 2,
+                build_list_size: 4,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .expect("top graph should build");
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 90,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+
+        let child_pids =
+            route_top_graph_object_to_child_pids(&root, &top_graph_object, &[1.0, 0.0], 4, 2)
+                .unwrap();
+
+        assert_eq!(
+            child_pids,
+            vec![SPIRE_FIRST_PID + 1, SPIRE_FIRST_PID + 2]
+        );
+    }
+
+    #[test]
     fn route_top_graph_to_child_pids_rejects_root_mismatch() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,

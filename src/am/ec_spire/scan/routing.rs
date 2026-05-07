@@ -75,6 +75,93 @@ struct SpireTopGraphRoute {
     distance: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SpireTopGraphRouteNode<'a> {
+    child_pid: u64,
+    centroid_ordinal: u32,
+    neighbors: &'a [u32],
+}
+
+trait SpireTopGraphRouteView {
+    fn root_pid(&self) -> u64;
+    fn dimensions(&self) -> u16;
+    fn node_count(&self) -> u32;
+    fn graph_degree(&self) -> u32;
+    fn entry_node(&self) -> u32;
+    fn nodes_len(&self) -> usize;
+    fn route_node(&self, index: usize) -> SpireTopGraphRouteNode<'_>;
+}
+
+impl SpireTopGraphRouteView for SpireTopGraphBuildDraft {
+    fn root_pid(&self) -> u64 {
+        self.root_pid
+    }
+
+    fn dimensions(&self) -> u16 {
+        self.dimensions
+    }
+
+    fn node_count(&self) -> u32 {
+        self.node_count
+    }
+
+    fn graph_degree(&self) -> u32 {
+        self.graph_degree
+    }
+
+    fn entry_node(&self) -> u32 {
+        self.entry_node
+    }
+
+    fn nodes_len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    fn route_node(&self, index: usize) -> SpireTopGraphRouteNode<'_> {
+        let node = &self.nodes[index];
+        SpireTopGraphRouteNode {
+            child_pid: node.child_pid,
+            centroid_ordinal: node.centroid_ordinal,
+            neighbors: &node.neighbors,
+        }
+    }
+}
+
+impl SpireTopGraphRouteView for SpireTopGraphPartitionObject {
+    fn root_pid(&self) -> u64 {
+        self.root_pid
+    }
+
+    fn dimensions(&self) -> u16 {
+        self.dimensions
+    }
+
+    fn node_count(&self) -> u32 {
+        self.header.child_count
+    }
+
+    fn graph_degree(&self) -> u32 {
+        self.graph_degree
+    }
+
+    fn entry_node(&self) -> u32 {
+        self.entry_node
+    }
+
+    fn nodes_len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    fn route_node(&self, index: usize) -> SpireTopGraphRouteNode<'_> {
+        let node = &self.nodes[index];
+        SpireTopGraphRouteNode {
+            child_pid: node.child_pid,
+            centroid_ordinal: node.centroid_ordinal,
+            neighbors: &node.neighbors,
+        }
+    }
+}
+
 fn route_top_graph_to_child_pids(
     root_object: &SpireRoutingPartitionObject,
     top_graph: &SpireTopGraphBuildDraft,
@@ -94,9 +181,44 @@ fn route_top_graph_to_child_pids(
     .collect())
 }
 
+fn route_top_graph_object_to_child_pids(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &SpireTopGraphPartitionObject,
+    query_vector: &[f32],
+    search_list_size: u32,
+    route_count: u32,
+) -> Result<Vec<u64>, String> {
+    Ok(route_top_graph_view_to_routes(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        route_count,
+    )?
+    .into_iter()
+    .map(|route| route.child_pid)
+    .collect())
+}
+
 fn route_top_graph_to_routes(
     root_object: &SpireRoutingPartitionObject,
     top_graph: &SpireTopGraphBuildDraft,
+    query_vector: &[f32],
+    search_list_size: u32,
+    route_count: u32,
+) -> Result<Vec<SpireTopGraphRoute>, String> {
+    route_top_graph_view_to_routes(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        route_count,
+    )
+}
+
+fn route_top_graph_view_to_routes(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &impl SpireTopGraphRouteView,
     query_vector: &[f32],
     search_list_size: u32,
     route_count: u32,
@@ -113,16 +235,14 @@ fn route_top_graph_to_routes(
     let route_count = usize::try_from(route_count)
         .map_err(|_| "ec_spire top graph route count exceeds usize".to_owned())?;
     let graph = crate::am::VamanaGraph {
-        neighbors: top_graph
-            .nodes
-            .iter()
-            .map(|node| node.neighbors.clone())
+        neighbors: (0..top_graph.nodes_len())
+            .map(|index| top_graph.route_node(index).neighbors.to_vec())
             .collect(),
-        max_degree: usize::try_from(top_graph.graph_degree)
+        max_degree: usize::try_from(top_graph.graph_degree())
             .map_err(|_| "ec_spire top graph degree exceeds usize".to_owned())?,
     };
     let query_distance_offset = max_query_centroid_inner_product(root_object, query_vector)?;
-    let search = crate::am::greedy_search(&graph, top_graph.entry_node, search_list_size, |node| {
+    let search = crate::am::greedy_search(&graph, top_graph.entry_node(), search_list_size, |node| {
         let centroid = root_object
             .child_centroid(node as usize)
             .expect("top graph route validation checked node centroid");
@@ -132,7 +252,7 @@ fn route_top_graph_to_routes(
         .frontier
         .into_iter()
         .map(|candidate| {
-            let node = &top_graph.nodes[candidate.node as usize];
+            let node = top_graph.route_node(candidate.node as usize);
             SpireTopGraphRoute {
                 node_ordinal: candidate.node,
                 centroid_ordinal: node.centroid_ordinal,
@@ -366,7 +486,7 @@ fn require_recursive_internal_child<'a>(
 
 fn validate_top_graph_route_inputs(
     root_object: &SpireRoutingPartitionObject,
-    top_graph: &SpireTopGraphBuildDraft,
+    top_graph: &impl SpireTopGraphRouteView,
     query_vector: &[f32],
     search_list_size: u32,
     route_count: u32,
@@ -374,40 +494,41 @@ fn validate_top_graph_route_inputs(
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire top graph routing requires a root routing object".to_owned());
     }
-    if root_object.header.pid != top_graph.root_pid {
+    if root_object.header.pid != top_graph.root_pid() {
         return Err(format!(
             "ec_spire top graph root pid {} does not match routing root pid {}",
-            top_graph.root_pid, root_object.header.pid
+            top_graph.root_pid(), root_object.header.pid
         ));
     }
-    if root_object.dimensions != top_graph.dimensions {
+    if root_object.dimensions != top_graph.dimensions() {
         return Err(format!(
             "ec_spire top graph dimensions {} do not match routing dimensions {}",
-            top_graph.dimensions, root_object.dimensions
+            top_graph.dimensions(), root_object.dimensions
         ));
     }
-    if usize::try_from(top_graph.node_count)
+    if usize::try_from(top_graph.node_count())
         .ok()
-        .filter(|node_count| *node_count == top_graph.nodes.len())
+        .filter(|node_count| *node_count == top_graph.nodes_len())
         .is_none()
     {
         return Err(format!(
             "ec_spire top graph node count {} does not match node rows {}",
-            top_graph.node_count,
-            top_graph.nodes.len()
+            top_graph.node_count(),
+            top_graph.nodes_len()
         ));
     }
-    if top_graph.nodes.len() != root_object.child_count() {
+    if top_graph.nodes_len() != root_object.child_count() {
         return Err(format!(
             "ec_spire top graph node count {} does not match routing child count {}",
-            top_graph.nodes.len(),
+            top_graph.nodes_len(),
             root_object.child_count()
         ));
     }
-    if top_graph.entry_node >= top_graph.node_count {
+    if top_graph.entry_node() >= top_graph.node_count() {
         return Err(format!(
             "ec_spire top graph entry node {} is outside node count {}",
-            top_graph.entry_node, top_graph.node_count
+            top_graph.entry_node(),
+            top_graph.node_count()
         ));
     }
     if search_list_size == 0 {
@@ -423,13 +544,9 @@ fn validate_top_graph_route_inputs(
     }
     validate_routing_query_vector(query_vector, usize::from(root_object.dimensions))?;
 
-    let node_count = top_graph.nodes.len();
-    for (node_index, (graph_node, routing_child)) in top_graph
-        .nodes
-        .iter()
-        .zip(root_object.children())
-        .enumerate()
-    {
+    let node_count = top_graph.nodes_len();
+    for (node_index, routing_child) in root_object.children().enumerate() {
+        let graph_node = top_graph.route_node(node_index);
         if graph_node.child_pid != routing_child.child_pid {
             return Err(format!(
                 "ec_spire top graph node {node_index} child pid {} does not match routing child pid {}",
@@ -442,7 +559,7 @@ fn validate_top_graph_route_inputs(
                 graph_node.centroid_ordinal, routing_child.centroid_index
             ));
         }
-        for &neighbor in &graph_node.neighbors {
+        for &neighbor in graph_node.neighbors {
             if usize::try_from(neighbor)
                 .ok()
                 .filter(|neighbor| *neighbor < node_count)

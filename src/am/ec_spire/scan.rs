@@ -21,7 +21,7 @@ use super::storage::{
     is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafObjectColumns,
     SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
     SpireRelationObjectStoreSet, SpireRoutingPartitionObject, SpireVecId,
-    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SpireTopGraphPartitionObject, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;
