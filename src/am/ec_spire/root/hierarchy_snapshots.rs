@@ -378,6 +378,47 @@ pub(crate) unsafe fn remote_search_coordinator_local_summary(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
+        let candidates = unsafe {
+            remote_search_coordinator_local_candidates_result(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )?
+        };
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let heap_tid = crate::storage::page::ItemPointer::decode(&candidate.row_locator)?;
+                Ok(SpireRemoteSearchLocalHeapResolutionPlanRow {
+                    requested_epoch,
+                    node_id: candidate.node_id,
+                    pid: candidate.pid,
+                    row_index: candidate.row_index,
+                    vec_id: candidate.vec_id,
+                    row_locator: candidate.row_locator,
+                    heap_block: heap_tid.block_number,
+                    heap_offset: heap_tid.offset_number,
+                    heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                    status: SPIRE_REMOTE_STATUS_READY,
+                })
+            })
+            .collect()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 unsafe fn remote_search_coordinator_local_summary_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
