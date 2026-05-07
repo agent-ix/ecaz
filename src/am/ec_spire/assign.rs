@@ -190,6 +190,32 @@ pub(super) fn build_boundary_leaf_assignment_placements(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireBoundaryLeafAssignmentInput>,
 ) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
+    build_boundary_assignment_placements(
+        allocator,
+        inputs,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    )
+}
+
+pub(super) fn build_boundary_insert_delta_assignment_placements(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireBoundaryLeafAssignmentInput>,
+) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
+    build_boundary_assignment_placements(
+        allocator,
+        inputs,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+    )
+}
+
+fn build_boundary_assignment_placements(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireBoundaryLeafAssignmentInput>,
+    primary_flags: u16,
+    replica_flags: u16,
+) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
     let mut rows = Vec::new();
     for input in inputs {
         if input.primary_pid == 0 {
@@ -213,20 +239,12 @@ pub(super) fn build_boundary_leaf_assignment_placements(
         let vec_id = allocator.allocate()?;
         rows.push(SpireLeafAssignmentPlacement {
             pid: input.primary_pid,
-            row: build_assignment_row(
-                input.assignment.clone(),
-                vec_id.clone(),
-                SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-            )?,
+            row: build_assignment_row(input.assignment.clone(), vec_id.clone(), primary_flags)?,
         });
         for replica_pid in input.replica_pids {
             rows.push(SpireLeafAssignmentPlacement {
                 pid: replica_pid,
-                row: build_assignment_row(
-                    input.assignment.clone(),
-                    vec_id.clone(),
-                    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-                )?,
+                row: build_assignment_row(input.assignment.clone(), vec_id.clone(), replica_flags)?,
             });
         }
     }
@@ -308,6 +326,7 @@ pub(super) fn observe_assignment_vec_ids(
 #[cfg(test)]
 mod tests {
     use super::{
+        build_boundary_insert_delta_assignment_placements,
         build_boundary_leaf_assignment_placements, build_delete_delta_assignments,
         build_insert_delta_assignments, build_primary_leaf_assignments, observe_assignment_vec_ids,
         SpireBoundaryLeafAssignmentInput, SpireDeleteDeltaInput, SpireLeafAssignmentInput,
@@ -584,6 +603,36 @@ mod tests {
             allocator.next_local_vec_seq(),
             SPIRE_FIRST_LOCAL_VEC_SEQ + 1
         );
+    }
+
+    #[test]
+    fn build_boundary_insert_delta_assignment_placements_sets_delta_flags() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+
+        let rows = build_boundary_insert_delta_assignment_placements(
+            &mut allocator,
+            vec![SpireBoundaryLeafAssignmentInput {
+                primary_pid: 11,
+                replica_pids: vec![12],
+                assignment: SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 1),
+                    payload_format: 1,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2, 3],
+                },
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(
+            rows[0].row.flags,
+            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+        );
+        assert_eq!(
+            rows[1].row.flags,
+            SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+        );
+        assert_eq!(rows[0].row.vec_id, rows[1].row.vec_id);
     }
 
     #[test]

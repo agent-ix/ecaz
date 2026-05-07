@@ -111,6 +111,21 @@
 
         row = valid_row.clone();
         row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_ok());
+
+        row = valid_row.clone();
+        row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY
+            | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+            | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT;
+        assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
+
+        row = valid_row.clone();
+        row.flags = SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
+            | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+            | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE;
+        row.payload_format = SPIRE_PAYLOAD_FORMAT_NONE;
+        row.gamma = 0.0;
+        row.encoded_payload.clear();
         assert!(SpireDeltaPartitionObject::new(19, 4, 17, vec![row]).is_err());
 
         row = valid_row.clone();

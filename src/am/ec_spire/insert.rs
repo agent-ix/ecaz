@@ -1,8 +1,8 @@
 use pgrx::pg_sys;
 
 use super::assign::{
-    build_insert_delta_assignments, build_primary_leaf_assignments, SpireLocalVecIdAllocator,
-    SpirePidAllocator,
+    build_boundary_insert_delta_assignment_placements, build_primary_leaf_assignments,
+    SpireBoundaryLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
 };
 use super::build::{
     self, encode_manifest_bundle_for_publish, object_manifest_from_placement_writes,
@@ -93,10 +93,26 @@ unsafe fn publish_insert_delta_epoch(
             pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         )?
     };
-    let routed =
-        scan::collect_snapshot_routed_leaf_rows(&active_snapshot, &store, &tuple.source_vector)?;
-    let base_pid = routed.leaf_pid;
-    let base_lookup = active_lookup.require_lookup(base_pid, "insert delta base leaf")?;
+    let boundary_replica_count = u32::try_from(relation_options.boundary_replica_count)
+        .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
+    let nprobe = boundary_replica_count
+        .checked_add(1)
+        .ok_or_else(|| "ec_spire insert boundary fanout overflow".to_owned())?;
+    let routed = scan::collect_snapshot_routed_probe_leaf_rows(
+        &active_snapshot,
+        &store,
+        &tuple.source_vector,
+        nprobe,
+    )?;
+    let primary_leaf_pid = routed
+        .first()
+        .map(|route| route.leaf_pid)
+        .ok_or_else(|| "ec_spire insert routed no leaf pids".to_owned())?;
+    let replica_leaf_pids = routed
+        .iter()
+        .skip(1)
+        .map(|route| route.leaf_pid)
+        .collect::<Vec<_>>();
     let new_epoch = root_control
         .active_epoch
         .checked_add(1)
@@ -107,17 +123,14 @@ unsafe fn publish_insert_delta_epoch(
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let mut local_vec_id_allocator =
         SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
-    let delta_pid = pid_allocator.allocate()?;
-    let assignments =
-        build_insert_delta_assignments(&mut local_vec_id_allocator, vec![tuple.assignment])?;
-    let delta_object = SpireDeltaPartitionObject::new(delta_pid, new_epoch, base_pid, assignments)?;
-    let delta_placement = unsafe {
-        store.insert_delta_object_for_base_placement(
-            new_epoch,
-            base_lookup.placement,
-            &delta_object,
-        )?
-    };
+    let assignment_placements = build_boundary_insert_delta_assignment_placements(
+        &mut local_vec_id_allocator,
+        vec![SpireBoundaryLeafAssignmentInput {
+            primary_pid: primary_leaf_pid,
+            replica_pids: replica_leaf_pids,
+            assignment: tuple.assignment,
+        }],
+    )?;
 
     let mut placement_entries = placement_directory
         .entries
@@ -128,7 +141,24 @@ unsafe fn publish_insert_delta_epoch(
             entry
         })
         .collect::<Vec<_>>();
-    placement_entries.push(delta_placement);
+    for assignment_placement in assignment_placements {
+        let base_lookup =
+            active_lookup.require_lookup(assignment_placement.pid, "insert delta base leaf")?;
+        let delta_pid = pid_allocator.allocate()?;
+        let delta_object = SpireDeltaPartitionObject::new(
+            delta_pid,
+            new_epoch,
+            assignment_placement.pid,
+            vec![assignment_placement.row],
+        )?;
+        placement_entries.push(unsafe {
+            store.insert_delta_object_for_base_placement(
+                new_epoch,
+                base_lookup.placement,
+                &delta_object,
+            )?
+        });
+    }
     let placement_directory = SpirePlacementDirectory::from_entries(new_epoch, placement_entries)?;
     let placement_evidence =
         unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };

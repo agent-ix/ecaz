@@ -5198,6 +5198,40 @@ mod tests {
         assert_eq!(scan_dedupe_mode, "vec_id");
         assert_eq!(returned_rows, 3);
         assert_eq!(distinct_rows, 3);
+
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_sql (id, embedding) VALUES \
+             (4, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42))",
+        )
+        .expect("post-build insert should succeed");
+        let delta_insert_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(delta_insert_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
+        let post_insert_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+               SELECT id FROM ec_spire_boundary_replica_sql \
+               ORDER BY embedding <#> ARRAY[0.8, 0.2]::real[] \
+               LIMIT 10 \
+             ) AS ranked",
+        )
+        .expect("ordered post-insert boundary replica scan should succeed")
+        .expect("count row should exist");
+        let post_insert_distinct_rows = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT id) FROM ( \
+               SELECT id FROM ec_spire_boundary_replica_sql \
+               ORDER BY embedding <#> ARRAY[0.8, 0.2]::real[] \
+               LIMIT 10 \
+             ) AS ranked",
+        )
+        .expect("ordered post-insert boundary replica scan should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(delta_insert_assignment_count, 2);
+        assert_eq!(post_insert_rows, 4);
+        assert_eq!(post_insert_distinct_rows, 4);
     }
 
     #[pg_test]

@@ -268,14 +268,16 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
             "ec_spire delta assignment must set exactly one insert/delete delta flag".to_owned(),
         );
     }
-    if assignment.flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
-        return Err("ec_spire delta assignment cannot be a boundary replica in Phase 1".to_owned());
-    }
     if assignment.flags & SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR != 0 {
         return Err("ec_spire delta assignment cannot be a stale locator".to_owned());
     }
-    if is_insert && assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY == 0 {
-        return Err("ec_spire insert delta assignment must be primary".to_owned());
+    let insert_scored_roles =
+        assignment.flags & (SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
+    if is_insert && insert_scored_roles.count_ones() != 1 {
+        return Err(
+            "ec_spire insert delta assignment must set exactly one primary/boundary role"
+                .to_owned(),
+        );
     }
     if is_insert && assignment.flags & SPIRE_ASSIGNMENT_FLAG_TOMBSTONE != 0 {
         return Err("ec_spire insert delta assignment cannot be tombstoned".to_owned());
@@ -285,6 +287,9 @@ fn validate_delta_assignment(assignment: &SpireLeafAssignmentRow) -> Result<(), 
     }
     if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
         return Err("ec_spire delete delta assignment cannot be primary".to_owned());
+    }
+    if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+        return Err("ec_spire delete delta assignment cannot be a boundary replica".to_owned());
     }
     if is_delete && assignment.flags & SPIRE_ASSIGNMENT_FLAG_TOMBSTONE == 0 {
         return Err("ec_spire delete delta assignment must be tombstoned".to_owned());

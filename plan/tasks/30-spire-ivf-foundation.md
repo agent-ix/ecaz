@@ -1372,7 +1372,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   vector to multiple `(vec_id, pid)` rows. The populated single-level
   relation-backed build path now writes one primary row plus bounded
   `BOUNDARY_REPLICA` rows with the same `vec_id` when
-  `boundary_replica_count > 0`; insert-delta, recursive build, and
+  `boundary_replica_count > 0`; post-build inserts now publish one insert
+  delta per selected target leaf with a shared `vec_id`; recursive build and
   split/merge replacement fanout remain open.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
   before final top-k. Scan candidate collection now treats primary and
