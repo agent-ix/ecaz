@@ -44,6 +44,7 @@ pub(crate) use self::ec_spire::{
     index_routing_centroid_snapshot as spire_index_routing_centroid_snapshot,
     index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
+    index_top_graph_snapshot as spire_index_top_graph_snapshot,
 };
 
 pub(crate) fn register_gucs() {

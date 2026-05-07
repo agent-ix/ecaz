@@ -1468,6 +1468,69 @@ fn ec_spire_index_hierarchy_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_top_graph_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(top_graph_enabled, bool),
+        name!(top_graph_count, i64),
+        name!(top_graph_pid, i64),
+        name!(root_pid, i64),
+        name!(object_version, i64),
+        name!(published_epoch_backref, i64),
+        name!(level, i32),
+        name!(node_count, i64),
+        name!(dimensions, i32),
+        name!(graph_degree, i64),
+        name!(build_list_size, i64),
+        name!(alpha, f32),
+        name!(entry_node, i64),
+        name!(edge_count, i64),
+        name!(max_node_degree, i64),
+        name!(effective_route_count, i64),
+        name!(effective_search_list_size, i64),
+        name!(configured_search_list_size, Option<i64>),
+        name!(object_bytes, i64),
+        name!(status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_top_graph_snapshot") };
+    let snapshot = unsafe { am::spire_index_top_graph_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        snapshot.top_graph_enabled,
+        i64::try_from(snapshot.top_graph_count).expect("top graph count should fit in i64"),
+        i64::try_from(snapshot.top_graph_pid).expect("top graph pid should fit in i64"),
+        i64::try_from(snapshot.root_pid).expect("root pid should fit in i64"),
+        i64::try_from(snapshot.object_version).expect("object version should fit in i64"),
+        i64::try_from(snapshot.published_epoch_backref)
+            .expect("published epoch backref should fit in i64"),
+        i32::from(snapshot.level),
+        i64::try_from(snapshot.node_count).expect("node count should fit in i64"),
+        i32::from(snapshot.dimensions),
+        i64::from(snapshot.graph_degree),
+        i64::from(snapshot.build_list_size),
+        snapshot.alpha,
+        i64::try_from(snapshot.entry_node).expect("entry node should fit in i64"),
+        i64::try_from(snapshot.edge_count).expect("edge count should fit in i64"),
+        i64::try_from(snapshot.max_node_degree).expect("max node degree should fit in i64"),
+        i64::from(snapshot.effective_route_count),
+        i64::from(snapshot.effective_search_list_size),
+        snapshot.configured_search_list_size.map(i64::from),
+        i64::try_from(snapshot.object_bytes).expect("object bytes should fit in i64"),
+        snapshot.status.to_owned(),
+        snapshot.recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_object_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -7269,6 +7332,109 @@ mod tests {
         .expect("ordered recursive ec_spire query should succeed")
         .expect("query should return a row");
         assert_eq!(first_id, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_top_graph_snapshot_sql() {
+        Spi::run("CREATE TABLE ec_spire_top_graph_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_top_graph_empty_idx ON ec_spire_top_graph_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+        let empty_status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_empty_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let empty_count = Spi::get_one::<i64>(
+            "SELECT top_graph_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_empty_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+
+        assert_eq!(empty_status, "empty");
+        assert_eq!(empty_count, 0);
+
+        Spi::run("DROP INDEX ec_spire_top_graph_empty_idx").expect("drop index should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_top_graph_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_top_graph_sql_idx \
+             ON ec_spire_top_graph_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 4, recursive_fanout = 2, top_graph_enabled = 1, \
+                   top_graph_degree = 2, top_graph_build_list_size = 4, \
+                   top_graph_search_list_size = 3)",
+        )
+        .expect("top graph ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let top_graph_count = Spi::get_one::<i64>(
+            "SELECT top_graph_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let node_count = Spi::get_one::<i64>(
+            "SELECT node_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let graph_degree = Spi::get_one::<i64>(
+            "SELECT graph_degree FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let configured_search = Spi::get_one::<i64>(
+            "SELECT configured_search_list_size FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("configured search size should exist");
+        let effective_search = Spi::get_one::<i64>(
+            "SELECT effective_search_list_size FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let top_graph_enabled = Spi::get_one::<bool>(
+            "SELECT top_graph_enabled FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let object_snapshot_top_graph_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_index_object_snapshot(\
+             'ec_spire_top_graph_sql_idx'::regclass) WHERE object_kind = 'top_graph'",
+        )
+        .expect("object snapshot query should succeed")
+        .expect("object count should exist");
+
+        assert_eq!(status, "ready");
+        assert_eq!(top_graph_count, 1);
+        assert_eq!(node_count, 2);
+        assert_eq!(graph_degree, 2);
+        assert_eq!(configured_search, 3);
+        assert_eq!(effective_search, 3);
+        assert!(top_graph_enabled);
+        assert_eq!(object_snapshot_top_graph_count, 1);
     }
 
     #[pg_test]

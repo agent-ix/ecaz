@@ -45,6 +45,180 @@ pub(crate) unsafe fn index_insert_debt_snapshot(
     }
 }
 
+fn empty_top_graph_snapshot(
+    active_epoch: u64,
+    top_graph_plan: options::SpireTopGraphOptionPlan,
+    status: &'static str,
+    recommendation: &'static str,
+) -> SpireIndexTopGraphSnapshot {
+    SpireIndexTopGraphSnapshot {
+        active_epoch,
+        top_graph_enabled: top_graph_plan.enabled,
+        top_graph_count: 0,
+        top_graph_pid: 0,
+        root_pid: 0,
+        object_version: 0,
+        published_epoch_backref: 0,
+        level: 0,
+        node_count: 0,
+        dimensions: 0,
+        graph_degree: top_graph_plan.graph_degree,
+        build_list_size: top_graph_plan.build_list_size,
+        alpha: top_graph_plan.alpha,
+        entry_node: 0,
+        edge_count: 0,
+        max_node_degree: 0,
+        effective_route_count: 0,
+        effective_search_list_size: top_graph_plan.search_list_size.unwrap_or(0),
+        configured_search_list_size: top_graph_plan.search_list_size,
+        object_bytes: 0,
+        status,
+        recommendation,
+    }
+}
+
+pub(crate) unsafe fn index_top_graph_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexTopGraphSnapshot {
+    let result = (|| -> Result<SpireIndexTopGraphSnapshot, String> {
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let top_graph_plan = relation_options.top_graph_plan()?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+
+        if root_control.active_epoch == 0 {
+            return Ok(empty_top_graph_snapshot(
+                root_control.active_epoch,
+                top_graph_plan,
+                "empty",
+                "populate the index before expecting a published SPIRE top graph",
+            ));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let active_leaf_count = count_snapshot_options_leaf_pids(
+            &meta::SpirePublishedEpochSnapshot::new(
+                &epoch_manifest,
+                &object_manifest,
+                &placement_directory,
+            )?,
+            &object_store,
+            relation_options.recursive_fanout().is_some(),
+        )?;
+        let relation_nprobe = u32::try_from(relation_options.nprobe)
+            .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
+        let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
+        let effective_search_list_size = top_graph_plan
+            .search_list_size
+            .unwrap_or(nprobe.effective_nprobe);
+
+        let mut top_graphs = Vec::new();
+        for manifest_entry in &snapshot.object_manifest().entries {
+            let lookup = snapshot.require_lookup(manifest_entry.pid, "top graph snapshot")?;
+            if lookup.placement.state != meta::SpirePlacementState::Available {
+                continue;
+            }
+            let header = storage::SpireObjectReader::read_object_header(
+                &object_store,
+                lookup.placement,
+            )?;
+            if header.kind == storage::SpirePartitionObjectKind::TopGraph {
+                top_graphs.push((
+                    lookup.placement,
+                    storage::SpireObjectReader::read_top_graph_object(
+                        &object_store,
+                        lookup.placement,
+                    )?,
+                ));
+            }
+        }
+
+        if top_graphs.is_empty() {
+            let (status, recommendation) = if top_graph_plan.enabled {
+                (
+                    "missing_top_graph",
+                    "rebuild the recursive index or disable top_graph_enabled; enabled scans fail closed without a graph object",
+                )
+            } else {
+                ("disabled", "none")
+            };
+            let mut snapshot = empty_top_graph_snapshot(
+                root_control.active_epoch,
+                top_graph_plan,
+                status,
+                recommendation,
+            );
+            snapshot.effective_route_count = nprobe.effective_nprobe;
+            snapshot.effective_search_list_size = effective_search_list_size;
+            return Ok(snapshot);
+        }
+
+        top_graphs.sort_by_key(|(_, graph)| graph.header.pid);
+        let top_graph_count = u64::try_from(top_graphs.len())
+            .map_err(|_| "ec_spire top graph snapshot count exceeds u64".to_owned())?;
+        let (placement, top_graph) = &top_graphs[0];
+        let mut edge_count = 0_u64;
+        let mut max_node_degree = 0_u64;
+        for node in &top_graph.nodes {
+            let node_degree = u64::try_from(node.neighbors.len())
+                .map_err(|_| "ec_spire top graph snapshot node degree exceeds u64".to_owned())?;
+            edge_count = edge_count
+                .checked_add(node_degree)
+                .ok_or_else(|| "ec_spire top graph snapshot edge count overflow".to_owned())?;
+            max_node_degree = max_node_degree.max(node_degree);
+        }
+        let (status, recommendation) = if top_graph_count == 1 && top_graph_plan.enabled {
+            ("ready", "none")
+        } else if top_graph_count == 1 {
+            ("available_disabled", "none")
+        } else {
+            (
+                "multiple_top_graphs",
+                "repair or rebuild the index; enabled scans fail closed when multiple top graph objects are visible",
+            )
+        };
+
+        Ok(SpireIndexTopGraphSnapshot {
+            active_epoch: root_control.active_epoch,
+            top_graph_enabled: top_graph_plan.enabled,
+            top_graph_count,
+            top_graph_pid: top_graph.header.pid,
+            root_pid: top_graph.root_pid,
+            object_version: top_graph.header.object_version,
+            published_epoch_backref: top_graph.header.published_epoch_backref,
+            level: top_graph.header.level,
+            node_count: u64::try_from(top_graph.node_count())
+                .map_err(|_| "ec_spire top graph snapshot node count exceeds u64".to_owned())?,
+            dimensions: top_graph.dimensions,
+            graph_degree: top_graph.graph_degree,
+            build_list_size: top_graph.build_list_size,
+            alpha: top_graph.alpha,
+            entry_node: u64::from(top_graph.entry_node),
+            edge_count,
+            max_node_degree,
+            effective_route_count: nprobe.effective_nprobe,
+            effective_search_list_size,
+            configured_search_list_size: top_graph_plan.search_list_size,
+            object_bytes: u64::from(placement.object_bytes),
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn index_hierarchy_snapshot(
     index_relation: pg_sys::Relation,
 ) -> SpireIndexHierarchySnapshot {

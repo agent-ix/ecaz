@@ -86,6 +86,32 @@ pub(crate) struct SpireIndexLevelParameterSnapshotRow {
     pub(crate) assignment_payload_format: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexTopGraphSnapshot {
+    pub(crate) active_epoch: u64,
+    pub(crate) top_graph_enabled: bool,
+    pub(crate) top_graph_count: u64,
+    pub(crate) top_graph_pid: u64,
+    pub(crate) root_pid: u64,
+    pub(crate) object_version: u64,
+    pub(crate) published_epoch_backref: u64,
+    pub(crate) level: u16,
+    pub(crate) node_count: u64,
+    pub(crate) dimensions: u16,
+    pub(crate) graph_degree: u32,
+    pub(crate) build_list_size: u32,
+    pub(crate) alpha: f32,
+    pub(crate) entry_node: u64,
+    pub(crate) edge_count: u64,
+    pub(crate) max_node_degree: u64,
+    pub(crate) effective_route_count: u32,
+    pub(crate) effective_search_list_size: u32,
+    pub(crate) configured_search_list_size: Option<u32>,
+    pub(crate) object_bytes: u64,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) active_epoch: u64,
