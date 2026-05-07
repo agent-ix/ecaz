@@ -1427,9 +1427,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `pid -> node_id -> local_store_id` map, and strict/degraded behavior is
   defined around explicit node health, epoch-serving evidence, and
   stale/unavailable diagnostics before libpq execution lands.
-- [ ] **Remote search API.** Add a SPIRE remote search SQL function on storage
-  nodes that accepts query vector, selected PIDs, requested epoch, and top-k
-  budget, then returns compact candidate rows.
+- [x] **Remote search API.** `ec_spire_remote_search` is now available as the
+  first storage-node SQL endpoint: it accepts query vector, selected leaf PIDs,
+  requested active epoch, top-k budget, and strict/degraded consistency mode,
+  then returns compact quantized candidate rows with epoch/node/object identity,
+  vec-id bytes, opaque row locator bytes, and score. Coordinator libpq fanout and
+  retained-epoch serving remain separate Phase 7 work.
 - [ ] **Coordinator transport.** Use libpq pipeline mode first for
   coordinator-to-node fanout; do not invent a custom network protocol until the
   SQL/protocol shape fails measurement.
