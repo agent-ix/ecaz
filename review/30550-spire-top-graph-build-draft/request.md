@@ -5,6 +5,7 @@
   - `c48a96df` (`Build SPIRE top graphs from routing roots`)
   - `6623bc41` (`Route SPIRE top graphs over routing roots`)
   - `6feba1da` (`Add SPIRE top graph object codec`)
+  - `8e087c90` (`Wire SPIRE top graph object stores`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -35,9 +36,18 @@ graph:
 - adds a durable `TopGraph` partition-object kind and V1 codec carrying root
   PID, dimensions, graph degree, build list size, alpha, entry node, child
   PIDs, centroid ordinals, and neighbor ordinals.
+- wires `TopGraph` through local and relation object-store write/read APIs,
+  including `SpireObjectReader` dispatch support for real stores.
+- expands codec tests for validator and decode error paths noted in
+  `review/30549-spire-top-graph-codec/feedback/2026-05-06-01-reviewer.md`.
+- records the current carry-forward assumption for top-graph objects during
+  leaf replacement/vacuum, with TODOs to invalidate or rebuild when a future
+  routing rewrite changes top-level centroids.
 
 This still does not publish graph object bytes into live epochs, add reloptions,
-or replace live scan routing yet.
+or replace live scan routing yet. Relation-store top-graph writes currently
+require the encoded graph to fit in one object tuple; multi-tuple graph storage
+is not part of this checkpoint.
 
 ## Files
 
@@ -51,8 +61,15 @@ or replace live scan routing yet.
 - `src/am/ec_spire/scan/tests/routing.rs`
 - `src/am/ec_spire/storage/top_graph.rs`
 - `src/am/ec_spire/storage/tests/top_graph.rs`
+- `src/am/ec_spire/storage/local_store.rs`
+- `src/am/ec_spire/storage/local_store_set.rs`
+- `src/am/ec_spire/storage/relation_store.rs`
+- `src/am/ec_spire/storage/routing_delta.rs`
+- `src/am/ec_spire/storage/tests/local_store.rs`
 - `src/am/ec_spire/storage/relation_plan.rs`
 - `src/am/ec_spire/storage/vec_id.rs`
+- `src/am/ec_spire/update/leaf_rows.rs`
+- `src/am/ec_spire/vacuum.rs`
 
 ## Review Focus
 
@@ -78,10 +95,17 @@ or replace live scan routing yet.
    linkage via `parent_pid`, node count in `child_count`, entry-node bounds,
    duplicate child/centroid rejection, neighbor bounds, no self-neighbors, and
    neighbor-count <= graph degree.
+9. Check the object-store API boundary: local store supports raw-page graph
+   objects, relation store currently rejects graph objects larger than one
+   relation-object tuple, and `SpireObjectReader` has a default unsupported
+   top-graph method for test-only readers.
+10. Confirm the `centroid_ordinal` bound is correctly validated at bind time
+    against the root routing object, not in the standalone codec.
 
 ## Validation
 
 - `cargo test --lib top_graph --no-default-features --features pg18`
+- `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`
 - `git diff --check`
 
 `cargo fmt --check` was also attempted, but it reports an unrelated pre-existing
