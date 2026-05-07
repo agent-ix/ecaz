@@ -700,9 +700,9 @@ pub(crate) unsafe fn remote_node_capability_summary(
                         "ec_spire remote node capability summary remote node count overflow"
                     )
                 });
-            summary.required_candidate_format = "ec_spire_remote_search_v1";
+            summary.required_candidate_format = SPIRE_REMOTE_CANDIDATE_FORMAT_V1;
         }
-        if row.status == "ready" {
+        if row.status == SPIRE_REMOTE_STATUS_READY {
             summary.ready_node_count =
                 summary.ready_node_count.checked_add(1).unwrap_or_else(|| {
                     pgrx::error!(
@@ -717,7 +717,9 @@ pub(crate) unsafe fn remote_node_capability_summary(
                     )
                 });
         }
-        if row.descriptor_state == "missing" || row.status == "requires_remote_node_descriptor" {
+        if row.descriptor_state == "missing"
+            || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+        {
             summary.missing_descriptor_node_count =
                 summary
                     .missing_descriptor_node_count
@@ -731,10 +733,10 @@ pub(crate) unsafe fn remote_node_capability_summary(
     }
 
     if summary.blocked_node_count == 0 {
-        summary.status = "ready";
-        summary.recommendation = "none";
+        summary.status = SPIRE_REMOTE_STATUS_READY;
+        summary.recommendation = SPIRE_REMOTE_NONE;
     } else {
-        summary.status = "requires_remote_node_descriptor";
+        summary.status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
         summary.recommendation = "register remote node descriptors before capability checks";
     }
     summary
@@ -799,7 +801,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
                     "ec_spire remote epoch publish readiness skipped placement count overflow"
                 )
             });
-        if row.status == "ready" {
+        if row.status == SPIRE_REMOTE_STATUS_READY {
             summary.ready_remote_node_count =
                 summary
                     .ready_remote_node_count
@@ -820,7 +822,9 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
                         )
                     });
         }
-        if row.descriptor_state == "missing" || row.status == "requires_remote_node_descriptor" {
+        if row.descriptor_state == "missing"
+            || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+        {
             summary.missing_descriptor_node_count =
                 summary
                     .missing_descriptor_node_count
@@ -834,10 +838,10 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     }
 
     if summary.blocked_remote_node_count == 0 {
-        summary.status = "ready";
-        summary.recommendation = "none";
+        summary.status = SPIRE_REMOTE_STATUS_READY;
+        summary.recommendation = SPIRE_REMOTE_NONE;
     } else {
-        summary.status = "requires_remote_node_descriptor";
+        summary.status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
         summary.recommendation =
             "register remote node descriptors before publishing distributed epochs";
     }
@@ -858,15 +862,15 @@ fn remote_node_capability_plan_row(
             descriptor_state: node.descriptor_state,
             required_last_served_epoch: node.active_epoch,
             required_min_retained_epoch: node.active_epoch,
-            required_candidate_format: "local",
+            required_candidate_format: SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
             required_extension_version: env!("CARGO_PKG_VERSION"),
             conninfo_source: "local",
             remote_index_identity_status: "not_required",
-            epoch_window_status: "ready",
+            epoch_window_status: SPIRE_REMOTE_STATUS_READY,
             candidate_format_status: "not_required",
-            extension_version_status: "ready",
-            status: "ready",
-            recommendation: "none",
+            extension_version_status: SPIRE_REMOTE_STATUS_READY,
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
         }
     } else {
         SpireRemoteNodeCapabilityPlanRow {
@@ -877,14 +881,14 @@ fn remote_node_capability_plan_row(
             descriptor_state: node.descriptor_state,
             required_last_served_epoch: node.active_epoch,
             required_min_retained_epoch: node.active_epoch,
-            required_candidate_format: "ec_spire_remote_search_v1",
+            required_candidate_format: SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
             required_extension_version: env!("CARGO_PKG_VERSION"),
-            conninfo_source: "remote_node_descriptor",
+            conninfo_source: SPIRE_REMOTE_DESCRIPTOR_SOURCE,
             remote_index_identity_status: "missing_descriptor",
             epoch_window_status: "missing_descriptor",
             candidate_format_status: "missing_descriptor",
             extension_version_status: "missing_descriptor",
-            status: "requires_remote_node_descriptor",
+            status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before capability check",
         }
     }
@@ -911,8 +915,8 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             min_retained_epoch: active_epoch,
             extension_version: env!("CARGO_PKG_VERSION"),
             last_error: "none",
-            status: "ready",
-            recommendation: "none",
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
         }
     } else {
         SpireRemoteNodeSnapshotRow {
@@ -932,7 +936,7 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             min_retained_epoch: 0,
             extension_version: "unknown",
             last_error: "missing_remote_node_descriptor",
-            status: "requires_remote_node_descriptor",
+            status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before libpq fanout execution",
         }
     }
