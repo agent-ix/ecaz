@@ -231,6 +231,44 @@ pub(crate) struct SpireRemoteSearchReadinessSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchExecutionPlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) target_kind: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) execution_transport: &'static str,
+    pub(crate) endpoint_function: &'static str,
+    pub(crate) remote_index_source: &'static str,
+    pub(crate) conninfo_source: &'static str,
+    pub(crate) candidate_format: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchExecutionSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) plan_count: u64,
+    pub(crate) local_plan_count: u64,
+    pub(crate) remote_plan_count: u64,
+    pub(crate) skipped_plan_count: u64,
+    pub(crate) ready_plan_count: u64,
+    pub(crate) blocked_plan_count: u64,
+    pub(crate) degraded_skipped_plan_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) blocked_pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

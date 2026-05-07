@@ -1480,6 +1480,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   aggregates that contract into one coordinator gate with ready/blocked node
   counts, missing descriptor counts, required candidate format, required
   extension version, and a recommendation.
+  `ec_spire_remote_search_execution_plan(...)` and
+  `ec_spire_remote_search_execution_summary(...)` now expose the final
+  pre-libpq executor contract: local-direct vs. libpq-pipeline transport,
+  endpoint function, remote index/conninfo metadata source, candidate format,
+  blocked/degraded counts, and effective status.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

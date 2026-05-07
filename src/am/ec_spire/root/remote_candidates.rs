@@ -725,6 +725,201 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_execution_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchExecutionPlanRow> {
+    let rows = unsafe {
+        remote_search_request_readiness_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    rows.into_iter()
+        .map(|row| {
+            let (execution_transport, remote_index_source, conninfo_source, candidate_format) =
+                match row.target_kind {
+                    "local" => ("local_direct", "local_index_oid", "local", "local"),
+                    "remote" => (
+                        "libpq_pipeline",
+                        "remote_node_descriptor",
+                        "remote_node_descriptor",
+                        "ec_spire_remote_search_v1",
+                    ),
+                    "skipped" => ("none", "none", "none", "none"),
+                    _ => ("unknown", "unknown", "unknown", "unknown"),
+                };
+            SpireRemoteSearchExecutionPlanRow {
+                requested_epoch: row.requested_epoch,
+                target_kind: row.target_kind,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids,
+                pid_count: row.pid_count,
+                query_dimension: row.query_dimension,
+                top_k: row.top_k,
+                consistency_mode: row.consistency_mode,
+                execution_transport,
+                endpoint_function: row.endpoint_function,
+                remote_index_source,
+                conninfo_source,
+                candidate_format,
+                status: row.status,
+            }
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_execution_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchExecutionSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchExecutionSummaryRow, String> {
+        let query_for_empty_plan = query.clone();
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search execution summary top_k exceeds u64")?;
+        let rows = unsafe {
+            remote_search_execution_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut local_plan_count = 0_u64;
+        let mut remote_plan_count = 0_u64;
+        let mut skipped_plan_count = 0_u64;
+        let mut ready_plan_count = 0_u64;
+        let mut blocked_plan_count = 0_u64;
+        let mut degraded_skipped_plan_count = 0_u64;
+        let mut local_pid_count = 0_u64;
+        let mut remote_pid_count = 0_u64;
+        let mut skipped_pid_count = 0_u64;
+        let mut blocked_pid_count = 0_u64;
+        let mut missing_descriptor_plan_count = 0_u64;
+        let mut transport_plan_count = 0_u64;
+        let mut query_dimension = 0_u64;
+        let mut top_k = 0_u64;
+        let mut parsed_consistency_mode = "";
+
+        for row in &rows {
+            query_dimension = row.query_dimension;
+            top_k = row.top_k;
+            parsed_consistency_mode = row.consistency_mode;
+            match row.target_kind {
+                "local" => {
+                    local_plan_count += 1;
+                    local_pid_count = local_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search execution summary local PID count overflowed",
+                    )?;
+                }
+                "remote" => {
+                    remote_plan_count += 1;
+                    remote_pid_count = remote_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search execution summary remote PID count overflowed",
+                    )?;
+                }
+                "skipped" => {
+                    skipped_plan_count += 1;
+                    skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search execution summary skipped PID count overflowed",
+                    )?;
+                }
+                target_kind => {
+                    return Err(format!(
+                        "ec_spire remote search execution summary found unknown target_kind '{target_kind}'"
+                    ));
+                }
+            }
+
+            match row.status {
+                "ready" => {
+                    ready_plan_count += 1;
+                }
+                "degraded_skipped" => {
+                    degraded_skipped_plan_count += 1;
+                }
+                "requires_remote_node_descriptor" => {
+                    blocked_plan_count += 1;
+                    missing_descriptor_plan_count += 1;
+                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search execution summary blocked PID count overflowed",
+                    )?;
+                }
+                "requires_libpq_transport" => {
+                    blocked_plan_count += 1;
+                    transport_plan_count += 1;
+                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
+                        "ec_spire remote search execution summary blocked PID count overflowed",
+                    )?;
+                }
+                status => {
+                    return Err(format!(
+                        "ec_spire remote search execution summary found unknown status '{status}'"
+                    ));
+                }
+            }
+        }
+
+        if rows.is_empty() {
+            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
+                "ec_spire remote search execution summary query dimension exceeds u64"
+            })?;
+            top_k = top_k_for_empty_plan;
+            parsed_consistency_mode =
+                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        }
+
+        let plan_count = u64::try_from(rows.len())
+            .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
+        let status = if top_k == 0 {
+            "empty_top_k"
+        } else if missing_descriptor_plan_count > 0 {
+            "requires_remote_node_descriptor"
+        } else if transport_plan_count > 0 {
+            "requires_libpq_transport"
+        } else if degraded_skipped_plan_count > 0 {
+            "degraded_ready"
+        } else {
+            "ready"
+        };
+
+        Ok(SpireRemoteSearchExecutionSummaryRow {
+            requested_epoch,
+            plan_count,
+            local_plan_count,
+            remote_plan_count,
+            skipped_plan_count,
+            ready_plan_count,
+            blocked_plan_count,
+            degraded_skipped_plan_count,
+            local_pid_count,
+            remote_pid_count,
+            skipped_pid_count,
+            blocked_pid_count,
+            query_dimension,
+            top_k,
+            consistency_mode: parsed_consistency_mode,
+            status,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the
