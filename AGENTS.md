@@ -1,12 +1,27 @@
 # Agent Workflow
 
-This repository uses a review-packet workflow in addition to normal code changes.
-
-## Review Packet Rules
+This repository uses a review-packet workflow in addition to normal code
+changes. Two roles operate against it: **coder** (implements work, requests
+review) and **reviewer** (reads checkpoints, leaves feedback). The rules
+below are organized as **Common** rules that apply to both roles, then
+**Coder** and **Reviewer** sections that each define that role's trigger,
+scope, and output.
 
 See `review/README.md` for full structure and conventions.
 
-### Structure
+---
+
+## Common Rules
+
+### Agents and Number Ranges
+
+| Name     | Role     | Range       | Area                  |
+|----------|----------|-------------|-----------------------|
+| coder1   | coder    | 1–9999      | core scan/build/index |
+| coder2   | coder    | 10000–19999 | planner integration   |
+| reviewer | reviewer | —           | reviews any topic     |
+
+### Review Packet Structure
 
 Each review topic is a directory under `review/`:
 
@@ -18,87 +33,118 @@ Each review topic is a directory under `review/`:
       feedback/
         {YYYY-MM-DD}-{seq}-{agent}.md
 
-### Agents and Number Ranges
-
-| Name     | Role     | Range       | Area                |
-|----------|----------|-------------|---------------------|
-| coder1   | coder    | 1–9999      | core scan/build/index |
-| coder2   | coder    | 10000–19999 | planner integration |
-| reviewer | reviewer | —           | reviews any topic   |
-
 ### Feedback Files
 
-- Filename: `{YYYY-MM-DD}-{seq}-{agent}.md`
-- Every feedback file must include frontmatter with `agent`, `role`, `model`, `date`, and `seq` fields.
+- Feedback always lands as a file at
+  `review/{NN}-{topic}/feedback/{YYYY-MM-DD}-{seq}-{agent}.md`. Chat
+  output alone is invisible to the coder inbox loop.
+- Frontmatter is required: `agent`, `role`, `model`, `date`, `seq`.
 - Any agent can leave feedback on any topic.
 
 ### Measurement Artifacts
 
-- Any review packet that makes a measurement claim should store the cited raw logs inside that packet's `artifacts/` directory instead of relying only on `tmp/`.
-- Measurement packets should include `artifacts/manifest.md` as the packet-local source of truth for artifact metadata.
+- Any review packet that makes a measurement claim should store the cited
+  raw logs inside that packet's `artifacts/` directory instead of relying
+  only on `tmp/`.
+- Measurement packets should include `artifacts/manifest.md` as the
+  packet-local source of truth for artifact metadata.
 - `manifest.md` should record, for each artifact:
   - head SHA
   - packet/topic
   - lane / fixture / storage format / rerank mode
   - command used
   - timestamp
-  - whether the run used isolated one-index-per-table or shared-table surfaces
+  - whether the run used isolated one-index-per-table or shared-table
+    surfaces
   - the key result lines that `request.md` cites
-- `request.md` should summarize the result and point at the packet-local artifact files.
+- `request.md` should summarize the result and point at the packet-local
+  artifact files.
 
-### Workflow
+### Push and Visibility
 
-- At the start of a turn, scan `review/` for topics with new feedback files you haven't processed.
-- If new feedback is present for a topic you own, process it before starting new implementation work.
-- Do not close review requests yourself. Leave requests open until an outside reviewer has responded.
-- Do not re-triage closed review topics unless an outside reviewer reopens them.
-
-## Checkpoint Rules
-
-- Work in narrow, testable slices.
-- Do not run tests by default. Run tests only when a change is risky enough
-  that static review is not sufficient, when PostgreSQL callback behavior must
-  be verified, or when the user explicitly asks for tests.
-- The primary validation target is PG18. When tests are necessary, prefer the
-  narrowest PG18-focused command that covers the touched behavior, for example:
-  - focused `cargo test ...`
-  - focused or full `cargo pgrx test pg18`
-  - `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
-- PG17 is optional compatibility coverage. Do not run PG17 tests unless the
-  user explicitly requests PG17 validation or the change is specifically
-  PG17-facing.
-- Commit each reviewed code checkpoint. If tests are skipped under this policy,
-  state that clearly in the commit/review context.
-- After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
-- Push committed checkpoints and review-packet updates to the remote immediately after committing. Feedback that exists only locally is invisible to other agents.
-
-## Reviewer Workflow
-
-- When leaving feedback on a branch, commit to **that branch** and push immediately.
-- If reviewing multiple branches, commit and push feedback to each branch separately.
-- Never run destructive git operations (reset, rebase, drop commits) without reading the affected commits and getting explicit confirmation from the user first.
+- Push committed checkpoints, packet updates, and feedback files to the
+  remote immediately after committing. **Anything that exists only locally
+  — including chat output — is invisible to other agents.**
+- When committing on a feature branch, push to **that branch**. If working
+  across multiple branches, commit and push to each separately.
 - After pushing, verify the push succeeded before moving on.
 
-## Local Safety Rules
+### Local Safety Rules
 
 - Do not revert unrelated local changes.
-- Preserve the current on-disk layout unless a very small change is clearly justified.
-- Do not use `/tmp`-based hacks or alternate scratch homes to work around approval, sandbox, or environment constraints; use the normal repo and user tool layouts instead.
+- Preserve the current on-disk layout unless a very small change is clearly
+  justified.
+- Do not use `/tmp`-based hacks or alternate scratch homes to work around
+  approval, sandbox, or environment constraints; use the normal repo and
+  user tool layouts instead.
 - Add ADRs for design decisions that need durable rationale.
+- Never run destructive git operations (reset, rebase, drop commits)
+  without reading the affected commits and getting explicit confirmation
+  from the user first.
 
-## Local Operator CLI
+### Local Operator CLI
 
 - Prefer `ecaz-cli` for local PostgreSQL/pgrx setup, SQL checks, corpus
   generation/load/list/inspect, and benchmark/storage commands when that
   surface exists.
-- In sandboxed agent sessions, invoke the installed binary by absolute path,
-  currently `/Users/peter/.cargo/bin/ecaz`, so one approval rule can cover the
-  operator surface consistently.
+- In sandboxed agent sessions, invoke the installed binary by absolute
+  path, currently `/Users/peter/.cargo/bin/ecaz`, so one approval rule can
+  cover the operator surface consistently.
 - Route PG18 socket work through `ecaz` commands such as `ecaz dev sql`,
-  `ecaz corpus ...`, and `ecaz bench ...` instead of direct `psql`, wrapper
-  scripts, or one-off shell plumbing.
+  `ecaz corpus ...`, and `ecaz bench ...` instead of direct `psql`,
+  wrapper scripts, or one-off shell plumbing.
 - Use packet-local logging flags (`--log-file` or command-specific
   `--log-output`) for review artifacts.
-- If a repeated setup or benchmark operation is missing from `ecaz-cli`, add a
-  narrow CLI command or option instead of working around the sandbox with ad hoc
-  commands.
+- If a repeated setup or benchmark operation is missing from `ecaz-cli`,
+  add a narrow CLI command or option instead of working around the sandbox
+  with ad hoc commands.
+
+---
+
+## Coder Workflow
+
+### Trigger
+
+Invoked to implement, continue, or close out a task on the current branch.
+
+### Inbox: Process Feedback Before New Work
+
+- At the start of a turn, scan `review/` for topics with new feedback
+  files you have not processed.
+- If new feedback is present for a topic you own, process it before
+  starting new implementation work.
+- Do not close review requests yourself. Leave requests open until an
+  outside reviewer has responded.
+- Do not re-triage closed review topics unless an outside reviewer
+  reopens them.
+
+### Checkpoint Rules
+
+- Work in narrow, testable slices.
+- Do not run tests by default. Run tests only when a change is risky
+  enough that static review is not sufficient, when PostgreSQL callback
+  behavior must be verified, or when the user explicitly asks for tests.
+- The primary validation target is PG18. When tests are necessary, prefer
+  the narrowest PG18-focused command that covers the touched behavior, for
+  example:
+  - focused `cargo test ...`
+  - focused or full `cargo pgrx test pg18`
+  - `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- PG17 is optional compatibility coverage. Do not run PG17 tests unless
+  the user explicitly requests PG17 validation or the change is
+  specifically PG17-facing.
+- Commit each reviewed code checkpoint. If tests are skipped under this
+  policy, state that clearly in the commit/review context.
+
+### Output
+
+- A code commit that lands the slice.
+- A matching review request at `review/{NN}-{topic}/request.md`, committed
+  separately from the code change.
+- Both pushed to the branch per the Common push rule.
+
+---
+
+## Reviewer Workflow
+
+See `review/REVIEWER.md` for reviewer trigger, scope, and output rules.

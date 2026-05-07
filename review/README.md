@@ -309,11 +309,10 @@ Review triage at `46d00bb`:
   integration state in one place: modeled cost scaffolding is ready, but ordered scan credibility,
   live planner activation, and PG18 callback/diagnostics readiness all remain explicitly blocked.
 
-Review instructions:
-- Prefer correctness findings over style comments.
-- Focus on behavior, invariants, page/WAL safety, SQL-surface coherence, and missing tests.
-- Treat the current on-disk layout as intentional unless a small, concrete defect requires change.
-- Keep request files in `review/` and put outside feedback under `review/feedback/<request-slug>/`.
+Review instructions: see `review/REVIEWER.md` for the reviewer playbook
+(trigger, scope, output, mechanics). Feedback path is
+`review/{NN}-{topic}/feedback/{YYYY-MM-DD}-{seq}-{agent}.md` per
+`AGENTS.md`.
 
 Open requests:
 - `120-amgettuple-orderby-score-emission.md`
