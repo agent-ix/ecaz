@@ -13,7 +13,7 @@ mod tests {
         SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
         SpireRecursiveRoutingEpochObjectInput, SpireSingleLevelBuildInput,
         SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry, SpireSingleLevelRouteMap,
-        SpireTopGraphBuildInput, SpireTopGraphNodeInput,
+        SpireTopGraphBuildInput, SpireTopGraphBuildParams, SpireTopGraphNodeInput,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -30,8 +30,8 @@ mod tests {
     use crate::am::ec_spire::quantizer::{self, SpireAssignmentPayloadFormat};
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
-        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject,
+        SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
     };
     use crate::storage::page::ItemPointer;
 

@@ -16,6 +16,14 @@ pub(super) struct SpireTopGraphBuildInput {
     pub(super) nodes: Vec<SpireTopGraphNodeInput>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireTopGraphBuildParams {
+    pub(super) graph_degree: u32,
+    pub(super) build_list_size: u32,
+    pub(super) alpha: f32,
+    pub(super) seed: u64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireTopGraphNode {
     pub(super) child_pid: u64,
@@ -34,6 +42,35 @@ pub(super) struct SpireTopGraphBuildDraft {
     pub(super) entry_node: u32,
     pub(super) nodes: Vec<SpireTopGraphNode>,
     pub(super) stats: crate::am::VamanaBuildStats,
+}
+
+pub(super) fn build_spire_top_graph_draft_from_routing_object(
+    routing_object: &SpireRoutingPartitionObject,
+    params: SpireTopGraphBuildParams,
+) -> Result<SpireTopGraphBuildDraft, String> {
+    if routing_object.header.kind != SpirePartitionObjectKind::Root {
+        return Err(format!(
+            "ec_spire top graph requires root routing object, got {:?}",
+            routing_object.header.kind
+        ));
+    }
+    let nodes = routing_object
+        .children()
+        .map(|child| SpireTopGraphNodeInput {
+            child_pid: child.child_pid,
+            centroid_ordinal: child.centroid_index,
+            centroid: child.centroid.to_vec(),
+        })
+        .collect::<Vec<_>>();
+    build_spire_top_graph_draft(SpireTopGraphBuildInput {
+        root_pid: routing_object.header.pid,
+        dimensions: routing_object.dimensions,
+        graph_degree: params.graph_degree,
+        build_list_size: params.build_list_size,
+        alpha: params.alpha,
+        seed: params.seed,
+        nodes,
+    })
 }
 
 pub(super) fn build_spire_top_graph_draft(
