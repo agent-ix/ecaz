@@ -304,6 +304,47 @@ pub(crate) struct SpireRemoteSearchLibpqRequestSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqResultContractRow {
+    pub(crate) column_ordinal: u64,
+    pub(crate) column_name: &'static str,
+    pub(crate) pg_type: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) nullable: bool,
+    pub(crate) validator: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchReceivePlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) expected_candidate_format: &'static str,
+    pub(crate) expected_result_column_count: u64,
+    pub(crate) validator_function: &'static str,
+    pub(crate) row_locator_policy: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchMergeInputSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) remote_batch_count: u64,
+    pub(crate) local_batch_count: u64,
+    pub(crate) skipped_batch_count: u64,
+    pub(crate) ready_batch_count: u64,
+    pub(crate) blocked_batch_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) merge_function: &'static str,
+    pub(crate) dedupe_key: &'static str,
+    pub(crate) tie_breaker: &'static str,
+    pub(crate) top_k: u64,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

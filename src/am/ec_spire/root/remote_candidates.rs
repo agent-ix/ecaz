@@ -924,6 +924,9 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RESULT_COLUMN_COUNT: u64 = 9;
+const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
+const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str =
+    "merge_validated_remote_search_candidate_batches";
 
 pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
     index_relation: pg_sys::Relation,
@@ -1064,6 +1067,173 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             query_dimension,
             top_k,
             consistency_mode: parsed_consistency_mode,
+            status,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn remote_search_libpq_result_contract_rows(
+) -> Vec<SpireRemoteSearchLibpqResultContractRow> {
+    vec![
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 1,
+            column_name: "served_epoch",
+            pg_type: "bigint",
+            semantic_role: "candidate_epoch",
+            nullable: false,
+            validator: "must_equal_requested_epoch",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 2,
+            column_name: "node_id",
+            pg_type: "bigint",
+            semantic_role: "candidate_node",
+            nullable: false,
+            validator: "must_equal_expected_node_id",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 3,
+            column_name: "pid",
+            pg_type: "bigint",
+            semantic_role: "partition_object",
+            nullable: false,
+            validator: "must_be_selected_pid",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 4,
+            column_name: "object_version",
+            pg_type: "bigint",
+            semantic_role: "partition_object_version",
+            nullable: false,
+            validator: "must_be_positive",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 5,
+            column_name: "row_index",
+            pg_type: "bigint",
+            semantic_role: "candidate_row_index",
+            nullable: false,
+            validator: "must_fit_u32",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 6,
+            column_name: "assignment_flags",
+            pg_type: "smallint",
+            semantic_role: "candidate_assignment_flags",
+            nullable: false,
+            validator: "must_include_primary_or_boundary_replica",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 7,
+            column_name: "vec_id",
+            pg_type: "bytea",
+            semantic_role: "dedupe_key",
+            nullable: false,
+            validator: "must_be_nonempty",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 8,
+            column_name: "row_locator",
+            pg_type: "bytea",
+            semantic_role: "origin_node_locator",
+            nullable: false,
+            validator: "must_be_nonempty_and_opaque",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 9,
+            column_name: "score",
+            pg_type: "real",
+            semantic_role: "candidate_score",
+            nullable: false,
+            validator: "must_be_finite",
+        },
+    ]
+}
+
+pub(crate) unsafe fn remote_search_receive_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchReceivePlanRow> {
+    let rows = unsafe {
+        remote_search_libpq_request_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    rows.into_iter()
+        .map(|row| SpireRemoteSearchReceivePlanRow {
+            requested_epoch: row.requested_epoch,
+            node_id: row.node_id,
+            selected_pids: row.selected_pids,
+            pid_count: row.pid_count,
+            expected_candidate_format: row.candidate_format,
+            expected_result_column_count: row.result_column_count,
+            validator_function: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            row_locator_policy: "opaque_origin_node_bytes",
+            status: row.status,
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_merge_input_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchMergeInputSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {
+        let execution_summary = unsafe {
+            remote_search_execution_summary_row(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let remote_batch_count = execution_summary.remote_plan_count;
+        let local_batch_count = execution_summary.local_plan_count;
+        let skipped_batch_count = execution_summary.skipped_plan_count;
+        let ready_batch_count = execution_summary.ready_plan_count;
+        let blocked_batch_count = execution_summary.blocked_plan_count;
+        let status = if execution_summary.top_k == 0 {
+            "empty_top_k"
+        } else if blocked_batch_count > 0 {
+            execution_summary.status
+        } else if remote_batch_count > 0 || local_batch_count > 0 {
+            "ready"
+        } else if skipped_batch_count > 0 {
+            "degraded_ready"
+        } else {
+            "ready"
+        };
+
+        Ok(SpireRemoteSearchMergeInputSummaryRow {
+            requested_epoch,
+            remote_batch_count,
+            local_batch_count,
+            skipped_batch_count,
+            ready_batch_count,
+            blocked_batch_count,
+            remote_pid_count: execution_summary.remote_pid_count,
+            local_pid_count: execution_summary.local_pid_count,
+            skipped_pid_count: execution_summary.skipped_pid_count,
+            merge_function: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+            dedupe_key: "vec_id",
+            tie_breaker: "score_then_primary_assignment_then_input_order",
+            top_k: execution_summary.top_k,
             status,
         })
     })();

@@ -1490,6 +1490,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   libpq request envelope without opening connections: SQL template, bind
   parameter count, expected result column count, remote index source, conninfo
   source, candidate format, PID counts, and blocked/readiness status.
+  `ec_spire_remote_search_libpq_result_contract()`,
+  `ec_spire_remote_search_receive_plan(...)`, and
+  `ec_spire_remote_search_merge_input_summary(...)` now expose the next
+  receive/merge boundary: result-column schema, per-node candidate batch
+  validation expectations, opaque row-locator policy, merge helper, dedupe key,
+  tie-breaker, batch counts, and blocked/readiness status.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
