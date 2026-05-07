@@ -6,7 +6,8 @@ use std::ptr;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use super::assign::{
-    build_primary_leaf_assignments, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
+    build_boundary_leaf_assignment_placements, build_primary_leaf_assignments,
+    SpireBoundaryLeafAssignmentInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
     SpirePidAllocator,
 };
 use super::meta::{

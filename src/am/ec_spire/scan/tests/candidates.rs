@@ -1035,9 +1035,9 @@
             assignment_row_with_payload(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 7, 20, 2, vec![1]);
         let same_vec_id_high_score =
             assignment_row_with_payload(SPIRE_ASSIGNMENT_FLAG_PRIMARY, 7, 10, 1, vec![9]);
-        let boundary_replica = assignment_row_with_payload(
-            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
-            8,
+        let better_boundary_replica = assignment_row_with_payload(
+            SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+            7,
             30,
             3,
             vec![100],
@@ -1063,7 +1063,7 @@
                     pid: SPIRE_FIRST_PID + 3,
                     object_version: 1,
                     row_index: 0,
-                    assignment: boundary_replica,
+                    assignment: better_boundary_replica,
                 },
             ],
         }];
@@ -1078,9 +1078,9 @@
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
-        assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 2);
-        assert_eq!(candidates[0].heap_tid, tid(10, 1));
-        assert_eq!(candidates[0].score, -9.0);
+        assert_eq!(candidates[0].pid, SPIRE_FIRST_PID + 3);
+        assert_eq!(candidates[0].heap_tid, tid(30, 3));
+        assert_eq!(candidates[0].score, -100.0);
     }
 
     #[test]

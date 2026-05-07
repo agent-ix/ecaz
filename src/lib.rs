@@ -5129,6 +5129,78 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_boundary_replica_build_writes_and_dedupes_scan() {
+        Spi::run(
+            "CREATE TABLE ec_spire_boundary_replica_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_boundary_replica_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_boundary_replica_sql_idx \
+             ON ec_spire_boundary_replica_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH ( \
+                 nlists = 3, \
+                 nprobe = 3, \
+                 boundary_replica_count = 1 \
+             )",
+        )
+        .expect("boundary replica ec_spire index creation should succeed");
+
+        let leaf_assignment_count = Spi::get_one::<i64>(
+            "SELECT leaf_assignment_count FROM \
+             ec_spire_index_active_snapshot_diagnostics(\
+                 'ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("active diagnostics should succeed")
+        .expect("diagnostics row should exist");
+        let base_assignment_count = Spi::get_one::<i64>(
+            "SELECT coalesce(sum(base_assignment_count), 0)::bigint FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot should succeed")
+        .expect("sum row should exist");
+        let scan_dedupe_mode = Spi::get_one::<String>(
+            "SELECT scan_dedupe_mode FROM \
+             ec_spire_index_options_snapshot('ec_spire_boundary_replica_sql_idx'::regclass)",
+        )
+        .expect("options snapshot should succeed")
+        .expect("options row should exist");
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
+        let returned_rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ( \
+               SELECT id FROM ec_spire_boundary_replica_sql \
+               ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+               LIMIT 10 \
+             ) AS ranked",
+        )
+        .expect("ordered boundary replica scan should succeed")
+        .expect("count row should exist");
+        let distinct_rows = Spi::get_one::<i64>(
+            "SELECT count(DISTINCT id) FROM ( \
+               SELECT id FROM ec_spire_boundary_replica_sql \
+               ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+               LIMIT 10 \
+             ) AS ranked",
+        )
+        .expect("ordered boundary replica scan should succeed")
+        .expect("count row should exist");
+
+        assert_eq!(leaf_assignment_count, 6);
+        assert_eq!(base_assignment_count, 6);
+        assert_eq!(scan_dedupe_mode, "vec_id");
+        assert_eq!(returned_rows, 3);
+        assert_eq!(distinct_rows, 3);
+    }
+
+    #[pg_test]
     #[should_panic(
         expected = "ec_spire PQ-FastScan encoding requires a persisted grouped-PQ model"
     )]

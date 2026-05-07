@@ -122,10 +122,15 @@
 
         row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
         assert!(!is_visible_primary_assignment(&row));
+        assert!(is_visible_scored_assignment(&row));
+        row.flags = SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+        assert!(is_visible_scored_assignment(&row));
         row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_TOMBSTONE;
         assert!(!is_visible_primary_assignment(&row));
+        assert!(!is_visible_scored_assignment(&row));
         row.flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
         assert!(!is_visible_primary_assignment(&row));
+        assert!(!is_visible_scored_assignment(&row));
 
         row.flags = SPIRE_ASSIGNMENT_FLAG_TOMBSTONE | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE;
         row.payload_format = SPIRE_PAYLOAD_FORMAT_NONE;
@@ -133,6 +138,7 @@
         row.encoded_payload.clear();
         assert!(is_delete_delta_assignment(&row));
         assert!(!is_visible_primary_assignment(&row));
+        assert!(!is_visible_scored_assignment(&row));
     }
 
     #[test]

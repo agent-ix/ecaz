@@ -16,9 +16,10 @@ use super::options::{
 use super::page;
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
-    is_delete_delta_assignment, is_visible_primary_assignment, is_visible_primary_assignment_flags,
-    SpireLeafAssignmentRow, SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader,
-    SpirePartitionObjectKind, SpireRelationObjectStoreSet, SpireRoutingPartitionObject, SpireVecId,
+    is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,
+    is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafObjectColumns,
+    SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
+    SpireRelationObjectStoreSet, SpireRoutingPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::am::ec_hnsw::source;

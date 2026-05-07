@@ -263,18 +263,24 @@ unsafe fn publish_relation_partitioned_single_level_build(
             .collect(),
     )?;
 
-    let assignments_by_centroid = group_assignments_by_centroid(
-        assignments,
-        &centroid_plan.assignment_indexes,
-        centroid_count,
-    )?;
-
     let mut leaf_assignments_by_centroid = Vec::with_capacity(centroid_count);
-    for assignments in assignments_by_centroid {
-        leaf_assignments_by_centroid.push(build_primary_leaf_assignments(
-            &mut local_vec_id_allocator,
-            assignments,
-        )?);
+    leaf_assignments_by_centroid.resize_with(centroid_count, Vec::new);
+    let boundary_replica_count = u32::try_from(state.options.boundary_replica_count)
+        .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
+    for placement in build_boundary_leaf_assignment_placements(
+        &mut local_vec_id_allocator,
+        plan_boundary_assignment_inputs(state, &route_map, boundary_replica_count)?,
+    )? {
+        let centroid_index = centroid_pids
+            .iter()
+            .position(|pid| *pid == placement.pid)
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire boundary assignment resolved unknown leaf pid {}",
+                    placement.pid
+                )
+            })?;
+        leaf_assignments_by_centroid[centroid_index].push(placement.row);
     }
 
     let mut store = unsafe {
@@ -324,6 +330,28 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let root_control = root_control_state_for_publish(input, locators)?;
     unsafe { page::initialize_root_control_page(index_relation, root_control) };
     Ok(state.scanned_tuples)
+}
+
+fn plan_boundary_assignment_inputs(
+    state: &SpireBuildState,
+    route_map: &SpireSingleLevelRouteMap,
+    boundary_replica_count: u32,
+) -> Result<Vec<SpireBoundaryLeafAssignmentInput>, String> {
+    state
+        .tuples
+        .iter()
+        .map(|tuple| {
+            let plan = route_map.route_boundary_assignment_for_vector(
+                &tuple.source_vector,
+                boundary_replica_count,
+            )?;
+            Ok(SpireBoundaryLeafAssignmentInput {
+                primary_pid: plan.primary_pid,
+                replica_pids: plan.replica_pids,
+                assignment: tuple.assignment.clone(),
+            })
+        })
+        .collect()
 }
 
 unsafe fn publish_relation_recursive_routing_build(

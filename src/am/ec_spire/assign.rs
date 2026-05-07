@@ -1,9 +1,9 @@
 //! Leaf PID and vector-identity assignment helpers.
 
 use super::storage::{
-    SpireLeafAssignmentRow, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-    SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-    SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+    SpireLeafAssignmentRow, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+    SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
 };
 use crate::storage::page::ItemPointer;
 
@@ -155,6 +155,19 @@ pub(super) struct SpireDeleteDeltaInput {
     pub(super) heap_tid: ItemPointer,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireBoundaryLeafAssignmentInput {
+    pub(super) primary_pid: u64,
+    pub(super) replica_pids: Vec<u64>,
+    pub(super) assignment: SpireLeafAssignmentInput,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafAssignmentPlacement {
+    pub(super) pid: u64,
+    pub(super) row: SpireLeafAssignmentRow,
+}
+
 pub(super) fn build_primary_leaf_assignments(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireLeafAssignmentInput>,
@@ -171,6 +184,53 @@ pub(super) fn build_insert_delta_assignments(
         inputs,
         SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
     )
+}
+
+pub(super) fn build_boundary_leaf_assignment_placements(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireBoundaryLeafAssignmentInput>,
+) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
+    let mut rows = Vec::new();
+    for input in inputs {
+        if input.primary_pid == 0 {
+            return Err("ec_spire boundary assignment primary pid 0 is invalid".to_owned());
+        }
+        if input.replica_pids.contains(&input.primary_pid) {
+            return Err(
+                "ec_spire boundary assignment replica pids must not include primary pid".to_owned(),
+            );
+        }
+        let mut seen_replica_pids = std::collections::HashSet::new();
+        for replica_pid in &input.replica_pids {
+            if *replica_pid == 0 {
+                return Err("ec_spire boundary assignment replica pid 0 is invalid".to_owned());
+            }
+            if !seen_replica_pids.insert(*replica_pid) {
+                return Err("ec_spire boundary assignment replica pids must be unique".to_owned());
+            }
+        }
+
+        let vec_id = allocator.allocate()?;
+        rows.push(SpireLeafAssignmentPlacement {
+            pid: input.primary_pid,
+            row: build_assignment_row(
+                input.assignment.clone(),
+                vec_id.clone(),
+                SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            )?,
+        });
+        for replica_pid in input.replica_pids {
+            rows.push(SpireLeafAssignmentPlacement {
+                pid: replica_pid,
+                row: build_assignment_row(
+                    input.assignment.clone(),
+                    vec_id.clone(),
+                    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                )?,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 pub(super) fn build_delete_delta_assignments(
@@ -203,27 +263,36 @@ fn build_allocated_assignment_rows(
 ) -> Result<Vec<SpireLeafAssignmentRow>, String> {
     let mut rows = Vec::with_capacity(inputs.len());
     for input in inputs {
-        if input.heap_tid == ItemPointer::INVALID {
-            return Err("ec_spire assignment input heap_tid must be valid".to_owned());
-        }
-        if !input.gamma.is_finite() {
-            return Err("ec_spire assignment input gamma must be finite".to_owned());
-        }
-        u32::try_from(input.encoded_payload.len())
-            .map_err(|_| "ec_spire assignment input payload length exceeds u32".to_owned())?;
-
-        let row = SpireLeafAssignmentRow {
-            flags,
-            vec_id: allocator.allocate()?,
-            heap_tid: input.heap_tid,
-            payload_format: input.payload_format,
-            gamma: input.gamma,
-            encoded_payload: input.encoded_payload,
-        };
-        row.encode()?;
-        rows.push(row);
+        let vec_id = allocator.allocate()?;
+        rows.push(build_assignment_row(input, vec_id, flags)?);
     }
     Ok(rows)
+}
+
+fn build_assignment_row(
+    input: SpireLeafAssignmentInput,
+    vec_id: SpireVecId,
+    flags: u16,
+) -> Result<SpireLeafAssignmentRow, String> {
+    if input.heap_tid == ItemPointer::INVALID {
+        return Err("ec_spire assignment input heap_tid must be valid".to_owned());
+    }
+    if !input.gamma.is_finite() {
+        return Err("ec_spire assignment input gamma must be finite".to_owned());
+    }
+    u32::try_from(input.encoded_payload.len())
+        .map_err(|_| "ec_spire assignment input payload length exceeds u32".to_owned())?;
+
+    let row = SpireLeafAssignmentRow {
+        flags,
+        vec_id,
+        heap_tid: input.heap_tid,
+        payload_format: input.payload_format,
+        gamma: input.gamma,
+        encoded_payload: input.encoded_payload,
+    };
+    row.encode()?;
+    Ok(row)
 }
 
 pub(super) fn observe_assignment_vec_ids(
@@ -239,15 +308,15 @@ pub(super) fn observe_assignment_vec_ids(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_delete_delta_assignments, build_insert_delta_assignments,
-        build_primary_leaf_assignments, observe_assignment_vec_ids, SpireDeleteDeltaInput,
-        SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
-        SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
+        build_boundary_leaf_assignment_placements, build_delete_delta_assignments,
+        build_insert_delta_assignments, build_primary_leaf_assignments, observe_assignment_vec_ids,
+        SpireBoundaryLeafAssignmentInput, SpireDeleteDeltaInput, SpireLeafAssignmentInput,
+        SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::storage::{
-        SpireDeltaPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,
-        SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-        SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
+        SpireDeltaPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_ASSIGNMENT_FLAG_TOMBSTONE,
     };
     use crate::storage::page::ItemPointer;
 
@@ -481,6 +550,40 @@ mod tests {
         assert_eq!(rows[1].encoded_payload, vec![7, 6]);
         assert_eq!(allocator.next_local_vec_seq(), 3);
         SpireDeltaPartitionObject::new(30, 4, 17, rows).unwrap();
+    }
+
+    #[test]
+    fn build_boundary_leaf_assignment_placements_reuses_vec_id_for_replicas() {
+        let mut allocator = SpireLocalVecIdAllocator::default();
+
+        let rows = build_boundary_leaf_assignment_placements(
+            &mut allocator,
+            vec![SpireBoundaryLeafAssignmentInput {
+                primary_pid: 11,
+                replica_pids: vec![12, 13],
+                assignment: SpireLeafAssignmentInput {
+                    heap_tid: tid(10, 1),
+                    payload_format: 1,
+                    gamma: 0.5,
+                    encoded_payload: vec![1, 2, 3],
+                },
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].pid, 11);
+        assert_eq!(rows[0].row.flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        assert_eq!(rows[1].pid, 12);
+        assert_eq!(rows[1].row.flags, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
+        assert_eq!(rows[2].pid, 13);
+        assert_eq!(rows[2].row.flags, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
+        assert_eq!(rows[0].row.vec_id, rows[1].row.vec_id);
+        assert_eq!(rows[0].row.vec_id, rows[2].row.vec_id);
+        assert_eq!(
+            allocator.next_local_vec_seq(),
+            SPIRE_FIRST_LOCAL_VEC_SEQ + 1
+        );
     }
 
     #[test]

@@ -1369,9 +1369,16 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   pure route-map helper that resolves primary plus bounded secondary leaf PIDs
   without writing replica rows yet.
 - [ ] **Assignment fanout.** Extend the assignment writer from one row per
-  vector to multiple `(vec_id, pid)` rows.
+  vector to multiple `(vec_id, pid)` rows. The populated single-level
+  relation-backed build path now writes one primary row plus bounded
+  `BOUNDARY_REPLICA` rows with the same `vec_id` when
+  `boundary_replica_count > 0`; insert-delta, recursive build, and
+  split/merge replacement fanout remain open.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
-  before final top-k.
+  before final top-k. Scan candidate collection now treats primary and
+  boundary-replica rows as scored-visible and uses the existing
+  `VecIdDedupeEnabled` mode for replica-capable scan plans; the default
+  primary-only path still resolves to `NoReplicaDedupeDisabled`.
 - [ ] **Recall study.** Measure recall delta with boundary replication off/on
   at fixed storage overhead.
 - [ ] **Storage accounting.** Report leaf-assignment and posting-list growth

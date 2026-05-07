@@ -396,7 +396,7 @@ fn append_quantized_v2_column_candidates(
     )?;
 
     for (row_offset, ip) in scores.into_iter().enumerate() {
-        if !is_visible_primary_assignment_flags(columns.flags[row_offset]) {
+        if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
             continue;
         }
         if !ip.is_finite() {
@@ -453,7 +453,7 @@ fn append_quantized_delta_candidates_for_routes(
             if is_delete_delta_assignment(&assignment) {
                 continue;
             }
-            if !is_visible_primary_assignment(&assignment) {
+            if !is_visible_scored_assignment(&assignment) {
                 continue;
             }
             if deleted_vec_ids.contains(&assignment.vec_id) {
@@ -529,7 +529,7 @@ fn append_quantized_v1_leaf_candidates(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     for (row_index, assignment) in leaf_object.assignments.into_iter().enumerate() {
-        if !is_visible_primary_assignment(&assignment) {
+        if !is_visible_scored_assignment(&assignment) {
             continue;
         }
         if deleted_vec_ids.contains(&assignment.vec_id) {
@@ -577,7 +577,7 @@ where
     };
     for routed in routed_rows {
         for row in routed.rows {
-            if !is_visible_primary_assignment(&row.assignment) {
+            if !is_visible_scored_assignment(&row.assignment) {
                 continue;
             }
             let ip = score_ip(&row.assignment)?;

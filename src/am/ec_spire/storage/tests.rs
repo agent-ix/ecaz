@@ -5,8 +5,9 @@ mod tests {
     };
     use super::{
         decode_leaf_v2_local_vec_id, is_delete_delta_assignment, is_visible_primary_assignment,
-        is_visible_primary_assignment_ref, local_store_config_from_relation_plan,
-        plan_local_store_relations, relation_object_prefetch_groups,
+        is_visible_primary_assignment_ref, is_visible_scored_assignment,
+        local_store_config_from_relation_plan, plan_local_store_relations,
+        relation_object_prefetch_groups,
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
         SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
         SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,

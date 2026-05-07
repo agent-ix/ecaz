@@ -43,8 +43,20 @@ pub(super) fn is_visible_primary_assignment_flags(flags: u16) -> bool {
     flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 && flags & blocked_flags == 0
 }
 
+pub(super) fn is_visible_scored_assignment_flags(flags: u16) -> bool {
+    let blocked_flags = SPIRE_ASSIGNMENT_FLAG_TOMBSTONE
+        | SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE
+        | SPIRE_ASSIGNMENT_FLAG_STALE_LOCATOR;
+    let scored_flags = SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+    flags & scored_flags != 0 && flags & blocked_flags == 0
+}
+
 pub(super) fn is_visible_primary_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
     is_visible_primary_assignment_flags(assignment.flags)
+}
+
+pub(super) fn is_visible_scored_assignment(assignment: &SpireLeafAssignmentRow) -> bool {
+    is_visible_scored_assignment_flags(assignment.flags)
 }
 
 pub(super) fn is_visible_primary_assignment_ref(
