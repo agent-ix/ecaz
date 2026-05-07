@@ -1439,6 +1439,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   groups selected leaf PIDs into local work, per-remote-node target requests,
   and degraded skipped-placement diagnostics before libpq execution lands. The
   plan is SQL-visible through `ec_spire_remote_search_fanout_plan(...)`.
+  `ec_spire_remote_search_coordinator_local(...)` now exercises the planned
+  coordinator path for local-only fanout by planning selected leaves, executing
+  the local target batch, validating the batch, and applying the coordinator
+  merge helper. It fails closed before remote-target execution until libpq
+  transport lands.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
