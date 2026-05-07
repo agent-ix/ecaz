@@ -1452,7 +1452,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   stale-node state.
 - [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
-  reporting skipped placements explicitly.
+  reporting skipped placements explicitly. The coordinator-local summary now
+  reports `degraded_ready` when degraded-mode planning skips selected
+  placements, and exposes the skipped-placement count alongside merge counters.
 - [ ] **Merge semantics.** Remote candidate merge now has a production helper
   that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
   primary placements ahead of boundary replicas on score ties, validates

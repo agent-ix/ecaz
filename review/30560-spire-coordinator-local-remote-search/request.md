@@ -4,6 +4,7 @@
   - `a322b95d` (`Add SPIRE coordinator local remote search path`)
   - `154c5335` (`Add SPIRE coordinator remote-target fail-closed test`)
   - `a0af9d5c` (`Add SPIRE coordinator local search summary`)
+  - `a271f798` (`Expose SPIRE degraded coordinator summary status`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 7 coordinator transport groundwork
 - Agent: coder1
@@ -38,6 +39,11 @@ limited intentionally to local-only fanout:
 - reports `requires_libpq_transport` for nonlocal fanout plans without opening
   local object stores or attempting transport;
 - adds PG18 coverage for both local-ready and remote-target summary rows;
+- reports `degraded_ready` when degraded-mode fanout skips selected
+  unavailable/skipped placements;
+- adds test-only consistency-mode rewrite support plus PG18 coverage proving
+  degraded skipped placements produce zero candidates while preserving the
+  skipped-placement count;
 - updates the Phase 7 task note to record the local-only coordinator path and
   the remaining libpq transport boundary.
 
@@ -66,14 +72,16 @@ multi-node candidate merge.
    local-store validation.
 5. Check that the summary status/count contract is useful for the future libpq
    executor and does not imply transport has landed.
-6. Check whether the SQL names and row contracts are acceptable as diagnostic
+6. Check that `degraded_ready` is the right status name for lower-recall
+   degraded plans that complete without transport.
+7. Check whether the SQL names and row contracts are acceptable as diagnostic
    coordinator bridges before real transport lands.
 
 ## Validation
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo test --lib remote_search --no-default-features --features pg18`
-  - Result: passed; 10 tests passed, including the coordinator-local SQL
+  - Result: passed; 11 tests passed, including the coordinator-local SQL
     endpoint test, the nonlocal remote-target fail-closed test, and the summary
-    count/status test.
+    count/status tests.
 - `git diff --check`
