@@ -13,6 +13,7 @@ mod tests {
         SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
         SpireRecursiveRoutingEpochObjectInput, SpireSingleLevelBuildInput,
         SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry, SpireSingleLevelRouteMap,
+        SpireTopGraphBuildInput, SpireTopGraphNodeInput,
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
@@ -164,4 +165,5 @@ mod tests {
     include!("tests/recursive.rs");
     include!("tests/publish.rs");
     include!("tests/single_level.rs");
+    include!("tests/top_graph.rs");
 }

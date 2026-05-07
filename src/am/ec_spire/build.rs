@@ -39,6 +39,7 @@ include!("build/object_store.rs");
 include!("build/publish.rs");
 include!("build/routing_plan.rs");
 include!("build/recursive.rs");
+include!("build/top_graph.rs");
 include!("build/training.rs");
 include!("build/drafts.rs");
 include!("build/tuples.rs");
