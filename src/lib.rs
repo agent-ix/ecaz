@@ -10955,6 +10955,9 @@ mod tests {
         let dedupe_key = Spi::get_one::<String>(&format!("SELECT dedupe_key {summary_from}"))
             .expect("merge input dedupe key query should succeed")
             .expect("merge input dedupe key should exist");
+        let tie_breaker = Spi::get_one::<String>(&format!("SELECT tie_breaker {summary_from}"))
+            .expect("merge input tie-breaker query should succeed")
+            .expect("merge input tie-breaker should exist");
         let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
             .expect("merge input status query should succeed")
             .expect("merge input status should exist");
@@ -10967,6 +10970,10 @@ mod tests {
             "merge_validated_remote_search_candidate_batches"
         );
         assert_eq!(dedupe_key, "vec_id");
+        assert_eq!(
+            tie_breaker,
+            "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator"
+        );
         assert_eq!(status, "requires_remote_node_descriptor");
     }
 
