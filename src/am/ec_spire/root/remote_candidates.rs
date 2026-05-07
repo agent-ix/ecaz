@@ -227,6 +227,81 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
 /// global vec-id format lands, multi-node callers must only use this helper
 /// when they can prove the input vec-id bytes are globally unique by
 /// construction.
+pub(crate) fn validate_remote_search_candidate_batch(
+    requested_epoch: u64,
+    expected_node_id: u32,
+    selected_pids: &[u64],
+    candidates: &[SpireRemoteSearchCandidateRow],
+) -> Result<(), String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote candidate batch requested_epoch must be greater than 0".to_owned(),
+        );
+    }
+
+    let mut selected = HashSet::new();
+    for &pid in selected_pids {
+        if pid == 0 {
+            return Err("ec_spire remote candidate batch selected PID 0 is invalid".to_owned());
+        }
+        if !selected.insert(pid) {
+            return Err(format!(
+                "ec_spire remote candidate batch selected PID {pid} appears more than once"
+            ));
+        }
+    }
+
+    for candidate in candidates {
+        if candidate.served_epoch != requested_epoch {
+            return Err(format!(
+                "ec_spire remote candidate batch served epoch {} does not match requested epoch {requested_epoch}",
+                candidate.served_epoch
+            ));
+        }
+        if candidate.node_id != expected_node_id {
+            return Err(format!(
+                "ec_spire remote candidate batch node_id {} does not match expected node_id {expected_node_id}",
+                candidate.node_id
+            ));
+        }
+        if candidate.pid == 0 {
+            return Err("ec_spire remote candidate batch candidate PID 0 is invalid".to_owned());
+        }
+        if !selected.contains(&candidate.pid) {
+            return Err(format!(
+                "ec_spire remote candidate batch candidate PID {} was not selected for node_id {expected_node_id}",
+                candidate.pid
+            ));
+        }
+        if candidate.object_version == 0 {
+            return Err(format!(
+                "ec_spire remote candidate batch candidate PID {} has object_version 0",
+                candidate.pid
+            ));
+        }
+        if !storage::is_visible_scored_assignment_flags(candidate.assignment_flags) {
+            return Err(format!(
+                "ec_spire remote candidate batch candidate PID {} has non-visible assignment_flags {}",
+                candidate.pid, candidate.assignment_flags
+            ));
+        }
+        if candidate.vec_id.is_empty() {
+            return Err("ec_spire remote candidate batch received empty vec_id".to_owned());
+        }
+        if candidate.row_locator.is_empty() {
+            return Err(format!(
+                "ec_spire remote candidate batch candidate PID {} has empty row_locator",
+                candidate.pid
+            ));
+        }
+        if !candidate.score.is_finite() {
+            return Err("ec_spire remote candidate batch received non-finite score".to_owned());
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn merge_remote_search_candidates<I>(
     candidates: I,
     limit: Option<usize>,

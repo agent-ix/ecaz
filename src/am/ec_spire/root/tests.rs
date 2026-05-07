@@ -188,6 +188,67 @@ mod tests {
     }
 
     #[test]
+    fn remote_candidate_batch_validation_accepts_expected_envelope() {
+        let candidates = vec![
+            remote_candidate(2, 10, 0, b"a", 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY),
+            remote_candidate(
+                2,
+                11,
+                0,
+                b"b",
+                0.6,
+                storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+            ),
+        ];
+
+        validate_remote_search_candidate_batch(7, 2, &[10, 11], &candidates)
+            .expect("candidate batch should validate");
+    }
+
+    #[test]
+    fn remote_candidate_batch_validation_rejects_receive_contract_drift() {
+        let wrong_epoch =
+            remote_candidate(2, 10, 0, b"a", 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let mut wrong_epoch = SpireRemoteSearchCandidateRow {
+            served_epoch: 8,
+            ..wrong_epoch
+        };
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch.clone()])
+            .expect_err("wrong served epoch should fail");
+        assert!(error.contains("served epoch 8"));
+
+        wrong_epoch.served_epoch = 7;
+        wrong_epoch.node_id = 3;
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch.clone()])
+            .expect_err("wrong node_id should fail");
+        assert!(error.contains("does not match expected node_id"));
+
+        wrong_epoch.node_id = 2;
+        wrong_epoch.pid = 12;
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch.clone()])
+            .expect_err("unselected pid should fail");
+        assert!(error.contains("was not selected"));
+
+        wrong_epoch.pid = 10;
+        wrong_epoch.object_version = 0;
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch.clone()])
+            .expect_err("zero object version should fail");
+        assert!(error.contains("object_version 0"));
+
+        wrong_epoch.object_version = 11;
+        wrong_epoch.assignment_flags = storage::SPIRE_ASSIGNMENT_FLAG_TOMBSTONE;
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch.clone()])
+            .expect_err("non-visible assignment flags should fail");
+        assert!(error.contains("non-visible assignment_flags"));
+
+        wrong_epoch.assignment_flags = storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY;
+        wrong_epoch.row_locator.clear();
+        let error = validate_remote_search_candidate_batch(7, 2, &[10], &[wrong_epoch])
+            .expect_err("empty row locator should fail");
+        assert!(error.contains("empty row_locator"));
+    }
+
+    #[test]
     fn remote_search_fanout_groups_selected_pids_by_local_and_remote_node() {
         let placements = vec![
             fanout_placement(
