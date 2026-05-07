@@ -661,6 +661,189 @@ pub(crate) unsafe fn remote_node_capability_plan(
         .collect()
 }
 
+pub(crate) unsafe fn remote_node_capability_summary(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteNodeCapabilitySummaryRow {
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let mut summary = SpireRemoteNodeCapabilitySummaryRow {
+        active_epoch: root_control.active_epoch,
+        node_count: 0,
+        local_node_count: 0,
+        remote_node_count: 0,
+        ready_node_count: 0,
+        blocked_node_count: 0,
+        missing_descriptor_node_count: 0,
+        required_candidate_format: "local",
+        required_extension_version: env!("CARGO_PKG_VERSION"),
+        status: "empty",
+        recommendation: "build index before remote capability summary check",
+    };
+    if root_control.active_epoch == 0 {
+        return summary;
+    }
+
+    for row in unsafe { remote_node_capability_plan(index_relation) } {
+        summary.node_count = summary.node_count.checked_add(1).unwrap_or_else(|| {
+            pgrx::error!("ec_spire remote node capability summary node count overflow")
+        });
+        if row.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            summary.local_node_count =
+                summary.local_node_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node capability summary local node count overflow"
+                    )
+                });
+        } else {
+            summary.remote_node_count =
+                summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node capability summary remote node count overflow"
+                    )
+                });
+            summary.required_candidate_format = "ec_spire_remote_search_v1";
+        }
+        if row.status == "ready" {
+            summary.ready_node_count =
+                summary.ready_node_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node capability summary ready node count overflow"
+                    )
+                });
+        } else {
+            summary.blocked_node_count =
+                summary.blocked_node_count.checked_add(1).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire remote node capability summary blocked node count overflow"
+                    )
+                });
+        }
+        if row.descriptor_state == "missing" || row.status == "requires_remote_node_descriptor" {
+            summary.missing_descriptor_node_count =
+                summary
+                    .missing_descriptor_node_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote node capability summary missing descriptor count overflow"
+                        )
+                    });
+        }
+    }
+
+    if summary.blocked_node_count == 0 {
+        summary.status = "ready";
+        summary.recommendation = "none";
+    } else {
+        summary.status = "requires_remote_node_descriptor";
+        summary.recommendation = "register remote node descriptors before capability checks";
+    }
+    summary
+}
+
+pub(crate) unsafe fn remote_epoch_publish_readiness(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteEpochPublishReadinessRow {
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let mut summary = SpireRemoteEpochPublishReadinessRow {
+        active_epoch: root_control.active_epoch,
+        remote_node_count: 0,
+        remote_placement_count: 0,
+        remote_available_placement_count: 0,
+        remote_unavailable_placement_count: 0,
+        remote_skipped_placement_count: 0,
+        ready_remote_node_count: 0,
+        blocked_remote_node_count: 0,
+        missing_descriptor_node_count: 0,
+        status: "empty",
+        recommendation: "build index before remote epoch publish readiness check",
+    };
+    if root_control.active_epoch == 0 {
+        return summary;
+    }
+
+    for row in unsafe { remote_node_snapshot(index_relation) } {
+        if row.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            continue;
+        }
+        summary.remote_node_count =
+            summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
+                pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
+            });
+        summary.remote_placement_count = summary
+            .remote_placement_count
+            .checked_add(row.placement_count)
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_spire remote epoch publish readiness placement count overflow")
+            });
+        summary.remote_available_placement_count = summary
+            .remote_available_placement_count
+            .checked_add(row.available_placement_count)
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_spire remote epoch publish readiness available placement count overflow"
+                )
+            });
+        summary.remote_unavailable_placement_count = summary
+            .remote_unavailable_placement_count
+            .checked_add(row.unavailable_placement_count)
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_spire remote epoch publish readiness unavailable placement count overflow"
+                )
+            });
+        summary.remote_skipped_placement_count = summary
+            .remote_skipped_placement_count
+            .checked_add(row.skipped_placement_count)
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_spire remote epoch publish readiness skipped placement count overflow"
+                )
+            });
+        if row.status == "ready" {
+            summary.ready_remote_node_count =
+                summary
+                    .ready_remote_node_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote epoch publish readiness ready node count overflow"
+                        )
+                    });
+        } else {
+            summary.blocked_remote_node_count =
+                summary
+                    .blocked_remote_node_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote epoch publish readiness blocked node count overflow"
+                        )
+                    });
+        }
+        if row.descriptor_state == "missing" || row.status == "requires_remote_node_descriptor" {
+            summary.missing_descriptor_node_count =
+                summary
+                    .missing_descriptor_node_count
+                    .checked_add(1)
+                    .unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_spire remote epoch publish readiness missing descriptor count overflow"
+                        )
+                    });
+        }
+    }
+
+    if summary.blocked_remote_node_count == 0 {
+        summary.status = "ready";
+        summary.recommendation = "none";
+    } else {
+        summary.status = "requires_remote_node_descriptor";
+        summary.recommendation =
+            "register remote node descriptors before publishing distributed epochs";
+    }
+    summary
+}
+
 fn remote_node_capability_plan_row(
     node: SpireRemoteNodeSnapshotRow,
 ) -> SpireRemoteNodeCapabilityPlanRow {

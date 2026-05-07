@@ -1351,6 +1351,94 @@ fn ec_spire_remote_node_capability_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_capability_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_count, i64),
+        name!(local_node_count, i64),
+        name!(remote_node_count, i64),
+        name!(ready_node_count, i64),
+        name!(blocked_node_count, i64),
+        name!(missing_descriptor_node_count, i64),
+        name!(required_candidate_format, &'static str),
+        name!(required_extension_version, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_node_capability_summary") };
+    let row = unsafe { am::spire_remote_node_capability_summary(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.node_count).expect("node count should fit in i64"),
+        i64::try_from(row.local_node_count).expect("local node count should fit in i64"),
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.ready_node_count).expect("ready node count should fit in i64"),
+        i64::try_from(row.blocked_node_count).expect("blocked node count should fit in i64"),
+        i64::try_from(row.missing_descriptor_node_count)
+            .expect("missing descriptor node count should fit in i64"),
+        row.required_candidate_format,
+        row.required_extension_version,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_publish_readiness(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(remote_node_count, i64),
+        name!(remote_placement_count, i64),
+        name!(remote_available_placement_count, i64),
+        name!(remote_unavailable_placement_count, i64),
+        name!(remote_skipped_placement_count, i64),
+        name!(ready_remote_node_count, i64),
+        name!(blocked_remote_node_count, i64),
+        name!(missing_descriptor_node_count, i64),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_publish_readiness") };
+    let row = unsafe { am::spire_remote_epoch_publish_readiness(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.remote_placement_count)
+            .expect("remote placement count should fit in i64"),
+        i64::try_from(row.remote_available_placement_count)
+            .expect("remote available placement count should fit in i64"),
+        i64::try_from(row.remote_unavailable_placement_count)
+            .expect("remote unavailable placement count should fit in i64"),
+        i64::try_from(row.remote_skipped_placement_count)
+            .expect("remote skipped placement count should fit in i64"),
+        i64::try_from(row.ready_remote_node_count)
+            .expect("ready remote node count should fit in i64"),
+        i64::try_from(row.blocked_remote_node_count)
+            .expect("blocked remote node count should fit in i64"),
+        i64::try_from(row.missing_descriptor_node_count)
+            .expect("missing descriptor node count should fit in i64"),
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_placement_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -9867,6 +9955,157 @@ mod tests {
         assert_eq!(remote_candidate_status, "missing_descriptor");
         assert_eq!(required_epoch, active_epoch);
         assert_eq!(required_format, "ec_spire_remote_search_v1");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_cap_summary_local() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_cap_summary_local_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_cap_summary_local_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_cap_summary_local_sql_idx \
+             ON ec_spire_remote_cap_summary_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let capability_from = "FROM ec_spire_remote_node_capability_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let publish_from = "FROM ec_spire_remote_epoch_publish_readiness(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+
+        let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
+            .expect("capability summary status query should succeed")
+            .expect("capability summary status should exist");
+        let node_count = Spi::get_one::<i64>(&format!("SELECT node_count {capability_from}"))
+            .expect("capability summary node count query should succeed")
+            .expect("capability summary node count should exist");
+        let remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_node_count {capability_from}"))
+                .expect("capability summary remote node count query should succeed")
+                .expect("capability summary remote node count should exist");
+        let blocked_node_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_node_count {capability_from}"))
+                .expect("capability summary blocked node count query should succeed")
+                .expect("capability summary blocked node count should exist");
+        let required_format = Spi::get_one::<String>(&format!(
+            "SELECT required_candidate_format {capability_from}"
+        ))
+        .expect("capability summary format query should succeed")
+        .expect("capability summary format should exist");
+        let publish_status = Spi::get_one::<String>(&format!("SELECT status {publish_from}"))
+            .expect("epoch publish readiness status query should succeed")
+            .expect("epoch publish readiness status should exist");
+        let remote_placement_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_placement_count {publish_from}"))
+                .expect("epoch publish readiness placement query should succeed")
+                .expect("epoch publish readiness placement count should exist");
+
+        assert_eq!(capability_status, "ready");
+        assert_eq!(node_count, 1);
+        assert_eq!(remote_node_count, 0);
+        assert_eq!(blocked_node_count, 0);
+        assert_eq!(required_format, "local");
+        assert_eq!(publish_status, "ready");
+        assert_eq!(remote_placement_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_cap_summary_missing() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_cap_summary_missing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_cap_summary_missing_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_cap_summary_missing_sql_idx \
+             ON ec_spire_remote_cap_summary_missing_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_cap_summary_missing_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_cap_summary_missing_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let capability_from = "FROM ec_spire_remote_node_capability_summary(\
+             'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
+        let publish_from = "FROM ec_spire_remote_epoch_publish_readiness(\
+             'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
+        let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
+            .expect("capability summary status query should succeed")
+            .expect("capability summary status should exist");
+        let node_count = Spi::get_one::<i64>(&format!("SELECT node_count {capability_from}"))
+            .expect("capability summary node count query should succeed")
+            .expect("capability summary node count should exist");
+        let remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_node_count {capability_from}"))
+                .expect("capability summary remote node count query should succeed")
+                .expect("capability summary remote node count should exist");
+        let blocked_node_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_node_count {capability_from}"))
+                .expect("capability summary blocked node count query should succeed")
+                .expect("capability summary blocked node count should exist");
+        let missing_descriptor_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_descriptor_node_count {capability_from}"
+        ))
+        .expect("capability summary missing descriptor query should succeed")
+        .expect("capability summary missing descriptor count should exist");
+        let required_format = Spi::get_one::<String>(&format!(
+            "SELECT required_candidate_format {capability_from}"
+        ))
+        .expect("capability summary format query should succeed")
+        .expect("capability summary format should exist");
+        let publish_status = Spi::get_one::<String>(&format!("SELECT status {publish_from}"))
+            .expect("epoch publish readiness status query should succeed")
+            .expect("epoch publish readiness status should exist");
+        let remote_placement_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_placement_count {publish_from}"))
+                .expect("epoch publish readiness placement query should succeed")
+                .expect("epoch publish readiness placement count should exist");
+        let remote_available_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_available_placement_count {publish_from}"
+        ))
+        .expect("epoch publish readiness available placement query should succeed")
+        .expect("epoch publish readiness available placement count should exist");
+        let blocked_remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_remote_node_count {publish_from}"))
+                .expect("epoch publish readiness blocked node query should succeed")
+                .expect("epoch publish readiness blocked node count should exist");
+
+        assert_eq!(capability_status, "requires_remote_node_descriptor");
+        assert_eq!(node_count, 2);
+        assert_eq!(remote_node_count, 1);
+        assert_eq!(blocked_node_count, 1);
+        assert_eq!(missing_descriptor_count, 1);
+        assert_eq!(required_format, "ec_spire_remote_search_v1");
+        assert_eq!(publish_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_placement_count, 1);
+        assert_eq!(remote_available_count, 1);
+        assert_eq!(blocked_remote_node_count, 1);
     }
 
     #[pg_test]

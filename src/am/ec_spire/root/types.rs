@@ -512,6 +512,36 @@ pub(crate) struct SpireRemoteNodeCapabilityPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeCapabilitySummaryRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) node_count: u64,
+    pub(crate) local_node_count: u64,
+    pub(crate) remote_node_count: u64,
+    pub(crate) ready_node_count: u64,
+    pub(crate) blocked_node_count: u64,
+    pub(crate) missing_descriptor_node_count: u64,
+    pub(crate) required_candidate_format: &'static str,
+    pub(crate) required_extension_version: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochPublishReadinessRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) remote_node_count: u64,
+    pub(crate) remote_placement_count: u64,
+    pub(crate) remote_available_placement_count: u64,
+    pub(crate) remote_unavailable_placement_count: u64,
+    pub(crate) remote_skipped_placement_count: u64,
+    pub(crate) ready_remote_node_count: u64,
+    pub(crate) blocked_remote_node_count: u64,
+    pub(crate) missing_descriptor_node_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexScanPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) effective_nprobe: u32,

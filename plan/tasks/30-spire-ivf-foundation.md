@@ -1476,10 +1476,16 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   fanout execution can be enabled. `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
-  and readiness status.
+  and readiness status. `ec_spire_remote_node_capability_summary(...)`
+  aggregates that contract into one coordinator gate with ready/blocked node
+  counts, missing descriptor counts, required candidate format, required
+  extension version, and a recommendation.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
-  stale-node state.
+  stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
+  the pre-publish remote-node descriptor gate for active placement metadata:
+  remote node counts, remote placement-state counts, blocked/missing descriptor
+  counts, readiness status, and recommendation.
 - [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
