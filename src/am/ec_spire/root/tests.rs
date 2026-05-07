@@ -71,6 +71,24 @@ mod tests {
         }
     }
 
+    fn fanout_placement(
+        pid: u64,
+        node_id: u32,
+        state: meta::SpirePlacementState,
+    ) -> meta::SpirePlacementEntry {
+        meta::SpirePlacementEntry {
+            epoch: 7,
+            pid,
+            node_id,
+            local_store_id: node_id,
+            store_relid: 10_000 + node_id,
+            object_version: 11,
+            object_tid: tid(90, pid as u16),
+            object_bytes: 4096,
+            state,
+        }
+    }
+
     #[test]
     fn scan_sanity_status_reports_empty_approximate_and_full_scan() {
         assert_eq!(
@@ -167,6 +185,136 @@ mod tests {
             merge_remote_search_candidates(vec![remote_candidate(1, 10, 0, b"", 1.0, 0)], None)
                 .expect_err("empty vec_id should fail");
         assert!(empty_vec_id_error.contains("empty vec_id"));
+    }
+
+    #[test]
+    fn remote_search_fanout_groups_selected_pids_by_local_and_remote_node() {
+        let placements = vec![
+            fanout_placement(
+                11,
+                meta::SPIRE_LOCAL_NODE_ID,
+                meta::SpirePlacementState::Available,
+            ),
+            fanout_placement(12, 2, meta::SpirePlacementState::Available),
+            fanout_placement(13, 2, meta::SpirePlacementState::Available),
+            fanout_placement(14, 7, meta::SpirePlacementState::Available),
+        ];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory =
+            meta::SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let epoch_manifest = published_epoch_manifest(7);
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let plan = plan_remote_search_fanout(&snapshot, &[13, 11, 14, 12]).unwrap();
+
+        assert_eq!(plan.requested_epoch, 7);
+        assert_eq!(plan.local_selected_pids, vec![11]);
+        assert_eq!(
+            plan.remote_targets,
+            vec![
+                SpireRemoteSearchFanoutTarget {
+                    node_id: 2,
+                    selected_pids: vec![13, 12],
+                },
+                SpireRemoteSearchFanoutTarget {
+                    node_id: 7,
+                    selected_pids: vec![14],
+                },
+            ]
+        );
+        assert!(plan.skipped_placements.is_empty());
+    }
+
+    #[test]
+    fn remote_search_fanout_records_degraded_skipped_placements() {
+        let placements = vec![
+            fanout_placement(11, 2, meta::SpirePlacementState::Available),
+            fanout_placement(12, 2, meta::SpirePlacementState::Unavailable),
+            fanout_placement(
+                13,
+                meta::SPIRE_LOCAL_NODE_ID,
+                meta::SpirePlacementState::Skipped,
+            ),
+        ];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory =
+            meta::SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let epoch_manifest = meta::SpireEpochManifest {
+            consistency_mode: meta::SpireConsistencyMode::Degraded,
+            ..published_epoch_manifest(7)
+        };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let plan = plan_remote_search_fanout(&snapshot, &[11, 12, 13]).unwrap();
+
+        assert!(plan.local_selected_pids.is_empty());
+        assert_eq!(
+            plan.remote_targets,
+            vec![SpireRemoteSearchFanoutTarget {
+                node_id: 2,
+                selected_pids: vec![11],
+            }]
+        );
+        assert_eq!(
+            plan.skipped_placements,
+            vec![
+                SpireRemoteSearchSkippedPlacement {
+                    node_id: 2,
+                    pid: 12,
+                    state: "unavailable",
+                },
+                SpireRemoteSearchSkippedPlacement {
+                    node_id: meta::SPIRE_LOCAL_NODE_ID,
+                    pid: 13,
+                    state: "skipped",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_search_fanout_rejects_duplicate_selected_pids() {
+        let placements = vec![fanout_placement(
+            11,
+            meta::SPIRE_LOCAL_NODE_ID,
+            meta::SpirePlacementState::Available,
+        )];
+        let object_manifest = meta::SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory =
+            meta::SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let epoch_manifest = published_epoch_manifest(7);
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let error = plan_remote_search_fanout(&snapshot, &[11, 11]).unwrap_err();
+
+        assert!(error.contains("appears more than once"));
     }
 
     #[test]

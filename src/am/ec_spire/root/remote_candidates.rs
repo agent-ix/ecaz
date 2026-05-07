@@ -27,6 +27,122 @@ pub(crate) struct SpireRemoteSearchMergeResult {
     pub(crate) duplicate_vec_id_count: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteSearchFanoutTarget {
+    node_id: u32,
+    selected_pids: Vec<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteSearchSkippedPlacement {
+    node_id: u32,
+    pid: u64,
+    state: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteSearchFanoutPlan {
+    requested_epoch: u64,
+    local_selected_pids: Vec<u64>,
+    remote_targets: Vec<SpireRemoteSearchFanoutTarget>,
+    skipped_placements: Vec<SpireRemoteSearchSkippedPlacement>,
+}
+
+fn plan_remote_search_fanout(
+    snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
+    selected_leaf_pids: &[u64],
+) -> Result<SpireRemoteSearchFanoutPlan, String> {
+    if selected_leaf_pids.is_empty() {
+        return Ok(SpireRemoteSearchFanoutPlan {
+            requested_epoch: snapshot.epoch_manifest.epoch,
+            local_selected_pids: Vec::new(),
+            remote_targets: Vec::new(),
+            skipped_placements: Vec::new(),
+        });
+    }
+
+    let snapshot = meta::SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let mut seen = HashSet::new();
+    let mut local_selected_pids = Vec::new();
+    let mut remote_by_node = BTreeMap::<u32, Vec<u64>>::new();
+    let mut skipped_placements = Vec::new();
+
+    for &pid in selected_leaf_pids {
+        if pid == 0 {
+            return Err("ec_spire remote search fanout selected PID 0 is invalid".to_owned());
+        }
+        if !seen.insert(pid) {
+            return Err(format!(
+                "ec_spire remote search fanout selected PID {pid} appears more than once"
+            ));
+        }
+
+        let lookup = snapshot.require_lookup(pid, "remote search fanout selected leaf")?;
+        if fanout_should_skip_placement(
+            snapshot.epoch_manifest().consistency_mode,
+            lookup.placement.state,
+        )? {
+            skipped_placements.push(SpireRemoteSearchSkippedPlacement {
+                node_id: lookup.placement.node_id,
+                pid,
+                state: fanout_placement_state_name(lookup.placement.state),
+            });
+            continue;
+        }
+
+        if lookup.placement.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            local_selected_pids.push(pid);
+        } else {
+            remote_by_node
+                .entry(lookup.placement.node_id)
+                .or_default()
+                .push(pid);
+        }
+    }
+
+    let remote_targets = remote_by_node
+        .into_iter()
+        .map(|(node_id, selected_pids)| SpireRemoteSearchFanoutTarget {
+            node_id,
+            selected_pids,
+        })
+        .collect();
+
+    Ok(SpireRemoteSearchFanoutPlan {
+        requested_epoch: snapshot.epoch_manifest().epoch,
+        local_selected_pids,
+        remote_targets,
+        skipped_placements,
+    })
+}
+
+fn fanout_should_skip_placement(
+    consistency_mode: meta::SpireConsistencyMode,
+    state: meta::SpirePlacementState,
+) -> Result<bool, String> {
+    match (consistency_mode, state) {
+        (_, meta::SpirePlacementState::Available) => Ok(false),
+        (meta::SpireConsistencyMode::Degraded, meta::SpirePlacementState::Unavailable)
+        | (meta::SpireConsistencyMode::Degraded, meta::SpirePlacementState::Skipped) => Ok(true),
+        (meta::SpireConsistencyMode::Strict, state) => Err(format!(
+            "ec_spire strict remote search fanout cannot skip {:?} placement",
+            state
+        )),
+        (meta::SpireConsistencyMode::Degraded, meta::SpirePlacementState::Stale) => {
+            Err("ec_spire degraded remote search fanout cannot use stale placement".to_owned())
+        }
+    }
+}
+
+fn fanout_placement_state_name(state: meta::SpirePlacementState) -> &'static str {
+    match state {
+        meta::SpirePlacementState::Available => "available",
+        meta::SpirePlacementState::Stale => "stale",
+        meta::SpirePlacementState::Unavailable => "unavailable",
+        meta::SpirePlacementState::Skipped => "skipped",
+    }
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the
