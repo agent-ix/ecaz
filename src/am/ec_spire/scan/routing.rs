@@ -56,6 +56,33 @@ fn load_snapshot_routing_hierarchy(
     })
 }
 
+fn load_snapshot_top_graph_object(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<Option<(u64, SpireTopGraphPartitionObject)>, String> {
+    let mut top_graph = None;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "scan top graph load")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::TopGraph {
+            continue;
+        }
+        if top_graph.is_some() {
+            return Err("ec_spire scan snapshot contains multiple top graph objects".to_owned());
+        }
+        top_graph = Some((
+            manifest_entry.pid,
+            object_store.read_top_graph_object(placement)?,
+        ));
+    }
+    Ok(top_graph)
+}
+
 fn route_root_object_to_leaf_pids(
     root_object: &SpireRoutingPartitionObject,
     query_vector: &[f32],

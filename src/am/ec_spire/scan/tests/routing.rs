@@ -483,6 +483,89 @@
     }
 
     #[test]
+    fn load_snapshot_top_graph_object_loads_available_graph_object() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![0.8, 0.2]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .unwrap();
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 20,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+        let root_placement = object_store.insert_routing_object(7, &root).unwrap();
+        let top_graph_placement = object_store
+            .insert_top_graph_object(7, &top_graph_object)
+            .unwrap();
+        let first_leaf_placement = object_store
+            .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 1, 1, SPIRE_FIRST_PID, &[])
+            .unwrap();
+        let second_leaf_placement = object_store
+            .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 2, 1, SPIRE_FIRST_PID, &[])
+            .unwrap();
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let placements = vec![
+            root_placement,
+            top_graph_placement,
+            first_leaf_placement,
+            second_leaf_placement,
+        ];
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpireValidatedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+
+        let (top_graph_pid, loaded_top_graph) =
+            load_snapshot_top_graph_object(&snapshot, &object_store)
+                .unwrap()
+                .expect("top graph should load");
+
+        assert_eq!(top_graph_pid, SPIRE_FIRST_PID + 20);
+        assert_eq!(loaded_top_graph.header.kind, SpirePartitionObjectKind::TopGraph);
+        assert_eq!(loaded_top_graph.header.parent_pid, SPIRE_FIRST_PID);
+        assert_eq!(loaded_top_graph.header.published_epoch_backref, 7);
+        assert_eq!(
+            route_top_graph_object_to_child_pids(&root, &loaded_top_graph, &[1.0, 0.0], 2, 1)
+                .unwrap(),
+            vec![SPIRE_FIRST_PID + 1]
+        );
+    }
+
+    #[test]
     fn recursive_routed_leaf_rows_skip_degraded_unavailable_unselected_internal() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root = SpireRoutingPartitionObject::root_at_level(
