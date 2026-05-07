@@ -114,6 +114,13 @@ impl SpireBuildState {
             .collect()
     }
 
+    fn source_vectors(&self) -> Vec<Vec<f32>> {
+        self.tuples
+            .iter()
+            .map(|tuple| tuple.source_vector.clone())
+            .collect()
+    }
+
     fn train_centroid_plan(&self) -> Result<SpireSingleLevelCentroidPlan, String> {
         let dimensions = self
             .dimensions

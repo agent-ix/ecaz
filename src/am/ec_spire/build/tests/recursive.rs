@@ -427,11 +427,18 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
+                boundary_replica_count: 0,
                 assignments: vec![
                     assignment_input(10, 1),
                     assignment_input(10, 2),
                     assignment_input(10, 3),
                     assignment_input(10, 4),
+                ],
+                source_vectors: vec![
+                    vec![1.0, 0.0],
+                    vec![0.9, 0.1],
+                    vec![-1.0, 0.0],
+                    vec![-0.9, 0.1],
                 ],
                 centroid_plan,
             },
@@ -490,6 +497,61 @@
     }
 
     #[test]
+    fn recursive_build_coordinator_fans_out_boundary_leaf_rows() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let centroid_plan = SpireSingleLevelCentroidPlan {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![0.8, 0.2], vec![-1.0, 0.0]],
+            assignment_indexes: vec![0, 1, 2],
+        };
+
+        let draft = super::build_recursive_epoch_input_from_centroid_plan(
+            SpireRecursiveBuildCoordinatorInput {
+                epoch: 7,
+                object_version: 3,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                target_fanout: 2,
+                seed: 42,
+                boundary_replica_count: 1,
+                assignments: vec![
+                    assignment_input(10, 1),
+                    assignment_input(10, 2),
+                    assignment_input(10, 3),
+                ],
+                source_vectors: vec![vec![1.0, 0.0], vec![0.8, 0.2], vec![-1.0, 0.0]],
+                centroid_plan,
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+        )
+        .unwrap();
+
+        let assignment_count = draft
+            .epoch_input
+            .leaf_inputs
+            .iter()
+            .map(|leaf_input| leaf_input.rows.len())
+            .sum::<usize>();
+        let boundary_count = draft
+            .epoch_input
+            .leaf_inputs
+            .iter()
+            .flat_map(|leaf_input| leaf_input.rows.iter())
+            .filter(|row| row.flags == SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA)
+            .count();
+
+        assert_eq!(assignment_count, 6);
+        assert_eq!(boundary_count, 3);
+        assert_eq!(
+            local_vec_id_allocator.next_local_vec_seq(),
+            SPIRE_FIRST_LOCAL_VEC_SEQ + 3
+        );
+    }
+
+    #[test]
     fn recursive_build_coordinator_rejects_assignment_count_mismatch() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
@@ -508,7 +570,9 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
+                boundary_replica_count: 0,
                 assignments: vec![assignment_input(10, 1)],
+                source_vectors: vec![vec![1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,
@@ -542,7 +606,9 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
+                boundary_replica_count: 0,
                 assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                source_vectors: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,
@@ -601,7 +667,9 @@
                 consistency_mode: SpireConsistencyMode::Strict,
                 target_fanout: 2,
                 seed: 42,
+                boundary_replica_count: 0,
                 assignments: vec![assignment_input(10, 1), assignment_input(10, 2)],
+                source_vectors: vec![vec![1.0, 0.0], vec![-1.0, 0.0]],
                 centroid_plan,
             },
             &mut pid_allocator,

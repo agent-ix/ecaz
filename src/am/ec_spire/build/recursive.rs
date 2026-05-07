@@ -137,9 +137,16 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
             input.centroid_plan.assignment_indexes.len()
         ));
     }
+    if input.source_vectors.len() != input.assignments.len() {
+        return Err(format!(
+            "ec_spire recursive build source vector count {} does not match assignment count {}",
+            input.source_vectors.len(),
+            input.assignments.len()
+        ));
+    }
 
     let assignments_by_centroid = group_assignments_by_centroid(
-        input.assignments,
+        input.assignments.clone(),
         &input.centroid_plan.assignment_indexes,
         centroid_count,
     )?;
@@ -172,20 +179,29 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
         &mut pid_cursor,
     )?;
     let leaf_parent_pids = assert_recursive_draft_invariants(&routing_draft)?.leaf_parent_pids;
+    let route_map = SpireSingleLevelRouteMap::from_centroid_plan(&input.centroid_plan, &leaf_pids)?;
+    let rows_by_leaf_pid = build_recursive_leaf_rows_by_pid(
+        input.assignments,
+        input.source_vectors,
+        assignments_by_centroid,
+        &route_map,
+        input.boundary_replica_count,
+        &mut local_vec_id_cursor,
+    )?;
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
-    for (pid, assignments) in leaf_pids
-        .iter()
-        .copied()
-        .zip(assignments_by_centroid.into_iter())
-    {
+    for pid in leaf_pids.iter().copied() {
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
             format!("ec_spire recursive build missing routing parent for leaf pid {pid}")
         })?;
+        let rows = rows_by_leaf_pid
+            .get(&pid)
+            .cloned()
+            .ok_or_else(|| format!("ec_spire recursive build missing leaf rows for pid {pid}"))?;
         leaf_inputs.push(SpireRecursiveLeafObjectInput {
             pid,
             object_version: input.object_version,
             parent_pid,
-            rows: build_primary_leaf_assignments(&mut local_vec_id_cursor, assignments)?,
+            rows,
         });
     }
 
@@ -205,6 +221,52 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
     *pid_allocator = pid_cursor;
     *local_vec_id_allocator = local_vec_id_cursor;
     Ok(draft)
+}
+
+fn build_recursive_leaf_rows_by_pid(
+    assignments: Vec<SpireLeafAssignmentInput>,
+    source_vectors: Vec<Vec<f32>>,
+    assignments_by_centroid: Vec<Vec<SpireLeafAssignmentInput>>,
+    route_map: &SpireSingleLevelRouteMap,
+    boundary_replica_count: u32,
+    local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
+) -> Result<HashMap<u64, Vec<SpireLeafAssignmentRow>>, String> {
+    let mut rows_by_leaf_pid = route_map
+        .entries
+        .iter()
+        .map(|entry| (entry.pid, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    if boundary_replica_count == 0 {
+        for (entry, assignments) in route_map.entries.iter().zip(assignments_by_centroid) {
+            let rows = build_primary_leaf_assignments(local_vec_id_cursor, assignments)?;
+            rows_by_leaf_pid.insert(entry.pid, rows);
+        }
+        return Ok(rows_by_leaf_pid);
+    }
+
+    let boundary_inputs = assignments
+        .into_iter()
+        .zip(source_vectors.into_iter())
+        .map(|(assignment, source_vector)| {
+            let plan =
+                route_map.route_boundary_assignment_for_vector(&source_vector, boundary_replica_count)?;
+            Ok(SpireBoundaryLeafAssignmentInput {
+                primary_pid: plan.primary_pid,
+                replica_pids: plan.replica_pids,
+                assignment,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    for placement in build_boundary_leaf_assignment_placements(local_vec_id_cursor, boundary_inputs)? {
+        let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
+            format!(
+                "ec_spire recursive boundary assignment resolved unknown leaf pid {}",
+                placement.pid
+            )
+        })?;
+        rows.push(placement.row);
+    }
+    Ok(rows_by_leaf_pid)
 }
 
 impl SpireRecursiveRoutingBuildInput {

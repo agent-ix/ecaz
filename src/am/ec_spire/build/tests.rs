@@ -29,7 +29,8 @@ mod tests {
     use crate::am::ec_spire::quantizer::{self, SpireAssignmentPayloadFormat};
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
-        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        SpirePartitionObjectKind, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
     };
     use crate::storage::page::ItemPointer;
 

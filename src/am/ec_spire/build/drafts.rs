@@ -377,7 +377,11 @@ unsafe fn publish_relation_recursive_routing_build(
             consistency_mode: SpireConsistencyMode::Strict,
             target_fanout,
             seed: state.options.seed as u64,
+            boundary_replica_count: u32::try_from(state.options.boundary_replica_count).map_err(
+                |_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned(),
+            )?,
             assignments: state.assignment_inputs(),
+            source_vectors: state.source_vectors(),
             centroid_plan,
         },
         &mut pid_allocator,
