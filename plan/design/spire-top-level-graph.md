@@ -98,6 +98,13 @@ product over the materialized centroids. Top-level centroid count is far smaller
 than heap vector count, so this is simpler and more stable than using a
 quantized graph payload before measurements require it.
 
+The Vamana core receives an inner-product-derived pseudo-distance for this
+checkpoint: `distance = max_centroid_norm_sq - inner_product`, clamped at zero.
+That preserves nearest-centroid ordering for routing, but it is not a metric
+distance and does not provide triangle-inequality guarantees. The top graph is
+therefore justified by routing recall/latency measurements, not by a formal
+metric proof of Vamana alpha-pruning behavior.
+
 ## Placement and Persistence
 
 Persist the top graph as a SPIRE partition object referenced by the epoch

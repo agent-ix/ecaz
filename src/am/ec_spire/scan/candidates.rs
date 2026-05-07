@@ -65,6 +65,8 @@ pub(super) fn collect_quantized_selected_leaf_candidates(
         return Ok(Vec::new());
     }
 
+    // The storage-node endpoint scores leaves selected by the coordinator; it
+    // does not run top-graph or recursive routing itself.
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;

@@ -18,7 +18,6 @@ fn remote_search_candidate_cmp(
         .then_with(|| right.object_version.cmp(&left.object_version))
         .then_with(|| left.row_index.cmp(&right.row_index))
         .then_with(|| left.row_locator.cmp(&right.row_locator))
-        .then_with(|| left.vec_id.cmp(&right.vec_id))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +27,12 @@ pub(crate) struct SpireRemoteSearchMergeResult {
     pub(crate) duplicate_vec_id_count: u64,
 }
 
+/// Merges candidates that share one coordinator-scoped `vec_id` namespace.
+///
+/// Current local SPIRE writers allocate node-local vec-id bytes. Until the
+/// global vec-id format lands, multi-node callers must only use this helper
+/// when they can prove the input vec-id bytes are globally unique by
+/// construction.
 pub(crate) fn merge_remote_search_candidates<I>(
     candidates: I,
     limit: Option<usize>,

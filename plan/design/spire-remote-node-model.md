@@ -218,7 +218,15 @@ remote_candidate
 values can participate in a distributed test fixture only when they are unique
 across all participating nodes by construction. Production distributed SPIRE
 requires the reserved global `vec_id` encoding from the Phase 0 design before
-cross-node candidate merge can be claimed durable.
+cross-node candidate merge can be claimed durable. Until that global encoding
+lands, candidate merge by raw `vec_id` bytes is a production blocker for
+multi-node fanout and is safe only for a single node or a fixture that proves
+global uniqueness outside SPIRE.
+
+Likewise, until retained-epoch serving lands, the only valid requested epoch
+for remote fanout is the coordinator's published active epoch. A node that can
+serve an older retained epoch is a future capability; v1 active fanout must
+fail closed on any requested epoch mismatch.
 
 `row_locator` is opaque to the coordinator until a row-delivery design lands.
 It may encode a remote heap TID plus relation identity, but the coordinator

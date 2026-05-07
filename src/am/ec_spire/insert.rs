@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use pgrx::pg_sys;
 
 use super::assign::{
@@ -98,21 +100,31 @@ unsafe fn publish_insert_delta_epoch(
     let nprobe = boundary_replica_count
         .checked_add(1)
         .ok_or_else(|| "ec_spire insert boundary fanout overflow".to_owned())?;
+    // Insert routing intentionally uses the recursive centroid router even when a
+    // top graph is present; graph-aware insert routing is a separate maintenance
+    // decision from graph-assisted scan routing.
     let routed = scan::collect_snapshot_routed_probe_leaf_rows(
         &active_snapshot,
         &store,
         &tuple.source_vector,
         nprobe,
     )?;
-    let primary_leaf_pid = routed
-        .first()
-        .map(|route| route.leaf_pid)
-        .ok_or_else(|| "ec_spire insert routed no leaf pids".to_owned())?;
-    let replica_leaf_pids = routed
+    let mut seen_leaf_pids = HashSet::new();
+    let routed_leaf_pids = routed
         .iter()
-        .skip(1)
-        .map(|route| route.leaf_pid)
+        .filter_map(|route| {
+            if seen_leaf_pids.insert(route.leaf_pid) {
+                Some(route.leaf_pid)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
+    let primary_leaf_pid = routed_leaf_pids
+        .first()
+        .copied()
+        .ok_or_else(|| "ec_spire insert routed no leaf pids".to_owned())?;
+    let replica_leaf_pids = routed_leaf_pids.iter().skip(1).copied().collect::<Vec<_>>();
     let new_epoch = root_control
         .active_epoch
         .checked_add(1)

@@ -88,6 +88,8 @@ fn parse_remote_search_consistency_mode(input: &str) -> Result<meta::SpireConsis
 }
 
 fn remote_search_row_locator(heap_tid: crate::storage::page::ItemPointer) -> Vec<u8> {
+    // Opaque to coordinators: only the node that emitted this locator may
+    // interpret it for future row fetch or rerank work.
     let mut row_locator = Vec::with_capacity(crate::storage::page::ITEM_POINTER_BYTES);
     heap_tid.encode_into(&mut row_locator);
     row_locator
@@ -106,6 +108,7 @@ pub(crate) unsafe fn remote_search_candidates(
             return Err("ec_spire remote search requested_epoch must be greater than 0".to_owned());
         }
         if top_k == 0 {
+            // Valid empty candidate request, useful for endpoint contract probes.
             return Ok(Vec::new());
         }
 

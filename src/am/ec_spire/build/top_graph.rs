@@ -118,11 +118,13 @@ pub(super) fn build_spire_top_graph_draft(
         .map_err(|_| "ec_spire top graph degree exceeds usize".to_owned())?;
     let build_list_size = usize::try_from(input.build_list_size)
         .map_err(|_| "ec_spire top graph build list size exceeds usize".to_owned())?;
-    let distance_offset = max_centroid_inner_product(&input.nodes);
+    let distance_offset = max_centroid_norm_sq(&input.nodes);
     let dist = |a: u32, b: u32| -> f32 {
         let a = &input.nodes[a as usize].centroid;
         let b = &input.nodes[b as usize].centroid;
-        (distance_offset - top_graph_inner_product(a, b)).max(0.0)
+        // Vamana receives an IP-derived pseudo-distance: order-preserving for
+        // centroid closeness, but not a metric distance.
+        (distance_offset - inner_product(a, b)).max(0.0)
     };
     let entry_node = crate::am::approximate_medoid(
         node_count,
@@ -224,16 +226,9 @@ impl SpireTopGraphBuildInput {
     }
 }
 
-fn max_centroid_inner_product(nodes: &[SpireTopGraphNodeInput]) -> f32 {
-    let mut max_ip = f32::NEG_INFINITY;
-    for lhs in nodes {
-        for rhs in nodes {
-            max_ip = max_ip.max(top_graph_inner_product(&lhs.centroid, &rhs.centroid));
-        }
-    }
-    max_ip
-}
-
-fn top_graph_inner_product(lhs: &[f32], rhs: &[f32]) -> f32 {
-    lhs.iter().zip(rhs).map(|(a, b)| a * b).sum::<f32>()
+fn max_centroid_norm_sq(nodes: &[SpireTopGraphNodeInput]) -> f32 {
+    nodes
+        .iter()
+        .map(|node| inner_product(&node.centroid, &node.centroid))
+        .fold(0.0, f32::max)
 }
