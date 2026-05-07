@@ -9,13 +9,21 @@ use super::{
     EC_SPIRE_DEFAULT_BOUNDARY_REPLICA_COUNT, EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
     EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE, EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
     EC_SPIRE_DEFAULT_RECURSIVE_FANOUT, EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED,
-    EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS, EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT,
+    EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA, EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
+    EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE, EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
+    EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE, EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT,
     EC_SPIRE_MAX_LOCAL_STORE_COUNT, EC_SPIRE_MAX_NLISTS, EC_SPIRE_MAX_NPROBE,
     EC_SPIRE_MAX_PQ_GROUP_SIZE, EC_SPIRE_MAX_RECURSIVE_FANOUT, EC_SPIRE_MAX_RERANK_WIDTH,
-    EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS, EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT,
+    EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TOP_GRAPH_ALPHA, EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE,
+    EC_SPIRE_MAX_TOP_GRAPH_DEGREE, EC_SPIRE_MAX_TOP_GRAPH_ENABLED,
+    EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE, EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT,
     EC_SPIRE_MIN_LOCAL_STORE_COUNT, EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE,
     EC_SPIRE_MIN_PQ_GROUP_SIZE, EC_SPIRE_MIN_RECURSIVE_FANOUT, EC_SPIRE_MIN_RERANK_WIDTH,
-    EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TOP_GRAPH_ALPHA, EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE,
+    EC_SPIRE_MIN_TOP_GRAPH_DEGREE, EC_SPIRE_MIN_TOP_GRAPH_ENABLED,
+    EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
@@ -38,6 +46,11 @@ struct EcSpireReloptions {
     training_sample_rows: i32,
     seed: i32,
     pq_group_size: i32,
+    top_graph_enabled: i32,
+    top_graph_degree: i32,
+    top_graph_build_list_size: i32,
+    top_graph_alpha: f64,
+    top_graph_search_list_size: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     local_store_tablespaces_offset: i32,
@@ -94,8 +107,22 @@ pub(super) struct EcSpireOptions {
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
     pub(super) pq_group_size: i32,
+    pub(super) top_graph_enabled: i32,
+    pub(super) top_graph_degree: i32,
+    pub(super) top_graph_build_list_size: i32,
+    pub(super) top_graph_alpha: f32,
+    pub(super) top_graph_search_list_size: i32,
     pub(super) storage_format: SpireStorageFormat,
     pub(super) local_store_tablespaces: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct SpireTopGraphOptionPlan {
+    pub(super) enabled: bool,
+    pub(super) graph_degree: u32,
+    pub(super) build_list_size: u32,
+    pub(super) alpha: f32,
+    pub(super) search_list_size: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +142,11 @@ impl EcSpireOptions {
         training_sample_rows: EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_SPIRE_DEFAULT_SEED,
         pq_group_size: EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
+        top_graph_enabled: EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
+        top_graph_degree: EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE,
+        top_graph_build_list_size: EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
+        top_graph_alpha: EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA,
+        top_graph_search_list_size: EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
         storage_format: SpireStorageFormat::Auto,
         local_store_tablespaces: None,
     };
@@ -139,6 +171,29 @@ impl EcSpireOptions {
             value if value >= 2 => Some(value as u32),
             _ => unreachable!("recursive_fanout validation rejects value 1"),
         }
+    }
+
+    pub(super) fn top_graph_plan(&self) -> Result<SpireTopGraphOptionPlan, String> {
+        validate_top_graph_enabled_value(self.top_graph_enabled)?;
+        validate_top_graph_degree_value(self.top_graph_degree)?;
+        validate_top_graph_build_list_size_value(self.top_graph_build_list_size)?;
+        validate_top_graph_alpha_value(self.top_graph_alpha)?;
+        validate_top_graph_search_list_size_value(self.top_graph_search_list_size)?;
+        Ok(SpireTopGraphOptionPlan {
+            enabled: self.top_graph_enabled != 0,
+            graph_degree: u32::try_from(self.top_graph_degree)
+                .map_err(|_| "ec_spire top_graph_degree reloption must fit u32".to_owned())?,
+            build_list_size: u32::try_from(self.top_graph_build_list_size).map_err(|_| {
+                "ec_spire top_graph_build_list_size reloption must fit u32".to_owned()
+            })?,
+            alpha: self.top_graph_alpha,
+            search_list_size: match self.top_graph_search_list_size {
+                0 => None,
+                value => Some(u32::try_from(value).map_err(|_| {
+                    "ec_spire top_graph_search_list_size reloption must fit u32".to_owned()
+                })?),
+            },
+        })
     }
 }
 
@@ -167,6 +222,62 @@ fn validate_boundary_replica_count_value(value: i32) -> Result<(), String> {
     } else {
         Err(format!(
             "ec_spire boundary_replica_count reloption must be between {EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT} and {EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT}, got {value}"
+        ))
+    }
+}
+
+fn validate_top_graph_enabled_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_TOP_GRAPH_ENABLED..=EC_SPIRE_MAX_TOP_GRAPH_ENABLED).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire top_graph_enabled reloption must be 0 or 1, got {value}"
+        ))
+    }
+}
+
+fn validate_top_graph_degree_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_TOP_GRAPH_DEGREE..=EC_SPIRE_MAX_TOP_GRAPH_DEGREE).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire top_graph_degree reloption must be between {EC_SPIRE_MIN_TOP_GRAPH_DEGREE} and {EC_SPIRE_MAX_TOP_GRAPH_DEGREE}, got {value}"
+        ))
+    }
+}
+
+fn validate_top_graph_build_list_size_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE..=EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE)
+        .contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire top_graph_build_list_size reloption must be between {EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE} and {EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE}, got {value}"
+        ))
+    }
+}
+
+fn validate_top_graph_alpha_value(value: f32) -> Result<(), String> {
+    if value.is_finite()
+        && (EC_SPIRE_MIN_TOP_GRAPH_ALPHA..=EC_SPIRE_MAX_TOP_GRAPH_ALPHA).contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire top_graph_alpha reloption must be finite and between {EC_SPIRE_MIN_TOP_GRAPH_ALPHA} and {EC_SPIRE_MAX_TOP_GRAPH_ALPHA}, got {value}"
+        ))
+    }
+}
+
+fn validate_top_graph_search_list_size_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE..=EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE)
+        .contains(&value)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire top_graph_search_list_size reloption must be between {EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE} and {EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE}, got {value}"
         ))
     }
 }
@@ -538,6 +649,53 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_PQ_GROUP_SIZE,
                 offset_of!(EcSpireReloptions, pq_group_size) as i32,
             );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"top_graph_enabled".as_ptr(),
+                c"Enable SPIRE top-graph build/scan plumbing; 0 keeps flat recursive routing."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
+                EC_SPIRE_MIN_TOP_GRAPH_ENABLED,
+                EC_SPIRE_MAX_TOP_GRAPH_ENABLED,
+                offset_of!(EcSpireReloptions, top_graph_enabled) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"top_graph_degree".as_ptr(),
+                c"Maximum Vamana out-degree for the SPIRE top graph.".as_ptr(),
+                EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE,
+                EC_SPIRE_MIN_TOP_GRAPH_DEGREE,
+                EC_SPIRE_MAX_TOP_GRAPH_DEGREE,
+                offset_of!(EcSpireReloptions, top_graph_degree) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"top_graph_build_list_size".as_ptr(),
+                c"Vamana build search-list size for the SPIRE top graph.".as_ptr(),
+                EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
+                EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE,
+                EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE,
+                offset_of!(EcSpireReloptions, top_graph_build_list_size) as i32,
+            );
+            pg_sys::add_local_real_reloption(
+                &mut relopts,
+                c"top_graph_alpha".as_ptr(),
+                c"Vamana alpha-pruning slack for the SPIRE top graph.".as_ptr(),
+                EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA as f64,
+                EC_SPIRE_MIN_TOP_GRAPH_ALPHA as f64,
+                EC_SPIRE_MAX_TOP_GRAPH_ALPHA as f64,
+                offset_of!(EcSpireReloptions, top_graph_alpha) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"top_graph_search_list_size".as_ptr(),
+                c"Vamana scan search-list size for the SPIRE top graph; 0 derives from nprobe."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
+                EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE,
+                EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE,
+                offset_of!(EcSpireReloptions, top_graph_search_list_size) as i32,
+            );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -610,6 +768,16 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     validate_boundary_replica_count_value(reloptions.boundary_replica_count)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_top_graph_enabled_value(reloptions.top_graph_enabled)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_top_graph_degree_value(reloptions.top_graph_degree)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_top_graph_build_list_size_value(reloptions.top_graph_build_list_size)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_top_graph_alpha_value(reloptions.top_graph_alpha as f32)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let storage_format_reloption = unsafe {
         read_string_reloption(
             rd_options,
@@ -658,6 +826,11 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
+        top_graph_enabled: reloptions.top_graph_enabled,
+        top_graph_degree: reloptions.top_graph_degree,
+        top_graph_build_list_size: reloptions.top_graph_build_list_size,
+        top_graph_alpha: reloptions.top_graph_alpha as f32,
+        top_graph_search_list_size: reloptions.top_graph_search_list_size,
         storage_format,
         local_store_tablespaces,
     }
@@ -670,7 +843,7 @@ mod tests {
         resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
         resolve_single_level_scan_plan_values, validate_boundary_replica_count_value,
         validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireStorageFormat,
+        SpireCandidateDedupeMode, SpireStorageFormat, SpireTopGraphOptionPlan,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -834,6 +1007,16 @@ mod tests {
         assert_eq!(options.training_sample_rows, 0);
         assert_eq!(options.seed, 42);
         assert_eq!(options.requested_pq_group_size(), None);
+        assert_eq!(
+            options.top_graph_plan().unwrap(),
+            SpireTopGraphOptionPlan {
+                enabled: false,
+                graph_degree: 32,
+                build_list_size: 100,
+                alpha: 1.2,
+                search_list_size: None,
+            }
+        );
         assert_eq!(options.storage_format, SpireStorageFormat::Auto);
         assert_eq!(options.local_store_tablespaces, None);
         assert_eq!(
@@ -854,6 +1037,11 @@ mod tests {
             training_sample_rows: 1000,
             seed: 7,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
             storage_format: SpireStorageFormat::RaBitQ,
             local_store_tablespaces: Some("fast_a".to_owned()),
         };
@@ -886,6 +1074,11 @@ mod tests {
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };
@@ -919,6 +1112,11 @@ mod tests {
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };
@@ -944,6 +1142,11 @@ mod tests {
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };
@@ -954,5 +1157,58 @@ mod tests {
             plan.dedupe_mode,
             SpireCandidateDedupeMode::VecIdDedupeEnabled
         );
+    }
+
+    #[test]
+    fn top_graph_option_plan_resolves_enabled_params_and_auto_search_list() {
+        let options = EcSpireOptions {
+            top_graph_enabled: 1,
+            top_graph_degree: 64,
+            top_graph_build_list_size: 200,
+            top_graph_alpha: 1.4,
+            top_graph_search_list_size: 0,
+            ..EcSpireOptions::DEFAULT
+        };
+
+        assert_eq!(
+            options.top_graph_plan().unwrap(),
+            SpireTopGraphOptionPlan {
+                enabled: true,
+                graph_degree: 64,
+                build_list_size: 200,
+                alpha: 1.4,
+                search_list_size: None,
+            }
+        );
+
+        let explicit_search = EcSpireOptions {
+            top_graph_search_list_size: 37,
+            ..options
+        };
+        assert_eq!(
+            explicit_search.top_graph_plan().unwrap().search_list_size,
+            Some(37)
+        );
+    }
+
+    #[test]
+    fn top_graph_option_plan_rejects_invalid_values() {
+        let invalid_enabled = EcSpireOptions {
+            top_graph_enabled: 2,
+            ..EcSpireOptions::DEFAULT
+        };
+        assert!(invalid_enabled.top_graph_plan().is_err());
+
+        let invalid_degree = EcSpireOptions {
+            top_graph_degree: 0,
+            ..EcSpireOptions::DEFAULT
+        };
+        assert!(invalid_degree.top_graph_plan().is_err());
+
+        let invalid_alpha = EcSpireOptions {
+            top_graph_alpha: f32::NAN,
+            ..EcSpireOptions::DEFAULT
+        };
+        assert!(invalid_alpha.top_graph_plan().is_err());
     }
 }

@@ -63,6 +63,11 @@ mod tests {
             training_sample_rows,
             seed: 7,
             pq_group_size: 0,
+            top_graph_enabled: 0,
+            top_graph_degree: 32,
+            top_graph_build_list_size: 100,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 0,
             storage_format: super::options::SpireStorageFormat::TurboQuant,
             local_store_tablespaces: None,
         }

@@ -55,6 +55,21 @@ const SPIRE_LEAF_MERGE_AVERAGE_DIVISOR: u64 = 4;
 pub(super) const EC_SPIRE_DEFAULT_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_SPIRE_MAX_PQ_GROUP_SIZE: i32 = 32;
+pub(super) const EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED: i32 = 0;
+pub(super) const EC_SPIRE_MIN_TOP_GRAPH_ENABLED: i32 = 0;
+pub(super) const EC_SPIRE_MAX_TOP_GRAPH_ENABLED: i32 = 1;
+pub(super) const EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE: i32 = 32;
+pub(super) const EC_SPIRE_MIN_TOP_GRAPH_DEGREE: i32 = 1;
+pub(super) const EC_SPIRE_MAX_TOP_GRAPH_DEGREE: i32 = 1024;
+pub(super) const EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE: i32 = 100;
+pub(super) const EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE: i32 = 1;
+pub(super) const EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE: i32 = 100_000;
+pub(super) const EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA: f32 = 1.2;
+pub(super) const EC_SPIRE_MIN_TOP_GRAPH_ALPHA: f32 = 1.0;
+pub(super) const EC_SPIRE_MAX_TOP_GRAPH_ALPHA: f32 = 10.0;
+pub(super) const EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE: i32 = 0;
+pub(super) const EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE: i32 = 0;
+pub(super) const EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE: i32 = 1_000_000;
 
 pub(super) const SPIRE_PUBLISH_LOCK_MODE: pg_sys::LOCKMODE =
     pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
