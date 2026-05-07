@@ -228,6 +228,97 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_target_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    selected_pids: Vec<u64>,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchTargetPlanRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchTargetPlanRow>, String> {
+        if requested_epoch == 0 {
+            return Err(
+                "ec_spire remote search target plan requested_epoch must be greater than 0"
+                    .to_owned(),
+            );
+        }
+        let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch != requested_epoch {
+            return Err(format!(
+                "ec_spire remote search target plan requested epoch {requested_epoch} does not match active epoch {}",
+                root_control.active_epoch
+            ));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
+        if epoch_manifest.consistency_mode != requested_consistency_mode {
+            return Err(format!(
+                "ec_spire remote search target plan requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+                consistency_mode_name(epoch_manifest.consistency_mode)
+            ));
+        }
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+        let mut rows = Vec::new();
+        if !plan.local_selected_pids.is_empty() {
+            let pid_count = u64::try_from(plan.local_selected_pids.len())
+                .map_err(|_| "ec_spire remote search target plan local PID count exceeds u64")?;
+            rows.push(SpireRemoteSearchTargetPlanRow {
+                requested_epoch: plan.requested_epoch,
+                target_kind: "local",
+                node_id: meta::SPIRE_LOCAL_NODE_ID,
+                selected_pids: plan.local_selected_pids,
+                pid_count,
+                placement_state: "available",
+                status: "ready",
+            });
+        }
+        for target in plan.remote_targets {
+            let pid_count = u64::try_from(target.selected_pids.len())
+                .map_err(|_| "ec_spire remote search target plan remote PID count exceeds u64")?;
+            rows.push(SpireRemoteSearchTargetPlanRow {
+                requested_epoch: plan.requested_epoch,
+                target_kind: "remote",
+                node_id: target.node_id,
+                selected_pids: target.selected_pids,
+                pid_count,
+                placement_state: "available",
+                status: "requires_libpq_transport",
+            });
+        }
+
+        let mut skipped_by_node_state = BTreeMap::<(u32, &'static str), Vec<u64>>::new();
+        for skipped in plan.skipped_placements {
+            skipped_by_node_state
+                .entry((skipped.node_id, skipped.state))
+                .or_default()
+                .push(skipped.pid);
+        }
+        for ((node_id, placement_state), selected_pids) in skipped_by_node_state {
+            let pid_count = u64::try_from(selected_pids.len())
+                .map_err(|_| "ec_spire remote search target plan skipped PID count exceeds u64")?;
+            rows.push(SpireRemoteSearchTargetPlanRow {
+                requested_epoch: plan.requested_epoch,
+                target_kind: "skipped",
+                node_id,
+                selected_pids,
+                pid_count,
+                placement_state,
+                status: "degraded_skipped",
+            });
+        }
+
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the
