@@ -207,7 +207,8 @@ pub(super) fn validate_replacement_leaf_object_inputs(
     }
 
     let mut input_pids = HashSet::new();
-    let mut vec_ids = HashSet::new();
+    let mut vec_id_roles: HashMap<SpireVecId, (usize, usize)> = HashMap::new();
+    let mut vec_id_leaf_locations = HashSet::new();
     for input in leaf_inputs {
         if input.pid == 0 {
             return Err("ec_spire replacement leaf object input pid 0 is invalid".to_owned());
@@ -222,9 +223,9 @@ pub(super) fn validate_replacement_leaf_object_inputs(
             ));
         }
         for row in &input.rows {
-            if !is_visible_primary_assignment(row) {
+            if !is_visible_scored_assignment(row) {
                 return Err(format!(
-                    "ec_spire replacement leaf object input pid {} contains a non-visible-primary row",
+                    "ec_spire replacement leaf object input pid {} contains a non-visible-scored row",
                     input.pid
                 ));
             }
@@ -234,12 +235,35 @@ pub(super) fn validate_replacement_leaf_object_inputs(
                     input.pid
                 ));
             }
-            if !vec_ids.insert(row.vec_id.clone()) {
+            let scored_roles =
+                row.flags & (SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA);
+            if scored_roles.count_ones() != 1 {
+                return Err(format!(
+                    "ec_spire replacement leaf object input pid {} must set exactly one primary/boundary role",
+                    input.pid
+                ));
+            }
+            if !vec_id_leaf_locations.insert((input.pid, row.vec_id.clone())) {
                 return Err(
-                    "ec_spire replacement leaf object inputs contain duplicate vec_id rows"
+                    "ec_spire replacement leaf object inputs contain duplicate vec_id rows in one leaf"
                         .to_owned(),
                 );
             }
+            let entry = vec_id_roles.entry(row.vec_id.clone()).or_default();
+            if row.flags & SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
+                entry.0 += 1;
+            }
+            if row.flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+                entry.1 += 1;
+            }
+        }
+    }
+    for (vec_id, (primary_count, _replica_count)) in vec_id_roles {
+        if primary_count != 1 {
+            return Err(format!(
+                "ec_spire replacement leaf object inputs vec_id {:?} must have exactly one primary row",
+                vec_id
+            ));
         }
     }
 

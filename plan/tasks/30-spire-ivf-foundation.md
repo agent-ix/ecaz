@@ -1375,7 +1375,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `boundary_replica_count > 0`; post-build inserts now publish one insert
   delta per selected target leaf with a shared `vec_id`; recursive builds now
   route each source vector through the same top-N boundary predicate before
-  writing leaf rows; split/merge replacement fanout remains open.
+  writing leaf rows; split replacement materialization now fans out normalized
+  source rows across replacement leaves; merge replacement remains primary-only
+  because it publishes one replacement leaf.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
   before final top-k. Scan candidate collection now treats primary and
   boundary-replica rows as scored-visible and uses the existing

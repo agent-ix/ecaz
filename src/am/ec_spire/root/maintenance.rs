@@ -247,6 +247,12 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
                     snapshot,
                     object_store,
                     selected,
+                    u32::try_from(relation_options.boundary_replica_count).map_err(
+                        |_| {
+                            "ec_spire boundary_replica_count reloption must be non-negative"
+                                .to_owned()
+                        },
+                    )?,
                     usize::from(parent.dimensions),
                     relation_options.seed as u64,
                     build::SPIRE_DEFAULT_KMEANS_ITERATIONS,

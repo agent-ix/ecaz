@@ -218,7 +218,7 @@
             ],
         )
         .unwrap_err()
-        .contains("duplicate vec_id"));
+        .contains("exactly one primary"));
     }
 
     #[test]
@@ -389,6 +389,7 @@
                     source_vector: vec![-1.0, 0.0],
                 },
             ],
+            0,
             2,
             42,
             8,
@@ -418,6 +419,71 @@
     }
 
     #[test]
+    fn split_replacement_materialization_fans_out_boundary_rows() {
+        let decision = scheduled_split_decision(7);
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        let materialized = build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: primary_row(1, 20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: primary_row(2, 20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+            ],
+            1,
+            2,
+            42,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(materialized.leaf_inputs[0].rows.len(), 2);
+        assert_eq!(materialized.leaf_inputs[1].rows.len(), 2);
+        assert_eq!(
+            materialized.leaf_inputs[0]
+                .rows
+                .iter()
+                .map(|row| row.flags)
+                .collect::<Vec<_>>(),
+            vec![
+                SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA
+            ]
+        );
+        assert_eq!(
+            materialized.leaf_inputs[1]
+                .rows
+                .iter()
+                .map(|row| row.flags)
+                .collect::<Vec<_>>(),
+            vec![
+                SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                SPIRE_ASSIGNMENT_FLAG_PRIMARY
+            ]
+        );
+        assert_eq!(
+            materialized.leaf_inputs[0].rows[0].vec_id,
+            materialized.leaf_inputs[1].rows[0].vec_id
+        );
+        assert_eq!(
+            materialized.leaf_inputs[0].rows[1].vec_id,
+            materialized.leaf_inputs[1].rows[1].vec_id
+        );
+    }
+
+    #[test]
     fn split_replacement_materialization_from_rows_hydrates_trains_and_routes() {
         let decision = scheduled_split_decision(7);
         let pid_plan = SpireLeafReplacementPidPlan {
@@ -443,6 +509,7 @@
                     source_vector: vec![1.0, 0.0],
                 },
             ],
+            0,
             2,
             42,
             8,
@@ -474,6 +541,7 @@
                 assignment: primary_row(1, 20, 1),
                 source_vector: vec![1.0, 0.0],
             }],
+            0,
             2,
             42,
             8,
@@ -489,6 +557,7 @@
                 assignment: delta_insert_row(1, 20, 1),
                 source_vector: vec![1.0, 0.0],
             }],
+            0,
             2,
             42,
             8,
@@ -504,6 +573,7 @@
                 assignment: primary_row(1, 20, 1),
                 source_vector: vec![0.0, 0.0],
             }],
+            0,
             2,
             42,
             8,
