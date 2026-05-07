@@ -1442,7 +1442,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   Target-level request grouping is SQL-visible through
   `ec_spire_remote_search_target_plan(...)`, which emits one row per local,
   remote, or degraded-skipped target group with the selected PID array and
-  transport status.
+  transport status. Request-level planning is SQL-visible through
+  `ec_spire_remote_search_request_plan(...)`, which binds target groups to the
+  storage-node endpoint contract: query dimension, top-k budget, consistency
+  mode, endpoint function, and transport status.
   `ec_spire_remote_search_coordinator_local(...)` now exercises the planned
   coordinator path for local-only fanout by planning selected leaves, executing
   the local target batch, validating the batch, and applying the coordinator
