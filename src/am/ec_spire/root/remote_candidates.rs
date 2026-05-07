@@ -45,6 +45,116 @@ const SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES: &str = "no_candidate_batches";
 const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP: &str = "requires_remote_heap_resolution";
 const SPIRE_REMOTE_FINAL_STATUS_BLOCKED: &str = "blocked";
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct SpireRemoteCountRollup {
+    local_count: u64,
+    remote_count: u64,
+    skipped_count: u64,
+    ready_count: u64,
+    blocked_count: u64,
+    degraded_skipped_count: u64,
+    missing_descriptor_count: u64,
+    transport_count: u64,
+    local_pid_count: u64,
+    remote_pid_count: u64,
+    skipped_pid_count: u64,
+    ready_pid_count: u64,
+    blocked_pid_count: u64,
+    missing_descriptor_pid_count: u64,
+    transport_pid_count: u64,
+}
+
+fn add_remote_count(value: &mut u64, amount: u64, context: &str, field: &str) -> Result<(), String> {
+    *value = value
+        .checked_add(amount)
+        .ok_or_else(|| format!("ec_spire {context} {field} count overflowed"))?;
+    Ok(())
+}
+
+impl SpireRemoteCountRollup {
+    fn record_target(
+        &mut self,
+        target_kind: &str,
+        pid_count: u64,
+        context: &str,
+    ) -> Result<(), String> {
+        match target_kind {
+            SPIRE_REMOTE_TARGET_LOCAL => {
+                add_remote_count(&mut self.local_count, 1, context, "local")?;
+                add_remote_count(&mut self.local_pid_count, pid_count, context, "local PID")?;
+            }
+            SPIRE_REMOTE_TARGET_REMOTE => {
+                add_remote_count(&mut self.remote_count, 1, context, "remote")?;
+                add_remote_count(&mut self.remote_pid_count, pid_count, context, "remote PID")?;
+            }
+            SPIRE_REMOTE_TARGET_SKIPPED => {
+                add_remote_count(&mut self.skipped_count, 1, context, "skipped")?;
+                add_remote_count(&mut self.skipped_pid_count, pid_count, context, "skipped PID")?;
+            }
+            target_kind => {
+                return Err(format!(
+                    "ec_spire {context} found unknown target_kind '{target_kind}'"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn record_remote_target(&mut self, pid_count: u64, context: &str) -> Result<(), String> {
+        add_remote_count(&mut self.remote_count, 1, context, "remote")?;
+        add_remote_count(&mut self.remote_pid_count, pid_count, context, "remote PID")
+    }
+
+    fn record_status(
+        &mut self,
+        status: &str,
+        pid_count: u64,
+        context: &str,
+    ) -> Result<(), String> {
+        match status {
+            SPIRE_REMOTE_STATUS_READY => {
+                add_remote_count(&mut self.ready_count, 1, context, "ready")?;
+                add_remote_count(&mut self.ready_pid_count, pid_count, context, "ready PID")?;
+            }
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED => {
+                add_remote_count(&mut self.degraded_skipped_count, 1, context, "degraded skipped")?;
+            }
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
+                add_remote_count(&mut self.blocked_count, 1, context, "blocked")?;
+                add_remote_count(
+                    &mut self.missing_descriptor_count,
+                    1,
+                    context,
+                    "missing descriptor",
+                )?;
+                add_remote_count(&mut self.blocked_pid_count, pid_count, context, "blocked PID")?;
+                add_remote_count(
+                    &mut self.missing_descriptor_pid_count,
+                    pid_count,
+                    context,
+                    "missing descriptor PID",
+                )?;
+            }
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
+                add_remote_count(&mut self.blocked_count, 1, context, "blocked")?;
+                add_remote_count(&mut self.transport_count, 1, context, "transport")?;
+                add_remote_count(&mut self.blocked_pid_count, pid_count, context, "blocked PID")?;
+                add_remote_count(&mut self.transport_pid_count, pid_count, context, "transport PID")?;
+            }
+            status => {
+                return Err(format!("ec_spire {context} found unknown status '{status}'"));
+            }
+        }
+        Ok(())
+    }
+
+    fn executable_pid_count(&self, context: &str) -> Result<u64, String> {
+        self.local_pid_count
+            .checked_add(self.remote_pid_count)
+            .ok_or_else(|| format!("ec_spire {context} executable PID count overflowed"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireRemoteSearchMergeResult {
     pub(crate) candidates: Vec<SpireRemoteSearchCandidateRow>,
@@ -528,12 +638,7 @@ pub(crate) unsafe fn remote_search_request_summary_row(
                 consistency_mode,
             )
         };
-        let mut local_request_count = 0_u64;
-        let mut remote_request_count = 0_u64;
-        let mut skipped_request_count = 0_u64;
-        let mut local_pid_count = 0_u64;
-        let mut remote_pid_count = 0_u64;
-        let mut skipped_pid_count = 0_u64;
+        let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
@@ -542,25 +647,7 @@ pub(crate) unsafe fn remote_search_request_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            match row.target_kind {
-                SPIRE_REMOTE_TARGET_LOCAL => {
-                    local_request_count += 1;
-                    local_pid_count += row.pid_count;
-                }
-                SPIRE_REMOTE_TARGET_REMOTE => {
-                    remote_request_count += 1;
-                    remote_pid_count += row.pid_count;
-                }
-                SPIRE_REMOTE_TARGET_SKIPPED => {
-                    skipped_request_count += 1;
-                    skipped_pid_count += row.pid_count;
-                }
-                target_kind => {
-                    return Err(format!(
-                        "ec_spire remote search request summary found unknown target_kind '{target_kind}'"
-                    ));
-                }
-            }
+            rollup.record_target(row.target_kind, row.pid_count, "remote search request summary")?;
         }
 
         if rows.is_empty() {
@@ -575,14 +662,12 @@ pub(crate) unsafe fn remote_search_request_summary_row(
 
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search request summary request count exceeds u64")?;
-        let executable_pid_count = local_pid_count
-            .checked_add(remote_pid_count)
-            .ok_or("ec_spire remote search request summary executable PID count overflowed")?;
+        let executable_pid_count = rollup.executable_pid_count("remote search request summary")?;
         let status = if top_k == 0 {
             SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if remote_request_count > 0 {
+        } else if rollup.remote_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if skipped_request_count > 0 {
+        } else if rollup.skipped_count > 0 {
             SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
             SPIRE_REMOTE_STATUS_READY
@@ -591,13 +676,13 @@ pub(crate) unsafe fn remote_search_request_summary_row(
         Ok(SpireRemoteSearchRequestSummaryRow {
             requested_epoch,
             request_count,
-            local_request_count,
-            remote_request_count,
-            skipped_request_count,
+            local_request_count: rollup.local_count,
+            remote_request_count: rollup.remote_count,
+            skipped_request_count: rollup.skipped_count,
             executable_pid_count,
-            local_pid_count,
-            remote_pid_count,
-            skipped_pid_count,
+            local_pid_count: rollup.local_pid_count,
+            remote_pid_count: rollup.remote_pid_count,
+            skipped_pid_count: rollup.skipped_pid_count,
             query_dimension,
             top_k,
             consistency_mode: parsed_consistency_mode,
@@ -629,19 +714,7 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
                 consistency_mode,
             )
         };
-        let mut ready_request_count = 0_u64;
-        let mut blocked_request_count = 0_u64;
-        let mut local_request_count = 0_u64;
-        let mut remote_request_count = 0_u64;
-        let mut skipped_request_count = 0_u64;
-        let mut executable_pid_count = 0_u64;
-        let mut ready_pid_count = 0_u64;
-        let mut blocked_pid_count = 0_u64;
-        let mut skipped_pid_count = 0_u64;
-        let mut missing_descriptor_request_count = 0_u64;
-        let mut missing_descriptor_pid_count = 0_u64;
-        let mut transport_request_count = 0_u64;
-        let mut transport_pid_count = 0_u64;
+        let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
@@ -650,68 +723,8 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            match row.target_kind {
-                SPIRE_REMOTE_TARGET_LOCAL => {
-                    local_request_count += 1;
-                    executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary executable PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_TARGET_REMOTE => {
-                    remote_request_count += 1;
-                    executable_pid_count = executable_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary executable PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_TARGET_SKIPPED => {
-                    skipped_request_count += 1;
-                    skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary skipped PID count overflowed",
-                    )?;
-                }
-                target_kind => {
-                    return Err(format!(
-                        "ec_spire remote search readiness summary found unknown target_kind '{target_kind}'"
-                    ));
-                }
-            }
-
-            match row.status {
-                SPIRE_REMOTE_STATUS_READY => {
-                    ready_request_count += 1;
-                    ready_pid_count = ready_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary ready PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED => {}
-                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
-                    blocked_request_count += 1;
-                    missing_descriptor_request_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary blocked PID count overflowed",
-                    )?;
-                    missing_descriptor_pid_count = missing_descriptor_pid_count
-                        .checked_add(row.pid_count)
-                        .ok_or(
-                            "ec_spire remote search readiness summary missing descriptor PID count overflowed",
-                        )?;
-                }
-                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
-                    blocked_request_count += 1;
-                    transport_request_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary blocked PID count overflowed",
-                    )?;
-                    transport_pid_count = transport_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search readiness summary transport PID count overflowed",
-                    )?;
-                }
-                status => {
-                    return Err(format!(
-                        "ec_spire remote search readiness summary found unknown status '{status}'"
-                    ));
-                }
-            }
+            rollup.record_target(row.target_kind, row.pid_count, "remote search readiness summary")?;
+            rollup.record_status(row.status, row.pid_count, "remote search readiness summary")?;
         }
 
         if rows.is_empty() {
@@ -728,11 +741,11 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
             .map_err(|_| "ec_spire remote search readiness summary request count exceeds u64")?;
         let status = if top_k == 0 {
             SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if missing_descriptor_request_count > 0 {
+        } else if rollup.missing_descriptor_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if transport_request_count > 0 {
+        } else if rollup.transport_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if skipped_request_count > 0 {
+        } else if rollup.skipped_count > 0 {
             SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
             SPIRE_REMOTE_STATUS_READY
@@ -741,19 +754,19 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
         Ok(SpireRemoteSearchReadinessSummaryRow {
             requested_epoch,
             request_count,
-            ready_request_count,
-            blocked_request_count,
-            local_request_count,
-            remote_request_count,
-            skipped_request_count,
-            executable_pid_count,
-            ready_pid_count,
-            blocked_pid_count,
-            skipped_pid_count,
-            missing_descriptor_request_count,
-            missing_descriptor_pid_count,
-            transport_request_count,
-            transport_pid_count,
+            ready_request_count: rollup.ready_count,
+            blocked_request_count: rollup.blocked_count,
+            local_request_count: rollup.local_count,
+            remote_request_count: rollup.remote_count,
+            skipped_request_count: rollup.skipped_count,
+            executable_pid_count: rollup.executable_pid_count("remote search readiness summary")?,
+            ready_pid_count: rollup.ready_pid_count,
+            blocked_pid_count: rollup.blocked_pid_count,
+            skipped_pid_count: rollup.skipped_pid_count,
+            missing_descriptor_request_count: rollup.missing_descriptor_count,
+            missing_descriptor_pid_count: rollup.missing_descriptor_pid_count,
+            transport_request_count: rollup.transport_count,
+            transport_pid_count: rollup.transport_pid_count,
             query_dimension,
             top_k,
             consistency_mode: parsed_consistency_mode,
@@ -847,18 +860,7 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
                 consistency_mode,
             )
         };
-        let mut local_plan_count = 0_u64;
-        let mut remote_plan_count = 0_u64;
-        let mut skipped_plan_count = 0_u64;
-        let mut ready_plan_count = 0_u64;
-        let mut blocked_plan_count = 0_u64;
-        let mut degraded_skipped_plan_count = 0_u64;
-        let mut local_pid_count = 0_u64;
-        let mut remote_pid_count = 0_u64;
-        let mut skipped_pid_count = 0_u64;
-        let mut blocked_pid_count = 0_u64;
-        let mut missing_descriptor_plan_count = 0_u64;
-        let mut transport_plan_count = 0_u64;
+        let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
@@ -867,59 +869,8 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            match row.target_kind {
-                SPIRE_REMOTE_TARGET_LOCAL => {
-                    local_plan_count += 1;
-                    local_pid_count = local_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search execution summary local PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_TARGET_REMOTE => {
-                    remote_plan_count += 1;
-                    remote_pid_count = remote_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search execution summary remote PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_TARGET_SKIPPED => {
-                    skipped_plan_count += 1;
-                    skipped_pid_count = skipped_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search execution summary skipped PID count overflowed",
-                    )?;
-                }
-                target_kind => {
-                    return Err(format!(
-                        "ec_spire remote search execution summary found unknown target_kind '{target_kind}'"
-                    ));
-                }
-            }
-
-            match row.status {
-                SPIRE_REMOTE_STATUS_READY => {
-                    ready_plan_count += 1;
-                }
-                SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED => {
-                    degraded_skipped_plan_count += 1;
-                }
-                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
-                    blocked_plan_count += 1;
-                    missing_descriptor_plan_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search execution summary blocked PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
-                    blocked_plan_count += 1;
-                    transport_plan_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search execution summary blocked PID count overflowed",
-                    )?;
-                }
-                status => {
-                    return Err(format!(
-                        "ec_spire remote search execution summary found unknown status '{status}'"
-                    ));
-                }
-            }
+            rollup.record_target(row.target_kind, row.pid_count, "remote search execution summary")?;
+            rollup.record_status(row.status, row.pid_count, "remote search execution summary")?;
         }
 
         if rows.is_empty() {
@@ -936,11 +887,11 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
             .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
         let status = if top_k == 0 {
             SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if missing_descriptor_plan_count > 0 {
+        } else if rollup.missing_descriptor_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if transport_plan_count > 0 {
+        } else if rollup.transport_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if degraded_skipped_plan_count > 0 {
+        } else if rollup.degraded_skipped_count > 0 {
             SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else {
             SPIRE_REMOTE_STATUS_READY
@@ -949,16 +900,16 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
         Ok(SpireRemoteSearchExecutionSummaryRow {
             requested_epoch,
             plan_count,
-            local_plan_count,
-            remote_plan_count,
-            skipped_plan_count,
-            ready_plan_count,
-            blocked_plan_count,
-            degraded_skipped_plan_count,
-            local_pid_count,
-            remote_pid_count,
-            skipped_pid_count,
-            blocked_pid_count,
+            local_plan_count: rollup.local_count,
+            remote_plan_count: rollup.remote_count,
+            skipped_plan_count: rollup.skipped_count,
+            ready_plan_count: rollup.ready_count,
+            blocked_plan_count: rollup.blocked_count,
+            degraded_skipped_plan_count: rollup.degraded_skipped_count,
+            local_pid_count: rollup.local_pid_count,
+            remote_pid_count: rollup.remote_pid_count,
+            skipped_pid_count: rollup.skipped_pid_count,
+            blocked_pid_count: rollup.blocked_pid_count,
             query_dimension,
             top_k,
             consistency_mode: parsed_consistency_mode,
@@ -1042,12 +993,7 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
                 consistency_mode,
             )
         };
-        let mut ready_request_count = 0_u64;
-        let mut blocked_request_count = 0_u64;
-        let mut remote_pid_count = 0_u64;
-        let mut blocked_pid_count = 0_u64;
-        let mut missing_descriptor_request_count = 0_u64;
-        let mut transport_request_count = 0_u64;
+        let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
@@ -1056,33 +1002,8 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
-            remote_pid_count = remote_pid_count.checked_add(row.pid_count).ok_or(
-                "ec_spire remote search libpq request summary remote PID count overflowed",
-            )?;
-            match row.status {
-                SPIRE_REMOTE_STATUS_READY => {
-                    ready_request_count += 1;
-                }
-                SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
-                    blocked_request_count += 1;
-                    missing_descriptor_request_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search libpq request summary blocked PID count overflowed",
-                    )?;
-                }
-                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ => {
-                    blocked_request_count += 1;
-                    transport_request_count += 1;
-                    blocked_pid_count = blocked_pid_count.checked_add(row.pid_count).ok_or(
-                        "ec_spire remote search libpq request summary blocked PID count overflowed",
-                    )?;
-                }
-                status => {
-                    return Err(format!(
-                        "ec_spire remote search libpq request summary found unknown status '{status}'"
-                    ));
-                }
-            }
+            rollup.record_remote_target(row.pid_count, "remote search libpq request summary")?;
+            rollup.record_status(row.status, row.pid_count, "remote search libpq request summary")?;
         }
 
         if rows.is_empty() {
@@ -1099,9 +1020,9 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             .map_err(|_| "ec_spire remote search libpq request summary request count exceeds u64")?;
         let status = if top_k == 0 {
             SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if missing_descriptor_request_count > 0 {
+        } else if rollup.missing_descriptor_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if transport_request_count > 0 {
+        } else if rollup.transport_count > 0 {
             SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
         } else {
             SPIRE_REMOTE_STATUS_READY
@@ -1110,10 +1031,10 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
         Ok(SpireRemoteSearchLibpqRequestSummaryRow {
             requested_epoch,
             request_count,
-            ready_request_count,
-            blocked_request_count,
-            remote_pid_count,
-            blocked_pid_count,
+            ready_request_count: rollup.ready_count,
+            blocked_request_count: rollup.blocked_count,
+            remote_pid_count: rollup.remote_pid_count,
+            blocked_pid_count: rollup.blocked_pid_count,
             parameter_count_per_request: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
             result_column_count: remote_search_result_column_count(),
             query_dimension,
