@@ -1213,6 +1213,68 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_search_merge_order_contract_rows(
+) -> Vec<SpireRemoteSearchMergeOrderContractRow> {
+    vec![
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 1,
+            order_key: "score",
+            direction: "ascending",
+            semantic_role: "nearest_candidate_first",
+            validator: "must_be_finite",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 2,
+            order_key: "assignment_role",
+            direction: "primary_before_boundary_replica",
+            semantic_role: "prefer_primary_placement_on_tie",
+            validator: "must_include_visible_assignment_role",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 3,
+            order_key: "served_epoch",
+            direction: "descending",
+            semantic_role: "newer_epoch_wins_tie",
+            validator: "must_equal_requested_epoch",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 4,
+            order_key: "node_id",
+            direction: "ascending",
+            semantic_role: "deterministic_node_tie_breaker",
+            validator: "must_equal_origin_node",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 5,
+            order_key: "pid",
+            direction: "ascending",
+            semantic_role: "deterministic_partition_tie_breaker",
+            validator: "must_be_selected_pid",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 6,
+            order_key: "object_version",
+            direction: "descending",
+            semantic_role: "newer_object_wins_tie",
+            validator: "must_be_positive",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 7,
+            order_key: "row_index",
+            direction: "ascending",
+            semantic_role: "deterministic_row_tie_breaker",
+            validator: "must_fit_u32",
+        },
+        SpireRemoteSearchMergeOrderContractRow {
+            order_ordinal: 8,
+            order_key: "row_locator",
+            direction: "lexicographic_ascending",
+            semantic_role: "final_stable_tie_breaker",
+            validator: "must_be_nonempty_and_opaque",
+        },
+    ]
+}
+
 pub(crate) fn remote_search_row_locator_contract_rows(
 ) -> Vec<SpireRemoteSearchRowLocatorContractRow> {
     vec![

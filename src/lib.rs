@@ -1501,6 +1501,62 @@ fn ec_spire_remote_node_capability_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_publish_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(descriptor_state, &'static str),
+        name!(placement_count, i64),
+        name!(available_placement_count, i64),
+        name!(stale_placement_count, i64),
+        name!(unavailable_placement_count, i64),
+        name!(skipped_placement_count, i64),
+        name!(required_last_served_epoch, i64),
+        name!(required_min_retained_epoch, i64),
+        name!(last_served_epoch, i64),
+        name!(min_retained_epoch, i64),
+        name!(epoch_window_status, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_publish_plan") };
+    let rows = unsafe { am::spire_remote_epoch_publish_plan(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.descriptor_state,
+            i64::try_from(row.placement_count).expect("placement count should fit in i64"),
+            i64::try_from(row.available_placement_count)
+                .expect("available placement count should fit in i64"),
+            i64::try_from(row.stale_placement_count)
+                .expect("stale placement count should fit in i64"),
+            i64::try_from(row.unavailable_placement_count)
+                .expect("unavailable placement count should fit in i64"),
+            i64::try_from(row.skipped_placement_count)
+                .expect("skipped placement count should fit in i64"),
+            i64::try_from(row.required_last_served_epoch)
+                .expect("required last served epoch should fit in i64"),
+            i64::try_from(row.required_min_retained_epoch)
+                .expect("required min retained epoch should fit in i64"),
+            i64::try_from(row.last_served_epoch).expect("last served epoch should fit in i64"),
+            i64::try_from(row.min_retained_epoch).expect("min retained epoch should fit in i64"),
+            row.epoch_window_status,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_publish_readiness(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -1544,6 +1600,32 @@ fn ec_spire_remote_epoch_publish_readiness(
         row.status,
         row.recommendation,
     ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
+    'static,
+    (
+        name!(consistency_mode, &'static str),
+        name!(placement_state, &'static str),
+        name!(search_action, &'static str),
+        name!(publish_action, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_degradation_policy_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            row.consistency_mode,
+            row.placement_state,
+            row.search_action,
+            row.publish_action,
+            row.status,
+            row.recommendation,
+        )
+    }))
 }
 
 #[pg_extern(stable, strict)]
@@ -2886,6 +2968,30 @@ fn ec_spire_remote_search_merge_input_summary(
         i64::try_from(row.top_k).expect("top_k should fit in i64"),
         row.status,
     ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_merge_order_contract() -> TableIterator<
+    'static,
+    (
+        name!(order_ordinal, i64),
+        name!(order_key, &'static str),
+        name!(direction, &'static str),
+        name!(semantic_role, &'static str),
+        name!(validator, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_merge_order_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.order_ordinal).expect("order ordinal should fit in i64"),
+            row.order_key,
+            row.direction,
+            row.semantic_role,
+            row.validator,
+        )
+    }))
 }
 
 #[pg_extern(stable, strict)]
@@ -11691,6 +11797,139 @@ mod tests {
         assert_eq!(remote_placement_count, 1);
         assert_eq!(remote_available_count, 1);
         assert_eq!(blocked_remote_node_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_epoch_publish_plan_missing() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_epoch_plan_missing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_plan_missing_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_epoch_plan_missing_sql_idx \
+             ON ec_spire_remote_epoch_plan_missing_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_epoch_plan_missing_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_epoch_plan_missing_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_epoch_plan_missing_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let plan_from = "FROM ec_spire_remote_epoch_publish_plan(\
+             'ec_spire_remote_epoch_plan_missing_sql_idx'::regclass)";
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
+            .expect("epoch publish plan count query should succeed")
+            .expect("epoch publish plan count should exist");
+        let descriptor_state =
+            Spi::get_one::<String>(&format!("SELECT descriptor_state {plan_from}"))
+                .expect("epoch publish plan descriptor query should succeed")
+                .expect("epoch publish plan descriptor should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {plan_from}"))
+            .expect("epoch publish plan status query should succeed")
+            .expect("epoch publish plan status should exist");
+        let epoch_window_status =
+            Spi::get_one::<String>(&format!("SELECT epoch_window_status {plan_from}"))
+                .expect("epoch publish plan epoch window query should succeed")
+                .expect("epoch publish plan epoch window should exist");
+        let required_last_served_epoch =
+            Spi::get_one::<i64>(&format!("SELECT required_last_served_epoch {plan_from}"))
+                .expect("epoch publish plan required served query should succeed")
+                .expect("epoch publish plan required served should exist");
+        let last_served_epoch =
+            Spi::get_one::<i64>(&format!("SELECT last_served_epoch {plan_from}"))
+                .expect("epoch publish plan served query should succeed")
+                .expect("epoch publish plan served should exist");
+        let placement_count = Spi::get_one::<i64>(&format!("SELECT placement_count {plan_from}"))
+            .expect("epoch publish plan placement query should succeed")
+            .expect("epoch publish plan placement count should exist");
+
+        assert_eq!(row_count, 1);
+        assert_eq!(descriptor_state, "missing");
+        assert_eq!(status, "requires_remote_node_descriptor");
+        assert_eq!(epoch_window_status, "missing_descriptor");
+        assert_eq!(required_last_served_epoch, active_epoch);
+        assert_eq!(last_served_epoch, 0);
+        assert_eq!(placement_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_phase7_policy_contracts() {
+        let degradation_from = "FROM ec_spire_remote_degradation_policy_contract()";
+        let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
+        let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
+            .expect("degradation contract count query should succeed")
+            .expect("degradation contract count should exist");
+        let degraded_unavailable_action = Spi::get_one::<String>(&format!(
+            "SELECT search_action {degradation_from} \
+             WHERE consistency_mode = 'degraded' AND placement_state = 'unavailable'"
+        ))
+        .expect("degraded unavailable contract query should succeed")
+        .expect("degraded unavailable contract should exist");
+        let strict_unavailable_action = Spi::get_one::<String>(&format!(
+            "SELECT search_action {degradation_from} \
+             WHERE consistency_mode = 'strict' AND placement_state = 'unavailable'"
+        ))
+        .expect("strict unavailable contract query should succeed")
+        .expect("strict unavailable contract should exist");
+        let stale_degraded_status = Spi::get_one::<String>(&format!(
+            "SELECT status {degradation_from} \
+             WHERE consistency_mode = 'degraded' AND placement_state = 'stale'"
+        ))
+        .expect("degraded stale contract query should succeed")
+        .expect("degraded stale contract should exist");
+        let merge_order_count = Spi::get_one::<i64>(&format!("SELECT count(*) {merge_order_from}"))
+            .expect("merge order contract count query should succeed")
+            .expect("merge order contract count should exist");
+        let first_order_key = Spi::get_one::<String>(&format!(
+            "SELECT order_key {merge_order_from} WHERE order_ordinal = 1"
+        ))
+        .expect("merge first order query should succeed")
+        .expect("merge first order should exist");
+        let assignment_direction = Spi::get_one::<String>(&format!(
+            "SELECT direction {merge_order_from} WHERE order_key = 'assignment_role'"
+        ))
+        .expect("merge assignment direction query should succeed")
+        .expect("merge assignment direction should exist");
+        let dedupe_order = Spi::get_one::<String>(&format!(
+            "SELECT string_agg(order_key, ',' ORDER BY order_ordinal) {merge_order_from}"
+        ))
+        .expect("merge order aggregate query should succeed")
+        .expect("merge order aggregate should exist");
+
+        assert_eq!(degradation_count, 8);
+        assert_eq!(degraded_unavailable_action, "skip_and_report");
+        assert_eq!(strict_unavailable_action, "fail_closed");
+        assert_eq!(stale_degraded_status, "requires_fresh_epoch");
+        assert_eq!(merge_order_count, 8);
+        assert_eq!(first_order_key, "score");
+        assert_eq!(assignment_direction, "primary_before_boundary_replica");
+        assert_eq!(
+            dedupe_order,
+            "score,assignment_role,served_epoch,node_id,pid,object_version,row_index,row_locator"
+        );
     }
 
     #[pg_test]

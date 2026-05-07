@@ -964,6 +964,16 @@ pub(crate) unsafe fn remote_node_capability_summary(
     summary
 }
 
+pub(crate) unsafe fn remote_epoch_publish_plan(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireRemoteEpochPublishPlanRow> {
+    unsafe { remote_node_snapshot(index_relation) }
+        .into_iter()
+        .filter(|node| node.node_id != meta::SPIRE_LOCAL_NODE_ID)
+        .map(remote_epoch_publish_plan_row)
+        .collect()
+}
+
 pub(crate) unsafe fn remote_epoch_publish_readiness(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteEpochPublishReadinessRow {
@@ -1070,6 +1080,76 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     summary
 }
 
+pub(crate) fn remote_degradation_policy_contract_rows(
+) -> Vec<SpireRemoteDegradationPolicyContractRow> {
+    vec![
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "strict",
+            placement_state: "available",
+            search_action: "dispatch",
+            publish_action: "publish",
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "strict",
+            placement_state: "stale",
+            search_action: "fail_closed",
+            publish_action: "block_publish",
+            status: "requires_fresh_epoch",
+            recommendation: "refresh stale placement before strict search or epoch publish",
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "strict",
+            placement_state: "unavailable",
+            search_action: "fail_closed",
+            publish_action: "block_publish",
+            status: "requires_available_placement",
+            recommendation: "restore unavailable placement before strict search or epoch publish",
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "strict",
+            placement_state: "skipped",
+            search_action: "fail_closed",
+            publish_action: "block_publish",
+            status: "requires_available_placement",
+            recommendation: "remove skipped placement from strict epoch manifests",
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "degraded",
+            placement_state: "available",
+            search_action: "dispatch",
+            publish_action: "publish",
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "degraded",
+            placement_state: "stale",
+            search_action: "fail_closed",
+            publish_action: "block_publish",
+            status: "requires_fresh_epoch",
+            recommendation: "do not serve stale placements in degraded mode",
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "degraded",
+            placement_state: "unavailable",
+            search_action: "skip_and_report",
+            publish_action: "publish_degraded",
+            status: SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            recommendation: "report skipped unavailable placement in degraded search results",
+        },
+        SpireRemoteDegradationPolicyContractRow {
+            consistency_mode: "degraded",
+            placement_state: "skipped",
+            search_action: "skip_and_report",
+            publish_action: "publish_degraded",
+            status: SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            recommendation: "report skipped placement in degraded search results",
+        },
+    ]
+}
+
 fn remote_node_capability_plan_row(
     node: SpireRemoteNodeSnapshotRow,
 ) -> SpireRemoteNodeCapabilityPlanRow {
@@ -1113,6 +1193,53 @@ fn remote_node_capability_plan_row(
             status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before capability check",
         }
+    }
+}
+
+fn remote_epoch_publish_plan_row(
+    node: SpireRemoteNodeSnapshotRow,
+) -> SpireRemoteEpochPublishPlanRow {
+    let required_last_served_epoch = node.active_epoch;
+    let required_min_retained_epoch = node.active_epoch;
+    let epoch_window_status = if node.descriptor_state == "missing" {
+        "missing_descriptor"
+    } else if node.last_served_epoch < required_last_served_epoch {
+        "stale_epoch"
+    } else if node.min_retained_epoch > required_min_retained_epoch {
+        "retention_gap"
+    } else {
+        SPIRE_REMOTE_STATUS_READY
+    };
+    let (status, recommendation) = if node.status != SPIRE_REMOTE_STATUS_READY {
+        (
+            node.status,
+            "register remote node descriptor before publishing distributed epochs",
+        )
+    } else if epoch_window_status != SPIRE_REMOTE_STATUS_READY {
+        (
+            epoch_window_status,
+            "refresh remote node served epoch window before distributed epoch publish",
+        )
+    } else {
+        (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+    };
+
+    SpireRemoteEpochPublishPlanRow {
+        active_epoch: node.active_epoch,
+        node_id: node.node_id,
+        descriptor_state: node.descriptor_state,
+        placement_count: node.placement_count,
+        available_placement_count: node.available_placement_count,
+        stale_placement_count: node.stale_placement_count,
+        unavailable_placement_count: node.unavailable_placement_count,
+        skipped_placement_count: node.skipped_placement_count,
+        required_last_served_epoch,
+        required_min_retained_epoch,
+        last_served_epoch: node.last_served_epoch,
+        min_retained_epoch: node.min_retained_epoch,
+        epoch_window_status,
+        status,
+        recommendation,
     }
 }
 

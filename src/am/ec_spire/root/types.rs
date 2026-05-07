@@ -345,6 +345,15 @@ pub(crate) struct SpireRemoteSearchMergeInputSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchMergeOrderContractRow {
+    pub(crate) order_ordinal: u64,
+    pub(crate) order_key: &'static str,
+    pub(crate) direction: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) validator: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchRowLocatorContractRow {
     pub(crate) contract_item: &'static str,
     pub(crate) contract_value: &'static str,
@@ -710,6 +719,35 @@ pub(crate) struct SpireRemoteEpochPublishReadinessRow {
     pub(crate) ready_remote_node_count: u64,
     pub(crate) blocked_remote_node_count: u64,
     pub(crate) missing_descriptor_node_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochPublishPlanRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) placement_count: u64,
+    pub(crate) available_placement_count: u64,
+    pub(crate) stale_placement_count: u64,
+    pub(crate) unavailable_placement_count: u64,
+    pub(crate) skipped_placement_count: u64,
+    pub(crate) required_last_served_epoch: u64,
+    pub(crate) required_min_retained_epoch: u64,
+    pub(crate) last_served_epoch: u64,
+    pub(crate) min_retained_epoch: u64,
+    pub(crate) epoch_window_status: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteDegradationPolicyContractRow {
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) placement_state: &'static str,
+    pub(crate) search_action: &'static str,
+    pub(crate) publish_action: &'static str,
     pub(crate) status: &'static str,
     pub(crate) recommendation: &'static str,
 }

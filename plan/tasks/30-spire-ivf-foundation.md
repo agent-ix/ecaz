@@ -1515,11 +1515,17 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   the pre-publish remote-node descriptor gate for active placement metadata:
   remote node counts, remote placement-state counts, blocked/missing descriptor
   counts, readiness status, and recommendation.
+  `ec_spire_remote_epoch_publish_plan(...)` now exposes the same gate per
+  remote node, including placement-state counts, required served/retained epoch
+  windows, observed node epoch windows, and the precise publish blocker.
 - [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
   reports `degraded_ready` when degraded-mode planning skips selected
   placements, and exposes the skipped-placement count alongside merge counters.
+  `ec_spire_remote_degradation_policy_contract()` now documents the strict vs.
+  degraded placement-state actions that coordinator fanout and distributed
+  epoch publication share.
 - [ ] **Merge semantics.** Remote candidate merge now has a production helper
   that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
   primary placements ahead of boundary replicas on score ties, validates
@@ -1527,8 +1533,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   coordinator receive boundary now validates candidate batches against the
   requested epoch, expected node, selected PIDs, object version, visible
   assignment flags, vec-id, locator, and score before those batches can enter
-  the merge path. Coordinator integration and local heap row resolution after
-  remote candidate selection remain open.
+  the merge path. `ec_spire_remote_search_merge_order_contract()` now exposes
+  the exact comparator order used by that helper. Coordinator integration and
+  local heap row resolution after remote candidate selection remain open.
 - [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
   PID. Recorded in the Phase 0 storage note as a future
