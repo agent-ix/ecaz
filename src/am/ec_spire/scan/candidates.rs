@@ -52,6 +52,44 @@ where
     )
 }
 
+fn collect_top_graph_scan_plan_reranked_candidates<F>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+    exact_score_ip: F,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+{
+    if scan_plan.nprobe == 0 {
+        return Ok(Vec::new());
+    }
+
+    let scorer = SpirePreparedAssignmentScorer::prepare(
+        scan_plan.payload_format,
+        query_vector.len(),
+        query_vector,
+    )?;
+    let routed_rows = collect_snapshot_top_graph_routed_probe_leaf_rows(
+        snapshot,
+        object_store,
+        query_vector,
+        top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+        scan_plan.nprobe,
+        scan_plan.nprobe,
+    )?;
+    let mut candidates = rank_routed_leaf_rows_by_ip(
+        routed_rows,
+        |row| scorer.score_assignment_ip(row),
+        scan_plan.dedupe_mode,
+        scan_plan.candidate_limit,
+    )?;
+    rerank_scored_candidates_by_ip(&mut candidates, scan_plan.rerank_width, exact_score_ip)?;
+    Ok(candidates)
+}
+
 pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -62,15 +100,27 @@ pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
 where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
+    let top_graph_plan = options.top_graph_plan()?;
     let leaf_count = count_snapshot_single_level_leaf_pids(snapshot, object_store)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
-    let candidates = collect_single_level_scan_plan_reranked_candidates(
-        snapshot,
-        object_store,
-        query.values(),
-        scan_plan,
-        exact_score_ip,
-    )?;
+    let candidates = if top_graph_plan.enabled {
+        collect_top_graph_scan_plan_reranked_candidates(
+            snapshot,
+            object_store,
+            query.values(),
+            scan_plan,
+            top_graph_plan,
+            exact_score_ip,
+        )?
+    } else {
+        collect_single_level_scan_plan_reranked_candidates(
+            snapshot,
+            object_store,
+            query.values(),
+            scan_plan,
+            exact_score_ip,
+        )?
+    };
 
     Ok(SpirePreparedScanCandidates {
         scan_plan,

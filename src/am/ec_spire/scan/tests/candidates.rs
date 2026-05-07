@@ -997,6 +997,164 @@
     }
 
     #[test]
+    fn prepare_single_level_snapshot_scan_candidates_uses_top_graph_when_enabled() {
+        fn quantized_row(
+            vec_seq: u64,
+            block_number: u32,
+            offset_number: u16,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let input = quantized_assignment_input(
+                block_number,
+                offset_number,
+                SpireAssignmentPayloadFormat::TurboQuant,
+                source_vector,
+            );
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: input.heap_tid,
+                payload_format: input.payload_format,
+                gamma: input.gamma,
+                encoded_payload: input.encoded_payload,
+            }
+        }
+
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let top_graph_draft = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 1,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .unwrap();
+        let top_graph_object = spire_top_graph_partition_object_from_build_draft(
+            SPIRE_FIRST_PID + 90,
+            1,
+            root.header.level,
+            &top_graph_draft,
+        )
+        .unwrap();
+        let positive_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 11, vec![1.0, 0.0])],
+        )
+        .unwrap();
+        let negative_internal = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 21, vec![-1.0, 0.0])],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store
+                .insert_routing_object(7, &positive_internal)
+                .unwrap(),
+            object_store
+                .insert_routing_object(7, &negative_internal)
+                .unwrap(),
+            object_store
+                .insert_top_graph_object(7, &top_graph_object)
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 11,
+                    1,
+                    SPIRE_FIRST_PID + 10,
+                    &[quantized_row(1, 10, 1, &[1.0, 0.0])],
+                )
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(
+                    7,
+                    SPIRE_FIRST_PID + 21,
+                    1,
+                    SPIRE_FIRST_PID + 20,
+                    &[quantized_row(2, 10, 2, &[-1.0, 0.0])],
+                )
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let options = EcSpireOptions {
+            nlists: 2,
+            recursive_fanout: 2,
+            local_store_count: 1,
+            boundary_replica_count: 0,
+            nprobe: 1,
+            rerank_width: 0,
+            training_sample_rows: 0,
+            seed: 42,
+            pq_group_size: 0,
+            top_graph_enabled: 1,
+            top_graph_degree: 1,
+            top_graph_build_list_size: 2,
+            top_graph_alpha: 1.2,
+            top_graph_search_list_size: 2,
+            storage_format: SpireStorageFormat::TurboQuant,
+            local_store_tablespaces: None,
+        };
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        let prepared = prepare_single_level_snapshot_scan_candidates(
+            &snapshot,
+            &object_store,
+            &query,
+            options,
+            |candidate| {
+                Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
+                    1 => 10.0,
+                    other => panic!("unexpected rerank candidate {other}"),
+                }))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(prepared.scan_plan.nprobe, 1);
+        assert_eq!(prepared.candidates.len(), 1);
+        assert_eq!(prepared.candidates[0].vec_id.local_sequence(), Some(1));
+        assert_eq!(prepared.candidates[0].heap_tid, tid(10, 1));
+        assert_eq!(prepared.candidates[0].score, -10.0);
+    }
+
+    #[test]
     fn collect_single_level_scan_plan_reranked_candidates_allows_empty_plan() {
         let epoch_manifest = SpireEpochManifest {
             epoch: 7,
