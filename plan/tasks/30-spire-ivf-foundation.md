@@ -1358,8 +1358,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 5 — Boundary Replication
 
-- [ ] **Boundary predicate.** Define the threshold/rule for assigning a vector
-  to multiple nearby partitions.
+- [x] **Boundary predicate.** Define the threshold/rule for assigning a vector
+  to multiple nearby partitions. Phase 5 now has a design checkpoint in
+  `plan/design/spire-boundary-replication.md`: boundary replication is
+  default-off through a bounded `boundary_replica_count` reloption, uses the
+  existing top-N leaf route ordering as the first predicate, derives scan
+  `VecIdDedupeEnabled` mode from active replica-capable metadata, and preserves
+  Phase 4 hash-by-PID local placement.
 - [ ] **Assignment fanout.** Extend the assignment writer from one row per
   vector to multiple `(vec_id, pid)` rows.
 - [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
