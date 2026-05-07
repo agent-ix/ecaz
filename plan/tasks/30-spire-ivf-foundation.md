@@ -1429,10 +1429,25 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   a later space-management phase.
 - [ ] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
+- [ ] **SPIRE planner cost model.** Replace the
+  `cost::gated_planner_cost_estimate(block_count)` stub in
+  `src/am/ec_spire/cost.rs` with a SPIRE-aware cost function factoring in
+  `nlists`, effective `nprobe`, `local_store_count`, recursion depth, and the
+  routing-vs-leaf object distribution from the active snapshot. Implement
+  `ec_spire_amgettreeheight` to return the actual recursion depth instead of
+  the current hardcoded `0`. Pattern reference:
+  `src/am/ec_ivf/cost.rs::compute_amcostestimate` and
+  `estimate_ivf_cost`. Required before benchmark-harness and scale-packet
+  measurements so `EXPLAIN` and cost-based plan selection across `ec_spire`,
+  `ec_ivf`, and `ec_hnsw` are credible. Until this lands, planner choice
+  involving `ec_spire` is driven only by block count and any cross-AM
+  benchmark comparison through the planner is misleading.
 - [ ] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
-  and write packet-local artifacts.
+  and write packet-local artifacts. Depends on the SPIRE planner cost model
+  above for any measurement that traverses the SQL planner.
 - [ ] **Scale packet.** Run controlled AWS/RDS-class measurements before making
-  product billion-scale claims.
+  product billion-scale claims. Depends on the SPIRE planner cost model
+  above.
 - [ ] **Docs.** Update README/user docs only after a validated operator path
   exists.
 
