@@ -1435,7 +1435,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   retained-epoch serving remain separate Phase 7 work.
 - [ ] **Coordinator transport.** Use libpq pipeline mode first for
   coordinator-to-node fanout; do not invent a custom network protocol until the
-  SQL/protocol shape fails measurement.
+  SQL/protocol shape fails measurement. Coordinator-side fanout planning now
+  groups selected leaf PIDs into local work, per-remote-node target requests,
+  and degraded skipped-placement diagnostics before libpq execution lands.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
