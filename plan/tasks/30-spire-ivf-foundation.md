@@ -1442,9 +1442,12 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 - [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly.
-- [ ] **Merge semantics.** Merge remote candidates by stable `vec_id`, dedupe
-  boundary replicas, and define how local heap row resolution works after
-  remote candidate selection.
+- [ ] **Merge semantics.** Remote candidate merge now has a production helper
+  that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
+  primary placements ahead of boundary replicas on score ties, validates
+  candidate envelopes, and applies the final top-k cap after dedupe. Coordinator
+  integration and local heap row resolution after remote candidate selection
+  remain open.
 - [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
   PID. Recorded in the Phase 0 storage note as a future
