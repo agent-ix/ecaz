@@ -143,6 +143,84 @@ fn fanout_placement_state_name(state: meta::SpirePlacementState) -> &'static str
     }
 }
 
+pub(crate) unsafe fn remote_search_fanout_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    selected_pids: Vec<u64>,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchFanoutPlanRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchFanoutPlanRow>, String> {
+        if requested_epoch == 0 {
+            return Err(
+                "ec_spire remote search fanout requested_epoch must be greater than 0".to_owned(),
+            );
+        }
+        let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch != requested_epoch {
+            return Err(format!(
+                "ec_spire remote search fanout requested epoch {requested_epoch} does not match active epoch {}",
+                root_control.active_epoch
+            ));
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        if epoch_manifest.consistency_mode != requested_consistency_mode {
+            return Err(format!(
+                "ec_spire remote search fanout requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+                consistency_mode_name(epoch_manifest.consistency_mode)
+            ));
+        }
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+        let mut rows = Vec::with_capacity(
+            plan.local_selected_pids.len()
+                + plan
+                    .remote_targets
+                    .iter()
+                    .map(|target| target.selected_pids.len())
+                    .sum::<usize>()
+                + plan.skipped_placements.len(),
+        );
+        rows.extend(plan.local_selected_pids.into_iter().map(|pid| {
+            SpireRemoteSearchFanoutPlanRow {
+                requested_epoch: plan.requested_epoch,
+                target_kind: "local",
+                node_id: meta::SPIRE_LOCAL_NODE_ID,
+                pid,
+                placement_state: "available",
+            }
+        }));
+        for target in plan.remote_targets {
+            rows.extend(target.selected_pids.into_iter().map(|pid| {
+                SpireRemoteSearchFanoutPlanRow {
+                    requested_epoch: plan.requested_epoch,
+                    target_kind: "remote",
+                    node_id: target.node_id,
+                    pid,
+                    placement_state: "available",
+                }
+            }));
+        }
+        rows.extend(plan.skipped_placements.into_iter().map(|skipped| {
+            SpireRemoteSearchFanoutPlanRow {
+                requested_epoch: plan.requested_epoch,
+                target_kind: "skipped",
+                node_id: skipped.node_id,
+                pid: skipped.pid,
+                placement_state: skipped.state,
+            }
+        }));
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 /// Merges candidates that share one coordinator-scoped `vec_id` namespace.
 ///
 /// Current local SPIRE writers allocate node-local vec-id bytes. Until the

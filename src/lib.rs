@@ -1531,6 +1531,60 @@ fn ec_spire_index_top_graph_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_fanout_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    selected_pids: Vec<i64>,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(target_kind, &'static str),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(placement_state, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!("ec_spire_remote_search_fanout_plan requested_epoch must be greater than 0");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!("ec_spire_remote_search_fanout_plan selected PID {pid} is negative")
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_fanout_plan") };
+    let rows = unsafe {
+        am::spire_remote_search_fanout_plan_rows(
+            index_relation,
+            requested_epoch,
+            selected_pids,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            row.target_kind,
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            row.placement_state,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -7582,6 +7636,72 @@ mod tests {
         assert!(selected_pid);
         assert!(has_vec_id);
         assert!(row_locator_len);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_fanout_plan_sql_reports_local_pids() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_fanout_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_fanout_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_fanout_sql_idx \
+             ON ec_spire_remote_fanout_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_fanout_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_fanout_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let fanout_from = format!(
+            "FROM ec_spire_remote_search_fanout_plan(\
+             'ec_spire_remote_fanout_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[{}, {}]::bigint[], 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {fanout_from}"))
+            .expect("fanout count query should succeed")
+            .expect("fanout count should exist");
+        let all_local = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(target_kind = 'local') {fanout_from}"
+        ))
+        .expect("fanout target query should succeed")
+        .expect("fanout target aggregate should exist");
+        let all_available = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(placement_state = 'available') {fanout_from}"
+        ))
+        .expect("fanout state query should succeed")
+        .expect("fanout state aggregate should exist");
+        let selected_match = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(pid = ANY(ARRAY[{}, {}]::bigint[])) {fanout_from}",
+            selected_pids[0], selected_pids[1]
+        ))
+        .expect("fanout pid query should succeed")
+        .expect("fanout pid aggregate should exist");
+
+        assert_eq!(row_count, 2);
+        assert!(all_local);
+        assert!(all_available);
+        assert!(selected_match);
     }
 
     #[pg_test]

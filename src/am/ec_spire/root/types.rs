@@ -126,6 +126,15 @@ pub(crate) struct SpireRemoteSearchCandidateRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchFanoutPlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) target_kind: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) pid: u64,
+    pub(crate) placement_state: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexHealthSnapshot {
     pub(crate) active_epoch: u64,
     pub(crate) consistency_mode: &'static str,

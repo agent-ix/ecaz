@@ -46,6 +46,7 @@ pub(crate) use self::ec_spire::{
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     remote_search_candidates as spire_remote_search_candidates,
+    remote_search_fanout_plan_rows as spire_remote_search_fanout_plan_rows,
 };
 
 pub(crate) fn register_gucs() {
