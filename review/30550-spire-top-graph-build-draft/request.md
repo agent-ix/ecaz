@@ -3,6 +3,7 @@
 - Code commits:
   - `014cb947` (`Build SPIRE top graph drafts`)
   - `c48a96df` (`Build SPIRE top graphs from routing roots`)
+  - `6623bc41` (`Route SPIRE top graphs over routing roots`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -27,9 +28,12 @@ graph:
   to top routing child PIDs and centroid ordinals.
 - adds a root-routing-object adapter that projects root child entries into the
   top-graph input model and rejects internal routing objects.
+- adds a pure scan-side top-graph route helper that validates graph/root
+  compatibility, runs Vamana greedy search, and returns deterministic selected
+  child PIDs without wiring live scan callbacks yet.
 
-This is intentionally still in-memory build plumbing. It does not persist graph
-object bytes, add reloptions, or replace scan routing yet.
+This is intentionally still in-memory graph build/routing plumbing. It does not
+persist graph object bytes, add reloptions, or replace live scan routing yet.
 
 ## Files
 
@@ -37,6 +41,10 @@ object bytes, add reloptions, or replace scan routing yet.
 - `src/am/ec_spire/build/tests/top_graph.rs`
 - `src/am/ec_spire/build.rs`
 - `src/am/ec_spire/build/tests.rs`
+- `src/am/ec_spire/scan.rs`
+- `src/am/ec_spire/scan/routing.rs`
+- `src/am/ec_spire/scan/tests.rs`
+- `src/am/ec_spire/scan/tests/routing.rs`
 
 ## Review Focus
 
@@ -53,6 +61,11 @@ object bytes, add reloptions, or replace scan routing yet.
 5. Check whether the root-only adapter is the right boundary for the initial
    top graph, given that the design target is one graph over the root/top
    routing child set.
+6. Review the scan-side graph route validation: root PID, dimensions, node
+   count, node ordering, child PID/centroid ordinal join, entry node, neighbor
+   bounds, and search-list versus route-count constraints.
+7. Confirm deterministic route ordering should sort by graph distance,
+   centroid ordinal, child PID, then graph node ordinal.
 
 ## Validation
 
