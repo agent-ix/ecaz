@@ -1449,7 +1449,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   planning is SQL-visible through `ec_spire_remote_search_request_plan(...)`,
   which binds target groups to the storage-node endpoint contract: query
   dimension, top-k budget, consistency mode, endpoint function, and transport
-  status. Request readiness is also
+  status. Request-level readiness is SQL-visible through
+  `ec_spire_remote_search_request_readiness(...)`, which binds query/top-k and
+  endpoint metadata to target/node readiness so missing remote descriptors are
+  visible at the same granularity a future libpq request executor will consume.
+  Request readiness is also
   SQL-visible through `ec_spire_remote_search_request_summary(...)`, which
   aggregates request counts, local/remote/skipped PID counts, executable PID
   count, query dimension, top-k budget, consistency mode, and the effective

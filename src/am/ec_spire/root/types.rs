@@ -174,6 +174,23 @@ pub(crate) struct SpireRemoteSearchRequestPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchRequestReadinessRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) target_kind: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) endpoint_function: &'static str,
+    pub(crate) node_kind: &'static str,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) node_status: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchRequestSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) request_count: u64,
