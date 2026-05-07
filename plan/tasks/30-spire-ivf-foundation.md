@@ -1442,10 +1442,14 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   Target-level request grouping is SQL-visible through
   `ec_spire_remote_search_target_plan(...)`, which emits one row per local,
   remote, or degraded-skipped target group with the selected PID array and
-  transport status. Request-level planning is SQL-visible through
-  `ec_spire_remote_search_request_plan(...)`, which binds target groups to the
-  storage-node endpoint contract: query dimension, top-k budget, consistency
-  mode, endpoint function, and transport status. Request readiness is also
+  transport status. Target-readiness planning is SQL-visible through
+  `ec_spire_remote_search_target_readiness(...)`, which joins target fanout to
+  node descriptor readiness and reports remote targets as blocked by missing
+  remote-node descriptors before libpq transport can run. Request-level
+  planning is SQL-visible through `ec_spire_remote_search_request_plan(...)`,
+  which binds target groups to the storage-node endpoint contract: query
+  dimension, top-k budget, consistency mode, endpoint function, and transport
+  status. Request readiness is also
   SQL-visible through `ec_spire_remote_search_request_summary(...)`, which
   aggregates request counts, local/remote/skipped PID counts, executable PID
   count, query dimension, top-k budget, consistency mode, and the effective

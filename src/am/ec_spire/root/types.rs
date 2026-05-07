@@ -146,6 +146,20 @@ pub(crate) struct SpireRemoteSearchTargetPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchTargetReadinessRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) target_kind: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) placement_state: &'static str,
+    pub(crate) node_kind: &'static str,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) node_status: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchRequestPlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) target_kind: &'static str,

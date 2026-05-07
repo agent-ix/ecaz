@@ -319,6 +319,60 @@ pub(crate) unsafe fn remote_search_target_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_target_readiness_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    selected_pids: Vec<u64>,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchTargetReadinessRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchTargetReadinessRow>, String> {
+        let target_rows = unsafe {
+            remote_search_target_plan_rows(
+                index_relation,
+                requested_epoch,
+                selected_pids,
+                consistency_mode,
+            )
+        };
+        let node_rows = unsafe { remote_node_snapshot(index_relation) }
+            .into_iter()
+            .map(|row| (row.node_id, row))
+            .collect::<BTreeMap<_, _>>();
+
+        target_rows
+            .into_iter()
+            .map(|target| {
+                let node = node_rows.get(&target.node_id).ok_or_else(|| {
+                    format!(
+                        "ec_spire remote search target readiness missing node snapshot for node_id {}",
+                        target.node_id
+                    )
+                })?;
+                let status = if target.target_kind == "skipped" {
+                    target.status
+                } else if node.status != "ready" {
+                    node.status
+                } else {
+                    target.status
+                };
+                Ok(SpireRemoteSearchTargetReadinessRow {
+                    requested_epoch: target.requested_epoch,
+                    target_kind: target.target_kind,
+                    node_id: target.node_id,
+                    selected_pids: target.selected_pids,
+                    pid_count: target.pid_count,
+                    placement_state: target.placement_state,
+                    node_kind: node.node_kind,
+                    descriptor_state: node.descriptor_state,
+                    node_status: node.status,
+                    status,
+                })
+            })
+            .collect()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn remote_search_request_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
