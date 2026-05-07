@@ -59,16 +59,16 @@ fn plan_remote_search_fanout(
     snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
     selected_leaf_pids: &[u64],
 ) -> Result<SpireRemoteSearchFanoutPlan, String> {
+    let snapshot = meta::SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     if selected_leaf_pids.is_empty() {
         return Ok(SpireRemoteSearchFanoutPlan {
-            requested_epoch: snapshot.epoch_manifest.epoch,
+            requested_epoch: snapshot.epoch_manifest().epoch,
             local_selected_pids: Vec::new(),
             remote_targets: Vec::new(),
             skipped_placements: Vec::new(),
         });
     }
 
-    let snapshot = meta::SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let mut seen = HashSet::new();
     let mut local_selected_pids = Vec::new();
     let mut remote_by_node = BTreeMap::<u32, Vec<u64>>::new();
@@ -185,6 +185,7 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             &placement_directory,
         )?;
         let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+        let validated_snapshot = meta::SpireValidatedEpochSnapshot::from_snapshot(snapshot)?;
         let mut rows = Vec::with_capacity(
             plan.local_selected_pids.len()
                 + plan
@@ -194,25 +195,37 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
                     .sum::<usize>()
                 + plan.skipped_placements.len(),
         );
-        rows.extend(plan.local_selected_pids.into_iter().map(|pid| {
-            SpireRemoteSearchFanoutPlanRow {
+        for pid in plan.local_selected_pids {
+            let placement_state = fanout_placement_state_name(
+                validated_snapshot
+                    .require_lookup(pid, "remote search fanout local row")?
+                    .placement
+                    .state,
+            );
+            rows.push(SpireRemoteSearchFanoutPlanRow {
                 requested_epoch: plan.requested_epoch,
                 target_kind: "local",
                 node_id: meta::SPIRE_LOCAL_NODE_ID,
                 pid,
-                placement_state: "available",
-            }
-        }));
+                placement_state,
+            });
+        }
         for target in plan.remote_targets {
-            rows.extend(target.selected_pids.into_iter().map(|pid| {
-                SpireRemoteSearchFanoutPlanRow {
+            for pid in target.selected_pids {
+                let placement_state = fanout_placement_state_name(
+                    validated_snapshot
+                        .require_lookup(pid, "remote search fanout remote row")?
+                        .placement
+                        .state,
+                );
+                rows.push(SpireRemoteSearchFanoutPlanRow {
                     requested_epoch: plan.requested_epoch,
                     target_kind: "remote",
                     node_id: target.node_id,
                     pid,
-                    placement_state: "available",
-                }
-            }));
+                    placement_state,
+                });
+            }
         }
         rows.extend(plan.skipped_placements.into_iter().map(|skipped| {
             SpireRemoteSearchFanoutPlanRow {
@@ -923,10 +936,14 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
 const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
-const SPIRE_REMOTE_SEARCH_RESULT_COLUMN_COUNT: u64 = 9;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str =
     "merge_validated_remote_search_candidate_batches";
+
+fn remote_search_result_column_count() -> u64 {
+    u64::try_from(remote_search_libpq_result_contract_rows().len())
+        .expect("remote search result contract row count should fit in u64")
+}
 
 pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
     index_relation: pg_sys::Relation,
@@ -959,7 +976,7 @@ pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
             execution_transport: row.execution_transport,
             sql_template: SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
             parameter_count: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
-            result_column_count: SPIRE_REMOTE_SEARCH_RESULT_COLUMN_COUNT,
+            result_column_count: remote_search_result_column_count(),
             remote_index_source: row.remote_index_source,
             conninfo_source: row.conninfo_source,
             candidate_format: row.candidate_format,
@@ -1063,7 +1080,7 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             remote_pid_count,
             blocked_pid_count,
             parameter_count_per_request: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
-            result_column_count: SPIRE_REMOTE_SEARCH_RESULT_COLUMN_COUNT,
+            result_column_count: remote_search_result_column_count(),
             query_dimension,
             top_k,
             consistency_mode: parsed_consistency_mode,
@@ -1232,7 +1249,7 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
             skipped_pid_count: execution_summary.skipped_pid_count,
             merge_function: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
             dedupe_key: "vec_id",
-            tie_breaker: "score_then_primary_assignment_then_input_order",
+            tie_breaker: "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator",
             top_k: execution_summary.top_k,
             status,
         })
@@ -1240,12 +1257,90 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-/// Merges candidates that share one coordinator-scoped `vec_id` namespace.
+pub(crate) fn remote_search_row_locator_contract_rows(
+) -> Vec<SpireRemoteSearchRowLocatorContractRow> {
+    vec![
+        SpireRemoteSearchRowLocatorContractRow {
+            contract_item: "locator_scope",
+            contract_value: "origin_node",
+            status: "active_contract",
+        },
+        SpireRemoteSearchRowLocatorContractRow {
+            contract_item: "coordinator_interpretation",
+            contract_value: "opaque_bytes",
+            status: "active_contract",
+        },
+        SpireRemoteSearchRowLocatorContractRow {
+            contract_item: "receive_validation",
+            contract_value: "nonempty_only",
+            status: "active_contract",
+        },
+        SpireRemoteSearchRowLocatorContractRow {
+            contract_item: "remote_heap_resolution",
+            contract_value: "requires_origin_node_resolution",
+            status: "deferred_until_remote_heap_fetch",
+        },
+    ]
+}
+
+pub(crate) unsafe fn remote_search_finalization_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchFinalizationSummaryRow {
+    let merge_summary = unsafe {
+        remote_search_merge_input_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    let (final_heap_fetch_status, status, recommendation) = if merge_summary.status
+        == "requires_remote_node_descriptor"
+    {
+        (
+            "blocked",
+            "requires_remote_node_descriptor",
+            "register remote node descriptors before remote candidate finalization",
+        )
+    } else if merge_summary.remote_batch_count > 0 {
+        (
+            "requires_remote_heap_resolution",
+            "requires_remote_heap_resolution",
+            "add origin-node row locator resolution before returning remote heap rows",
+        )
+    } else if merge_summary.local_batch_count > 0 {
+        ("local_ready", "ready", "none")
+    } else {
+        ("no_candidate_batches", merge_summary.status, "none")
+    };
+
+    SpireRemoteSearchFinalizationSummaryRow {
+        requested_epoch: merge_summary.requested_epoch,
+        remote_batch_count: merge_summary.remote_batch_count,
+        local_batch_count: merge_summary.local_batch_count,
+        skipped_batch_count: merge_summary.skipped_batch_count,
+        merge_status: merge_summary.status,
+        row_locator_policy: "opaque_origin_node_bytes",
+        local_heap_resolution: "coordinator_local_heap",
+        remote_heap_resolution: "origin_node_row_locator",
+        final_heap_fetch_status,
+        status,
+        recommendation,
+    }
+}
+
+/// Validates one target-scoped remote candidate receive batch.
 ///
-/// Current local SPIRE writers allocate node-local vec-id bytes. Until the
-/// global vec-id format lands, multi-node callers must only use this helper
-/// when they can prove the input vec-id bytes are globally unique by
-/// construction.
+/// The batch must match the requested epoch, expected node, selected PID set,
+/// visible assignment flags, nonempty vec_id, nonempty opaque row_locator, and
+/// finite score contract before candidates can enter the merge path.
 pub(crate) fn validate_remote_search_candidate_batch(
     requested_epoch: u64,
     expected_node_id: u32,
@@ -1321,6 +1416,12 @@ pub(crate) fn validate_remote_search_candidate_batch(
     Ok(())
 }
 
+/// Merges candidates that share one coordinator-scoped `vec_id` namespace.
+///
+/// Current local SPIRE writers allocate node-local vec-id bytes. Until the
+/// global vec-id format lands, multi-node callers must only use this helper
+/// when they can prove the input vec-id bytes are globally unique by
+/// construction.
 pub(crate) fn merge_remote_search_candidates<I>(
     candidates: I,
     limit: Option<usize>,

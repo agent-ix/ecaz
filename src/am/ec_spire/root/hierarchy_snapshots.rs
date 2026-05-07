@@ -316,6 +316,8 @@ unsafe fn remote_search_coordinator_local_candidates_result(
         )?
     };
     let relation_options = unsafe { options::relation_options(index_relation) };
+    // The local collector caps one batch; the merge cap remains load-bearing
+    // once remote batches compete in the same coordinator result set.
     let candidates = scan::collect_quantized_selected_leaf_candidates(
         &snapshot,
         &object_store,
@@ -414,6 +416,8 @@ unsafe fn remote_search_coordinator_local_summary_result(
         &object_manifest,
         &placement_directory,
     )?;
+    // Unlike the candidate path, the summary still plans empty top-k probes so
+    // operators can inspect fanout and transport readiness without fetching rows.
     let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
     let local_pid_count = u64::try_from(plan.local_selected_pids.len())
         .map_err(|_| "ec_spire coordinator local PID count exceeds u64".to_owned())?;

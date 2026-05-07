@@ -345,6 +345,28 @@ pub(crate) struct SpireRemoteSearchMergeInputSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchRowLocatorContractRow {
+    pub(crate) contract_item: &'static str,
+    pub(crate) contract_value: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchFinalizationSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) remote_batch_count: u64,
+    pub(crate) local_batch_count: u64,
+    pub(crate) skipped_batch_count: u64,
+    pub(crate) merge_status: &'static str,
+    pub(crate) row_locator_policy: &'static str,
+    pub(crate) local_heap_resolution: &'static str,
+    pub(crate) remote_heap_resolution: &'static str,
+    pub(crate) final_heap_fetch_status: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

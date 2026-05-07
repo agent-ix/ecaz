@@ -1496,6 +1496,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   receive/merge boundary: result-column schema, per-node candidate batch
   validation expectations, opaque row-locator policy, merge helper, dedupe key,
   tie-breaker, batch counts, and blocked/readiness status.
+  `ec_spire_remote_search_row_locator_contract()` and
+  `ec_spire_remote_search_finalization_summary(...)` now expose the final
+  post-merge boundary: row locators remain origin-node opaque bytes, remote heap
+  resolution stays deferred to origin-node lookup, and finalization reports
+  whether remote heap fetch is blocked or ready.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

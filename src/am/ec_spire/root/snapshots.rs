@@ -847,6 +847,8 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
 fn remote_node_capability_plan_row(
     node: SpireRemoteNodeSnapshotRow,
 ) -> SpireRemoteNodeCapabilityPlanRow {
+    // Until remote descriptors carry binary metadata, version checks report the
+    // coordinator build's Cargo version as the required storage-node version.
     if node.node_id == meta::SPIRE_LOCAL_NODE_ID {
         SpireRemoteNodeCapabilityPlanRow {
             active_epoch: node.active_epoch,
@@ -890,6 +892,8 @@ fn remote_node_capability_plan_row(
 
 fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemoteNodeSnapshotRow {
     if node_id == meta::SPIRE_LOCAL_NODE_ID {
+        // A local empty index is ready but has no dispatchable placements.
+        // Executors that need work items must still gate on placement_count.
         SpireRemoteNodeSnapshotRow {
             active_epoch,
             node_id,
