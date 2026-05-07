@@ -1,6 +1,8 @@
 # Review Request: SPIRE Top-Graph Build Draft
 
-- Code commit: `014cb947` (`Build SPIRE top graph drafts`)
+- Code commits:
+  - `014cb947` (`Build SPIRE top graph drafts`)
+  - `c48a96df` (`Build SPIRE top graphs from routing roots`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -23,6 +25,8 @@ graph:
   `build_vamana_graph_with_stats` core;
 - preserves graph-local node ordinals as the mapping from graph neighbors back
   to top routing child PIDs and centroid ordinals.
+- adds a root-routing-object adapter that projects root child entries into the
+  top-graph input model and rejects internal routing objects.
 
 This is intentionally still in-memory build plumbing. It does not persist graph
 object bytes, add reloptions, or replace scan routing yet.
@@ -46,6 +50,9 @@ object bytes, add reloptions, or replace scan routing yet.
    routing centroid set.
 4. Confirm this is a reasonable first build-integration slice before durable
    graph object codecs and scan routing land.
+5. Check whether the root-only adapter is the right boundary for the initial
+   top graph, given that the design target is one graph over the root/top
+   routing child set.
 
 ## Validation
 
