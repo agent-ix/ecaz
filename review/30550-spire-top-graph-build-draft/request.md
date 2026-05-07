@@ -12,6 +12,7 @@
   - `e37771e7` (`Route SPIRE top graphs through recursive leaves`)
   - `6175e6b0` (`Add inert SPIRE top graph options`)
   - `4f9ddf1e` (`Bind SPIRE top graph recursive builds`)
+  - `073ae555` (`Bind SPIRE top graph scan candidates`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 6 top-level graph
 - Agent: coder1
@@ -73,9 +74,12 @@ graph:
 - binds `top_graph_enabled = 1` into the recursive build path: recursive
   populated builds publish the graph object in the initial epoch manifest, and
   `top_graph_enabled = 1` without `recursive_fanout >= 2` fails during build.
+- binds `top_graph_enabled = 1` into scan candidate preparation: enabled scans
+  load the durable graph object, route through graph-selected recursive leaves,
+  then reuse the existing quantized scoring, vec-id dedupe, and exact rerank
+  pipeline.
 
-This still does not enable graph publishing by default, add live scan binding,
-or replace live scan routing yet.
+This still does not enable graph publishing or graph scan by default.
 Relation-store top-graph writes currently require the encoded graph to fit in
 one object tuple; multi-tuple graph storage is not part of this checkpoint.
 
@@ -161,10 +165,13 @@ one object tuple; multi-tuple graph storage is not part of this checkpoint.
 17. Check the opt-in recursive build binding: graph publication must only happen
     for recursive builds, must advance `next_pid` by exactly one graph object,
     and must reject `top_graph_enabled = 1` without `recursive_fanout >= 2`.
+18. Review the opt-in scan binding: enabled scans must fail closed if the graph
+    object is missing or malformed, must use graph-selected recursive leaf rows,
+    and must leave scoring/dedupe/rerank behavior consistent with the flat path.
 
 ## Validation
 
-- `cargo test --lib top_graph --no-default-features --features pg18` (30 tests)
+- `cargo test --lib top_graph --no-default-features --features pg18` (31 tests)
 - `cargo test --lib top_graph_option --no-default-features --features pg18`
 - `cargo test --lib recursive_top_graph --no-default-features --features pg18`
 - `cargo test --lib local_object_store_reads_object_headers_for_dispatch --no-default-features --features pg18`
