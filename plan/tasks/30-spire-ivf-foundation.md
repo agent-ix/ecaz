@@ -1437,7 +1437,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   coordinator-to-node fanout; do not invent a custom network protocol until the
   SQL/protocol shape fails measurement. Coordinator-side fanout planning now
   groups selected leaf PIDs into local work, per-remote-node target requests,
-  and degraded skipped-placement diagnostics before libpq execution lands.
+  and degraded skipped-placement diagnostics before libpq execution lands. The
+  plan is SQL-visible through `ec_spire_remote_search_fanout_plan(...)`.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.
