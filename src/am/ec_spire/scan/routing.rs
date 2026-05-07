@@ -67,6 +67,85 @@ fn route_root_object_to_leaf_pids(
     route_routing_object_to_child_pids(root_object, query_vector, nprobe)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireTopGraphRoute {
+    node_ordinal: u32,
+    centroid_ordinal: u32,
+    child_pid: u64,
+    distance: f32,
+}
+
+fn route_top_graph_to_child_pids(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &SpireTopGraphBuildDraft,
+    query_vector: &[f32],
+    search_list_size: u32,
+    route_count: u32,
+) -> Result<Vec<u64>, String> {
+    Ok(route_top_graph_to_routes(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        route_count,
+    )?
+    .into_iter()
+    .map(|route| route.child_pid)
+    .collect())
+}
+
+fn route_top_graph_to_routes(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &SpireTopGraphBuildDraft,
+    query_vector: &[f32],
+    search_list_size: u32,
+    route_count: u32,
+) -> Result<Vec<SpireTopGraphRoute>, String> {
+    validate_top_graph_route_inputs(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        route_count,
+    )?;
+    let search_list_size = usize::try_from(search_list_size)
+        .map_err(|_| "ec_spire top graph search list size exceeds usize".to_owned())?;
+    let route_count = usize::try_from(route_count)
+        .map_err(|_| "ec_spire top graph route count exceeds usize".to_owned())?;
+    let graph = crate::am::VamanaGraph {
+        neighbors: top_graph
+            .nodes
+            .iter()
+            .map(|node| node.neighbors.clone())
+            .collect(),
+        max_degree: usize::try_from(top_graph.graph_degree)
+            .map_err(|_| "ec_spire top graph degree exceeds usize".to_owned())?,
+    };
+    let query_distance_offset = max_query_centroid_inner_product(root_object, query_vector)?;
+    let search = crate::am::greedy_search(&graph, top_graph.entry_node, search_list_size, |node| {
+        let centroid = root_object
+            .child_centroid(node as usize)
+            .expect("top graph route validation checked node centroid");
+        (query_distance_offset - inner_product(query_vector, centroid)).max(0.0)
+    });
+    let mut routes = search
+        .frontier
+        .into_iter()
+        .map(|candidate| {
+            let node = &top_graph.nodes[candidate.node as usize];
+            SpireTopGraphRoute {
+                node_ordinal: candidate.node,
+                centroid_ordinal: node.centroid_ordinal,
+                child_pid: node.child_pid,
+                distance: candidate.distance,
+            }
+        })
+        .collect::<Vec<_>>();
+    routes.sort_by(top_graph_route_cmp);
+    routes.truncate(route_count);
+    Ok(routes)
+}
+
 fn route_routing_object_to_child_pids(
     routing_object: &SpireRoutingPartitionObject,
     query_vector: &[f32],
@@ -294,6 +373,121 @@ fn require_recursive_internal_child<'a>(
         ));
     }
     Ok(child)
+}
+
+fn validate_top_graph_route_inputs(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &SpireTopGraphBuildDraft,
+    query_vector: &[f32],
+    search_list_size: u32,
+    route_count: u32,
+) -> Result<(), String> {
+    if root_object.header.kind != SpirePartitionObjectKind::Root {
+        return Err("ec_spire top graph routing requires a root routing object".to_owned());
+    }
+    if root_object.header.pid != top_graph.root_pid {
+        return Err(format!(
+            "ec_spire top graph root pid {} does not match routing root pid {}",
+            top_graph.root_pid, root_object.header.pid
+        ));
+    }
+    if root_object.dimensions != top_graph.dimensions {
+        return Err(format!(
+            "ec_spire top graph dimensions {} do not match routing dimensions {}",
+            top_graph.dimensions, root_object.dimensions
+        ));
+    }
+    if usize::try_from(top_graph.node_count)
+        .ok()
+        .filter(|node_count| *node_count == top_graph.nodes.len())
+        .is_none()
+    {
+        return Err(format!(
+            "ec_spire top graph node count {} does not match node rows {}",
+            top_graph.node_count,
+            top_graph.nodes.len()
+        ));
+    }
+    if top_graph.nodes.len() != root_object.child_count() {
+        return Err(format!(
+            "ec_spire top graph node count {} does not match routing child count {}",
+            top_graph.nodes.len(),
+            root_object.child_count()
+        ));
+    }
+    if top_graph.entry_node >= top_graph.node_count {
+        return Err(format!(
+            "ec_spire top graph entry node {} is outside node count {}",
+            top_graph.entry_node, top_graph.node_count
+        ));
+    }
+    if search_list_size == 0 {
+        return Err("ec_spire top graph search list size must be greater than 0".to_owned());
+    }
+    if route_count == 0 {
+        return Err("ec_spire top graph route count must be greater than 0".to_owned());
+    }
+    if search_list_size < route_count {
+        return Err(
+            "ec_spire top graph search list size must be at least route count".to_owned(),
+        );
+    }
+    validate_routing_query_vector(query_vector, usize::from(root_object.dimensions))?;
+
+    let node_count = top_graph.nodes.len();
+    for (node_index, (graph_node, routing_child)) in top_graph
+        .nodes
+        .iter()
+        .zip(root_object.children())
+        .enumerate()
+    {
+        if graph_node.child_pid != routing_child.child_pid {
+            return Err(format!(
+                "ec_spire top graph node {node_index} child pid {} does not match routing child pid {}",
+                graph_node.child_pid, routing_child.child_pid
+            ));
+        }
+        if graph_node.centroid_ordinal != routing_child.centroid_index {
+            return Err(format!(
+                "ec_spire top graph node {node_index} centroid ordinal {} does not match routing centroid ordinal {}",
+                graph_node.centroid_ordinal, routing_child.centroid_index
+            ));
+        }
+        for &neighbor in &graph_node.neighbors {
+            if usize::try_from(neighbor)
+                .ok()
+                .filter(|neighbor| *neighbor < node_count)
+                .is_none()
+            {
+                return Err(format!(
+                    "ec_spire top graph node {node_index} neighbor {neighbor} is outside node count {node_count}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn max_query_centroid_inner_product(
+    root_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+) -> Result<f32, String> {
+    let mut max_ip = f32::NEG_INFINITY;
+    for child in root_object.children() {
+        max_ip = max_ip.max(inner_product(query_vector, child.centroid));
+    }
+    if !max_ip.is_finite() {
+        return Err("ec_spire top graph query-to-centroid score must be finite".to_owned());
+    }
+    Ok(max_ip)
+}
+
+fn top_graph_route_cmp(left: &SpireTopGraphRoute, right: &SpireTopGraphRoute) -> Ordering {
+    left.distance
+        .total_cmp(&right.distance)
+        .then_with(|| left.centroid_ordinal.cmp(&right.centroid_ordinal))
+        .then_with(|| left.child_pid.cmp(&right.child_pid))
+        .then_with(|| left.node_ordinal.cmp(&right.node_ordinal))
 }
 
 fn route_candidate_cmp(left: &SpireRouteCandidate, right: &SpireRouteCandidate) -> Ordering {

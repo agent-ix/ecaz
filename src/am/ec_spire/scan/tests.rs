@@ -12,7 +12,7 @@ mod tests {
         prefetch_store_object_read_groups, prepare_single_level_snapshot_scan_candidates,
         rank_routed_leaf_rows_by_ip, rerank_scored_candidates_by_ip,
         route_recursive_routing_objects_to_leaf_pids, route_root_object_to_leaf_pids,
-        route_routing_object_to_child_pids,
+        route_routing_object_to_child_pids, route_top_graph_to_child_pids,
         SpireDeltaObjectRoute, SpireLeafObjectReadRoute, SpireLeafScanRow,
         SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute, SpireRoutedLeafScanRows,
         SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
@@ -26,9 +26,10 @@ mod tests {
     use crate::am::ec_spire::build::{
         build_local_recursive_routing_epoch_draft, build_partitioned_single_level_leaf_epoch_draft,
         build_recursive_routing_hierarchy_draft, build_single_level_leaf_epoch_draft,
-        SpirePartitionedSingleLevelBuildInput, SpireRecursiveRoutingBuildInput,
-        SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
-        SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
+        build_spire_top_graph_draft_from_routing_object, SpirePartitionedSingleLevelBuildInput,
+        SpireRecursiveRoutingBuildInput, SpireRecursiveRoutingChildInput,
+        SpireRecursiveRoutingEpochInput, SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan,
+        SpireTopGraphBuildParams,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireManifestEntry,

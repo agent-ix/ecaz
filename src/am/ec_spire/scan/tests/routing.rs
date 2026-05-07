@@ -47,6 +47,70 @@
     }
 
     #[test]
+    fn route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![0.8, 0.2]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![-1.0, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 4, vec![-0.8, 0.2]),
+            ],
+        )
+        .unwrap();
+        let top_graph = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 2,
+                build_list_size: 4,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .expect("top graph should build");
+
+        let child_pids =
+            route_top_graph_to_child_pids(&root, &top_graph, &[1.0, 0.0], 4, 2).unwrap();
+
+        assert_eq!(
+            child_pids,
+            vec![SPIRE_FIRST_PID + 1, SPIRE_FIRST_PID + 2]
+        );
+    }
+
+    #[test]
+    fn route_top_graph_to_child_pids_rejects_root_mismatch() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let mut top_graph = build_spire_top_graph_draft_from_routing_object(
+            &root,
+            SpireTopGraphBuildParams {
+                graph_degree: 2,
+                build_list_size: 2,
+                alpha: 1.2,
+                seed: 42,
+            },
+        )
+        .expect("top graph should build");
+        top_graph.root_pid = SPIRE_FIRST_PID + 99;
+
+        let error =
+            route_top_graph_to_child_pids(&root, &top_graph, &[1.0, 0.0], 2, 1).unwrap_err();
+
+        assert!(error.contains("does not match routing root pid"));
+    }
+
+    #[test]
     fn route_root_object_to_leaf_pids_still_rejects_internal_parent() {
         let internal = SpireRoutingPartitionObject::internal(
             SPIRE_FIRST_PID + 10,
