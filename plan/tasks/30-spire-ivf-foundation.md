@@ -1368,7 +1368,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   landed the parsed reloption, SQL options diagnostics, CLI profile key, and a
   pure route-map helper that resolves primary plus bounded secondary leaf PIDs
   without writing replica rows yet.
-- [ ] **Assignment fanout.** Extend the assignment writer from one row per
+- [x] **Assignment fanout.** Extend the assignment writer from one row per
   vector to multiple `(vec_id, pid)` rows. The populated single-level
   relation-backed build path now writes one primary row plus bounded
   `BOUNDARY_REPLICA` rows with the same `vec_id` when
@@ -1378,13 +1378,19 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   writing leaf rows; split replacement materialization now fans out normalized
   source rows across replacement leaves; merge replacement remains primary-only
   because it publishes one replacement leaf.
-- [ ] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
+- [x] **Duplicate control.** Ensure scans deduplicate replicated vector IDs
   before final top-k. Scan candidate collection now treats primary and
   boundary-replica rows as scored-visible and uses the existing
   `VecIdDedupeEnabled` mode for replica-capable scan plans; the default
   primary-only path still resolves to `NoReplicaDedupeDisabled`.
-- [ ] **Recall study.** Measure recall delta with boundary replication off/on
-  at fixed storage overhead.
+- [x] **Recall study.** Packet `review/30548-spire-boundary-recall-study/`
+  measures real-10k recall/storage with boundary replication off/on. With
+  `boundary_replica_count=1`, base assignment rows double from 10,000 to
+  20,000 and SPIRE index bytes rise from 8.2 MiB to 16.0 MiB. Recall@10 improves
+  from 0.9950 to 0.9975 at `nprobe=4` and from 0.9985 to 0.9990 at `nprobe=8`,
+  while mean query time roughly doubles at the same `nprobe`. The result keeps
+  boundary replication functioning but not compelling for the current real-10k
+  default operating point.
 - [x] **Storage accounting.** Leaf snapshot diagnostics now report base
   primary rows, base boundary-replica rows, delta boundary-replica insert rows,
   and effective boundary-replica rows so physical assignment growth from
