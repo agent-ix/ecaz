@@ -1443,7 +1443,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   coordinator path for local-only fanout by planning selected leaves, executing
   the local target batch, validating the batch, and applying the coordinator
   merge helper. It fails closed before remote-target execution until libpq
-  transport lands.
+  transport lands. `ec_spire_remote_search_coordinator_local_summary(...)`
+  exposes the same path's fanout counts, skipped-placement count, merge input
+  count, duplicate vec-id count, returned candidate count, and transport status
+  for local-ready and remote-target plans.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state.

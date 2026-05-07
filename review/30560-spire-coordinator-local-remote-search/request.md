@@ -3,6 +3,7 @@
 - Code commits:
   - `a322b95d` (`Add SPIRE coordinator local remote search path`)
   - `154c5335` (`Add SPIRE coordinator remote-target fail-closed test`)
+  - `a0af9d5c` (`Add SPIRE coordinator local search summary`)
 - Branch: `task-30-spire`
 - Task: Task 30 SPIRE IVF foundation, Phase 7 coordinator transport groundwork
 - Agent: coder1
@@ -30,6 +31,13 @@ limited intentionally to local-only fanout:
 - adds test-only placement-node rewrite support and PG18 coverage proving the
   coordinator-local endpoint fails closed before transport when a selected leaf
   is planned for a nonlocal node;
+- adds `ec_spire_remote_search_coordinator_local_summary(...)`, returning one
+  diagnostic row with local PID count, remote target/PID counts, skipped
+  placement count, merge input count, duplicate vec-id count, returned
+  candidate count, and status;
+- reports `requires_libpq_transport` for nonlocal fanout plans without opening
+  local object stores or attempting transport;
+- adds PG18 coverage for both local-ready and remote-target summary rows;
 - updates the Phase 7 task note to record the local-only coordinator path and
   the remaining libpq transport boundary.
 
@@ -41,6 +49,7 @@ multi-node candidate merge.
 
 - `src/am/ec_spire/root/hierarchy_snapshots.rs`
 - `src/am/ec_spire/root/debug.rs`
+- `src/am/ec_spire/root/types.rs`
 - `src/am/mod.rs`
 - `src/lib.rs`
 - `plan/tasks/30-spire-ivf-foundation.md`
@@ -55,13 +64,16 @@ multi-node candidate merge.
    result-helper refactor.
 4. Check that the test-only remote placement fixture does not weaken production
    local-store validation.
-5. Check whether the SQL name and row contract are acceptable as a diagnostic
-   coordinator bridge before real transport lands.
+5. Check that the summary status/count contract is useful for the future libpq
+   executor and does not imply transport has landed.
+6. Check whether the SQL names and row contracts are acceptable as diagnostic
+   coordinator bridges before real transport lands.
 
 ## Validation
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo test --lib remote_search --no-default-features --features pg18`
-  - Result: passed; 9 tests passed, including the coordinator-local SQL endpoint
-    test and the nonlocal remote-target fail-closed test.
+  - Result: passed; 10 tests passed, including the coordinator-local SQL
+    endpoint test, the nonlocal remote-target fail-closed test, and the summary
+    count/status test.
 - `git diff --check`
