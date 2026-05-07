@@ -2428,6 +2428,176 @@ fn ec_spire_remote_search_execution_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_request_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pids, Vec<i64>),
+        name!(pid_count, i64),
+        name!(query_dimension, i64),
+        name!(top_k, i64),
+        name!(consistency_mode, &'static str),
+        name!(execution_transport, &'static str),
+        name!(sql_template, &'static str),
+        name!(parameter_count, i64),
+        name!(result_column_count, i64),
+        name!(remote_index_source, &'static str),
+        name!(conninfo_source, &'static str),
+        name!(candidate_format, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_request_plan requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_request_plan top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_request_plan selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_request_plan")
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_request_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.selected_pids
+                .into_iter()
+                .map(|pid| i64::try_from(pid).expect("pid should fit in i64"))
+                .collect::<Vec<_>>(),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            i64::try_from(row.query_dimension).expect("query dimension should fit in i64"),
+            i64::try_from(row.top_k).expect("top_k should fit in i64"),
+            row.consistency_mode,
+            row.execution_transport,
+            row.sql_template,
+            i64::try_from(row.parameter_count).expect("parameter count should fit in i64"),
+            i64::try_from(row.result_column_count).expect("result column count should fit in i64"),
+            row.remote_index_source,
+            row.conninfo_source,
+            row.candidate_format,
+            row.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_request_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(request_count, i64),
+        name!(ready_request_count, i64),
+        name!(blocked_request_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(parameter_count_per_request, i64),
+        name!(result_column_count, i64),
+        name!(query_dimension, i64),
+        name!(top_k, i64),
+        name!(consistency_mode, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_request_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_request_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_request_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_request_summary")
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_request_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.request_count).expect("request count should fit in i64"),
+        i64::try_from(row.ready_request_count).expect("ready request count should fit in i64"),
+        i64::try_from(row.blocked_request_count).expect("blocked request count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.blocked_pid_count).expect("blocked pid count should fit in i64"),
+        i64::try_from(row.parameter_count_per_request)
+            .expect("parameter count per request should fit in i64"),
+        i64::try_from(row.result_column_count).expect("result column count should fit in i64"),
+        i64::try_from(row.query_dimension).expect("query dimension should fit in i64"),
+        i64::try_from(row.top_k).expect("top_k should fit in i64"),
+        row.consistency_mode,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_local(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -10073,6 +10243,159 @@ mod tests {
         assert_eq!(candidate_format, "none");
         assert_eq!(summary_status, "degraded_ready");
         assert_eq!(degraded_skipped_plan_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_libpq_req_blocked() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_libpq_req_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_libpq_req_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_libpq_req_sql_idx \
+             ON ec_spire_remote_libpq_req_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_libpq_req_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_libpq_req_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_libpq_req_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        let plan_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_plan(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_summary(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
+            .expect("libpq request count query should succeed")
+            .expect("libpq request count should exist");
+        let sql_template = Spi::get_one::<String>(&format!("SELECT sql_template {plan_from}"))
+            .expect("libpq request SQL template query should succeed")
+            .expect("libpq request SQL template should exist");
+        let parameter_count = Spi::get_one::<i64>(&format!("SELECT parameter_count {plan_from}"))
+            .expect("libpq request parameter count query should succeed")
+            .expect("libpq request parameter count should exist");
+        let result_column_count =
+            Spi::get_one::<i64>(&format!("SELECT result_column_count {plan_from}"))
+                .expect("libpq request result column count query should succeed")
+                .expect("libpq request result column count should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {plan_from}"))
+            .expect("libpq request status query should succeed")
+            .expect("libpq request status should exist");
+        let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("libpq request summary status query should succeed")
+            .expect("libpq request summary status should exist");
+        let blocked_request_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_request_count {summary_from}"))
+                .expect("libpq request summary blocked count query should succeed")
+                .expect("libpq request summary blocked count should exist");
+        let blocked_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_pid_count {summary_from}"))
+                .expect("libpq request summary blocked pid query should succeed")
+                .expect("libpq request summary blocked pid count should exist");
+
+        assert_eq!(request_count, 1);
+        assert!(sql_template.contains("ec_spire_remote_search"));
+        assert_eq!(parameter_count, 6);
+        assert_eq!(result_column_count, 9);
+        assert_eq!(status, "requires_remote_node_descriptor");
+        assert_eq!(summary_status, "requires_remote_node_descriptor");
+        assert_eq!(blocked_request_count, 1);
+        assert_eq!(blocked_pid_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_libpq_req_local() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_libpq_req_local_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_libpq_req_local_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_libpq_req_local_sql_idx \
+             ON ec_spire_remote_libpq_req_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_libpq_req_local_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_libpq_req_local_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        let plan_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_plan(\
+             'ec_spire_remote_libpq_req_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
+        );
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_summary(\
+             'ec_spire_remote_libpq_req_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
+        );
+        let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
+            .expect("local libpq request count query should succeed")
+            .expect("local libpq request count should exist");
+        let summary_request_count =
+            Spi::get_one::<i64>(&format!("SELECT request_count {summary_from}"))
+                .expect("local libpq summary request count query should succeed")
+                .expect("local libpq summary request count should exist");
+        let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("local libpq summary status query should succeed")
+            .expect("local libpq summary status should exist");
+
+        assert_eq!(request_count, 0);
+        assert_eq!(summary_request_count, 0);
+        assert_eq!(summary_status, "ready");
     }
 
     #[pg_test]
