@@ -929,6 +929,17 @@ fn parse_result_rows(
                 values,
             })
             .collect(),
+        "explain" => parse_explain_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values,
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1005,6 +1016,14 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
         }
     }
     rows
+}
+
+fn parse_explain_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    parse_table_rows(raw)
+        .into_iter()
+        .filter(|row| row.contains_key("modeled_total_cost"))
+        .map(|row| ("planner_cost".into(), row))
+        .collect()
 }
 
 fn parse_timed_loader_line(line: &str, prefix: &str) -> Option<(String, String)> {
@@ -1949,6 +1968,24 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_explain_planner_cost_rows() {
+        let rows = parse_explain_rows(
+            "┌──────────────────────┬──────────────────────┬────────────────────┐\n\
+             │ planner_scan_enabled ┆ modeled_startup_cost ┆ modeled_total_cost │\n\
+             ╞══════════════════════╪══════════════════════╪════════════════════╡\n\
+             │ t                    ┆ 12.5                 ┆ 37.25              │\n\
+             └──────────────────────┴──────────────────────┴────────────────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "planner_cost");
+        assert_eq!(
+            rows[0].1.get("modeled_total_cost").map(String::as_str),
+            Some("37.25")
         );
     }
 
