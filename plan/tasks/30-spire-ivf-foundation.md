@@ -1662,6 +1662,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_libpq_executor_readiness(...)` now reports the
   remaining manifest publication executor steps: secret resolution, connection
   open, pipeline entry, send, and payload-validation result handoff.
+  `ec_spire_remote_epoch_manifest_libpq_receive_plan(...)` and
+  `ec_spire_remote_epoch_manifest_libpq_receive_summary(...)` now expose the
+  pre-I/O manifest payload-validation receive boundary, including expected
+  result contract, validator action, ready/blocked receive counts, executor
+  status, and effective status.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future

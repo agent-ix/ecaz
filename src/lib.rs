@@ -4435,6 +4435,283 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_readiness(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_receive_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(expected_result_column_count, i64),
+        name!(validator_function, String),
+        name!(result_action, String),
+        name!(result_contract, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_receive_plan",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT d.active_epoch, d.node_id, \
+                        d.expected_result_column_count, \
+                        d.receive_validator AS validator_function, \
+                        CASE \
+                            WHEN d.dispatch_action = 'open_pipeline_and_send_remote_epoch_manifest' \
+                             AND d.status = 'ready' \
+                            THEN 'validate_remote_manifest_payload_result' \
+                            ELSE 'blocked_before_manifest_receive' \
+                        END AS result_action, \
+                        'remote_manifest_payload_validation_result'::text \
+                            AS result_contract, \
+                        CASE \
+                            WHEN d.dispatch_action = 'open_pipeline_and_send_remote_epoch_manifest' \
+                             AND d.status = 'ready' \
+                            THEN e.status \
+                            ELSE d.status \
+                        END AS status \
+                   FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan($1::oid) d \
+                  CROSS JOIN ec_spire_remote_epoch_manifest_libpq_executor_readiness($1::oid) e \
+                  ORDER BY d.node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq receive plan read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest receive active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "manifest receive active_epoch is null".to_owned())?,
+                    row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest receive node_id decode failed: {e}"))?
+                        .ok_or_else(|| "manifest receive node_id is null".to_owned())?,
+                    row["expected_result_column_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive expected_result_column_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive expected_result_column_count is null".to_owned()
+                        })?,
+                    row["validator_function"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive validator_function decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest receive validator_function is null".to_owned())?,
+                    row["result_action"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive result_action decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest receive result_action is null".to_owned())?,
+                    row["result_contract"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive result_contract decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest receive result_contract is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest receive status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest receive status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_receive_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(receive_count, i64),
+        name!(ready_receive_count, i64),
+        name!(blocked_receive_count, i64),
+        name!(expected_result_column_count, i64),
+        name!(validator_function, String),
+        name!(result_contract, String),
+        name!(next_executor_step, String),
+        name!(executor_status, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_receive_summary",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                "WITH receive AS ( \
+                     SELECT * FROM \
+                         ec_spire_remote_epoch_manifest_libpq_receive_plan($1::oid) \
+                 ), readiness AS ( \
+                     SELECT * FROM \
+                         ec_spire_remote_epoch_manifest_libpq_executor_readiness($1::oid) \
+                 ) \
+                 SELECT r.active_epoch, \
+                        count(p.node_id)::bigint AS receive_count, \
+                        count(*) FILTER \
+                            (WHERE p.result_action = 'validate_remote_manifest_payload_result')::bigint \
+                            AS ready_receive_count, \
+                        count(*) FILTER \
+                            (WHERE p.node_id IS NOT NULL \
+                               AND p.result_action <> 'validate_remote_manifest_payload_result')::bigint \
+                            AS blocked_receive_count, \
+                        coalesce(max(p.expected_result_column_count), 0)::bigint \
+                            AS expected_result_column_count, \
+                        coalesce(max(p.validator_function), 'none') AS validator_function, \
+                        coalesce(max(p.result_contract), 'none') AS result_contract, \
+                        r.next_executor_step, r.status AS executor_status, \
+                        CASE \
+                            WHEN count(p.node_id) = 0 THEN r.status \
+                            WHEN count(*) FILTER \
+                                (WHERE p.node_id IS NOT NULL \
+                                   AND p.result_action <> 'validate_remote_manifest_payload_result') = 0 \
+                            THEN r.status \
+                            ELSE min(p.status) FILTER \
+                                (WHERE p.result_action <> 'validate_remote_manifest_payload_result') \
+                        END AS status \
+                   FROM readiness r \
+                   LEFT JOIN receive p ON p.active_epoch = r.active_epoch \
+                  GROUP BY r.active_epoch, r.next_executor_step, r.status",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq receive summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest receive summary active_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary active_epoch is null".to_owned()
+                        })?,
+                    row["receive_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest receive summary receive_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary receive_count is null".to_owned()
+                        })?,
+                    row["ready_receive_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive summary ready_receive_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary ready_receive_count is null".to_owned()
+                        })?,
+                    row["blocked_receive_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive summary blocked_receive_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary blocked_receive_count is null".to_owned()
+                        })?,
+                    row["expected_result_column_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive summary expected_result_column_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary expected_result_column_count is null"
+                                .to_owned()
+                        })?,
+                    row["validator_function"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive summary validator_function decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary validator_function is null".to_owned()
+                        })?,
+                    row["result_contract"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive summary result_contract decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary result_contract is null".to_owned()
+                        })?,
+                    row["next_executor_step"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest receive summary next_executor_step decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary next_executor_step is null".to_owned()
+                        })?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive summary executor_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest receive summary executor_status is null".to_owned()
+                        })?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest receive summary status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest receive summary status is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| {
+                "ec_spire remote epoch manifest libpq receive summary returned no rows".to_owned()
+            })
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once(row)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_parameter_contract() -> TableIterator<
     'static,
     (
@@ -17876,6 +18153,9 @@ mod tests {
         let manifest_executor_readiness_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_executor_readiness(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_receive_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_libpq_receive_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -17990,6 +18270,15 @@ mod tests {
         ))
         .expect("manifest executor readiness next step query should succeed")
         .expect("manifest executor readiness next step should exist");
+        let manifest_receive_count = Spi::get_one::<i64>(&format!(
+            "SELECT receive_count {manifest_receive_summary_from}"
+        ))
+        .expect("manifest receive summary count query should succeed")
+        .expect("manifest receive summary count should exist");
+        let manifest_receive_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_receive_summary_from}"))
+                .expect("manifest receive summary status query should succeed")
+                .expect("manifest receive summary status should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -18017,6 +18306,8 @@ mod tests {
         assert_eq!(manifest_dispatch_status, "not_required");
         assert_eq!(manifest_executor_status, "not_required");
         assert_eq!(manifest_executor_next_step, "none");
+        assert_eq!(manifest_receive_count, 0);
+        assert_eq!(manifest_receive_status, "not_required");
     }
 
     #[pg_test]
@@ -18419,6 +18710,11 @@ mod tests {
         let manifest_executor_readiness_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_executor_readiness(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_receive_from = "FROM ec_spire_remote_epoch_manifest_libpq_receive_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_receive_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_libpq_receive_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -18687,6 +18983,37 @@ mod tests {
         ))
         .expect("manifest executor readiness send action query should succeed")
         .expect("manifest executor readiness send action should exist");
+        let manifest_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {manifest_receive_from}"))
+                .expect("manifest receive count query should succeed")
+                .expect("manifest receive count should exist");
+        let manifest_receive_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator_function {manifest_receive_from}"
+        ))
+        .expect("manifest receive validator query should succeed")
+        .expect("manifest receive validator should exist");
+        let manifest_receive_action =
+            Spi::get_one::<String>(&format!("SELECT result_action {manifest_receive_from}"))
+                .expect("manifest receive action query should succeed")
+                .expect("manifest receive action should exist");
+        let manifest_receive_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_receive_from}"))
+                .expect("manifest receive status query should succeed")
+                .expect("manifest receive status should exist");
+        let manifest_receive_summary_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_receive_count {manifest_receive_summary_from}"
+        ))
+        .expect("manifest receive summary ready count query should succeed")
+        .expect("manifest receive summary ready count should exist");
+        let manifest_receive_summary_result_columns = Spi::get_one::<i64>(&format!(
+            "SELECT expected_result_column_count {manifest_receive_summary_from}"
+        ))
+        .expect("manifest receive summary result count query should succeed")
+        .expect("manifest receive summary result count should exist");
+        let manifest_receive_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_receive_summary_from}"))
+                .expect("manifest receive summary status query should succeed")
+                .expect("manifest receive summary status should exist");
         let executor_contract_mismatch_count = Spi::get_one::<i64>(&format!(
             "WITH readiness AS ( \
                  SELECT * {manifest_executor_readiness_from} \
@@ -18787,6 +19114,19 @@ mod tests {
         assert_eq!(executor_readiness_status, "requires_libpq_executor");
         assert_eq!(executor_next_step, "conninfo_secret_resolution");
         assert_eq!(executor_send_action, "send_remote_epoch_manifest");
+        assert_eq!(manifest_receive_count, 1);
+        assert_eq!(
+            manifest_receive_validator,
+            "ec_spire_remote_epoch_manifest_libpq_result_contract"
+        );
+        assert_eq!(
+            manifest_receive_action,
+            "validate_remote_manifest_payload_result"
+        );
+        assert_eq!(manifest_receive_status, "requires_libpq_executor");
+        assert_eq!(manifest_receive_summary_ready_count, 1);
+        assert_eq!(manifest_receive_summary_result_columns, 3);
+        assert_eq!(manifest_receive_summary_status, "requires_libpq_executor");
         assert_eq!(executor_contract_mismatch_count, 0);
 
         Spi::run(&format!(
