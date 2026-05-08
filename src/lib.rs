@@ -1322,6 +1322,32 @@ fn ec_spire_remote_node_descriptor_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_descriptor_state_contract() -> TableIterator<
+    'static,
+    (
+        name!(state_ordinal, i64),
+        name!(descriptor_state, &'static str),
+        name!(state_source, &'static str),
+        name!(read_eligible, bool),
+        name!(snapshot_status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_node_descriptor_state_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.state_ordinal).expect("state ordinal should fit in i64"),
+            row.descriptor_state,
+            row.state_source,
+            row.read_eligible,
+            row.snapshot_status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_descriptor_registration_contract() -> TableIterator<
     'static,
     (
@@ -1385,10 +1411,7 @@ fn ec_spire_register_remote_node_descriptor(
             "ec_spire_register_remote_node_descriptor remote_index_regclass must be nonempty"
         );
     }
-    if !matches!(
-        descriptor_state.as_str(),
-        "active" | "draining" | "disabled" | "failed"
-    ) {
+    if !am::spire_remote_node_descriptor_catalog_state_is_supported(descriptor_state.as_str()) {
         pgrx::error!(
             "ec_spire_register_remote_node_descriptor descriptor_state must be active, draining, disabled, or failed"
         );
@@ -14122,6 +14145,52 @@ mod tests {
         assert_eq!(secret_validator, "must_be_nonempty_secret_reference");
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(required_epoch_fields, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_descriptor_state_contract() {
+        let contract_from = "FROM ec_spire_remote_node_descriptor_state_contract()";
+        let state_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
+            .expect("descriptor state contract count query should succeed")
+            .expect("descriptor state contract count should exist");
+        let catalog_state_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {contract_from} WHERE state_source = 'catalog'"
+        ))
+        .expect("catalog state count query should succeed")
+        .expect("catalog state count should exist");
+        let active_read_eligible = Spi::get_one::<bool>(&format!(
+            "SELECT read_eligible {contract_from} WHERE descriptor_state = 'active'"
+        ))
+        .expect("active state query should succeed")
+        .expect("active state should exist");
+        let draining_read_eligible = Spi::get_one::<bool>(&format!(
+            "SELECT read_eligible {contract_from} WHERE descriptor_state = 'draining'"
+        ))
+        .expect("draining state query should succeed")
+        .expect("draining state should exist");
+        let disabled_read_eligible = Spi::get_one::<bool>(&format!(
+            "SELECT read_eligible {contract_from} WHERE descriptor_state = 'disabled'"
+        ))
+        .expect("disabled state query should succeed")
+        .expect("disabled state should exist");
+        let failed_status = Spi::get_one::<String>(&format!(
+            "SELECT snapshot_status {contract_from} WHERE descriptor_state = 'failed'"
+        ))
+        .expect("failed state query should succeed")
+        .expect("failed state should exist");
+        let missing_source = Spi::get_one::<String>(&format!(
+            "SELECT state_source {contract_from} WHERE descriptor_state = 'missing'"
+        ))
+        .expect("missing state query should succeed")
+        .expect("missing state should exist");
+
+        assert_eq!(state_count, 5);
+        assert_eq!(catalog_state_count, 4);
+        assert!(active_read_eligible);
+        assert!(draining_read_eligible);
+        assert!(!disabled_read_eligible);
+        assert_eq!(failed_status, "failed_remote_node");
+        assert_eq!(missing_source, "synthetic");
     }
 
     #[pg_test]

@@ -831,6 +831,16 @@ pub(crate) struct SpireRemoteNodeDescriptorContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeDescriptorStateContractRow {
+    pub(crate) state_ordinal: u64,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) state_source: &'static str,
+    pub(crate) read_eligible: bool,
+    pub(crate) snapshot_status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteNodeDescriptorRegistrationContractRow {
     pub(crate) step_ordinal: u64,
     pub(crate) step_name: &'static str,

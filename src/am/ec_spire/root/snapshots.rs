@@ -930,6 +930,58 @@ pub(crate) fn remote_node_descriptor_contract_rows(
     ]
 }
 
+pub(crate) fn remote_node_descriptor_state_contract_rows(
+) -> Vec<SpireRemoteNodeDescriptorStateContractRow> {
+    vec![
+        SpireRemoteNodeDescriptorStateContractRow {
+            state_ordinal: 1,
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE,
+            state_source: "catalog",
+            read_eligible: true,
+            snapshot_status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteNodeDescriptorStateContractRow {
+            state_ordinal: 2,
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING,
+            state_source: "catalog",
+            read_eligible: true,
+            snapshot_status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteNodeDescriptorStateContractRow {
+            state_ordinal: 3,
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED,
+            state_source: "catalog",
+            read_eligible: false,
+            snapshot_status: "disabled_remote_node",
+            recommendation: "enable or replace remote node descriptor before libpq fanout execution",
+        },
+        SpireRemoteNodeDescriptorStateContractRow {
+            state_ordinal: 4,
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED,
+            state_source: "catalog",
+            read_eligible: false,
+            snapshot_status: "failed_remote_node",
+            recommendation: "repair remote node descriptor before libpq fanout execution",
+        },
+        SpireRemoteNodeDescriptorStateContractRow {
+            state_ordinal: 5,
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING,
+            state_source: "synthetic",
+            read_eligible: false,
+            snapshot_status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+            recommendation: "register remote node descriptor before libpq fanout execution",
+        },
+    ]
+}
+
+pub(crate) fn remote_node_descriptor_catalog_state_is_supported(state: &str) -> bool {
+    remote_node_descriptor_state_contract_rows()
+        .into_iter()
+        .any(|row| row.state_source == "catalog" && row.descriptor_state == state)
+}
+
 pub(crate) fn remote_node_descriptor_registration_contract_rows(
 ) -> Vec<SpireRemoteNodeDescriptorRegistrationContractRow> {
     vec![
