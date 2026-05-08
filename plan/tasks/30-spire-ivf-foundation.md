@@ -1754,9 +1754,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   Landed in packet 30620: the callback now uses active hierarchy diagnostics,
   page byte estimates, effective probe count, storage format, rerank width,
   local-store fanout, and the PG18 tree-height callback.
-- [ ] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
+- [x] **Benchmark harness.** Extend `ecaz` to prepare/load/query SPIRE corpora
   and write packet-local artifacts. Depends on the SPIRE planner cost model
   above for any measurement that traverses the SQL planner.
+  Landed across packets 30622-30624: suite explain steps are profile-aware for
+  SPIRE, the reusable real10k SPIRE suite expands load/storage/explain/latency/
+  recall commands with packet-local artifacts, and suite reports can parse the
+  planner-cost snapshot rows emitted by explain artifacts.
 - [ ] **Scale packet.** Run controlled AWS/RDS-class measurements before making
   product billion-scale claims. Depends on the SPIRE planner cost model
   above.
