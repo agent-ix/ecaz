@@ -1262,10 +1262,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
         return summary;
     }
 
-    for row in unsafe { remote_node_snapshot(index_relation) } {
-        if row.node_id == meta::SPIRE_LOCAL_NODE_ID {
-            continue;
-        }
+    for row in unsafe { remote_epoch_publish_plan(index_relation) } {
         summary.remote_node_count =
             summary.remote_node_count.checked_add(1).unwrap_or_else(|| {
                 pgrx::error!("ec_spire remote epoch publish readiness node count overflow")
@@ -1339,10 +1336,14 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     if summary.blocked_remote_node_count == 0 {
         summary.status = SPIRE_REMOTE_STATUS_READY;
         summary.recommendation = SPIRE_REMOTE_NONE;
-    } else {
+    } else if summary.missing_descriptor_node_count > 0 {
         summary.status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
         summary.recommendation =
             "register remote node descriptors before publishing distributed epochs";
+    } else {
+        summary.status = "remote_epoch_window";
+        summary.recommendation =
+            "refresh remote node served epoch window before publishing distributed epochs";
     }
     summary
 }

@@ -568,6 +568,11 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                 })?;
                 let status = if target.target_kind == SPIRE_REMOTE_TARGET_SKIPPED {
                     target.status
+                } else if matches!(
+                    node.descriptor_state,
+                    SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED | SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED
+                ) {
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
                 } else if node.status != SPIRE_REMOTE_STATUS_READY {
                     node.status
                 } else {
@@ -1107,9 +1112,12 @@ fn load_remote_libpq_connection_descriptors(
                 remote_index_regclass \
            FROM ec_spire_remote_node_descriptor \
           WHERE coordinator_index_oid = '{}'::oid \
-            AND node_id = ANY (ARRAY[{}]::integer[])",
+            AND node_id = ANY (ARRAY[{}]::integer[]) \
+            AND descriptor_state IN ('{}', '{}')",
         u32::from(index_relid),
-        node_id_list
+        node_id_list,
+        SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE,
+        SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING
     );
 
     Spi::connect(|client| {

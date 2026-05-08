@@ -1496,7 +1496,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   target-readiness, execution-plan, and libpq-request envelopes as the
   `requires_libpq_transport` gate rather than a missing-descriptor blocker. The
   registration upsert validates the coordinator OID as an `ec_spire` index
-  before mutating the descriptor catalog.
+  before mutating the descriptor catalog and fails closed unless
+  `descriptor_generation` advances the existing row. Read-side libpq connection
+  descriptors now accept only `active` and `draining` catalog states, so
+  `disabled` or `failed` descriptors continue to block dispatch instead of
+  resolving as pipeline-ready.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
@@ -1575,7 +1579,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_plan(...)` and
   `ec_spire_remote_epoch_manifest_summary(...)` now expose the planned manifest
   entries and final manifest decision for local-only, blocked, and distributed
-  epoch publishes without writing a remote manifest.
+  epoch publishes without writing a remote manifest. Publish readiness now
+  derives blocked state from the per-node publish plan, so stale served-epoch
+  or retained-window gaps block manifests through the `remote_epoch_window`
+  gate even when the remote descriptor exists.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now

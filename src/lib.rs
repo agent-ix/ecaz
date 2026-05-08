@@ -1413,7 +1413,7 @@ fn ec_spire_register_remote_node_descriptor(
 
     let result = Spi::connect_mut(|client| {
         client
-            .update(
+            .select(
                 "INSERT INTO ec_spire_remote_node_descriptor \
              (coordinator_index_oid, node_id, descriptor_generation, \
               conninfo_secret_name, remote_index_identity, remote_index_regclass, \
@@ -1431,7 +1431,10 @@ fn ec_spire_register_remote_node_descriptor(
                  last_served_epoch = EXCLUDED.last_served_epoch, \
                  min_retained_epoch = EXCLUDED.min_retained_epoch, \
                  extension_version = EXCLUDED.extension_version, \
-                 last_error = EXCLUDED.last_error",
+                 last_error = EXCLUDED.last_error \
+              WHERE EXCLUDED.descriptor_generation > \
+                    ec_spire_remote_node_descriptor.descriptor_generation \
+             RETURNING true AS registered",
                 None,
                 &[
                     index_oid.into(),
@@ -1447,9 +1450,27 @@ fn ec_spire_register_remote_node_descriptor(
                     last_error.as_str().into(),
                 ],
             )
-            .map(|_| ())
+            .map_err(|e| format!("ec_spire remote node descriptor upsert failed: {e}"))?
+            .map(|row| {
+                row["registered"]
+                    .value::<bool>()
+                    .map_err(|e| {
+                        format!("ec_spire remote node descriptor registration decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor registration result is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or(false))
     });
-    result.unwrap_or_else(|e| pgrx::error!("ec_spire remote node descriptor upsert failed: {e}"));
+    let registered = result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    if !registered {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
+        );
+    }
     true
 }
 
@@ -13548,6 +13569,198 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
+    )]
+    fn test_ec_spire_remote_node_descriptor_stale_generation_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_desc_stale_gen_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_desc_stale_gen_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_desc_stale_gen_sql_idx \
+             ON ec_spire_remote_node_desc_stale_gen_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_desc_stale_gen_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_node_desc_stale_gen_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        let first_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 7, 'spire/remote/stale-generation', decode('02', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("first descriptor registration should succeed")
+        .expect("first descriptor registration result should exist");
+        assert!(first_result);
+
+        let _ = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 7, 'spire/remote/stale-generation', decode('02', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ));
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_desc_failed_blocks_libpq_dispatch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_desc_failed_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_desc_failed_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_desc_failed_sql_idx \
+             ON ec_spire_remote_node_desc_failed_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_desc_failed_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_node_desc_failed_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_node_desc_failed_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 9, 'spire/remote/failed', decode('03', 'hex'), \
+                     'remote_spire_idx', 'failed', {active_epoch}, {active_epoch}, '{}', 'network_error')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("failed descriptor registration should succeed")
+        .expect("failed descriptor registration result should exist");
+
+        let readiness_from = format!(
+            "FROM ec_spire_remote_search_target_readiness(\
+             'ec_spire_remote_node_desc_failed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[{selected_pid}], 'strict')"
+        );
+        let connection_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_plan(\
+             'ec_spire_remote_node_desc_failed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let connection_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_summary(\
+             'ec_spire_remote_node_desc_failed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let dispatch_from = format!(
+            "FROM ec_spire_remote_search_libpq_dispatch_plan(\
+             'ec_spire_remote_node_desc_failed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let dispatch_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_dispatch_summary(\
+             'ec_spire_remote_node_desc_failed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+
+        let descriptor_state =
+            Spi::get_one::<String>(&format!("SELECT descriptor_state {readiness_from}"))
+                .expect("failed readiness descriptor query should succeed")
+                .expect("failed descriptor state should exist");
+        let node_status = Spi::get_one::<String>(&format!("SELECT node_status {readiness_from}"))
+            .expect("failed readiness node status query should succeed")
+            .expect("failed node status should exist");
+        let target_status = Spi::get_one::<String>(&format!("SELECT status {readiness_from}"))
+            .expect("failed readiness status query should succeed")
+            .expect("failed readiness status should exist");
+        let conninfo_secret_name =
+            Spi::get_one::<String>(&format!("SELECT conninfo_secret_name {connection_from}"))
+                .expect("failed connection secret query should succeed")
+                .expect("failed connection secret should exist");
+        let conninfo_resolution =
+            Spi::get_one::<String>(&format!("SELECT conninfo_resolution {connection_from}"))
+                .expect("failed connection resolution query should succeed")
+                .expect("failed connection resolution should exist");
+        let pipeline_mode =
+            Spi::get_one::<String>(&format!("SELECT pipeline_mode {connection_from}"))
+                .expect("failed connection pipeline query should succeed")
+                .expect("failed connection pipeline should exist");
+        let connection_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_summary_from}"))
+                .expect("failed connection summary status query should succeed")
+                .expect("failed connection summary status should exist");
+        let missing_descriptor_connection_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_descriptor_connection_count {connection_summary_from}"
+        ))
+        .expect("failed connection summary missing query should succeed")
+        .expect("failed connection summary missing count should exist");
+        let dispatch_action =
+            Spi::get_one::<String>(&format!("SELECT dispatch_action {dispatch_from}"))
+                .expect("failed dispatch action query should succeed")
+                .expect("failed dispatch action should exist");
+        let dispatch_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
+                .expect("failed dispatch summary status query should succeed")
+                .expect("failed dispatch summary status should exist");
+        let missing_descriptor_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_descriptor_dispatch_count {dispatch_summary_from}"
+        ))
+        .expect("failed dispatch summary missing query should succeed")
+        .expect("failed dispatch summary missing count should exist");
+
+        assert!(register_result);
+        assert_eq!(descriptor_state, "failed");
+        assert_eq!(node_status, "failed_remote_node");
+        assert_eq!(target_status, "requires_remote_node_descriptor");
+        assert_eq!(conninfo_secret_name, "none");
+        assert_eq!(conninfo_resolution, "requires_remote_node_descriptor");
+        assert_eq!(pipeline_mode, "none");
+        assert_eq!(connection_summary_status, "requires_remote_node_descriptor");
+        assert_eq!(missing_descriptor_connection_count, 1);
+        assert_eq!(dispatch_action, "blocked_before_dispatch");
+        assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
+        assert_eq!(missing_descriptor_dispatch_count, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_node_descriptor_contract() {
         let contract_from = "FROM ec_spire_remote_node_descriptor_contract()";
         let field_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
@@ -14140,6 +14353,104 @@ mod tests {
         assert_eq!(required_last_served_epoch, active_epoch);
         assert_eq!(last_served_epoch, 0);
         assert_eq!(placement_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_epoch_publish_manifest_stale_descriptor() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_epoch_manifest_stale_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest_stale_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_epoch_manifest_stale_sql_idx \
+             ON ec_spire_remote_epoch_manifest_stale_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+        let stale_served_epoch = active_epoch.saturating_sub(1);
+        assert!(stale_served_epoch < active_epoch);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 8, 'spire/remote/stale', decode('02', 'hex'), \
+                     'remote_spire_idx', 'active', {stale_served_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("stale remote descriptor registration should succeed")
+        .expect("stale remote descriptor registration result should exist");
+
+        let plan_from = "FROM ec_spire_remote_epoch_publish_plan(\
+             'ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)";
+        let readiness_from = "FROM ec_spire_remote_epoch_publish_readiness(\
+             'ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)";
+        let gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
+             'ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)";
+        let manifest_from = "FROM ec_spire_remote_epoch_manifest_summary(\
+             'ec_spire_remote_epoch_manifest_stale_sql_idx'::regclass)";
+
+        let plan_status = Spi::get_one::<String>(&format!("SELECT status {plan_from}"))
+            .expect("stale publish plan status query should succeed")
+            .expect("stale publish plan status should exist");
+        let epoch_window_status =
+            Spi::get_one::<String>(&format!("SELECT epoch_window_status {plan_from}"))
+                .expect("stale publish plan epoch window query should succeed")
+                .expect("stale publish plan epoch window should exist");
+        let readiness_status = Spi::get_one::<String>(&format!("SELECT status {readiness_from}"))
+            .expect("stale publish readiness status query should succeed")
+            .expect("stale publish readiness status should exist");
+        let blocked_remote_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_remote_node_count {readiness_from}"
+        ))
+        .expect("stale publish readiness blocked count query should succeed")
+        .expect("stale publish readiness blocked count should exist");
+        let missing_descriptor_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_descriptor_node_count {readiness_from}"
+        ))
+        .expect("stale publish readiness missing count query should succeed")
+        .expect("stale publish readiness missing count should exist");
+        let next_blocker = Spi::get_one::<String>(&format!("SELECT next_blocker {gate_from}"))
+            .expect("stale publish gate blocker query should succeed")
+            .expect("stale publish gate blocker should exist");
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT manifest_decision {manifest_from}"))
+                .expect("stale manifest decision query should succeed")
+                .expect("stale manifest decision should exist");
+
+        assert!(register_result);
+        assert_eq!(plan_status, "stale_epoch");
+        assert_eq!(epoch_window_status, "stale_epoch");
+        assert_eq!(readiness_status, "remote_epoch_window");
+        assert_eq!(blocked_remote_node_count, 1);
+        assert_eq!(missing_descriptor_node_count, 0);
+        assert_eq!(next_blocker, "remote_epoch_window");
+        assert_eq!(manifest_decision, "block_manifest");
     }
 
     #[pg_test]
