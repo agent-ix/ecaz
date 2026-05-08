@@ -1,0 +1,232 @@
+{
+  "suite": "task30-spire-real10k",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/task30-spire-real10k.json",
+  "config_sha256": "35f522675050ab9ab952d3277bb2597bb57180dc3d58f1d452f73c31754e1127",
+  "dry_run": true,
+  "generated_at_unix_ms": 1778273419833,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-real10k-turboquant-n32-w25",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "review/30623-spire-suite-config/artifacts/load_real10k_spire_turboquant_n32_w25.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task30_spire_real10k_suite",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "storage_format=turboquant",
+        "--reloption",
+        "nlists=32",
+        "--reloption",
+        "nprobe=24",
+        "--reloption",
+        "rerank_width=25"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "real10k",
+        "n32",
+        "w25"
+      ],
+      "expected_artifacts": [
+        "review/30623-spire-suite-config/artifacts/load_real10k_spire_turboquant_n32_w25.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-real10k-n32",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "review/30623-spire-suite-config/artifacts/storage_real10k_spire_n32.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task30_spire_real10k_suite"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "real10k",
+        "n32"
+      ],
+      "expected_artifacts": [
+        "review/30623-spire-suite-config/artifacts/storage_real10k_spire_n32.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-real10k-n32-p24-w25",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.sql",
+        "--log-output",
+        "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "planner",
+        "real10k",
+        "n32",
+        "w25"
+      ],
+      "expected_artifacts": [
+        "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.sql",
+        "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-real10k-nprobe-sweep-w25",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task30_spire_real10k_suite",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "8,24",
+        "--rerank-width",
+        "25",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "review/30623-spire-suite-config/artifacts/latency_real10k_spire_n32_w25_p8_24.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "sweep",
+        "real10k",
+        "n32",
+        "w25"
+      ],
+      "expected_artifacts": [
+        "review/30623-spire-suite-config/artifacts/latency_real10k_spire_n32_w25_p8_24.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-real10k-nprobe-sweep-w25",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task30_spire_real10k_suite",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,24",
+        "--rerank-width",
+        "25",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "review/30623-spire-suite-config/artifacts/truth_real10k_spire_k10.json",
+        "--log-output",
+        "review/30623-spire-suite-config/artifacts/recall_real10k_spire_n32_w25_p8_24.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "sweep",
+        "real10k",
+        "n32",
+        "w25"
+      ],
+      "expected_artifacts": [
+        "review/30623-spire-suite-config/artifacts/recall_real10k_spire_n32_w25_p8_24.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
