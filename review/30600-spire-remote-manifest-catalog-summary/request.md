@@ -14,6 +14,9 @@ Changes:
   stale, or ready.
 - Exposes current included-node/placement counts alongside persisted
   manifest/entry/placement counts.
+- Adds `persisted_entry_mismatch_count` so same-count stale entries are detected
+  when node IDs or persisted epoch-window fields no longer match the current
+  manifest plan.
 - Extends the ready persistence test to prove the summary reports `ready` after
   persistence.
 - Adds missing-persistence coverage for a distributed-ready manifest that has
@@ -27,7 +30,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `751158e7`
+Head SHA: `e590adef`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_catalog_summary`
@@ -47,8 +50,10 @@ Result:
 - PG18 `remote_epoch_manifest_persist` filter passed:
   - `pg_test_ec_spire_remote_epoch_manifest_persist_ready`
   - `pg_test_ec_spire_remote_epoch_manifest_persist_blocked`
-- The ready test confirms the summary reaches `ready` after persistence; the
-  missing test confirms distributed-ready manifests report
+- The ready test confirms the summary reaches `ready` after persistence, then
+  mutates a persisted entry and confirms the summary reports
+  `stale_remote_epoch_manifest` with one entry mismatch.
+- The missing test confirms distributed-ready manifests report
   `requires_remote_epoch_manifest_persistence` before persistence.
 
 ## Notes
