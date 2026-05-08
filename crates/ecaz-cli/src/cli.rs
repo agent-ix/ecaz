@@ -89,6 +89,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::stress::StressCommand,
     },
+    /// Cloud benchmark harness: provision, install, load, bench, teardown on AWS.
+    Cloud {
+        #[command(subcommand)]
+        command: ecaz_cloud::CloudCommand,
+    },
 }
 
 impl Cli {
@@ -107,6 +112,21 @@ impl Cli {
             Command::Dev { command } => command.run(&conn.database).await,
             Command::Quant { command } => command.run(&conn.database).await,
             Command::Stress { command } => command.run(&conn).await,
+            Command::Cloud { command } => command.run(find_repo_root()?).await,
+        }
+    }
+}
+
+fn find_repo_root() -> Result<std::path::PathBuf> {
+    let mut cwd = std::env::current_dir()?;
+    loop {
+        if cwd.join("infra/cloud/terraform").exists() {
+            return Ok(cwd);
+        }
+        if !cwd.pop() {
+            return Err(color_eyre::eyre::eyre!(
+                "could not locate ecaz repo root (no infra/cloud/terraform/ on the way up)"
+            ));
         }
     }
 }
