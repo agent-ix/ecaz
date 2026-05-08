@@ -3052,6 +3052,86 @@ fn ec_spire_remote_search_libpq_connection_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_connection_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(connection_count, i64),
+        name!(descriptor_resolved_connection_count, i64),
+        name!(missing_descriptor_connection_count, i64),
+        name!(pipeline_connection_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(query_dimension, i64),
+        name!(top_k, i64),
+        name!(consistency_mode, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_connection_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_connection_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_connection_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_connection_summary")
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_connection_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.connection_count).expect("connection count should fit in i64"),
+        i64::try_from(row.descriptor_resolved_connection_count)
+            .expect("descriptor resolved connection count should fit in i64"),
+        i64::try_from(row.missing_descriptor_connection_count)
+            .expect("missing descriptor connection count should fit in i64"),
+        i64::try_from(row.pipeline_connection_count)
+            .expect("pipeline connection count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.blocked_pid_count).expect("blocked pid count should fit in i64"),
+        i64::try_from(row.query_dimension).expect("query dimension should fit in i64"),
+        i64::try_from(row.top_k).expect("top_k should fit in i64"),
+        row.consistency_mode,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_parameter_contract() -> TableIterator<
     'static,
     (
@@ -11723,6 +11803,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let connection_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_summary(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("libpq request count query should succeed")
             .expect("libpq request count should exist");
@@ -11761,6 +11848,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT pipeline_mode {connection_from}"))
                 .expect("libpq connection pipeline query should succeed")
                 .expect("libpq connection pipeline should exist");
+        let missing_descriptor_connection_count = Spi::get_one::<i64>(&format!(
+            "SELECT missing_descriptor_connection_count {connection_summary_from}"
+        ))
+        .expect("libpq connection summary missing count query should succeed")
+        .expect("libpq connection summary missing count should exist");
+        let connection_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_summary_from}"))
+                .expect("libpq connection summary status query should succeed")
+                .expect("libpq connection summary status should exist");
 
         assert_eq!(request_count, 1);
         assert!(sql_template.contains("ec_spire_remote_search"));
@@ -11773,6 +11869,8 @@ mod tests {
         assert_eq!(connection_count, 1);
         assert_eq!(conninfo_resolution, "requires_remote_node_descriptor");
         assert_eq!(pipeline_mode, "none");
+        assert_eq!(missing_descriptor_connection_count, 1);
+        assert_eq!(connection_summary_status, "requires_remote_node_descriptor");
     }
 
     #[pg_test]
@@ -11826,6 +11924,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
         );
+        let connection_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_summary(\
+             'ec_spire_remote_libpq_req_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
+        );
         let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local libpq request count query should succeed")
             .expect("local libpq request count should exist");
@@ -11839,11 +11943,22 @@ mod tests {
         let connection_count = Spi::get_one::<i64>(&format!("SELECT count(*) {connection_from}"))
             .expect("local libpq connection count query should succeed")
             .expect("local libpq connection count should exist");
+        let connection_summary_count = Spi::get_one::<i64>(&format!(
+            "SELECT connection_count {connection_summary_from}"
+        ))
+        .expect("local libpq connection summary count query should succeed")
+        .expect("local libpq connection summary count should exist");
+        let connection_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_summary_from}"))
+                .expect("local libpq connection summary status query should succeed")
+                .expect("local libpq connection summary status should exist");
 
         assert_eq!(request_count, 0);
         assert_eq!(summary_request_count, 0);
         assert_eq!(connection_count, 0);
+        assert_eq!(connection_summary_count, 0);
         assert_eq!(summary_status, "ready");
+        assert_eq!(connection_summary_status, "ready");
     }
 
     #[pg_test]
@@ -12890,6 +13005,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let connection_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
 
         let descriptor_state =
             Spi::get_one::<String>(&format!("SELECT descriptor_state {snapshot_from}"))
@@ -12967,6 +13088,20 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT pipeline_mode {connection_from}"))
                 .expect("connection pipeline mode query should succeed")
                 .expect("connection pipeline mode should exist");
+        let descriptor_resolved_connection_count = Spi::get_one::<i64>(&format!(
+            "SELECT descriptor_resolved_connection_count {connection_summary_from}"
+        ))
+        .expect("connection summary resolved count query should succeed")
+        .expect("connection summary resolved count should exist");
+        let pipeline_connection_count = Spi::get_one::<i64>(&format!(
+            "SELECT pipeline_connection_count {connection_summary_from}"
+        ))
+        .expect("connection summary pipeline count query should succeed")
+        .expect("connection summary pipeline count should exist");
+        let connection_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_summary_from}"))
+                .expect("connection summary status query should succeed")
+                .expect("connection summary status should exist");
 
         assert!(register_result);
         assert_eq!(descriptor_state, "active");
@@ -12989,6 +13124,9 @@ mod tests {
         assert_eq!(remote_index_identity_bytes, 1);
         assert_eq!(conninfo_resolution, "secret_reference_ready");
         assert_eq!(pipeline_mode, "libpq_pipeline");
+        assert_eq!(descriptor_resolved_connection_count, 1);
+        assert_eq!(pipeline_connection_count, 1);
+        assert_eq!(connection_summary_status, "requires_libpq_transport");
     }
 
     #[pg_test]

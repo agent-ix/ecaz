@@ -1202,6 +1202,9 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
                     node_id: row.node_id,
                     selected_pids: row.selected_pids,
                     pid_count: row.pid_count,
+                    query_dimension: row.query_dimension,
+                    top_k: row.top_k,
+                    consistency_mode: row.consistency_mode,
                     execution_transport: row.execution_transport,
                     conninfo_secret_name: descriptor
                         .map(|row| row.conninfo_secret_name.clone())
@@ -1226,6 +1229,102 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
                 })
             })
             .collect::<Result<Vec<_>, String>>()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqConnectionSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchLibpqConnectionSummaryRow, String> {
+        let query_for_empty_plan = query.clone();
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search libpq connection summary top_k exceeds u64")?;
+        let rows = unsafe {
+            remote_search_libpq_connection_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut rollup = SpireRemoteCountRollup::default();
+        let mut descriptor_resolved_connection_count = 0_u64;
+        let mut missing_descriptor_connection_count = 0_u64;
+        let mut pipeline_connection_count = 0_u64;
+        let mut query_dimension = 0_u64;
+        let mut top_k = 0_u64;
+        let mut parsed_consistency_mode = "";
+
+        for row in &rows {
+            query_dimension = row.query_dimension;
+            top_k = row.top_k;
+            parsed_consistency_mode = row.consistency_mode;
+            rollup.record_remote_target(row.pid_count, "remote search libpq connection summary")?;
+            rollup
+                .record_status(row.status, row.pid_count, "remote search libpq connection summary")?;
+            if row.conninfo_resolution == SPIRE_REMOTE_CONNINFO_READY {
+                descriptor_resolved_connection_count =
+                    descriptor_resolved_connection_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire remote search libpq connection summary resolved count overflow"
+                                .to_owned()
+                        })?;
+            }
+            if row.conninfo_resolution == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+                missing_descriptor_connection_count =
+                    missing_descriptor_connection_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            "ec_spire remote search libpq connection summary missing descriptor count overflow"
+                                .to_owned()
+                        })?;
+            }
+            if row.pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
+                pipeline_connection_count =
+                    pipeline_connection_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire remote search libpq connection summary pipeline count overflow"
+                            .to_owned()
+                    })?;
+            }
+        }
+
+        if rows.is_empty() {
+            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
+                "ec_spire remote search libpq connection summary query dimension exceeds u64"
+            })?;
+            top_k = top_k_for_empty_plan;
+            parsed_consistency_mode =
+                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        }
+
+        let connection_count = u64::try_from(rows.len()).map_err(|_| {
+            "ec_spire remote search libpq connection summary connection count exceeds u64"
+        })?;
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
+
+        Ok(SpireRemoteSearchLibpqConnectionSummaryRow {
+            requested_epoch,
+            connection_count,
+            descriptor_resolved_connection_count,
+            missing_descriptor_connection_count,
+            pipeline_connection_count,
+            remote_pid_count: rollup.remote_pid_count,
+            blocked_pid_count: rollup.blocked_pid_count,
+            query_dimension,
+            top_k,
+            consistency_mode: parsed_consistency_mode,
+            status,
+        })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
