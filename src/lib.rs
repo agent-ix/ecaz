@@ -7962,6 +7962,8 @@ fn ec_spire_remote_search_coordinator_result_summary(
         name!(decoded_local_locator_count, i64),
         name!(returned_candidate_count, i64),
         name!(result_source, &'static str),
+        name!(libpq_receive_count, i64),
+        name!(libpq_receive_status, &'static str),
         name!(final_heap_fetch_status, &'static str),
         name!(next_blocker, &'static str),
         name!(status, &'static str),
@@ -8023,6 +8025,8 @@ fn ec_spire_remote_search_coordinator_result_summary(
         i64::try_from(row.returned_candidate_count)
             .expect("returned candidate count should fit in i64"),
         row.result_source,
+        i64::try_from(row.libpq_receive_count).expect("libpq receive count should fit in i64"),
+        row.libpq_receive_status,
         row.final_heap_fetch_status,
         row.next_blocker,
         row.status,
@@ -16841,6 +16845,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
                 .expect("coordinator result source query should succeed")
                 .expect("coordinator result source should exist");
+        let result_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_receive_count {result_summary_from}"))
+                .expect("coordinator result receive count query should succeed")
+                .expect("coordinator result receive count should exist");
+        let result_receive_status = Spi::get_one::<String>(&format!(
+            "SELECT libpq_receive_status {result_summary_from}"
+        ))
+        .expect("coordinator result receive status query should succeed")
+        .expect("coordinator result receive status should exist");
         let result_status = Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
             .expect("coordinator result status query should succeed")
             .expect("coordinator result status should exist");
@@ -16869,6 +16882,8 @@ mod tests {
         assert_eq!(returned_candidate_count, candidate_count);
         assert_eq!(candidate_summary_status, "ready");
         assert_eq!(result_source, "local_heap_candidates");
+        assert_eq!(result_receive_count, 0);
+        assert_eq!(result_receive_status, "ready");
         assert_eq!(result_status, "ready");
         assert_eq!(result_returned_candidate_count, candidate_count);
         assert_eq!(result_next_blocker, "none");
@@ -16977,6 +16992,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
                 .expect("degraded result source query should succeed")
                 .expect("degraded result source should exist");
+        let result_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_receive_count {result_summary_from}"))
+                .expect("degraded result receive count query should succeed")
+                .expect("degraded result receive count should exist");
+        let result_receive_status = Spi::get_one::<String>(&format!(
+            "SELECT libpq_receive_status {result_summary_from}"
+        ))
+        .expect("degraded result receive status query should succeed")
+        .expect("degraded result receive status should exist");
         let result_status = Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
             .expect("degraded result status query should succeed")
             .expect("degraded result status should exist");
@@ -16997,6 +17021,8 @@ mod tests {
         assert_eq!(returned_candidate_count, 1);
         assert_eq!(candidate_summary_status, "degraded_ready");
         assert_eq!(result_source, "local_heap_candidates");
+        assert_eq!(result_receive_count, 0);
+        assert_eq!(result_receive_status, "ready");
         assert_eq!(result_status, "degraded_ready");
         assert_eq!(result_skipped_pid_count, 1);
     }
@@ -17101,6 +17127,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
                 .expect("remote result source query should succeed")
                 .expect("remote result source should exist");
+        let result_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_receive_count {result_summary_from}"))
+                .expect("remote result receive count query should succeed")
+                .expect("remote result receive count should exist");
+        let result_receive_status = Spi::get_one::<String>(&format!(
+            "SELECT libpq_receive_status {result_summary_from}"
+        ))
+        .expect("remote result receive status query should succeed")
+        .expect("remote result receive status should exist");
         let result_next_blocker =
             Spi::get_one::<String>(&format!("SELECT next_blocker {result_summary_from}"))
                 .expect("remote result blocker query should succeed")
@@ -17120,6 +17155,8 @@ mod tests {
         assert_eq!(candidate_summary_status, "requires_remote_node_descriptor");
         assert_eq!(returned_candidate_count, 0);
         assert_eq!(result_source, "blocked");
+        assert_eq!(result_receive_count, 1);
+        assert_eq!(result_receive_status, "requires_remote_node_descriptor");
         assert_eq!(result_next_blocker, "remote_node_descriptor");
         assert_eq!(result_returned_candidate_count, 0);
     }

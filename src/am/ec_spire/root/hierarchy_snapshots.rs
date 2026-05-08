@@ -617,6 +617,8 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         decoded_local_locator_count: local_summary.decoded_local_locator_count,
         returned_candidate_count: local_summary.returned_candidate_count,
         result_source,
+        libpq_receive_count: gate.libpq_receive_count,
+        libpq_receive_status: gate.libpq_receive_status,
         final_heap_fetch_status: gate.final_heap_fetch_status,
         next_blocker: gate.next_blocker,
         status: gate.status,

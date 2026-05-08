@@ -183,6 +183,8 @@ pub(crate) struct SpireRemoteSearchCoordinatorResultSummaryRow {
     pub(crate) decoded_local_locator_count: u64,
     pub(crate) returned_candidate_count: u64,
     pub(crate) result_source: &'static str,
+    pub(crate) libpq_receive_count: u64,
+    pub(crate) libpq_receive_status: &'static str,
     pub(crate) final_heap_fetch_status: &'static str,
     pub(crate) next_blocker: &'static str,
     pub(crate) status: &'static str,
