@@ -14,6 +14,10 @@ Start with:
   or unexpectedly approximate.
 - `ec_spire_index_relation_storage_snapshot(index_oid)` when old epoch or
   relation-object cleanup debt is suspected.
+- `ec_spire_index_maintenance_scheduler_plan(index_oid)` before running a
+  periodic maintenance job.
+- `ec_spire_index_epoch_cleanup_summary(index_oid)` when old-epoch retention
+  and physical cleanup status need one operator row.
 
 ## Function Map
 
@@ -25,6 +29,7 @@ Start with:
 | `ec_spire_index_scan_sanity_snapshot(index_oid)` | operator | You need deterministic scan preconditions such as exact leaf coverage and rerank mode. |
 | `ec_spire_index_relation_storage_snapshot(index_oid)` | operator | You need relation object tuple counts, active referenced bytes, and cleanup-candidate debt. |
 | `ec_spire_index_epoch_snapshot(index_oid)` | operator | You need active, retired, failed, superseded, and cleanup-eligibility epoch rows. |
+| `ec_spire_index_epoch_cleanup_summary(index_oid)` | operator | You need retained-epoch blockers and cleanup-candidate tuple debt in one row. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
 | `ec_spire_index_root_routing_snapshot(index_oid)` | debug | You need root centroid-to-child routing rows and child placement metadata. |
@@ -33,6 +38,10 @@ Start with:
 | `ec_spire_index_leaf_snapshot(index_oid)` | operator/debug | You need per-leaf base, delta, effective assignment counts, maintenance labels, and object bytes. |
 | `ec_spire_index_delta_snapshot(index_oid)` | debug | You need readable delta object rows with parent leaf, version, and insert/delete counts. |
 | `ec_spire_index_insert_debt_snapshot(index_oid)` | operator | You need active delta fanout and whether insert batching is recommended. |
+| `ec_spire_index_maintenance_plan_snapshot(index_oid)` | operator/debug | You need an unlocked split/merge maintenance preview. |
+| `ec_spire_index_locked_maintenance_run_plan(index_oid)` | operator/debug | You need the publish-lock rechecked split/merge plan without publishing an epoch. |
+| `ec_spire_index_maintenance_scheduler_plan(index_oid)` | operator | You need to decide whether an operator-controlled periodic job should call maintenance. |
+| `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
 
 ## Stable Labels
@@ -68,6 +77,28 @@ replication planning state through `boundary_replica_count`,
 `boundary_replica_count = 0` keeps primary-only assignment and reports
 `scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
 can see when scan plans must deduplicate replicated vector identities.
+
+## Maintenance And Cleanup
+
+SPIRE maintenance uses epoch publication. The operator-controlled periodic-job
+path is:
+
+1. Read `ec_spire_index_maintenance_scheduler_plan(index_oid)`.
+2. If `scheduler_status = 'due'`, call
+   `ec_spire_index_maintenance_scheduler_run(index_oid)`.
+3. Inspect `maintenance_status`, `planned_action`, `published`, and
+   `maintenance_message`.
+
+The scheduler entrypoint does not implement a separate split/merge algorithm.
+It delegates to `ec_spire_index_maintenance_run(index_oid)`, which takes the
+SPIRE publish lock, reloads active state, rechecks the selected action, and
+publishes through the normal maintenance path.
+
+Use `ec_spire_index_epoch_cleanup_summary(index_oid)` for old-epoch cleanup
+triage. `physical_cleanup_status = 'blocked_not_implemented'` means retained or
+superseded object tuples are visible as cleanup debt, but this build cannot
+physically reclaim those tuples yet. `physical_cleanup_supported = false` is the
+current expected value.
 
 ## Reading Notes
 
