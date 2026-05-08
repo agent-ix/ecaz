@@ -2915,6 +2915,32 @@ fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_publication_contract() -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(prerequisite, &'static str),
+        name!(publication_action, &'static str),
+        name!(required_status, &'static str),
+        name!(validator, &'static str),
+        name!(failure_status, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_epoch_manifest_publication_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.step_ordinal).expect("step ordinal should fit in i64"),
+            row.prerequisite,
+            row.publication_action,
+            row.required_status,
+            row.validator,
+            row.failure_status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_placement_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -16145,6 +16171,7 @@ mod tests {
     #[pg_test]
     fn test_ec_spire_remote_phase7_policy_contracts() {
         let degradation_from = "FROM ec_spire_remote_degradation_policy_contract()";
+        let publication_from = "FROM ec_spire_remote_epoch_manifest_publication_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
             .expect("degradation contract count query should succeed")
@@ -16185,6 +16212,28 @@ mod tests {
         ))
         .expect("merge order aggregate query should succeed")
         .expect("merge order aggregate should exist");
+        let publication_step_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {publication_from}"))
+                .expect("manifest publication contract count query should succeed")
+                .expect("manifest publication contract count should exist");
+        let persistence_action = Spi::get_one::<String>(&format!(
+            "SELECT publication_action {publication_from} \
+             WHERE failure_status = 'requires_remote_epoch_manifest_persistence'"
+        ))
+        .expect("manifest publication persistence query should succeed")
+        .expect("manifest publication persistence action should exist");
+        let stale_action = Spi::get_one::<String>(&format!(
+            "SELECT publication_action {publication_from} \
+             WHERE failure_status = 'stale_remote_epoch_manifest'"
+        ))
+        .expect("manifest publication stale query should succeed")
+        .expect("manifest publication stale action should exist");
+        let transport_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {publication_from} \
+             WHERE prerequisite = 'remote_epoch_manifest_transport'"
+        ))
+        .expect("manifest publication transport query should succeed")
+        .expect("manifest publication transport validator should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -16196,6 +16245,13 @@ mod tests {
         assert_eq!(
             dedupe_order,
             "score,assignment_role,served_epoch,node_id,pid,object_version,row_index,row_locator"
+        );
+        assert_eq!(publication_step_count, 5);
+        assert_eq!(persistence_action, "persist_remote_epoch_manifest");
+        assert_eq!(stale_action, "refresh_remote_epoch_manifest");
+        assert_eq!(
+            transport_validator,
+            "future_executor_must_use_libpq_pipeline"
         );
     }
 

@@ -1035,6 +1035,16 @@ pub(crate) struct SpireRemoteDegradationPolicyContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochManifestPublicationContractRow {
+    pub(crate) step_ordinal: u64,
+    pub(crate) prerequisite: &'static str,
+    pub(crate) publication_action: &'static str,
+    pub(crate) required_status: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) failure_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexScanPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) effective_nprobe: u32,

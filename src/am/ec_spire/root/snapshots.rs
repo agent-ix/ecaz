@@ -1564,6 +1564,52 @@ pub(crate) fn remote_degradation_policy_contract_rows(
     ]
 }
 
+pub(crate) fn remote_epoch_manifest_publication_contract_rows(
+) -> Vec<SpireRemoteEpochManifestPublicationContractRow> {
+    vec![
+        SpireRemoteEpochManifestPublicationContractRow {
+            step_ordinal: 1,
+            prerequisite: "remote_epoch_publish_gate",
+            publication_action: "block_manifest_publication",
+            required_status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_allow_distributed_epoch_publish",
+            failure_status: "remote_epoch_publish_gate_blocked",
+        },
+        SpireRemoteEpochManifestPublicationContractRow {
+            step_ordinal: 2,
+            prerequisite: "remote_epoch_manifest_catalog_summary",
+            publication_action: "persist_remote_epoch_manifest",
+            required_status: "ready",
+            validator: "must_have_persisted_current_manifest_header",
+            failure_status: "requires_remote_epoch_manifest_persistence",
+        },
+        SpireRemoteEpochManifestPublicationContractRow {
+            step_ordinal: 3,
+            prerequisite: "remote_epoch_manifest_entry_catalog",
+            publication_action: "refresh_remote_epoch_manifest",
+            required_status: "ready",
+            validator: "persisted_entries_must_match_current_manifest_plan",
+            failure_status: "stale_remote_epoch_manifest",
+        },
+        SpireRemoteEpochManifestPublicationContractRow {
+            step_ordinal: 4,
+            prerequisite: "remote_epoch_manifest_publication_plan",
+            publication_action: "publish_remote_epoch_manifest",
+            required_status: "ready",
+            validator: "all_publication_rows_must_be_ready",
+            failure_status: "block_manifest_publication",
+        },
+        SpireRemoteEpochManifestPublicationContractRow {
+            step_ordinal: 5,
+            prerequisite: "remote_epoch_manifest_transport",
+            publication_action: "publish_remote_epoch_manifest",
+            required_status: "libpq_pipeline",
+            validator: "future_executor_must_use_libpq_pipeline",
+            failure_status: "requires_libpq_executor",
+        },
+    ]
+}
+
 fn remote_node_capability_plan_row(
     node: SpireRemoteNodeSnapshotRow,
 ) -> SpireRemoteNodeCapabilityPlanRow {
