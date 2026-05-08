@@ -2445,6 +2445,216 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_publication_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(placement_count, i64),
+        name!(persisted_entry_present, bool),
+        name!(persisted_entry_matches, bool),
+        name!(manifest_action, String),
+        name!(publication_action, String),
+        name!(publication_transport, String),
+        name!(status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_publication_plan")
+    };
+    let current_rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let Some(active_epoch) = current_rows.first().map(|row| row.active_epoch) else {
+        return TableIterator::new(Vec::new().into_iter());
+    };
+    let active_epoch_i64 = i64::try_from(active_epoch).expect("active epoch should fit in i64");
+
+    let (catalog_status, catalog_recommendation) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT catalog_status, recommendation \
+                   FROM ec_spire_remote_epoch_manifest_catalog_summary($1::oid)",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest publication summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<(String, String), String>((
+                    row["catalog_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("publication catalog_status decode failed: {e}"))?
+                        .ok_or_else(|| "publication catalog_status is null".to_owned())?,
+                    row["recommendation"]
+                        .value::<String>()
+                        .map_err(|e| format!("publication recommendation decode failed: {e}"))?
+                        .ok_or_else(|| "publication recommendation is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or_else(|| ("empty".to_owned(), "none".to_owned())))
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    let persisted_entries = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT node_id, placement_count, required_last_served_epoch, \
+                        required_min_retained_epoch, last_served_epoch, min_retained_epoch, \
+                        epoch_window_status, manifest_action, status \
+                   FROM ec_spire_remote_epoch_manifest_entry \
+                  WHERE coordinator_index_oid = $1::oid \
+                    AND active_epoch = $2::bigint",
+                None,
+                &[index_oid.into(), active_epoch_i64.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest publication entry read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<(i32, i64, i64, i64, i64, i64, String, String, String), String>((
+                    row["node_id"]
+                        .value::<i32>()
+                        .map_err(|e| format!("publication node_id decode failed: {e}"))?
+                        .ok_or_else(|| "publication node_id is null".to_owned())?,
+                    row["placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("publication placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "publication placement_count is null".to_owned())?,
+                    row["required_last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("publication required_last_served_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "publication required_last_served_epoch is null".to_owned()
+                        })?,
+                    row["required_min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("publication required_min_retained_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "publication required_min_retained_epoch is null".to_owned()
+                        })?,
+                    row["last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("publication last_served_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "publication last_served_epoch is null".to_owned())?,
+                    row["min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("publication min_retained_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "publication min_retained_epoch is null".to_owned())?,
+                    row["epoch_window_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("publication epoch_window_status decode failed: {e}"))?
+                        .ok_or_else(|| "publication epoch_window_status is null".to_owned())?,
+                    row["manifest_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("publication manifest_action decode failed: {e}"))?
+                        .ok_or_else(|| "publication manifest_action is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("publication status decode failed: {e}"))?
+                        .ok_or_else(|| "publication status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    let rows = current_rows
+        .into_iter()
+        .map(|current| {
+            let persisted = persisted_entries
+                .iter()
+                .find(|entry| u32::try_from(entry.0).ok() == Some(current.node_id));
+            let persisted_entry_present = persisted.is_some();
+            let persisted_entry_matches = persisted.is_some_and(|entry| {
+                let placement_count = i64::try_from(current.placement_count)
+                    .expect("placement count should fit in i64");
+                let required_last_served_epoch = i64::try_from(current.required_last_served_epoch)
+                    .expect("required last served epoch should fit in i64");
+                let required_min_retained_epoch =
+                    i64::try_from(current.required_min_retained_epoch)
+                        .expect("required min retained epoch should fit in i64");
+                let last_served_epoch = i64::try_from(current.last_served_epoch)
+                    .expect("last served epoch should fit in i64");
+                let min_retained_epoch = i64::try_from(current.min_retained_epoch)
+                    .expect("min retained epoch should fit in i64");
+                entry.1 == placement_count
+                    && entry.2 == required_last_served_epoch
+                    && entry.3 == required_min_retained_epoch
+                    && entry.4 == last_served_epoch
+                    && entry.5 == min_retained_epoch
+                    && entry.6 == current.epoch_window_status
+                    && entry.7 == current.manifest_action
+                    && entry.8 == current.status
+            });
+            let (publication_action, publication_transport, status, recommendation) =
+                if current.status != "ready" {
+                    (
+                        "block_manifest_publication".to_owned(),
+                        "none".to_owned(),
+                        current.status.to_owned(),
+                        current.recommendation.to_owned(),
+                    )
+                } else if catalog_status == "ready" && persisted_entry_matches {
+                    (
+                        "publish_remote_epoch_manifest".to_owned(),
+                        "libpq_pipeline".to_owned(),
+                        "ready".to_owned(),
+                        "none".to_owned(),
+                    )
+                } else if catalog_status == "requires_remote_epoch_manifest_persistence" {
+                    (
+                        "persist_remote_epoch_manifest".to_owned(),
+                        "none".to_owned(),
+                        catalog_status.clone(),
+                        catalog_recommendation.clone(),
+                    )
+                } else if catalog_status == "stale_remote_epoch_manifest" {
+                    (
+                        "refresh_remote_epoch_manifest".to_owned(),
+                        "none".to_owned(),
+                        catalog_status.clone(),
+                        catalog_recommendation.clone(),
+                    )
+                } else {
+                    (
+                        "block_manifest_publication".to_owned(),
+                        "none".to_owned(),
+                        catalog_status.clone(),
+                        catalog_recommendation.clone(),
+                    )
+                };
+
+            (
+                active_epoch_i64,
+                i64::from(current.node_id),
+                i64::try_from(current.placement_count).expect("placement count should fit in i64"),
+                persisted_entry_present,
+                persisted_entry_matches,
+                current.manifest_action.to_owned(),
+                publication_action,
+                publication_transport,
+                status,
+                recommendation,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -15358,6 +15568,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let summary_from = "FROM ec_spire_remote_epoch_manifest_catalog_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let publication_from = "FROM ec_spire_remote_epoch_manifest_publication_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -15402,6 +15614,23 @@ mod tests {
         ))
         .expect("manifest catalog summary mismatch count query should succeed")
         .expect("manifest catalog summary mismatch count should exist");
+        let publication_action =
+            Spi::get_one::<String>(&format!("SELECT publication_action {publication_from}"))
+                .expect("manifest publication action query should succeed")
+                .expect("manifest publication action should exist");
+        let publication_transport =
+            Spi::get_one::<String>(&format!("SELECT publication_transport {publication_from}"))
+                .expect("manifest publication transport query should succeed")
+                .expect("manifest publication transport should exist");
+        let publication_status =
+            Spi::get_one::<String>(&format!("SELECT status {publication_from}"))
+                .expect("manifest publication status query should succeed")
+                .expect("manifest publication status should exist");
+        let publication_entry_matches = Spi::get_one::<bool>(&format!(
+            "SELECT persisted_entry_matches {publication_from}"
+        ))
+        .expect("manifest publication match query should succeed")
+        .expect("manifest publication match should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -15417,6 +15646,10 @@ mod tests {
         assert_eq!(summary_status, "ready");
         assert_eq!(summary_persisted_entry_count, 1);
         assert_eq!(summary_mismatch_count, 0);
+        assert_eq!(publication_action, "publish_remote_epoch_manifest");
+        assert_eq!(publication_transport, "libpq_pipeline");
+        assert_eq!(publication_status, "ready");
+        assert!(publication_entry_matches);
 
         Spi::run(&format!(
             "UPDATE ec_spire_remote_epoch_manifest_entry \
@@ -15436,8 +15669,24 @@ mod tests {
         ))
         .expect("stale manifest catalog summary mismatch count query should succeed")
         .expect("stale manifest catalog summary mismatch count should exist");
+        let stale_publication_action =
+            Spi::get_one::<String>(&format!("SELECT publication_action {publication_from}"))
+                .expect("stale manifest publication action query should succeed")
+                .expect("stale manifest publication action should exist");
+        let stale_publication_status =
+            Spi::get_one::<String>(&format!("SELECT status {publication_from}"))
+                .expect("stale manifest publication status query should succeed")
+                .expect("stale manifest publication status should exist");
+        let stale_publication_entry_matches = Spi::get_one::<bool>(&format!(
+            "SELECT persisted_entry_matches {publication_from}"
+        ))
+        .expect("stale manifest publication match query should succeed")
+        .expect("stale manifest publication match should exist");
         assert_eq!(stale_summary_status, "stale_remote_epoch_manifest");
         assert_eq!(stale_mismatch_count, 1);
+        assert_eq!(stale_publication_action, "refresh_remote_epoch_manifest");
+        assert_eq!(stale_publication_status, "stale_remote_epoch_manifest");
+        assert!(!stale_publication_entry_matches);
     }
 
     #[pg_test]
