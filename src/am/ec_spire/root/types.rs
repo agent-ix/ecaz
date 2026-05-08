@@ -172,6 +172,24 @@ pub(crate) struct SpireRemoteSearchLocalHeapCandidateSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchCoordinatorResultSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) local_plan_count: u64,
+    pub(crate) remote_plan_count: u64,
+    pub(crate) skipped_plan_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) decoded_local_locator_count: u64,
+    pub(crate) returned_candidate_count: u64,
+    pub(crate) result_source: &'static str,
+    pub(crate) final_heap_fetch_status: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchHeapResolutionSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_plan_count: u64,

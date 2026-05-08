@@ -522,6 +522,65 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     }
 }
 
+pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchCoordinatorResultSummaryRow {
+    let gate = unsafe {
+        remote_search_coordinator_gate_summary_row(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+    let local_summary = unsafe {
+        remote_search_local_heap_candidate_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    let result_source = if local_summary.returned_candidate_count > 0 {
+        "local_heap_candidates"
+    } else if gate.next_blocker != SPIRE_REMOTE_NONE {
+        "blocked"
+    } else {
+        SPIRE_REMOTE_NONE
+    };
+    let recommendation = if gate.recommendation != SPIRE_REMOTE_NONE {
+        gate.recommendation
+    } else {
+        local_summary.recommendation
+    };
+
+    SpireRemoteSearchCoordinatorResultSummaryRow {
+        requested_epoch: gate.requested_epoch,
+        local_plan_count: gate.local_plan_count,
+        remote_plan_count: gate.remote_plan_count,
+        skipped_plan_count: gate.skipped_plan_count,
+        local_pid_count: gate.local_pid_count,
+        remote_pid_count: gate.remote_pid_count,
+        skipped_pid_count: gate.skipped_pid_count,
+        decoded_local_locator_count: local_summary.decoded_local_locator_count,
+        returned_candidate_count: local_summary.returned_candidate_count,
+        result_source,
+        final_heap_fetch_status: gate.final_heap_fetch_status,
+        next_blocker: gate.next_blocker,
+        status: gate.status,
+        recommendation,
+    }
+}
+
 unsafe fn remote_search_coordinator_local_summary_result(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,

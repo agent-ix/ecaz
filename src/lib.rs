@@ -3390,6 +3390,96 @@ fn ec_spire_remote_search_local_heap_candidate_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_result_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(local_plan_count, i64),
+        name!(remote_plan_count, i64),
+        name!(skipped_plan_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(skipped_pid_count, i64),
+        name!(decoded_local_locator_count, i64),
+        name!(returned_candidate_count, i64),
+        name!(result_source, &'static str),
+        name!(final_heap_fetch_status, &'static str),
+        name!(next_blocker, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_result_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_coordinator_result_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_coordinator_result_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_coordinator_result_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_coordinator_result_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.local_plan_count).expect("local plan count should fit in i64"),
+        i64::try_from(row.remote_plan_count).expect("remote plan count should fit in i64"),
+        i64::try_from(row.skipped_plan_count).expect("skipped plan count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.skipped_pid_count).expect("skipped pid count should fit in i64"),
+        i64::try_from(row.decoded_local_locator_count)
+            .expect("decoded local locator count should fit in i64"),
+        i64::try_from(row.returned_candidate_count)
+            .expect("returned candidate count should fit in i64"),
+        row.result_source,
+        row.final_heap_fetch_status,
+        row.next_blocker,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_finalization_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11788,6 +11878,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 2, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let result_summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_result_summary(\
+             'ec_spire_remote_local_heap_res_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local heap resolution count query should succeed")
             .expect("local heap resolution count should exist");
@@ -11855,6 +11952,22 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {candidate_summary_from}"))
                 .expect("local heap candidate summary status query should succeed")
                 .expect("local heap candidate summary status should exist");
+        let result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
+                .expect("coordinator result source query should succeed")
+                .expect("coordinator result source should exist");
+        let result_status = Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
+            .expect("coordinator result status query should succeed")
+            .expect("coordinator result status should exist");
+        let result_returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {result_summary_from}"
+        ))
+        .expect("coordinator result returned count query should succeed")
+        .expect("coordinator result returned count should exist");
+        let result_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {result_summary_from}"))
+                .expect("coordinator result blocker query should succeed")
+                .expect("coordinator result blocker should exist");
 
         assert_eq!(row_count, 2);
         assert_eq!(ready_count, row_count);
@@ -11870,6 +11983,10 @@ mod tests {
         assert_eq!(candidate_locator_count, candidate_count);
         assert_eq!(returned_candidate_count, candidate_count);
         assert_eq!(candidate_summary_status, "ready");
+        assert_eq!(result_source, "local_heap_candidates");
+        assert_eq!(result_status, "ready");
+        assert_eq!(result_returned_candidate_count, candidate_count);
+        assert_eq!(result_next_blocker, "none");
     }
 
     #[pg_test]
@@ -11927,6 +12044,8 @@ mod tests {
         let candidate_from = format!("FROM ec_spire_remote_search_local_heap_candidates({args})");
         let candidate_summary_from =
             format!("FROM ec_spire_remote_search_local_heap_candidate_summary({args})");
+        let result_summary_from =
+            format!("FROM ec_spire_remote_search_coordinator_result_summary({args})");
 
         let merge_status = Spi::get_one::<String>(&format!("SELECT status {merge_from}"))
             .expect("degraded merge status query should succeed")
@@ -11969,6 +12088,17 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {candidate_summary_from}"))
                 .expect("degraded candidate summary status query should succeed")
                 .expect("degraded candidate summary status should exist");
+        let result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
+                .expect("degraded result source query should succeed")
+                .expect("degraded result source should exist");
+        let result_status = Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
+            .expect("degraded result status query should succeed")
+            .expect("degraded result status should exist");
+        let result_skipped_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT skipped_pid_count {result_summary_from}"))
+                .expect("degraded result skipped pid query should succeed")
+                .expect("degraded result skipped pid count should exist");
 
         assert_eq!(merge_status, "degraded_ready");
         assert_eq!(skipped_batch_count, 1);
@@ -11981,6 +12111,9 @@ mod tests {
         assert_eq!(candidate_count, 1);
         assert_eq!(returned_candidate_count, 1);
         assert_eq!(candidate_summary_status, "degraded_ready");
+        assert_eq!(result_source, "local_heap_candidates");
+        assert_eq!(result_status, "degraded_ready");
+        assert_eq!(result_skipped_pid_count, 1);
     }
 
     #[pg_test]
@@ -12037,6 +12170,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 2, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let result_summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_result_summary(\
+             'ec_spire_remote_heap_res_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
             .expect("remote heap summary status query should succeed")
             .expect("remote heap summary status should exist");
@@ -12072,6 +12212,19 @@ mod tests {
         ))
         .expect("remote heap candidate summary return query should succeed")
         .expect("remote heap candidate summary return count should exist");
+        let result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
+                .expect("remote result source query should succeed")
+                .expect("remote result source should exist");
+        let result_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {result_summary_from}"))
+                .expect("remote result blocker query should succeed")
+                .expect("remote result blocker should exist");
+        let result_returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {result_summary_from}"
+        ))
+        .expect("remote result returned count query should succeed")
+        .expect("remote result returned count should exist");
 
         assert_eq!(status, "requires_remote_node_descriptor");
         assert_eq!(remote_plan_count, 1);
@@ -12081,6 +12234,9 @@ mod tests {
         assert_eq!(remote_resolution_status, "requires_remote_node_descriptor");
         assert_eq!(candidate_summary_status, "requires_remote_node_descriptor");
         assert_eq!(returned_candidate_count, 0);
+        assert_eq!(result_source, "blocked");
+        assert_eq!(result_next_blocker, "remote_node_descriptor");
+        assert_eq!(result_returned_candidate_count, 0);
     }
 
     #[pg_test]
