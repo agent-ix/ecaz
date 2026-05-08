@@ -5281,42 +5281,52 @@ fn ec_spire_remote_epoch_manifest_publication_contract() -> TableIterator<
 fn ec_spire_remote_epoch_manifest_publication_result_contract() -> TableIterator<
     'static,
     (
+        name!(result_ordinal, i64),
         name!(result_source, &'static str),
         name!(publication_decision, &'static str),
         name!(status_family, &'static str),
         name!(semantic_role, &'static str),
         name!(validator, &'static str),
+        name!(recommendation, &'static str),
     ),
 > {
     TableIterator::new(
         vec![
             (
+                1_i64,
                 "not_required",
                 "not_required",
                 "not_required",
                 "local_only_manifest_publication_result",
                 "must_have_zero_libpq_receive_count",
+                "remote publication is not required for local-only manifests",
             ),
             (
+                2_i64,
                 "pending_libpq_executor",
                 "publish_remote_epoch_manifest",
                 "requires_libpq_executor",
                 "distributed_manifest_waiting_for_transport_executor",
                 "must_name_next_executor_step",
+                "run the future libpq executor against the manifest work plan",
             ),
             (
+                3_i64,
                 "remote_manifest_validation_result",
                 "publish_remote_epoch_manifest",
                 "ready",
                 "distributed_manifest_payload_validation_result",
                 "must_match_manifest_result_contract",
+                "v1: synthesize after the remote apply executor lands",
             ),
             (
+                4_i64,
                 "blocked",
                 "any_blocked_publication_decision",
                 "blocked",
                 "pre_publication_gate_blocked_result",
                 "must_preserve_original_blocker_status",
+                "resolve the upstream publication blocker before remote apply",
             ),
         ]
         .into_iter(),
@@ -20317,6 +20327,12 @@ mod tests {
         ))
         .expect("manifest publication pending result query should succeed")
         .expect("manifest publication pending result validator should exist");
+        let validation_result_recommendation = Spi::get_one::<String>(&format!(
+            "SELECT recommendation {publication_result_from} \
+             WHERE result_source = 'remote_manifest_validation_result'"
+        ))
+        .expect("manifest publication validation result query should succeed")
+        .expect("manifest publication validation result recommendation should exist");
         let manifest_parameter_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {manifest_parameter_from}"))
                 .expect("manifest parameter contract count query should succeed")
@@ -20376,6 +20392,7 @@ mod tests {
         );
         assert_eq!(publication_result_count, 4);
         assert_eq!(pending_result_validator, "must_name_next_executor_step");
+        assert!(validation_result_recommendation.contains("remote apply executor"));
         assert_eq!(manifest_parameter_count, 3);
         assert_eq!(manifest_payload_type, "jsonb");
         assert_eq!(manifest_result_count, 3);
