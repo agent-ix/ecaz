@@ -954,6 +954,37 @@ pub(crate) struct SpireRemoteEpochPublishPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochManifestPlanRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) descriptor_state: &'static str,
+    pub(crate) placement_count: u64,
+    pub(crate) required_last_served_epoch: u64,
+    pub(crate) required_min_retained_epoch: u64,
+    pub(crate) last_served_epoch: u64,
+    pub(crate) min_retained_epoch: u64,
+    pub(crate) epoch_window_status: &'static str,
+    pub(crate) manifest_action: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochManifestSummaryRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) manifest_scope: &'static str,
+    pub(crate) manifest_decision: &'static str,
+    pub(crate) manifest_entry_count: u64,
+    pub(crate) included_remote_node_count: u64,
+    pub(crate) blocked_remote_node_count: u64,
+    pub(crate) remote_placement_count: u64,
+    pub(crate) publish_decision: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteDegradationPolicyContractRow {
     pub(crate) consistency_mode: &'static str,
     pub(crate) placement_state: &'static str,

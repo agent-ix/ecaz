@@ -1572,6 +1572,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   readiness rows into one final pre-publish decision: local-only publish,
   distributed publish-ready, or blocked distributed publish with the next
   descriptor/epoch-window blocker and the shared degradation-policy contract.
+  `ec_spire_remote_epoch_manifest_plan(...)` and
+  `ec_spire_remote_epoch_manifest_summary(...)` now expose the planned manifest
+  entries and final manifest decision for local-only, blocked, and distributed
+  epoch publishes without writing a remote manifest.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now

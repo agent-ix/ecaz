@@ -1784,6 +1784,95 @@ fn ec_spire_remote_epoch_publish_gate_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(descriptor_state, &'static str),
+        name!(placement_count, i64),
+        name!(required_last_served_epoch, i64),
+        name!(required_min_retained_epoch, i64),
+        name!(last_served_epoch, i64),
+        name!(min_retained_epoch, i64),
+        name!(epoch_window_status, &'static str),
+        name!(manifest_action, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_plan") };
+    let rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.descriptor_state,
+            i64::try_from(row.placement_count).expect("placement count should fit in i64"),
+            i64::try_from(row.required_last_served_epoch)
+                .expect("required last served epoch should fit in i64"),
+            i64::try_from(row.required_min_retained_epoch)
+                .expect("required min retained epoch should fit in i64"),
+            i64::try_from(row.last_served_epoch).expect("last served epoch should fit in i64"),
+            i64::try_from(row.min_retained_epoch).expect("min retained epoch should fit in i64"),
+            row.epoch_window_status,
+            row.manifest_action,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(manifest_scope, &'static str),
+        name!(manifest_decision, &'static str),
+        name!(manifest_entry_count, i64),
+        name!(included_remote_node_count, i64),
+        name!(blocked_remote_node_count, i64),
+        name!(remote_placement_count, i64),
+        name!(publish_decision, &'static str),
+        name!(next_blocker, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_summary") };
+    let row = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        row.manifest_scope,
+        row.manifest_decision,
+        i64::try_from(row.manifest_entry_count).expect("manifest entry count should fit in i64"),
+        i64::try_from(row.included_remote_node_count)
+            .expect("included remote node count should fit in i64"),
+        i64::try_from(row.blocked_remote_node_count)
+            .expect("blocked remote node count should fit in i64"),
+        i64::try_from(row.remote_placement_count)
+            .expect("remote placement count should fit in i64"),
+        row.publish_decision,
+        row.next_blocker,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -13228,6 +13317,10 @@ mod tests {
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
         let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass)";
+        let manifest_plan_from = "FROM ec_spire_remote_epoch_manifest_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass)";
+        let manifest_summary_from = "FROM ec_spire_remote_epoch_manifest_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass)";
         let coordinator_gate_from = format!(
             "FROM ec_spire_remote_search_coordinator_gate_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -13311,6 +13404,19 @@ mod tests {
         let publish_status = Spi::get_one::<String>(&format!("SELECT status {publish_gate_from}"))
             .expect("publish status query should succeed")
             .expect("publish status should exist");
+        let manifest_action =
+            Spi::get_one::<String>(&format!("SELECT manifest_action {manifest_plan_from}"))
+                .expect("manifest action query should succeed")
+                .expect("manifest action should exist");
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT manifest_decision {manifest_summary_from}"))
+                .expect("manifest decision query should succeed")
+                .expect("manifest decision should exist");
+        let included_manifest_count = Spi::get_one::<i64>(&format!(
+            "SELECT included_remote_node_count {manifest_summary_from}"
+        ))
+        .expect("manifest included count query should succeed")
+        .expect("manifest included count should exist");
         let coordinator_libpq_dispatch_count = Spi::get_one::<i64>(&format!(
             "SELECT libpq_dispatch_count {coordinator_gate_from}"
         ))
@@ -13409,6 +13515,9 @@ mod tests {
         assert_eq!(extension_status, "ready");
         assert_eq!(publish_decision, "publish_distributed_epoch");
         assert_eq!(publish_status, "ready");
+        assert_eq!(manifest_action, "include_remote_node");
+        assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
+        assert_eq!(included_manifest_count, 1);
         assert_eq!(coordinator_libpq_dispatch_count, 1);
         assert_eq!(
             coordinator_libpq_dispatch_status,
@@ -13757,6 +13866,8 @@ mod tests {
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
         let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_summary_from = "FROM ec_spire_remote_epoch_manifest_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -13796,6 +13907,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT next_blocker {publish_gate_from}"))
                 .expect("epoch publish gate blocker query should succeed")
                 .expect("epoch publish gate blocker should exist");
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT manifest_decision {manifest_summary_from}"))
+                .expect("epoch manifest decision query should succeed")
+                .expect("epoch manifest decision should exist");
+        let manifest_entry_count = Spi::get_one::<i64>(&format!(
+            "SELECT manifest_entry_count {manifest_summary_from}"
+        ))
+        .expect("epoch manifest entry count query should succeed")
+        .expect("epoch manifest entry count should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -13807,6 +13927,8 @@ mod tests {
         assert_eq!(publish_scope, "local_only");
         assert_eq!(publish_decision, "publish_local_epoch");
         assert_eq!(next_blocker, "none");
+        assert_eq!(manifest_decision, "emit_local_epoch_manifest");
+        assert_eq!(manifest_entry_count, 0);
     }
 
     #[pg_test]
@@ -13847,6 +13969,10 @@ mod tests {
         let publish_from = "FROM ec_spire_remote_epoch_publish_readiness(\
              'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
         let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
+             'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
+        let manifest_plan_from = "FROM ec_spire_remote_epoch_manifest_plan(\
+             'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
+        let manifest_summary_from = "FROM ec_spire_remote_epoch_manifest_summary(\
              'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -13904,6 +14030,19 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT policy_contract {publish_gate_from}"))
                 .expect("epoch publish gate policy query should succeed")
                 .expect("epoch publish gate policy should exist");
+        let manifest_action =
+            Spi::get_one::<String>(&format!("SELECT manifest_action {manifest_plan_from}"))
+                .expect("epoch manifest action query should succeed")
+                .expect("epoch manifest action should exist");
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT manifest_decision {manifest_summary_from}"))
+                .expect("epoch manifest decision query should succeed")
+                .expect("epoch manifest decision should exist");
+        let blocked_manifest_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_remote_node_count {manifest_summary_from}"
+        ))
+        .expect("epoch manifest blocked count query should succeed")
+        .expect("epoch manifest blocked count should exist");
 
         assert_eq!(capability_status, "requires_remote_node_descriptor");
         assert_eq!(node_count, 2);
@@ -13922,6 +14061,9 @@ mod tests {
             policy_contract,
             "ec_spire_remote_degradation_policy_contract"
         );
+        assert_eq!(manifest_action, "block_manifest");
+        assert_eq!(manifest_decision, "block_manifest");
+        assert_eq!(blocked_manifest_count, 1);
     }
 
     #[pg_test]

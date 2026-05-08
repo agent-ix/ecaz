@@ -1403,6 +1403,44 @@ pub(crate) unsafe fn remote_epoch_publish_gate_summary(
     }
 }
 
+pub(crate) unsafe fn remote_epoch_manifest_plan(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireRemoteEpochManifestPlanRow> {
+    unsafe { remote_epoch_publish_plan(index_relation) }
+        .into_iter()
+        .map(remote_epoch_manifest_plan_row)
+        .collect()
+}
+
+pub(crate) unsafe fn remote_epoch_manifest_summary(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteEpochManifestSummaryRow {
+    let gate = unsafe { remote_epoch_publish_gate_summary(index_relation) };
+    let (manifest_decision, recommendation) = if gate.active_epoch == 0 {
+        ("build_required", gate.recommendation)
+    } else if gate.publish_decision == "block_publish" {
+        ("block_manifest", gate.recommendation)
+    } else if gate.publish_scope == "local_only" {
+        ("emit_local_epoch_manifest", SPIRE_REMOTE_NONE)
+    } else {
+        ("emit_distributed_epoch_manifest", SPIRE_REMOTE_NONE)
+    };
+
+    SpireRemoteEpochManifestSummaryRow {
+        active_epoch: gate.active_epoch,
+        manifest_scope: gate.publish_scope,
+        manifest_decision,
+        manifest_entry_count: gate.remote_node_count,
+        included_remote_node_count: gate.ready_remote_node_count,
+        blocked_remote_node_count: gate.blocked_remote_node_count,
+        remote_placement_count: gate.remote_placement_count,
+        publish_decision: gate.publish_decision,
+        next_blocker: gate.next_blocker,
+        status: gate.status,
+        recommendation,
+    }
+}
+
 pub(crate) fn remote_degradation_policy_contract_rows(
 ) -> Vec<SpireRemoteDegradationPolicyContractRow> {
     vec![
@@ -1612,6 +1650,31 @@ fn remote_epoch_publish_plan_row(
         epoch_window_status,
         status,
         recommendation,
+    }
+}
+
+fn remote_epoch_manifest_plan_row(
+    row: SpireRemoteEpochPublishPlanRow,
+) -> SpireRemoteEpochManifestPlanRow {
+    let manifest_action = if row.status == SPIRE_REMOTE_STATUS_READY {
+        "include_remote_node"
+    } else {
+        "block_manifest"
+    };
+
+    SpireRemoteEpochManifestPlanRow {
+        active_epoch: row.active_epoch,
+        node_id: row.node_id,
+        descriptor_state: row.descriptor_state,
+        placement_count: row.placement_count,
+        required_last_served_epoch: row.required_last_served_epoch,
+        required_min_retained_epoch: row.required_min_retained_epoch,
+        last_served_epoch: row.last_served_epoch,
+        min_retained_epoch: row.min_retained_epoch,
+        epoch_window_status: row.epoch_window_status,
+        manifest_action,
+        status: row.status,
+        recommendation: row.recommendation,
     }
 }
 
