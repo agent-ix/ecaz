@@ -19996,6 +19996,9 @@ mod tests {
              'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
         let publication_summary_from = "FROM ec_spire_remote_epoch_manifest_publication_summary(\
              'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
+        let publication_result_from =
+            "FROM ec_spire_remote_epoch_manifest_publication_result_summary(\
+             'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
         let manifest_decision =
             Spi::get_one::<String>(&format!("SELECT current_manifest_decision {summary_from}"))
                 .expect("manifest summary decision query should succeed")
@@ -20031,6 +20034,23 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT next_blocker {publication_summary_from}"))
                 .expect("publication summary blocker query should succeed")
                 .expect("publication summary blocker should exist");
+        let publication_result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {publication_result_from}"))
+                .expect("publication result source query should succeed")
+                .expect("publication result source should exist");
+        let publication_result_receive_count = Spi::get_one::<i64>(&format!(
+            "SELECT libpq_receive_count {publication_result_from}"
+        ))
+        .expect("publication result receive count query should succeed")
+        .expect("publication result receive count should exist");
+        let publication_result_status =
+            Spi::get_one::<String>(&format!("SELECT status {publication_result_from}"))
+                .expect("publication result status query should succeed")
+                .expect("publication result status should exist");
+        let publication_result_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {publication_result_from}"))
+                .expect("publication result blocker query should succeed")
+                .expect("publication result blocker should exist");
 
         assert!(register_result);
         assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
@@ -20042,6 +20062,16 @@ mod tests {
         assert_eq!(persistence_required_count, 1);
         assert_eq!(
             publication_next_blocker,
+            "remote_epoch_manifest_persistence"
+        );
+        assert_eq!(publication_result_source, "blocked");
+        assert_eq!(publication_result_receive_count, 0);
+        assert_eq!(
+            publication_result_status,
+            "requires_remote_epoch_manifest_persistence"
+        );
+        assert_eq!(
+            publication_result_next_blocker,
             "remote_epoch_manifest_persistence"
         );
     }
