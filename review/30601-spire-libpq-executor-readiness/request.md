@@ -21,6 +21,12 @@ Changes:
   descriptor-blocked plans.
 - Reports `requires_libpq_executor` and `conninfo_secret_resolution` once
   registered active/draining descriptors make dispatch pipeline-ready.
+- Threads executor readiness into
+  `ec_spire_remote_search_coordinator_gate_summary(...)` with
+  `libpq_executor_status` and `libpq_executor_next_step`.
+- Advances active-descriptor coordinator plans from the generic
+  `requires_libpq_transport` blocker to
+  `requires_libpq_executor` / `conninfo_secret_resolution`.
 - Updates the Phase 7 task note with the executor-readiness surface.
 
 ## Files
@@ -33,10 +39,11 @@ Changes:
 
 ## Validation
 
-Head SHA: `9062f129`
+Head SHA: `721c0311`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_search_libpq_req`
+- `cargo pgrx test pg18 remote_search_coordinator_gate_summary`
 - `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
 - `cargo fmt`
 - Restored known unrelated rustfmt churn in:
@@ -51,13 +58,16 @@ Result:
 - PG18 `remote_search_libpq_req` filter passed:
   - `pg_test_ec_spire_remote_search_libpq_req_blocked`
   - `pg_test_ec_spire_remote_search_libpq_req_local`
+- PG18 `remote_search_coordinator_gate_summary` filter passed:
+  - `pg_test_ec_spire_remote_search_coordinator_gate_summary`
 - PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
 - The tests cover descriptor-blocked, local-only ready/no-op, and
-  active-descriptor executor-required states.
+  active-descriptor executor-required states, including coordinator-gate
+  propagation.
 
 ## Notes
 
 This is still pre-I/O. It makes the future executor's first unresolved work item
-explicit instead of hiding every remote-ready dispatch behind the generic
-transport gate.
+explicit at both the executor-readiness surface and the coordinator gate instead
+of hiding every remote-ready dispatch behind the generic transport gate.
