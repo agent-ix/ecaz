@@ -29,6 +29,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Complete for local implementation surface; product scale evidence deferred |
 | StR-005 SPIRE extension | US-017 SPIRE, US-018..US-020, FR-038 SPIRE, FR-039..FR-043 | TC-020 SPIRE, TC-021..TC-025 | Partial: SPIRE Phase 4 local multi-store implementation is landed; distributed and lifecycle follow-ons remain planned |
 | StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009 | TC-015, TC-016, TC-019, TC-020 benchmark suites | Partial: product hardware gates are explicit gaps |
+| StR-007 cloud | US-021, FR-044..FR-047, NFR-010, NFR-011 | TC-026..TC-032 | Planned: cloud harness implementation begins on `feat/cloud-test-harness` |
 
 ### User Story Coverage
 
@@ -55,6 +56,7 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | US-018 | US-018-AC-1..6 | TC-021, TC-023 | Planned: local multi-store behavior after single-store SPIRE foundation |
 | US-019 | US-019-AC-1..6 | TC-023, TC-024 | Planned: distributed libpq coordinator after local placement |
 | US-020 | US-020-AC-1..6 | TC-023, TC-025 | Planned: epoch/update lifecycle after Phase 0 consistency decisions |
+| US-021 | Cloud benchmark cycle main and alternate flows | TC-026, TC-029, TC-030 | Planned: implementation in progress on cloud branch |
 
 ### Functional Requirement Coverage
 
@@ -88,6 +90,10 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | FR-041 | FR-041-AC-1..5 | TC-023 | Planned: strict/degraded epoch tests after baseline epoch implementation |
 | FR-042 | FR-042-AC-1..4 | TC-024 | Planned: libpq coordinator tests after remote API exists |
 | FR-043 | FR-043-AC-1..5 | TC-025 | Planned: insert/delete, split/merge, cleanup, and failure-path tests |
+| FR-044 | FR-044-AC-1..4 | TC-026, TC-030 | Planned: cloud command surface and idempotence |
+| FR-045 | FR-045-AC-1..4 | TC-027 | Planned: terraform module and profile selection |
+| FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
+| FR-047 | FR-047-AC-1..4 | TC-029, TC-032 | Planned: in-VPC parallel corpus load |
 
 ### Non-Functional Requirement Coverage
 
@@ -102,6 +108,8 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | NFR-007 | Benchmark provenance | TC-015 | Complete for current docs/review-packet citations |
 | NFR-008 | Scale boundary | TC-016 | Complete as policy; execution deferred |
 | NFR-009 | CLI drift and artifact discipline | TC-019 | Complete for docs/spec traceability; command-tree execution audit deferred to CLI tests |
+| NFR-010 | Cloud cost discipline (status reporting, no NAT, --confirm-cost gate) | TC-031 | Planned: cloud harness implementation in progress |
+| NFR-011 | Cloud corpus load throughput targets | TC-032 | Planned: targets baseline once first `1m` run lands |
 
 ## Test Case Summary
 
@@ -133,6 +141,13 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | TC-023 | SPIRE epoch consistency, degraded mode, retention, and failed publish | pg_test / fault injection | P0 | US-017..US-020, FR-041 | Planned: strict local default before distributed degraded mode |
 | TC-024 | SPIRE distributed libpq coordinator and remote strict/degraded behavior | Integration / pg_test | P2 | US-019, FR-042 | Planned: remote Postgres-node prototype |
 | TC-025 | SPIRE update, split/merge, rebalance, and cleanup lifecycle | pg_test / stress | P1 | US-017, US-020, FR-043 | Planned: post-Phase 0 update mechanics |
+| TC-026 | `ecaz cloud` lifecycle (up/install/down/status) idempotence and JSON status | Integration / CLI smoke | P0 | US-021, FR-044 | Planned: implementation in progress |
+| TC-027 | Terraform module plans clean for every profile, no NAT, no SSH | Static / `terraform plan` | P0 | FR-045, NFR-010 | Planned: implementation in progress |
+| TC-028 | Cloud dataset registry coverage, parquet staging SHA verification, BIGANN adapter | Unit / staging dry-run | P1 | FR-046 | Planned: implementation in progress |
+| TC-029 | In-VPC parallel corpus load, row-count match, `--resume` correctness | Integration / SSM exec | P0 | US-021, FR-047 | Planned: implementation in progress |
+| TC-030 | Pause/resume preserves data; snapshot + `--from-snapshot` skips re-load | Integration | P1 | US-021, FR-044, NFR-010 | Planned: implementation in progress |
+| TC-031 | `--confirm-cost` gate, status `$/hr` and `$/mo` reporting, S3 lifecycle rule | Unit / static | P1 | NFR-010 | Planned: implementation in progress |
+| TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
 
 ## Option Permutation Matrix
 
@@ -182,6 +197,9 @@ This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-e
 | EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038 benchmark suites, NFR-007, NFR-009 | TC-020 benchmark suites | Operators cannot audit what ran or identify missing artifacts |
 | EC-009 | SPIRE stored heap TID goes stale after UPDATE/HOT movement | FR-038 SPIRE, FR-040, FR-043 | TC-020 SPIRE, TC-022, TC-025 | Wrong tuple returned or candidate silently lost |
 | EC-010 | SPIRE epoch publish fails after some partition objects are durable | FR-041, FR-043 | TC-023, TC-025 | Active epoch may point at incompatible object versions |
+| EC-011 | Cloud profile left running unattended (forgotten EC2/EBS spend) | NFR-010 | TC-031 | Material AWS spend accumulates silently |
+| EC-012 | Loader EC2 worker dies mid-shard during 100M load | FR-047 | TC-029 | Partial corpus loaded; resume must not duplicate rows |
+| EC-013 | BIGANN `.fbin` adapter mis-encodes parquet (dim or distance) | FR-046 | TC-028 | Bench results compared against the wrong ground truth |
 
 ## Integration Test Matrix
 
@@ -194,6 +212,7 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | INT-003 | Real-corpus benchmark surfaces | PostgreSQL plus local corpus files | database/filesystem | TC-015, TC-016, TC-017 | Partial: local evidence exists, product gates deferred |
 | INT-004 | CLI operator benchmark and stress workflows | PostgreSQL plus local corpus files | database/filesystem | TC-019 | Partial: docs/spec trace complete; execution run on demand |
 | INT-005 | SPIRE local and remote partition-store lifecycle | PostgreSQL 18 plus optional remote PostgreSQL nodes | database | TC-020..TC-025 | Planned: begins with Phase 0 design packet |
+| INT-006 | Cloud harness end-to-end (provision, install, load, bench, teardown) | AWS (EC2 Graviton, EBS, S3, SSM) plus PostgreSQL 18 | cloud-infrastructure | TC-026..TC-032 | Planned: implementation in progress on `feat/cloud-test-harness` |
 
 ## Coverage Gaps
 
@@ -206,6 +225,8 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-005 | Full requirement-to-individual-test function inventory | Low | Generate from source/test names if a stricter audit packet is needed |
 | GAP-006 | Automated CLI README-vs-Clap tree drift check | Low | Add a generated help snapshot or parser-backed docs check if the CLI surface starts changing frequently |
 | GAP-007 | Dedicated normalized numeric columns for each metric family | Low | Add typed result fields if downstream plotting needs them beyond string-valued `values` |
+| GAP-008 | Source dataset for 10M+ comparable benchmarks not yet ingested | Medium | Resolve in FR-046 dataset-registry adapters (Cohere Wikipedia, LAION subsets, BIGANN) before promoting `10m`/`100m` profiles |
+| GAP-009 | Graviton (aarch64) BLAS backend selection for `bench recall` ground-truth matmul | Medium | Verify on first `dev` cloud run; pin in AMI bake if default backend underperforms |
 
 ## Test Execution Summary
 
