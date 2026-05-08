@@ -418,6 +418,29 @@ pub(crate) struct SpireRemoteSearchLibpqConnectionSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteOperatorEntrypointContractRow {
+    pub(crate) entrypoint_ordinal: u64,
+    pub(crate) entrypoint_name: &'static str,
+    pub(crate) area: &'static str,
+    pub(crate) operator_use: &'static str,
+    pub(crate) status_source: &'static str,
+    pub(crate) next_action: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteLibpqConnectionLifecycleContractRow {
+    pub(crate) surface: &'static str,
+    pub(crate) connection_lifecycle_policy: &'static str,
+    pub(crate) pooling_policy: &'static str,
+    pub(crate) secret_resolution_policy: &'static str,
+    pub(crate) conninfo_exposure_policy: &'static str,
+    pub(crate) failure_policy: &'static str,
+    pub(crate) resource_limit_policy: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) node_id: u32,

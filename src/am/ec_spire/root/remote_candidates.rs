@@ -61,6 +61,104 @@ const SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED: &str = "disabled";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 
+pub(crate) fn remote_operator_entrypoint_contract_rows(
+) -> Vec<SpireRemoteOperatorEntrypointContractRow> {
+    vec![
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 1,
+            entrypoint_name: "ec_spire_remote_search_coordinator_gate_summary",
+            area: "search",
+            operator_use: "pre_result_gate",
+            status_source: "status,next_blocker,libpq_executor_next_step",
+            next_action: "resolve_reported_blocker_before_expect_result_rows",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 2,
+            entrypoint_name: "ec_spire_remote_search_coordinator_result_summary",
+            area: "search",
+            operator_use: "final_result_source",
+            status_source: "result_source,status,next_blocker",
+            next_action: "consume_local_heap_candidates_or_resolve_blocker",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 3,
+            entrypoint_name: "ec_spire_remote_node_snapshot",
+            area: "descriptor",
+            operator_use: "node_inventory",
+            status_source: "descriptor_state,status,recommendation",
+            next_action: "register_or_refresh_remote_node_descriptor",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 4,
+            entrypoint_name: "ec_spire_remote_node_descriptor_readiness_summary",
+            area: "descriptor",
+            operator_use: "descriptor_field_gate",
+            status_source: "ready_field_count,blocked_field_count,status",
+            next_action: "fill_required_descriptor_fields_before_transport",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 5,
+            entrypoint_name: "ec_spire_remote_node_capability_summary",
+            area: "capability",
+            operator_use: "remote_serving_window_gate",
+            status_source: "ready_node_count,blocked_node_count,status",
+            next_action: "refresh_served_epoch_or_remote_index_identity",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 6,
+            entrypoint_name: "ec_spire_remote_epoch_publish_gate_summary",
+            area: "manifest",
+            operator_use: "distributed_publish_gate",
+            status_source: "publish_decision,status,next_blocker",
+            next_action: "persist_manifest_only_after_publish_gate_ready",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 7,
+            entrypoint_name: "ec_spire_remote_epoch_manifest_catalog_summary",
+            area: "manifest",
+            operator_use: "manifest_persistence_gate",
+            status_source: "catalog_status,persisted_manifest_count,persisted_entry_mismatch_count",
+            next_action: "persist_or_refresh_remote_epoch_manifest_catalog",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 8,
+            entrypoint_name: "ec_spire_remote_epoch_manifest_publication_result_summary",
+            area: "publication",
+            operator_use: "manifest_publication_result",
+            status_source: "result_source,status,next_blocker",
+            next_action: "run_libpq_executor_or_resolve_publication_blocker",
+        },
+    ]
+}
+
+pub(crate) fn remote_libpq_connection_lifecycle_contract_rows(
+) -> Vec<SpireRemoteLibpqConnectionLifecycleContractRow> {
+    vec![
+        SpireRemoteLibpqConnectionLifecycleContractRow {
+            surface: "ec_spire_remote_search_libpq_executor",
+            connection_lifecycle_policy: "per_query",
+            pooling_policy: "no_pooling_v1",
+            secret_resolution_policy: "conninfo_secret_name_resolved_by_executor",
+            conninfo_exposure_policy: "never_expose_raw_conninfo_in_sql",
+            failure_policy: "fail_closed_no_implicit_retry",
+            resource_limit_policy: "one_connection_per_ready_remote_node_per_query",
+            validator: "must_close_connection_before_coordinator_returns",
+            recommendation: "implement executor-owned secret provider before opening libpq sockets",
+        },
+        SpireRemoteLibpqConnectionLifecycleContractRow {
+            surface: "ec_spire_remote_epoch_manifest_publication_libpq_executor",
+            connection_lifecycle_policy: "per_query",
+            pooling_policy: "no_pooling_v1",
+            secret_resolution_policy: "conninfo_secret_name_resolved_by_executor",
+            conninfo_exposure_policy: "never_expose_raw_conninfo_in_sql",
+            failure_policy: "fail_closed_no_implicit_retry",
+            resource_limit_policy: "one_connection_per_ready_remote_node_per_publication",
+            validator: "must_close_connection_before_publication_result_returns",
+            recommendation: "share executor secret provider with remote search publication transport",
+        },
+    ]
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct SpireRemoteCountRollup {
     local_count: u64,

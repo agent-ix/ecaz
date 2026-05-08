@@ -5226,6 +5226,64 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_step_contract() -> TableIterato
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_operator_entrypoint_contract() -> TableIterator<
+    'static,
+    (
+        name!(entrypoint_ordinal, i64),
+        name!(entrypoint_name, &'static str),
+        name!(area, &'static str),
+        name!(operator_use, &'static str),
+        name!(status_source, &'static str),
+        name!(next_action, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_operator_entrypoint_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.entrypoint_ordinal).expect("entrypoint ordinal should fit in i64"),
+            row.entrypoint_name,
+            row.area,
+            row.operator_use,
+            row.status_source,
+            row.next_action,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_libpq_connection_lifecycle_contract() -> TableIterator<
+    'static,
+    (
+        name!(surface, &'static str),
+        name!(connection_lifecycle_policy, &'static str),
+        name!(pooling_policy, &'static str),
+        name!(secret_resolution_policy, &'static str),
+        name!(conninfo_exposure_policy, &'static str),
+        name!(failure_policy, &'static str),
+        name!(resource_limit_policy, &'static str),
+        name!(validator, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_libpq_connection_lifecycle_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            row.surface,
+            row.connection_lifecycle_policy,
+            row.pooling_policy,
+            row.secret_resolution_policy,
+            row.conninfo_exposure_policy,
+            row.failure_policy,
+            row.resource_limit_policy,
+            row.validator,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -20801,6 +20859,8 @@ mod tests {
         let manifest_result_from = "FROM ec_spire_remote_epoch_manifest_libpq_result_contract()";
         let manifest_executor_step_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_executor_step_contract()";
+        let operator_entrypoint_from = "FROM ec_spire_remote_operator_entrypoint_contract()";
+        let libpq_lifecycle_from = "FROM ec_spire_remote_libpq_connection_lifecycle_contract()";
         let search_result_from = "FROM ec_spire_remote_search_coordinator_result_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
@@ -20918,6 +20978,44 @@ mod tests {
         ))
         .expect("search blocked result query should succeed")
         .expect("search blocked result should exist");
+        let operator_entrypoint_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {operator_entrypoint_from}"))
+                .expect("operator entrypoint count query should succeed")
+                .expect("operator entrypoint count should exist");
+        let search_gate_next_action = Spi::get_one::<String>(&format!(
+            "SELECT next_action {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_coordinator_gate_summary'"
+        ))
+        .expect("operator search gate entrypoint query should succeed")
+        .expect("operator search gate entrypoint should exist");
+        let publication_result_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_epoch_manifest_publication_result_summary'"
+        ))
+        .expect("operator publication result entrypoint query should succeed")
+        .expect("operator publication result entrypoint should exist");
+        let libpq_lifecycle_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
+                .expect("libpq lifecycle count query should succeed")
+                .expect("libpq lifecycle count should exist");
+        let search_connection_policy = Spi::get_one::<String>(&format!(
+            "SELECT connection_lifecycle_policy {libpq_lifecycle_from} \
+             WHERE surface = 'ec_spire_remote_search_libpq_executor'"
+        ))
+        .expect("search lifecycle policy query should succeed")
+        .expect("search lifecycle policy should exist");
+        let search_secret_policy = Spi::get_one::<String>(&format!(
+            "SELECT secret_resolution_policy {libpq_lifecycle_from} \
+             WHERE surface = 'ec_spire_remote_search_libpq_executor'"
+        ))
+        .expect("search lifecycle secret policy query should succeed")
+        .expect("search lifecycle secret policy should exist");
+        let manifest_conninfo_policy = Spi::get_one::<String>(&format!(
+            "SELECT conninfo_exposure_policy {libpq_lifecycle_from} \
+             WHERE surface = 'ec_spire_remote_epoch_manifest_publication_libpq_executor'"
+        ))
+        .expect("manifest lifecycle conninfo policy query should succeed")
+        .expect("manifest lifecycle conninfo policy should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -20951,6 +21049,19 @@ mod tests {
         );
         assert_eq!(search_result_count, 3);
         assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
+        assert_eq!(operator_entrypoint_count, 8);
+        assert_eq!(
+            search_gate_next_action,
+            "resolve_reported_blocker_before_expect_result_rows"
+        );
+        assert_eq!(publication_result_use, "manifest_publication_result");
+        assert_eq!(libpq_lifecycle_count, 2);
+        assert_eq!(search_connection_policy, "per_query");
+        assert_eq!(
+            search_secret_policy,
+            "conninfo_secret_name_resolved_by_executor"
+        );
+        assert_eq!(manifest_conninfo_policy, "never_expose_raw_conninfo_in_sql");
     }
 
     #[pg_test]

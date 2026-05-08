@@ -1597,6 +1597,14 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_coordinator_result_contract()` now names the final
   search result-source states for local heap candidates, blocked pre-result
   gates, and empty-top-k outcomes.
+  `ec_spire_remote_operator_entrypoint_contract()` now names the compact
+  operator-facing subset of the larger remote diagnostic surface for search,
+  descriptor readiness, capability, manifest persistence, and manifest
+  publication checks. `ec_spire_remote_libpq_connection_lifecycle_contract()`
+  now locks the Phase 7 executor contract to per-query, no-pooling libpq
+  connections, executor-owned `conninfo_secret_name` resolution, no raw
+  conninfo exposure through SQL, and fail-closed/no-implicit-retry behavior for
+  both remote search and remote manifest publication transports.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
