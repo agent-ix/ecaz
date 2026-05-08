@@ -18,6 +18,8 @@ Changes:
 - Adds `ec_spire_remote_epoch_manifest_payload_plan(...)`.
 - Adds `ec_spire_remote_epoch_manifest_payload_summary(...)`.
 - Adds `ec_spire_apply_remote_epoch_manifest(...)`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_dispatch_plan(...)`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_dispatch_summary(...)`.
 - Projects the current manifest plan and persisted manifest catalog into
   per-node publication rows.
 - Reports whether the persisted manifest entry exists and still matches the
@@ -41,6 +43,8 @@ Changes:
 - Materializes catalog-backed JSONB manifest payloads for ready publication
   requests and validates those payloads on the remote apply surface before any
   durable remote apply/write path exists.
+- Joins request metadata, payload, dispatch action, receive validator, and
+  executor handoff into the final pre-I/O libpq dispatch surface.
 - Reports local-only manifest publication as `not_required` in both catalog and
   publication summaries, with no libpq request rows.
 - Publishes the ordered prerequisite/action contract for future manifest
@@ -55,7 +59,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `977b8f37`
+Head SHA: `0de18384`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
@@ -84,10 +88,10 @@ Result:
   persisted-entry refresh blocking, the publication summary, executor handoff,
   request-plan envelope, ready request-summary counts, JSONB payload
   materialization, successful remote apply validation, and an epoch-mismatch
-  apply blocker.
+  apply blocker, plus manifest libpq dispatch action/validator/summary counts.
 - The local summary test covers local-only `not_required` catalog and
   publication summaries with no executor handoff, no request rows, and a
-  `not_required` request/payload summary.
+  `not_required` request/payload/dispatch summary.
 - The missing catalog summary test covers the publication summary's
   `persist_remote_epoch_manifest` blocker.
 - The Phase 7 policy-contract test covers the manifest publication contract,
@@ -98,5 +102,6 @@ Result:
 
 This remains pre-I/O. The new surfaces identify which remote manifest entries
 are eligible for future libpq publication, expose the request and payload shape,
-and define the executor/apply-result contracts, but they do not send manifests
-to remote nodes or persist remote apply state.
+define the executor/apply-result contracts, and publish the final dispatch
+handoff view, but they do not send manifests to remote nodes or persist remote
+apply state.
