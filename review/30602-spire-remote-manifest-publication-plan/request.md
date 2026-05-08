@@ -17,9 +17,10 @@ Changes:
 - Adds `ec_spire_remote_epoch_manifest_libpq_executor_step_contract()`.
 - Adds `ec_spire_remote_epoch_manifest_payload_plan(...)`.
 - Adds `ec_spire_remote_epoch_manifest_payload_summary(...)`.
-- Adds `ec_spire_apply_remote_epoch_manifest(...)`.
+- Adds `ec_spire_validate_remote_epoch_manifest_payload(...)`.
 - Adds `ec_spire_remote_epoch_manifest_libpq_dispatch_plan(...)`.
 - Adds `ec_spire_remote_epoch_manifest_libpq_dispatch_summary(...)`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_executor_readiness(...)`.
 - Projects the current manifest plan and persisted manifest catalog into
   per-node publication rows.
 - Reports whether the persisted manifest entry exists and still matches the
@@ -38,13 +39,15 @@ Changes:
   source/format, SQL template, parameter/result counts, and executor handoff
   status.
 - Aggregates request-plan rows into a pre-I/O request summary, and publishes the
-  bind-parameter, apply-result, and executor-step contracts for the future
+  bind-parameter, validation-result, and executor-step contracts for the future
   libpq manifest publication executor.
 - Materializes catalog-backed JSONB manifest payloads for ready publication
-  requests and validates those payloads on the remote apply surface before any
-  durable remote apply/write path exists.
+  requests and validates those payloads on the remote validation surface before
+  any durable remote apply/write path exists.
 - Joins request metadata, payload, dispatch action, receive validator, and
   executor handoff into the final pre-I/O libpq dispatch surface.
+- Reports the remaining manifest publication executor steps: secret resolution,
+  connection open, pipeline entry, send, and payload-validation result handoff.
 - Reports local-only manifest publication as `not_required` in both catalog and
   publication summaries, with no libpq request rows.
 - Publishes the ordered prerequisite/action contract for future manifest
@@ -59,7 +62,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `0de18384`
+Head SHA: `8ad36f21`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
@@ -87,11 +90,12 @@ Result:
 - The ready persisted-manifest test covers publication readiness, stale
   persisted-entry refresh blocking, the publication summary, executor handoff,
   request-plan envelope, ready request-summary counts, JSONB payload
-  materialization, successful remote apply validation, and an epoch-mismatch
-  apply blocker, plus manifest libpq dispatch action/validator/summary counts.
+  materialization, successful remote payload validation, an epoch-mismatch
+  validation blocker, manifest libpq dispatch action/validator/summary counts,
+  and manifest executor-readiness next-step reporting.
 - The local summary test covers local-only `not_required` catalog and
   publication summaries with no executor handoff, no request rows, and a
-  `not_required` request/payload/dispatch summary.
+  `not_required` request/payload/dispatch/executor-readiness summary.
 - The missing catalog summary test covers the publication summary's
   `persist_remote_epoch_manifest` blocker.
 - The Phase 7 policy-contract test covers the manifest publication contract,
@@ -102,6 +106,6 @@ Result:
 
 This remains pre-I/O. The new surfaces identify which remote manifest entries
 are eligible for future libpq publication, expose the request and payload shape,
-define the executor/apply-result contracts, and publish the final dispatch
-handoff view, but they do not send manifests to remote nodes or persist remote
-apply state.
+define the executor/validation-result contracts, and publish the final dispatch
+and executor-readiness handoff views, but they do not send manifests to remote
+nodes or persist remote apply state.
