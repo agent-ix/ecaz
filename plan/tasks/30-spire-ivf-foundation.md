@@ -1559,7 +1559,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   local/degraded-skipped plans preserve `degraded_ready` through execution,
   merge, finalization, heap-resolution, local heap-candidate, and coordinator
   result summaries while keeping stale placements fail-closed.
-- [ ] **Merge semantics.** Remote candidate merge now has a production helper
+- [x] **Merge semantics.** Remote candidate merge now has a production helper
   that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
   primary placements ahead of boundary replicas on score ties, validates
   candidate envelopes, and applies the final top-k cap after dedupe. The
@@ -1567,8 +1567,14 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   requested epoch, expected node, selected PIDs, object version, visible
   assignment flags, vec-id, locator, and score before those batches can enter
   the merge path. `ec_spire_remote_search_merge_order_contract()` now exposes
-  the exact comparator order used by that helper. Coordinator integration and
-  local heap row resolution after remote candidate selection remain open.
+  the exact comparator order used by that helper. Coordinator-local heap
+  resolution now decodes local opaque locators into heap block/offset work
+  items, local heap candidates carry ranked candidate metadata through that
+  boundary, and `ec_spire_remote_search_coordinator_result_summary(...)`
+  composes the final gate for local-ready, degraded-ready, and remote-blocked
+  plans. Remote-origin heap fetch remains deferred under the coordinator
+  transport item until libpq execution can return real remote candidate
+  batches.
 - [x] **Replica deferral.** Record replicated partition objects as future work
   for read throughput and availability; v1 assumes one primary placement per
   PID. Recorded in the Phase 0 storage note as a future
