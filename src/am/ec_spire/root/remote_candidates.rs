@@ -1252,43 +1252,51 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
                 consistency_mode,
             )
         };
-        let remote_batch_count = execution_summary.remote_plan_count;
-        let local_batch_count = execution_summary.local_plan_count;
-        let skipped_batch_count = execution_summary.skipped_plan_count;
-        let ready_batch_count = execution_summary.ready_plan_count;
-        let blocked_batch_count = execution_summary.blocked_plan_count;
-        let status = if execution_summary.top_k == 0 {
-            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if blocked_batch_count > 0 {
-            execution_summary.status
-        } else if execution_summary.degraded_skipped_plan_count > 0 {
-            SPIRE_REMOTE_STATUS_DEGRADED_READY
-        } else if remote_batch_count > 0 || local_batch_count > 0 {
-            SPIRE_REMOTE_STATUS_READY
-        } else if skipped_batch_count > 0 {
-            SPIRE_REMOTE_STATUS_DEGRADED_READY
-        } else {
-            SPIRE_REMOTE_STATUS_READY
-        };
-
-        Ok(SpireRemoteSearchMergeInputSummaryRow {
-            requested_epoch,
-            remote_batch_count,
-            local_batch_count,
-            skipped_batch_count,
-            ready_batch_count,
-            blocked_batch_count,
-            remote_pid_count: execution_summary.remote_pid_count,
-            local_pid_count: execution_summary.local_pid_count,
-            skipped_pid_count: execution_summary.skipped_pid_count,
-            merge_function: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
-            dedupe_key: "vec_id",
-            tie_breaker: "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator",
-            top_k: execution_summary.top_k,
-            status,
-        })
+        Ok(remote_search_merge_input_summary_from_execution(
+            &execution_summary,
+        ))
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_merge_input_summary_from_execution(
+    execution_summary: &SpireRemoteSearchExecutionSummaryRow,
+) -> SpireRemoteSearchMergeInputSummaryRow {
+    let remote_batch_count = execution_summary.remote_plan_count;
+    let local_batch_count = execution_summary.local_plan_count;
+    let skipped_batch_count = execution_summary.skipped_plan_count;
+    let ready_batch_count = execution_summary.ready_plan_count;
+    let blocked_batch_count = execution_summary.blocked_plan_count;
+    let status = if execution_summary.top_k == 0 {
+        SPIRE_REMOTE_STATUS_EMPTY_TOP_K
+    } else if blocked_batch_count > 0 {
+        execution_summary.status
+    } else if execution_summary.degraded_skipped_plan_count > 0 {
+        SPIRE_REMOTE_STATUS_DEGRADED_READY
+    } else if remote_batch_count > 0 || local_batch_count > 0 {
+        SPIRE_REMOTE_STATUS_READY
+    } else if skipped_batch_count > 0 {
+        SPIRE_REMOTE_STATUS_DEGRADED_READY
+    } else {
+        SPIRE_REMOTE_STATUS_READY
+    };
+
+    SpireRemoteSearchMergeInputSummaryRow {
+        requested_epoch: execution_summary.requested_epoch,
+        remote_batch_count,
+        local_batch_count,
+        skipped_batch_count,
+        ready_batch_count,
+        blocked_batch_count,
+        remote_pid_count: execution_summary.remote_pid_count,
+        local_pid_count: execution_summary.local_pid_count,
+        skipped_pid_count: execution_summary.skipped_pid_count,
+        merge_function: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+        dedupe_key: "vec_id",
+        tie_breaker: "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator",
+        top_k: execution_summary.top_k,
+        status,
+    }
 }
 
 pub(crate) fn remote_search_merge_order_contract_rows(
@@ -1419,6 +1427,12 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
             consistency_mode,
         )
     };
+    remote_search_finalization_summary_from_merge(&merge_summary)
+}
+
+fn remote_search_finalization_summary_from_merge(
+    merge_summary: &SpireRemoteSearchMergeInputSummaryRow,
+) -> SpireRemoteSearchFinalizationSummaryRow {
     let (final_heap_fetch_status, status, recommendation) = if merge_summary.status
         == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
     {
@@ -1474,22 +1488,14 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         remote_search_execution_summary_row(
             index_relation,
             requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
-    let finalization_summary = unsafe {
-        remote_search_finalization_summary_row(
-            index_relation,
-            requested_epoch,
             query,
             selected_pids,
             top_k,
             consistency_mode,
         )
     };
+    let merge_summary = remote_search_merge_input_summary_from_execution(&execution_summary);
+    let finalization_summary = remote_search_finalization_summary_from_merge(&merge_summary);
 
     let (next_blocker, status, recommendation) =
         if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
