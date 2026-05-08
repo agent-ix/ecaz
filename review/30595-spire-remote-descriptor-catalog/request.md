@@ -21,6 +21,9 @@ Changes:
   served/retained epoch window and matching extension version report `ready`.
 - Adds PG18 coverage proving an active registered descriptor makes target
   readiness advance to `requires_libpq_transport`.
+- Extends that coverage through execution-plan and libpq-request envelope
+  summaries so registered descriptors stay blocked on transport, not descriptor
+  registration.
 - Updates the Phase 7 task note with the durable catalog surface.
 
 ## Files
@@ -35,10 +38,11 @@ Changes:
 
 ## Validation
 
-Head SHA: `a742fc0e`
+Head SHA: `ed31165b`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_node_descriptor`
+- `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
 - `git diff --check`
 
 Result:
@@ -47,6 +51,8 @@ Result:
   - `pg_test_ec_spire_remote_node_descriptor_registration_contract`
   - `pg_test_ec_spire_remote_node_descriptor_contract`
   - `pg_test_ec_spire_remote_node_descriptor_readiness_missing`
+  - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
+- PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
 - `cargo fmt --check` was run after formatting touched files and restoring
   unrelated known rustfmt churn. It still reports only the pre-existing
