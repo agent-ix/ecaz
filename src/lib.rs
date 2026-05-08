@@ -3880,6 +3880,131 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_executor_work_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(bind_count, i64),
+        name!(bind_status, String),
+        name!(dispatch_action, String),
+        name!(next_executor_step, String),
+        name!(executor_status, String),
+        name!(work_action, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_executor_work_plan",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT d.active_epoch, d.node_id, 3::bigint AS bind_count, \
+                        CASE \
+                            WHEN d.dispatch_action = \
+                                'open_pipeline_and_send_remote_epoch_manifest' \
+                            THEN 'ready' \
+                            ELSE d.status \
+                        END AS bind_status, \
+                        d.dispatch_action, e.next_executor_step, e.status AS executor_status, \
+                        CASE \
+                            WHEN d.dispatch_action = \
+                                'open_pipeline_and_send_remote_epoch_manifest' \
+                            THEN e.secret_resolution_action \
+                            ELSE 'blocked_before_executor' \
+                        END AS work_action, \
+                        CASE \
+                            WHEN d.dispatch_action = \
+                                'open_pipeline_and_send_remote_epoch_manifest' \
+                            THEN e.status \
+                            ELSE d.status \
+                        END AS status \
+                   FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan($1::oid) d \
+                  CROSS JOIN ec_spire_remote_epoch_manifest_libpq_executor_readiness($1::oid) e \
+                  ORDER BY d.node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq executor work plan read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest executor work active_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor work active_epoch is null".to_owned())?,
+                    row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest executor work node_id decode failed: {e}"))?
+                        .ok_or_else(|| "manifest executor work node_id is null".to_owned())?,
+                    row["bind_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest executor work bind_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor work bind_count is null".to_owned())?,
+                    row["bind_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work bind_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor work bind_status is null".to_owned())?,
+                    row["dispatch_action"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work dispatch_action decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work dispatch_action is null".to_owned()
+                        })?,
+                    row["next_executor_step"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work next_executor_step decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work next_executor_step is null".to_owned()
+                        })?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work executor_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work executor_status is null".to_owned()
+                        })?,
+                    row["work_action"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work work_action decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor work work_action is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest executor work status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest executor work status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -6031,6 +6156,115 @@ fn ec_spire_remote_search_libpq_bind_summary(
         i64::try_from(blocked_pid_count).expect("blocked pid count should fit in i64"),
         status,
     ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_work_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pids, Vec<i64>),
+        name!(pid_count, i64),
+        name!(bind_count, i64),
+        name!(bind_status, String),
+        name!(dispatch_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(executor_status, &'static str),
+        name!(work_action, &'static str),
+        name!(status, String),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_work_plan requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_executor_work_plan top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_work_plan selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_executor_work_plan")
+    };
+    let dispatch_rows = unsafe {
+        am::spire_remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            &consistency_mode,
+        )
+    };
+    let readiness_row = unsafe {
+        am::spire_remote_search_libpq_executor_readiness_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(dispatch_rows.into_iter().map(move |row| {
+        let pipeline_ready = row.dispatch_action == "open_pipeline_and_send_remote_search";
+        let bind_status = if pipeline_ready {
+            "ready".to_owned()
+        } else {
+            row.status.to_owned()
+        };
+        let work_action = if pipeline_ready {
+            readiness_row.secret_resolution_action
+        } else {
+            "blocked_before_executor"
+        };
+        let status = if pipeline_ready {
+            readiness_row.status.to_owned()
+        } else {
+            row.status.to_owned()
+        };
+
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.selected_pids
+                .into_iter()
+                .map(|pid| i64::try_from(pid).expect("pid should fit in i64"))
+                .collect::<Vec<_>>(),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            6_i64,
+            bind_status,
+            row.dispatch_action,
+            readiness_row.next_executor_step,
+            readiness_row.status,
+            work_action,
+            status,
+        )
+    }))
 }
 
 #[pg_extern(stable, strict)]
@@ -14930,6 +15164,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let work_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_work_plan(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_libpq_req_sql_idx'::regclass, \
@@ -15021,6 +15262,19 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {bind_summary_from}"))
                 .expect("libpq bind summary status query should succeed")
                 .expect("libpq bind summary status should exist");
+        let work_bind_status = Spi::get_one::<String>(&format!("SELECT bind_status {work_from}"))
+            .expect("libpq work bind status query should succeed")
+            .expect("libpq work bind status should exist");
+        let work_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {work_from}"))
+                .expect("libpq work next step query should succeed")
+                .expect("libpq work next step should exist");
+        let work_action = Spi::get_one::<String>(&format!("SELECT work_action {work_from}"))
+            .expect("libpq work action query should succeed")
+            .expect("libpq work action should exist");
+        let work_status = Spi::get_one::<String>(&format!("SELECT status {work_from}"))
+            .expect("libpq work status query should succeed")
+            .expect("libpq work status should exist");
         let dispatch_missing_count = Spi::get_one::<i64>(&format!(
             "SELECT missing_descriptor_dispatch_count {dispatch_summary_from}"
         ))
@@ -15058,6 +15312,10 @@ mod tests {
         assert_eq!(bind_summary_blocked_count, 6);
         assert_eq!(bind_summary_blocked_pid_count, 1);
         assert_eq!(bind_summary_status, "requires_remote_node_descriptor");
+        assert_eq!(work_bind_status, "requires_remote_node_descriptor");
+        assert_eq!(work_next_step, "remote_node_descriptor");
+        assert_eq!(work_action, "blocked_before_executor");
+        assert_eq!(work_status, "requires_remote_node_descriptor");
         assert_eq!(dispatch_missing_count, 1);
         assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
         assert_eq!(executor_status, "requires_remote_node_descriptor");
@@ -16345,6 +16603,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let work_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_work_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -16547,6 +16811,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {bind_summary_from}"))
                 .expect("bind summary status query should succeed")
                 .expect("bind summary status should exist");
+        let work_bind_status = Spi::get_one::<String>(&format!("SELECT bind_status {work_from}"))
+            .expect("work bind status query should succeed")
+            .expect("work bind status should exist");
+        let work_action = Spi::get_one::<String>(&format!("SELECT work_action {work_from}"))
+            .expect("work action query should succeed")
+            .expect("work action should exist");
+        let work_status = Spi::get_one::<String>(&format!("SELECT status {work_from}"))
+            .expect("work status query should succeed")
+            .expect("work status should exist");
         let dispatch_pipeline_count = Spi::get_one::<i64>(&format!(
             "SELECT pipeline_dispatch_count {dispatch_summary_from}"
         ))
@@ -16650,6 +16923,9 @@ mod tests {
         assert_eq!(bind_summary_blocked_count, 0);
         assert_eq!(bind_summary_remote_pid_count, 1);
         assert_eq!(bind_summary_status, "ready");
+        assert_eq!(work_bind_status, "ready");
+        assert_eq!(work_action, "resolve_conninfo_secret_reference");
+        assert_eq!(work_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
         assert_eq!(executor_status, "requires_libpq_executor");
@@ -17814,6 +18090,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_bind_summary_from = "FROM ec_spire_remote_epoch_manifest_libpq_bind_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_work_from = "FROM ec_spire_remote_epoch_manifest_libpq_executor_work_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_dispatch_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
@@ -18040,6 +18318,18 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {manifest_bind_summary_from}"))
                 .expect("manifest bind summary status query should succeed")
                 .expect("manifest bind summary status should exist");
+        let manifest_work_bind_status =
+            Spi::get_one::<String>(&format!("SELECT bind_status {manifest_work_from}"))
+                .expect("manifest work bind status query should succeed")
+                .expect("manifest work bind status should exist");
+        let manifest_work_action =
+            Spi::get_one::<String>(&format!("SELECT work_action {manifest_work_from}"))
+                .expect("manifest work action query should succeed")
+                .expect("manifest work action should exist");
+        let manifest_work_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_work_from}"))
+                .expect("manifest work status query should succeed")
+                .expect("manifest work status should exist");
         let dispatch_executor_status =
             Spi::get_one::<String>(&format!("SELECT executor_status {manifest_dispatch_from}"))
                 .expect("manifest dispatch executor status query should succeed")
@@ -18156,6 +18446,9 @@ mod tests {
         assert_eq!(manifest_bind_summary_ready_count, 3);
         assert_eq!(manifest_bind_summary_entry_count, 1);
         assert_eq!(manifest_bind_summary_status, "ready");
+        assert_eq!(manifest_work_bind_status, "ready");
+        assert_eq!(manifest_work_action, "resolve_conninfo_secret");
+        assert_eq!(manifest_work_status, "requires_libpq_executor");
         assert_eq!(dispatch_executor_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "ready");
