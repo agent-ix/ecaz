@@ -21,7 +21,9 @@
 
 pub mod aws;
 pub mod commands;
+pub mod datasets;
 pub mod profiles;
+pub mod ssm;
 pub mod state;
 pub mod terraform;
 
