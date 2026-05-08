@@ -1565,6 +1565,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   receive/merge boundary: result-column schema, per-node candidate batch
   validation expectations, opaque row-locator policy, merge helper, dedupe key,
   tie-breaker, batch counts, and blocked/readiness status.
+  `ec_spire_remote_search_receive_summary(...)` now aggregates receive-plan
+  rows into one coordinator gate with ready/blocked receive counts, remote PID
+  counts, result contract metadata, row-locator policy, and effective status.
   `ec_spire_remote_search_row_locator_contract()` and
   `ec_spire_remote_search_finalization_summary(...)` now expose the final
   post-merge boundary: row locators remain origin-node opaque bytes, remote heap

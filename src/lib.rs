@@ -7348,6 +7348,123 @@ fn ec_spire_remote_search_receive_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_receive_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(receive_count, i64),
+        name!(ready_receive_count, i64),
+        name!(blocked_receive_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(expected_result_column_count, i64),
+        name!(validator_function, &'static str),
+        name!(row_locator_policy, &'static str),
+        name!(status, String),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_receive_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_receive_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_receive_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_receive_summary") };
+    let rows = unsafe {
+        am::spire_remote_search_receive_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let mut ready_receive_count = 0_u64;
+    let mut blocked_receive_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut blocked_pid_count = 0_u64;
+    let mut expected_result_column_count = 0_u64;
+    let mut validator_function = "none";
+    let mut row_locator_policy = "none";
+    let mut first_blocked_status = "ready";
+
+    for row in &rows {
+        remote_pid_count = remote_pid_count
+            .checked_add(row.pid_count)
+            .unwrap_or_else(|| pgrx::error!("remote search receive remote pid overflow"));
+        expected_result_column_count =
+            expected_result_column_count.max(row.expected_result_column_count);
+        validator_function = row.validator_function;
+        row_locator_policy = row.row_locator_policy;
+        if row.status == "ready" {
+            ready_receive_count = ready_receive_count
+                .checked_add(1)
+                .unwrap_or_else(|| pgrx::error!("remote search receive ready count overflow"));
+        } else {
+            blocked_receive_count = blocked_receive_count
+                .checked_add(1)
+                .unwrap_or_else(|| pgrx::error!("remote search receive blocked count overflow"));
+            blocked_pid_count = blocked_pid_count
+                .checked_add(row.pid_count)
+                .unwrap_or_else(|| pgrx::error!("remote search receive blocked pid overflow"));
+            if first_blocked_status == "ready" {
+                first_blocked_status = row.status;
+            }
+        }
+    }
+
+    let receive_count =
+        u64::try_from(rows.len()).expect("remote search receive count should fit in u64");
+    let status = if blocked_receive_count == 0 {
+        "ready".to_owned()
+    } else {
+        first_blocked_status.to_owned()
+    };
+
+    TableIterator::once((
+        i64::try_from(requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(receive_count).expect("receive count should fit in i64"),
+        i64::try_from(ready_receive_count).expect("ready receive count should fit in i64"),
+        i64::try_from(blocked_receive_count).expect("blocked receive count should fit in i64"),
+        i64::try_from(remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(blocked_pid_count).expect("blocked pid count should fit in i64"),
+        i64::try_from(expected_result_column_count)
+            .expect("expected result column count should fit in i64"),
+        validator_function,
+        row_locator_policy,
+        status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_merge_input_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -16186,6 +16303,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
         );
+        let receive_summary_from = format!(
+            "FROM ec_spire_remote_search_receive_summary(\
+             'ec_spire_remote_libpq_req_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
+        );
         let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local libpq request count query should succeed")
             .expect("local libpq request count should exist");
@@ -16226,6 +16349,14 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
                 .expect("local libpq executor step query should succeed")
                 .expect("local libpq executor step should exist");
+        let receive_summary_count =
+            Spi::get_one::<i64>(&format!("SELECT receive_count {receive_summary_from}"))
+                .expect("local receive summary count query should succeed")
+                .expect("local receive summary count should exist");
+        let receive_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {receive_summary_from}"))
+                .expect("local receive summary status query should succeed")
+                .expect("local receive summary status should exist");
 
         assert_eq!(request_count, 0);
         assert_eq!(summary_request_count, 0);
@@ -16238,6 +16369,8 @@ mod tests {
         assert_eq!(dispatch_summary_status, "ready");
         assert_eq!(executor_status, "ready");
         assert_eq!(executor_next_step, "none");
+        assert_eq!(receive_summary_count, 0);
+        assert_eq!(receive_summary_status, "ready");
     }
 
     #[pg_test]
@@ -16368,6 +16501,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let receive_summary_from = format!(
+            "FROM ec_spire_remote_search_receive_summary(\
+             'ec_spire_remote_receive_plan_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {receive_from}"))
             .expect("receive plan count query should succeed")
             .expect("receive plan count should exist");
@@ -16386,12 +16526,39 @@ mod tests {
         let status = Spi::get_one::<String>(&format!("SELECT status {receive_from}"))
             .expect("receive plan status query should succeed")
             .expect("receive plan status should exist");
+        let summary_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT receive_count {receive_summary_from}"))
+                .expect("receive summary count query should succeed")
+                .expect("receive summary count should exist");
+        let summary_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_receive_count {receive_summary_from}"
+        ))
+        .expect("receive summary ready count query should succeed")
+        .expect("receive summary ready count should exist");
+        let summary_blocked_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_receive_count {receive_summary_from}"
+        ))
+        .expect("receive summary blocked count query should succeed")
+        .expect("receive summary blocked count should exist");
+        let summary_blocked_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_pid_count {receive_summary_from}"))
+                .expect("receive summary blocked pid query should succeed")
+                .expect("receive summary blocked pid count should exist");
+        let summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {receive_summary_from}"))
+                .expect("receive summary status query should succeed")
+                .expect("receive summary status should exist");
 
         assert_eq!(row_count, 1);
         assert_eq!(validator_function, "validate_remote_search_candidate_batch");
         assert_eq!(row_locator_policy, "opaque_origin_node_bytes");
         assert_eq!(candidate_format, "ec_spire_remote_search_v1");
         assert_eq!(status, "requires_remote_node_descriptor");
+        assert_eq!(summary_receive_count, 1);
+        assert_eq!(summary_ready_count, 0);
+        assert_eq!(summary_blocked_count, 1);
+        assert_eq!(summary_blocked_pid_count, 1);
+        assert_eq!(summary_status, "requires_remote_node_descriptor");
     }
 
     #[pg_test]
