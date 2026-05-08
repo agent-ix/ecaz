@@ -11,6 +11,10 @@ Changes:
 - Adds `ec_spire_remote_epoch_manifest_publication_summary(...)`.
 - Adds `ec_spire_remote_epoch_manifest_publication_contract()`.
 - Adds `ec_spire_remote_epoch_manifest_libpq_request_plan(...)`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_request_summary(...)`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_parameter_contract()`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_result_contract()`.
+- Adds `ec_spire_remote_epoch_manifest_libpq_executor_step_contract()`.
 - Projects the current manifest plan and persisted manifest catalog into
   per-node publication rows.
 - Reports whether the persisted manifest entry exists and still matches the
@@ -28,6 +32,9 @@ Changes:
   publication, including descriptor-backed secret/index metadata, payload
   source/format, SQL template, parameter/result counts, and executor handoff
   status.
+- Aggregates request-plan rows into a pre-I/O request summary, and publishes the
+  bind-parameter, apply-result, and executor-step contracts for the future
+  libpq manifest publication executor.
 - Reports local-only manifest publication as `not_required` in both catalog and
   publication summaries, with no libpq request rows.
 - Publishes the ordered prerequisite/action contract for future manifest
@@ -42,7 +49,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `9006db61`
+Head SHA: `87779724`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
@@ -69,15 +76,19 @@ Result:
   - `pg_test_ec_spire_remote_phase7_policy_contracts`
 - The ready persisted-manifest test covers publication readiness, stale
   persisted-entry refresh blocking, the publication summary, executor handoff,
-  and the libpq request-plan envelope.
+  request-plan envelope, and ready request-summary counts.
 - The local summary test covers local-only `not_required` catalog and
-  publication summaries with no executor handoff or request rows.
+  publication summaries with no executor handoff, no request rows, and a
+  `not_required` request summary.
 - The missing catalog summary test covers the publication summary's
   `persist_remote_epoch_manifest` blocker.
-- The Phase 7 policy-contract test covers the manifest publication contract.
+- The Phase 7 policy-contract test covers the manifest publication contract,
+  manifest libpq parameter contract, manifest libpq result contract, and
+  manifest libpq executor-step contract.
 
 ## Notes
 
 This remains pre-I/O. The new surfaces identify which remote manifest entries
-are eligible for future libpq publication and expose the request shape, but they
-do not send manifests to remote nodes.
+are eligible for future libpq publication, expose the request shape, and define
+the executor/apply-result contracts, but they do not send manifests to remote
+nodes.
