@@ -2408,7 +2408,7 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
         .expect("remote placement count should fit in i64");
 
     let (catalog_status, recommendation) =
-        if summary.manifest_decision == "local_only_epoch_manifest" {
+        if summary.manifest_decision == "emit_local_epoch_manifest" {
             ("not_required", "none")
         } else if summary.manifest_decision != "emit_distributed_epoch_manifest" {
             (summary.status, summary.recommendation)
@@ -15369,6 +15369,11 @@ mod tests {
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
         let manifest_summary_from = "FROM ec_spire_remote_epoch_manifest_summary(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_catalog_summary_from = "FROM ec_spire_remote_epoch_manifest_catalog_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_publication_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_publication_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -15417,6 +15422,26 @@ mod tests {
         ))
         .expect("epoch manifest entry count query should succeed")
         .expect("epoch manifest entry count should exist");
+        let catalog_status = Spi::get_one::<String>(&format!(
+            "SELECT catalog_status {manifest_catalog_summary_from}"
+        ))
+        .expect("manifest catalog summary status query should succeed")
+        .expect("manifest catalog summary status should exist");
+        let publication_decision = Spi::get_one::<String>(&format!(
+            "SELECT publication_decision {manifest_publication_summary_from}"
+        ))
+        .expect("manifest publication summary decision query should succeed")
+        .expect("manifest publication summary decision should exist");
+        let publication_entry_count = Spi::get_one::<i64>(&format!(
+            "SELECT publication_entry_count {manifest_publication_summary_from}"
+        ))
+        .expect("manifest publication summary entry count query should succeed")
+        .expect("manifest publication summary entry count should exist");
+        let publication_status = Spi::get_one::<String>(&format!(
+            "SELECT status {manifest_publication_summary_from}"
+        ))
+        .expect("manifest publication summary status query should succeed")
+        .expect("manifest publication summary status should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -15430,6 +15455,10 @@ mod tests {
         assert_eq!(next_blocker, "none");
         assert_eq!(manifest_decision, "emit_local_epoch_manifest");
         assert_eq!(manifest_entry_count, 0);
+        assert_eq!(catalog_status, "not_required");
+        assert_eq!(publication_decision, "not_required");
+        assert_eq!(publication_entry_count, 0);
+        assert_eq!(publication_status, "not_required");
     }
 
     #[pg_test]
