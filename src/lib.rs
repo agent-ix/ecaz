@@ -9032,6 +9032,103 @@ fn ec_spire_index_epoch_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_epoch_cleanup_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(epoch_manifest_count, i64),
+        name!(active_root_manifest_count, i64),
+        name!(retired_epoch_count, i64),
+        name!(failed_epoch_count, i64),
+        name!(cleanup_eligible_epoch_count, i64),
+        name!(retained_retired_epoch_count, i64),
+        name!(active_query_blocked_epoch_count, i64),
+        name!(retention_window_blocked_epoch_count, i64),
+        name!(cleanup_candidate_tuple_count, i64),
+        name!(cleanup_candidate_tuple_bytes, i64),
+        name!(physical_cleanup_supported, bool),
+        name!(physical_cleanup_status, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_cleanup_summary") };
+    let epoch_rows = unsafe { am::spire_index_epoch_snapshot(index_relation) };
+    let storage_snapshot = unsafe { am::spire_index_relation_storage_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let active_root_manifest_count = epoch_rows
+        .iter()
+        .filter(|row| row.is_active_root_manifest)
+        .count();
+    let retired_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.state == "retired")
+        .count();
+    let failed_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.state == "failed")
+        .count();
+    let cleanup_eligible_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.cleanup_eligible_now)
+        .count();
+    let retained_retired_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.cleanup_blocked_reason == "retained_retired_epoch")
+        .count();
+    let active_query_blocked_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.cleanup_blocked_reason == "active_queries")
+        .count();
+    let retention_window_blocked_epoch_count = epoch_rows
+        .iter()
+        .filter(|row| row.cleanup_blocked_reason == "retention_window")
+        .count();
+    let physical_cleanup_status = if storage_snapshot.cleanup_candidate_tuple_count == 0 {
+        "not_required"
+    } else if storage_snapshot.physical_cleanup_supported {
+        "supported"
+    } else {
+        "blocked_not_implemented"
+    };
+    let recommendation = match physical_cleanup_status {
+        "not_required" => "none",
+        "supported" => "run the SPIRE physical cleanup worker when available",
+        _ => {
+            "cleanup debt is visible, but old-epoch tuple reclamation is not implemented in this build"
+        }
+    };
+
+    TableIterator::once((
+        i64::try_from(storage_snapshot.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(epoch_rows.len()).expect("epoch manifest count should fit in i64"),
+        i64::try_from(active_root_manifest_count)
+            .expect("active root manifest count should fit in i64"),
+        i64::try_from(retired_epoch_count).expect("retired epoch count should fit in i64"),
+        i64::try_from(failed_epoch_count).expect("failed epoch count should fit in i64"),
+        i64::try_from(cleanup_eligible_epoch_count)
+            .expect("cleanup eligible epoch count should fit in i64"),
+        i64::try_from(retained_retired_epoch_count)
+            .expect("retained retired epoch count should fit in i64"),
+        i64::try_from(active_query_blocked_epoch_count)
+            .expect("active query blocked epoch count should fit in i64"),
+        i64::try_from(retention_window_blocked_epoch_count)
+            .expect("retention window blocked epoch count should fit in i64"),
+        i64::try_from(storage_snapshot.cleanup_candidate_tuple_count)
+            .expect("cleanup candidate tuple count should fit in i64"),
+        i64::try_from(storage_snapshot.cleanup_candidate_tuple_bytes)
+            .expect("cleanup candidate tuple bytes should fit in i64"),
+        storage_snapshot.physical_cleanup_supported,
+        physical_cleanup_status.to_owned(),
+        recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_leaf_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -9243,6 +9340,62 @@ fn ec_spire_index_locked_maintenance_run_plan(
     ))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_scheduler_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(scheduler_policy, String),
+        name!(scheduler_status, String),
+        name!(plan_entrypoint, String),
+        name!(run_entrypoint, String),
+        name!(publish_lock_mode, String),
+        name!(lock_time_recheck, bool),
+        name!(planner_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_scheduler_plan")
+    };
+    let snapshot = unsafe { am::spire_index_locked_maintenance_plan_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let (scheduler_status, recommendation) = if snapshot.planner_status == "planned" {
+        (
+            "due",
+            "call ec_spire_index_maintenance_scheduler_run(index_oid) from an operator-controlled periodic job",
+        )
+    } else {
+        ("idle", "none")
+    };
+
+    TableIterator::once((
+        i64::try_from(snapshot.active_epoch).expect("active epoch should fit in i64"),
+        "operator_periodic_job".to_owned(),
+        scheduler_status.to_owned(),
+        "ec_spire_index_locked_maintenance_run_plan".to_owned(),
+        "ec_spire_index_maintenance_scheduler_run".to_owned(),
+        "ShareUpdateExclusiveLock".to_owned(),
+        true,
+        snapshot.planner_status.to_owned(),
+        snapshot.planned_action.to_owned(),
+        snapshot.planned_reason.to_owned(),
+        i64::try_from(snapshot.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(snapshot.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(snapshot.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        recommendation.to_owned(),
+    ))
+}
+
 #[pg_extern(volatile, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_maintenance_run(
@@ -9272,6 +9425,65 @@ fn ec_spire_index_maintenance_run(
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::once((
+        i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
+        i64::try_from(result.active_epoch_after).expect("active epoch should fit in i64"),
+        result.maintenance_status.to_owned(),
+        result.planned_action.to_owned(),
+        result.planned_reason.to_owned(),
+        i64::try_from(result.replaced_parent_pid).expect("parent pid should fit in i64"),
+        format_u64_array_text(&result.affected_leaf_pids),
+        i64::try_from(result.replacement_leaf_count)
+            .expect("replacement leaf count should fit in i64"),
+        format_u64_array_text(&result.replacement_leaf_pids),
+        i64::try_from(result.publish_epoch).expect("publish epoch should fit in i64"),
+        i64::try_from(result.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(result.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        result.published,
+        result.maintenance_message.to_owned(),
+    ))
+}
+
+#[pg_extern(volatile, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_maintenance_scheduler_run(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(scheduler_policy, String),
+        name!(scheduler_status, String),
+        name!(run_entrypoint, String),
+        name!(publish_lock_mode, String),
+        name!(lock_time_recheck, bool),
+        name!(active_epoch_before, i64),
+        name!(active_epoch_after, i64),
+        name!(maintenance_status, String),
+        name!(planned_action, String),
+        name!(planned_reason, String),
+        name!(replaced_parent_pid, i64),
+        name!(affected_leaf_pids, String),
+        name!(replacement_leaf_count, i64),
+        name!(replacement_leaf_pids, String),
+        name!(publish_epoch, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(published, bool),
+        name!(maintenance_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_maintenance_scheduler_run") };
+    let result = unsafe { am::spire_index_maintenance_run(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let scheduler_status = if result.published { "ran" } else { "idle" };
+
+    TableIterator::once((
+        "operator_periodic_job".to_owned(),
+        scheduler_status.to_owned(),
+        "ec_spire_index_maintenance_run".to_owned(),
+        "ShareUpdateExclusiveLock".to_owned(),
+        true,
         i64::try_from(result.active_epoch_before).expect("active epoch should fit in i64"),
         i64::try_from(result.active_epoch_after).expect("active epoch should fit in i64"),
         result.maintenance_status.to_owned(),
@@ -12924,6 +13136,24 @@ mod tests {
         )
         .expect("storage snapshot query should succeed")
         .expect("storage snapshot row should exist");
+        let cleanup_summary_status = Spi::get_one::<String>(
+            "SELECT physical_cleanup_status FROM \
+             ec_spire_index_epoch_cleanup_summary('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("cleanup summary query should succeed")
+        .expect("cleanup summary row should exist");
+        let cleanup_summary_candidate_count = Spi::get_one::<i64>(
+            "SELECT cleanup_candidate_tuple_count FROM \
+             ec_spire_index_epoch_cleanup_summary('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("cleanup summary query should succeed")
+        .expect("cleanup summary row should exist");
+        let cleanup_summary_retired_count = Spi::get_one::<i64>(
+            "SELECT retired_epoch_count FROM \
+             ec_spire_index_epoch_cleanup_summary('ec_spire_storage_debt_sql_idx'::regclass)",
+        )
+        .expect("cleanup summary query should succeed")
+        .expect("cleanup summary row should exist");
         let recommendation = Spi::get_one::<String>(
             "SELECT recommendation FROM \
              ec_spire_index_relation_storage_snapshot('ec_spire_storage_debt_sql_idx'::regclass)",
@@ -12935,6 +13165,12 @@ mod tests {
         assert!(post_insert_tuple_count > build_tuple_count);
         assert!(post_insert_cleanup_candidate_count > 0);
         assert!(post_insert_cleanup_candidate_bytes > 0);
+        assert_eq!(cleanup_summary_status, "blocked_not_implemented");
+        assert_eq!(
+            cleanup_summary_candidate_count,
+            post_insert_cleanup_candidate_count
+        );
+        assert_eq!(cleanup_summary_retired_count, 1);
         assert!(recommendation.contains("cleanup candidates"));
 
         let index_oid = index_oid("ec_spire_storage_debt_sql_idx");
@@ -13195,12 +13431,36 @@ mod tests {
         )
         .expect("maintenance run should succeed")
         .expect("active epoch row should exist");
+        let scheduler_status = Spi::get_one::<String>(
+            "SELECT scheduler_status FROM \
+             ec_spire_index_maintenance_scheduler_plan(\
+             'ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("scheduler plan should succeed")
+        .expect("scheduler status row should exist");
+        let scheduler_reason = Spi::get_one::<String>(
+            "SELECT planned_reason FROM \
+             ec_spire_index_maintenance_scheduler_plan(\
+             'ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("scheduler plan should succeed")
+        .expect("scheduler reason row should exist");
+        let scheduler_run_status = Spi::get_one::<String>(
+            "SELECT scheduler_status FROM \
+             ec_spire_index_maintenance_scheduler_run(\
+             'ec_spire_maintenance_run_empty_idx'::regclass)",
+        )
+        .expect("scheduler run should succeed")
+        .expect("scheduler run status row should exist");
 
         assert_eq!(status, "no_action");
         assert_eq!(action, "none");
         assert_eq!(reason, "empty_index");
         assert!(!published);
         assert_eq!(active_epoch_after, 0);
+        assert_eq!(scheduler_status, "idle");
+        assert_eq!(scheduler_reason, "empty_index");
+        assert_eq!(scheduler_run_status, "idle");
     }
 
     #[pg_test]
@@ -13328,14 +13588,45 @@ mod tests {
         assert_eq!(post_next_pid, pre_next_pid);
         assert_eq!(post_leaf_count, pre_leaf_count);
 
+        let scheduler_status = Spi::get_one::<String>(
+            "SELECT scheduler_status FROM \
+             ec_spire_index_maintenance_scheduler_plan(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("scheduler plan query should succeed")
+        .expect("scheduler status row should exist");
+        let scheduler_policy = Spi::get_one::<String>(
+            "SELECT scheduler_policy FROM \
+             ec_spire_index_maintenance_scheduler_plan(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("scheduler plan query should succeed")
+        .expect("scheduler policy row should exist");
+        let scheduler_lock_recheck = Spi::get_one::<bool>(
+            "SELECT lock_time_recheck FROM \
+             ec_spire_index_maintenance_scheduler_plan(\
+             'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
+        )
+        .expect("scheduler plan query should succeed")
+        .expect("scheduler lock-time recheck row should exist");
+
+        assert_eq!(scheduler_status, "due");
+        assert_eq!(scheduler_policy, "operator_periodic_job");
+        assert!(scheduler_lock_recheck);
+
         Spi::run(
             "CREATE TEMP TABLE ec_spire_locked_maintenance_run_publish_result AS \
              SELECT * FROM \
-             ec_spire_index_maintenance_run(\
+             ec_spire_index_maintenance_scheduler_run(\
              'ec_spire_locked_maintenance_run_plan_idx'::regclass)",
         )
-        .expect("maintenance run should publish the planned replacement");
+        .expect("scheduler run should publish the planned replacement");
 
+        let run_scheduler_status = Spi::get_one::<String>(
+            "SELECT scheduler_status FROM ec_spire_locked_maintenance_run_publish_result",
+        )
+        .expect("scheduler run result query should succeed")
+        .expect("scheduler status row should exist");
         let run_status = Spi::get_one::<String>(
             "SELECT maintenance_status FROM ec_spire_locked_maintenance_run_publish_result",
         )
@@ -13377,6 +13668,7 @@ mod tests {
         .expect("maintenance run result query should succeed")
         .expect("published row should exist");
 
+        assert_eq!(run_scheduler_status, "ran");
         assert_eq!(run_status, "published");
         assert_eq!(run_action, action);
         assert_eq!(run_affected_leaf_pids, affected_leaf_pids);
