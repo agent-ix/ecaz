@@ -2902,6 +2902,117 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_request_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(conninfo_secret_name, String),
+        name!(remote_index_regclass, String),
+        name!(remote_index_source, String),
+        name!(manifest_payload_source, String),
+        name!(manifest_payload_format, String),
+        name!(sql_template, String),
+        name!(parameter_count, i64),
+        name!(expected_result_column_count, i64),
+        name!(publication_transport, String),
+        name!(request_action, String),
+        name!(executor_status, String),
+        name!(executor_next_step, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_request_plan",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT p.active_epoch, p.node_id, \
+                        coalesce(d.conninfo_secret_name, 'none') AS conninfo_secret_name, \
+                        coalesce(d.remote_index_regclass, 'none') AS remote_index_regclass, \
+                        p.publication_transport, p.status \
+                   FROM ec_spire_remote_epoch_manifest_publication_plan($1::oid) p \
+                   LEFT JOIN ec_spire_remote_node_descriptor d \
+                     ON d.coordinator_index_oid = $1::oid \
+                    AND d.node_id = p.node_id::integer \
+                  ORDER BY p.node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq request plan read failed: {e}")
+            })?
+            .map(|row| {
+                let publication_transport = row["publication_transport"]
+                    .value::<String>()
+                    .map_err(|e| format!("publication_transport decode failed: {e}"))?
+                    .ok_or_else(|| "publication_transport is null".to_owned())?;
+                let status = row["status"]
+                    .value::<String>()
+                    .map_err(|e| format!("publication status decode failed: {e}"))?
+                    .ok_or_else(|| "publication status is null".to_owned())?;
+                let (request_action, executor_status, executor_next_step) =
+                    if status == "ready" && publication_transport == "libpq_pipeline" {
+                        (
+                            "send_remote_epoch_manifest".to_owned(),
+                            "requires_libpq_executor".to_owned(),
+                            "conninfo_secret_resolution".to_owned(),
+                        )
+                    } else {
+                        (
+                            "blocked_before_manifest_publication".to_owned(),
+                            "none".to_owned(),
+                            "none".to_owned(),
+                        )
+                    };
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("request active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "request active_epoch is null".to_owned())?,
+                    row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("request node_id decode failed: {e}"))?
+                        .ok_or_else(|| "request node_id is null".to_owned())?,
+                    row["conninfo_secret_name"]
+                        .value::<String>()
+                        .map_err(|e| format!("request conninfo_secret_name decode failed: {e}"))?
+                        .ok_or_else(|| "request conninfo_secret_name is null".to_owned())?,
+                    row["remote_index_regclass"]
+                        .value::<String>()
+                        .map_err(|e| format!("request remote_index_regclass decode failed: {e}"))?
+                        .ok_or_else(|| "request remote_index_regclass is null".to_owned())?,
+                    "remote_node_descriptor".to_owned(),
+                    "ec_spire_remote_epoch_manifest_catalog".to_owned(),
+                    "ec_spire_remote_epoch_manifest_v1".to_owned(),
+                    "SELECT * FROM ec_spire_apply_remote_epoch_manifest($1::oid, $2::bigint, $3::jsonb)"
+                        .to_owned(),
+                    3_i64,
+                    3_i64,
+                    publication_transport,
+                    request_action,
+                    executor_status,
+                    executor_next_step,
+                    status,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -15413,6 +15524,8 @@ mod tests {
         let manifest_publication_summary_from =
             "FROM ec_spire_remote_epoch_manifest_publication_summary(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_libpq_request_from = "FROM ec_spire_remote_epoch_manifest_libpq_request_plan(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -15486,6 +15599,10 @@ mod tests {
         ))
         .expect("manifest publication summary executor status query should succeed")
         .expect("manifest publication summary executor status should exist");
+        let libpq_request_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {manifest_libpq_request_from}"))
+                .expect("manifest libpq request count query should succeed")
+                .expect("manifest libpq request count should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -15504,6 +15621,7 @@ mod tests {
         assert_eq!(publication_entry_count, 0);
         assert_eq!(publication_status, "not_required");
         assert_eq!(publication_executor_status, "none");
+        assert_eq!(libpq_request_count, 0);
     }
 
     #[pg_test]
@@ -15880,6 +15998,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let publication_summary_from = "FROM ec_spire_remote_epoch_manifest_publication_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_libpq_request_from = "FROM ec_spire_remote_epoch_manifest_libpq_request_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -15965,6 +16085,26 @@ mod tests {
         ))
         .expect("manifest publication summary executor step query should succeed")
         .expect("manifest publication summary executor step should exist");
+        let libpq_request_action = Spi::get_one::<String>(&format!(
+            "SELECT request_action {manifest_libpq_request_from}"
+        ))
+        .expect("manifest libpq request action query should succeed")
+        .expect("manifest libpq request action should exist");
+        let libpq_request_sql = Spi::get_one::<String>(&format!(
+            "SELECT sql_template {manifest_libpq_request_from}"
+        ))
+        .expect("manifest libpq request SQL query should succeed")
+        .expect("manifest libpq request SQL should exist");
+        let libpq_request_parameter_count = Spi::get_one::<i64>(&format!(
+            "SELECT parameter_count {manifest_libpq_request_from}"
+        ))
+        .expect("manifest libpq request parameter count query should succeed")
+        .expect("manifest libpq request parameter count should exist");
+        let libpq_request_executor_status = Spi::get_one::<String>(&format!(
+            "SELECT executor_status {manifest_libpq_request_from}"
+        ))
+        .expect("manifest libpq request executor status query should succeed")
+        .expect("manifest libpq request executor status should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -15998,6 +16138,10 @@ mod tests {
             publication_summary_executor_step,
             "conninfo_secret_resolution"
         );
+        assert_eq!(libpq_request_action, "send_remote_epoch_manifest");
+        assert!(libpq_request_sql.contains("ec_spire_apply_remote_epoch_manifest"));
+        assert_eq!(libpq_request_parameter_count, 3);
+        assert_eq!(libpq_request_executor_status, "requires_libpq_executor");
 
         Spi::run(&format!(
             "UPDATE ec_spire_remote_epoch_manifest_entry \

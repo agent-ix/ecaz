@@ -1616,6 +1616,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   refresh-required, and blocked counts, plus the remaining
   `requires_libpq_executor` / `conninfo_secret_resolution` handoff when
   manifest publication preconditions are ready.
+  `ec_spire_remote_epoch_manifest_libpq_request_plan(...)` now exposes the
+  future per-node libpq request envelope for ready remote manifest publication,
+  including descriptor-backed secret/index metadata, payload source/format,
+  SQL template, parameter/result counts, and executor handoff status.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
