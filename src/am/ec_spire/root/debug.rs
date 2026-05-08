@@ -155,6 +155,43 @@ pub(crate) unsafe fn debug_spire_empty_manifest_publish_roundtrip(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_age_retired_epoch_manifests(
+    index_oid: pg_sys::Oid,
+    retain_until_micros: i64,
+) -> u64 {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
+    let result = (|| -> Result<u64, String> {
+        let mut rewrites = Vec::new();
+        unsafe {
+            page::scan_object_tuples(index_relation, |tid, tuple| {
+                if tuple.len() != meta::SpireEpochManifest::encoded_len() {
+                    return Ok(());
+                }
+                let Ok(mut manifest) = meta::SpireEpochManifest::decode(tuple) else {
+                    return Ok(());
+                };
+                if manifest.state != meta::SpireEpochState::Retired {
+                    return Ok(());
+                }
+                manifest.published_at_micros = retain_until_micros;
+                manifest.retain_until_micros = retain_until_micros;
+                manifest.active_query_count = 0;
+                rewrites.push((tid, manifest.encode()?));
+                Ok(())
+            })?
+        };
+        for (tid, payload) in &rewrites {
+            unsafe { page::rewrite_object_tuple_same_len(index_relation, *tid, payload)? };
+        }
+        u64::try_from(rewrites.len())
+            .map_err(|_| "ec_spire debug retired epoch rewrite count exceeds u64".to_owned())
+    })();
+    unsafe { pg_sys::index_close(index_relation, lockmode) };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
     root_index_oid: pg_sys::Oid,
     aux_store_oid: pg_sys::Oid,

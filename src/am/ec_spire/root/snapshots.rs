@@ -477,7 +477,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
         let cleanup_candidate_tuple_bytes =
             relation_object_tuple_bytes.saturating_sub(active_referenced_tuple_bytes);
         let recommendation = if cleanup_candidate_tuple_count > 0 {
-            "old relation object tuples are cleanup candidates once physical reclamation is implemented"
+            "run ec_spire_index_epoch_cleanup_run(index_oid) after retention and active-query checks permit cleanup"
         } else {
             "none"
         };
@@ -491,7 +491,7 @@ pub(crate) unsafe fn index_relation_storage_snapshot(
             active_referenced_tuple_bytes,
             cleanup_candidate_tuple_count,
             cleanup_candidate_tuple_bytes,
-            physical_cleanup_supported: false,
+            physical_cleanup_supported: true,
             recommendation,
         })
     })();
@@ -517,6 +517,282 @@ pub(crate) unsafe fn index_epoch_snapshot(
         };
         let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
         epoch_snapshot_rows_from_manifests(root_control, manifests, now_micros)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn collect_epoch_manifests_for_cleanup(
+    index_relation: pg_sys::Relation,
+) -> Result<Vec<(crate::storage::page::ItemPointer, meta::SpireEpochManifest)>, String> {
+    let mut manifests = Vec::new();
+    unsafe {
+        page::scan_object_tuples(index_relation, |tid, tuple| {
+            if tuple.len() != meta::SpireEpochManifest::encoded_len() {
+                return Ok(());
+            }
+            if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {
+                manifests.push((tid, manifest));
+            }
+            Ok(())
+        })?
+    };
+    Ok(manifests)
+}
+
+fn latest_epoch_manifests(
+    manifests: &[(crate::storage::page::ItemPointer, meta::SpireEpochManifest)],
+) -> Vec<meta::SpireEpochManifest> {
+    let mut latest_tid_by_epoch = HashMap::new();
+    for (tid, manifest) in manifests {
+        latest_tid_by_epoch
+            .entry(manifest.epoch)
+            .and_modify(|latest_tid: &mut crate::storage::page::ItemPointer| {
+                if (tid.block_number, tid.offset_number)
+                    > (latest_tid.block_number, latest_tid.offset_number)
+                {
+                    *latest_tid = *tid;
+                }
+            })
+            .or_insert(*tid);
+    }
+    manifests
+        .iter()
+        .filter_map(|(tid, manifest)| {
+            latest_tid_by_epoch
+                .get(&manifest.epoch)
+                .is_some_and(|latest_tid| latest_tid == tid)
+                .then_some(*manifest)
+        })
+        .collect()
+}
+
+fn protect_tuple(
+    protected: &mut HashSet<(u32, crate::storage::page::ItemPointer)>,
+    relid: u32,
+    tid: crate::storage::page::ItemPointer,
+) {
+    if tid != crate::storage::page::ItemPointer::INVALID {
+        protected.insert((relid, tid));
+    }
+}
+
+fn collect_physical_cleanup_candidates(
+    index_relation: pg_sys::Relation,
+    root_control: meta::SpireRootControlState,
+    now_micros: i64,
+) -> Result<(
+    HashSet<u64>,
+    HashSet<(u32, crate::storage::page::ItemPointer)>,
+    BTreeMap<u32, Vec<crate::storage::page::ItemPointer>>,
+), String> {
+    let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+    let manifests = collect_epoch_manifests_for_cleanup(index_relation)?;
+    let latest_manifests = latest_epoch_manifests(&manifests);
+    let cleanup_epochs: HashSet<u64> =
+        meta::plan_epoch_cleanup(&latest_manifests, root_control.active_epoch, now_micros)?
+            .cleanup_epochs
+            .into_iter()
+            .collect();
+
+    let mut protected = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
+    let mut storage_relids = HashSet::from([index_relid]);
+    let mut protected_directories = Vec::new();
+    protect_tuple(&mut protected, index_relid, root_control.epoch_manifest_tid);
+    protect_tuple(&mut protected, index_relid, root_control.object_manifest_tid);
+    protect_tuple(
+        &mut protected,
+        index_relid,
+        root_control.placement_directory_tid,
+    );
+    protect_tuple(
+        &mut protected,
+        index_relid,
+        root_control.local_store_config_tid,
+    );
+
+    unsafe {
+        page::scan_object_tuples(index_relation, |tid, tuple| {
+            if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {
+                if !cleanup_epochs.contains(&manifest.epoch) {
+                    protect_tuple(&mut protected, index_relid, tid);
+                }
+                return Ok(());
+            }
+            if let Ok(manifest) = meta::SpireObjectManifest::decode(tuple) {
+                if !cleanup_epochs.contains(&manifest.epoch) {
+                    protect_tuple(&mut protected, index_relid, tid);
+                }
+                return Ok(());
+            }
+            if let Ok(directory) = meta::SpirePlacementDirectory::decode(tuple) {
+                for placement in &directory.entries {
+                    storage_relids.insert(placement.store_relid);
+                }
+                if !cleanup_epochs.contains(&directory.epoch) {
+                    protect_tuple(&mut protected, index_relid, tid);
+                    protected_directories.push(directory);
+                }
+                return Ok(());
+            }
+            if meta::SpireLocalStoreConfig::decode(tuple).is_ok() {
+                protect_tuple(&mut protected, index_relid, tid);
+            }
+            Ok(())
+        })?
+    };
+
+    for directory in &protected_directories {
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        for placement in &directory.entries {
+            protect_tuple(&mut protected, placement.store_relid, placement.object_tid);
+            for tid in unsafe { object_store.active_object_tuple_locators(placement)? } {
+                protect_tuple(&mut protected, placement.store_relid, tid);
+            }
+        }
+    }
+
+    let mut candidates_by_relid = BTreeMap::<u32, Vec<crate::storage::page::ItemPointer>>::new();
+    let mut sorted_storage_relids = storage_relids.into_iter().collect::<Vec<_>>();
+    sorted_storage_relids.sort_unstable();
+    for storage_relid in sorted_storage_relids {
+        let (storage_relation, opened) = if storage_relid == index_relid {
+            (index_relation, false)
+        } else {
+            let relation = unsafe {
+                pg_sys::relation_open(
+                    pg_sys::Oid::from(storage_relid),
+                    pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                )
+            };
+            if relation.is_null() {
+                return Err(format!(
+                    "ec_spire failed to open local store relation {storage_relid}"
+                ));
+            }
+            (relation, true)
+        };
+        let mut candidates = Vec::new();
+        let scan_result = unsafe {
+            page::scan_object_tuples(storage_relation, |tid, _tuple| {
+                if !protected.contains(&(storage_relid, tid)) {
+                    candidates.push(tid);
+                }
+                Ok(())
+            })
+        };
+        if opened {
+            unsafe {
+                pg_sys::relation_close(
+                    storage_relation,
+                    pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                )
+            };
+        }
+        scan_result?;
+        if !candidates.is_empty() {
+            candidates_by_relid.insert(storage_relid, candidates);
+        }
+    }
+
+    Ok((cleanup_epochs, protected, candidates_by_relid))
+}
+
+pub(crate) unsafe fn index_epoch_cleanup_run(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexEpochCleanupRunResult {
+    let _guard = unsafe { lock_publish_relation(index_relation) };
+    let result = (|| -> Result<SpireIndexEpochCleanupRunResult, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(SpireIndexEpochCleanupRunResult {
+                active_epoch: 0,
+                cleanup_epoch_count: 0,
+                protected_tuple_count: 0,
+                removed_tuple_count: 0,
+                removed_tuple_bytes: 0,
+                physical_cleanup_status: "not_required",
+                cleanup_message: "build or insert rows to publish the first SPIRE epoch",
+            });
+        }
+
+        let now_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+        let (cleanup_epochs, protected, candidates_by_relid) =
+            collect_physical_cleanup_candidates(index_relation, root_control, now_micros)?;
+        let cleanup_epoch_count = u64::try_from(cleanup_epochs.len())
+            .map_err(|_| "ec_spire cleanup epoch count exceeds u64".to_owned())?;
+        if cleanup_epochs.is_empty() {
+            return Ok(SpireIndexEpochCleanupRunResult {
+                active_epoch: root_control.active_epoch,
+                cleanup_epoch_count: 0,
+                protected_tuple_count: u64::try_from(protected.len())
+                    .map_err(|_| "ec_spire protected tuple count exceeds u64".to_owned())?,
+                removed_tuple_count: 0,
+                removed_tuple_bytes: 0,
+                physical_cleanup_status: "blocked_by_retention",
+                cleanup_message: "no epochs are cleanup-eligible after retention and active-query checks",
+            });
+        }
+
+        let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
+        let mut removed_tuple_count = 0_u64;
+        let mut removed_tuple_bytes = 0_u64;
+        for (storage_relid, tids) in candidates_by_relid {
+            let (storage_relation, opened) = if storage_relid == index_relid {
+                (index_relation, false)
+            } else {
+                let relation = unsafe {
+                    pg_sys::relation_open(
+                        pg_sys::Oid::from(storage_relid),
+                        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
+                if relation.is_null() {
+                    return Err(format!(
+                        "ec_spire failed to open local store relation {storage_relid}"
+                    ));
+                }
+                (relation, true)
+            };
+            let delete_result =
+                unsafe { page::delete_object_tuples_no_compact(storage_relation, &tids) };
+            if opened {
+                unsafe {
+                    pg_sys::relation_close(
+                        storage_relation,
+                        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
+            }
+            let (deleted_count, deleted_bytes) = delete_result?;
+            removed_tuple_count = removed_tuple_count
+                .checked_add(deleted_count)
+                .ok_or_else(|| "ec_spire removed tuple count overflow".to_owned())?;
+            removed_tuple_bytes = removed_tuple_bytes
+                .checked_add(deleted_bytes)
+                .ok_or_else(|| "ec_spire removed tuple bytes overflow".to_owned())?;
+        }
+
+        let physical_cleanup_status = if removed_tuple_count > 0 {
+            "reclaimed"
+        } else {
+            "no_candidates"
+        };
+        Ok(SpireIndexEpochCleanupRunResult {
+            active_epoch: root_control.active_epoch,
+            cleanup_epoch_count,
+            protected_tuple_count: u64::try_from(protected.len())
+                .map_err(|_| "ec_spire protected tuple count exceeds u64".to_owned())?,
+            removed_tuple_count,
+            removed_tuple_bytes,
+            physical_cleanup_status,
+            cleanup_message: "removed unprotected object tuples with no-compaction line-pointer deletion",
+        })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }

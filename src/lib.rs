@@ -9089,8 +9089,10 @@ fn ec_spire_index_epoch_cleanup_summary(
         .count();
     let physical_cleanup_status = if storage_snapshot.cleanup_candidate_tuple_count == 0 {
         "not_required"
-    } else if storage_snapshot.physical_cleanup_supported {
+    } else if cleanup_eligible_epoch_count > 0 && storage_snapshot.physical_cleanup_supported {
         "supported"
+    } else if storage_snapshot.physical_cleanup_supported {
+        "blocked_by_retention"
     } else {
         "blocked_not_implemented"
     };
@@ -9124,6 +9126,41 @@ fn ec_spire_index_epoch_cleanup_summary(
         storage_snapshot.physical_cleanup_supported,
         physical_cleanup_status.to_owned(),
         recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(volatile, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_index_epoch_cleanup_run(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(cleanup_epoch_count, i64),
+        name!(protected_tuple_count, i64),
+        name!(removed_tuple_count, i64),
+        name!(removed_tuple_bytes, i64),
+        name!(physical_cleanup_supported, bool),
+        name!(physical_cleanup_status, String),
+        name!(cleanup_message, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_epoch_cleanup_run") };
+    let result = unsafe { am::spire_index_epoch_cleanup_run(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(result.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(result.cleanup_epoch_count).expect("cleanup epoch count should fit in i64"),
+        i64::try_from(result.protected_tuple_count)
+            .expect("protected tuple count should fit in i64"),
+        i64::try_from(result.removed_tuple_count).expect("removed tuple count should fit in i64"),
+        i64::try_from(result.removed_tuple_bytes).expect("removed tuple bytes should fit in i64"),
+        true,
+        result.physical_cleanup_status.to_owned(),
+        result.cleanup_message.to_owned(),
     ))
 }
 
@@ -13104,7 +13141,7 @@ mod tests {
         assert!(build_tuple_count > 0);
         assert_eq!(build_active_tuple_count, build_tuple_count);
         assert_eq!(build_cleanup_candidate_count, 0);
-        assert!(!cleanup_supported);
+        assert!(cleanup_supported);
 
         Spi::run(
             "INSERT INTO ec_spire_storage_debt_sql (id, embedding) VALUES \
@@ -13165,13 +13202,13 @@ mod tests {
         assert!(post_insert_tuple_count > build_tuple_count);
         assert!(post_insert_cleanup_candidate_count > 0);
         assert!(post_insert_cleanup_candidate_bytes > 0);
-        assert_eq!(cleanup_summary_status, "blocked_not_implemented");
+        assert_eq!(cleanup_summary_status, "blocked_by_retention");
         assert_eq!(
             cleanup_summary_candidate_count,
             post_insert_cleanup_candidate_count
         );
         assert_eq!(cleanup_summary_retired_count, 1);
-        assert!(recommendation.contains("cleanup candidates"));
+        assert!(recommendation.contains("epoch_cleanup_run"));
 
         let index_oid = index_oid("ec_spire_storage_debt_sql_idx");
         let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
@@ -13207,6 +13244,104 @@ mod tests {
         assert!(post_compaction_tuple_count > post_insert_tuple_count);
         assert!(post_compaction_cleanup_candidate_count > post_insert_cleanup_candidate_count);
         assert!(post_compaction_cleanup_candidate_bytes > post_insert_cleanup_candidate_bytes);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_epoch_cleanup_run_reclaims_old_tuples_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_epoch_cleanup_run_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_epoch_cleanup_run_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("initial insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_epoch_cleanup_run_idx ON ec_spire_epoch_cleanup_run_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("populated ec_spire index creation should succeed");
+        for id in 3..=6 {
+            Spi::run(&format!(
+                "INSERT INTO ec_spire_epoch_cleanup_run_sql (id, embedding) VALUES \
+                 ({id}, encode_to_ecvector(ARRAY[{id}.0, 0.5], 4, 42))",
+            ))
+            .expect("post-build insert should publish a delta epoch");
+        }
+
+        let index_oid = index_oid("ec_spire_epoch_cleanup_run_idx");
+        let aged = unsafe { am::debug_spire_age_retired_epoch_manifests(index_oid, 1) };
+        assert!(aged >= 3);
+
+        let pre_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_epoch_cleanup_run_idx'::regclass)",
+        )
+        .expect("storage snapshot should succeed")
+        .expect("tuple count should exist");
+        let pre_cleanup_eligible_count = Spi::get_one::<i64>(
+            "SELECT cleanup_eligible_epoch_count FROM \
+             ec_spire_index_epoch_cleanup_summary('ec_spire_epoch_cleanup_run_idx'::regclass)",
+        )
+        .expect("cleanup summary should succeed")
+        .expect("cleanup eligible count should exist");
+        let pre_cleanup_status = Spi::get_one::<String>(
+            "SELECT physical_cleanup_status FROM \
+             ec_spire_index_epoch_cleanup_summary('ec_spire_epoch_cleanup_run_idx'::regclass)",
+        )
+        .expect("cleanup summary should succeed")
+        .expect("cleanup status should exist");
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_epoch_cleanup_run_result AS \
+             SELECT * FROM \
+             ec_spire_index_epoch_cleanup_run('ec_spire_epoch_cleanup_run_idx'::regclass)",
+        )
+        .expect("physical cleanup run should succeed");
+
+        let run_status = Spi::get_one::<String>(
+            "SELECT physical_cleanup_status FROM ec_spire_epoch_cleanup_run_result",
+        )
+        .expect("cleanup run result should succeed")
+        .expect("cleanup run status should exist");
+        let removed_tuple_count = Spi::get_one::<i64>(
+            "SELECT removed_tuple_count FROM ec_spire_epoch_cleanup_run_result",
+        )
+        .expect("cleanup run result should succeed")
+        .expect("removed tuple count should exist");
+        let removed_tuple_bytes = Spi::get_one::<i64>(
+            "SELECT removed_tuple_bytes FROM ec_spire_epoch_cleanup_run_result",
+        )
+        .expect("cleanup run result should succeed")
+        .expect("removed tuple bytes should exist");
+        let post_tuple_count = Spi::get_one::<i64>(
+            "SELECT relation_object_tuple_count FROM \
+             ec_spire_index_relation_storage_snapshot('ec_spire_epoch_cleanup_run_idx'::regclass)",
+        )
+        .expect("storage snapshot should succeed")
+        .expect("tuple count should exist");
+        let visible_count =
+            Spi::get_one::<i64>("SELECT count(*) FROM ec_spire_epoch_cleanup_run_sql")
+                .expect("heap count should succeed")
+                .expect("heap count should exist");
+        let top_id = Spi::get_one::<i64>(
+            "SELECT id FROM ec_spire_epoch_cleanup_run_sql \
+             ORDER BY embedding <#> ARRAY[6.0, 0.5]::real[] LIMIT 1",
+        )
+        .expect("post-cleanup scan should succeed")
+        .expect("top row should exist");
+
+        assert!(pre_cleanup_eligible_count > 0);
+        assert_eq!(pre_cleanup_status, "supported");
+        assert_eq!(run_status, "reclaimed");
+        assert!(removed_tuple_count > 0);
+        assert!(removed_tuple_bytes > 0);
+        assert!(post_tuple_count < pre_tuple_count);
+        assert_eq!(visible_count, 6);
+        assert_eq!(top_id, 6);
     }
 
     #[pg_test]

@@ -27,6 +27,7 @@ pub(crate) use self::ec_spire::{
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,
     index_delta_snapshot as spire_index_delta_snapshot,
+    index_epoch_cleanup_run as spire_index_epoch_cleanup_run,
     index_epoch_snapshot as spire_index_epoch_snapshot,
     index_health_snapshot as spire_index_health_snapshot,
     index_hierarchy_snapshot as spire_index_hierarchy_snapshot,
@@ -124,12 +125,12 @@ pub(crate) use self::ec_ivf::{
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::{
-    debug_spire_active_snapshot_diagnostics, debug_spire_empty_manifest_publish_roundtrip,
-    debug_spire_relation_leaf_v2_roundtrip, debug_spire_relation_object_tuple_roundtrip,
-    debug_spire_relation_two_store_scan_roundtrip, debug_spire_rewrite_consistency_mode,
-    debug_spire_rewrite_placement_node, debug_spire_rewrite_placement_state,
-    debug_spire_root_control, debug_spire_vacuum_bulkdelete_heap_tids,
-    debug_spire_vacuum_remove_heap_tids,
+    debug_spire_active_snapshot_diagnostics, debug_spire_age_retired_epoch_manifests,
+    debug_spire_empty_manifest_publish_roundtrip, debug_spire_relation_leaf_v2_roundtrip,
+    debug_spire_relation_object_tuple_roundtrip, debug_spire_relation_two_store_scan_roundtrip,
+    debug_spire_rewrite_consistency_mode, debug_spire_rewrite_placement_node,
+    debug_spire_rewrite_placement_state, debug_spire_root_control,
+    debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

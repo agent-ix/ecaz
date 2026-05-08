@@ -731,6 +731,17 @@ pub(crate) struct SpireIndexMaintenanceRunResult {
     pub(crate) maintenance_message: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexEpochCleanupRunResult {
+    pub(crate) active_epoch: u64,
+    pub(crate) cleanup_epoch_count: u64,
+    pub(crate) protected_tuple_count: u64,
+    pub(crate) removed_tuple_count: u64,
+    pub(crate) removed_tuple_bytes: u64,
+    pub(crate) physical_cleanup_status: &'static str,
+    pub(crate) cleanup_message: &'static str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireScheduledReplacementObjectVersionPlan {
     parent_object_version: u64,
