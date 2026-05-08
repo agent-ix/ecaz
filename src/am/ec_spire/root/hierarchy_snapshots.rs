@@ -103,6 +103,13 @@ fn remote_search_coordinator_ready_status(skipped_placement_count: u64) -> &'sta
     }
 }
 
+fn remote_search_status_allows_local_heap_rows(status: &str) -> bool {
+    matches!(
+        status,
+        SPIRE_REMOTE_STATUS_READY | SPIRE_REMOTE_STATUS_DEGRADED_READY
+    )
+}
+
 unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
@@ -417,6 +424,102 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
             .collect()
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let candidates = unsafe {
+            remote_search_coordinator_local_candidates_result(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )?
+        };
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let heap_tid = crate::storage::page::ItemPointer::decode(&candidate.row_locator)?;
+                Ok(SpireRemoteSearchLocalHeapCandidateRow {
+                    requested_epoch,
+                    served_epoch: candidate.served_epoch,
+                    node_id: candidate.node_id,
+                    pid: candidate.pid,
+                    object_version: candidate.object_version,
+                    row_index: candidate.row_index,
+                    assignment_flags: candidate.assignment_flags,
+                    vec_id: candidate.vec_id,
+                    row_locator: candidate.row_locator,
+                    heap_block: heap_tid.block_number,
+                    heap_offset: heap_tid.offset_number,
+                    score: candidate.score,
+                    heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                    status: SPIRE_REMOTE_STATUS_READY,
+                })
+            })
+            .collect()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
+    let heap_summary = unsafe {
+        remote_search_heap_resolution_summary_row(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+    let returned_candidate_count = if heap_summary.remote_plan_count == 0
+        && remote_search_status_allows_local_heap_rows(heap_summary.status)
+    {
+        let rows = unsafe {
+            remote_search_local_heap_candidate_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        u64::try_from(rows.len())
+            .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"))
+    } else {
+        0
+    };
+
+    SpireRemoteSearchLocalHeapCandidateSummaryRow {
+        requested_epoch: heap_summary.requested_epoch,
+        local_plan_count: heap_summary.local_plan_count,
+        remote_plan_count: heap_summary.remote_plan_count,
+        skipped_plan_count: heap_summary.skipped_plan_count,
+        local_pid_count: heap_summary.local_pid_count,
+        remote_pid_count: heap_summary.remote_pid_count,
+        decoded_local_locator_count: heap_summary.decoded_local_locator_count,
+        returned_candidate_count,
+        status: heap_summary.status,
+        recommendation: heap_summary.recommendation,
+    }
 }
 
 unsafe fn remote_search_coordinator_local_summary_result(

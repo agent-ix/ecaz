@@ -1551,7 +1551,8 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
         SPIRE_REMOTE_NONE
     } else if gate.status == SPIRE_REMOTE_STATUS_EMPTY_TOP_K {
         SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-    } else if gate.remote_plan_count == 0 && gate.status == SPIRE_REMOTE_STATUS_READY {
+    } else if gate.remote_plan_count == 0 && remote_search_status_allows_local_heap_rows(gate.status)
+    {
         SPIRE_REMOTE_STATUS_READY
     } else {
         "planned"

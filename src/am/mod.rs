@@ -68,6 +68,8 @@ pub(crate) use self::ec_spire::{
     remote_search_libpq_request_plan_rows as spire_remote_search_libpq_request_plan_rows,
     remote_search_libpq_request_summary_row as spire_remote_search_libpq_request_summary_row,
     remote_search_libpq_result_contract_rows as spire_remote_search_libpq_result_contract_rows,
+    remote_search_local_heap_candidate_rows as spire_remote_search_local_heap_candidate_rows,
+    remote_search_local_heap_candidate_summary_row as spire_remote_search_local_heap_candidate_summary_row,
     remote_search_local_heap_resolution_plan_rows as spire_remote_search_local_heap_resolution_plan_rows,
     remote_search_merge_input_summary_row as spire_remote_search_merge_input_summary_row,
     remote_search_merge_order_contract_rows as spire_remote_search_merge_order_contract_rows,

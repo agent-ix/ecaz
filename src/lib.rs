@@ -3223,6 +3223,173 @@ fn ec_spire_remote_search_heap_resolution_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_local_heap_candidates(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(score, f32),
+        name!(heap_lookup_owner, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_local_heap_candidates requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_local_heap_candidates top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_local_heap_candidates selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_local_heap_candidates")
+    };
+    let rows = unsafe {
+        am::spire_remote_search_local_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            i64::from(row.heap_block),
+            i32::from(row.heap_offset),
+            row.score,
+            row.heap_lookup_owner,
+            row.status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_local_heap_candidate_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(local_plan_count, i64),
+        name!(remote_plan_count, i64),
+        name!(skipped_plan_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(decoded_local_locator_count, i64),
+        name!(returned_candidate_count, i64),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_local_heap_candidate_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_local_heap_candidate_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_local_heap_candidate_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_local_heap_candidate_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_local_heap_candidate_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.local_plan_count).expect("local plan count should fit in i64"),
+        i64::try_from(row.remote_plan_count).expect("remote plan count should fit in i64"),
+        i64::try_from(row.skipped_plan_count).expect("skipped plan count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.decoded_local_locator_count)
+            .expect("decoded local locator count should fit in i64"),
+        i64::try_from(row.returned_candidate_count)
+            .expect("returned candidate count should fit in i64"),
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_finalization_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11607,6 +11774,20 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 2, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let candidates_from = format!(
+            "FROM ec_spire_remote_search_local_heap_candidates(\
+             'ec_spire_remote_local_heap_res_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let candidate_summary_from = format!(
+            "FROM ec_spire_remote_search_local_heap_candidate_summary(\
+             'ec_spire_remote_local_heap_res_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local heap resolution count query should succeed")
             .expect("local heap resolution count should exist");
@@ -11648,6 +11829,32 @@ mod tests {
         ))
         .expect("heap resolution summary remote status query should succeed")
         .expect("heap resolution summary remote status should exist");
+        let candidate_count = Spi::get_one::<i64>(&format!("SELECT count(*) {candidates_from}"))
+            .expect("local heap candidate count query should succeed")
+            .expect("local heap candidate count should exist");
+        let candidate_owner_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {candidates_from} \
+             WHERE heap_lookup_owner = 'coordinator_local_heap' AND status = 'ready'"
+        ))
+        .expect("local heap candidate owner query should succeed")
+        .expect("local heap candidate owner count should exist");
+        let candidate_locator_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {candidates_from} \
+             WHERE served_epoch = requested_epoch \
+             AND heap_block >= 0 AND heap_offset > 0 \
+             AND length(row_locator) = 6 AND score IS NOT NULL"
+        ))
+        .expect("local heap candidate locator query should succeed")
+        .expect("local heap candidate locator count should exist");
+        let returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {candidate_summary_from}"
+        ))
+        .expect("local heap candidate summary return query should succeed")
+        .expect("local heap candidate summary return count should exist");
+        let candidate_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {candidate_summary_from}"))
+                .expect("local heap candidate summary status query should succeed")
+                .expect("local heap candidate summary status should exist");
 
         assert_eq!(row_count, 2);
         assert_eq!(ready_count, row_count);
@@ -11658,6 +11865,11 @@ mod tests {
         assert_eq!(decoded_summary_count, row_count);
         assert_eq!(local_resolution_status, "ready");
         assert_eq!(remote_resolution_status, "none");
+        assert_eq!(candidate_count, row_count);
+        assert_eq!(candidate_owner_count, candidate_count);
+        assert_eq!(candidate_locator_count, candidate_count);
+        assert_eq!(returned_candidate_count, candidate_count);
+        assert_eq!(candidate_summary_status, "ready");
     }
 
     #[pg_test]
@@ -11707,6 +11919,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 2, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let candidate_summary_from = format!(
+            "FROM ec_spire_remote_search_local_heap_candidate_summary(\
+             'ec_spire_remote_heap_res_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
             .expect("remote heap summary status query should succeed")
             .expect("remote heap summary status should exist");
@@ -11733,6 +11952,15 @@ mod tests {
         ))
         .expect("remote heap summary remote status query should succeed")
         .expect("remote heap summary remote status should exist");
+        let candidate_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {candidate_summary_from}"))
+                .expect("remote heap candidate summary status query should succeed")
+                .expect("remote heap candidate summary status should exist");
+        let returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {candidate_summary_from}"
+        ))
+        .expect("remote heap candidate summary return query should succeed")
+        .expect("remote heap candidate summary return count should exist");
 
         assert_eq!(status, "requires_remote_node_descriptor");
         assert_eq!(remote_plan_count, 1);
@@ -11740,6 +11968,8 @@ mod tests {
         assert_eq!(decoded_local_locator_count, 0);
         assert_eq!(local_resolution_status, "planned");
         assert_eq!(remote_resolution_status, "requires_remote_node_descriptor");
+        assert_eq!(candidate_summary_status, "requires_remote_node_descriptor");
+        assert_eq!(returned_candidate_count, 0);
     }
 
     #[pg_test]
