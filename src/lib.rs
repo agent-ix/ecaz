@@ -5278,6 +5278,53 @@ fn ec_spire_remote_epoch_manifest_publication_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_publication_result_contract() -> TableIterator<
+    'static,
+    (
+        name!(result_source, &'static str),
+        name!(publication_decision, &'static str),
+        name!(status_family, &'static str),
+        name!(semantic_role, &'static str),
+        name!(validator, &'static str),
+    ),
+> {
+    TableIterator::new(
+        vec![
+            (
+                "not_required",
+                "not_required",
+                "not_required",
+                "local_only_manifest_publication_result",
+                "must_have_zero_libpq_receive_count",
+            ),
+            (
+                "pending_libpq_executor",
+                "publish_remote_epoch_manifest",
+                "requires_libpq_executor",
+                "distributed_manifest_waiting_for_transport_executor",
+                "must_name_next_executor_step",
+            ),
+            (
+                "remote_manifest_validation_result",
+                "publish_remote_epoch_manifest",
+                "ready",
+                "distributed_manifest_payload_validation_result",
+                "must_match_manifest_result_contract",
+            ),
+            (
+                "blocked",
+                "any_blocked_publication_decision",
+                "blocked",
+                "pre_publication_gate_blocked_result",
+                "must_preserve_original_blocker_status",
+            ),
+        ]
+        .into_iter(),
+    )
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_placement_snapshot(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -20080,6 +20127,8 @@ mod tests {
     fn test_ec_spire_remote_phase7_policy_contracts() {
         let degradation_from = "FROM ec_spire_remote_degradation_policy_contract()";
         let publication_from = "FROM ec_spire_remote_epoch_manifest_publication_contract()";
+        let publication_result_from =
+            "FROM ec_spire_remote_epoch_manifest_publication_result_contract()";
         let manifest_parameter_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_parameter_contract()";
         let manifest_result_from = "FROM ec_spire_remote_epoch_manifest_libpq_result_contract()";
@@ -20147,6 +20196,16 @@ mod tests {
         ))
         .expect("manifest publication transport query should succeed")
         .expect("manifest publication transport validator should exist");
+        let publication_result_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {publication_result_from}"))
+                .expect("manifest publication result contract count query should succeed")
+                .expect("manifest publication result contract count should exist");
+        let pending_result_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {publication_result_from} \
+             WHERE result_source = 'pending_libpq_executor'"
+        ))
+        .expect("manifest publication pending result query should succeed")
+        .expect("manifest publication pending result validator should exist");
         let manifest_parameter_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {manifest_parameter_from}"))
                 .expect("manifest parameter contract count query should succeed")
@@ -20195,6 +20254,8 @@ mod tests {
             transport_validator,
             "future_executor_must_use_libpq_pipeline"
         );
+        assert_eq!(publication_result_count, 4);
+        assert_eq!(pending_result_validator, "must_name_next_executor_step");
         assert_eq!(manifest_parameter_count, 3);
         assert_eq!(manifest_payload_type, "jsonb");
         assert_eq!(manifest_result_count, 3);

@@ -1678,6 +1678,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   that gate as the final operator-facing publication result source, including
   receive counts, payload-validation result status, the next blocker, and
   effective status.
+  `ec_spire_remote_epoch_manifest_publication_result_contract()` now names the
+  final result-source states for local-only, pending-libpq, ready validation,
+  and blocked publication outcomes.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
