@@ -5326,6 +5326,196 @@ fn ec_spire_remote_conninfo_secret_resolution_contract() -> TableIterator<
     }))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
+    'static,
+    (
+        name!(descriptor_orphan_count, i64),
+        name!(manifest_orphan_count, i64),
+        name!(manifest_entry_orphan_count, i64),
+        name!(cleanup_recommended, bool),
+        name!(status, String),
+    ),
+> {
+    let result = Spi::connect(|client| {
+        client
+            .select(
+                "WITH live_spire_index AS ( \
+                     SELECT c.oid \
+                       FROM pg_class c \
+                       JOIN pg_am am ON am.oid = c.relam \
+                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
+                 ) \
+                 SELECT \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_node_descriptor d \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = d.coordinator_index_oid)) \
+                        AS descriptor_orphan_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_epoch_manifest m \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = m.coordinator_index_oid)) \
+                        AS manifest_orphan_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_epoch_manifest_entry e \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = e.coordinator_index_oid)) \
+                        AS manifest_entry_orphan_count",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire remote catalog orphan summary failed: {e}"))?
+            .map(|row| {
+                Ok::<(i64, i64, i64), String>((
+                    row["descriptor_orphan_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("descriptor orphan count decode failed: {e}"))?
+                        .ok_or_else(|| "descriptor orphan count is null".to_owned())?,
+                    row["manifest_orphan_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest orphan count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest orphan count is null".to_owned())?,
+                    row["manifest_entry_orphan_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest entry orphan count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry orphan count is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or((0, 0, 0)))
+    });
+    let (descriptor_orphan_count, manifest_orphan_count, manifest_entry_orphan_count) =
+        result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    let cleanup_recommended =
+        descriptor_orphan_count > 0 || manifest_orphan_count > 0 || manifest_entry_orphan_count > 0;
+    let status = if cleanup_recommended {
+        "orphaned_remote_catalog_rows"
+    } else {
+        "ready"
+    };
+
+    TableIterator::once((
+        descriptor_orphan_count,
+        manifest_orphan_count,
+        manifest_entry_orphan_count,
+        cleanup_recommended,
+        status.to_owned(),
+    ))
+}
+
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
+    'static,
+    (
+        name!(descriptor_removed_count, i64),
+        name!(manifest_removed_count, i64),
+        name!(manifest_entry_removed_count, i64),
+        name!(status, String),
+    ),
+> {
+    let result = Spi::connect_mut(|client| {
+        let counts = client
+            .select(
+                "WITH live_spire_index AS ( \
+                     SELECT c.oid \
+                       FROM pg_class c \
+                       JOIN pg_am am ON am.oid = c.relam \
+                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
+                 ) \
+                 SELECT \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_node_descriptor d \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = d.coordinator_index_oid)) \
+                        AS descriptor_removed_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_epoch_manifest m \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = m.coordinator_index_oid)) \
+                        AS manifest_removed_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_remote_epoch_manifest_entry e \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = e.coordinator_index_oid)) \
+                        AS manifest_entry_removed_count",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire remote catalog orphan cleanup count failed: {e}"))?
+            .map(|row| {
+                Ok::<(i64, i64, i64), String>((
+                    row["descriptor_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("descriptor removed count decode failed: {e}"))?
+                        .ok_or_else(|| "descriptor removed count is null".to_owned())?,
+                    row["manifest_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest removed count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest removed count is null".to_owned())?,
+                    row["manifest_entry_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest entry removed count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry removed count is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .unwrap_or((0, 0, 0));
+        client
+            .update(
+                "WITH live_spire_index AS ( \
+                     SELECT c.oid \
+                       FROM pg_class c \
+                       JOIN pg_am am ON am.oid = c.relam \
+                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
+                 ) \
+                 DELETE FROM ec_spire_remote_epoch_manifest m \
+                  WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                     WHERE l.oid = m.coordinator_index_oid)",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire remote manifest orphan cleanup failed: {e}"))?;
+        client
+            .update(
+                "WITH live_spire_index AS ( \
+                     SELECT c.oid \
+                       FROM pg_class c \
+                       JOIN pg_am am ON am.oid = c.relam \
+                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
+                 ) \
+                 DELETE FROM ec_spire_remote_node_descriptor d \
+                  WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                     WHERE l.oid = d.coordinator_index_oid)",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire remote descriptor orphan cleanup failed: {e}"))?;
+        Ok::<(i64, i64, i64), String>(counts)
+    });
+    let (descriptor_removed_count, manifest_removed_count, manifest_entry_removed_count) =
+        result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    let removed_any = descriptor_removed_count > 0
+        || manifest_removed_count > 0
+        || manifest_entry_removed_count > 0;
+    let status = if removed_any {
+        "removed_orphaned_remote_catalog_rows"
+    } else {
+        "ready"
+    };
+
+    TableIterator::once((
+        descriptor_removed_count,
+        manifest_removed_count,
+        manifest_entry_removed_count,
+        status.to_owned(),
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
@@ -21139,6 +21329,86 @@ mod tests {
             rejected_provider_storage,
             "never_store_raw_conninfo_in_extension_catalog"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_catalog_orphan_cleanup() {
+        Spi::run("SELECT * FROM ec_spire_remote_catalog_orphan_cleanup()")
+            .expect("initial orphan cleanup should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_descriptor \
+             (coordinator_index_oid, node_id, descriptor_generation, conninfo_secret_name, \
+              remote_index_identity, remote_index_regclass, descriptor_state, \
+              last_served_epoch, min_retained_epoch, extension_version, last_error) \
+             VALUES ('4294967294'::oid, 2, 1, 'spire/remote/orphan', '\\x01'::bytea, \
+                     'orphan_idx', 'active', 1, 1, 'test', 'none')",
+        )
+        .expect("orphan descriptor insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest \
+             (coordinator_index_oid, active_epoch, manifest_scope, manifest_decision, \
+              manifest_entry_count, included_remote_node_count, remote_placement_count, \
+              publish_decision, status, persisted_at_micros) \
+             VALUES ('4294967294'::oid, 1, 'distributed', \
+                     'emit_distributed_epoch_manifest', 1, 1, 1, \
+                     'publish_remote_epoch_manifest', 'ready', 1)",
+        )
+        .expect("orphan manifest insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest_entry \
+             (coordinator_index_oid, active_epoch, node_id, descriptor_state, placement_count, \
+              required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+              min_retained_epoch, epoch_window_status, manifest_action, status) \
+             VALUES ('4294967294'::oid, 1, 2, 'active', 1, 1, 1, 1, 1, \
+                     'ready', 'include_remote_node', 'ready')",
+        )
+        .expect("orphan manifest entry insert should succeed");
+
+        let summary_from = "FROM ec_spire_remote_catalog_orphan_summary()";
+        let cleanup_from = "FROM ec_spire_remote_catalog_orphan_cleanup()";
+        let descriptor_orphan_count =
+            Spi::get_one::<i64>(&format!("SELECT descriptor_orphan_count {summary_from}"))
+                .expect("descriptor orphan count query should succeed")
+                .expect("descriptor orphan count should exist");
+        let manifest_orphan_count =
+            Spi::get_one::<i64>(&format!("SELECT manifest_orphan_count {summary_from}"))
+                .expect("manifest orphan count query should succeed")
+                .expect("manifest orphan count should exist");
+        let manifest_entry_orphan_count = Spi::get_one::<i64>(&format!(
+            "SELECT manifest_entry_orphan_count {summary_from}"
+        ))
+        .expect("manifest entry orphan count query should succeed")
+        .expect("manifest entry orphan count should exist");
+        let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("orphan summary status query should succeed")
+            .expect("orphan summary status should exist");
+
+        let cleanup_counts = Spi::get_one::<String>(&format!(
+            "SELECT descriptor_removed_count::text || ',' || \
+                    manifest_removed_count::text || ',' || \
+                    manifest_entry_removed_count::text \
+               {cleanup_from}"
+        ))
+        .expect("orphan cleanup count query should succeed")
+        .expect("orphan cleanup counts should exist");
+        let cleanup_counts = cleanup_counts
+            .split(',')
+            .map(|value| {
+                value
+                    .parse::<i64>()
+                    .expect("cleanup count should parse as i64")
+            })
+            .collect::<Vec<_>>();
+        let post_cleanup_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("post-cleanup summary status query should succeed")
+            .expect("post-cleanup summary status should exist");
+
+        assert_eq!(descriptor_orphan_count, 1);
+        assert_eq!(manifest_orphan_count, 1);
+        assert_eq!(manifest_entry_orphan_count, 1);
+        assert_eq!(summary_status, "orphaned_remote_catalog_rows");
+        assert_eq!(cleanup_counts, vec![1, 1, 1]);
+        assert_eq!(post_cleanup_status, "ready");
     }
 
     #[pg_test]

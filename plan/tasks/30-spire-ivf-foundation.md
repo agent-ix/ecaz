@@ -1614,6 +1614,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   provider keyed by `conninfo_secret_name`, keeps raw conninfo out of extension
   SQL/catalog surfaces, leaves FDW-style mappings as a future option, and
   rejects an extension-owned raw conninfo table.
+  `ec_spire_remote_catalog_orphan_summary()` and
+  `ec_spire_remote_catalog_orphan_cleanup()` now expose the first remote
+  catalog lifecycle cleanup path: rows keyed by coordinator OIDs that no longer
+  resolve to live `ec_spire` indexes are reported and removable from the
+  descriptor and manifest catalogs.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
