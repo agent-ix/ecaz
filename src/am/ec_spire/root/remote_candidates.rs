@@ -46,6 +46,9 @@ const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
 const SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES: &str = "no_candidate_batches";
 const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP: &str = "requires_remote_heap_resolution";
 const SPIRE_REMOTE_FINAL_STATUS_BLOCKED: &str = "blocked";
+const SPIRE_REMOTE_FINAL_STATUS_PLANNED: &str = "planned";
+const SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES: &str = "local_heap_candidates";
+const SPIRE_REMOTE_RESULT_SOURCE_BLOCKED: &str = "blocked";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE: &str = "active";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 
@@ -1561,7 +1564,7 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     {
         SPIRE_REMOTE_STATUS_READY
     } else {
-        "planned"
+        SPIRE_REMOTE_FINAL_STATUS_PLANNED
     };
     let remote_heap_resolution_status = if gate.remote_plan_count == 0 {
         SPIRE_REMOTE_NONE

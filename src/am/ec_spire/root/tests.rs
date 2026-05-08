@@ -422,6 +422,37 @@ mod tests {
     }
 
     #[test]
+    fn remote_degradation_policy_contract_matches_fanout_skip_decisions() {
+        for row in remote_degradation_policy_contract_rows() {
+            let consistency_mode = match row.consistency_mode {
+                "strict" => meta::SpireConsistencyMode::Strict,
+                "degraded" => meta::SpireConsistencyMode::Degraded,
+                other => panic!("unexpected consistency mode in contract: {other}"),
+            };
+            let placement_state = match row.placement_state {
+                "available" => meta::SpirePlacementState::Available,
+                "stale" => meta::SpirePlacementState::Stale,
+                "unavailable" => meta::SpirePlacementState::Unavailable,
+                "skipped" => meta::SpirePlacementState::Skipped,
+                other => panic!("unexpected placement state in contract: {other}"),
+            };
+
+            let search_action = match fanout_should_skip_placement(consistency_mode, placement_state)
+            {
+                Ok(false) => "dispatch",
+                Ok(true) => "skip_and_report",
+                Err(_) => "fail_closed",
+            };
+
+            assert_eq!(
+                row.search_action, search_action,
+                "degradation policy contract drift for {} {}",
+                row.consistency_mode, row.placement_state
+            );
+        }
+    }
+
+    #[test]
     fn remote_search_fanout_rejects_duplicate_selected_pids() {
         let placements = vec![fanout_placement(
             11,

@@ -571,9 +571,9 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         )
     };
     let result_source = if local_summary.returned_candidate_count > 0 {
-        "local_heap_candidates"
+        SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES
     } else if gate.next_blocker != SPIRE_REMOTE_NONE {
-        "blocked"
+        SPIRE_REMOTE_RESULT_SOURCE_BLOCKED
     } else {
         SPIRE_REMOTE_NONE
     };
