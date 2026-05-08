@@ -1461,6 +1461,78 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     }
 }
 
+pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchHeapResolutionSummaryRow {
+    let gate = unsafe {
+        remote_search_coordinator_gate_summary_row(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+
+    let decoded_local_locator_count = if gate.remote_plan_count == 0
+        && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K
+    {
+        let rows = unsafe {
+            remote_search_local_heap_resolution_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        u64::try_from(rows.len())
+            .unwrap_or_else(|_| pgrx::error!("ec_spire local heap resolution row count overflow"))
+    } else {
+        0
+    };
+
+    let local_heap_resolution_status = if gate.local_plan_count == 0 {
+        SPIRE_REMOTE_NONE
+    } else if gate.status == SPIRE_REMOTE_STATUS_EMPTY_TOP_K {
+        SPIRE_REMOTE_STATUS_EMPTY_TOP_K
+    } else if gate.remote_plan_count == 0 && gate.status == SPIRE_REMOTE_STATUS_READY {
+        SPIRE_REMOTE_STATUS_READY
+    } else {
+        "planned"
+    };
+    let remote_heap_resolution_status = if gate.remote_plan_count == 0 {
+        SPIRE_REMOTE_NONE
+    } else if gate.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+        || gate.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+    {
+        gate.status
+    } else {
+        SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+    };
+
+    SpireRemoteSearchHeapResolutionSummaryRow {
+        requested_epoch,
+        local_plan_count: gate.local_plan_count,
+        remote_plan_count: gate.remote_plan_count,
+        skipped_plan_count: gate.skipped_plan_count,
+        local_pid_count: gate.local_pid_count,
+        remote_pid_count: gate.remote_pid_count,
+        decoded_local_locator_count,
+        local_heap_resolution_status,
+        remote_heap_resolution_status,
+        status: gate.status,
+        recommendation: gate.recommendation,
+    }
+}
+
 /// Validates one target-scoped remote candidate receive batch.
 ///
 /// The batch must match the requested epoch, expected node, selected PID set,

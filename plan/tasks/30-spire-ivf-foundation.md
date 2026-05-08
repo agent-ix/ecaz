@@ -1517,6 +1517,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_local_heap_resolution_plan(...)` now decodes
   coordinator-local opaque row locators into heap block/offset work items while
   keeping remote-origin resolution blocked behind the origin-node contract.
+  `ec_spire_remote_search_heap_resolution_summary(...)` now aggregates local
+  decoded locator counts, remote heap work, and the effective resolution
+  blocker for the coordinator.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

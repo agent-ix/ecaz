@@ -140,6 +140,21 @@ pub(crate) struct SpireRemoteSearchLocalHeapResolutionPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchHeapResolutionSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) local_plan_count: u64,
+    pub(crate) remote_plan_count: u64,
+    pub(crate) skipped_plan_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) decoded_local_locator_count: u64,
+    pub(crate) local_heap_resolution_status: &'static str,
+    pub(crate) remote_heap_resolution_status: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchFanoutPlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) target_kind: &'static str,

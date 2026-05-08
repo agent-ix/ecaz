@@ -3121,6 +3121,84 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_heap_resolution_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(local_plan_count, i64),
+        name!(remote_plan_count, i64),
+        name!(skipped_plan_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(decoded_local_locator_count, i64),
+        name!(local_heap_resolution_status, &'static str),
+        name!(remote_heap_resolution_status, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_heap_resolution_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_heap_resolution_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_heap_resolution_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_heap_resolution_summary")
+    };
+    let row = unsafe {
+        am::spire_remote_search_heap_resolution_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.local_plan_count).expect("local plan count should fit in i64"),
+        i64::try_from(row.remote_plan_count).expect("remote plan count should fit in i64"),
+        i64::try_from(row.skipped_plan_count).expect("skipped plan count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.decoded_local_locator_count)
+            .expect("decoded local locator count should fit in i64"),
+        row.local_heap_resolution_status,
+        row.remote_heap_resolution_status,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_finalization_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11470,6 +11548,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 2, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_heap_resolution_summary(\
+             'ec_spire_remote_local_heap_res_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local heap resolution count query should succeed")
             .expect("local heap resolution count should exist");
@@ -11493,12 +11578,116 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT count(DISTINCT node_id) {plan_from}"))
                 .expect("local heap resolution node count query should succeed")
                 .expect("local heap resolution node count should exist");
+        let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("heap resolution summary status query should succeed")
+            .expect("heap resolution summary status should exist");
+        let decoded_summary_count = Spi::get_one::<i64>(&format!(
+            "SELECT decoded_local_locator_count {summary_from}"
+        ))
+        .expect("heap resolution summary decoded count query should succeed")
+        .expect("heap resolution summary decoded count should exist");
+        let local_resolution_status = Spi::get_one::<String>(&format!(
+            "SELECT local_heap_resolution_status {summary_from}"
+        ))
+        .expect("heap resolution summary local status query should succeed")
+        .expect("heap resolution summary local status should exist");
+        let remote_resolution_status = Spi::get_one::<String>(&format!(
+            "SELECT remote_heap_resolution_status {summary_from}"
+        ))
+        .expect("heap resolution summary remote status query should succeed")
+        .expect("heap resolution summary remote status should exist");
 
         assert_eq!(row_count, 2);
         assert_eq!(ready_count, row_count);
         assert_eq!(owner_count, row_count);
         assert_eq!(decoded_locator_count, row_count);
         assert_eq!(node_count, 1);
+        assert_eq!(summary_status, "ready");
+        assert_eq!(decoded_summary_count, row_count);
+        assert_eq!(local_resolution_status, "ready");
+        assert_eq!(remote_resolution_status, "none");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_heap_resolution_summary_blocks_remote() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_heap_res_summary_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_heap_res_summary_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_heap_res_summary_sql_idx \
+             ON ec_spire_remote_heap_res_summary_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_heap_res_summary_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_heap_res_summary_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_heap_res_summary_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_heap_resolution_summary(\
+             'ec_spire_remote_heap_res_summary_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("remote heap summary status query should succeed")
+            .expect("remote heap summary status should exist");
+        let remote_plan_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_plan_count {summary_from}"))
+                .expect("remote heap summary remote plan query should succeed")
+                .expect("remote heap summary remote plan count should exist");
+        let remote_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_pid_count {summary_from}"))
+                .expect("remote heap summary remote pid query should succeed")
+                .expect("remote heap summary remote pid count should exist");
+        let decoded_local_locator_count = Spi::get_one::<i64>(&format!(
+            "SELECT decoded_local_locator_count {summary_from}"
+        ))
+        .expect("remote heap summary decoded count query should succeed")
+        .expect("remote heap summary decoded count should exist");
+        let local_resolution_status = Spi::get_one::<String>(&format!(
+            "SELECT local_heap_resolution_status {summary_from}"
+        ))
+        .expect("remote heap summary local status query should succeed")
+        .expect("remote heap summary local status should exist");
+        let remote_resolution_status = Spi::get_one::<String>(&format!(
+            "SELECT remote_heap_resolution_status {summary_from}"
+        ))
+        .expect("remote heap summary remote status query should succeed")
+        .expect("remote heap summary remote status should exist");
+
+        assert_eq!(status, "requires_remote_node_descriptor");
+        assert_eq!(remote_plan_count, 1);
+        assert_eq!(remote_pid_count, 1);
+        assert_eq!(decoded_local_locator_count, 0);
+        assert_eq!(local_resolution_status, "planned");
+        assert_eq!(remote_resolution_status, "requires_remote_node_descriptor");
     }
 
     #[pg_test]
