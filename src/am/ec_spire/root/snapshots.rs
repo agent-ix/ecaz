@@ -52,6 +52,10 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn active_epoch(index_relation: pg_sys::Relation) -> u64 {
+    unsafe { page::read_root_control_page(index_relation).active_epoch }
+}
+
 pub(crate) unsafe fn index_allocator_snapshot(
     index_relation: pg_sys::Relation,
     warn_within: u64,

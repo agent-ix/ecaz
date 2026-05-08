@@ -1638,6 +1638,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_catalog_summary(...)` compares the current
   manifest decision against persisted catalog rows so operators can distinguish
   blocked, missing-persistence, stale-persistence, and ready manifest states.
+  `ec_spire_persist_remote_epoch_manifest(...)` now rechecks the current active
+  epoch inside its SPI write block and fails closed with a retryable error if
+  the epoch advanced between the manifest summary read and durable catalog
+  writes.
   `ec_spire_remote_epoch_manifest_publication_plan(...)` projects the current
   manifest and persisted catalog into per-node publication actions,
   distinguishing ready libpq-pipeline publication from missing or stale

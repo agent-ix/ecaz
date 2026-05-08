@@ -1921,9 +1921,9 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_persist_remote_epoch_manifest") };
     let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
     let manifest_rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     if summary.manifest_decision != "emit_distributed_epoch_manifest" {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!(
             "ec_spire_persist_remote_epoch_manifest cannot persist remote epoch manifest when decision is '{}' with next_blocker '{}'",
             summary.manifest_decision,
@@ -1935,6 +1935,7 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         .filter(|row| row.manifest_action == "include_remote_node")
         .collect::<Vec<_>>();
     if included_rows.is_empty() {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!(
             "ec_spire_persist_remote_epoch_manifest requires at least one included remote manifest entry"
         );
@@ -1949,6 +1950,14 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         .expect("remote placement count should fit in i64");
 
     let result = Spi::connect_mut(|client| {
+        let current_active_epoch = i64::try_from(unsafe { am::spire_active_epoch(index_relation) })
+            .map_err(|_| "ec_spire remote epoch manifest active epoch exceeds i64")?;
+        if current_active_epoch != active_epoch {
+            return Err(format!(
+                "ec_spire_persist_remote_epoch_manifest active epoch changed from {active_epoch} to {current_active_epoch}; retry persistence"
+            ));
+        }
+
         client
             .update(
                 "INSERT INTO ec_spire_remote_epoch_manifest \
@@ -2046,6 +2055,7 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         }
         Ok::<(), String>(())
     });
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result.unwrap_or_else(|e| pgrx::error!("{e}"));
     true
 }

@@ -23,6 +23,7 @@ pub(crate) use self::ec_ivf::{
     IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
 };
 pub(crate) use self::ec_spire::{
+    active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,
