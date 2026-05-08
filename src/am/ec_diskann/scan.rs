@@ -211,10 +211,28 @@ where
     // under MVCC, the second carries `primary_heaptid == INVALID`
     // which is not a legal `xs_heaptid` return. Traversal still walks
     // their neighbors for connectivity. (Packets 11023/11027/11028.)
-    let mut reranked: Vec<ScanResult> = frontier
+    //
+    // Visit candidates in heap-TID order so adjacent rerank rows share
+    // pinned shared buffers, matching the locality fix the IVF lane
+    // landed in `79c1a11c`. Final ordering still comes from the
+    // exact-distance sort below, so this only affects fetch order.
+    let mut to_rerank: Vec<ScanCandidate> = frontier
         .into_iter()
         .filter(|c| c.emittable)
         .take(params.rerank_budget)
+        .collect();
+    to_rerank.sort_by(|a, b| {
+        a.primary_heaptid
+            .block_number
+            .cmp(&b.primary_heaptid.block_number)
+            .then_with(|| {
+                a.primary_heaptid
+                    .offset_number
+                    .cmp(&b.primary_heaptid.offset_number)
+            })
+    });
+    let mut reranked: Vec<ScanResult> = to_rerank
+        .into_iter()
         .map(|c| {
             let exact = rerank(c.primary_heaptid);
             ScanResult {
@@ -549,6 +567,53 @@ mod tests {
             rerank_calls.get(),
             3,
             "rerank must be called exactly `budget` times"
+        );
+    }
+
+    // SC-003b: rerank visits candidates in heap-TID order, not in
+    // prefilter-score order. The final result is still sorted by
+    // exact distance (covered by other tests); this test only locks
+    // the visit order so adjacent rerank rows can share PG buffer
+    // pins on real hardware.
+    #[test]
+    fn sc_003b_rerank_visits_in_heap_tid_order() {
+        use std::cell::RefCell;
+        let n = 6;
+        let g = chain_graph(n, 4);
+        let payloads = synth_payloads(n, 0, 0);
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
+
+        // Prefilter: descending in node_id, so frontier order would
+        // be [n-1, n-2, ..., 0] without the heap-TID sort.
+        let prefilter = |t: &VamanaNodeTuple| {
+            ((n - 1) as u32 - (t.primary_heaptid.block_number - 1000)) as f32
+        };
+        let visit_order = RefCell::new(Vec::<ItemPointer>::new());
+        let rerank = |hip: ItemPointer| {
+            visit_order.borrow_mut().push(hip);
+            0.0
+        };
+
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: n,
+            rerank_budget: n,
+            top_k: 1,
+        };
+        vamana_scan(&reader, params, prefilter, rerank).expect("scan");
+
+        let observed: Vec<u32> = visit_order
+            .borrow()
+            .iter()
+            .map(|tid| tid.block_number)
+            .collect();
+        let mut expected = observed.clone();
+        expected.sort();
+        assert_eq!(
+            observed, expected,
+            "rerank must visit candidates in ascending heap-TID order"
         );
     }
 
