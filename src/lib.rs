@@ -3445,6 +3445,287 @@ fn ec_spire_apply_remote_epoch_manifest(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_dispatch_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(conninfo_secret_name, String),
+        name!(remote_index_regclass, String),
+        name!(sql_template, String),
+        name!(parameter_count, i64),
+        name!(expected_result_column_count, i64),
+        name!(manifest_payload_format, String),
+        name!(manifest_payload, pgrx::JsonB),
+        name!(dispatch_action, String),
+        name!(receive_validator, String),
+        name!(executor_status, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_dispatch_plan",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT r.active_epoch, r.node_id, r.conninfo_secret_name, \
+                        r.remote_index_regclass, r.sql_template, r.parameter_count, \
+                        r.expected_result_column_count, p.manifest_payload_format, \
+                        p.manifest_payload, \
+                        CASE \
+                            WHEN r.request_action = 'send_remote_epoch_manifest' \
+                             AND r.status = 'ready' \
+                             AND p.status = 'ready' \
+                            THEN 'open_pipeline_and_send_remote_epoch_manifest' \
+                            ELSE 'blocked_before_manifest_dispatch' \
+                        END AS dispatch_action, \
+                        'ec_spire_remote_epoch_manifest_libpq_result_contract'::text \
+                            AS receive_validator, \
+                        CASE \
+                            WHEN r.request_action = 'send_remote_epoch_manifest' \
+                             AND r.status = 'ready' \
+                             AND p.status = 'ready' \
+                            THEN 'requires_libpq_executor' \
+                            ELSE 'none' \
+                        END AS executor_status, \
+                        CASE \
+                            WHEN r.status <> 'ready' THEN r.status \
+                            ELSE p.status \
+                        END AS status \
+                   FROM ec_spire_remote_epoch_manifest_libpq_request_plan($1::oid) r \
+                   JOIN ec_spire_remote_epoch_manifest_payload_plan($1::oid) p \
+                     ON p.active_epoch = r.active_epoch \
+                    AND p.node_id = r.node_id \
+                  ORDER BY r.node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq dispatch plan read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest dispatch active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "manifest dispatch active_epoch is null".to_owned())?,
+                    row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest dispatch node_id decode failed: {e}"))?
+                        .ok_or_else(|| "manifest dispatch node_id is null".to_owned())?,
+                    row["conninfo_secret_name"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch conninfo_secret_name decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest dispatch conninfo_secret_name is null".to_owned()
+                        })?,
+                    row["remote_index_regclass"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch remote_index_regclass decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest dispatch remote_index_regclass is null".to_owned()
+                        })?,
+                    row["sql_template"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest dispatch sql_template decode failed: {e}"))?
+                        .ok_or_else(|| "manifest dispatch sql_template is null".to_owned())?,
+                    row["parameter_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest dispatch parameter_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest dispatch parameter_count is null".to_owned())?,
+                    row["expected_result_column_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest dispatch expected_result_column_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest dispatch expected_result_column_count is null".to_owned()
+                        })?,
+                    row["manifest_payload_format"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch manifest_payload_format decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest dispatch manifest_payload_format is null".to_owned()
+                        })?,
+                    row["manifest_payload"]
+                        .value::<pgrx::JsonB>()
+                        .map_err(|e| {
+                            format!("manifest dispatch manifest_payload decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest dispatch manifest_payload is null".to_owned())?,
+                    row["dispatch_action"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch dispatch_action decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest dispatch dispatch_action is null".to_owned())?,
+                    row["receive_validator"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch receive_validator decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest dispatch receive_validator is null".to_owned())?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest dispatch executor_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest dispatch executor_status is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest dispatch status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest dispatch status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(dispatch_count, i64),
+        name!(pipeline_dispatch_count, i64),
+        name!(blocked_dispatch_count, i64),
+        name!(ready_payload_count, i64),
+        name!(executor_status, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_dispatch_summary",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                "WITH dispatch_rows AS ( \
+                        SELECT * \
+                          FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan($1::oid) \
+                    ), publication_summary AS ( \
+                        SELECT * \
+                          FROM ec_spire_remote_epoch_manifest_publication_summary($1::oid) \
+                    ) \
+                  SELECT s.active_epoch, \
+                         count(d.active_epoch)::bigint AS dispatch_count, \
+                         count(*) FILTER ( \
+                             WHERE d.dispatch_action = 'open_pipeline_and_send_remote_epoch_manifest')::bigint \
+                             AS pipeline_dispatch_count, \
+                         count(*) FILTER ( \
+                             WHERE d.active_epoch IS NOT NULL \
+                               AND d.dispatch_action <> 'open_pipeline_and_send_remote_epoch_manifest')::bigint \
+                             AS blocked_dispatch_count, \
+                         count(*) FILTER (WHERE d.status = 'ready')::bigint \
+                             AS ready_payload_count, \
+                         CASE \
+                             WHEN count(*) FILTER ( \
+                                 WHERE d.dispatch_action = 'open_pipeline_and_send_remote_epoch_manifest') > 0 \
+                             THEN 'requires_libpq_executor' \
+                             ELSE s.publication_executor_status \
+                         END AS executor_status, \
+                         CASE \
+                             WHEN count(d.active_epoch) = 0 THEN s.status \
+                             WHEN bool_and(d.status = 'ready') THEN 'ready' \
+                             ELSE 'blocked' \
+                         END AS status \
+                    FROM publication_summary s \
+                    LEFT JOIN dispatch_rows d ON true \
+                   GROUP BY s.active_epoch, s.status, s.publication_executor_status",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq dispatch summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("dispatch summary active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "dispatch summary active_epoch is null".to_owned())?,
+                    row["dispatch_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("dispatch summary dispatch_count decode failed: {e}"))?
+                        .ok_or_else(|| "dispatch summary dispatch_count is null".to_owned())?,
+                    row["pipeline_dispatch_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("dispatch summary pipeline_dispatch_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "dispatch summary pipeline_dispatch_count is null".to_owned()
+                        })?,
+                    row["blocked_dispatch_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("dispatch summary blocked_dispatch_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "dispatch summary blocked_dispatch_count is null".to_owned()
+                        })?,
+                    row["ready_payload_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("dispatch summary ready_payload_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "dispatch summary ready_payload_count is null".to_owned()
+                        })?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("dispatch summary executor_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "dispatch summary executor_status is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("dispatch summary status decode failed: {e}"))?
+                        .ok_or_else(|| "dispatch summary status is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| {
+                "ec_spire remote epoch manifest libpq dispatch summary returned no rows".to_owned()
+            })
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once(row)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_parameter_contract() -> TableIterator<
     'static,
     (
@@ -16113,6 +16394,9 @@ mod tests {
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
         let manifest_payload_summary_from = "FROM ec_spire_remote_epoch_manifest_payload_summary(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_dispatch_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -16209,6 +16493,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {manifest_payload_summary_from}"))
                 .expect("manifest payload summary status query should succeed")
                 .expect("manifest payload summary status should exist");
+        let manifest_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT dispatch_count {manifest_dispatch_summary_from}"
+        ))
+        .expect("manifest dispatch summary count query should succeed")
+        .expect("manifest dispatch summary count should exist");
+        let manifest_dispatch_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_dispatch_summary_from}"))
+                .expect("manifest dispatch summary status query should succeed")
+                .expect("manifest dispatch summary status should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -16232,6 +16525,8 @@ mod tests {
         assert_eq!(libpq_request_summary_status, "not_required");
         assert_eq!(manifest_payload_count, 0);
         assert_eq!(manifest_payload_status, "not_required");
+        assert_eq!(manifest_dispatch_count, 0);
+        assert_eq!(manifest_dispatch_status, "not_required");
     }
 
     #[pg_test]
@@ -16617,6 +16912,11 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_payload_summary_from = "FROM ec_spire_remote_epoch_manifest_payload_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_dispatch_from = "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_dispatch_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -16784,6 +17084,28 @@ mod tests {
         ))
         .expect("remote manifest apply mismatch query should succeed")
         .expect("remote manifest apply mismatch status should exist");
+        let dispatch_action =
+            Spi::get_one::<String>(&format!("SELECT dispatch_action {manifest_dispatch_from}"))
+                .expect("manifest dispatch action query should succeed")
+                .expect("manifest dispatch action should exist");
+        let dispatch_validator = Spi::get_one::<String>(&format!(
+            "SELECT receive_validator {manifest_dispatch_from}"
+        ))
+        .expect("manifest dispatch validator query should succeed")
+        .expect("manifest dispatch validator should exist");
+        let dispatch_executor_status =
+            Spi::get_one::<String>(&format!("SELECT executor_status {manifest_dispatch_from}"))
+                .expect("manifest dispatch executor status query should succeed")
+                .expect("manifest dispatch executor status should exist");
+        let dispatch_pipeline_count = Spi::get_one::<i64>(&format!(
+            "SELECT pipeline_dispatch_count {manifest_dispatch_summary_from}"
+        ))
+        .expect("manifest dispatch summary pipeline count query should succeed")
+        .expect("manifest dispatch summary pipeline count should exist");
+        let dispatch_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_dispatch_summary_from}"))
+                .expect("manifest dispatch summary status query should succeed")
+                .expect("manifest dispatch summary status should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -16832,6 +17154,17 @@ mod tests {
         assert_eq!(apply_result_status, "ready");
         assert_eq!(apply_result_entry_count, 1);
         assert_eq!(apply_epoch_mismatch_status, "manifest_epoch_mismatch");
+        assert_eq!(
+            dispatch_action,
+            "open_pipeline_and_send_remote_epoch_manifest"
+        );
+        assert_eq!(
+            dispatch_validator,
+            "ec_spire_remote_epoch_manifest_libpq_result_contract"
+        );
+        assert_eq!(dispatch_executor_status, "requires_libpq_executor");
+        assert_eq!(dispatch_pipeline_count, 1);
+        assert_eq!(dispatch_summary_status, "ready");
 
         Spi::run(&format!(
             "UPDATE ec_spire_remote_epoch_manifest_entry \
