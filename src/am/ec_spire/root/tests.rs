@@ -306,6 +306,19 @@ mod tests {
     }
 
     #[test]
+    fn remote_local_heap_locator_decode_error_includes_candidate_context() {
+        let candidate =
+            remote_candidate(2, 10, 7, b"abc", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let error = decode_remote_search_local_heap_locator(&candidate, "unit test")
+            .expect_err("short locator should fail to decode");
+
+        assert!(error.contains("unit test"));
+        assert!(error.contains("pid 10"));
+        assert!(error.contains("row_index 7"));
+        assert!(error.contains("vec_id 616263"));
+    }
+
+    #[test]
     fn remote_search_fanout_groups_selected_pids_by_local_and_remote_node() {
         let placements = vec![
             fanout_placement(

@@ -95,6 +95,20 @@ fn remote_search_row_locator(heap_tid: crate::storage::page::ItemPointer) -> Vec
     row_locator
 }
 
+fn decode_remote_search_local_heap_locator(
+    candidate: &SpireRemoteSearchCandidateRow,
+    context: &str,
+) -> Result<crate::storage::page::ItemPointer, String> {
+    crate::storage::page::ItemPointer::decode(&candidate.row_locator).map_err(|e| {
+        format!(
+            "ec_spire {context} failed to decode local row locator for pid {} row_index {} vec_id {}: {e}",
+            candidate.pid,
+            candidate.row_index,
+            hex::encode(&candidate.vec_id)
+        )
+    })
+}
+
 fn remote_search_coordinator_ready_status(skipped_placement_count: u64) -> &'static str {
     if skipped_placement_count > 0 {
         "degraded_ready"
@@ -407,7 +421,10 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
         candidates
             .into_iter()
             .map(|candidate| {
-                let heap_tid = crate::storage::page::ItemPointer::decode(&candidate.row_locator)?;
+                let heap_tid = decode_remote_search_local_heap_locator(
+                    &candidate,
+                    "local heap resolution plan",
+                )?;
                 Ok(SpireRemoteSearchLocalHeapResolutionPlanRow {
                     requested_epoch,
                     node_id: candidate.node_id,
@@ -448,7 +465,10 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
         candidates
             .into_iter()
             .map(|candidate| {
-                let heap_tid = crate::storage::page::ItemPointer::decode(&candidate.row_locator)?;
+                let heap_tid = decode_remote_search_local_heap_locator(
+                    &candidate,
+                    "local heap candidate rows",
+                )?;
                 Ok(SpireRemoteSearchLocalHeapCandidateRow {
                     requested_epoch,
                     served_epoch: candidate.served_epoch,
