@@ -18,6 +18,8 @@ Start with:
   periodic maintenance job.
 - `ec_spire_index_epoch_cleanup_summary(index_oid)` when old-epoch retention
   and physical cleanup status need one operator row.
+- `ec_spire_index_epoch_cleanup_run(index_oid)` when the cleanup summary reports
+  eligible old-epoch tuple debt.
 
 ## Function Map
 
@@ -30,6 +32,7 @@ Start with:
 | `ec_spire_index_relation_storage_snapshot(index_oid)` | operator | You need relation object tuple counts, active referenced bytes, and cleanup-candidate debt. |
 | `ec_spire_index_epoch_snapshot(index_oid)` | operator | You need active, retired, failed, superseded, and cleanup-eligibility epoch rows. |
 | `ec_spire_index_epoch_cleanup_summary(index_oid)` | operator | You need retained-epoch blockers and cleanup-candidate tuple debt in one row. |
+| `ec_spire_index_epoch_cleanup_run(index_oid)` | operator | You need to reclaim cleanup-eligible old-epoch object tuples under the SPIRE publish lock. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
 | `ec_spire_index_root_routing_snapshot(index_oid)` | debug | You need root centroid-to-child routing rows and child placement metadata. |
@@ -95,12 +98,14 @@ SPIRE publish lock, reloads active state, rechecks the selected action, and
 publishes through the normal maintenance path.
 
 Use `ec_spire_index_epoch_cleanup_summary(index_oid)` for old-epoch cleanup
-triage. `physical_cleanup_status = 'blocked_by_retention'` means cleanup debt is
-visible, but no epoch is currently eligible after retention and active-query
-checks. `physical_cleanup_status = 'supported'` means
-`ec_spire_index_epoch_cleanup_run(index_oid)` can reclaim old object tuples.
-The cleanup run removes only unprotected tuples for cleanup-eligible epochs
-under the SPIRE publish lock.
+triage. `physical_cleanup_status = 'not_required'` means there is no old-epoch
+tuple debt to reclaim. `physical_cleanup_status = 'blocked_by_retention'` means
+cleanup debt is visible, but no epoch is currently eligible after retention and
+active-query checks. `physical_cleanup_status = 'supported'` means
+`ec_spire_index_epoch_cleanup_run(index_oid)` can reclaim old object tuples. The
+cleanup run removes only unprotected tuples for cleanup-eligible epochs under
+the SPIRE publish lock. Schedule cleanup from an operator-controlled job during
+an acceptable pause window for publish-path work.
 
 ## Reading Notes
 
