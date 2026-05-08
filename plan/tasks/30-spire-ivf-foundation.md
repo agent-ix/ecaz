@@ -1490,6 +1490,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `(coordinator_index_oid, node_id)`, and `ec_spire_remote_node_snapshot(...)`
   consumes active/draining/disabled/failed catalog rows so registered remote
   nodes can advance from descriptor-missing to the libpq transport gate.
+  `ec_spire_register_remote_node_descriptor(...)` now performs validated
+  upserts into that catalog while preserving the `conninfo_secret_name`
+  indirection.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,

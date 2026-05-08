@@ -1348,6 +1348,107 @@ fn ec_spire_remote_node_descriptor_registration_contract() -> TableIterator<
     }))
 }
 
+#[pg_extern(strict)]
+fn ec_spire_register_remote_node_descriptor(
+    index_oid: pg_sys::Oid,
+    node_id: i32,
+    descriptor_generation: i64,
+    conninfo_secret_name: String,
+    remote_index_identity: Vec<u8>,
+    remote_index_regclass: String,
+    descriptor_state: String,
+    last_served_epoch: i64,
+    min_retained_epoch: i64,
+    extension_version: String,
+    last_error: String,
+) -> bool {
+    if node_id <= 0 {
+        pgrx::error!("ec_spire_register_remote_node_descriptor node_id must be greater than 0");
+    }
+    if descriptor_generation < 0 {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor descriptor_generation must be non-negative"
+        );
+    }
+    if conninfo_secret_name.is_empty() {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor conninfo_secret_name must be nonempty"
+        );
+    }
+    if remote_index_identity.is_empty() {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor remote_index_identity must be nonempty"
+        );
+    }
+    if remote_index_regclass.is_empty() {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor remote_index_regclass must be nonempty"
+        );
+    }
+    if !matches!(
+        descriptor_state.as_str(),
+        "active" | "draining" | "disabled" | "failed"
+    ) {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor descriptor_state must be active, draining, disabled, or failed"
+        );
+    }
+    if last_served_epoch < 0 {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor last_served_epoch must be non-negative"
+        );
+    }
+    if min_retained_epoch < 0 {
+        pgrx::error!(
+            "ec_spire_register_remote_node_descriptor min_retained_epoch must be non-negative"
+        );
+    }
+    if extension_version.is_empty() {
+        pgrx::error!("ec_spire_register_remote_node_descriptor extension_version must be nonempty");
+    }
+
+    let result = Spi::connect_mut(|client| {
+        client
+            .update(
+                "INSERT INTO ec_spire_remote_node_descriptor \
+             (coordinator_index_oid, node_id, descriptor_generation, \
+              conninfo_secret_name, remote_index_identity, remote_index_regclass, \
+              descriptor_state, last_seen_at, last_served_epoch, min_retained_epoch, \
+              extension_version, last_error) \
+             VALUES ($1::oid, $2::integer, $3::bigint, $4::text, $5::bytea, $6::text, \
+                     $7::text, clock_timestamp(), $8::bigint, $9::bigint, $10::text, $11::text) \
+             ON CONFLICT (coordinator_index_oid, node_id) DO UPDATE SET \
+                 descriptor_generation = EXCLUDED.descriptor_generation, \
+                 conninfo_secret_name = EXCLUDED.conninfo_secret_name, \
+                 remote_index_identity = EXCLUDED.remote_index_identity, \
+                 remote_index_regclass = EXCLUDED.remote_index_regclass, \
+                 descriptor_state = EXCLUDED.descriptor_state, \
+                 last_seen_at = EXCLUDED.last_seen_at, \
+                 last_served_epoch = EXCLUDED.last_served_epoch, \
+                 min_retained_epoch = EXCLUDED.min_retained_epoch, \
+                 extension_version = EXCLUDED.extension_version, \
+                 last_error = EXCLUDED.last_error",
+                None,
+                &[
+                    index_oid.into(),
+                    node_id.into(),
+                    descriptor_generation.into(),
+                    conninfo_secret_name.as_str().into(),
+                    remote_index_identity.into(),
+                    remote_index_regclass.as_str().into(),
+                    descriptor_state.as_str().into(),
+                    last_served_epoch.into(),
+                    min_retained_epoch.into(),
+                    extension_version.as_str().into(),
+                    last_error.as_str().into(),
+                ],
+            )
+            .map(|_| ())
+    });
+    result.unwrap_or_else(|e| pgrx::error!("ec_spire remote node descriptor upsert failed: {e}"));
+    true
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_descriptor_readiness(
@@ -12627,18 +12728,13 @@ mod tests {
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         Spi::run(&format!(
-            "INSERT INTO ec_spire_remote_node_descriptor \
-             (coordinator_index_oid, node_id, descriptor_generation, \
-              conninfo_secret_name, remote_index_identity, remote_index_regclass, \
-              descriptor_state, last_seen_at, last_served_epoch, min_retained_epoch, \
-              extension_version) \
-             VALUES ('{}'::oid, 2, 7, 'spire/remote/2', decode('01', 'hex'), \
-                     'remote_spire_idx', 'active', '2026-01-01 00:00:00+00'::timestamptz, \
-                     {active_epoch}, {active_epoch}, '{}')",
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 7, 'spire/remote/2', decode('01', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
             u32::from(index_oid),
             env!("CARGO_PKG_VERSION")
         ))
-        .expect("remote descriptor insert should succeed");
+        .expect("remote descriptor registration should succeed");
 
         let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
