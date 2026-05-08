@@ -22,6 +22,8 @@ Changes:
   blocked-PID counts into one coordinator gate row.
 - Exposes the pre-I/O dispatch action, receive validator, request shape, and
   fail-closed dispatch counts for the future libpq pipeline executor.
+- Threads libpq dispatch count/status into
+  `ec_spire_remote_search_coordinator_gate_summary(...)`.
 - Updates the Phase 7 task note with the connection and dispatch envelope
   surfaces.
 
@@ -35,10 +37,11 @@ Changes:
 
 ## Validation
 
-Head SHA: `68fac3e0`
+Head SHA: `40197495`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_search_libpq_req`
+- `cargo pgrx test pg18 remote_search_coordinator_gate_summary`
 - `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
 - `git diff --check`
 
@@ -47,6 +50,10 @@ Result:
 - PG18 `remote_search_libpq_req` filter passed:
   - `pg_test_ec_spire_remote_search_libpq_req_blocked`
   - `pg_test_ec_spire_remote_search_libpq_req_local`
+- PG18 `remote_search_coordinator_gate_summary` filter passed:
+  - `pg_test_ec_spire_remote_search_coordinator_gate_summary`
+  - Confirms the top-level coordinator gate reports libpq dispatch count/status
+    for local-only and missing-descriptor plans.
 - PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
   - Confirms the connection summary reports one descriptor-resolved pipeline
