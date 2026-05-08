@@ -4069,6 +4069,34 @@ fn ec_spire_remote_search_libpq_parameter_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_step_contract() -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(executor_action, &'static str),
+        name!(input_contract, &'static str),
+        name!(output_contract, &'static str),
+        name!(blocking_status, &'static str),
+        name!(validator, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_libpq_executor_step_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.step_ordinal).expect("step ordinal should fit in i64"),
+            row.step_name,
+            row.executor_action,
+            row.input_contract,
+            row.output_contract,
+            row.blocking_status,
+            row.validator,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_result_contract() -> TableIterator<
     'static,
     (
@@ -12972,6 +13000,7 @@ mod tests {
     #[pg_test]
     fn test_ec_spire_remote_search_receive_contract() {
         let parameter_contract_from = "FROM ec_spire_remote_search_libpq_parameter_contract()";
+        let executor_contract_from = "FROM ec_spire_remote_search_libpq_executor_step_contract()";
         let result_contract_from = "FROM ec_spire_remote_search_libpq_result_contract()";
         let parameter_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {parameter_contract_from}"))
@@ -13010,6 +13039,27 @@ mod tests {
         ))
         .expect("result contract nullable count query should succeed")
         .expect("result contract nullable count should exist");
+        let executor_step_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {executor_contract_from}"))
+                .expect("executor contract count query should succeed")
+                .expect("executor contract count should exist");
+        let first_executor_step = Spi::get_one::<String>(&format!(
+            "SELECT step_name {executor_contract_from} WHERE step_ordinal = 1"
+        ))
+        .expect("executor contract first step query should succeed")
+        .expect("executor contract first step should exist");
+        let secret_step_action = Spi::get_one::<String>(&format!(
+            "SELECT executor_action {executor_contract_from} \
+             WHERE step_name = 'conninfo_secret_resolution'"
+        ))
+        .expect("executor contract secret step query should succeed")
+        .expect("executor contract secret step action should exist");
+        let merge_step_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {executor_contract_from} \
+             WHERE step_name = 'merge_validated_remote_search_candidate_batches'"
+        ))
+        .expect("executor contract merge step query should succeed")
+        .expect("executor contract merge step validator should exist");
 
         assert_eq!(parameter_count, 6);
         assert_eq!(first_parameter, "remote_index_oid");
@@ -13022,6 +13072,10 @@ mod tests {
         assert_eq!(first_column, "served_epoch");
         assert_eq!(score_validator, "must_be_finite");
         assert_eq!(nullable_count, 0);
+        assert_eq!(executor_step_count, 7);
+        assert_eq!(first_executor_step, "remote_node_descriptor");
+        assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
+        assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
     }
 
     #[pg_test]

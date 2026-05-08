@@ -1540,6 +1540,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   includes `libpq_executor_status` and `libpq_executor_next_step`, and advances
   active-descriptor remote plans from the generic transport blocker to
   `requires_libpq_executor` / `conninfo_secret_resolution`.
+  `ec_spire_remote_search_libpq_executor_step_contract()` now publishes the
+  ordered executor step contract so descriptor, secret, connection, pipeline,
+  send, receive-validation, and merge-handoff names can be checked without a
+  specific query plan.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,

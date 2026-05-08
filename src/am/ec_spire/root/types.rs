@@ -467,6 +467,17 @@ pub(crate) struct SpireRemoteSearchLibpqExecutorReadinessRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqExecutorStepContractRow {
+    pub(crate) step_ordinal: u64,
+    pub(crate) step_name: &'static str,
+    pub(crate) executor_action: &'static str,
+    pub(crate) input_contract: &'static str,
+    pub(crate) output_contract: &'static str,
+    pub(crate) blocking_status: &'static str,
+    pub(crate) validator: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqParameterContractRow {
     pub(crate) parameter_ordinal: u64,
     pub(crate) parameter_name: &'static str,

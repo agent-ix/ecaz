@@ -1567,6 +1567,75 @@ fn remote_search_libpq_executor_readiness_from_dispatch_summary(
     }
 }
 
+pub(crate) fn remote_search_libpq_executor_step_contract_rows(
+) -> Vec<SpireRemoteSearchLibpqExecutorStepContractRow> {
+    vec![
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 1,
+            step_name: SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+            executor_action: "resolve_remote_node_descriptor",
+            input_contract: "remote_leaf_pid_placement",
+            output_contract: "active_or_draining_remote_node_descriptor",
+            blocking_status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+            validator: "descriptor_state_must_allow_pipeline_dispatch",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 2,
+            step_name: SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+            executor_action: "resolve_conninfo_secret_reference",
+            input_contract: "conninfo_secret_name",
+            output_contract: SPIRE_REMOTE_CONNINFO_READY,
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_resolve_secret_without_exposing_raw_conninfo",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 3,
+            step_name: "open_libpq_connection",
+            executor_action: "open_libpq_connection",
+            input_contract: SPIRE_REMOTE_CONNINFO_READY,
+            output_contract: "libpq_connection",
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_target_registered_remote_index",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 4,
+            step_name: "enter_libpq_pipeline_mode",
+            executor_action: "enter_libpq_pipeline_mode",
+            input_contract: "libpq_connection",
+            output_contract: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_enter_pipeline_before_sending_remote_search",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 5,
+            step_name: "send_remote_search_request",
+            executor_action: "send_remote_search_request",
+            input_contract: "ec_spire_remote_search_libpq_request_plan",
+            output_contract: "pending_remote_search_result",
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_bind_libpq_parameter_contract",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 6,
+            step_name: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            executor_action: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            input_contract: "remote_search_result_batch",
+            output_contract: "validated_remote_candidate_batch",
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_match_libpq_result_contract",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 7,
+            step_name: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+            executor_action: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+            input_contract: "validated_remote_candidate_batches",
+            output_contract: "coordinator_ranked_candidate_batch",
+            blocking_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_preserve_merge_order_contract",
+        },
+    ]
+}
+
 pub(crate) fn remote_search_libpq_parameter_contract_rows(
 ) -> Vec<SpireRemoteSearchLibpqParameterContractRow> {
     vec![
