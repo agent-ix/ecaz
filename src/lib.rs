@@ -21344,6 +21344,12 @@ mod tests {
         ))
         .expect("upgrade lifecycle query should succeed")
         .expect("upgrade lifecycle should exist");
+        let upgrade_status = Spi::get_one::<String>(&format!(
+            "SELECT status {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'extension_upgrade_0_1_0_to_0_1_1'"
+        ))
+        .expect("upgrade lifecycle status query should succeed")
+        .expect("upgrade lifecycle status should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -21409,6 +21415,7 @@ mod tests {
         );
         assert_eq!(basebackup_status, "supported");
         assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
+        assert_eq!(upgrade_status, "supported_after_upgrade_script");
     }
 
     #[pg_test]

@@ -245,8 +245,8 @@ pub(crate) fn remote_catalog_lifecycle_contract_rows(
             operator_action: "apply_extension_upgrade_before_remote_transport",
             cleanup_surface: "none",
             migration_surface: "ecaz--0.1.0--0.1.1.sql",
-            status: "requires_upgrade_script",
-            recommendation: "extension upgrade must create remote catalog tables before remote transport is enabled",
+            status: "supported_after_upgrade_script",
+            recommendation: "extension upgrade creates remote catalog tables before remote transport is enabled",
         },
     ]
 }
