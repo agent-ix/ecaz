@@ -1674,6 +1674,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   publication readiness, libpq request/dispatch/receive counts, executor status,
   next blocker, and effective status into one final pre-I/O manifest
   publication gate.
+  `ec_spire_remote_epoch_manifest_publication_result_summary(...)` now presents
+  that gate as the final operator-facing publication result source, including
+  receive counts, payload-validation result status, the next blocker, and
+  effective status.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
