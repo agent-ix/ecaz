@@ -12747,6 +12747,24 @@ mod tests {
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
              {active_epoch}, ARRAY[{selected_pid}], 'strict')"
         );
+        let execution_from = format!(
+            "FROM ec_spire_remote_search_execution_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let libpq_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let libpq_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_request_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
 
         let descriptor_state =
             Spi::get_one::<String>(&format!("SELECT descriptor_state {snapshot_from}"))
@@ -12780,6 +12798,29 @@ mod tests {
         let target_status = Spi::get_one::<String>(&format!("SELECT status {readiness_from}"))
             .expect("target readiness query should succeed")
             .expect("target readiness status should exist");
+        let execution_status = Spi::get_one::<String>(&format!("SELECT status {execution_from}"))
+            .expect("execution plan status query should succeed")
+            .expect("execution plan status should exist");
+        let execution_transport =
+            Spi::get_one::<String>(&format!("SELECT execution_transport {execution_from}"))
+                .expect("execution transport query should succeed")
+                .expect("execution transport should exist");
+        let libpq_status = Spi::get_one::<String>(&format!("SELECT status {libpq_from}"))
+            .expect("libpq request status query should succeed")
+            .expect("libpq request status should exist");
+        let libpq_conninfo_source =
+            Spi::get_one::<String>(&format!("SELECT conninfo_source {libpq_from}"))
+                .expect("libpq conninfo source query should succeed")
+                .expect("libpq conninfo source should exist");
+        let libpq_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {libpq_summary_from}"))
+                .expect("libpq summary status query should succeed")
+                .expect("libpq summary status should exist");
+        let libpq_blocked_request_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_request_count {libpq_summary_from}"
+        ))
+        .expect("libpq blocked request count query should succeed")
+        .expect("libpq blocked request count should exist");
 
         assert_eq!(descriptor_state, "active");
         assert_eq!(descriptor_generation, 7);
@@ -12790,6 +12831,12 @@ mod tests {
         assert_eq!(publish_decision, "publish_distributed_epoch");
         assert_eq!(publish_status, "ready");
         assert_eq!(target_status, "requires_libpq_transport");
+        assert_eq!(execution_status, "requires_libpq_transport");
+        assert_eq!(execution_transport, "libpq_pipeline");
+        assert_eq!(libpq_status, "requires_libpq_transport");
+        assert_eq!(libpq_conninfo_source, "remote_node_descriptor");
+        assert_eq!(libpq_summary_status, "requires_libpq_transport");
+        assert_eq!(libpq_blocked_request_count, 1);
     }
 
     #[pg_test]

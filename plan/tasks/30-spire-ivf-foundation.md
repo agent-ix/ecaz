@@ -1492,7 +1492,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   nodes can advance from descriptor-missing to the libpq transport gate.
   `ec_spire_register_remote_node_descriptor(...)` now performs validated
   upserts into that catalog while preserving the `conninfo_secret_name`
-  indirection.
+  indirection, and registered remote descriptors now propagate through
+  target-readiness, execution-plan, and libpq-request envelopes as the
+  `requires_libpq_transport` gate rather than a missing-descriptor blocker.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
