@@ -1,0 +1,75 @@
+{
+  "name": "task30-spire-real10k",
+  "schema_version": 1,
+  "artifact_dir": "review/30623-spire-suite-config/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-real10k-turboquant-n32-w25",
+      "tags": ["load", "real10k", "n32", "w25"],
+      "prefix": "task30_spire_real10k_suite",
+      "corpus_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=turboquant",
+        "nlists=32",
+        "nprobe=24",
+        "rerank_width=25"
+      ],
+      "log_file": "review/30623-spire-suite-config/artifacts/load_real10k_spire_turboquant_n32_w25.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-n32",
+      "tags": ["storage", "real10k", "n32"],
+      "prefix": "task30_spire_real10k_suite",
+      "log_file": "review/30623-spire-suite-config/artifacts/storage_real10k_spire_n32.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-real10k-n32-p24-w25",
+      "tags": ["explain", "planner", "real10k", "n32", "w25"],
+      "prefix": "task30_spire_real10k_suite",
+      "index_name": "task30_spire_real10k_suite_idx",
+      "nprobe": 24,
+      "rerank_width": 25,
+      "sql_file": "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.sql",
+      "log_output": "review/30623-spire-suite-config/artifacts/explain_real10k_spire_n32_p24_w25.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real10k-nprobe-sweep-w25",
+      "tags": ["latency", "sweep", "real10k", "n32", "w25"],
+      "prefix": "task30_spire_real10k_suite",
+      "k": 10,
+      "sweep": [8, 24],
+      "rerank_width": 25,
+      "log_output": "review/30623-spire-suite-config/artifacts/latency_real10k_spire_n32_w25_p8_24.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-nprobe-sweep-w25",
+      "tags": ["recall", "sweep", "real10k", "n32", "w25"],
+      "prefix": "task30_spire_real10k_suite",
+      "k": 10,
+      "sweep": [8, 24],
+      "rerank_width": 25,
+      "truth_cache_file": "review/30623-spire-suite-config/artifacts/truth_real10k_spire_k10.json",
+      "log_output": "review/30623-spire-suite-config/artifacts/recall_real10k_spire_n32_w25_p8_24.log"
+    }
+  ]
+}

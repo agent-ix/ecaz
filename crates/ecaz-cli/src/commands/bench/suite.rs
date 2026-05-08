@@ -1155,6 +1155,7 @@ fn validate_config(config: &SuiteConfig) -> Result<()> {
     if config.steps.is_empty() {
         bail!("suite {:?} has no steps", config.name);
     }
+    validate_profile_name("suite defaults profile", config.defaults.profile.as_deref())?;
     let mut names = HashSet::new();
     for step in &config.steps {
         if !names.insert(step.name()) {
@@ -1201,25 +1202,35 @@ impl SuiteStep {
 
     fn validate(&self) -> Result<()> {
         match self {
-            SuiteStep::Recall(step) if step.sweep.is_empty() => {
-                bail!(
-                    "recall step {:?} must include at least one sweep value",
-                    step.name
-                )
+            SuiteStep::Load(step) => validate_profile_name("load profile", step.profile.as_deref()),
+            SuiteStep::Recall(step) => {
+                validate_profile_name("recall profile", step.profile.as_deref())?;
+                if step.sweep.is_empty() {
+                    bail!(
+                        "recall step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.truth_cache_file.is_some() && step.truth_cache_dir.is_some() {
+                    bail!(
+                        "recall step {:?} cannot set both truth_cache_file and truth_cache_dir",
+                        step.name
+                    )
+                }
+                Ok(())
             }
-            SuiteStep::Recall(step)
-                if step.truth_cache_file.is_some() && step.truth_cache_dir.is_some() =>
-            {
-                bail!(
-                    "recall step {:?} cannot set both truth_cache_file and truth_cache_dir",
-                    step.name
-                )
+            SuiteStep::Latency(step) => {
+                validate_profile_name("latency profile", step.profile.as_deref())?;
+                if step.sweep.is_empty() {
+                    bail!(
+                        "latency step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                Ok(())
             }
-            SuiteStep::Latency(step) if step.sweep.is_empty() => {
-                bail!(
-                    "latency step {:?} must include at least one sweep value",
-                    step.name
-                )
+            SuiteStep::Explain(step) => {
+                validate_profile_name("explain profile", step.profile.as_deref())
             }
             SuiteStep::Raw(step) if step.args.is_empty() => {
                 bail!("raw step {:?} must include args", step.name)
@@ -1262,6 +1273,19 @@ impl SuiteStep {
             _ => Vec::new(),
         }
     }
+}
+
+fn validate_profile_name(label: &str, profile_name: Option<&str>) -> Result<()> {
+    if let Some(profile_name) = profile_name {
+        if profiles::resolve(profile_name).is_none() {
+            bail!(
+                "{label} {:?} is not registered; known profiles: {}",
+                profile_name,
+                profiles::names().join(", ")
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn prepare_step(step: &SuiteStep, defaults: &SuiteDefaults) -> Result<()> {
@@ -1806,6 +1830,26 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("duplicate suite step name"));
+    }
+
+    #[test]
+    fn rejects_unknown_profile_names() {
+        let cfg: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "smoke",
+              "schema_version": 1,
+              "defaults": {"profile": "missing_am"},
+              "steps": [
+                {"kind": "storage", "name": "storage", "prefix": "p"}
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(validate_config(&cfg)
+            .unwrap_err()
+            .to_string()
+            .contains("known profiles"));
     }
 
     #[test]
