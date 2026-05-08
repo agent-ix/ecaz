@@ -534,7 +534,16 @@ pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
+pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    if std::arch::is_aarch64_feature_detected!("neon") {
+        unsafe { source_inner_product_neon(left, right) }
+    } else {
+        source_inner_product_scalar(left, right)
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub(super) fn source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     source_inner_product_scalar(left, right)
 }
@@ -581,6 +590,56 @@ unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     let total = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
     let mut lanes = [0.0_f32; 8];
     unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), total) };
+    let mut ip = lanes.iter().sum::<f32>();
+
+    while i < len {
+        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        i += 1;
+    }
+
+    ip
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+    use std::arch::aarch64::{
+        float32x4_t, vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32,
+    };
+
+    let len = left.len().min(right.len());
+    let mut acc0: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc1: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc2: float32x4_t = vdupq_n_f32(0.0);
+    let mut acc3: float32x4_t = vdupq_n_f32(0.0);
+    let mut i = 0_usize;
+
+    while i + 16 <= len {
+        let l0 = unsafe { vld1q_f32(left.as_ptr().add(i)) };
+        let r0 = unsafe { vld1q_f32(right.as_ptr().add(i)) };
+        let l1 = unsafe { vld1q_f32(left.as_ptr().add(i + 4)) };
+        let r1 = unsafe { vld1q_f32(right.as_ptr().add(i + 4)) };
+        let l2 = unsafe { vld1q_f32(left.as_ptr().add(i + 8)) };
+        let r2 = unsafe { vld1q_f32(right.as_ptr().add(i + 8)) };
+        let l3 = unsafe { vld1q_f32(left.as_ptr().add(i + 12)) };
+        let r3 = unsafe { vld1q_f32(right.as_ptr().add(i + 12)) };
+        acc0 = vfmaq_f32(acc0, l0, r0);
+        acc1 = vfmaq_f32(acc1, l1, r1);
+        acc2 = vfmaq_f32(acc2, l2, r2);
+        acc3 = vfmaq_f32(acc3, l3, r3);
+        i += 16;
+    }
+
+    while i + 4 <= len {
+        let l = unsafe { vld1q_f32(left.as_ptr().add(i)) };
+        let r = unsafe { vld1q_f32(right.as_ptr().add(i)) };
+        acc0 = vfmaq_f32(acc0, l, r);
+        i += 4;
+    }
+
+    let acc = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+    let mut lanes = [0.0_f32; 4];
+    unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
@@ -830,5 +889,22 @@ mod tests {
             (scalar - dispatched).abs() <= 0.0001,
             "scalar={scalar} dispatched={dispatched}"
         );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn source_inner_product_neon_matches_scalar_at_loop_boundaries() {
+        // Lengths chosen so the kernel exercises the 16-lane main loop, the
+        // 4-lane tail, and the scalar remainder in turn.
+        for len in [1usize, 3, 4, 7, 16, 17, 19, 64, 1536, 1539] {
+            let left: Vec<f32> = (0..len).map(|i| ((i as f32) * 0.013).sin()).collect();
+            let right: Vec<f32> = (0..len).map(|i| ((i as f32) * 0.017).cos()).collect();
+            let scalar = super::source_inner_product_scalar(&left, &right);
+            let neon = unsafe { super::source_inner_product_neon(&left, &right) };
+            assert!(
+                (scalar - neon).abs() <= 0.0001,
+                "len={len} scalar={scalar} neon={neon}"
+            );
+        }
     }
 }
