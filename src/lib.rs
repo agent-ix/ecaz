@@ -2243,6 +2243,109 @@ fn ec_spire_remote_epoch_manifest_entry_catalog(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_catalog_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(current_manifest_decision, &'static str),
+        name!(current_included_remote_node_count, i64),
+        name!(current_remote_placement_count, i64),
+        name!(persisted_manifest_count, i64),
+        name!(persisted_entry_count, i64),
+        name!(persisted_remote_placement_count, i64),
+        name!(catalog_status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_catalog_summary")
+    };
+    let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let active_epoch = i64::try_from(summary.active_epoch).expect("active epoch should fit in i64");
+    let catalog = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT count(m.*)::bigint AS manifest_count, \
+                        coalesce(max(m.remote_placement_count), 0)::bigint AS remote_placement_count, \
+                        count(e.*)::bigint AS entry_count \
+                   FROM ec_spire_remote_epoch_manifest m \
+                   LEFT JOIN ec_spire_remote_epoch_manifest_entry e \
+                     ON e.coordinator_index_oid = m.coordinator_index_oid \
+                    AND e.active_epoch = m.active_epoch \
+                  WHERE m.coordinator_index_oid = $1::oid \
+                    AND m.active_epoch = $2::bigint",
+                None,
+                &[index_oid.into(), active_epoch.into()],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest catalog summary read failed: {e}"))?
+            .map(|row| {
+                Ok::<(i64, i64, i64), String>((
+                    row["manifest_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest_count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest_count is null".to_owned())?,
+                    row["entry_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("entry_count decode failed: {e}"))?
+                        .ok_or_else(|| "entry_count is null".to_owned())?,
+                    row["remote_placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("remote_placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "remote_placement_count is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or((0, 0, 0)))
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let (persisted_manifest_count, persisted_entry_count, persisted_remote_placement_count) =
+        catalog;
+    let current_included_remote_node_count = i64::try_from(summary.included_remote_node_count)
+        .expect("included remote node count should fit in i64");
+    let current_remote_placement_count = i64::try_from(summary.remote_placement_count)
+        .expect("remote placement count should fit in i64");
+
+    let (catalog_status, recommendation) =
+        if summary.manifest_decision == "local_only_epoch_manifest" {
+            ("not_required", "none")
+        } else if summary.manifest_decision != "emit_distributed_epoch_manifest" {
+            (summary.status, summary.recommendation)
+        } else if persisted_manifest_count == 0 {
+            (
+                "requires_remote_epoch_manifest_persistence",
+                "persist distributed remote epoch manifest before publishing",
+            )
+        } else if persisted_entry_count != current_included_remote_node_count
+            || persisted_remote_placement_count != current_remote_placement_count
+        {
+            (
+                "stale_remote_epoch_manifest",
+                "refresh persisted remote epoch manifest before publishing",
+            )
+        } else {
+            ("ready", "none")
+        };
+
+    TableIterator::once((
+        active_epoch,
+        summary.manifest_decision,
+        current_included_remote_node_count,
+        current_remote_placement_count,
+        persisted_manifest_count,
+        persisted_entry_count,
+        persisted_remote_placement_count,
+        catalog_status,
+        recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -14907,6 +15010,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let entry_from = "FROM ec_spire_remote_epoch_manifest_entry_catalog(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let summary_from = "FROM ec_spire_remote_epoch_manifest_catalog_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -14938,6 +15043,14 @@ mod tests {
         let entry_status = Spi::get_one::<String>(&format!("SELECT status {entry_from}"))
             .expect("manifest entry status query should succeed")
             .expect("manifest entry status should exist");
+        let summary_status =
+            Spi::get_one::<String>(&format!("SELECT catalog_status {summary_from}"))
+                .expect("manifest catalog summary status query should succeed")
+                .expect("manifest catalog summary status should exist");
+        let summary_persisted_entry_count =
+            Spi::get_one::<i64>(&format!("SELECT persisted_entry_count {summary_from}"))
+                .expect("manifest catalog summary entry count query should succeed")
+                .expect("manifest catalog summary entry count should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -14950,6 +15063,8 @@ mod tests {
         assert_eq!(entry_node_id, 2);
         assert_eq!(entry_action, "include_remote_node");
         assert_eq!(entry_status, "ready");
+        assert_eq!(summary_status, "ready");
+        assert_eq!(summary_persisted_entry_count, 1);
     }
 
     #[pg_test]
@@ -14992,6 +15107,81 @@ mod tests {
             "SELECT ec_spire_persist_remote_epoch_manifest(\
              'ec_spire_remote_manifest_blocked_sql_idx'::regclass)",
         );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_epoch_manifest_catalog_summary_missing() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_manifest_summary_missing_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_manifest_summary_missing_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_manifest_summary_missing_sql_idx \
+             ON ec_spire_remote_manifest_summary_missing_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 12, 'spire/remote/summary-missing', decode('05', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+
+        let summary_from = "FROM ec_spire_remote_epoch_manifest_catalog_summary(\
+             'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT current_manifest_decision {summary_from}"))
+                .expect("manifest summary decision query should succeed")
+                .expect("manifest summary decision should exist");
+        let catalog_status =
+            Spi::get_one::<String>(&format!("SELECT catalog_status {summary_from}"))
+                .expect("manifest summary status query should succeed")
+                .expect("manifest summary status should exist");
+        let persisted_manifest_count =
+            Spi::get_one::<i64>(&format!("SELECT persisted_manifest_count {summary_from}"))
+                .expect("manifest summary persisted count query should succeed")
+                .expect("manifest summary persisted count should exist");
+        let persisted_entry_count =
+            Spi::get_one::<i64>(&format!("SELECT persisted_entry_count {summary_from}"))
+                .expect("manifest summary entry count query should succeed")
+                .expect("manifest summary entry count should exist");
+
+        assert!(register_result);
+        assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
+        assert_eq!(catalog_status, "requires_remote_epoch_manifest_persistence");
+        assert_eq!(persisted_manifest_count, 0);
+        assert_eq!(persisted_entry_count, 0);
     }
 
     #[pg_test]

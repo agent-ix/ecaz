@@ -1593,6 +1593,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   decisions fail closed, and readback is SQL-visible through
   `ec_spire_remote_epoch_manifest_catalog(...)` plus
   `ec_spire_remote_epoch_manifest_entry_catalog(...)`.
+  `ec_spire_remote_epoch_manifest_catalog_summary(...)` compares the current
+  manifest decision against persisted catalog rows so operators can distinguish
+  blocked, missing-persistence, stale-persistence, and ready manifest states.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
