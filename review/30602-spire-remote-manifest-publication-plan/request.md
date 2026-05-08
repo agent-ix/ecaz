@@ -20,6 +20,9 @@ Changes:
   when publication is blocked on missing or stale persisted manifest state.
 - Aggregates per-node publication rows into one publication decision with
   ready, persistence-required, refresh-required, and blocked counts.
+- Exposes `publication_executor_status` and `publication_executor_next_step`
+  on the publication summary so ready manifests still show the libpq executor
+  handoff.
 - Reports local-only manifest publication as `not_required` in both catalog and
   publication summaries.
 - Publishes the ordered prerequisite/action contract for future manifest
@@ -34,7 +37,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `9a801c87`
+Head SHA: `a6db8bae`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
@@ -60,9 +63,9 @@ Result:
 - PG18 `remote_phase7_policy_contracts` filter passed:
   - `pg_test_ec_spire_remote_phase7_policy_contracts`
 - The test covers ready persisted-manifest publication and stale persisted-entry
-  refresh blocking, including the publication summary.
+  refresh blocking, including the publication summary and executor handoff.
 - The local summary test covers local-only `not_required` catalog and
-  publication summaries.
+  publication summaries with no executor handoff.
 - The missing catalog summary test covers the publication summary's
   `persist_remote_epoch_manifest` blocker.
 - The Phase 7 policy-contract test covers the manifest publication contract.
