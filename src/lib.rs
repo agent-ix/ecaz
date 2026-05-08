@@ -1892,6 +1892,332 @@ fn ec_spire_remote_epoch_manifest_summary(
     ))
 }
 
+#[pg_extern(strict)]
+fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_persist_remote_epoch_manifest") };
+    let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
+    let manifest_rows = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    if summary.manifest_decision != "emit_distributed_epoch_manifest" {
+        pgrx::error!(
+            "ec_spire_persist_remote_epoch_manifest cannot persist remote epoch manifest when decision is '{}' with next_blocker '{}'",
+            summary.manifest_decision,
+            summary.next_blocker
+        );
+    }
+    let included_rows = manifest_rows
+        .into_iter()
+        .filter(|row| row.manifest_action == "include_remote_node")
+        .collect::<Vec<_>>();
+    if included_rows.is_empty() {
+        pgrx::error!(
+            "ec_spire_persist_remote_epoch_manifest requires at least one included remote manifest entry"
+        );
+    }
+
+    let active_epoch = i64::try_from(summary.active_epoch).expect("active epoch should fit in i64");
+    let manifest_entry_count = i64::try_from(summary.manifest_entry_count)
+        .expect("manifest entry count should fit in i64");
+    let included_remote_node_count = i64::try_from(summary.included_remote_node_count)
+        .expect("included remote node count should fit in i64");
+    let remote_placement_count = i64::try_from(summary.remote_placement_count)
+        .expect("remote placement count should fit in i64");
+
+    let result = Spi::connect_mut(|client| {
+        client
+            .update(
+                "INSERT INTO ec_spire_remote_epoch_manifest \
+                 (coordinator_index_oid, active_epoch, manifest_scope, manifest_decision, \
+                  manifest_entry_count, included_remote_node_count, remote_placement_count, \
+                  publish_decision, status, persisted_at_micros) \
+                 VALUES ($1::oid, $2::bigint, $3::text, $4::text, $5::bigint, $6::bigint, \
+                         $7::bigint, $8::text, $9::text, \
+                         (extract(epoch from clock_timestamp()) * 1000000)::bigint) \
+                 ON CONFLICT (coordinator_index_oid, active_epoch) DO UPDATE SET \
+                     manifest_scope = EXCLUDED.manifest_scope, \
+                     manifest_decision = EXCLUDED.manifest_decision, \
+                     manifest_entry_count = EXCLUDED.manifest_entry_count, \
+                     included_remote_node_count = EXCLUDED.included_remote_node_count, \
+                     remote_placement_count = EXCLUDED.remote_placement_count, \
+                     publish_decision = EXCLUDED.publish_decision, \
+                     status = EXCLUDED.status, \
+                     persisted_at_micros = EXCLUDED.persisted_at_micros",
+                None,
+                &[
+                    index_oid.into(),
+                    active_epoch.into(),
+                    summary.manifest_scope.into(),
+                    summary.manifest_decision.into(),
+                    manifest_entry_count.into(),
+                    included_remote_node_count.into(),
+                    remote_placement_count.into(),
+                    summary.publish_decision.into(),
+                    summary.status.into(),
+                ],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest header persist failed: {e}"))?;
+        client
+            .update(
+                "DELETE FROM ec_spire_remote_epoch_manifest_entry \
+                  WHERE coordinator_index_oid = $1::oid AND active_epoch = $2::bigint",
+                None,
+                &[index_oid.into(), active_epoch.into()],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest entry replace failed: {e}"))?;
+
+        for row in included_rows {
+            let node_id = i32::try_from(row.node_id).map_err(|_| {
+                "ec_spire remote epoch manifest node_id should fit in i32".to_owned()
+            })?;
+            let placement_count = i64::try_from(row.placement_count)
+                .map_err(|_| "ec_spire remote epoch manifest placement_count exceeds i64")?;
+            let required_last_served_epoch = i64::try_from(row.required_last_served_epoch)
+                .map_err(|_| {
+                    "ec_spire remote epoch manifest required_last_served_epoch exceeds i64"
+                        .to_owned()
+                })?;
+            let required_min_retained_epoch = i64::try_from(row.required_min_retained_epoch)
+                .map_err(|_| {
+                    "ec_spire remote epoch manifest required_min_retained_epoch exceeds i64"
+                        .to_owned()
+                })?;
+            let last_served_epoch = i64::try_from(row.last_served_epoch)
+                .map_err(|_| "ec_spire remote epoch manifest last_served_epoch exceeds i64")?;
+            let min_retained_epoch = i64::try_from(row.min_retained_epoch)
+                .map_err(|_| "ec_spire remote epoch manifest min_retained_epoch exceeds i64")?;
+
+            client
+                .update(
+                    "INSERT INTO ec_spire_remote_epoch_manifest_entry \
+                     (coordinator_index_oid, active_epoch, node_id, descriptor_state, \
+                      placement_count, required_last_served_epoch, required_min_retained_epoch, \
+                      last_served_epoch, min_retained_epoch, epoch_window_status, \
+                      manifest_action, status) \
+                     VALUES ($1::oid, $2::bigint, $3::integer, $4::text, $5::bigint, \
+                             $6::bigint, $7::bigint, $8::bigint, $9::bigint, $10::text, \
+                             $11::text, $12::text)",
+                    None,
+                    &[
+                        index_oid.into(),
+                        active_epoch.into(),
+                        node_id.into(),
+                        row.descriptor_state.into(),
+                        placement_count.into(),
+                        required_last_served_epoch.into(),
+                        required_min_retained_epoch.into(),
+                        last_served_epoch.into(),
+                        min_retained_epoch.into(),
+                        row.epoch_window_status.into(),
+                        row.manifest_action.into(),
+                        row.status.into(),
+                    ],
+                )
+                .map_err(|e| {
+                    format!(
+                        "ec_spire remote epoch manifest entry persist failed for node_id {}: {e}",
+                        row.node_id
+                    )
+                })?;
+        }
+        Ok::<(), String>(())
+    });
+    result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    true
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_catalog(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(manifest_scope, String),
+        name!(manifest_decision, String),
+        name!(manifest_entry_count, i64),
+        name!(included_remote_node_count, i64),
+        name!(remote_placement_count, i64),
+        name!(publish_decision, String),
+        name!(status, String),
+        name!(persisted_at_micros, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_catalog") };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let sql = format!(
+        "SELECT active_epoch, manifest_scope, manifest_decision, manifest_entry_count, \
+                included_remote_node_count, remote_placement_count, publish_decision, status, \
+                persisted_at_micros \
+           FROM ec_spire_remote_epoch_manifest \
+          WHERE coordinator_index_oid = '{}'::oid \
+          ORDER BY active_epoch",
+        u32::from(index_oid)
+    );
+    let rows = Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire remote epoch manifest catalog read failed: {e}"))?
+            .map(|row| {
+                Ok((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "manifest active_epoch is null".to_owned())?,
+                    row["manifest_scope"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest_scope decode failed: {e}"))?
+                        .ok_or_else(|| "manifest_scope is null".to_owned())?,
+                    row["manifest_decision"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest_decision decode failed: {e}"))?
+                        .ok_or_else(|| "manifest_decision is null".to_owned())?,
+                    row["manifest_entry_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest_entry_count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest_entry_count is null".to_owned())?,
+                    row["included_remote_node_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("included_remote_node_count decode failed: {e}"))?
+                        .ok_or_else(|| "included_remote_node_count is null".to_owned())?,
+                    row["remote_placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("remote_placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "remote_placement_count is null".to_owned())?,
+                    row["publish_decision"]
+                        .value::<String>()
+                        .map_err(|e| format!("publish_decision decode failed: {e}"))?
+                        .ok_or_else(|| "publish_decision is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest status is null".to_owned())?,
+                    row["persisted_at_micros"]
+                        .value::<i64>()
+                        .map_err(|e| format!("persisted_at_micros decode failed: {e}"))?
+                        .ok_or_else(|| "persisted_at_micros is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_entry_catalog(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(descriptor_state, String),
+        name!(placement_count, i64),
+        name!(required_last_served_epoch, i64),
+        name!(required_min_retained_epoch, i64),
+        name!(last_served_epoch, i64),
+        name!(min_retained_epoch, i64),
+        name!(epoch_window_status, String),
+        name!(manifest_action, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_entry_catalog")
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let sql = format!(
+        "SELECT active_epoch, node_id, descriptor_state, placement_count, \
+                required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+                min_retained_epoch, epoch_window_status, manifest_action, status \
+           FROM ec_spire_remote_epoch_manifest_entry \
+          WHERE coordinator_index_oid = '{}'::oid \
+          ORDER BY active_epoch, node_id",
+        u32::from(index_oid)
+    );
+    let rows = Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire remote epoch manifest entry read failed: {e}"))?
+            .map(|row| {
+                Ok((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest entry active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry active_epoch is null".to_owned())?,
+                    i64::from(
+                        row["node_id"]
+                            .value::<i32>()
+                            .map_err(|e| format!("manifest entry node_id decode failed: {e}"))?
+                            .ok_or_else(|| "manifest entry node_id is null".to_owned())?,
+                    ),
+                    row["descriptor_state"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest entry descriptor_state decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry descriptor_state is null".to_owned())?,
+                    row["placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest entry placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry placement_count is null".to_owned())?,
+                    row["required_last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest entry required_last_served_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest entry required_last_served_epoch is null".to_owned()
+                        })?,
+                    row["required_min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest entry required_min_retained_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest entry required_min_retained_epoch is null".to_owned()
+                        })?,
+                    row["last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest entry last_served_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest entry last_served_epoch is null".to_owned())?,
+                    row["min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest entry min_retained_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest entry min_retained_epoch is null".to_owned())?,
+                    row["epoch_window_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest entry epoch_window_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest entry epoch_window_status is null".to_owned())?,
+                    row["manifest_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest entry manifest_action decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry manifest_action is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest entry status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
@@ -14451,6 +14777,152 @@ mod tests {
         assert_eq!(missing_descriptor_node_count, 0);
         assert_eq!(next_blocker, "remote_epoch_window");
         assert_eq!(manifest_decision, "block_manifest");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_epoch_manifest_persist_ready() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_manifest_persist_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_manifest_persist_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_manifest_persist_sql_idx \
+             ON ec_spire_remote_manifest_persist_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_manifest_persist_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_manifest_persist_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_manifest_persist_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 11, 'spire/remote/persist', decode('04', 'hex'), \
+                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        let persist_result = Spi::get_one::<bool>(
+            "SELECT ec_spire_persist_remote_epoch_manifest(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)",
+        )
+        .expect("remote manifest persist should succeed")
+        .expect("remote manifest persist result should exist");
+
+        let catalog_from = "FROM ec_spire_remote_epoch_manifest_catalog(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let entry_from = "FROM ec_spire_remote_epoch_manifest_entry_catalog(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
+            .expect("manifest catalog count query should succeed")
+            .expect("manifest catalog count should exist");
+        let manifest_decision =
+            Spi::get_one::<String>(&format!("SELECT manifest_decision {catalog_from}"))
+                .expect("manifest catalog decision query should succeed")
+                .expect("manifest catalog decision should exist");
+        let manifest_entry_count =
+            Spi::get_one::<i64>(&format!("SELECT manifest_entry_count {catalog_from}"))
+                .expect("manifest catalog entry count query should succeed")
+                .expect("manifest catalog entry count should exist");
+        let included_remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT included_remote_node_count {catalog_from}"))
+                .expect("manifest catalog included node count query should succeed")
+                .expect("manifest catalog included node count should exist");
+        let persisted_at_micros =
+            Spi::get_one::<i64>(&format!("SELECT persisted_at_micros {catalog_from}"))
+                .expect("manifest catalog timestamp query should succeed")
+                .expect("manifest catalog timestamp should exist");
+        let entry_count = Spi::get_one::<i64>(&format!("SELECT count(*) {entry_from}"))
+            .expect("manifest entry count query should succeed")
+            .expect("manifest entry count should exist");
+        let entry_node_id = Spi::get_one::<i64>(&format!("SELECT node_id {entry_from}"))
+            .expect("manifest entry node query should succeed")
+            .expect("manifest entry node should exist");
+        let entry_action = Spi::get_one::<String>(&format!("SELECT manifest_action {entry_from}"))
+            .expect("manifest entry action query should succeed")
+            .expect("manifest entry action should exist");
+        let entry_status = Spi::get_one::<String>(&format!("SELECT status {entry_from}"))
+            .expect("manifest entry status query should succeed")
+            .expect("manifest entry status should exist");
+
+        assert!(register_result);
+        assert!(persist_result);
+        assert_eq!(catalog_count, 1);
+        assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
+        assert_eq!(manifest_entry_count, 1);
+        assert_eq!(included_remote_node_count, 1);
+        assert!(persisted_at_micros > 0);
+        assert_eq!(entry_count, 1);
+        assert_eq!(entry_node_id, 2);
+        assert_eq!(entry_action, "include_remote_node");
+        assert_eq!(entry_status, "ready");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire_persist_remote_epoch_manifest cannot persist remote epoch manifest"
+    )]
+    fn test_ec_spire_remote_epoch_manifest_persist_blocked() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_manifest_blocked_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_manifest_blocked_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_manifest_blocked_sql_idx \
+             ON ec_spire_remote_manifest_blocked_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_manifest_blocked_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_manifest_blocked_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let _ = Spi::get_one::<bool>(
+            "SELECT ec_spire_persist_remote_epoch_manifest(\
+             'ec_spire_remote_manifest_blocked_sql_idx'::regclass)",
+        );
     }
 
     #[pg_test]

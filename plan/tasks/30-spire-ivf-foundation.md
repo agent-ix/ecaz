@@ -1582,7 +1582,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   epoch publishes without writing a remote manifest. Publish readiness now
   derives blocked state from the per-node publish plan, so stale served-epoch
   or retained-window gaps block manifests through the `remote_epoch_window`
-  gate even when the remote descriptor exists.
+  gate even when the remote descriptor exists. `ec_spire_remote_epoch_manifest`
+  and `ec_spire_remote_epoch_manifest_entry` now persist distributed-ready
+  manifest headers and included remote-node entries through
+  `ec_spire_persist_remote_epoch_manifest(...)`; blocked or local-only manifest
+  decisions fail closed, and readback is SQL-visible through
+  `ec_spire_remote_epoch_manifest_catalog(...)` plus
+  `ec_spire_remote_epoch_manifest_entry_catalog(...)`.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
