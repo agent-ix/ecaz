@@ -16090,6 +16090,8 @@ mod tests {
 
         let summary_from = "FROM ec_spire_remote_epoch_manifest_catalog_summary(\
              'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
+        let publication_summary_from = "FROM ec_spire_remote_epoch_manifest_publication_summary(\
+             'ec_spire_remote_manifest_summary_missing_sql_idx'::regclass)";
         let manifest_decision =
             Spi::get_one::<String>(&format!("SELECT current_manifest_decision {summary_from}"))
                 .expect("manifest summary decision query should succeed")
@@ -16111,6 +16113,20 @@ mod tests {
         ))
         .expect("manifest summary mismatch count query should succeed")
         .expect("manifest summary mismatch count should exist");
+        let publication_decision = Spi::get_one::<String>(&format!(
+            "SELECT publication_decision {publication_summary_from}"
+        ))
+        .expect("publication summary decision query should succeed")
+        .expect("publication summary decision should exist");
+        let persistence_required_count = Spi::get_one::<i64>(&format!(
+            "SELECT persistence_required_count {publication_summary_from}"
+        ))
+        .expect("publication summary persistence count query should succeed")
+        .expect("publication summary persistence count should exist");
+        let publication_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {publication_summary_from}"))
+                .expect("publication summary blocker query should succeed")
+                .expect("publication summary blocker should exist");
 
         assert!(register_result);
         assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
@@ -16118,6 +16134,12 @@ mod tests {
         assert_eq!(persisted_manifest_count, 0);
         assert_eq!(persisted_entry_count, 0);
         assert_eq!(persisted_entry_mismatch_count, 1);
+        assert_eq!(publication_decision, "persist_remote_epoch_manifest");
+        assert_eq!(persistence_required_count, 1);
+        assert_eq!(
+            publication_next_blocker,
+            "remote_epoch_manifest_persistence"
+        );
     }
 
     #[pg_test]
