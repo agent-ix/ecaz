@@ -1546,14 +1546,19 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_publish_plan(...)` now exposes the same gate per
   remote node, including placement-state counts, required served/retained epoch
   windows, observed node epoch windows, and the precise publish blocker.
-- [ ] **Graceful degradation policy.** Define strict fail-closed and degraded
+- [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
   reports `degraded_ready` when degraded-mode planning skips selected
   placements, and exposes the skipped-placement count alongside merge counters.
   `ec_spire_remote_degradation_policy_contract()` now documents the strict vs.
   degraded placement-state actions that coordinator fanout and distributed
-  epoch publication share.
+  epoch publication share. The invariant test
+  `remote_degradation_policy_contract_matches_fanout_skip_decisions` now guards
+  that SQL contract against fanout planner drift, and mixed
+  local/degraded-skipped plans preserve `degraded_ready` through execution,
+  merge, finalization, heap-resolution, local heap-candidate, and coordinator
+  result summaries while keeping stale placements fail-closed.
 - [ ] **Merge semantics.** Remote candidate merge now has a production helper
   that globally ranks compact candidate rows, dedupes by stable `vec_id`, keeps
   primary placements ahead of boundary replicas on score ties, validates
