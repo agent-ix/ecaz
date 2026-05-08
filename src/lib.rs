@@ -4005,6 +4005,158 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_work_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_executor_work_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(work_count, i64),
+        name!(ready_work_count, i64),
+        name!(blocked_work_count, i64),
+        name!(bind_ready_work_count, i64),
+        name!(next_executor_step, String),
+        name!(executor_status, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_executor_work_summary",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                "WITH work AS ( \
+                     SELECT * FROM \
+                         ec_spire_remote_epoch_manifest_libpq_executor_work_plan($1::oid) \
+                 ), readiness AS ( \
+                     SELECT * FROM \
+                         ec_spire_remote_epoch_manifest_libpq_executor_readiness($1::oid) \
+                 ) \
+                 SELECT r.active_epoch, \
+                        count(w.node_id)::bigint AS work_count, \
+                        count(*) FILTER (WHERE w.bind_status = 'ready')::bigint \
+                            AS ready_work_count, \
+                        count(*) FILTER (WHERE w.node_id IS NOT NULL \
+                                           AND w.bind_status <> 'ready')::bigint \
+                            AS blocked_work_count, \
+                        count(*) FILTER (WHERE w.bind_status = 'ready')::bigint \
+                            AS bind_ready_work_count, \
+                        r.next_executor_step, r.status AS executor_status, \
+                        CASE \
+                            WHEN count(w.node_id) = 0 THEN r.status \
+                            WHEN count(*) FILTER \
+                                (WHERE w.node_id IS NOT NULL \
+                                   AND w.bind_status <> 'ready') = 0 THEN r.status \
+                            ELSE min(w.status) FILTER (WHERE w.bind_status <> 'ready') \
+                        END AS status \
+                   FROM readiness r \
+                   LEFT JOIN work w ON w.active_epoch = r.active_epoch \
+                  GROUP BY r.active_epoch, r.next_executor_step, r.status",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq executor work summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest executor work summary active_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary active_epoch is null".to_owned()
+                        })?,
+                    row["work_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest executor work summary work_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary work_count is null".to_owned()
+                        })?,
+                    row["ready_work_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest executor work summary ready_work_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary ready_work_count is null".to_owned()
+                        })?,
+                    row["blocked_work_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest executor work summary blocked_work_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary blocked_work_count is null".to_owned()
+                        })?,
+                    row["bind_ready_work_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest executor work summary bind_ready_work_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary bind_ready_work_count is null"
+                                .to_owned()
+                        })?,
+                    row["next_executor_step"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest executor work summary next_executor_step decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary next_executor_step is null".to_owned()
+                        })?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest executor work summary executor_status decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary executor_status is null".to_owned()
+                        })?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor work summary status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor work summary status is null".to_owned()
+                        })?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| {
+                "ec_spire remote epoch manifest libpq executor work summary returned no rows"
+                    .to_owned()
+            })
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once(row)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -6265,6 +6417,129 @@ fn ec_spire_remote_search_libpq_executor_work_plan(
             status,
         )
     }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_work_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(work_count, i64),
+        name!(ready_work_count, i64),
+        name!(blocked_work_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(next_executor_step, &'static str),
+        name!(executor_status, &'static str),
+        name!(status, String),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_work_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_work_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_work_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_executor_work_summary",
+        )
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            &consistency_mode,
+        )
+    };
+    let readiness = unsafe {
+        am::spire_remote_search_libpq_executor_readiness_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let mut ready_work_count = 0_u64;
+    let mut blocked_work_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut blocked_pid_count = 0_u64;
+    let mut first_blocked_status = "ready";
+
+    for row in &rows {
+        remote_pid_count = remote_pid_count
+            .checked_add(row.pid_count)
+            .unwrap_or_else(|| pgrx::error!("remote search executor work remote pid overflow"));
+        if row.dispatch_action == "open_pipeline_and_send_remote_search" {
+            ready_work_count = ready_work_count
+                .checked_add(1)
+                .unwrap_or_else(|| pgrx::error!("remote search executor ready work overflow"));
+        } else {
+            blocked_work_count = blocked_work_count
+                .checked_add(1)
+                .unwrap_or_else(|| pgrx::error!("remote search executor blocked work overflow"));
+            blocked_pid_count = blocked_pid_count
+                .checked_add(row.pid_count)
+                .unwrap_or_else(|| pgrx::error!("remote search executor blocked pid overflow"));
+            if first_blocked_status == "ready" {
+                first_blocked_status = row.status;
+            }
+        }
+    }
+
+    let work_count =
+        u64::try_from(rows.len()).expect("remote search executor work count should fit in u64");
+    let status = if blocked_work_count == 0 {
+        readiness.status.to_owned()
+    } else {
+        first_blocked_status.to_owned()
+    };
+
+    TableIterator::once((
+        i64::try_from(requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(work_count).expect("work count should fit in i64"),
+        i64::try_from(ready_work_count).expect("ready work count should fit in i64"),
+        i64::try_from(blocked_work_count).expect("blocked work count should fit in i64"),
+        i64::try_from(remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(blocked_pid_count).expect("blocked pid count should fit in i64"),
+        readiness.next_executor_step,
+        readiness.status,
+        status,
+    ))
 }
 
 #[pg_extern(stable, strict)]
@@ -15171,6 +15446,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let work_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_work_summary(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_libpq_req_sql_idx'::regclass, \
@@ -15275,6 +15557,18 @@ mod tests {
         let work_status = Spi::get_one::<String>(&format!("SELECT status {work_from}"))
             .expect("libpq work status query should succeed")
             .expect("libpq work status should exist");
+        let work_summary_ready_count =
+            Spi::get_one::<i64>(&format!("SELECT ready_work_count {work_summary_from}"))
+                .expect("libpq work summary ready count query should succeed")
+                .expect("libpq work summary ready count should exist");
+        let work_summary_blocked_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_work_count {work_summary_from}"))
+                .expect("libpq work summary blocked count query should succeed")
+                .expect("libpq work summary blocked count should exist");
+        let work_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {work_summary_from}"))
+                .expect("libpq work summary status query should succeed")
+                .expect("libpq work summary status should exist");
         let dispatch_missing_count = Spi::get_one::<i64>(&format!(
             "SELECT missing_descriptor_dispatch_count {dispatch_summary_from}"
         ))
@@ -15316,6 +15610,9 @@ mod tests {
         assert_eq!(work_next_step, "remote_node_descriptor");
         assert_eq!(work_action, "blocked_before_executor");
         assert_eq!(work_status, "requires_remote_node_descriptor");
+        assert_eq!(work_summary_ready_count, 0);
+        assert_eq!(work_summary_blocked_count, 1);
+        assert_eq!(work_summary_status, "requires_remote_node_descriptor");
         assert_eq!(dispatch_missing_count, 1);
         assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
         assert_eq!(executor_status, "requires_remote_node_descriptor");
@@ -16609,6 +16906,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let work_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_work_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -16820,6 +17123,18 @@ mod tests {
         let work_status = Spi::get_one::<String>(&format!("SELECT status {work_from}"))
             .expect("work status query should succeed")
             .expect("work status should exist");
+        let work_summary_ready_count =
+            Spi::get_one::<i64>(&format!("SELECT ready_work_count {work_summary_from}"))
+                .expect("work summary ready count query should succeed")
+                .expect("work summary ready count should exist");
+        let work_summary_blocked_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_work_count {work_summary_from}"))
+                .expect("work summary blocked count query should succeed")
+                .expect("work summary blocked count should exist");
+        let work_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {work_summary_from}"))
+                .expect("work summary status query should succeed")
+                .expect("work summary status should exist");
         let dispatch_pipeline_count = Spi::get_one::<i64>(&format!(
             "SELECT pipeline_dispatch_count {dispatch_summary_from}"
         ))
@@ -16926,6 +17241,9 @@ mod tests {
         assert_eq!(work_bind_status, "ready");
         assert_eq!(work_action, "resolve_conninfo_secret_reference");
         assert_eq!(work_status, "requires_libpq_executor");
+        assert_eq!(work_summary_ready_count, 1);
+        assert_eq!(work_summary_blocked_count, 0);
+        assert_eq!(work_summary_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
         assert_eq!(executor_status, "requires_libpq_executor");
@@ -18092,6 +18410,9 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_work_from = "FROM ec_spire_remote_epoch_manifest_libpq_executor_work_plan(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_work_summary_from =
+            "FROM ec_spire_remote_epoch_manifest_libpq_executor_work_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_dispatch_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
@@ -18330,6 +18651,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {manifest_work_from}"))
                 .expect("manifest work status query should succeed")
                 .expect("manifest work status should exist");
+        let manifest_work_summary_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_work_count {manifest_work_summary_from}"
+        ))
+        .expect("manifest work summary ready count query should succeed")
+        .expect("manifest work summary ready count should exist");
+        let manifest_work_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_work_summary_from}"))
+                .expect("manifest work summary status query should succeed")
+                .expect("manifest work summary status should exist");
         let dispatch_executor_status =
             Spi::get_one::<String>(&format!("SELECT executor_status {manifest_dispatch_from}"))
                 .expect("manifest dispatch executor status query should succeed")
@@ -18449,6 +18779,8 @@ mod tests {
         assert_eq!(manifest_work_bind_status, "ready");
         assert_eq!(manifest_work_action, "resolve_conninfo_secret");
         assert_eq!(manifest_work_status, "requires_libpq_executor");
+        assert_eq!(manifest_work_summary_ready_count, 1);
+        assert_eq!(manifest_work_summary_status, "requires_libpq_executor");
         assert_eq!(dispatch_executor_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "ready");
