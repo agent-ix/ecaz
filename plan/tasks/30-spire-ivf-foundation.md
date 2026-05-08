@@ -1537,6 +1537,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   blocked dispatch row into the six executor bind slots from the parameter
   contract, including value source, status, preview, and element-count metadata
   without opening libpq connections or exposing raw conninfo.
+  `ec_spire_remote_search_libpq_bind_summary(...)` now aggregates those bind
+  rows into a compact executor gate with ready/blocked bind counts, remote PID
+  counts, and the effective bind status.
   `ec_spire_remote_search_libpq_executor_readiness(...)` now splits the
   remaining transport gate into executor steps: conninfo secret resolution,
   libpq connection open, pipeline mode, request send, receive validation, and
@@ -1640,6 +1643,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_libpq_bind_plan(...)` now expands each
   manifest dispatch row into the three parameter-contract bind slots with value
   source, status, preview, and manifest-entry count metadata.
+  `ec_spire_remote_epoch_manifest_libpq_bind_summary(...)` now aggregates
+  manifest bind readiness into one row with request, bind, ready/blocked, entry
+  count, executor status, and effective bind status.
   `ec_spire_remote_epoch_manifest_libpq_executor_readiness(...)` now reports the
   remaining manifest publication executor steps: secret resolution, connection
   open, pipeline entry, send, and payload-validation result handoff.

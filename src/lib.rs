@@ -3737,6 +3737,149 @@ fn ec_spire_remote_epoch_manifest_libpq_bind_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_bind_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(request_count, i64),
+        name!(bind_count, i64),
+        name!(ready_bind_count, i64),
+        name!(blocked_bind_count, i64),
+        name!(parameter_count_per_request, i64),
+        name!(manifest_entry_count, i64),
+        name!(executor_status, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_bind_summary",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                "WITH bind AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_libpq_bind_plan($1::oid) \
+                 ), dispatch AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary($1::oid) \
+                 ) \
+                 SELECT d.active_epoch, d.dispatch_count AS request_count, \
+                        count(b.parameter_ordinal)::bigint AS bind_count, \
+                        count(*) FILTER (WHERE b.value_status = 'ready')::bigint \
+                            AS ready_bind_count, \
+                        count(*) FILTER (WHERE b.parameter_ordinal IS NOT NULL \
+                                           AND b.value_status <> 'ready')::bigint \
+                            AS blocked_bind_count, \
+                        3::bigint AS parameter_count_per_request, \
+                        coalesce(sum(b.element_count) FILTER \
+                            (WHERE b.parameter_name = 'manifest_payload'), 0)::bigint \
+                            AS manifest_entry_count, \
+                        d.executor_status, \
+                        CASE \
+                            WHEN d.dispatch_count = 0 THEN d.status \
+                            WHEN count(*) FILTER \
+                                (WHERE b.parameter_ordinal IS NOT NULL \
+                                   AND b.value_status <> 'ready') = 0 THEN 'ready' \
+                            ELSE d.status \
+                        END AS status \
+                   FROM dispatch d \
+                   LEFT JOIN bind b ON b.active_epoch = d.active_epoch \
+                  GROUP BY d.active_epoch, d.dispatch_count, d.executor_status, d.status",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq bind summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest bind summary active_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary active_epoch is null".to_owned()
+                        })?,
+                    row["request_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest bind summary request_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary request_count is null".to_owned()
+                        })?,
+                    row["bind_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest bind summary bind_count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest bind summary bind_count is null".to_owned())?,
+                    row["ready_bind_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest bind summary ready_bind_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary ready_bind_count is null".to_owned()
+                        })?,
+                    row["blocked_bind_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest bind summary blocked_bind_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary blocked_bind_count is null".to_owned()
+                        })?,
+                    row["parameter_count_per_request"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest bind summary parameter_count_per_request decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary parameter_count_per_request is null".to_owned()
+                        })?,
+                    row["manifest_entry_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest bind summary manifest_entry_count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary manifest_entry_count is null".to_owned()
+                        })?,
+                    row["executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest bind summary executor_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest bind summary executor_status is null".to_owned()
+                        })?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest bind summary status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest bind summary status is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| {
+                "ec_spire remote epoch manifest libpq bind summary returned no rows".to_owned()
+            })
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once(row)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -5773,6 +5916,121 @@ fn ec_spire_remote_search_libpq_bind_plan(
     });
 
     TableIterator::new(bind_rows)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_bind_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(request_count, i64),
+        name!(bind_count, i64),
+        name!(ready_bind_count, i64),
+        name!(blocked_bind_count, i64),
+        name!(parameter_count_per_request, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(status, String),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_bind_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_bind_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_bind_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_bind_summary")
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let parameter_count_per_request = 6_u64;
+    let request_count =
+        u64::try_from(rows.len()).expect("remote search bind request count should fit in u64");
+    let mut ready_bind_count = 0_u64;
+    let mut blocked_bind_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut blocked_pid_count = 0_u64;
+    let mut first_blocked_status = "ready";
+
+    for row in &rows {
+        remote_pid_count = remote_pid_count
+            .checked_add(row.pid_count)
+            .unwrap_or_else(|| pgrx::error!("remote search bind summary remote pid overflow"));
+        if row.dispatch_action == "open_pipeline_and_send_remote_search" {
+            ready_bind_count = ready_bind_count
+                .checked_add(parameter_count_per_request)
+                .unwrap_or_else(|| pgrx::error!("remote search bind summary ready bind overflow"));
+        } else {
+            blocked_bind_count = blocked_bind_count
+                .checked_add(parameter_count_per_request)
+                .unwrap_or_else(|| {
+                    pgrx::error!("remote search bind summary blocked bind overflow")
+                });
+            blocked_pid_count = blocked_pid_count
+                .checked_add(row.pid_count)
+                .unwrap_or_else(|| pgrx::error!("remote search bind summary blocked pid overflow"));
+            if first_blocked_status == "ready" {
+                first_blocked_status = row.status;
+            }
+        }
+    }
+
+    let bind_count = request_count
+        .checked_mul(parameter_count_per_request)
+        .unwrap_or_else(|| pgrx::error!("remote search bind summary bind count overflow"));
+    let status = if blocked_bind_count == 0 {
+        "ready".to_owned()
+    } else {
+        first_blocked_status.to_owned()
+    };
+
+    TableIterator::once((
+        i64::try_from(requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(request_count).expect("request count should fit in i64"),
+        i64::try_from(bind_count).expect("bind count should fit in i64"),
+        i64::try_from(ready_bind_count).expect("ready bind count should fit in i64"),
+        i64::try_from(blocked_bind_count).expect("blocked bind count should fit in i64"),
+        i64::try_from(parameter_count_per_request)
+            .expect("parameter count per request should fit in i64"),
+        i64::try_from(remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(blocked_pid_count).expect("blocked pid count should fit in i64"),
+        status,
+    ))
 }
 
 #[pg_extern(stable, strict)]
@@ -14665,6 +14923,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let bind_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_bind_summary(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_libpq_req_sql_idx'::regclass, \
@@ -14740,6 +15005,22 @@ mod tests {
         ))
         .expect("libpq bind remote index query should succeed")
         .expect("libpq bind remote index preview should exist");
+        let bind_summary_bind_count =
+            Spi::get_one::<i64>(&format!("SELECT bind_count {bind_summary_from}"))
+                .expect("libpq bind summary count query should succeed")
+                .expect("libpq bind summary count should exist");
+        let bind_summary_blocked_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_bind_count {bind_summary_from}"))
+                .expect("libpq bind summary blocked query should succeed")
+                .expect("libpq bind summary blocked count should exist");
+        let bind_summary_blocked_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_pid_count {bind_summary_from}"))
+                .expect("libpq bind summary blocked pid query should succeed")
+                .expect("libpq bind summary blocked pid count should exist");
+        let bind_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {bind_summary_from}"))
+                .expect("libpq bind summary status query should succeed")
+                .expect("libpq bind summary status should exist");
         let dispatch_missing_count = Spi::get_one::<i64>(&format!(
             "SELECT missing_descriptor_dispatch_count {dispatch_summary_from}"
         ))
@@ -14773,6 +15054,10 @@ mod tests {
         assert_eq!(dispatch_action, "blocked_before_dispatch");
         assert_eq!(bind_blocked_count, 6);
         assert_eq!(bind_remote_index_preview, "none");
+        assert_eq!(bind_summary_bind_count, 6);
+        assert_eq!(bind_summary_blocked_count, 6);
+        assert_eq!(bind_summary_blocked_pid_count, 1);
+        assert_eq!(bind_summary_status, "requires_remote_node_descriptor");
         assert_eq!(dispatch_missing_count, 1);
         assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
         assert_eq!(executor_status, "requires_remote_node_descriptor");
@@ -16054,6 +16339,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let bind_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_bind_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -16240,6 +16531,22 @@ mod tests {
         ))
         .expect("bind ready count query should succeed")
         .expect("bind ready count should exist");
+        let bind_summary_ready_count =
+            Spi::get_one::<i64>(&format!("SELECT ready_bind_count {bind_summary_from}"))
+                .expect("bind summary ready count query should succeed")
+                .expect("bind summary ready count should exist");
+        let bind_summary_blocked_count =
+            Spi::get_one::<i64>(&format!("SELECT blocked_bind_count {bind_summary_from}"))
+                .expect("bind summary blocked count query should succeed")
+                .expect("bind summary blocked count should exist");
+        let bind_summary_remote_pid_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_pid_count {bind_summary_from}"))
+                .expect("bind summary remote pid count query should succeed")
+                .expect("bind summary remote pid count should exist");
+        let bind_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {bind_summary_from}"))
+                .expect("bind summary status query should succeed")
+                .expect("bind summary status should exist");
         let dispatch_pipeline_count = Spi::get_one::<i64>(&format!(
             "SELECT pipeline_dispatch_count {dispatch_summary_from}"
         ))
@@ -16339,6 +16646,10 @@ mod tests {
         assert_eq!(bind_query_element_count, 2);
         assert_eq!(bind_selected_pid_count, 1);
         assert_eq!(bind_ready_count, 6);
+        assert_eq!(bind_summary_ready_count, 6);
+        assert_eq!(bind_summary_blocked_count, 0);
+        assert_eq!(bind_summary_remote_pid_count, 1);
+        assert_eq!(bind_summary_status, "ready");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
         assert_eq!(executor_status, "requires_libpq_executor");
@@ -17501,6 +17812,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_bind_from = "FROM ec_spire_remote_epoch_manifest_libpq_bind_plan(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_bind_summary_from = "FROM ec_spire_remote_epoch_manifest_libpq_bind_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_dispatch_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
@@ -17713,6 +18026,20 @@ mod tests {
         ))
         .expect("manifest bind ready count query should succeed")
         .expect("manifest bind ready count should exist");
+        let manifest_bind_summary_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_bind_count {manifest_bind_summary_from}"
+        ))
+        .expect("manifest bind summary ready count query should succeed")
+        .expect("manifest bind summary ready count should exist");
+        let manifest_bind_summary_entry_count = Spi::get_one::<i64>(&format!(
+            "SELECT manifest_entry_count {manifest_bind_summary_from}"
+        ))
+        .expect("manifest bind summary entry count query should succeed")
+        .expect("manifest bind summary entry count should exist");
+        let manifest_bind_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_bind_summary_from}"))
+                .expect("manifest bind summary status query should succeed")
+                .expect("manifest bind summary status should exist");
         let dispatch_executor_status =
             Spi::get_one::<String>(&format!("SELECT executor_status {manifest_dispatch_from}"))
                 .expect("manifest dispatch executor status query should succeed")
@@ -17826,6 +18153,9 @@ mod tests {
         assert_eq!(manifest_bind_remote_index_preview, "remote_spire_idx");
         assert_eq!(manifest_bind_payload_element_count, 1);
         assert_eq!(manifest_bind_ready_count, 3);
+        assert_eq!(manifest_bind_summary_ready_count, 3);
+        assert_eq!(manifest_bind_summary_entry_count, 1);
+        assert_eq!(manifest_bind_summary_status, "ready");
         assert_eq!(dispatch_executor_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "ready");
