@@ -1533,6 +1533,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   pre-I/O dispatch contract: SQL template, parameter/result shape, secret
   reference, remote index regclass, pipeline dispatch action, receive validator,
   dispatch counts, and fail-closed blocked status.
+  `ec_spire_remote_search_libpq_bind_plan(...)` now expands each ready or
+  blocked dispatch row into the six executor bind slots from the parameter
+  contract, including value source, status, preview, and element-count metadata
+  without opening libpq connections or exposing raw conninfo.
   `ec_spire_remote_search_libpq_executor_readiness(...)` now splits the
   remaining transport gate into executor steps: conninfo secret resolution,
   libpq connection open, pipeline mode, request send, receive validation, and

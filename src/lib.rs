@@ -5503,6 +5503,152 @@ fn ec_spire_remote_search_libpq_dispatch_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_bind_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(parameter_ordinal, i64),
+        name!(parameter_name, &'static str),
+        name!(pg_type, &'static str),
+        name!(value_source, &'static str),
+        name!(value_status, String),
+        name!(value_preview, String),
+        name!(element_count, i64),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_bind_plan requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_bind_plan top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_bind_plan selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_bind_plan") };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let bind_rows = rows.into_iter().flat_map(|row| {
+        let value_status = if row.dispatch_action == "open_pipeline_and_send_remote_search" {
+            "ready".to_owned()
+        } else {
+            row.status.to_owned()
+        };
+        let requested_epoch =
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64");
+        let node_id = i64::from(row.node_id);
+        let query_dimension =
+            i64::try_from(row.query_dimension).expect("query dimension should fit in i64");
+        let pid_count = i64::try_from(row.pid_count).expect("pid count should fit in i64");
+        let top_k = i64::try_from(row.top_k).expect("top_k should fit in i64");
+
+        vec![
+            (
+                requested_epoch,
+                node_id,
+                1_i64,
+                "remote_index_oid",
+                "oid",
+                "remote_node_descriptor.remote_index_regclass",
+                value_status.clone(),
+                row.remote_index_regclass,
+                1_i64,
+            ),
+            (
+                requested_epoch,
+                node_id,
+                2_i64,
+                "requested_epoch",
+                "bigint",
+                "coordinator_request.requested_epoch",
+                value_status.clone(),
+                requested_epoch.to_string(),
+                1_i64,
+            ),
+            (
+                requested_epoch,
+                node_id,
+                3_i64,
+                "query",
+                "real[]",
+                "coordinator_request.query",
+                value_status.clone(),
+                format!("query_dimension={query_dimension}"),
+                query_dimension,
+            ),
+            (
+                requested_epoch,
+                node_id,
+                4_i64,
+                "selected_pids",
+                "bigint[]",
+                "target_plan.selected_pids",
+                value_status.clone(),
+                format!("pid_count={pid_count}"),
+                pid_count,
+            ),
+            (
+                requested_epoch,
+                node_id,
+                5_i64,
+                "top_k",
+                "integer",
+                "coordinator_request.top_k",
+                value_status.clone(),
+                top_k.to_string(),
+                1_i64,
+            ),
+            (
+                requested_epoch,
+                node_id,
+                6_i64,
+                "consistency_mode",
+                "text",
+                "coordinator_request.consistency_mode",
+                value_status,
+                row.consistency_mode.to_owned(),
+                1_i64,
+            ),
+        ]
+    });
+
+    TableIterator::new(bind_rows)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_dispatch_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -14384,6 +14530,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let bind_from = format!(
+            "FROM ec_spire_remote_search_libpq_bind_plan(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_libpq_req_sql_idx'::regclass, \
@@ -14449,6 +14602,16 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT dispatch_action {dispatch_from}"))
                 .expect("libpq dispatch action query should succeed")
                 .expect("libpq dispatch action should exist");
+        let bind_blocked_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {bind_from} WHERE value_status = 'requires_remote_node_descriptor'"
+        ))
+        .expect("libpq bind blocked count query should succeed")
+        .expect("libpq bind blocked count should exist");
+        let bind_remote_index_preview = Spi::get_one::<String>(&format!(
+            "SELECT value_preview {bind_from} WHERE parameter_name = 'remote_index_oid'"
+        ))
+        .expect("libpq bind remote index query should succeed")
+        .expect("libpq bind remote index preview should exist");
         let dispatch_missing_count = Spi::get_one::<i64>(&format!(
             "SELECT missing_descriptor_dispatch_count {dispatch_summary_from}"
         ))
@@ -14480,6 +14643,8 @@ mod tests {
         assert_eq!(missing_descriptor_connection_count, 1);
         assert_eq!(connection_summary_status, "requires_remote_node_descriptor");
         assert_eq!(dispatch_action, "blocked_before_dispatch");
+        assert_eq!(bind_blocked_count, 6);
+        assert_eq!(bind_remote_index_preview, "none");
         assert_eq!(dispatch_missing_count, 1);
         assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
         assert_eq!(executor_status, "requires_remote_node_descriptor");
@@ -15755,6 +15920,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let bind_from = format!(
+            "FROM ec_spire_remote_search_libpq_bind_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -15907,6 +16078,40 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT receive_validator {dispatch_from}"))
                 .expect("dispatch receive validator query should succeed")
                 .expect("dispatch receive validator should exist");
+        let bind_count = Spi::get_one::<i64>(&format!("SELECT count(*) {bind_from}"))
+            .expect("bind plan count query should succeed")
+            .expect("bind plan count should exist");
+        let bind_contract_mismatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_libpq_parameter_contract() contract \
+               LEFT JOIN (SELECT * {bind_from}) bind \
+                 ON bind.parameter_ordinal = contract.parameter_ordinal \
+                AND bind.parameter_name = contract.parameter_name \
+                AND bind.pg_type = contract.pg_type \
+              WHERE bind.parameter_ordinal IS NULL"
+        ))
+        .expect("bind contract invariant query should succeed")
+        .expect("bind contract invariant count should exist");
+        let bind_remote_index_preview = Spi::get_one::<String>(&format!(
+            "SELECT value_preview {bind_from} WHERE parameter_name = 'remote_index_oid'"
+        ))
+        .expect("bind remote index query should succeed")
+        .expect("bind remote index preview should exist");
+        let bind_query_element_count = Spi::get_one::<i64>(&format!(
+            "SELECT element_count {bind_from} WHERE parameter_name = 'query'"
+        ))
+        .expect("bind query element count query should succeed")
+        .expect("bind query element count should exist");
+        let bind_selected_pid_count = Spi::get_one::<i64>(&format!(
+            "SELECT element_count {bind_from} WHERE parameter_name = 'selected_pids'"
+        ))
+        .expect("bind selected pid count query should succeed")
+        .expect("bind selected pid count should exist");
+        let bind_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {bind_from} WHERE value_status = 'ready'"
+        ))
+        .expect("bind ready count query should succeed")
+        .expect("bind ready count should exist");
         let dispatch_pipeline_count = Spi::get_one::<i64>(&format!(
             "SELECT pipeline_dispatch_count {dispatch_summary_from}"
         ))
@@ -16000,6 +16205,12 @@ mod tests {
             dispatch_receive_validator,
             "validate_remote_search_candidate_batch"
         );
+        assert_eq!(bind_count, 6);
+        assert_eq!(bind_contract_mismatch_count, 0);
+        assert_eq!(bind_remote_index_preview, "remote_spire_idx");
+        assert_eq!(bind_query_element_count, 2);
+        assert_eq!(bind_selected_pid_count, 1);
+        assert_eq!(bind_ready_count, 6);
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
         assert_eq!(executor_status, "requires_libpq_executor");
