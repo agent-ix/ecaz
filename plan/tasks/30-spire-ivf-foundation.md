@@ -1620,6 +1620,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   future per-node libpq request envelope for ready remote manifest publication,
   including descriptor-backed secret/index metadata, payload source/format,
   SQL template, parameter/result counts, and executor handoff status.
+  `ec_spire_remote_epoch_manifest_libpq_request_summary(...)`, the manifest
+  libpq parameter/result contracts, and the manifest libpq executor-step
+  contract now make the pre-I/O request batch and apply-result boundary
+  reviewable before a real libpq executor exists.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
