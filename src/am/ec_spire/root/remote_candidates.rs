@@ -33,6 +33,8 @@ const SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR: &str = "missing_descriptor";
 const SPIRE_REMOTE_STATUS_OPTIONAL_DESCRIPTOR_MISSING: &str = "optional_descriptor_missing";
 const SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT: &str = "local_direct";
 const SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE: &str = "libpq_pipeline";
+const SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION: &str = "open_pipeline_and_send_remote_search";
+const SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION: &str = "blocked_before_dispatch";
 const SPIRE_REMOTE_NONE: &str = "none";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
@@ -1318,6 +1320,136 @@ pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
             descriptor_resolved_connection_count,
             missing_descriptor_connection_count,
             pipeline_connection_count,
+            remote_pid_count: rollup.remote_pid_count,
+            blocked_pid_count: rollup.blocked_pid_count,
+            query_dimension,
+            top_k,
+            consistency_mode: parsed_consistency_mode,
+            status,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
+    let connection_rows = unsafe {
+        remote_search_libpq_connection_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+
+    connection_rows
+        .into_iter()
+        .map(|row| {
+            let dispatch_action = if row.pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
+                SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION
+            } else {
+                SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION
+            };
+
+            SpireRemoteSearchLibpqDispatchPlanRow {
+                requested_epoch: row.requested_epoch,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids,
+                pid_count: row.pid_count,
+                query_dimension: row.query_dimension,
+                top_k: row.top_k,
+                consistency_mode: row.consistency_mode,
+                sql_template: SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                parameter_count: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
+                result_column_count: remote_search_result_column_count(),
+                conninfo_secret_name: row.conninfo_secret_name,
+                remote_index_regclass: row.remote_index_regclass,
+                pipeline_mode: row.pipeline_mode,
+                dispatch_action,
+                receive_validator: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+                status: row.status,
+            }
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqDispatchSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchLibpqDispatchSummaryRow, String> {
+        let query_for_empty_plan = query.clone();
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search libpq dispatch summary top_k exceeds u64")?;
+        let rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut rollup = SpireRemoteCountRollup::default();
+        let mut pipeline_dispatch_count = 0_u64;
+        let mut missing_descriptor_dispatch_count = 0_u64;
+        let mut query_dimension = 0_u64;
+        let mut top_k = 0_u64;
+        let mut parsed_consistency_mode = "";
+
+        for row in &rows {
+            query_dimension = row.query_dimension;
+            top_k = row.top_k;
+            parsed_consistency_mode = row.consistency_mode;
+            rollup.record_remote_target(row.pid_count, "remote search libpq dispatch summary")?;
+            rollup.record_status(row.status, row.pid_count, "remote search libpq dispatch summary")?;
+            if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+                pipeline_dispatch_count = pipeline_dispatch_count.checked_add(1).ok_or_else(|| {
+                    "ec_spire remote search libpq dispatch summary pipeline count overflow".to_owned()
+                })?;
+            }
+            if row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+                missing_descriptor_dispatch_count =
+                    missing_descriptor_dispatch_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire remote search libpq dispatch summary missing descriptor count overflow"
+                            .to_owned()
+                    })?;
+            }
+        }
+
+        if rows.is_empty() {
+            let query = scan::SpireScanQuery::new(query_for_empty_plan)?;
+            query_dimension = u64::try_from(query.values().len()).map_err(|_| {
+                "ec_spire remote search libpq dispatch summary query dimension exceeds u64"
+            })?;
+            top_k = top_k_for_empty_plan;
+            parsed_consistency_mode =
+                consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        }
+
+        let dispatch_count = u64::try_from(rows.len()).map_err(|_| {
+            "ec_spire remote search libpq dispatch summary dispatch count exceeds u64"
+        })?;
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
+
+        Ok(SpireRemoteSearchLibpqDispatchSummaryRow {
+            requested_epoch,
+            dispatch_count,
+            pipeline_dispatch_count,
+            missing_descriptor_dispatch_count,
             remote_pid_count: rollup.remote_pid_count,
             blocked_pid_count: rollup.blocked_pid_count,
             query_dimension,

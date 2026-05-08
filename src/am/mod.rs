@@ -69,6 +69,8 @@ pub(crate) use self::ec_spire::{
     remote_search_heap_resolution_summary_row as spire_remote_search_heap_resolution_summary_row,
     remote_search_libpq_connection_plan_rows as spire_remote_search_libpq_connection_plan_rows,
     remote_search_libpq_connection_summary_row as spire_remote_search_libpq_connection_summary_row,
+    remote_search_libpq_dispatch_plan_rows as spire_remote_search_libpq_dispatch_plan_rows,
+    remote_search_libpq_dispatch_summary_row as spire_remote_search_libpq_dispatch_summary_row,
     remote_search_libpq_parameter_contract_rows as spire_remote_search_libpq_parameter_contract_rows,
     remote_search_libpq_request_plan_rows as spire_remote_search_libpq_request_plan_rows,
     remote_search_libpq_request_summary_row as spire_remote_search_libpq_request_summary_row,

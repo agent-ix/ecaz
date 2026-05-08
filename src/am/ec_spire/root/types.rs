@@ -416,6 +416,40 @@ pub(crate) struct SpireRemoteSearchLibpqConnectionSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) sql_template: &'static str,
+    pub(crate) parameter_count: u64,
+    pub(crate) result_column_count: u64,
+    pub(crate) conninfo_secret_name: String,
+    pub(crate) remote_index_regclass: String,
+    pub(crate) pipeline_mode: &'static str,
+    pub(crate) dispatch_action: &'static str,
+    pub(crate) receive_validator: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqDispatchSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) dispatch_count: u64,
+    pub(crate) pipeline_dispatch_count: u64,
+    pub(crate) missing_descriptor_dispatch_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) blocked_pid_count: u64,
+    pub(crate) query_dimension: u64,
+    pub(crate) top_k: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqParameterContractRow {
     pub(crate) parameter_ordinal: u64,
     pub(crate) parameter_name: &'static str,

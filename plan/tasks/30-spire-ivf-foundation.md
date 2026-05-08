@@ -1520,6 +1520,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   exposing raw conninfo: secret reference, remote index regclass, remote
   identity byte count, pipeline-mode requirement, summary counts, and
   fail-closed missing descriptor status.
+  `ec_spire_remote_search_libpq_dispatch_plan(...)` and
+  `ec_spire_remote_search_libpq_dispatch_summary(...)` now expose the final
+  pre-I/O dispatch contract: SQL template, parameter/result shape, secret
+  reference, remote index regclass, pipeline dispatch action, receive validator,
+  dispatch counts, and fail-closed blocked status.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,
