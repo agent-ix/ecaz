@@ -954,46 +954,52 @@ pub(crate) unsafe fn remote_search_execution_plan_rows(
     };
     rows.into_iter()
         .map(|row| {
-            let (execution_transport, remote_index_source, conninfo_source, candidate_format) =
-                match row.target_kind {
-                    SPIRE_REMOTE_TARGET_LOCAL => (
-                        SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT,
-                        SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID,
-                        SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
-                        SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
-                    ),
-                    SPIRE_REMOTE_TARGET_REMOTE => (
-                        SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
-                        SPIRE_REMOTE_DESCRIPTOR_SOURCE,
-                        SPIRE_REMOTE_DESCRIPTOR_SOURCE,
-                        SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
-                    ),
-                    SPIRE_REMOTE_TARGET_SKIPPED => (
-                        SPIRE_REMOTE_NONE,
-                        SPIRE_REMOTE_NONE,
-                        SPIRE_REMOTE_NONE,
-                        SPIRE_REMOTE_NONE,
-                    ),
-                    _ => ("unknown", "unknown", "unknown", "unknown"),
-                };
-            SpireRemoteSearchExecutionPlanRow {
-                requested_epoch: row.requested_epoch,
-                target_kind: row.target_kind,
-                node_id: row.node_id,
-                selected_pids: row.selected_pids,
-                pid_count: row.pid_count,
-                query_dimension: row.query_dimension,
-                top_k: row.top_k,
-                consistency_mode: row.consistency_mode,
-                execution_transport,
-                endpoint_function: row.endpoint_function,
-                remote_index_source,
-                conninfo_source,
-                candidate_format,
-                status: row.status,
-            }
+            remote_search_execution_plan_row_from_readiness(row)
         })
         .collect()
+}
+
+fn remote_search_execution_plan_row_from_readiness(
+    row: SpireRemoteSearchRequestReadinessRow,
+) -> SpireRemoteSearchExecutionPlanRow {
+    let (execution_transport, remote_index_source, conninfo_source, candidate_format) =
+        match row.target_kind {
+            SPIRE_REMOTE_TARGET_LOCAL => (
+                SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT,
+                SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID,
+                SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
+                SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL,
+            ),
+            SPIRE_REMOTE_TARGET_REMOTE => (
+                SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+                SPIRE_REMOTE_DESCRIPTOR_SOURCE,
+                SPIRE_REMOTE_DESCRIPTOR_SOURCE,
+                SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
+            ),
+            SPIRE_REMOTE_TARGET_SKIPPED => (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+            ),
+            _ => ("unknown", "unknown", "unknown", "unknown"),
+        };
+    SpireRemoteSearchExecutionPlanRow {
+        requested_epoch: row.requested_epoch,
+        target_kind: row.target_kind,
+        node_id: row.node_id,
+        selected_pids: row.selected_pids,
+        pid_count: row.pid_count,
+        query_dimension: row.query_dimension,
+        top_k: row.top_k,
+        consistency_mode: row.consistency_mode,
+        execution_transport,
+        endpoint_function: row.endpoint_function,
+        remote_index_source,
+        conninfo_source,
+        candidate_format,
+        status: row.status,
+    }
 }
 
 pub(crate) unsafe fn remote_search_execution_summary_row(
@@ -1018,12 +1024,30 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
                 consistency_mode,
             )
         };
+        remote_search_execution_summary_from_plan_rows(
+            requested_epoch,
+            &rows,
+            query_for_empty_plan,
+            top_k_for_empty_plan,
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_execution_summary_from_plan_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchExecutionPlanRow],
+    query_for_empty_plan: Vec<f32>,
+    top_k_for_empty_plan: u64,
+    consistency_mode: &str,
+) -> Result<SpireRemoteSearchExecutionSummaryRow, String> {
         let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
 
-        for row in &rows {
+        for row in rows {
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
@@ -1063,8 +1087,6 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
             consistency_mode: parsed_consistency_mode,
             status,
         })
-    })();
-    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
@@ -1097,12 +1119,18 @@ pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
             consistency_mode,
         )
     };
-    rows.into_iter()
+    remote_search_libpq_request_plan_rows_from_execution(&rows)
+}
+
+fn remote_search_libpq_request_plan_rows_from_execution(
+    rows: &[SpireRemoteSearchExecutionPlanRow],
+) -> Vec<SpireRemoteSearchLibpqRequestPlanRow> {
+    rows.iter()
         .filter(|row| row.target_kind == SPIRE_REMOTE_TARGET_REMOTE)
         .map(|row| SpireRemoteSearchLibpqRequestPlanRow {
             requested_epoch: row.requested_epoch,
             node_id: row.node_id,
-            selected_pids: row.selected_pids,
+            selected_pids: row.selected_pids.clone(),
             pid_count: row.pid_count,
             query_dimension: row.query_dimension,
             top_k: row.top_k,
@@ -1295,53 +1323,60 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
                 consistency_mode,
             )
         };
-        let remote_node_ids = request_rows
-            .iter()
-            .map(|row| row.node_id)
-            .collect::<Vec<_>>();
-        let descriptors = load_remote_libpq_connection_descriptors(
+        remote_search_libpq_connection_plan_rows_from_requests(
             unsafe { (*index_relation).rd_id },
-            &remote_node_ids,
-        )?;
-
-        request_rows
-            .into_iter()
-            .map(|row| {
-                let descriptor = descriptors.get(&row.node_id);
-                Ok(SpireRemoteSearchLibpqConnectionPlanRow {
-                    requested_epoch: row.requested_epoch,
-                    node_id: row.node_id,
-                    selected_pids: row.selected_pids,
-                    pid_count: row.pid_count,
-                    query_dimension: row.query_dimension,
-                    top_k: row.top_k,
-                    consistency_mode: row.consistency_mode,
-                    execution_transport: row.execution_transport,
-                    conninfo_secret_name: descriptor
-                        .map(|row| row.conninfo_secret_name.clone())
-                        .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
-                    remote_index_regclass: descriptor
-                        .map(|row| row.remote_index_regclass.clone())
-                        .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
-                    remote_index_identity_bytes: descriptor
-                        .map(|row| row.remote_index_identity_bytes)
-                        .unwrap_or(0),
-                    conninfo_resolution: if descriptor.is_some() {
-                        SPIRE_REMOTE_CONNINFO_READY
-                    } else {
-                        SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-                    },
-                    pipeline_mode: if descriptor.is_some() {
-                        SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE
-                    } else {
-                        SPIRE_REMOTE_NONE
-                    },
-                    status: row.status,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()
+            &request_rows,
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_connection_plan_rows_from_requests(
+    index_relid: pg_sys::Oid,
+    request_rows: &[SpireRemoteSearchLibpqRequestPlanRow],
+) -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
+    let remote_node_ids = request_rows
+        .iter()
+        .map(|row| row.node_id)
+        .collect::<Vec<_>>();
+    let descriptors = load_remote_libpq_connection_descriptors(index_relid, &remote_node_ids)?;
+
+    request_rows
+        .iter()
+        .map(|row| {
+            let descriptor = descriptors.get(&row.node_id);
+            Ok(SpireRemoteSearchLibpqConnectionPlanRow {
+                requested_epoch: row.requested_epoch,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids.clone(),
+                pid_count: row.pid_count,
+                query_dimension: row.query_dimension,
+                top_k: row.top_k,
+                consistency_mode: row.consistency_mode,
+                execution_transport: row.execution_transport,
+                conninfo_secret_name: descriptor
+                    .map(|row| row.conninfo_secret_name.clone())
+                    .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                remote_index_regclass: descriptor
+                    .map(|row| row.remote_index_regclass.clone())
+                    .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                remote_index_identity_bytes: descriptor
+                    .map(|row| row.remote_index_identity_bytes)
+                    .unwrap_or(0),
+                conninfo_resolution: if descriptor.is_some() {
+                    SPIRE_REMOTE_CONNINFO_READY
+                } else {
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                },
+                pipeline_mode: if descriptor.is_some() {
+                    SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE
+                } else {
+                    SPIRE_REMOTE_NONE
+                },
+                status: row.status,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
 }
 
 pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
@@ -1459,8 +1494,14 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
         )
     };
 
+    remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows)
+}
+
+fn remote_search_libpq_dispatch_plan_rows_from_connections(
+    connection_rows: &[SpireRemoteSearchLibpqConnectionPlanRow],
+) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
     connection_rows
-        .into_iter()
+        .iter()
         .map(|row| {
             let dispatch_action = if row.pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
                 SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION
@@ -1471,7 +1512,7 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
             SpireRemoteSearchLibpqDispatchPlanRow {
                 requested_epoch: row.requested_epoch,
                 node_id: row.node_id,
-                selected_pids: row.selected_pids,
+                selected_pids: row.selected_pids.clone(),
                 pid_count: row.pid_count,
                 query_dimension: row.query_dimension,
                 top_k: row.top_k,
@@ -1479,8 +1520,8 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
                 sql_template: SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
                 parameter_count: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
                 result_column_count: remote_search_result_column_count(),
-                conninfo_secret_name: row.conninfo_secret_name,
-                remote_index_regclass: row.remote_index_regclass,
+                conninfo_secret_name: row.conninfo_secret_name.clone(),
+                remote_index_regclass: row.remote_index_regclass.clone(),
                 pipeline_mode: row.pipeline_mode,
                 dispatch_action,
                 receive_validator: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
@@ -1512,6 +1553,24 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
                 consistency_mode,
             )
         };
+        remote_search_libpq_dispatch_summary_from_plan_rows(
+            requested_epoch,
+            &rows,
+            query_for_empty_plan,
+            top_k_for_empty_plan,
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_dispatch_summary_from_plan_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    query_for_empty_plan: Vec<f32>,
+    top_k_for_empty_plan: u64,
+    consistency_mode: &str,
+) -> Result<SpireRemoteSearchLibpqDispatchSummaryRow, String> {
         let mut rollup = SpireRemoteCountRollup::default();
         let mut pipeline_dispatch_count = 0_u64;
         let mut missing_descriptor_dispatch_count = 0_u64;
@@ -1519,7 +1578,7 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
         let mut top_k = 0_u64;
         let mut parsed_consistency_mode = "";
 
-        for row in &rows {
+        for row in rows {
             query_dimension = row.query_dimension;
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
@@ -1566,8 +1625,6 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
             consistency_mode: parsed_consistency_mode,
             status,
         })
-    })();
-    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
@@ -1878,11 +1935,17 @@ pub(crate) unsafe fn remote_search_receive_plan_rows(
             consistency_mode,
         )
     };
-    rows.into_iter()
+    remote_search_receive_plan_rows_from_requests(&rows)
+}
+
+fn remote_search_receive_plan_rows_from_requests(
+    rows: &[SpireRemoteSearchLibpqRequestPlanRow],
+) -> Vec<SpireRemoteSearchReceivePlanRow> {
+    rows.iter()
         .map(|row| SpireRemoteSearchReceivePlanRow {
             requested_epoch: row.requested_epoch,
             node_id: row.node_id,
-            selected_pids: row.selected_pids,
+            selected_pids: row.selected_pids.clone(),
             pid_count: row.pid_count,
             expected_candidate_format: row.candidate_format,
             expected_result_column_count: row.result_column_count,
@@ -2136,6 +2199,79 @@ fn remote_search_finalization_summary_from_merge(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireCoordinatorPipeline {
+    execution_summary: SpireRemoteSearchExecutionSummaryRow,
+    dispatch_summary: SpireRemoteSearchLibpqDispatchSummaryRow,
+    receive_rows: Vec<SpireRemoteSearchReceivePlanRow>,
+    finalization_summary: SpireRemoteSearchFinalizationSummaryRow,
+    executor_readiness: SpireRemoteSearchLibpqExecutorReadinessRow,
+}
+
+impl SpireCoordinatorPipeline {
+    unsafe fn execute_once(
+        index_relation: pg_sys::Relation,
+        requested_epoch: u64,
+        query: Vec<f32>,
+        selected_pids: Vec<u64>,
+        top_k: usize,
+        consistency_mode: &str,
+    ) -> Result<Self, String> {
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
+        let query_for_summary_fallback = query.clone();
+        let readiness_rows = unsafe {
+            remote_search_request_readiness_rows(
+                index_relation,
+                requested_epoch,
+                query.clone(),
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let execution_rows = readiness_rows
+            .into_iter()
+            .map(remote_search_execution_plan_row_from_readiness)
+            .collect::<Vec<_>>();
+        let execution_summary = remote_search_execution_summary_from_plan_rows(
+            requested_epoch,
+            &execution_rows,
+            query_for_summary_fallback.clone(),
+            top_k_for_empty_plan,
+            consistency_mode,
+        )?;
+        let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
+        let connection_rows = remote_search_libpq_connection_plan_rows_from_requests(
+            unsafe { (*index_relation).rd_id },
+            &request_rows,
+        )?;
+        let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
+        let dispatch_summary = remote_search_libpq_dispatch_summary_from_plan_rows(
+            requested_epoch,
+            &dispatch_rows,
+            query_for_summary_fallback,
+            top_k_for_empty_plan,
+            consistency_mode,
+        )?;
+        let receive_rows = remote_search_receive_plan_rows_from_requests(&request_rows);
+        let merge_summary = remote_search_merge_input_summary_from_execution(&execution_summary);
+        let finalization_summary = remote_search_finalization_summary_from_merge(&merge_summary);
+        let executor_readiness = remote_search_libpq_executor_readiness_from_dispatch_summary(
+            requested_epoch,
+            &dispatch_summary,
+        );
+
+        Ok(Self {
+            execution_summary,
+            dispatch_summary,
+            receive_rows,
+            finalization_summary,
+            executor_readiness,
+        })
+    }
+}
+
 pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -2144,28 +2280,8 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorGateSummaryRow {
-    let execution_summary = unsafe {
-        remote_search_execution_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
-    let dispatch_summary = unsafe {
-        remote_search_libpq_dispatch_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
-    let receive_rows = unsafe {
-        remote_search_receive_plan_rows(
+    let pipeline = unsafe {
+        SpireCoordinatorPipeline::execute_once(
             index_relation,
             requested_epoch,
             query,
@@ -2173,13 +2289,13 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
             top_k,
             consistency_mode,
         )
-    };
-    let merge_summary = remote_search_merge_input_summary_from_execution(&execution_summary);
-    let finalization_summary = remote_search_finalization_summary_from_merge(&merge_summary);
-    let executor_readiness = remote_search_libpq_executor_readiness_from_dispatch_summary(
-        requested_epoch,
-        &dispatch_summary,
-    );
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let execution_summary = &pipeline.execution_summary;
+    let dispatch_summary = &pipeline.dispatch_summary;
+    let receive_rows = &pipeline.receive_rows;
+    let finalization_summary = &pipeline.finalization_summary;
+    let executor_readiness = &pipeline.executor_readiness;
     let libpq_receive_count =
         u64::try_from(receive_rows.len()).expect("receive row count should fit in u64");
     let libpq_receive_status = receive_rows

@@ -1575,7 +1575,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   whether remote heap fetch is blocked or ready.
   `ec_spire_remote_search_coordinator_gate_summary(...)` now ties execution,
   libpq dispatch, receive, merge, and final heap-fetch readiness into one
-  coordinator integration gate with the next unresolved blocker.
+  coordinator integration gate with the next unresolved blocker. The gate now
+  uses an internal `SpireCoordinatorPipeline::execute_once(...)` bundle so the
+  operator entrypoint computes target readiness once and derives execution,
+  dispatch, receive, merge, finalization, and executor-readiness summaries from
+  that shared pipeline state.
   `ec_spire_remote_search_heap_resolution_contract()` now makes the local vs.
   origin-node heap lookup boundary explicit.
   `ec_spire_remote_search_local_heap_resolution_plan(...)` now decodes
