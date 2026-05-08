@@ -14,6 +14,7 @@ use std::process::ExitStatus;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
+use crate::profiles::{self, IndexProfile};
 use crate::psql::ConnectionOptions;
 
 #[derive(Args, Debug)]
@@ -299,6 +300,8 @@ struct ExplainStep {
     tags: Vec<String>,
     prefix: String,
     #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
     index_name: Option<String>,
     #[serde(default)]
     query_table: Option<String>,
@@ -487,7 +490,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
             );
             continue;
         }
-        prepare_step(&config.steps[idx]).await?;
+        prepare_step(&config.steps[idx], &config.defaults).await?;
         let command = manifest.steps[idx].command.clone();
         crate::ecaz_println!(
             "[suite:{}] {} -> {}",
@@ -1261,14 +1264,14 @@ impl SuiteStep {
     }
 }
 
-async fn prepare_step(step: &SuiteStep) -> Result<()> {
+async fn prepare_step(step: &SuiteStep, defaults: &SuiteDefaults) -> Result<()> {
     if let SuiteStep::Explain(step) = step {
         if let Some(parent) = step.sql_file.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        tokio::fs::write(&step.sql_file, explain_sql(step))
+        tokio::fs::write(&step.sql_file, explain_sql(step, defaults))
             .await
             .wrap_err_with(|| format!("writing {}", step.sql_file.display()))?;
     }
@@ -1458,7 +1461,7 @@ fn expand_explain(
     args
 }
 
-fn explain_sql(step: &ExplainStep) -> String {
+fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
     let corpus_table = step
         .corpus_table
         .clone()
@@ -1471,20 +1474,46 @@ fn explain_sql(step: &ExplainStep) -> String {
         .index_name
         .clone()
         .unwrap_or_else(|| format!("{}_idx", step.prefix));
+    let profile = explain_step_profile(step, defaults);
+    let scan_guc = profile.ef_search_guc.unwrap_or("ec_ivf.nprobe");
+    let rerank_guc = rerank_width_guc(profile);
+    let set_rerank_sql = rerank_guc
+        .map(|guc| {
+            format!(
+                "SET {guc} = {rerank_width};\n",
+                rerank_width = step.rerank_width
+            )
+        })
+        .unwrap_or_default();
+    let current_rerank_sql = rerank_guc
+        .map(|guc| format!("current_setting('{guc}') AS rerank_width,\n           "))
+        .unwrap_or_default();
+    let reset_rerank_sql = rerank_guc
+        .map(|guc| format!("RESET {guc};\n"))
+        .unwrap_or_default();
+    let cost_snapshot_sql = cost_snapshot_function(profile)
+        .map(|function| {
+            format!(
+                "SELECT *\n\
+                 FROM {function}('{index}'::regclass);\n\n"
+            )
+        })
+        .unwrap_or_default();
     format!(
         "\\pset pager off\n\
          \\timing on\n\n\
          SET enable_seqscan = off;\n\
-         SET ec_ivf.nprobe = {nprobe};\n\
-         SET ec_ivf.rerank_width = {rerank_width};\n\n\
+         SET {scan_guc} = {nprobe};\n\
+         {set_rerank_sql}\n\
          SELECT\n\
            current_setting('server_version') AS server_version,\n\
-           current_setting('ec_ivf.nprobe') AS nprobe,\n\
-           current_setting('ec_ivf.rerank_width') AS rerank_width;\n\n\
+           current_setting('{scan_guc}') AS sweep_value,\n\
+           {current_rerank_sql}'{profile_name}' AS profile;\n\n\
          SELECT\n\
            '{index}' AS index_name,\n\
            pg_relation_size('{index}'::regclass) AS index_bytes,\n\
            pg_size_pretty(pg_relation_size('{index}'::regclass)) AS index_size;\n\n\
+         {cost_snapshot_sql}\
          EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)\n\
          SELECT id\n\
          FROM {corpus_table}\n\
@@ -1496,14 +1525,48 @@ fn explain_sql(step: &ExplainStep) -> String {
          )::real[]\n\
          LIMIT 10;\n\n\
          RESET enable_seqscan;\n\
-         RESET ec_ivf.nprobe;\n\
-         RESET ec_ivf.rerank_width;\n",
+         RESET {scan_guc};\n\
+         {reset_rerank_sql}",
         nprobe = step.nprobe,
-        rerank_width = step.rerank_width,
+        scan_guc = scan_guc,
+        set_rerank_sql = set_rerank_sql,
+        current_rerank_sql = current_rerank_sql,
+        profile_name = profile.name,
         index = index,
+        cost_snapshot_sql = cost_snapshot_sql,
         corpus_table = corpus_table,
-        query_table = query_table
+        query_table = query_table,
+        reset_rerank_sql = reset_rerank_sql
     )
+}
+
+fn explain_step_profile<'a>(
+    step: &'a ExplainStep,
+    defaults: &'a SuiteDefaults,
+) -> &'static IndexProfile {
+    let profile_name = step
+        .profile
+        .as_deref()
+        .or(defaults.profile.as_deref())
+        .unwrap_or("ec_ivf");
+    profiles::resolve(profile_name).unwrap_or(&profiles::EC_IVF)
+}
+
+fn rerank_width_guc(profile: &IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.rerank_width"),
+        "ec_spire" => Some("ec_spire.rerank_width"),
+        _ => None,
+    }
+}
+
+fn cost_snapshot_function(profile: &IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_hnsw" => Some("ec_hnsw_index_cost_snapshot"),
+        "ec_ivf" => Some("ec_ivf_index_cost_snapshot"),
+        "ec_spire" => Some("ec_spire_index_cost_snapshot"),
+        _ => None,
+    }
 }
 
 fn manifest_path(args: &SuiteRunOptions, config: &SuiteConfig) -> Option<PathBuf> {
@@ -1927,6 +1990,7 @@ mod tests {
             name: "explain".into(),
             tags: Vec::new(),
             prefix: "pfx".into(),
+            profile: None,
             index_name: None,
             query_table: None,
             corpus_table: None,
@@ -1952,6 +2016,7 @@ mod tests {
             name: "explain".into(),
             tags: Vec::new(),
             prefix: "pfx".into(),
+            profile: None,
             index_name: None,
             query_table: None,
             corpus_table: None,
@@ -1964,11 +2029,41 @@ mod tests {
             sql_file: "explain.sql".into(),
             log_output: "explain.log".into(),
         };
-        let sql = explain_sql(&step);
+        let sql = explain_sql(&step, &SuiteDefaults::default());
         assert!(sql.contains("SET ec_ivf.nprobe = 96;"));
         assert!(sql.contains("SET ec_ivf.rerank_width = 1000;"));
+        assert!(sql.contains("FROM ec_ivf_index_cost_snapshot('pfx_idx'::regclass);"));
         assert!(sql.contains("FROM pfx_corpus"));
         assert!(sql.contains("FROM pfx_queries"));
         assert!(sql.contains("'pfx_idx'::regclass"));
+    }
+
+    #[test]
+    fn explain_sql_uses_spire_profile_gucs_and_cost_snapshot() {
+        let step = ExplainStep {
+            name: "explain".into(),
+            tags: Vec::new(),
+            prefix: "spire_pfx".into(),
+            profile: Some("ec_spire".into()),
+            index_name: None,
+            query_table: None,
+            corpus_table: None,
+            nprobe: 32,
+            rerank_width: 500,
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            sql_file: "explain.sql".into(),
+            log_output: "explain.log".into(),
+        };
+        let sql = explain_sql(&step, &SuiteDefaults::default());
+
+        assert!(sql.contains("SET ec_spire.nprobe = 32;"));
+        assert!(sql.contains("SET ec_spire.rerank_width = 500;"));
+        assert!(sql.contains("FROM ec_spire_index_cost_snapshot('spire_pfx_idx'::regclass);"));
+        assert!(sql.contains("'ec_spire' AS profile"));
+        assert!(sql.contains("RESET ec_spire.nprobe;"));
+        assert!(sql.contains("RESET ec_spire.rerank_width;"));
     }
 }
