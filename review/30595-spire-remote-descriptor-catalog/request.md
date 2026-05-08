@@ -9,6 +9,8 @@ Changes:
 
 - Adds extension-owned table `ec_spire_remote_node_descriptor`, keyed by
   `(coordinator_index_oid, node_id)`.
+- Adds `ec_spire_register_remote_node_descriptor(...)`, a validated upsert
+  surface for that catalog.
 - Stores only `conninfo_secret_name` as the connection reference; raw conninfo
   remains outside the catalog.
 - Extends `ec_spire_remote_node_snapshot(...)` to consume active, draining,
@@ -17,7 +19,7 @@ Changes:
   `requires_remote_node_descriptor` to the next pre-libpq blocker.
 - Extends capability and publish-gate status so active descriptors with a valid
   served/retained epoch window and matching extension version report `ready`.
-- Adds PG18 coverage proving an active catalog descriptor makes target
+- Adds PG18 coverage proving an active registered descriptor makes target
   readiness advance to `requires_libpq_transport`.
 - Updates the Phase 7 task note with the durable catalog surface.
 
@@ -33,7 +35,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `3381ab75`
+Head SHA: `a742fc0e`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_node_descriptor`
