@@ -11,6 +11,8 @@ Changes:
   `(coordinator_index_oid, node_id)`.
 - Adds `ec_spire_register_remote_node_descriptor(...)`, a validated upsert
   surface for that catalog.
+- Validates the coordinator OID as an `ec_spire` index before mutating the
+  descriptor catalog.
 - Stores only `conninfo_secret_name` as the connection reference; raw conninfo
   remains outside the catalog.
 - Extends `ec_spire_remote_node_snapshot(...)` to consume active, draining,
@@ -38,7 +40,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `ed31165b`
+Head SHA: `9eb91d01`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_node_descriptor`
@@ -54,6 +56,8 @@ Result:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
 - PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
+  - Confirms descriptor registration returns `true` after the coordinator index
+    validation path accepts the target `ec_spire` index.
 - `cargo fmt --check` was run after formatting touched files and restoring
   unrelated known rustfmt churn. It still reports only the pre-existing
   unrelated differences in:
