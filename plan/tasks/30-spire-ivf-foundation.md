@@ -1775,7 +1775,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   planner-cost snapshot rows emitted by explain artifacts.
 - [ ] **Scale packet.** Run controlled AWS/RDS-class measurements before making
   product billion-scale claims. Depends on the SPIRE planner cost model
-  above.
+  above. Packet 30629 prepares the scale-packet runbook and artifact manifest
+  scaffold; the actual controlled measurement run remains open.
 - [x] **Docs.** Update README/user docs only after a validated operator path
   exists. Landed in packet 30627: `docs/SPIRE_DIAGNOSTICS.md` now documents the
   operator-controlled scheduler flow and old-epoch cleanup summary status.
