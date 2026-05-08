@@ -8,6 +8,7 @@ opening libpq connections.
 Changes:
 
 - Adds `ec_spire_remote_search_libpq_connection_plan(...)`.
+- Adds `ec_spire_remote_search_libpq_connection_summary(...)`.
 - Resolves remote request rows against `ec_spire_remote_node_descriptor`.
 - Exposes per-node secret reference, remote index regclass, remote identity byte
   count, pipeline mode, and transport status.
@@ -15,6 +16,8 @@ Changes:
   surfaced.
 - Preserves fail-closed behavior for missing descriptors by reporting
   `requires_remote_node_descriptor` and no pipeline mode.
+- Aggregates descriptor-resolved, missing-descriptor, pipeline, remote-PID, and
+  blocked-PID counts into one coordinator gate row.
 - Updates the Phase 7 task note with the connection envelope surface.
 
 ## Files
@@ -27,7 +30,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `ce128def`
+Head SHA: `d1205da4`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_search_libpq_req`
@@ -41,6 +44,8 @@ Result:
   - `pg_test_ec_spire_remote_search_libpq_req_local`
 - PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
+  - Confirms the connection summary reports one descriptor-resolved pipeline
+    connection and preserves `requires_libpq_transport`.
 
 ## Notes
 
