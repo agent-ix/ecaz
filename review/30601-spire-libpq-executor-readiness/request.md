@@ -8,6 +8,7 @@ executor steps without opening sockets.
 Changes:
 
 - Adds `ec_spire_remote_search_libpq_executor_readiness(...)`.
+- Adds `ec_spire_remote_search_libpq_executor_step_contract()`.
 - Splits the broad `requires_libpq_transport` gate into concrete executor
   steps:
   - conninfo secret resolution
@@ -27,6 +28,9 @@ Changes:
 - Advances active-descriptor coordinator plans from the generic
   `requires_libpq_transport` blocker to
   `requires_libpq_executor` / `conninfo_secret_resolution`.
+- Publishes the ordered executor step contract so descriptor, secret,
+  connection, pipeline, send, receive-validation, and merge handoff names can
+  be checked without a query-specific plan.
 - Updates the Phase 7 task note with the executor-readiness surface.
 
 ## Files
@@ -39,11 +43,12 @@ Changes:
 
 ## Validation
 
-Head SHA: `721c0311`
+Head SHA: `2f2ceac0`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_search_libpq_req`
 - `cargo pgrx test pg18 remote_search_coordinator_gate_summary`
+- `cargo pgrx test pg18 remote_search_receive_contract`
 - `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
 - `cargo fmt`
 - Restored known unrelated rustfmt churn in:
@@ -60,11 +65,13 @@ Result:
   - `pg_test_ec_spire_remote_search_libpq_req_local`
 - PG18 `remote_search_coordinator_gate_summary` filter passed:
   - `pg_test_ec_spire_remote_search_coordinator_gate_summary`
+- PG18 `remote_search_receive_contract` filter passed:
+  - `pg_test_ec_spire_remote_search_receive_contract`
 - PG18 `remote_node_descriptor_catalog_active` filter passed:
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
 - The tests cover descriptor-blocked, local-only ready/no-op, and
   active-descriptor executor-required states, including coordinator-gate
-  propagation.
+  propagation and static executor-step contract exposure.
 
 ## Notes
 
