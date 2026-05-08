@@ -8,6 +8,7 @@ remote epoch manifests.
 Changes:
 
 - Adds `ec_spire_remote_epoch_manifest_publication_plan(...)`.
+- Adds `ec_spire_remote_epoch_manifest_publication_summary(...)`.
 - Projects the current manifest plan and persisted manifest catalog into
   per-node publication rows.
 - Reports whether the persisted manifest entry exists and still matches the
@@ -16,6 +17,8 @@ Changes:
   persisted catalog is fresh.
 - Reports `persist_remote_epoch_manifest` or `refresh_remote_epoch_manifest`
   when publication is blocked on missing or stale persisted manifest state.
+- Aggregates per-node publication rows into one publication decision with
+  ready, persistence-required, refresh-required, and blocked counts.
 - Updates the Phase 7 task note with the publication-plan surface.
 
 ## Files
@@ -25,7 +28,7 @@ Changes:
 
 ## Validation
 
-Head SHA: `8e268f56`
+Head SHA: `2955716c`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
@@ -42,7 +45,7 @@ Result:
 - PG18 `remote_epoch_manifest_persist_ready` filter passed:
   - `pg_test_ec_spire_remote_epoch_manifest_persist_ready`
 - The test covers ready persisted-manifest publication and stale persisted-entry
-  refresh blocking.
+  refresh blocking, including the publication summary.
 
 ## Notes
 
