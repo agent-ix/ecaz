@@ -370,7 +370,6 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     top_k: build_list_size,
                 },
                 |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
-                |_: &[ItemPointer]| {},
                 |heap_tid| match exact_heap_rerank_distance(
                     heap_relation,
                     snapshot,
@@ -635,9 +634,6 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 &mut opaque.visited,
                 scan_params,
                 |tuple| prefilter.score(tuple),
-                |heap_tids: &[ItemPointer]| {
-                    prefetch_heap_rerank_blocks(heap_relation_state.0, heap_tids)
-                },
                 |heap_tid| match exact_heap_rerank_distance(
                     heap_relation_state.0,
                     snapshot_state.0,
@@ -1832,54 +1828,6 @@ fn sql_scan_result_cap(reloption_top_k: usize, rerank_budget: usize) -> usize {
     // hard SQL result cap.
     let _ = reloption_top_k;
     rerank_budget
-}
-
-#[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
-    if heap_tids.is_empty() {
-        return;
-    }
-    let block_numbers = heap_tids.iter().map(|tid| tid.block_number).collect();
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_DEFAULT as i32,
-            ptr::null_mut(),
-            heap_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
-    }
-    unsafe { pg_sys::read_stream_end(stream) };
-}
-
-#[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    heap_tids: &[ItemPointer],
-) {
-    for heap_tid in heap_tids {
-        unsafe {
-            pg_sys::PrefetchBuffer(
-                heap_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                heap_tid.block_number,
-            )
-        };
-    }
 }
 
 unsafe fn exact_heap_rerank_distance(

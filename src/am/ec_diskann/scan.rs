@@ -151,14 +151,7 @@ where
     Re: Fn(ItemPointer) -> f32,
 {
     let mut scratch = VisitedState::new();
-    vamana_scan_with(
-        reader,
-        &mut scratch,
-        params,
-        prefilter,
-        |_: &[ItemPointer]| {},
-        rerank,
-    )
+    vamana_scan_with(reader, &mut scratch, params, prefilter, rerank)
 }
 
 /// Scratch-reusing variant of [`vamana_scan`]. Phase 6B's pgrx
@@ -166,26 +159,15 @@ where
 /// calls this across `amgettuple` re-entries (if we move to a
 /// streaming shape) or across successive cursors on the same
 /// relation.
-///
-/// `prefetch(&[ItemPointer])` is called exactly once with the
-/// rerank-budget-sized, heap-TID-sorted slice of `primary_heaptid`
-/// values that will subsequently be passed to `rerank`. Callers wire
-/// a real PG read_stream / PrefetchBuffer hook here so the OS / PG
-/// shared-buffer manager can start fetching rerank pages while the
-/// rerank loop is still warming up. Callers that do not need
-/// prefetching (e.g. unit tests, the build / insert insert path with
-/// SnapshotSelf) pass a no-op closure.
-pub fn vamana_scan_with<Pre, Pf, Re>(
+pub fn vamana_scan_with<Pre, Re>(
     reader: &PersistedGraphReader<'_>,
     scratch: &mut VisitedState,
     params: ScanParams,
     prefilter: Pre,
-    prefetch: Pf,
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
     Pre: Fn(&VamanaNodeTuple) -> f32,
-    Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
     if params.entry_point == ItemPointer::INVALID {
@@ -249,13 +231,6 @@ where
                     .cmp(&b.primary_heaptid.offset_number)
             })
     });
-    // Hand the heap-TID-sorted batch to the caller's prefetch hook so
-    // PG can start populating shared buffers concurrently with the
-    // first few rerank rows. Same shape as the IVF prefetch in
-    // `3ef44426`.
-    let prefetch_tids: Vec<ItemPointer> =
-        to_rerank.iter().map(|c| c.primary_heaptid).collect();
-    prefetch(&prefetch_tids);
     let mut reranked: Vec<ScanResult> = to_rerank
         .into_iter()
         .map(|c| {
@@ -951,24 +926,10 @@ mod tests {
 
         use crate::am::ec_diskann::reader::VisitedState;
         let mut scratch = VisitedState::new();
-        let reused_a = vamana_scan_with(
-            &reader,
-            &mut scratch,
-            params_a,
-            prefilter_a,
-            |_: &[ItemPointer]| {},
-            rerank_a,
-        )
-        .expect("reused a");
-        let reused_b = vamana_scan_with(
-            &reader,
-            &mut scratch,
-            params_b,
-            prefilter_b,
-            |_: &[ItemPointer]| {},
-            rerank_b,
-        )
-        .expect("reused b");
+        let reused_a = vamana_scan_with(&reader, &mut scratch, params_a, prefilter_a, rerank_a)
+            .expect("reused a");
+        let reused_b = vamana_scan_with(&reader, &mut scratch, params_b, prefilter_b, rerank_b)
+            .expect("reused b");
 
         assert_eq!(fresh_a, reused_a, "first reuse must match fresh");
         assert_eq!(
