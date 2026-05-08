@@ -499,8 +499,8 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
-    let heap_summary = unsafe {
-        remote_search_heap_resolution_summary_row(
+    let gate = unsafe {
+        remote_search_coordinator_gate_summary_row(
             index_relation,
             requested_epoch,
             query.clone(),
@@ -509,8 +509,30 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
             consistency_mode,
         )
     };
-    let returned_candidate_count = if heap_summary.remote_plan_count == 0
-        && remote_search_status_allows_local_heap_rows(heap_summary.status)
+    unsafe {
+        remote_search_local_heap_candidate_summary_from_gate(
+            index_relation,
+            &gate,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    }
+}
+
+unsafe fn remote_search_local_heap_candidate_summary_from_gate(
+    index_relation: pg_sys::Relation,
+    gate: &SpireRemoteSearchCoordinatorGateSummaryRow,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
+    let returned_candidate_count = if gate.remote_plan_count == 0
+        && remote_search_status_allows_local_heap_rows(gate.status)
     {
         let rows = unsafe {
             remote_search_local_heap_candidate_rows(
@@ -529,16 +551,16 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     };
 
     SpireRemoteSearchLocalHeapCandidateSummaryRow {
-        requested_epoch: heap_summary.requested_epoch,
-        local_plan_count: heap_summary.local_plan_count,
-        remote_plan_count: heap_summary.remote_plan_count,
-        skipped_plan_count: heap_summary.skipped_plan_count,
-        local_pid_count: heap_summary.local_pid_count,
-        remote_pid_count: heap_summary.remote_pid_count,
-        decoded_local_locator_count: heap_summary.decoded_local_locator_count,
+        requested_epoch: gate.requested_epoch,
+        local_plan_count: gate.local_plan_count,
+        remote_plan_count: gate.remote_plan_count,
+        skipped_plan_count: gate.skipped_plan_count,
+        local_pid_count: gate.local_pid_count,
+        remote_pid_count: gate.remote_pid_count,
+        decoded_local_locator_count: returned_candidate_count,
         returned_candidate_count,
-        status: heap_summary.status,
-        recommendation: heap_summary.recommendation,
+        status: gate.status,
+        recommendation: gate.recommendation,
     }
 }
 
@@ -561,8 +583,9 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         )
     };
     let local_summary = unsafe {
-        remote_search_local_heap_candidate_summary_row(
+        remote_search_local_heap_candidate_summary_from_gate(
             index_relation,
+            &gate,
             requested_epoch,
             query,
             selected_pids,
