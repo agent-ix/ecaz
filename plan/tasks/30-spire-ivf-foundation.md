@@ -1735,14 +1735,16 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   an operator-periodic-job schedule decision under the same publish lock
   recheck, and `ec_spire_index_maintenance_scheduler_run` delegates to the
   existing locked maintenance publish path.
-- [ ] **Old-epoch physical reclamation.** Physically reclaim or reuse retained
+- [x] **Old-epoch physical reclamation.** Physically reclaim or reuse retained
   old epoch object/manifest tuples only after active-query and retention rules
   prove they are no longer needed. Phase 2 preserves retired epochs for
   correctness and exposes cleanup-candidate debt, but tuple/page reclamation is
   a later space-management phase.
   Packet 30625 added `ec_spire_index_epoch_cleanup_summary` so operators can
-  see retention blockers and cleanup-candidate tuple debt in one row; physical
-  tuple reclamation remains open.
+  see retention blockers and cleanup-candidate tuple debt in one row. Landed in
+  packet 30628: `ec_spire_index_epoch_cleanup_run` now removes unprotected
+  object tuples for cleanup-eligible epochs using no-compaction line-pointer
+  deletion under the SPIRE publish lock.
 - [x] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
   Landed in packet 30626: the local correctness matrix records the focused PG18

@@ -95,10 +95,12 @@ SPIRE publish lock, reloads active state, rechecks the selected action, and
 publishes through the normal maintenance path.
 
 Use `ec_spire_index_epoch_cleanup_summary(index_oid)` for old-epoch cleanup
-triage. `physical_cleanup_status = 'blocked_not_implemented'` means retained or
-superseded object tuples are visible as cleanup debt, but this build cannot
-physically reclaim those tuples yet. `physical_cleanup_supported = false` is the
-current expected value.
+triage. `physical_cleanup_status = 'blocked_by_retention'` means cleanup debt is
+visible, but no epoch is currently eligible after retention and active-query
+checks. `physical_cleanup_status = 'supported'` means
+`ec_spire_index_epoch_cleanup_run(index_oid)` can reclaim old object tuples.
+The cleanup run removes only unprotected tuples for cleanup-eligible epochs
+under the SPIRE publish lock.
 
 ## Reading Notes
 
