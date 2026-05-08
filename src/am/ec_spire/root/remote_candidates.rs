@@ -1875,6 +1875,16 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         remote_search_execution_summary_row(
             index_relation,
             requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+    let dispatch_summary = unsafe {
+        remote_search_libpq_dispatch_summary_row(
+            index_relation,
+            requested_epoch,
             query,
             selected_pids,
             top_k,
@@ -1924,6 +1934,8 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         remote_pid_count: execution_summary.remote_pid_count,
         skipped_pid_count: execution_summary.skipped_pid_count,
         execution_status: execution_summary.status,
+        libpq_dispatch_count: dispatch_summary.dispatch_count,
+        libpq_dispatch_status: dispatch_summary.status,
         merge_status: finalization_summary.merge_status,
         final_heap_fetch_status: finalization_summary.final_heap_fetch_status,
         next_blocker,

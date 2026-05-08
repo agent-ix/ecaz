@@ -4087,6 +4087,8 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         name!(remote_pid_count, i64),
         name!(skipped_pid_count, i64),
         name!(execution_status, &'static str),
+        name!(libpq_dispatch_count, i64),
+        name!(libpq_dispatch_status, &'static str),
         name!(merge_status, &'static str),
         name!(final_heap_fetch_status, &'static str),
         name!(next_blocker, &'static str),
@@ -4140,6 +4142,8 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
         i64::try_from(row.skipped_pid_count).expect("skipped pid count should fit in i64"),
         row.execution_status,
+        i64::try_from(row.libpq_dispatch_count).expect("libpq dispatch count should fit in i64"),
+        row.libpq_dispatch_status,
         row.merge_status,
         row.final_heap_fetch_status,
         row.next_blocker,
@@ -12994,6 +12998,14 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT final_heap_fetch_status {local_gate_from}"))
                 .expect("local coordinator gate heap query should succeed")
                 .expect("local coordinator gate heap should exist");
+        let local_libpq_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_dispatch_count {local_gate_from}"))
+                .expect("local coordinator gate dispatch count query should succeed")
+                .expect("local coordinator gate dispatch count should exist");
+        let local_libpq_dispatch_status =
+            Spi::get_one::<String>(&format!("SELECT libpq_dispatch_status {local_gate_from}"))
+                .expect("local coordinator gate dispatch status query should succeed")
+                .expect("local coordinator gate dispatch status should exist");
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
         let remote_gate_from = format!(
@@ -13014,6 +13026,14 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT execution_status {remote_gate_from}"))
                 .expect("remote coordinator gate execution query should succeed")
                 .expect("remote coordinator gate execution should exist");
+        let remote_libpq_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_dispatch_count {remote_gate_from}"))
+                .expect("remote coordinator gate dispatch count query should succeed")
+                .expect("remote coordinator gate dispatch count should exist");
+        let remote_libpq_dispatch_status =
+            Spi::get_one::<String>(&format!("SELECT libpq_dispatch_status {remote_gate_from}"))
+                .expect("remote coordinator gate dispatch status query should succeed")
+                .expect("remote coordinator gate dispatch status should exist");
         let remote_plan_count =
             Spi::get_one::<i64>(&format!("SELECT remote_plan_count {remote_gate_from}"))
                 .expect("remote coordinator gate remote plan query should succeed")
@@ -13026,9 +13046,16 @@ mod tests {
         assert_eq!(local_status, "ready");
         assert_eq!(local_next_blocker, "none");
         assert_eq!(local_final_heap_fetch_status, "local_ready");
+        assert_eq!(local_libpq_dispatch_count, 0);
+        assert_eq!(local_libpq_dispatch_status, "ready");
         assert_eq!(remote_status, "requires_remote_node_descriptor");
         assert_eq!(remote_next_blocker, "remote_node_descriptor");
         assert_eq!(remote_execution_status, "requires_remote_node_descriptor");
+        assert_eq!(remote_libpq_dispatch_count, 1);
+        assert_eq!(
+            remote_libpq_dispatch_status,
+            "requires_remote_node_descriptor"
+        );
         assert_eq!(remote_plan_count, 1);
         assert_eq!(remote_pid_count, 1);
     }
@@ -13201,6 +13228,12 @@ mod tests {
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
         let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass)";
+        let coordinator_gate_from = format!(
+            "FROM ec_spire_remote_search_coordinator_gate_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let readiness_from = format!(
             "FROM ec_spire_remote_search_target_readiness(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -13278,6 +13311,16 @@ mod tests {
         let publish_status = Spi::get_one::<String>(&format!("SELECT status {publish_gate_from}"))
             .expect("publish status query should succeed")
             .expect("publish status should exist");
+        let coordinator_libpq_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT libpq_dispatch_count {coordinator_gate_from}"
+        ))
+        .expect("coordinator gate dispatch count query should succeed")
+        .expect("coordinator gate dispatch count should exist");
+        let coordinator_libpq_dispatch_status = Spi::get_one::<String>(&format!(
+            "SELECT libpq_dispatch_status {coordinator_gate_from}"
+        ))
+        .expect("coordinator gate dispatch status query should succeed")
+        .expect("coordinator gate dispatch status should exist");
         let target_status = Spi::get_one::<String>(&format!("SELECT status {readiness_from}"))
             .expect("target readiness query should succeed")
             .expect("target readiness status should exist");
@@ -13366,6 +13409,11 @@ mod tests {
         assert_eq!(extension_status, "ready");
         assert_eq!(publish_decision, "publish_distributed_epoch");
         assert_eq!(publish_status, "ready");
+        assert_eq!(coordinator_libpq_dispatch_count, 1);
+        assert_eq!(
+            coordinator_libpq_dispatch_status,
+            "requires_libpq_transport"
+        );
         assert_eq!(target_status, "requires_libpq_transport");
         assert_eq!(execution_status, "requires_libpq_transport");
         assert_eq!(execution_transport, "libpq_pipeline");

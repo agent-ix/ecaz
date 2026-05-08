@@ -1539,8 +1539,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   resolution stays deferred to origin-node lookup, and finalization reports
   whether remote heap fetch is blocked or ready.
   `ec_spire_remote_search_coordinator_gate_summary(...)` now ties execution,
-  merge, and final heap-fetch readiness into one coordinator integration gate
-  with the next unresolved blocker.
+  libpq dispatch, merge, and final heap-fetch readiness into one coordinator
+  integration gate with the next unresolved blocker.
   `ec_spire_remote_search_heap_resolution_contract()` now makes the local vs.
   origin-node heap lookup boundary explicit.
   `ec_spire_remote_search_local_heap_resolution_plan(...)` now decodes
