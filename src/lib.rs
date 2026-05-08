@@ -7470,6 +7470,42 @@ fn ec_spire_remote_search_libpq_result_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_coordinator_result_contract() -> TableIterator<
+    'static,
+    (
+        name!(result_source, &'static str),
+        name!(status_family, &'static str),
+        name!(semantic_role, &'static str),
+        name!(validator, &'static str),
+    ),
+> {
+    TableIterator::new(
+        vec![
+            (
+                "local_heap_candidates",
+                "ready_or_degraded_ready",
+                "coordinator_local_heap_result_rows",
+                "must_have_positive_returned_candidate_count",
+            ),
+            (
+                "blocked",
+                "blocked",
+                "pre_result_gate_blocked",
+                "must_preserve_next_blocker",
+            ),
+            (
+                "none",
+                "ready_empty",
+                "no_candidate_result",
+                "must_have_zero_returned_candidate_count_and_no_blocker",
+            ),
+        ]
+        .into_iter(),
+    )
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_receive_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -20134,6 +20170,7 @@ mod tests {
         let manifest_result_from = "FROM ec_spire_remote_epoch_manifest_libpq_result_contract()";
         let manifest_executor_step_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_executor_step_contract()";
+        let search_result_from = "FROM ec_spire_remote_search_coordinator_result_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
             .expect("degradation contract count query should succeed")
@@ -20235,6 +20272,15 @@ mod tests {
         ))
         .expect("manifest executor send input query should succeed")
         .expect("manifest executor send input should exist");
+        let search_result_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {search_result_from}"))
+                .expect("search result contract count query should succeed")
+                .expect("search result contract count should exist");
+        let search_blocked_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {search_result_from} WHERE result_source = 'blocked'"
+        ))
+        .expect("search blocked result query should succeed")
+        .expect("search blocked result should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -20265,6 +20311,8 @@ mod tests {
             manifest_send_input,
             "ec_spire_remote_epoch_manifest_libpq_parameter_contract"
         );
+        assert_eq!(search_result_count, 3);
+        assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
     }
 
     #[pg_test]
