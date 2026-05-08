@@ -37,6 +37,7 @@ const SPIRE_REMOTE_NONE: &str = "none";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
+const SPIRE_REMOTE_CONNINFO_READY: &str = "secret_reference_ready";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -1073,6 +1074,158 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             consistency_mode: parsed_consistency_mode,
             status,
         })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteLibpqConnectionDescriptorRow {
+    conninfo_secret_name: String,
+    remote_index_regclass: String,
+    remote_index_identity_bytes: u64,
+}
+
+fn load_remote_libpq_connection_descriptors(
+    index_relid: pg_sys::Oid,
+    remote_node_ids: &[u32],
+) -> Result<HashMap<u32, SpireRemoteLibpqConnectionDescriptorRow>, String> {
+    if remote_node_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let node_id_list = remote_node_ids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT node_id::int4, \
+                conninfo_secret_name, \
+                remote_index_identity, \
+                remote_index_regclass \
+           FROM ec_spire_remote_node_descriptor \
+          WHERE coordinator_index_oid = '{}'::oid \
+            AND node_id = ANY (ARRAY[{}]::integer[])",
+        u32::from(index_relid),
+        node_id_list
+    );
+
+    Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire libpq connection descriptor read failed: {e}"))?
+            .map(|row| {
+                let node_id = row["node_id"]
+                    .value::<i32>()
+                    .map_err(|e| format!("ec_spire libpq connection node_id decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire libpq connection node_id is null".to_owned())
+                    .and_then(|value| {
+                        u32::try_from(value)
+                            .map_err(|_| "ec_spire libpq connection node_id is negative".to_owned())
+                    })?;
+                let conninfo_secret_name = row["conninfo_secret_name"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire libpq connection conninfo secret decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection conninfo secret is null".to_owned()
+                    })?;
+                let remote_index_identity = row["remote_index_identity"]
+                    .value::<Vec<u8>>()
+                    .map_err(|e| {
+                        format!("ec_spire libpq connection remote identity decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection remote identity is null".to_owned()
+                    })?;
+                let remote_index_regclass = row["remote_index_regclass"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire libpq connection remote regclass decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection remote regclass is null".to_owned()
+                    })?;
+                let remote_index_identity_bytes = u64::try_from(remote_index_identity.len())
+                    .map_err(|_| {
+                        "ec_spire libpq connection remote identity length exceeds u64".to_owned()
+                    })?;
+
+                Ok((
+                    node_id,
+                    SpireRemoteLibpqConnectionDescriptorRow {
+                        conninfo_secret_name,
+                        remote_index_regclass,
+                        remote_index_identity_bytes,
+                    },
+                ))
+            })
+            .collect::<Result<HashMap<_, _>, String>>()
+    })
+}
+
+pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLibpqConnectionPlanRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
+        let request_rows = unsafe {
+            remote_search_libpq_request_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let remote_node_ids = request_rows
+            .iter()
+            .map(|row| row.node_id)
+            .collect::<Vec<_>>();
+        let descriptors = load_remote_libpq_connection_descriptors(
+            unsafe { (*index_relation).rd_id },
+            &remote_node_ids,
+        )?;
+
+        request_rows
+            .into_iter()
+            .map(|row| {
+                let descriptor = descriptors.get(&row.node_id);
+                Ok(SpireRemoteSearchLibpqConnectionPlanRow {
+                    requested_epoch: row.requested_epoch,
+                    node_id: row.node_id,
+                    selected_pids: row.selected_pids,
+                    pid_count: row.pid_count,
+                    execution_transport: row.execution_transport,
+                    conninfo_secret_name: descriptor
+                        .map(|row| row.conninfo_secret_name.clone())
+                        .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                    remote_index_regclass: descriptor
+                        .map(|row| row.remote_index_regclass.clone())
+                        .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                    remote_index_identity_bytes: descriptor
+                        .map(|row| row.remote_index_identity_bytes)
+                        .unwrap_or(0),
+                    conninfo_resolution: if descriptor.is_some() {
+                        SPIRE_REMOTE_CONNINFO_READY
+                    } else {
+                        SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                    },
+                    pipeline_mode: if descriptor.is_some() {
+                        SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE
+                    } else {
+                        SPIRE_REMOTE_NONE
+                    },
+                    status: row.status,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }

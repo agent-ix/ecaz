@@ -383,6 +383,21 @@ pub(crate) struct SpireRemoteSearchLibpqRequestSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqConnectionPlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) execution_transport: &'static str,
+    pub(crate) conninfo_secret_name: String,
+    pub(crate) remote_index_regclass: String,
+    pub(crate) remote_index_identity_bytes: u64,
+    pub(crate) conninfo_resolution: &'static str,
+    pub(crate) pipeline_mode: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqParameterContractRow {
     pub(crate) parameter_ordinal: u64,
     pub(crate) parameter_name: &'static str,

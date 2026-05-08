@@ -1514,6 +1514,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   libpq request envelope without opening connections: SQL template, bind
   parameter count, expected result column count, remote index source, conninfo
   source, candidate format, PID counts, and blocked/readiness status.
+  `ec_spire_remote_search_libpq_connection_plan(...)` now resolves registered
+  descriptors into the future executor's per-node connection envelope without
+  exposing raw conninfo: secret reference, remote index regclass, remote
+  identity byte count, pipeline-mode requirement, and fail-closed missing
+  descriptor status.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,
