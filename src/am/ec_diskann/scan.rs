@@ -570,26 +570,71 @@ mod tests {
         );
     }
 
-    // SC-003b: rerank visits candidates in heap-TID order, not in
-    // prefilter-score order. The final result is still sorted by
-    // exact distance (covered by other tests); this test only locks
-    // the visit order so adjacent rerank rows can share PG buffer
-    // pins on real hardware.
+    // SC-003b: rerank visits candidates in full
+    // `(block_number, offset_number)` heap-TID order, not in
+    // prefilter-score order. Exercises the offset_number tie-breaker
+    // explicitly with multiple candidates on the same block, so a
+    // regression that only sorted by block_number would actually
+    // fail this test (reviewer feedback `30207-01`).
     #[test]
-    fn sc_003b_rerank_visits_in_heap_tid_order() {
+    fn sc_003b_rerank_visits_in_full_heap_tid_order() {
         use std::cell::RefCell;
-        let n = 6;
+        use std::collections::{HashMap, HashSet};
+        // Fixture: three blocks, two candidates per block, with the
+        // offsets chosen so the heap-TID-sorted order is NOT the
+        // insertion order on any block.
+        let payload_heap_tids = [
+            ItemPointer {
+                block_number: 1002,
+                offset_number: 7,
+            },
+            ItemPointer {
+                block_number: 1000,
+                offset_number: 5,
+            },
+            ItemPointer {
+                block_number: 1001,
+                offset_number: 1,
+            },
+            ItemPointer {
+                block_number: 1000,
+                offset_number: 2,
+            },
+            ItemPointer {
+                block_number: 1002,
+                offset_number: 3,
+            },
+            ItemPointer {
+                block_number: 1001,
+                offset_number: 9,
+            },
+        ];
+        let n = payload_heap_tids.len();
         let g = chain_graph(n, 4);
-        let payloads = synth_payloads(n, 0, 0);
+        let payloads: Vec<NodePayload> = payload_heap_tids
+            .iter()
+            .map(|tid| NodePayload {
+                primary_heaptid: *tid,
+                binary_words: Vec::new(),
+                search_code: Vec::new(),
+            })
+            .collect();
         let persisted =
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        // Prefilter: descending in node_id, so frontier order would
-        // be [n-1, n-2, ..., 0] without the heap-TID sort.
-        let prefilter = |t: &VamanaNodeTuple| {
-            ((n - 1) as u32 - (t.primary_heaptid.block_number - 1000)) as f32
-        };
+        // Prefilter scores chosen so the natural score-ordered
+        // traversal is the *reverse* of the heap-TID-sorted order.
+        // The heap-TID sort must overwrite this entirely.
+        let mut prefilter_scores: HashMap<ItemPointer, f32> = HashMap::new();
+        prefilter_scores.insert(payload_heap_tids[0], 0.0); // (1002, 7) — best score
+        prefilter_scores.insert(payload_heap_tids[4], 1.0); // (1002, 3)
+        prefilter_scores.insert(payload_heap_tids[5], 2.0); // (1001, 9)
+        prefilter_scores.insert(payload_heap_tids[2], 3.0); // (1001, 1)
+        prefilter_scores.insert(payload_heap_tids[1], 4.0); // (1000, 5)
+        prefilter_scores.insert(payload_heap_tids[3], 5.0); // (1000, 2)
+
+        let prefilter = |t: &VamanaNodeTuple| prefilter_scores[&t.primary_heaptid];
         let visit_order = RefCell::new(Vec::<ItemPointer>::new());
         let rerank = |hip: ItemPointer| {
             visit_order.borrow_mut().push(hip);
@@ -604,16 +649,27 @@ mod tests {
         };
         vamana_scan(&reader, params, prefilter, rerank).expect("scan");
 
-        let observed: Vec<u32> = visit_order
-            .borrow()
-            .iter()
-            .map(|tid| tid.block_number)
-            .collect();
+        let observed = visit_order.borrow().clone();
         let mut expected = observed.clone();
-        expected.sort();
+        expected.sort_by(|a, b| {
+            a.block_number
+                .cmp(&b.block_number)
+                .then_with(|| a.offset_number.cmp(&b.offset_number))
+        });
         assert_eq!(
             observed, expected,
-            "rerank must visit candidates in ascending heap-TID order"
+            "rerank must visit candidates in ascending (block_number, offset_number) order"
+        );
+
+        // Fixture-shape sanity: there really are multiple candidates
+        // per block, so a block_number-only sort would not be enough
+        // to satisfy the assertion above.
+        let unique_blocks: HashSet<u32> =
+            observed.iter().map(|tid| tid.block_number).collect();
+        assert!(
+            unique_blocks.len() < observed.len(),
+            "fixture must include multiple candidates per block to exercise \
+             the offset_number tie-breaker"
         );
     }
 
