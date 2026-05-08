@@ -1743,8 +1743,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   Packet 30625 added `ec_spire_index_epoch_cleanup_summary` so operators can
   see retention blockers and cleanup-candidate tuple debt in one row; physical
   tuple reclamation remains open.
-- [ ] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
+- [x] **Local correctness matrix.** Keep local PG18 tests narrow and focused on
   correctness, WAL safety, and scan behavior.
+  Landed in packet 30626: the local correctness matrix records the focused PG18
+  lanes for build/scan, insert/update/vacuum, recursive routing, maintenance
+  publish safety, storage debt, planner cost, and remote contract drift guards.
 - [x] **SPIRE planner cost model.** Replace the
   `cost::gated_planner_cost_estimate(block_count)` stub in
   `src/am/ec_spire/cost.rs` with a SPIRE-aware cost function factoring in
