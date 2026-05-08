@@ -159,6 +159,48 @@ pub(crate) fn remote_libpq_connection_lifecycle_contract_rows(
     ]
 }
 
+pub(crate) fn remote_conninfo_secret_resolution_contract_rows(
+) -> Vec<SpireRemoteConninfoSecretResolutionContractRow> {
+    vec![
+        SpireRemoteConninfoSecretResolutionContractRow {
+            provider_ordinal: 1,
+            provider_policy: "external_executor_secret_provider",
+            provider_status: "selected_v1",
+            secret_reference_field: "conninfo_secret_name",
+            sql_storage_policy: "descriptor_catalog_stores_secret_reference_only",
+            raw_conninfo_allowed: false,
+            executor_action: "resolve_conninfo_secret_reference",
+            failure_status: SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            validator: "must_resolve_to_libpq_conninfo_without_sql_exposure",
+            recommendation: "configure the executor secret provider before enabling remote transport",
+        },
+        SpireRemoteConninfoSecretResolutionContractRow {
+            provider_ordinal: 2,
+            provider_policy: "postgres_fdw_user_mapping",
+            provider_status: "not_selected_v1",
+            secret_reference_field: "conninfo_secret_name",
+            sql_storage_policy: "no_postgres_fdw_dependency_for_v1",
+            raw_conninfo_allowed: false,
+            executor_action: "not_used",
+            failure_status: "unsupported_secret_provider",
+            validator: "must_not_assume_fdw_user_mapping_exists",
+            recommendation: "keep FDW-style mapping as a future integration option",
+        },
+        SpireRemoteConninfoSecretResolutionContractRow {
+            provider_ordinal: 3,
+            provider_policy: "in_extension_conninfo_table",
+            provider_status: "rejected_v1",
+            secret_reference_field: "conninfo_secret_name",
+            sql_storage_policy: "never_store_raw_conninfo_in_extension_catalog",
+            raw_conninfo_allowed: false,
+            executor_action: "not_used",
+            failure_status: "unsupported_secret_provider",
+            validator: "must_not_persist_raw_conninfo_in_ec_spire_catalogs",
+            recommendation: "use external secret storage instead of an extension-owned conninfo table",
+        },
+    ]
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct SpireRemoteCountRollup {
     local_count: u64,

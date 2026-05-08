@@ -441,6 +441,20 @@ pub(crate) struct SpireRemoteLibpqConnectionLifecycleContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteConninfoSecretResolutionContractRow {
+    pub(crate) provider_ordinal: u64,
+    pub(crate) provider_policy: &'static str,
+    pub(crate) provider_status: &'static str,
+    pub(crate) secret_reference_field: &'static str,
+    pub(crate) sql_storage_policy: &'static str,
+    pub(crate) raw_conninfo_allowed: bool,
+    pub(crate) executor_action: &'static str,
+    pub(crate) failure_status: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) node_id: u32,

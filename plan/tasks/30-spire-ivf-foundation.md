@@ -1609,6 +1609,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   connections, executor-owned `conninfo_secret_name` resolution, no raw
   conninfo exposure through SQL, and fail-closed/no-implicit-retry behavior for
   both remote search and remote manifest publication transports.
+  `ec_spire_remote_conninfo_secret_resolution_contract()` now records the
+  Phase 7 authentication decision: v1 uses an external executor-owned secret
+  provider keyed by `conninfo_secret_name`, keeps raw conninfo out of extension
+  SQL/catalog surfaces, leaves FDW-style mappings as a future option, and
+  rejects an extension-owned raw conninfo table.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

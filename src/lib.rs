@@ -5294,6 +5294,40 @@ fn ec_spire_remote_libpq_connection_lifecycle_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_conninfo_secret_resolution_contract() -> TableIterator<
+    'static,
+    (
+        name!(provider_ordinal, i64),
+        name!(provider_policy, &'static str),
+        name!(provider_status, &'static str),
+        name!(secret_reference_field, &'static str),
+        name!(sql_storage_policy, &'static str),
+        name!(raw_conninfo_allowed, bool),
+        name!(executor_action, &'static str),
+        name!(failure_status, &'static str),
+        name!(validator, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_conninfo_secret_resolution_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.provider_ordinal).expect("provider ordinal should fit in i64"),
+            row.provider_policy,
+            row.provider_status,
+            row.secret_reference_field,
+            row.sql_storage_policy,
+            row.raw_conninfo_allowed,
+            row.executor_action,
+            row.failure_status,
+            row.validator,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -20871,6 +20905,7 @@ mod tests {
             "FROM ec_spire_remote_epoch_manifest_libpq_executor_step_contract()";
         let operator_entrypoint_from = "FROM ec_spire_remote_operator_entrypoint_contract()";
         let libpq_lifecycle_from = "FROM ec_spire_remote_libpq_connection_lifecycle_contract()";
+        let secret_resolution_from = "FROM ec_spire_remote_conninfo_secret_resolution_contract()";
         let search_result_from = "FROM ec_spire_remote_search_coordinator_result_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
@@ -21026,6 +21061,28 @@ mod tests {
         ))
         .expect("manifest lifecycle conninfo policy query should succeed")
         .expect("manifest lifecycle conninfo policy should exist");
+        let secret_provider_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {secret_resolution_from}"))
+                .expect("secret provider count query should succeed")
+                .expect("secret provider count should exist");
+        let selected_secret_provider = Spi::get_one::<String>(&format!(
+            "SELECT provider_policy {secret_resolution_from} \
+             WHERE provider_status = 'selected_v1'"
+        ))
+        .expect("selected secret provider query should succeed")
+        .expect("selected secret provider should exist");
+        let selected_raw_conninfo_allowed = Spi::get_one::<bool>(&format!(
+            "SELECT raw_conninfo_allowed {secret_resolution_from} \
+             WHERE provider_status = 'selected_v1'"
+        ))
+        .expect("selected raw conninfo query should succeed")
+        .expect("selected raw conninfo should exist");
+        let rejected_provider_storage = Spi::get_one::<String>(&format!(
+            "SELECT sql_storage_policy {secret_resolution_from} \
+             WHERE provider_policy = 'in_extension_conninfo_table'"
+        ))
+        .expect("rejected secret provider storage query should succeed")
+        .expect("rejected secret provider storage should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -21072,6 +21129,16 @@ mod tests {
             "conninfo_secret_name_resolved_by_executor"
         );
         assert_eq!(manifest_conninfo_policy, "never_expose_raw_conninfo_in_sql");
+        assert_eq!(secret_provider_count, 3);
+        assert_eq!(
+            selected_secret_provider,
+            "external_executor_secret_provider"
+        );
+        assert!(!selected_raw_conninfo_allowed);
+        assert_eq!(
+            rejected_provider_storage,
+            "never_store_raw_conninfo_in_extension_catalog"
+        );
     }
 
     #[pg_test]
