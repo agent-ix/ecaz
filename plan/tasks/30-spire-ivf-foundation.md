@@ -1637,6 +1637,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_libpq_dispatch_summary(...)` now join the
   request envelope, JSONB payload, dispatch action, receive validator, and
   executor handoff into the final manifest-publication pre-I/O dispatch view.
+  `ec_spire_remote_epoch_manifest_libpq_bind_plan(...)` now expands each
+  manifest dispatch row into the three parameter-contract bind slots with value
+  source, status, preview, and manifest-entry count metadata.
   `ec_spire_remote_epoch_manifest_libpq_executor_readiness(...)` now reports the
   remaining manifest publication executor steps: secret resolution, connection
   open, pipeline entry, send, and payload-validation result handoff.

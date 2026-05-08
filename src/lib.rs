@@ -3609,6 +3609,134 @@ fn ec_spire_remote_epoch_manifest_libpq_dispatch_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_bind_plan(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(parameter_ordinal, i64),
+        name!(parameter_name, &'static str),
+        name!(pg_type, &'static str),
+        name!(value_source, &'static str),
+        name!(value_status, String),
+        name!(value_preview, String),
+        name!(element_count, i64),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_libpq_bind_plan")
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT active_epoch, node_id, remote_index_regclass, \
+                        manifest_payload_format, manifest_payload, dispatch_action, status \
+                   FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan($1::oid) \
+                  ORDER BY node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest libpq bind plan read failed: {e}")
+            })?
+            .map(|row| {
+                let active_epoch = row["active_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| format!("manifest bind active_epoch decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind active_epoch is null".to_owned())?;
+                let node_id = row["node_id"]
+                    .value::<i64>()
+                    .map_err(|e| format!("manifest bind node_id decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind node_id is null".to_owned())?;
+                let remote_index_regclass = row["remote_index_regclass"]
+                    .value::<String>()
+                    .map_err(|e| format!("manifest bind remote_index_regclass decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind remote_index_regclass is null".to_owned())?;
+                let manifest_payload_format = row["manifest_payload_format"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("manifest bind manifest_payload_format decode failed: {e}")
+                    })?
+                    .ok_or_else(|| "manifest bind manifest_payload_format is null".to_owned())?;
+                let manifest_payload = row["manifest_payload"]
+                    .value::<pgrx::JsonB>()
+                    .map_err(|e| format!("manifest bind manifest_payload decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind manifest_payload is null".to_owned())?;
+                let dispatch_action = row["dispatch_action"]
+                    .value::<String>()
+                    .map_err(|e| format!("manifest bind dispatch_action decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind dispatch_action is null".to_owned())?;
+                let status = row["status"]
+                    .value::<String>()
+                    .map_err(|e| format!("manifest bind status decode failed: {e}"))?
+                    .ok_or_else(|| "manifest bind status is null".to_owned())?;
+
+                let value_status =
+                    if dispatch_action == "open_pipeline_and_send_remote_epoch_manifest" {
+                        "ready".to_owned()
+                    } else {
+                        status
+                    };
+                let entry_count = manifest_payload
+                    .0
+                    .as_object()
+                    .and_then(|object| object.get("entries"))
+                    .and_then(|entries| entries.as_array())
+                    .map(|entries| {
+                        i64::try_from(entries.len())
+                            .expect("manifest payload entry count should fit in i64")
+                    })
+                    .unwrap_or(0);
+
+                Ok::<_, String>(vec![
+                    (
+                        active_epoch,
+                        node_id,
+                        1_i64,
+                        "remote_index_oid",
+                        "oid",
+                        "remote_node_descriptor.remote_index_regclass",
+                        value_status.clone(),
+                        remote_index_regclass,
+                        1_i64,
+                    ),
+                    (
+                        active_epoch,
+                        node_id,
+                        2_i64,
+                        "active_epoch",
+                        "bigint",
+                        "manifest_catalog.active_epoch",
+                        value_status.clone(),
+                        active_epoch.to_string(),
+                        1_i64,
+                    ),
+                    (
+                        active_epoch,
+                        node_id,
+                        3_i64,
+                        "manifest_payload",
+                        "jsonb",
+                        "ec_spire_remote_epoch_manifest_payload_plan.manifest_payload",
+                        value_status,
+                        format!("{manifest_payload_format}:entries={entry_count}"),
+                        entry_count,
+                    ),
+                ])
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter().flatten())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_dispatch_summary(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -17371,6 +17499,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_dispatch_from = "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_bind_from = "FROM ec_spire_remote_epoch_manifest_libpq_bind_plan(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_dispatch_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
@@ -17553,6 +17683,36 @@ mod tests {
         ))
         .expect("manifest dispatch validator query should succeed")
         .expect("manifest dispatch validator should exist");
+        let manifest_bind_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {manifest_bind_from}"))
+                .expect("manifest bind count query should succeed")
+                .expect("manifest bind count should exist");
+        let manifest_bind_contract_mismatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_epoch_manifest_libpq_parameter_contract() contract \
+               LEFT JOIN (SELECT * {manifest_bind_from}) bind \
+                 ON bind.parameter_ordinal = contract.parameter_ordinal \
+                AND bind.parameter_name = contract.parameter_name \
+                AND bind.pg_type = contract.pg_type \
+              WHERE bind.parameter_ordinal IS NULL"
+        ))
+        .expect("manifest bind contract invariant query should succeed")
+        .expect("manifest bind contract invariant count should exist");
+        let manifest_bind_remote_index_preview = Spi::get_one::<String>(&format!(
+            "SELECT value_preview {manifest_bind_from} WHERE parameter_name = 'remote_index_oid'"
+        ))
+        .expect("manifest bind remote index query should succeed")
+        .expect("manifest bind remote index preview should exist");
+        let manifest_bind_payload_element_count = Spi::get_one::<i64>(&format!(
+            "SELECT element_count {manifest_bind_from} WHERE parameter_name = 'manifest_payload'"
+        ))
+        .expect("manifest bind payload element count query should succeed")
+        .expect("manifest bind payload element count should exist");
+        let manifest_bind_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {manifest_bind_from} WHERE value_status = 'ready'"
+        ))
+        .expect("manifest bind ready count query should succeed")
+        .expect("manifest bind ready count should exist");
         let dispatch_executor_status =
             Spi::get_one::<String>(&format!("SELECT executor_status {manifest_dispatch_from}"))
                 .expect("manifest dispatch executor status query should succeed")
@@ -17661,6 +17821,11 @@ mod tests {
             dispatch_validator,
             "ec_spire_remote_epoch_manifest_libpq_result_contract"
         );
+        assert_eq!(manifest_bind_count, 3);
+        assert_eq!(manifest_bind_contract_mismatch_count, 0);
+        assert_eq!(manifest_bind_remote_index_preview, "remote_spire_idx");
+        assert_eq!(manifest_bind_payload_element_count, 1);
+        assert_eq!(manifest_bind_ready_count, 3);
         assert_eq!(dispatch_executor_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "ready");
