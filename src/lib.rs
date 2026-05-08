@@ -4712,6 +4712,221 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_publication_gate_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(publication_decision, String),
+        name!(publication_entry_count, i64),
+        name!(libpq_request_count, i64),
+        name!(libpq_dispatch_count, i64),
+        name!(libpq_receive_count, i64),
+        name!(ready_receive_count, i64),
+        name!(publication_status, String),
+        name!(libpq_executor_status, String),
+        name!(libpq_executor_next_step, String),
+        name!(receive_status, String),
+        name!(next_blocker, String),
+        name!(status, String),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_publication_gate_summary",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                "WITH publication AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_publication_summary($1::oid) \
+                 ), request AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_libpq_request_summary($1::oid) \
+                 ), dispatch AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_libpq_dispatch_summary($1::oid) \
+                 ), receive AS ( \
+                     SELECT * FROM ec_spire_remote_epoch_manifest_libpq_receive_summary($1::oid) \
+                 ) \
+                 SELECT p.active_epoch, p.publication_decision, \
+                        p.publication_entry_count, \
+                        r.request_count AS libpq_request_count, \
+                        d.dispatch_count AS libpq_dispatch_count, \
+                        v.receive_count AS libpq_receive_count, \
+                        v.ready_receive_count, \
+                        p.status AS publication_status, \
+                        v.executor_status AS libpq_executor_status, \
+                        v.next_executor_step AS libpq_executor_next_step, \
+                        v.status AS receive_status, \
+                        CASE \
+                            WHEN p.status <> 'ready' THEN p.next_blocker \
+                            WHEN p.publication_decision = 'publish_remote_epoch_manifest' \
+                             AND v.status = 'requires_libpq_executor' \
+                            THEN v.next_executor_step \
+                            WHEN p.publication_decision = 'publish_remote_epoch_manifest' \
+                             AND v.status <> 'ready' \
+                            THEN 'manifest_receive' \
+                            ELSE 'none' \
+                        END AS next_blocker, \
+                        CASE \
+                            WHEN p.status <> 'ready' THEN p.status \
+                            WHEN p.publication_decision = 'publish_remote_epoch_manifest' \
+                            THEN v.status \
+                            ELSE p.status \
+                        END AS status \
+                   FROM publication p \
+                   JOIN request r ON r.active_epoch = p.active_epoch \
+                   JOIN dispatch d ON d.active_epoch = p.active_epoch \
+                   JOIN receive v ON v.active_epoch = p.active_epoch",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest publication gate summary read failed: {e}")
+            })?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("manifest publication gate active_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate active_epoch is null".to_owned()
+                        })?,
+                    row["publication_decision"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate publication_decision decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate publication_decision is null".to_owned()
+                        })?,
+                    row["publication_entry_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate publication_entry_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate publication_entry_count is null".to_owned()
+                        })?,
+                    row["libpq_request_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate libpq_request_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate libpq_request_count is null".to_owned()
+                        })?,
+                    row["libpq_dispatch_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate libpq_dispatch_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate libpq_dispatch_count is null".to_owned()
+                        })?,
+                    row["libpq_receive_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate libpq_receive_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate libpq_receive_count is null".to_owned()
+                        })?,
+                    row["ready_receive_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate ready_receive_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate ready_receive_count is null".to_owned()
+                        })?,
+                    row["publication_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate publication_status decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate publication_status is null".to_owned()
+                        })?,
+                    row["libpq_executor_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate libpq_executor_status decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate libpq_executor_status is null".to_owned()
+                        })?,
+                    row["libpq_executor_next_step"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!(
+                                "manifest publication gate libpq_executor_next_step decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate libpq_executor_next_step is null"
+                                .to_owned()
+                        })?,
+                    row["receive_status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest publication gate receive_status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate receive_status is null".to_owned()
+                        })?,
+                    row["next_blocker"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest publication gate next_blocker decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest publication gate next_blocker is null".to_owned()
+                        })?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest publication gate status decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest publication gate status is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| {
+                "ec_spire remote epoch manifest publication gate summary returned no rows"
+                    .to_owned()
+            })
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once(row)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_libpq_parameter_contract() -> TableIterator<
     'static,
     (
@@ -18156,6 +18371,9 @@ mod tests {
         let manifest_receive_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_receive_summary(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let manifest_publication_gate_from =
+            "FROM ec_spire_remote_epoch_manifest_publication_gate_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -18279,6 +18497,15 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {manifest_receive_summary_from}"))
                 .expect("manifest receive summary status query should succeed")
                 .expect("manifest receive summary status should exist");
+        let manifest_gate_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_publication_gate_from}"))
+                .expect("manifest publication gate status query should succeed")
+                .expect("manifest publication gate status should exist");
+        let manifest_gate_next_blocker = Spi::get_one::<String>(&format!(
+            "SELECT next_blocker {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate blocker query should succeed")
+        .expect("manifest publication gate blocker should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -18308,6 +18535,8 @@ mod tests {
         assert_eq!(manifest_executor_next_step, "none");
         assert_eq!(manifest_receive_count, 0);
         assert_eq!(manifest_receive_status, "not_required");
+        assert_eq!(manifest_gate_status, "not_required");
+        assert_eq!(manifest_gate_next_blocker, "none");
     }
 
     #[pg_test]
@@ -18715,6 +18944,9 @@ mod tests {
         let manifest_receive_summary_from =
             "FROM ec_spire_remote_epoch_manifest_libpq_receive_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let manifest_publication_gate_from =
+            "FROM ec_spire_remote_epoch_manifest_publication_gate_summary(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let catalog_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
             .expect("manifest catalog count query should succeed")
             .expect("manifest catalog count should exist");
@@ -19014,6 +19246,35 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {manifest_receive_summary_from}"))
                 .expect("manifest receive summary status query should succeed")
                 .expect("manifest receive summary status should exist");
+        let manifest_gate_request_count = Spi::get_one::<i64>(&format!(
+            "SELECT libpq_request_count {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate request count query should succeed")
+        .expect("manifest publication gate request count should exist");
+        let manifest_gate_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT libpq_dispatch_count {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate dispatch count query should succeed")
+        .expect("manifest publication gate dispatch count should exist");
+        let manifest_gate_receive_count = Spi::get_one::<i64>(&format!(
+            "SELECT libpq_receive_count {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate receive count query should succeed")
+        .expect("manifest publication gate receive count should exist");
+        let manifest_gate_executor_status = Spi::get_one::<String>(&format!(
+            "SELECT libpq_executor_status {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate executor status query should succeed")
+        .expect("manifest publication gate executor status should exist");
+        let manifest_gate_next_blocker = Spi::get_one::<String>(&format!(
+            "SELECT next_blocker {manifest_publication_gate_from}"
+        ))
+        .expect("manifest publication gate blocker query should succeed")
+        .expect("manifest publication gate blocker should exist");
+        let manifest_gate_status =
+            Spi::get_one::<String>(&format!("SELECT status {manifest_publication_gate_from}"))
+                .expect("manifest publication gate status query should succeed")
+                .expect("manifest publication gate status should exist");
         let executor_contract_mismatch_count = Spi::get_one::<i64>(&format!(
             "WITH readiness AS ( \
                  SELECT * {manifest_executor_readiness_from} \
@@ -19127,6 +19388,12 @@ mod tests {
         assert_eq!(manifest_receive_summary_ready_count, 1);
         assert_eq!(manifest_receive_summary_result_columns, 3);
         assert_eq!(manifest_receive_summary_status, "requires_libpq_executor");
+        assert_eq!(manifest_gate_request_count, 1);
+        assert_eq!(manifest_gate_dispatch_count, 1);
+        assert_eq!(manifest_gate_receive_count, 1);
+        assert_eq!(manifest_gate_executor_status, "requires_libpq_executor");
+        assert_eq!(manifest_gate_next_blocker, "conninfo_secret_resolution");
+        assert_eq!(manifest_gate_status, "requires_libpq_executor");
         assert_eq!(executor_contract_mismatch_count, 0);
 
         Spi::run(&format!(
