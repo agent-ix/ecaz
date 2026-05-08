@@ -852,23 +852,27 @@ pub(crate) unsafe fn remote_node_descriptor_readiness(
             continue;
         }
         for contract in &contract_rows {
-            let (status, recommendation) = if node.descriptor_state == "missing" {
-                if contract.required {
+            let (status, recommendation) =
+                if node.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING {
+                    if contract.required {
+                        (
+                            SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
+                            "register remote node descriptor before libpq fanout execution",
+                        )
+                    } else {
+                        (
+                            SPIRE_REMOTE_STATUS_OPTIONAL_DESCRIPTOR_MISSING,
+                            SPIRE_REMOTE_NONE,
+                        )
+                    }
+                } else if node.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
                     (
-                        "missing_descriptor",
-                        "register remote node descriptor before libpq fanout execution",
+                        SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+                        "repair remote node descriptor before libpq fanout execution",
                     )
                 } else {
-                    ("optional_descriptor_missing", SPIRE_REMOTE_NONE)
-                }
-            } else if node.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
-                (
-                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
-                    "repair remote node descriptor before libpq fanout execution",
-                )
-            } else {
-                (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
-            };
+                    (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+                };
             rows.push(SpireRemoteNodeDescriptorReadinessRow {
                 active_epoch: node.active_epoch,
                 node_id: node.node_id,
@@ -939,7 +943,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
                 summary.blocked_field_count.checked_add(1).unwrap_or_else(|| {
                     pgrx::error!("ec_spire remote node descriptor readiness blocked count overflow")
                 });
-            if row.status == "missing_descriptor" {
+            if row.status == SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR {
                 summary.missing_required_field_count = summary
                     .missing_required_field_count
                     .checked_add(1)
@@ -1027,7 +1031,7 @@ pub(crate) unsafe fn remote_node_capability_summary(
                     )
                 });
         }
-        if row.descriptor_state == "missing"
+        if row.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING
             || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         {
             summary.missing_descriptor_node_count =
@@ -1142,7 +1146,7 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
                         )
                     });
         }
-        if row.descriptor_state == "missing"
+        if row.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING
             || row.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         {
             summary.missing_descriptor_node_count =
@@ -1274,10 +1278,10 @@ fn remote_node_capability_plan_row(
             required_candidate_format: SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
             required_extension_version: env!("CARGO_PKG_VERSION"),
             conninfo_source: SPIRE_REMOTE_DESCRIPTOR_SOURCE,
-            remote_index_identity_status: "missing_descriptor",
-            epoch_window_status: "missing_descriptor",
-            candidate_format_status: "missing_descriptor",
-            extension_version_status: "missing_descriptor",
+            remote_index_identity_status: SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
+            epoch_window_status: SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
+            candidate_format_status: SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
+            extension_version_status: SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
             status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before capability check",
         }
@@ -1289,8 +1293,8 @@ fn remote_epoch_publish_plan_row(
 ) -> SpireRemoteEpochPublishPlanRow {
     let required_last_served_epoch = node.active_epoch;
     let required_min_retained_epoch = node.active_epoch;
-    let epoch_window_status = if node.descriptor_state == "missing" {
-        "missing_descriptor"
+    let epoch_window_status = if node.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING {
+        SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR
     } else if node.last_served_epoch < required_last_served_epoch {
         "stale_epoch"
     } else if node.min_retained_epoch > required_min_retained_epoch {
@@ -1340,7 +1344,7 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             node_id,
             node_kind: "local",
             descriptor_generation: 0,
-            descriptor_state: "active",
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE,
             placement_count: 0,
             available_placement_count: 0,
             stale_placement_count: 0,
@@ -1361,7 +1365,7 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             node_id,
             node_kind: "remote",
             descriptor_generation: 0,
-            descriptor_state: "missing",
+            descriptor_state: SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING,
             placement_count: 0,
             available_placement_count: 0,
             stale_placement_count: 0,
