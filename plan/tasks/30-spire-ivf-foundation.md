@@ -1596,7 +1596,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   status, and next blocker.
   `ec_spire_remote_search_coordinator_result_contract()` now names the final
   search result-source states for local heap candidates, blocked pre-result
-  gates, and ready-empty outcomes.
+  gates, and empty-top-k outcomes.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

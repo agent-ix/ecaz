@@ -7495,8 +7495,8 @@ fn ec_spire_remote_search_coordinator_result_contract() -> TableIterator<
             ),
             (
                 "none",
-                "ready_empty",
-                "no_candidate_result",
+                "empty_top_k",
+                "empty_top_k_result",
                 "must_have_zero_returned_candidate_count_and_no_blocker",
             ),
         ]
@@ -17391,6 +17391,80 @@ mod tests {
         assert_eq!(result_receive_status, "requires_remote_node_descriptor");
         assert_eq!(result_next_blocker, "remote_node_descriptor");
         assert_eq!(result_returned_candidate_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_coordinator_result_ready_empty() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_result_ready_empty_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_result_ready_empty_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_result_ready_empty_sql_idx \
+             ON ec_spire_remote_result_ready_empty_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_result_ready_empty_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_result_ready_empty_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let result_summary_from = format!(
+            "FROM ec_spire_remote_search_coordinator_result_summary(\
+             'ec_spire_remote_result_ready_empty_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 0, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
+        let result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
+                .expect("ready-empty result source query should succeed")
+                .expect("ready-empty result source should exist");
+        let returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {result_summary_from}"
+        ))
+        .expect("ready-empty returned count query should succeed")
+        .expect("ready-empty returned count should exist");
+        let next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {result_summary_from}"))
+                .expect("ready-empty blocker query should succeed")
+                .expect("ready-empty blocker should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
+            .expect("ready-empty status query should succeed")
+            .expect("ready-empty status should exist");
+        let contract_validator = Spi::get_one::<String>(
+            "SELECT validator FROM ec_spire_remote_search_coordinator_result_contract() \
+             WHERE result_source = 'none'",
+        )
+        .expect("ready-empty contract query should succeed")
+        .expect("ready-empty contract validator should exist");
+
+        assert_eq!(result_source, "none");
+        assert_eq!(returned_candidate_count, 0);
+        assert_eq!(next_blocker, "none");
+        assert_eq!(status, "empty_top_k");
+        assert_eq!(
+            contract_validator,
+            "must_have_zero_returned_candidate_count_and_no_blocker"
+        );
     }
 
     #[pg_test]
