@@ -21217,6 +21217,16 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT count(*) {operator_entrypoint_from}"))
                 .expect("operator entrypoint count query should succeed")
                 .expect("operator entrypoint count should exist");
+        let operator_entrypoint_reachable_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_operator_entrypoint_contract() contract \
+              WHERE EXISTS ( \
+                    SELECT 1 \
+                      FROM pg_proc proc \
+                     WHERE proc.proname = contract.entrypoint_name)"
+        ))
+        .expect("operator entrypoint reachability query should succeed")
+        .expect("operator entrypoint reachability count should exist");
         let search_gate_next_action = Spi::get_one::<String>(&format!(
             "SELECT next_action {operator_entrypoint_from} \
              WHERE entrypoint_name = 'ec_spire_remote_search_coordinator_gate_summary'"
@@ -21307,6 +21317,7 @@ mod tests {
         assert_eq!(search_result_count, 3);
         assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
         assert_eq!(operator_entrypoint_count, 8);
+        assert_eq!(operator_entrypoint_reachable_count, 8);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
