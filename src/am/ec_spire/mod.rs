@@ -17,7 +17,7 @@ mod storage;
 mod update;
 mod vacuum;
 
-use pgrx::pg_sys;
+use pgrx::{pg_sys, Spi};
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{

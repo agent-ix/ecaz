@@ -1254,8 +1254,8 @@ fn ec_spire_remote_node_snapshot(
         name!(last_seen_at_micros, i64),
         name!(last_served_epoch, i64),
         name!(min_retained_epoch, i64),
-        name!(extension_version, &'static str),
-        name!(last_error, &'static str),
+        name!(extension_version, String),
+        name!(last_error, String),
         name!(status, &'static str),
         name!(recommendation, &'static str),
     ),
@@ -12585,6 +12585,115 @@ mod tests {
         assert_eq!(remote_error, "missing_remote_node_descriptor");
         assert_eq!(remote_placement_count, 1);
         assert_eq!(local_status, "ready");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_descriptor_catalog_active() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_desc_catalog_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_desc_catalog_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_desc_catalog_sql_idx \
+             ON ec_spire_remote_node_desc_catalog_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_desc_catalog_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_node_desc_catalog_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_node_desc_catalog_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_node_descriptor \
+             (coordinator_index_oid, node_id, descriptor_generation, \
+              conninfo_secret_name, remote_index_identity, remote_index_regclass, \
+              descriptor_state, last_seen_at, last_served_epoch, min_retained_epoch, \
+              extension_version) \
+             VALUES ('{}'::oid, 2, 7, 'spire/remote/2', decode('01', 'hex'), \
+                     'remote_spire_idx', 'active', '2026-01-01 00:00:00+00'::timestamptz, \
+                     {active_epoch}, {active_epoch}, '{}')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor insert should succeed");
+
+        let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
+        let capability_from = "FROM ec_spire_remote_node_capability_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
+        let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass)";
+        let readiness_from = format!(
+            "FROM ec_spire_remote_search_target_readiness(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[{selected_pid}], 'strict')"
+        );
+
+        let descriptor_state =
+            Spi::get_one::<String>(&format!("SELECT descriptor_state {snapshot_from}"))
+                .expect("snapshot descriptor query should succeed")
+                .expect("descriptor state should exist");
+        let descriptor_generation =
+            Spi::get_one::<i64>(&format!("SELECT descriptor_generation {snapshot_from}"))
+                .expect("snapshot generation query should succeed")
+                .expect("descriptor generation should exist");
+        let node_status = Spi::get_one::<String>(&format!("SELECT status {snapshot_from}"))
+            .expect("snapshot status query should succeed")
+            .expect("node status should exist");
+        let last_error = Spi::get_one::<String>(&format!("SELECT last_error {snapshot_from}"))
+            .expect("snapshot error query should succeed")
+            .expect("last error should exist");
+        let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
+            .expect("capability status query should succeed")
+            .expect("capability status should exist");
+        let extension_status = Spi::get_one::<String>(&format!(
+            "SELECT extension_version_status {capability_from}"
+        ))
+        .expect("capability extension query should succeed")
+        .expect("capability extension status should exist");
+        let publish_decision =
+            Spi::get_one::<String>(&format!("SELECT publish_decision {publish_gate_from}"))
+                .expect("publish decision query should succeed")
+                .expect("publish decision should exist");
+        let publish_status = Spi::get_one::<String>(&format!("SELECT status {publish_gate_from}"))
+            .expect("publish status query should succeed")
+            .expect("publish status should exist");
+        let target_status = Spi::get_one::<String>(&format!("SELECT status {readiness_from}"))
+            .expect("target readiness query should succeed")
+            .expect("target readiness status should exist");
+
+        assert_eq!(descriptor_state, "active");
+        assert_eq!(descriptor_generation, 7);
+        assert_eq!(node_status, "ready");
+        assert_eq!(last_error, "none");
+        assert_eq!(capability_status, "ready");
+        assert_eq!(extension_status, "ready");
+        assert_eq!(publish_decision, "publish_distributed_epoch");
+        assert_eq!(publish_status, "ready");
+        assert_eq!(target_status, "requires_libpq_transport");
     }
 
     #[pg_test]

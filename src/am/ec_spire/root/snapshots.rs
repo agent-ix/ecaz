@@ -647,9 +647,184 @@ pub(crate) unsafe fn remote_node_snapshot(
             })?;
         }
 
+        let remote_node_ids = rows_by_node
+            .keys()
+            .copied()
+            .filter(|node_id| *node_id != meta::SPIRE_LOCAL_NODE_ID)
+            .collect::<Vec<_>>();
+        let descriptors =
+            load_remote_node_descriptor_rows(unsafe { (*index_relation).rd_id }, &remote_node_ids)?;
+        for descriptor in descriptors {
+            if let Some(row) = rows_by_node.get_mut(&descriptor.node_id) {
+                apply_remote_node_descriptor(row, descriptor);
+            }
+        }
+
         Ok(rows_by_node.into_values().collect())
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[derive(Debug, Clone)]
+struct SpireRemoteNodeDescriptorRow {
+    node_id: u32,
+    descriptor_generation: u64,
+    descriptor_state: &'static str,
+    last_seen_at_micros: i64,
+    last_served_epoch: u64,
+    min_retained_epoch: u64,
+    extension_version: String,
+    last_error: String,
+}
+
+fn load_remote_node_descriptor_rows(
+    index_relid: pg_sys::Oid,
+    remote_node_ids: &[u32],
+) -> Result<Vec<SpireRemoteNodeDescriptorRow>, String> {
+    if remote_node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let node_id_list = remote_node_ids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT node_id::int4, \
+                descriptor_generation::bigint, \
+                descriptor_state, \
+                (EXTRACT(EPOCH FROM last_seen_at) * 1000000)::bigint AS last_seen_at_micros, \
+                last_served_epoch::bigint, \
+                min_retained_epoch::bigint, \
+                extension_version, \
+                last_error \
+           FROM ec_spire_remote_node_descriptor \
+          WHERE coordinator_index_oid = '{}'::oid \
+            AND node_id = ANY (ARRAY[{}]::integer[])",
+        u32::from(index_relid),
+        node_id_list
+    );
+
+    Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire remote node descriptor catalog read failed: {e}"))?
+            .map(|row| {
+                let node_id = row["node_id"]
+                    .value::<i32>()
+                    .map_err(|e| format!("ec_spire remote node descriptor node_id decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor node_id is null".to_owned())
+                    .and_then(|value| {
+                        u32::try_from(value)
+                            .map_err(|_| "ec_spire remote node descriptor node_id is negative".to_owned())
+                    })?;
+                let descriptor_generation = row["descriptor_generation"]
+                    .value::<i64>()
+                    .map_err(|e| format!("ec_spire remote node descriptor generation decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor generation is null".to_owned())
+                    .and_then(|value| {
+                        u64::try_from(value)
+                            .map_err(|_| "ec_spire remote node descriptor generation is negative".to_owned())
+                    })?;
+                let descriptor_state_value = row["descriptor_state"]
+                    .value::<String>()
+                    .map_err(|e| format!("ec_spire remote node descriptor state decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor state is null".to_owned())?;
+                let descriptor_state =
+                    remote_node_descriptor_state_name(&descriptor_state_value)?;
+                let last_seen_at_micros = row["last_seen_at_micros"]
+                    .value::<i64>()
+                    .map_err(|e| format!("ec_spire remote node descriptor last_seen_at decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor last_seen_at is null".to_owned())?;
+                let last_served_epoch = row["last_served_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| format!("ec_spire remote node descriptor served epoch decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor served epoch is null".to_owned())
+                    .and_then(|value| {
+                        u64::try_from(value)
+                            .map_err(|_| "ec_spire remote node descriptor served epoch is negative".to_owned())
+                    })?;
+                let min_retained_epoch = row["min_retained_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| format!("ec_spire remote node descriptor retained epoch decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor retained epoch is null".to_owned())
+                    .and_then(|value| {
+                        u64::try_from(value)
+                            .map_err(|_| "ec_spire remote node descriptor retained epoch is negative".to_owned())
+                    })?;
+                let extension_version = row["extension_version"]
+                    .value::<String>()
+                    .map_err(|e| format!("ec_spire remote node descriptor extension version decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor extension version is null".to_owned())?;
+                let last_error = row["last_error"]
+                    .value::<String>()
+                    .map_err(|e| format!("ec_spire remote node descriptor last_error decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire remote node descriptor last_error is null".to_owned())?;
+
+                Ok(SpireRemoteNodeDescriptorRow {
+                    node_id,
+                    descriptor_generation,
+                    descriptor_state,
+                    last_seen_at_micros,
+                    last_served_epoch,
+                    min_retained_epoch,
+                    extension_version,
+                    last_error,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+}
+
+fn remote_node_descriptor_state_name(state: &str) -> Result<&'static str, String> {
+    match state {
+        SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE => Ok(SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE),
+        SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING => Ok(SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING),
+        SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED => Ok(SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED),
+        SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED => Ok(SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED),
+        other => Err(format!(
+            "ec_spire remote node descriptor has unsupported descriptor_state '{other}'"
+        )),
+    }
+}
+
+fn apply_remote_node_descriptor(
+    row: &mut SpireRemoteNodeSnapshotRow,
+    descriptor: SpireRemoteNodeDescriptorRow,
+) {
+    let (status, recommendation) = remote_node_descriptor_status(descriptor.descriptor_state);
+    row.descriptor_generation = descriptor.descriptor_generation;
+    row.descriptor_state = descriptor.descriptor_state;
+    row.last_seen_at_micros = descriptor.last_seen_at_micros;
+    row.last_served_epoch = descriptor.last_served_epoch;
+    row.min_retained_epoch = descriptor.min_retained_epoch;
+    row.extension_version = descriptor.extension_version;
+    row.last_error = descriptor.last_error;
+    row.status = status;
+    row.recommendation = recommendation;
+}
+
+fn remote_node_descriptor_status(
+    descriptor_state: &'static str,
+) -> (&'static str, &'static str) {
+    match descriptor_state {
+        SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE | SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING => {
+            (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+        }
+        SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED => (
+            "disabled_remote_node",
+            "enable or replace remote node descriptor before libpq fanout execution",
+        ),
+        SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED => (
+            "failed_remote_node",
+            "repair remote node descriptor before libpq fanout execution",
+        ),
+        _ => (
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+            "register remote node descriptor before libpq fanout execution",
+        ),
+    }
 }
 
 pub(crate) fn remote_node_descriptor_contract_rows(
@@ -1322,7 +1497,7 @@ fn remote_node_capability_plan_row(
             status: SPIRE_REMOTE_STATUS_READY,
             recommendation: SPIRE_REMOTE_NONE,
         }
-    } else {
+    } else if node.descriptor_state == SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING {
         SpireRemoteNodeCapabilityPlanRow {
             active_epoch: node.active_epoch,
             node_id: node.node_id,
@@ -1340,6 +1515,55 @@ fn remote_node_capability_plan_row(
             extension_version_status: SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR,
             status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before capability check",
+        }
+    } else {
+        let required_last_served_epoch = node.active_epoch;
+        let required_min_retained_epoch = node.active_epoch;
+        let epoch_window_status = if node.last_served_epoch < required_last_served_epoch {
+            "stale_epoch"
+        } else if node.min_retained_epoch > required_min_retained_epoch {
+            "retention_gap"
+        } else {
+            SPIRE_REMOTE_STATUS_READY
+        };
+        let extension_version_status = if node.extension_version == env!("CARGO_PKG_VERSION") {
+            SPIRE_REMOTE_STATUS_READY
+        } else {
+            "incompatible_extension_version"
+        };
+        let (status, recommendation) = if node.status != SPIRE_REMOTE_STATUS_READY {
+            (node.status, node.recommendation)
+        } else if epoch_window_status != SPIRE_REMOTE_STATUS_READY {
+            (
+                epoch_window_status,
+                "refresh remote node served epoch window before capability check",
+            )
+        } else if extension_version_status != SPIRE_REMOTE_STATUS_READY {
+            (
+                extension_version_status,
+                "upgrade remote node extension before libpq fanout execution",
+            )
+        } else {
+            (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+        };
+
+        SpireRemoteNodeCapabilityPlanRow {
+            active_epoch: node.active_epoch,
+            node_id: node.node_id,
+            node_kind: node.node_kind,
+            descriptor_generation: node.descriptor_generation,
+            descriptor_state: node.descriptor_state,
+            required_last_served_epoch,
+            required_min_retained_epoch,
+            required_candidate_format: SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
+            required_extension_version: env!("CARGO_PKG_VERSION"),
+            conninfo_source: SPIRE_REMOTE_DESCRIPTOR_SOURCE,
+            remote_index_identity_status: SPIRE_REMOTE_STATUS_READY,
+            epoch_window_status,
+            candidate_format_status: SPIRE_REMOTE_STATUS_READY,
+            extension_version_status,
+            status,
+            recommendation,
         }
     }
 }
@@ -1410,8 +1634,8 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             last_seen_at_micros: 0,
             last_served_epoch: active_epoch,
             min_retained_epoch: active_epoch,
-            extension_version: env!("CARGO_PKG_VERSION"),
-            last_error: "none",
+            extension_version: env!("CARGO_PKG_VERSION").to_owned(),
+            last_error: SPIRE_REMOTE_NONE.to_owned(),
             status: SPIRE_REMOTE_STATUS_READY,
             recommendation: SPIRE_REMOTE_NONE,
         }
@@ -1431,8 +1655,8 @@ fn remote_node_snapshot_empty_row(active_epoch: u64, node_id: u32) -> SpireRemot
             last_seen_at_micros: 0,
             last_served_epoch: 0,
             min_retained_epoch: 0,
-            extension_version: "unknown",
-            last_error: "missing_remote_node_descriptor",
+            extension_version: "unknown".to_owned(),
+            last_error: "missing_remote_node_descriptor".to_owned(),
             status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             recommendation: "register remote node descriptor before libpq fanout execution",
         }

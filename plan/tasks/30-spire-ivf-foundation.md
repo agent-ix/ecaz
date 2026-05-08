@@ -1485,7 +1485,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_node_descriptor_readiness(...)` and
   `ec_spire_remote_node_descriptor_readiness_summary(...)` now project that
   contract onto remote nodes so required missing descriptor fields are visible
-  as the precise pre-libpq blocker.
+  as the precise pre-libpq blocker. `ec_spire_remote_node_descriptor` now
+  provides the durable coordinator-owned descriptor catalog keyed by
+  `(coordinator_index_oid, node_id)`, and `ec_spire_remote_node_snapshot(...)`
+  consumes active/draining/disabled/failed catalog rows so registered remote
+  nodes can advance from descriptor-missing to the libpq transport gate.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,

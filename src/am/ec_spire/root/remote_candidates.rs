@@ -50,6 +50,9 @@ const SPIRE_REMOTE_FINAL_STATUS_PLANNED: &str = "planned";
 const SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES: &str = "local_heap_candidates";
 const SPIRE_REMOTE_RESULT_SOURCE_BLOCKED: &str = "blocked";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_ACTIVE: &str = "active";
+const SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING: &str = "draining";
+const SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED: &str = "disabled";
+const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

@@ -745,8 +745,8 @@ pub(crate) struct SpireRemoteNodeSnapshotRow {
     pub(crate) last_seen_at_micros: i64,
     pub(crate) last_served_epoch: u64,
     pub(crate) min_retained_epoch: u64,
-    pub(crate) extension_version: &'static str,
-    pub(crate) last_error: &'static str,
+    pub(crate) extension_version: String,
+    pub(crate) last_error: String,
     pub(crate) status: &'static str,
     pub(crate) recommendation: &'static str,
 }

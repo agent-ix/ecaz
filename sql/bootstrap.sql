@@ -133,6 +133,24 @@ WITH FUNCTION ecvector_from_bytea(bytea, integer, boolean);
 CREATE CAST (ecvector AS bytea)
 WITH FUNCTION ecvector_to_bytea(ecvector, integer, boolean);
 
+CREATE TABLE ec_spire_remote_node_descriptor (
+    coordinator_index_oid oid NOT NULL,
+    node_id integer NOT NULL CHECK (node_id > 0),
+    descriptor_generation bigint NOT NULL CHECK (descriptor_generation >= 0),
+    conninfo_secret_name text NOT NULL CHECK (length(conninfo_secret_name) > 0),
+    remote_index_identity bytea NOT NULL CHECK (octet_length(remote_index_identity) > 0),
+    remote_index_regclass text NOT NULL CHECK (length(remote_index_regclass) > 0),
+    descriptor_state text NOT NULL CHECK (
+        descriptor_state IN ('active', 'draining', 'disabled', 'failed')
+    ),
+    last_seen_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    last_served_epoch bigint NOT NULL CHECK (last_served_epoch >= 0),
+    min_retained_epoch bigint NOT NULL CHECK (min_retained_epoch >= 0),
+    extension_version text NOT NULL CHECK (length(extension_version) > 0),
+    last_error text NOT NULL DEFAULT 'none',
+    PRIMARY KEY (coordinator_index_oid, node_id)
+);
+
 CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
