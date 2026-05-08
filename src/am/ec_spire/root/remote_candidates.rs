@@ -36,6 +36,9 @@ const SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE: &str = "libpq_pipeline";
 const SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION: &str = "open_pipeline_and_send_remote_search";
 const SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION: &str = "blocked_before_dispatch";
 const SPIRE_REMOTE_NONE: &str = "none";
+const SPIRE_REMOTE_EXECUTOR_REQUIRED: &str = "requires_libpq_executor";
+const SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR: &str = "remote_node_descriptor";
+const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
@@ -1467,6 +1470,93 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqExecutorReadinessRow {
+    let dispatch_summary = unsafe {
+        remote_search_libpq_dispatch_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    let blocked_dispatch_count = dispatch_summary
+        .dispatch_count
+        .saturating_sub(dispatch_summary.pipeline_dispatch_count);
+
+    let (
+        secret_resolution_action,
+        connection_action,
+        pipeline_action,
+        send_action,
+        receive_action,
+        merge_action,
+        next_executor_step,
+        status,
+        recommendation,
+    ) = if dispatch_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+        (
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+            "register active or draining remote node descriptors before libpq executor startup",
+        )
+    } else if dispatch_summary.pipeline_dispatch_count > 0 {
+        (
+            "resolve_conninfo_secret_reference",
+            "open_libpq_connection",
+            "enter_libpq_pipeline_mode",
+            "send_remote_search_request",
+            SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+            SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+            SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            "implement conninfo secret resolution and libpq pipeline execution before remote dispatch",
+        )
+    } else {
+        (
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            dispatch_summary.status,
+            SPIRE_REMOTE_NONE,
+        )
+    };
+
+    SpireRemoteSearchLibpqExecutorReadinessRow {
+        requested_epoch,
+        dispatch_count: dispatch_summary.dispatch_count,
+        pipeline_dispatch_count: dispatch_summary.pipeline_dispatch_count,
+        blocked_dispatch_count,
+        secret_resolution_action,
+        connection_action,
+        pipeline_action,
+        send_action,
+        receive_action,
+        merge_action,
+        next_executor_step,
+        status,
+        recommendation,
+    }
 }
 
 pub(crate) fn remote_search_libpq_parameter_contract_rows(

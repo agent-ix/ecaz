@@ -450,6 +450,23 @@ pub(crate) struct SpireRemoteSearchLibpqDispatchSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqExecutorReadinessRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) dispatch_count: u64,
+    pub(crate) pipeline_dispatch_count: u64,
+    pub(crate) blocked_dispatch_count: u64,
+    pub(crate) secret_resolution_action: &'static str,
+    pub(crate) connection_action: &'static str,
+    pub(crate) pipeline_action: &'static str,
+    pub(crate) send_action: &'static str,
+    pub(crate) receive_action: &'static str,
+    pub(crate) merge_action: &'static str,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqParameterContractRow {
     pub(crate) parameter_ordinal: u64,
     pub(crate) parameter_name: &'static str,

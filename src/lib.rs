@@ -3962,6 +3962,89 @@ fn ec_spire_remote_search_libpq_dispatch_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_readiness(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(dispatch_count, i64),
+        name!(pipeline_dispatch_count, i64),
+        name!(blocked_dispatch_count, i64),
+        name!(secret_resolution_action, &'static str),
+        name!(connection_action, &'static str),
+        name!(pipeline_action, &'static str),
+        name!(send_action, &'static str),
+        name!(receive_action, &'static str),
+        name!(merge_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_readiness requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_executor_readiness top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_readiness selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_executor_readiness")
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_executor_readiness_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+        i64::try_from(row.pipeline_dispatch_count)
+            .expect("pipeline dispatch count should fit in i64"),
+        i64::try_from(row.blocked_dispatch_count)
+            .expect("blocked dispatch count should fit in i64"),
+        row.secret_resolution_action,
+        row.connection_action,
+        row.pipeline_action,
+        row.send_action,
+        row.receive_action,
+        row.merge_action,
+        row.next_executor_step,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_parameter_contract() -> TableIterator<
     'static,
     (
@@ -12658,6 +12741,13 @@ mod tests {
              ARRAY[{}, {}]::bigint[], 3, 'strict')",
             selected_pids[0], selected_pids[1],
         );
+        let executor_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_readiness(\
+             'ec_spire_remote_libpq_req_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 3, 'strict')",
+            selected_pids[0], selected_pids[1],
+        );
         let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("libpq request count query should succeed")
             .expect("libpq request count should exist");
@@ -12718,6 +12808,13 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
                 .expect("libpq dispatch summary status query should succeed")
                 .expect("libpq dispatch summary status should exist");
+        let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
+            .expect("libpq executor status query should succeed")
+            .expect("libpq executor status should exist");
+        let executor_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
+                .expect("libpq executor step query should succeed")
+                .expect("libpq executor step should exist");
 
         assert_eq!(request_count, 1);
         assert!(sql_template.contains("ec_spire_remote_search"));
@@ -12735,6 +12832,8 @@ mod tests {
         assert_eq!(dispatch_action, "blocked_before_dispatch");
         assert_eq!(dispatch_missing_count, 1);
         assert_eq!(dispatch_summary_status, "requires_remote_node_descriptor");
+        assert_eq!(executor_status, "requires_remote_node_descriptor");
+        assert_eq!(executor_next_step, "remote_node_descriptor");
     }
 
     #[pg_test]
@@ -12806,6 +12905,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
         );
+        let executor_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_readiness(\
+             'ec_spire_remote_libpq_req_local_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')",
+        );
         let request_count = Spi::get_one::<i64>(&format!("SELECT count(*) {plan_from}"))
             .expect("local libpq request count query should succeed")
             .expect("local libpq request count should exist");
@@ -12839,6 +12944,13 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
                 .expect("local libpq dispatch summary status query should succeed")
                 .expect("local libpq dispatch summary status should exist");
+        let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
+            .expect("local libpq executor status query should succeed")
+            .expect("local libpq executor status should exist");
+        let executor_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
+                .expect("local libpq executor step query should succeed")
+                .expect("local libpq executor step should exist");
 
         assert_eq!(request_count, 0);
         assert_eq!(summary_request_count, 0);
@@ -12849,6 +12961,8 @@ mod tests {
         assert_eq!(summary_status, "ready");
         assert_eq!(connection_summary_status, "ready");
         assert_eq!(dispatch_summary_status, "ready");
+        assert_eq!(executor_status, "ready");
+        assert_eq!(executor_next_step, "none");
     }
 
     #[pg_test]
@@ -13946,6 +14060,12 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let executor_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_readiness(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
 
         let descriptor_state =
             Spi::get_one::<String>(&format!("SELECT descriptor_state {snapshot_from}"))
@@ -14077,6 +14197,21 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
                 .expect("dispatch summary status query should succeed")
                 .expect("dispatch summary status should exist");
+        let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
+            .expect("executor readiness status query should succeed")
+            .expect("executor readiness status should exist");
+        let executor_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
+                .expect("executor readiness next step query should succeed")
+                .expect("executor readiness next step should exist");
+        let executor_secret_action =
+            Spi::get_one::<String>(&format!("SELECT secret_resolution_action {executor_from}"))
+                .expect("executor readiness secret action query should succeed")
+                .expect("executor readiness secret action should exist");
+        let executor_receive_action =
+            Spi::get_one::<String>(&format!("SELECT receive_action {executor_from}"))
+                .expect("executor readiness receive action query should succeed")
+                .expect("executor readiness receive action should exist");
 
         assert!(register_result);
         assert_eq!(descriptor_state, "active");
@@ -14117,6 +14252,13 @@ mod tests {
         );
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
+        assert_eq!(executor_status, "requires_libpq_executor");
+        assert_eq!(executor_next_step, "conninfo_secret_resolution");
+        assert_eq!(executor_secret_action, "resolve_conninfo_secret_reference");
+        assert_eq!(
+            executor_receive_action,
+            "validate_remote_search_candidate_batch"
+        );
     }
 
     #[pg_test]
