@@ -30,11 +30,12 @@ Changes:
 
 ## Validation
 
-Head SHA: `219beddd`
+Head SHA: `0ab2a8ad`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
 - `cargo pgrx test pg18 remote_node_cap_summary_local`
+- `cargo pgrx test pg18 remote_epoch_manifest_catalog_summary_missing`
 - `cargo fmt`
 - Restored known unrelated rustfmt churn in:
   - `src/am/ec_ivf/scan.rs`
@@ -49,10 +50,14 @@ Result:
   - `pg_test_ec_spire_remote_epoch_manifest_persist_ready`
 - PG18 `remote_node_cap_summary_local` filter passed:
   - `pg_test_ec_spire_remote_node_cap_summary_local`
+- PG18 `remote_epoch_manifest_catalog_summary_missing` filter passed:
+  - `pg_test_ec_spire_remote_epoch_manifest_catalog_summary_missing`
 - The test covers ready persisted-manifest publication and stale persisted-entry
   refresh blocking, including the publication summary.
 - The local summary test covers local-only `not_required` catalog and
   publication summaries.
+- The missing catalog summary test covers the publication summary's
+  `persist_remote_epoch_manifest` blocker.
 
 ## Notes
 
