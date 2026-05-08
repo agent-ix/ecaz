@@ -71,6 +71,14 @@ struct SpireRemoteCountRollup {
     transport_pid_count: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireRemoteSummaryStatusMode {
+    RequestPlan,
+    Readiness,
+    Execution,
+    LibpqRequest,
+}
+
 fn add_remote_count(value: &mut u64, amount: u64, context: &str, field: &str) -> Result<(), String> {
     *value = value
         .checked_add(amount)
@@ -159,6 +167,55 @@ impl SpireRemoteCountRollup {
         self.local_pid_count
             .checked_add(self.remote_pid_count)
             .ok_or_else(|| format!("ec_spire {context} executable PID count overflowed"))
+    }
+
+    fn summary_status(&self, top_k: u64, mode: SpireRemoteSummaryStatusMode) -> &'static str {
+        if top_k == 0 {
+            return SPIRE_REMOTE_STATUS_EMPTY_TOP_K;
+        }
+
+        match mode {
+            SpireRemoteSummaryStatusMode::RequestPlan => {
+                if self.remote_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+                } else if self.skipped_count > 0 {
+                    SPIRE_REMOTE_STATUS_DEGRADED_READY
+                } else {
+                    SPIRE_REMOTE_STATUS_READY
+                }
+            }
+            SpireRemoteSummaryStatusMode::Readiness => {
+                if self.missing_descriptor_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if self.transport_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+                } else if self.skipped_count > 0 {
+                    SPIRE_REMOTE_STATUS_DEGRADED_READY
+                } else {
+                    SPIRE_REMOTE_STATUS_READY
+                }
+            }
+            SpireRemoteSummaryStatusMode::Execution => {
+                if self.missing_descriptor_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if self.transport_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+                } else if self.degraded_skipped_count > 0 {
+                    SPIRE_REMOTE_STATUS_DEGRADED_READY
+                } else {
+                    SPIRE_REMOTE_STATUS_READY
+                }
+            }
+            SpireRemoteSummaryStatusMode::LibpqRequest => {
+                if self.missing_descriptor_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if self.transport_count > 0 {
+                    SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+                } else {
+                    SPIRE_REMOTE_STATUS_READY
+                }
+            }
+        }
     }
 }
 
@@ -670,15 +727,7 @@ pub(crate) unsafe fn remote_search_request_summary_row(
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search request summary request count exceeds u64")?;
         let executable_pid_count = rollup.executable_pid_count("remote search request summary")?;
-        let status = if top_k == 0 {
-            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if rollup.remote_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if rollup.skipped_count > 0 {
-            SPIRE_REMOTE_STATUS_DEGRADED_READY
-        } else {
-            SPIRE_REMOTE_STATUS_READY
-        };
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::RequestPlan);
 
         Ok(SpireRemoteSearchRequestSummaryRow {
             requested_epoch,
@@ -746,17 +795,7 @@ pub(crate) unsafe fn remote_search_readiness_summary_row(
 
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search readiness summary request count exceeds u64")?;
-        let status = if top_k == 0 {
-            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if rollup.missing_descriptor_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if rollup.transport_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if rollup.skipped_count > 0 {
-            SPIRE_REMOTE_STATUS_DEGRADED_READY
-        } else {
-            SPIRE_REMOTE_STATUS_READY
-        };
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::Readiness);
 
         Ok(SpireRemoteSearchReadinessSummaryRow {
             requested_epoch,
@@ -892,17 +931,7 @@ pub(crate) unsafe fn remote_search_execution_summary_row(
 
         let plan_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search execution summary plan count exceeds u64")?;
-        let status = if top_k == 0 {
-            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if rollup.missing_descriptor_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if rollup.transport_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else if rollup.degraded_skipped_count > 0 {
-            SPIRE_REMOTE_STATUS_DEGRADED_READY
-        } else {
-            SPIRE_REMOTE_STATUS_READY
-        };
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::Execution);
 
         Ok(SpireRemoteSearchExecutionSummaryRow {
             requested_epoch,
@@ -1025,15 +1054,7 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
 
         let request_count = u64::try_from(rows.len())
             .map_err(|_| "ec_spire remote search libpq request summary request count exceeds u64")?;
-        let status = if top_k == 0 {
-            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-        } else if rollup.missing_descriptor_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-        } else if rollup.transport_count > 0 {
-            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
-        } else {
-            SPIRE_REMOTE_STATUS_READY
-        };
+        let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
 
         Ok(SpireRemoteSearchLibpqRequestSummaryRow {
             requested_epoch,

@@ -453,6 +453,49 @@ mod tests {
     }
 
     #[test]
+    fn remote_summary_status_helper_preserves_precedence() {
+        let mut rollup = SpireRemoteCountRollup {
+            remote_count: 1,
+            skipped_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            rollup.summary_status(0, SpireRemoteSummaryStatusMode::RequestPlan),
+            SPIRE_REMOTE_STATUS_EMPTY_TOP_K
+        );
+        assert_eq!(
+            rollup.summary_status(1, SpireRemoteSummaryStatusMode::RequestPlan),
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+        );
+
+        rollup.remote_count = 0;
+        assert_eq!(
+            rollup.summary_status(1, SpireRemoteSummaryStatusMode::RequestPlan),
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
+        );
+
+        rollup.missing_descriptor_count = 1;
+        rollup.transport_count = 1;
+        assert_eq!(
+            rollup.summary_status(1, SpireRemoteSummaryStatusMode::Readiness),
+            SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+        );
+
+        rollup.missing_descriptor_count = 0;
+        assert_eq!(
+            rollup.summary_status(1, SpireRemoteSummaryStatusMode::Readiness),
+            SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+        );
+
+        rollup.transport_count = 0;
+        rollup.degraded_skipped_count = 1;
+        assert_eq!(
+            rollup.summary_status(1, SpireRemoteSummaryStatusMode::Execution),
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
+        );
+    }
+
+    #[test]
     fn remote_search_fanout_rejects_duplicate_selected_pids() {
         let placements = vec![fanout_placement(
             11,
