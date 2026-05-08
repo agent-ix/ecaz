@@ -15931,6 +15931,33 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT receive_action {executor_from}"))
                 .expect("executor readiness receive action query should succeed")
                 .expect("executor readiness receive action should exist");
+        let executor_contract_mismatch_count = Spi::get_one::<i64>(&format!(
+            "WITH readiness AS ( \
+                 SELECT * {executor_from} \
+             ), expected(step_name, readiness_action) AS ( \
+                 VALUES \
+                     ('conninfo_secret_resolution', \
+                         (SELECT secret_resolution_action FROM readiness)), \
+                     ('open_libpq_connection', \
+                         (SELECT connection_action FROM readiness)), \
+                     ('enter_libpq_pipeline_mode', \
+                         (SELECT pipeline_action FROM readiness)), \
+                     ('send_remote_search_request', \
+                         (SELECT send_action FROM readiness)), \
+                     ('validate_remote_search_candidate_batch', \
+                         (SELECT receive_action FROM readiness)), \
+                     ('merge_validated_remote_search_candidate_batches', \
+                         (SELECT merge_action FROM readiness)) \
+             ) \
+             SELECT count(*) \
+               FROM expected \
+               LEFT JOIN ec_spire_remote_search_libpq_executor_step_contract() contract \
+                 ON contract.step_name = expected.step_name \
+              WHERE contract.step_name IS NULL \
+                 OR contract.executor_action <> expected.readiness_action"
+        ))
+        .expect("executor contract invariant query should succeed")
+        .expect("executor contract invariant count should exist");
 
         assert!(register_result);
         assert_eq!(descriptor_state, "active");
@@ -15982,6 +16009,7 @@ mod tests {
             executor_receive_action,
             "validate_remote_search_candidate_batch"
         );
+        assert_eq!(executor_contract_mismatch_count, 0);
     }
 
     #[pg_test]
@@ -16250,6 +16278,46 @@ mod tests {
         ))
         .expect("missing state query should succeed")
         .expect("missing state should exist");
+        let descriptor_state_check_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM pg_constraint c \
+              WHERE c.conrelid = 'ec_spire_remote_node_descriptor'::regclass \
+                AND c.contype = 'c' \
+                AND pg_get_constraintdef(c.oid) LIKE '%descriptor_state%'",
+        )
+        .expect("descriptor state check count query should succeed")
+        .expect("descriptor state check count should exist");
+        let catalog_state_check_miss_count = Spi::get_one::<i64>(
+            "WITH descriptor_check AS ( \
+                 SELECT pg_get_constraintdef(c.oid) AS constraint_def \
+                   FROM pg_constraint c \
+                  WHERE c.conrelid = 'ec_spire_remote_node_descriptor'::regclass \
+                    AND c.contype = 'c' \
+                    AND pg_get_constraintdef(c.oid) LIKE '%descriptor_state%' \
+                  LIMIT 1 \
+             ) \
+             SELECT count(*) \
+               FROM ec_spire_remote_node_descriptor_state_contract() states \
+               JOIN descriptor_check ON true \
+              WHERE states.state_source = 'catalog' \
+                AND position(quote_literal(states.descriptor_state) in descriptor_check.constraint_def) = 0",
+        )
+        .expect("descriptor state check invariant query should succeed")
+        .expect("descriptor state check invariant count should exist");
+        let synthetic_state_check_present = Spi::get_one::<bool>(
+            "WITH descriptor_check AS ( \
+                 SELECT pg_get_constraintdef(c.oid) AS constraint_def \
+                   FROM pg_constraint c \
+                  WHERE c.conrelid = 'ec_spire_remote_node_descriptor'::regclass \
+                    AND c.contype = 'c' \
+                    AND pg_get_constraintdef(c.oid) LIKE '%descriptor_state%' \
+                  LIMIT 1 \
+             ) \
+             SELECT position(quote_literal('missing') in constraint_def) > 0 \
+               FROM descriptor_check",
+        )
+        .expect("descriptor synthetic state check query should succeed")
+        .expect("descriptor synthetic state check should exist");
 
         assert_eq!(state_count, 5);
         assert_eq!(catalog_state_count, 4);
@@ -16258,6 +16326,9 @@ mod tests {
         assert!(!disabled_read_eligible);
         assert_eq!(failed_status, "failed_remote_node");
         assert_eq!(missing_source, "synthetic");
+        assert_eq!(descriptor_state_check_count, 1);
+        assert_eq!(catalog_state_check_miss_count, 0);
+        assert!(!synthetic_state_check_present);
     }
 
     #[pg_test]
@@ -17298,6 +17369,31 @@ mod tests {
         ))
         .expect("manifest executor readiness send action query should succeed")
         .expect("manifest executor readiness send action should exist");
+        let executor_contract_mismatch_count = Spi::get_one::<i64>(&format!(
+            "WITH readiness AS ( \
+                 SELECT * {manifest_executor_readiness_from} \
+             ), expected(step_name, readiness_action) AS ( \
+                 VALUES \
+                     ('conninfo_secret_resolution', \
+                         (SELECT secret_resolution_action FROM readiness)), \
+                     ('libpq_connection_open', \
+                         (SELECT connection_action FROM readiness)), \
+                     ('pipeline_mode_start', \
+                         (SELECT pipeline_action FROM readiness)), \
+                     ('send_manifest_request', \
+                         (SELECT send_action FROM readiness)), \
+                     ('receive_payload_validation_result', \
+                         (SELECT receive_action FROM readiness)) \
+             ) \
+             SELECT count(*) \
+               FROM expected \
+               LEFT JOIN ec_spire_remote_epoch_manifest_libpq_executor_step_contract() contract \
+                 ON contract.step_name = expected.step_name \
+              WHERE contract.step_name IS NULL \
+                 OR contract.executor_action <> expected.readiness_action"
+        ))
+        .expect("manifest executor contract invariant query should succeed")
+        .expect("manifest executor contract invariant count should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -17360,6 +17456,7 @@ mod tests {
         assert_eq!(executor_readiness_status, "requires_libpq_executor");
         assert_eq!(executor_next_step, "conninfo_secret_resolution");
         assert_eq!(executor_send_action, "send_remote_epoch_manifest");
+        assert_eq!(executor_contract_mismatch_count, 0);
 
         Spi::run(&format!(
             "UPDATE ec_spire_remote_epoch_manifest_entry \
