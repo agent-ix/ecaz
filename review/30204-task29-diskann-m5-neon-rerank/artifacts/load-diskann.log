@@ -1,0 +1,22 @@
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_synth10k/m5_diskann_synth10k_corpus.tsv
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_synth10k/m5_diskann_synth10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 200 rows, sha256=a93d23a9b17e3a9ebd8912c9610863453f1ac95728efda3036beef96b7df933f
+[loader] no sibling manifest at /Users/peter/dev/tqvector/fixtures/m5_diskann_synth10k/m5_diskann_synth10k_manifest.json; continuing without verification
+[loader] copied corpus table m5_diskann_synth10k_corpus in 2.05s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m5_diskann_synth10k_corpus in 722.75ms
+[loader] copied queries table m5_diskann_synth10k_queries in 28.43ms
+[loader] building m5_diskann_synth10k_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2]) ...
+[loader] built m5_diskann_synth10k_idx in 204.49s
+┌─────────┬───────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                     │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m5_diskann_synth10k_corpus (10000 rows)                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m5_diskann_synth10k_queries (200 rows)                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m5_diskann_synth10k_idx [graph_degree=32, build_list_size=100, alpha=1.2] │
+└─────────┴───────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix m5_diskann_synth10k in 207.74s
