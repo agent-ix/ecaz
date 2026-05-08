@@ -2669,6 +2669,8 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
         name!(refresh_required_count, i64),
         name!(blocked_publication_count, i64),
         name!(remote_placement_count, i64),
+        name!(publication_executor_status, String),
+        name!(publication_executor_next_step, String),
         name!(next_blocker, String),
         name!(status, String),
         name!(recommendation, String),
@@ -2870,6 +2872,15 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
                 catalog_recommendation,
             )
         };
+    let (publication_executor_status, publication_executor_next_step) =
+        if publication_decision == "publish_remote_epoch_manifest" {
+            (
+                "requires_libpq_executor".to_owned(),
+                "conninfo_secret_resolution".to_owned(),
+            )
+        } else {
+            ("none".to_owned(), "none".to_owned())
+        };
 
     TableIterator::once((
         active_epoch,
@@ -2881,6 +2892,8 @@ fn ec_spire_remote_epoch_manifest_publication_summary(
         refresh_required_count,
         blocked_publication_count,
         remote_placement_count,
+        publication_executor_status,
+        publication_executor_next_step,
         next_blocker,
         status,
         recommendation,
@@ -15468,6 +15481,11 @@ mod tests {
         ))
         .expect("manifest publication summary status query should succeed")
         .expect("manifest publication summary status should exist");
+        let publication_executor_status = Spi::get_one::<String>(&format!(
+            "SELECT publication_executor_status {manifest_publication_summary_from}"
+        ))
+        .expect("manifest publication summary executor status query should succeed")
+        .expect("manifest publication summary executor status should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -15485,6 +15503,7 @@ mod tests {
         assert_eq!(publication_decision, "not_required");
         assert_eq!(publication_entry_count, 0);
         assert_eq!(publication_status, "not_required");
+        assert_eq!(publication_executor_status, "none");
     }
 
     #[pg_test]
@@ -15936,6 +15955,16 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {publication_summary_from}"))
                 .expect("manifest publication summary status query should succeed")
                 .expect("manifest publication summary status should exist");
+        let publication_summary_executor_status = Spi::get_one::<String>(&format!(
+            "SELECT publication_executor_status {publication_summary_from}"
+        ))
+        .expect("manifest publication summary executor status query should succeed")
+        .expect("manifest publication summary executor status should exist");
+        let publication_summary_executor_step = Spi::get_one::<String>(&format!(
+            "SELECT publication_executor_next_step {publication_summary_from}"
+        ))
+        .expect("manifest publication summary executor step query should succeed")
+        .expect("manifest publication summary executor step should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -15961,6 +15990,14 @@ mod tests {
         );
         assert_eq!(publication_summary_ready_count, 1);
         assert_eq!(publication_summary_status, "ready");
+        assert_eq!(
+            publication_summary_executor_status,
+            "requires_libpq_executor"
+        );
+        assert_eq!(
+            publication_summary_executor_step,
+            "conninfo_secret_resolution"
+        );
 
         Spi::run(&format!(
             "UPDATE ec_spire_remote_epoch_manifest_entry \

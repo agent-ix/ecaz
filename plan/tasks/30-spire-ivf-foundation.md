@@ -1613,7 +1613,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   manifest persistence before any remote I/O exists.
   `ec_spire_remote_epoch_manifest_publication_summary(...)` aggregates that
   plan into one publication decision with ready, persist-required,
-  refresh-required, and blocked counts.
+  refresh-required, and blocked counts, plus the remaining
+  `requires_libpq_executor` / `conninfo_secret_resolution` handoff when
+  manifest publication preconditions are ready.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
