@@ -2789,6 +2789,30 @@ fn ec_spire_remote_search_libpq_request_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_parameter_contract() -> TableIterator<
+    'static,
+    (
+        name!(parameter_ordinal, i64),
+        name!(parameter_name, &'static str),
+        name!(pg_type, &'static str),
+        name!(semantic_role, &'static str),
+        name!(validator, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_libpq_parameter_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.parameter_ordinal).expect("parameter ordinal should fit in i64"),
+            row.parameter_name,
+            row.pg_type,
+            row.semantic_role,
+            row.validator,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_result_contract() -> TableIterator<
     'static,
     (
@@ -11273,25 +11297,53 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_remote_search_receive_contract() {
-        let contract_from = "FROM ec_spire_remote_search_libpq_result_contract()";
-        let column_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
+        let parameter_contract_from = "FROM ec_spire_remote_search_libpq_parameter_contract()";
+        let result_contract_from = "FROM ec_spire_remote_search_libpq_result_contract()";
+        let parameter_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {parameter_contract_from}"))
+                .expect("parameter contract count query should succeed")
+                .expect("parameter contract count should exist");
+        let first_parameter = Spi::get_one::<String>(&format!(
+            "SELECT parameter_name {parameter_contract_from} WHERE parameter_ordinal = 1"
+        ))
+        .expect("parameter contract first parameter query should succeed")
+        .expect("parameter contract first parameter should exist");
+        let selected_pids_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {parameter_contract_from} WHERE parameter_name = 'selected_pids'"
+        ))
+        .expect("parameter contract selected pids query should succeed")
+        .expect("parameter contract selected pids validator should exist");
+        let consistency_mode_role = Spi::get_one::<String>(&format!(
+            "SELECT semantic_role {parameter_contract_from} WHERE parameter_name = 'consistency_mode'"
+        ))
+        .expect("parameter contract consistency mode query should succeed")
+        .expect("parameter contract consistency mode role should exist");
+        let column_count = Spi::get_one::<i64>(&format!("SELECT count(*) {result_contract_from}"))
             .expect("result contract count query should succeed")
             .expect("result contract count should exist");
         let first_column = Spi::get_one::<String>(&format!(
-            "SELECT column_name {contract_from} WHERE column_ordinal = 1"
+            "SELECT column_name {result_contract_from} WHERE column_ordinal = 1"
         ))
         .expect("result contract first column query should succeed")
         .expect("result contract first column should exist");
         let score_validator = Spi::get_one::<String>(&format!(
-            "SELECT validator {contract_from} WHERE column_name = 'score'"
+            "SELECT validator {result_contract_from} WHERE column_name = 'score'"
         ))
         .expect("result contract score validator query should succeed")
         .expect("result contract score validator should exist");
-        let nullable_count =
-            Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from} WHERE nullable"))
-                .expect("result contract nullable count query should succeed")
-                .expect("result contract nullable count should exist");
+        let nullable_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {result_contract_from} WHERE nullable"
+        ))
+        .expect("result contract nullable count query should succeed")
+        .expect("result contract nullable count should exist");
 
+        assert_eq!(parameter_count, 6);
+        assert_eq!(first_parameter, "remote_index_oid");
+        assert_eq!(
+            selected_pids_validator,
+            "must_be_nonempty_positive_unique_remote_leaf_pids"
+        );
+        assert_eq!(consistency_mode_role, "strict_or_degraded_policy");
         assert_eq!(column_count, 9);
         assert_eq!(first_column, "served_epoch");
         assert_eq!(score_validator, "must_be_finite");

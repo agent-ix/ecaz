@@ -1046,6 +1046,54 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn remote_search_libpq_parameter_contract_rows(
+) -> Vec<SpireRemoteSearchLibpqParameterContractRow> {
+    vec![
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 1,
+            parameter_name: "remote_index_oid",
+            pg_type: "oid",
+            semantic_role: "remote_index_identity",
+            validator: "must_resolve_to_ec_spire_index_on_remote_node",
+        },
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 2,
+            parameter_name: "requested_epoch",
+            pg_type: "bigint",
+            semantic_role: "served_epoch_gate",
+            validator: "must_be_positive_and_served_by_remote_node",
+        },
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 3,
+            parameter_name: "query",
+            pg_type: "real[]",
+            semantic_role: "query_vector",
+            validator: "must_match_index_dimensions",
+        },
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 4,
+            parameter_name: "selected_pids",
+            pg_type: "bigint[]",
+            semantic_role: "selected_leaf_pid_set",
+            validator: "must_be_nonempty_positive_unique_remote_leaf_pids",
+        },
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 5,
+            parameter_name: "top_k",
+            pg_type: "integer",
+            semantic_role: "candidate_budget",
+            validator: "must_be_non_negative",
+        },
+        SpireRemoteSearchLibpqParameterContractRow {
+            parameter_ordinal: 6,
+            parameter_name: "consistency_mode",
+            pg_type: "text",
+            semantic_role: "strict_or_degraded_policy",
+            validator: "must_match_active_remote_epoch_consistency_mode",
+        },
+    ]
+}
+
 pub(crate) fn remote_search_libpq_result_contract_rows(
 ) -> Vec<SpireRemoteSearchLibpqResultContractRow> {
     vec![

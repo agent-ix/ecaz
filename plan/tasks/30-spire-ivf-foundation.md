@@ -1498,6 +1498,8 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   libpq request envelope without opening connections: SQL template, bind
   parameter count, expected result column count, remote index source, conninfo
   source, candidate format, PID counts, and blocked/readiness status.
+  `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
+  parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,
   `ec_spire_remote_search_receive_plan(...)`, and
   `ec_spire_remote_search_merge_input_summary(...)` now expose the next

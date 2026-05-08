@@ -333,6 +333,15 @@ pub(crate) struct SpireRemoteSearchLibpqRequestSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqParameterContractRow {
+    pub(crate) parameter_ordinal: u64,
+    pub(crate) parameter_name: &'static str,
+    pub(crate) pg_type: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) validator: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqResultContractRow {
     pub(crate) column_ordinal: u64,
     pub(crate) column_name: &'static str,
