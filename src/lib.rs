@@ -1632,6 +1632,53 @@ fn ec_spire_remote_epoch_publish_readiness(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_publish_gate_summary(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(publish_scope, &'static str),
+        name!(publish_decision, &'static str),
+        name!(remote_node_count, i64),
+        name!(remote_placement_count, i64),
+        name!(ready_remote_node_count, i64),
+        name!(blocked_remote_node_count, i64),
+        name!(missing_descriptor_node_count, i64),
+        name!(policy_contract, &'static str),
+        name!(status, &'static str),
+        name!(next_blocker, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_publish_gate_summary")
+    };
+    let row = unsafe { am::spire_remote_epoch_publish_gate_summary(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        row.publish_scope,
+        row.publish_decision,
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.remote_placement_count)
+            .expect("remote placement count should fit in i64"),
+        i64::try_from(row.ready_remote_node_count)
+            .expect("ready remote node count should fit in i64"),
+        i64::try_from(row.blocked_remote_node_count)
+            .expect("blocked remote node count should fit in i64"),
+        i64::try_from(row.missing_descriptor_node_count)
+            .expect("missing descriptor node count should fit in i64"),
+        row.policy_contract,
+        row.status,
+        row.next_blocker,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
     'static,
     (
@@ -12857,6 +12904,8 @@ mod tests {
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
         let publish_from = "FROM ec_spire_remote_epoch_publish_readiness(\
              'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
+        let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
+             'ec_spire_remote_cap_summary_local_sql_idx'::regclass)";
 
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -12884,6 +12933,18 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT remote_placement_count {publish_from}"))
                 .expect("epoch publish readiness placement query should succeed")
                 .expect("epoch publish readiness placement count should exist");
+        let publish_scope =
+            Spi::get_one::<String>(&format!("SELECT publish_scope {publish_gate_from}"))
+                .expect("epoch publish gate scope query should succeed")
+                .expect("epoch publish gate scope should exist");
+        let publish_decision =
+            Spi::get_one::<String>(&format!("SELECT publish_decision {publish_gate_from}"))
+                .expect("epoch publish gate decision query should succeed")
+                .expect("epoch publish gate decision should exist");
+        let next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {publish_gate_from}"))
+                .expect("epoch publish gate blocker query should succeed")
+                .expect("epoch publish gate blocker should exist");
 
         assert_eq!(capability_status, "ready");
         assert_eq!(node_count, 1);
@@ -12892,6 +12953,9 @@ mod tests {
         assert_eq!(required_format, "local");
         assert_eq!(publish_status, "ready");
         assert_eq!(remote_placement_count, 0);
+        assert_eq!(publish_scope, "local_only");
+        assert_eq!(publish_decision, "publish_local_epoch");
+        assert_eq!(next_blocker, "none");
     }
 
     #[pg_test]
@@ -12930,6 +12994,8 @@ mod tests {
         let capability_from = "FROM ec_spire_remote_node_capability_summary(\
              'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
         let publish_from = "FROM ec_spire_remote_epoch_publish_readiness(\
+             'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
+        let publish_gate_from = "FROM ec_spire_remote_epoch_publish_gate_summary(\
              'ec_spire_remote_cap_summary_missing_sql_idx'::regclass)";
         let capability_status = Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
             .expect("capability summary status query should succeed")
@@ -12971,6 +13037,22 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT blocked_remote_node_count {publish_from}"))
                 .expect("epoch publish readiness blocked node query should succeed")
                 .expect("epoch publish readiness blocked node count should exist");
+        let publish_scope =
+            Spi::get_one::<String>(&format!("SELECT publish_scope {publish_gate_from}"))
+                .expect("epoch publish gate scope query should succeed")
+                .expect("epoch publish gate scope should exist");
+        let publish_decision =
+            Spi::get_one::<String>(&format!("SELECT publish_decision {publish_gate_from}"))
+                .expect("epoch publish gate decision query should succeed")
+                .expect("epoch publish gate decision should exist");
+        let next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {publish_gate_from}"))
+                .expect("epoch publish gate blocker query should succeed")
+                .expect("epoch publish gate blocker should exist");
+        let policy_contract =
+            Spi::get_one::<String>(&format!("SELECT policy_contract {publish_gate_from}"))
+                .expect("epoch publish gate policy query should succeed")
+                .expect("epoch publish gate policy should exist");
 
         assert_eq!(capability_status, "requires_remote_node_descriptor");
         assert_eq!(node_count, 2);
@@ -12982,6 +13064,13 @@ mod tests {
         assert_eq!(remote_placement_count, 1);
         assert_eq!(remote_available_count, 1);
         assert_eq!(blocked_remote_node_count, 1);
+        assert_eq!(publish_scope, "distributed");
+        assert_eq!(publish_decision, "block_publish");
+        assert_eq!(next_blocker, "remote_node_descriptor");
+        assert_eq!(
+            policy_contract,
+            "ec_spire_remote_degradation_policy_contract"
+        );
     }
 
     #[pg_test]

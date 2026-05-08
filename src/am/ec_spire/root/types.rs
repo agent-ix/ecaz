@@ -850,6 +850,22 @@ pub(crate) struct SpireRemoteEpochPublishReadinessRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteEpochPublishGateSummaryRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) publish_scope: &'static str,
+    pub(crate) publish_decision: &'static str,
+    pub(crate) remote_node_count: u64,
+    pub(crate) remote_placement_count: u64,
+    pub(crate) ready_remote_node_count: u64,
+    pub(crate) blocked_remote_node_count: u64,
+    pub(crate) missing_descriptor_node_count: u64,
+    pub(crate) policy_contract: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteEpochPublishPlanRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,

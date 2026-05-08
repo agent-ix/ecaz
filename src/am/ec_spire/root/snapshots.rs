@@ -1172,6 +1172,62 @@ pub(crate) unsafe fn remote_epoch_publish_readiness(
     summary
 }
 
+pub(crate) unsafe fn remote_epoch_publish_gate_summary(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteEpochPublishGateSummaryRow {
+    let readiness = unsafe { remote_epoch_publish_readiness(index_relation) };
+    let (publish_scope, publish_decision, next_blocker, recommendation) =
+        if readiness.active_epoch == 0 {
+            (
+                "empty",
+                "build_required",
+                "build_index",
+                readiness.recommendation,
+            )
+        } else if readiness.remote_node_count == 0 {
+            (
+                "local_only",
+                "publish_local_epoch",
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+            )
+        } else if readiness.blocked_remote_node_count > 0 {
+            let next_blocker = if readiness.missing_descriptor_node_count > 0 {
+                "remote_node_descriptor"
+            } else {
+                "remote_epoch_window"
+            };
+            (
+                "distributed",
+                "block_publish",
+                next_blocker,
+                readiness.recommendation,
+            )
+        } else {
+            (
+                "distributed",
+                "publish_distributed_epoch",
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+            )
+        };
+
+    SpireRemoteEpochPublishGateSummaryRow {
+        active_epoch: readiness.active_epoch,
+        publish_scope,
+        publish_decision,
+        remote_node_count: readiness.remote_node_count,
+        remote_placement_count: readiness.remote_placement_count,
+        ready_remote_node_count: readiness.ready_remote_node_count,
+        blocked_remote_node_count: readiness.blocked_remote_node_count,
+        missing_descriptor_node_count: readiness.missing_descriptor_node_count,
+        policy_contract: "ec_spire_remote_degradation_policy_contract",
+        status: readiness.status,
+        next_blocker,
+        recommendation,
+    }
+}
+
 pub(crate) fn remote_degradation_policy_contract_rows(
 ) -> Vec<SpireRemoteDegradationPolicyContractRow> {
     vec![

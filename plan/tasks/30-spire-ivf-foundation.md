@@ -1546,6 +1546,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_publish_plan(...)` now exposes the same gate per
   remote node, including placement-state counts, required served/retained epoch
   windows, observed node epoch windows, and the precise publish blocker.
+  `ec_spire_remote_epoch_publish_gate_summary(...)` now composes those
+  readiness rows into one final pre-publish decision: local-only publish,
+  distributed publish-ready, or blocked distributed publish with the next
+  descriptor/epoch-window blocker and the shared degradation-policy contract.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
