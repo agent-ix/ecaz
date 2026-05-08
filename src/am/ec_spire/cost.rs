@@ -13,6 +13,41 @@ const SPIRE_LEAF_SCORING_DIMENSION_SCALE: f64 = 0.01;
 const SPIRE_INDEX_PAGE_COST_SCALE: f64 = 1.0;
 const SPIRE_LOCAL_STORE_PAGE_FANOUT_SCALE: f64 = 0.05;
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexCostSnapshot {
+    pub(crate) planner_scan_enabled: bool,
+    pub(crate) planner_gate_reason: &'static str,
+    pub(crate) dimensions: u16,
+    pub(crate) nlists: u32,
+    pub(crate) active_leaf_count: u32,
+    pub(crate) relation_nprobe: u32,
+    pub(crate) session_nprobe: Option<u32>,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) local_store_count: u32,
+    pub(crate) recursive_fanout: Option<u32>,
+    pub(crate) resolved_tree_height: f64,
+    pub(crate) tree_height_source: &'static str,
+    pub(crate) pg18_tree_height_callback_ready: bool,
+    pub(crate) average_leaf_live_count: f64,
+    pub(crate) estimated_routing_scores: u64,
+    pub(crate) estimated_selected_leaves: u32,
+    pub(crate) estimated_candidate_rows: f64,
+    pub(crate) estimated_routing_pages: f64,
+    pub(crate) estimated_leaf_pages: f64,
+    pub(crate) storage_format: &'static str,
+    pub(crate) relation_rerank_width: i32,
+    pub(crate) session_rerank_width: Option<i32>,
+    pub(crate) effective_rerank_width: i32,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) index_pages: f64,
+    pub(crate) reltuples: f64,
+    pub(crate) modeled_startup_cost: f64,
+    pub(crate) modeled_total_cost: f64,
+    pub(crate) modeled_selectivity: f64,
+    pub(crate) modeled_correlation: f64,
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
@@ -37,6 +72,67 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
             *index_correlation = estimate.correlation;
             *index_pages = estimate.index_pages;
         })
+    }
+}
+
+pub(crate) unsafe fn index_cost_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexCostSnapshot {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let index_pages = f64::from(block_count);
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let constants = unsafe { current_planner_cost_constants() };
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+    let hierarchy = unsafe { index_hierarchy_snapshot(index_relation) };
+    let inputs = SpireCostInputs::from_snapshots(
+        &relation_options,
+        &diagnostics,
+        &hierarchy,
+        index_pages,
+        reltuples,
+    );
+    let details = estimate_spire_details(&inputs);
+    let estimate = estimate_spire_cost(&inputs, constants);
+
+    SpireIndexCostSnapshot {
+        planner_scan_enabled: true,
+        planner_gate_reason: "planner scan selection is live: Phase 8 SPIRE cost model active",
+        dimensions: inputs.dimensions,
+        nlists: inputs.nlists,
+        active_leaf_count: active_leaf_count(&inputs),
+        relation_nprobe: inputs.relation_nprobe,
+        session_nprobe: inputs.session_nprobe,
+        effective_nprobe: inputs.effective_nprobe,
+        effective_nprobe_source: inputs.effective_nprobe_source,
+        local_store_count: inputs.local_store_count,
+        recursive_fanout: inputs.recursive_fanout,
+        resolved_tree_height: f64::from(spire_tree_height_callback_value(index_relation)),
+        tree_height_source: if cfg!(feature = "pg18") {
+            "amgettreeheight_callback"
+        } else {
+            "hierarchy_snapshot"
+        },
+        pg18_tree_height_callback_ready: cfg!(feature = "pg18"),
+        average_leaf_live_count: details.average_leaf_live_count,
+        estimated_routing_scores: details.estimated_routing_scores,
+        estimated_selected_leaves: details.estimated_selected_leaves,
+        estimated_candidate_rows: details.estimated_candidate_rows,
+        estimated_routing_pages: details.estimated_routing_pages,
+        estimated_leaf_pages: details.estimated_leaf_pages,
+        storage_format: inputs.storage_format.reloption_name(),
+        relation_rerank_width: inputs.relation_rerank_width,
+        session_rerank_width: inputs.session_rerank_width,
+        effective_rerank_width: inputs.effective_rerank_width,
+        effective_rerank_width_source: inputs.effective_rerank_width_source,
+        index_pages: inputs.index_pages,
+        reltuples: inputs.reltuples,
+        modeled_startup_cost: estimate.startup_cost,
+        modeled_total_cost: estimate.total_cost,
+        modeled_selectivity: estimate.selectivity,
+        modeled_correlation: estimate.correlation,
     }
 }
 
@@ -75,10 +171,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amgettreeheight(rel: pg_sys::Rel
 struct SpireCostInputs {
     dimensions: u16,
     nlists: u32,
+    relation_nprobe: u32,
+    session_nprobe: Option<u32>,
     effective_nprobe: u32,
+    effective_nprobe_source: &'static str,
     local_store_count: u32,
     recursive_fanout: Option<u32>,
-    rerank_width: i32,
+    relation_rerank_width: i32,
+    session_rerank_width: Option<i32>,
+    effective_rerank_width: i32,
+    effective_rerank_width_source: &'static str,
     storage_format: options::SpireStorageFormat,
     hierarchy_depth: u16,
     routing_object_count: u64,
@@ -109,14 +211,21 @@ impl SpireCostInputs {
         };
         let relation_nprobe = u32::try_from(relation_options.nprobe).unwrap_or(0);
         let nprobe = options::resolve_scan_nprobe(probe_leaf_count, relation_nprobe);
+        let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
 
         Self {
             dimensions: hierarchy.centroid_dimensions,
             nlists: relation_nlists,
+            relation_nprobe: nprobe.relation_nprobe,
+            session_nprobe: nprobe.session_nprobe,
             effective_nprobe: nprobe.effective_nprobe,
+            effective_nprobe_source: nprobe.source,
             local_store_count: u32::try_from(relation_options.local_store_count).unwrap_or(1),
             recursive_fanout: relation_options.recursive_fanout(),
-            rerank_width: relation_options.rerank_width,
+            relation_rerank_width: rerank_width.relation_rerank_width,
+            session_rerank_width: rerank_width.session_rerank_width,
+            effective_rerank_width: rerank_width.effective_rerank_width,
+            effective_rerank_width_source: rerank_width.source,
             storage_format: relation_options.storage_format,
             hierarchy_depth: hierarchy.hierarchy_depth,
             routing_object_count: hierarchy.routing_object_count,
@@ -157,7 +266,7 @@ fn estimate_spire_cost(
         * constants.cpu_operator_cost
         * leaf_scoring_dimensions
         * storage_scoring_multiplier(inputs.storage_format)
-        * rerank_multiplier(inputs.rerank_width);
+        * rerank_multiplier(inputs.effective_rerank_width);
     let index_page_cost = constants.seq_page_cost
         * SPIRE_INDEX_PAGE_COST_SCALE
         * local_store_page_multiplier(inputs.local_store_count);
@@ -293,10 +402,16 @@ mod tests {
         SpireCostInputs {
             dimensions: 1536,
             nlists: 128,
+            relation_nprobe: effective_nprobe,
+            session_nprobe: None,
             effective_nprobe,
+            effective_nprobe_source: "test",
             local_store_count,
             recursive_fanout: Some(16),
-            rerank_width: 100,
+            relation_rerank_width: 100,
+            session_rerank_width: None,
+            effective_rerank_width: 100,
+            effective_rerank_width_source: "test",
             storage_format: options::SpireStorageFormat::TurboQuant,
             hierarchy_depth,
             routing_object_count: if hierarchy_depth > 1 { 8 } else { 1 },

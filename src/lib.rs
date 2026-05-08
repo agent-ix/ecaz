@@ -9426,6 +9426,91 @@ fn ec_ivf_index_page_ownership(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_cost_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(planner_gate_reason, String),
+        name!(dimensions, i32),
+        name!(nlists, i64),
+        name!(active_leaf_count, i64),
+        name!(relation_nprobe, i64),
+        name!(session_nprobe, Option<i32>),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(local_store_count, i32),
+        name!(recursive_fanout, Option<i32>),
+        name!(resolved_tree_height, f64),
+        name!(tree_height_source, String),
+        name!(pg18_tree_height_callback_ready, bool),
+        name!(average_leaf_live_count, f64),
+        name!(estimated_routing_scores, i64),
+        name!(estimated_selected_leaves, i64),
+        name!(estimated_candidate_rows, f64),
+        name!(estimated_routing_pages, f64),
+        name!(estimated_leaf_pages, f64),
+        name!(storage_format, String),
+        name!(relation_rerank_width, i32),
+        name!(session_rerank_width, Option<i32>),
+        name!(effective_rerank_width, i32),
+        name!(effective_rerank_width_source, String),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(modeled_startup_cost, f64),
+        name!(modeled_total_cost, f64),
+        name!(modeled_selectivity, f64),
+        name!(modeled_correlation, f64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_cost_snapshot") };
+    let snapshot = unsafe { am::spire_index_cost_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.planner_gate_reason.to_owned(),
+        i32::from(snapshot.dimensions),
+        i64::from(snapshot.nlists),
+        i64::from(snapshot.active_leaf_count),
+        i64::from(snapshot.relation_nprobe),
+        snapshot
+            .session_nprobe
+            .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
+        i64::from(snapshot.effective_nprobe),
+        snapshot.effective_nprobe_source.to_owned(),
+        i32::try_from(snapshot.local_store_count).expect("local store count should fit in i32"),
+        snapshot
+            .recursive_fanout
+            .map(|value| i32::try_from(value).expect("recursive fanout should fit in i32")),
+        snapshot.resolved_tree_height,
+        snapshot.tree_height_source.to_owned(),
+        snapshot.pg18_tree_height_callback_ready,
+        snapshot.average_leaf_live_count,
+        i64::try_from(snapshot.estimated_routing_scores)
+            .expect("routing score estimate should fit in i64"),
+        i64::from(snapshot.estimated_selected_leaves),
+        snapshot.estimated_candidate_rows,
+        snapshot.estimated_routing_pages,
+        snapshot.estimated_leaf_pages,
+        snapshot.storage_format.to_owned(),
+        snapshot.relation_rerank_width,
+        snapshot.session_rerank_width,
+        snapshot.effective_rerank_width,
+        snapshot.effective_rerank_width_source.to_owned(),
+        snapshot.index_pages,
+        snapshot.reltuples,
+        snapshot.modeled_startup_cost,
+        snapshot.modeled_total_cost,
+        snapshot.modeled_selectivity,
+        snapshot.modeled_correlation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -14443,6 +14528,36 @@ mod tests {
         )
         .expect("level parameter snapshot query should succeed")
         .expect("level payload count should exist");
+        let cost_tree_height = Spi::get_one::<f64>(
+            "SELECT resolved_tree_height FROM \
+             ec_spire_index_cost_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("cost snapshot tree-height query should succeed")
+        .expect("cost snapshot tree-height should exist");
+        let cost_tree_height_source = Spi::get_one::<String>(
+            "SELECT tree_height_source FROM \
+             ec_spire_index_cost_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("cost snapshot tree-height source query should succeed")
+        .expect("cost snapshot tree-height source should exist");
+        let cost_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM \
+             ec_spire_index_cost_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("cost snapshot nprobe query should succeed")
+        .expect("cost snapshot nprobe should exist");
+        let cost_total = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM \
+             ec_spire_index_cost_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("cost snapshot total-cost query should succeed")
+        .expect("cost snapshot total-cost should exist");
+        let cost_startup = Spi::get_one::<f64>(
+            "SELECT modeled_startup_cost FROM \
+             ec_spire_index_cost_snapshot('ec_spire_recursive_build_idx'::regclass)",
+        )
+        .expect("cost snapshot startup-cost query should succeed")
+        .expect("cost snapshot startup-cost should exist");
 
         assert_eq!(hierarchy_status, "hierarchy_metadata_present");
         assert_eq!(internal_count, 2);
@@ -14461,6 +14576,11 @@ mod tests {
         assert_eq!(level_2_effective_nprobe, 1);
         assert_eq!(level_2_nprobe_source, "conservative_upper_level");
         assert_eq!(level_assignment_payloads, 2);
+        assert_eq!(cost_tree_height, 2.0);
+        assert_eq!(cost_tree_height_source, "amgettreeheight_callback");
+        assert_eq!(cost_effective_nprobe, 2);
+        assert!(cost_total.is_finite());
+        assert!(cost_total > cost_startup);
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET should succeed");
         let first_id = Spi::get_one::<i64>(

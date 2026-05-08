@@ -19,6 +19,7 @@ mod vacuum;
 
 use pgrx::{pg_sys, Spi};
 
+pub(crate) use self::cost::index_cost_snapshot;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{
     debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
