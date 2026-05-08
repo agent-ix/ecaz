@@ -16,7 +16,7 @@ Code checkpoint: `21d70122` (`Thread SPIRE receive status into result summary`)
 - Extends PG18 coverage for local-ready, degraded-ready, and descriptor-blocked
   result summaries so the final row now proves both ready/no-receive and
   blocked/descriptor-receive states.
-- Updates the Phase 5 task note so the public result-summary surface includes
+- Updates the Phase 7 task note so the public result-summary surface includes
   receive status in its advertised contract.
 
 ## Files
