@@ -1536,7 +1536,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_libpq_executor_readiness(...)` now splits the
   remaining transport gate into executor steps: conninfo secret resolution,
   libpq connection open, pipeline mode, request send, receive validation, and
-  merge handoff, while still avoiding socket I/O.
+  merge handoff, while still avoiding socket I/O. The coordinator gate now
+  includes `libpq_executor_status` and `libpq_executor_next_step`, and advances
+  active-descriptor remote plans from the generic transport blocker to
+  `requires_libpq_executor` / `conninfo_secret_resolution`.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,

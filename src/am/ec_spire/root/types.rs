@@ -582,6 +582,8 @@ pub(crate) struct SpireRemoteSearchCoordinatorGateSummaryRow {
     pub(crate) execution_status: &'static str,
     pub(crate) libpq_dispatch_count: u64,
     pub(crate) libpq_dispatch_status: &'static str,
+    pub(crate) libpq_executor_status: &'static str,
+    pub(crate) libpq_executor_next_step: &'static str,
     pub(crate) merge_status: &'static str,
     pub(crate) final_heap_fetch_status: &'static str,
     pub(crate) next_blocker: &'static str,

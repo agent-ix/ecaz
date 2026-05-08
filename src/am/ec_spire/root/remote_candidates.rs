@@ -1490,6 +1490,14 @@ pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
             consistency_mode,
         )
     };
+
+    remote_search_libpq_executor_readiness_from_dispatch_summary(requested_epoch, &dispatch_summary)
+}
+
+fn remote_search_libpq_executor_readiness_from_dispatch_summary(
+    requested_epoch: u64,
+    dispatch_summary: &SpireRemoteSearchLibpqDispatchSummaryRow,
+) -> SpireRemoteSearchLibpqExecutorReadinessRow {
     let blocked_dispatch_count = dispatch_summary
         .dispatch_count
         .saturating_sub(dispatch_summary.pipeline_dispatch_count);
@@ -1991,6 +1999,10 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     };
     let merge_summary = remote_search_merge_input_summary_from_execution(&execution_summary);
     let finalization_summary = remote_search_finalization_summary_from_merge(&merge_summary);
+    let executor_readiness = remote_search_libpq_executor_readiness_from_dispatch_summary(
+        requested_epoch,
+        &dispatch_summary,
+    );
 
     let (next_blocker, status, recommendation) =
         if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
@@ -1998,6 +2010,12 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
                 "remote_node_descriptor",
                 SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
                 "register remote node descriptors before coordinator execution",
+            )
+        } else if executor_readiness.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
+            (
+                executor_readiness.next_executor_step,
+                SPIRE_REMOTE_EXECUTOR_REQUIRED,
+                executor_readiness.recommendation,
             )
         } else if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ {
             (
@@ -2034,6 +2052,8 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         execution_status: execution_summary.status,
         libpq_dispatch_count: dispatch_summary.dispatch_count,
         libpq_dispatch_status: dispatch_summary.status,
+        libpq_executor_status: executor_readiness.status,
+        libpq_executor_next_step: executor_readiness.next_executor_step,
         merge_status: finalization_summary.merge_status,
         final_heap_fetch_status: finalization_summary.final_heap_fetch_status,
         next_blocker,
