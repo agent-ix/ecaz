@@ -1624,6 +1624,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   libpq parameter/result contracts, and the manifest libpq executor-step
   contract now make the pre-I/O request batch and apply-result boundary
   reviewable before a real libpq executor exists.
+  `ec_spire_remote_epoch_manifest_payload_plan(...)` and
+  `ec_spire_remote_epoch_manifest_payload_summary(...)` now materialize the
+  catalog-backed JSONB payloads referenced by the request plan, and
+  `ec_spire_apply_remote_epoch_manifest(...)` validates that payload shape on
+  the remote side before any durable remote apply path exists.
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
