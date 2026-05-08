@@ -2254,6 +2254,7 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
         name!(current_remote_placement_count, i64),
         name!(persisted_manifest_count, i64),
         name!(persisted_entry_count, i64),
+        name!(persisted_entry_mismatch_count, i64),
         name!(persisted_remote_placement_count, i64),
         name!(catalog_status, &'static str),
         name!(recommendation, &'static str),
@@ -2263,6 +2264,10 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
         open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_catalog_summary")
     };
     let summary = unsafe { am::spire_remote_epoch_manifest_summary(index_relation) };
+    let current_entries = unsafe { am::spire_remote_epoch_manifest_plan(index_relation) }
+        .into_iter()
+        .filter(|row| row.manifest_action == "include_remote_node")
+        .collect::<Vec<_>>();
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     let active_epoch = i64::try_from(summary.active_epoch).expect("active epoch should fit in i64");
@@ -2305,6 +2310,98 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let (persisted_manifest_count, persisted_entry_count, persisted_remote_placement_count) =
         catalog;
+    let persisted_entries = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT node_id, placement_count, required_last_served_epoch, \
+                        required_min_retained_epoch, last_served_epoch, min_retained_epoch, \
+                        epoch_window_status, manifest_action, status \
+                   FROM ec_spire_remote_epoch_manifest_entry \
+                  WHERE coordinator_index_oid = $1::oid \
+                    AND active_epoch = $2::bigint",
+                None,
+                &[index_oid.into(), active_epoch.into()],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest entry summary read failed: {e}"))?
+            .map(|row| {
+                Ok((
+                    row["node_id"]
+                        .value::<i32>()
+                        .map_err(|e| format!("entry node_id decode failed: {e}"))?
+                        .ok_or_else(|| "entry node_id is null".to_owned())?,
+                    row["placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("entry placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "entry placement_count is null".to_owned())?,
+                    row["required_last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("entry required_last_served_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "entry required_last_served_epoch is null".to_owned())?,
+                    row["required_min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("entry required_min_retained_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "entry required_min_retained_epoch is null".to_owned())?,
+                    row["last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("entry last_served_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "entry last_served_epoch is null".to_owned())?,
+                    row["min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("entry min_retained_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "entry min_retained_epoch is null".to_owned())?,
+                    row["epoch_window_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("entry epoch_window_status decode failed: {e}"))?
+                        .ok_or_else(|| "entry epoch_window_status is null".to_owned())?,
+                    row["manifest_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("entry manifest_action decode failed: {e}"))?
+                        .ok_or_else(|| "entry manifest_action is null".to_owned())?,
+                    row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("entry status decode failed: {e}"))?
+                        .ok_or_else(|| "entry status is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let mut persisted_entry_mismatch_count = 0_i64;
+    for current in &current_entries {
+        let Some(persisted) = persisted_entries
+            .iter()
+            .find(|row| u32::try_from(row.0).ok() == Some(current.node_id))
+        else {
+            persisted_entry_mismatch_count += 1;
+            continue;
+        };
+        let current_placement_count =
+            i64::try_from(current.placement_count).expect("placement count should fit in i64");
+        let current_required_last_served_epoch = i64::try_from(current.required_last_served_epoch)
+            .expect("required last served epoch should fit in i64");
+        let current_required_min_retained_epoch =
+            i64::try_from(current.required_min_retained_epoch)
+                .expect("required min retained epoch should fit in i64");
+        let current_last_served_epoch =
+            i64::try_from(current.last_served_epoch).expect("last served epoch should fit in i64");
+        let current_min_retained_epoch = i64::try_from(current.min_retained_epoch)
+            .expect("min retained epoch should fit in i64");
+        if persisted.1 != current_placement_count
+            || persisted.2 != current_required_last_served_epoch
+            || persisted.3 != current_required_min_retained_epoch
+            || persisted.4 != current_last_served_epoch
+            || persisted.5 != current_min_retained_epoch
+            || persisted.6 != current.epoch_window_status
+            || persisted.7 != current.manifest_action
+            || persisted.8 != current.status
+        {
+            persisted_entry_mismatch_count += 1;
+        }
+    }
     let current_included_remote_node_count = i64::try_from(summary.included_remote_node_count)
         .expect("included remote node count should fit in i64");
     let current_remote_placement_count = i64::try_from(summary.remote_placement_count)
@@ -2322,6 +2419,7 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
             )
         } else if persisted_entry_count != current_included_remote_node_count
             || persisted_remote_placement_count != current_remote_placement_count
+            || persisted_entry_mismatch_count > 0
         {
             (
                 "stale_remote_epoch_manifest",
@@ -2338,6 +2436,7 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
         current_remote_placement_count,
         persisted_manifest_count,
         persisted_entry_count,
+        persisted_entry_mismatch_count,
         persisted_remote_placement_count,
         catalog_status,
         recommendation,
@@ -15051,6 +15150,11 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT persisted_entry_count {summary_from}"))
                 .expect("manifest catalog summary entry count query should succeed")
                 .expect("manifest catalog summary entry count should exist");
+        let summary_mismatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT persisted_entry_mismatch_count {summary_from}"
+        ))
+        .expect("manifest catalog summary mismatch count query should succeed")
+        .expect("manifest catalog summary mismatch count should exist");
 
         assert!(register_result);
         assert!(persist_result);
@@ -15065,6 +15169,28 @@ mod tests {
         assert_eq!(entry_status, "ready");
         assert_eq!(summary_status, "ready");
         assert_eq!(summary_persisted_entry_count, 1);
+        assert_eq!(summary_mismatch_count, 0);
+
+        Spi::run(&format!(
+            "UPDATE ec_spire_remote_epoch_manifest_entry \
+                SET last_served_epoch = last_served_epoch - 1 \
+              WHERE coordinator_index_oid = '{}'::oid \
+                AND active_epoch = {active_epoch} \
+                AND node_id = 2",
+            u32::from(index_oid)
+        ))
+        .expect("manifest entry drift update should succeed");
+        let stale_summary_status =
+            Spi::get_one::<String>(&format!("SELECT catalog_status {summary_from}"))
+                .expect("stale manifest catalog summary status query should succeed")
+                .expect("stale manifest catalog summary status should exist");
+        let stale_mismatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT persisted_entry_mismatch_count {summary_from}"
+        ))
+        .expect("stale manifest catalog summary mismatch count query should succeed")
+        .expect("stale manifest catalog summary mismatch count should exist");
+        assert_eq!(stale_summary_status, "stale_remote_epoch_manifest");
+        assert_eq!(stale_mismatch_count, 1);
     }
 
     #[pg_test]
@@ -15176,12 +15302,18 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT persisted_entry_count {summary_from}"))
                 .expect("manifest summary entry count query should succeed")
                 .expect("manifest summary entry count should exist");
+        let persisted_entry_mismatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT persisted_entry_mismatch_count {summary_from}"
+        ))
+        .expect("manifest summary mismatch count query should succeed")
+        .expect("manifest summary mismatch count should exist");
 
         assert!(register_result);
         assert_eq!(manifest_decision, "emit_distributed_epoch_manifest");
         assert_eq!(catalog_status, "requires_remote_epoch_manifest_persistence");
         assert_eq!(persisted_manifest_count, 0);
         assert_eq!(persisted_entry_count, 0);
+        assert_eq!(persisted_entry_mismatch_count, 1);
     }
 
     #[pg_test]
