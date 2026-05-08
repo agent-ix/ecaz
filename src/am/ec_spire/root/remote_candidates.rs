@@ -2060,6 +2060,16 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         remote_search_libpq_dispatch_summary_row(
             index_relation,
             requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        )
+    };
+    let receive_rows = unsafe {
+        remote_search_receive_plan_rows(
+            index_relation,
+            requested_epoch,
             query,
             selected_pids,
             top_k,
@@ -2072,6 +2082,13 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         requested_epoch,
         &dispatch_summary,
     );
+    let libpq_receive_count =
+        u64::try_from(receive_rows.len()).expect("receive row count should fit in u64");
+    let libpq_receive_status = receive_rows
+        .iter()
+        .find(|row| row.status != SPIRE_REMOTE_STATUS_READY)
+        .map(|row| row.status)
+        .unwrap_or(SPIRE_REMOTE_STATUS_READY);
 
     let (next_blocker, status, recommendation) =
         if execution_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
@@ -2123,6 +2140,8 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
         libpq_dispatch_status: dispatch_summary.status,
         libpq_executor_status: executor_readiness.status,
         libpq_executor_next_step: executor_readiness.next_executor_step,
+        libpq_receive_count,
+        libpq_receive_status,
         merge_status: finalization_summary.merge_status,
         final_heap_fetch_status: finalization_summary.final_heap_fetch_status,
         next_blocker,

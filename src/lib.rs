@@ -8131,6 +8131,8 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         name!(libpq_dispatch_status, &'static str),
         name!(libpq_executor_status, &'static str),
         name!(libpq_executor_next_step, &'static str),
+        name!(libpq_receive_count, i64),
+        name!(libpq_receive_status, &'static str),
         name!(merge_status, &'static str),
         name!(final_heap_fetch_status, &'static str),
         name!(next_blocker, &'static str),
@@ -8188,6 +8190,8 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         row.libpq_dispatch_status,
         row.libpq_executor_status,
         row.libpq_executor_next_step,
+        i64::try_from(row.libpq_receive_count).expect("libpq receive count should fit in i64"),
+        row.libpq_receive_status,
         row.merge_status,
         row.final_heap_fetch_status,
         row.next_blocker,
@@ -17258,6 +17262,14 @@ mod tests {
         ))
         .expect("local coordinator gate executor step query should succeed")
         .expect("local coordinator gate executor step should exist");
+        let local_libpq_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_receive_count {local_gate_from}"))
+                .expect("local coordinator gate receive count query should succeed")
+                .expect("local coordinator gate receive count should exist");
+        let local_libpq_receive_status =
+            Spi::get_one::<String>(&format!("SELECT libpq_receive_status {local_gate_from}"))
+                .expect("local coordinator gate receive status query should succeed")
+                .expect("local coordinator gate receive status should exist");
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
         let remote_gate_from = format!(
@@ -17295,6 +17307,14 @@ mod tests {
         ))
         .expect("remote coordinator gate executor step query should succeed")
         .expect("remote coordinator gate executor step should exist");
+        let remote_libpq_receive_count =
+            Spi::get_one::<i64>(&format!("SELECT libpq_receive_count {remote_gate_from}"))
+                .expect("remote coordinator gate receive count query should succeed")
+                .expect("remote coordinator gate receive count should exist");
+        let remote_libpq_receive_status =
+            Spi::get_one::<String>(&format!("SELECT libpq_receive_status {remote_gate_from}"))
+                .expect("remote coordinator gate receive status query should succeed")
+                .expect("remote coordinator gate receive status should exist");
         let remote_plan_count =
             Spi::get_one::<i64>(&format!("SELECT remote_plan_count {remote_gate_from}"))
                 .expect("remote coordinator gate remote plan query should succeed")
@@ -17311,6 +17331,8 @@ mod tests {
         assert_eq!(local_libpq_dispatch_status, "ready");
         assert_eq!(local_libpq_executor_status, "ready");
         assert_eq!(local_libpq_executor_next_step, "none");
+        assert_eq!(local_libpq_receive_count, 0);
+        assert_eq!(local_libpq_receive_status, "ready");
         assert_eq!(remote_status, "requires_remote_node_descriptor");
         assert_eq!(remote_next_blocker, "remote_node_descriptor");
         assert_eq!(remote_execution_status, "requires_remote_node_descriptor");
@@ -17324,6 +17346,11 @@ mod tests {
             "requires_remote_node_descriptor"
         );
         assert_eq!(remote_libpq_executor_next_step, "remote_node_descriptor");
+        assert_eq!(remote_libpq_receive_count, 1);
+        assert_eq!(
+            remote_libpq_receive_status,
+            "requires_remote_node_descriptor"
+        );
         assert_eq!(remote_plan_count, 1);
         assert_eq!(remote_pid_count, 1);
     }
