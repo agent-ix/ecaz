@@ -1407,6 +1407,10 @@ fn ec_spire_register_remote_node_descriptor(
         pgrx::error!("ec_spire_register_remote_node_descriptor extension_version must be nonempty");
     }
 
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_register_remote_node_descriptor") };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
     let result = Spi::connect_mut(|client| {
         client
             .update(
@@ -12727,14 +12731,15 @@ mod tests {
         .expect("leaf pid should exist");
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
-        Spi::run(&format!(
+        let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 7, 'spire/remote/2', decode('01', 'hex'), \
                      'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
             u32::from(index_oid),
             env!("CARGO_PKG_VERSION")
         ))
-        .expect("remote descriptor registration should succeed");
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
 
         let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass) WHERE node_id = 2";
@@ -12822,6 +12827,7 @@ mod tests {
         .expect("libpq blocked request count query should succeed")
         .expect("libpq blocked request count should exist");
 
+        assert!(register_result);
         assert_eq!(descriptor_state, "active");
         assert_eq!(descriptor_generation, 7);
         assert_eq!(node_status, "ready");
