@@ -1611,6 +1611,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   manifest and persisted catalog into per-node publication actions,
   distinguishing ready libpq-pipeline publication from missing or stale
   manifest persistence before any remote I/O exists.
+  `ec_spire_remote_epoch_manifest_publication_summary(...)` aggregates that
+  plan into one publication decision with ready, persist-required,
+  refresh-required, and blocked counts.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
