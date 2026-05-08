@@ -455,6 +455,19 @@ pub(crate) struct SpireRemoteConninfoSecretResolutionContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteCatalogLifecycleContractRow {
+    pub(crate) lifecycle_ordinal: u64,
+    pub(crate) lifecycle_event: &'static str,
+    pub(crate) oid_stability: &'static str,
+    pub(crate) catalog_risk: &'static str,
+    pub(crate) operator_action: &'static str,
+    pub(crate) cleanup_surface: &'static str,
+    pub(crate) migration_surface: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) node_id: u32,

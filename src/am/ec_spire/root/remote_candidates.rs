@@ -201,6 +201,56 @@ pub(crate) fn remote_conninfo_secret_resolution_contract_rows(
     ]
 }
 
+pub(crate) fn remote_catalog_lifecycle_contract_rows(
+) -> Vec<SpireRemoteCatalogLifecycleContractRow> {
+    vec![
+        SpireRemoteCatalogLifecycleContractRow {
+            lifecycle_ordinal: 1,
+            lifecycle_event: "pg_dump_restore",
+            oid_stability: "oids_reassigned",
+            catalog_risk: "catalog_rows_reference_dump_source_oids",
+            operator_action: "run_orphan_cleanup_and_reregister_descriptors",
+            cleanup_surface: "ec_spire_remote_catalog_orphan_summary,ec_spire_remote_catalog_orphan_cleanup",
+            migration_surface: "bootstrap_remote_catalog_tables",
+            status: "requires_operator_reregistration",
+            recommendation: "after logical restore, clean orphaned remote catalog rows and re-register remote node descriptors for restored coordinator indexes",
+        },
+        SpireRemoteCatalogLifecycleContractRow {
+            lifecycle_ordinal: 2,
+            lifecycle_event: "drop_index",
+            oid_stability: "coordinator_oid_removed",
+            catalog_risk: "remote_catalog_orphans",
+            operator_action: "run_remote_catalog_orphan_cleanup",
+            cleanup_surface: "ec_spire_remote_catalog_orphan_cleanup",
+            migration_surface: "future_drop_index_hook",
+            status: "manual_cleanup_available",
+            recommendation: "use manual orphan cleanup until automatic DROP INDEX lifecycle cleanup lands",
+        },
+        SpireRemoteCatalogLifecycleContractRow {
+            lifecycle_ordinal: 3,
+            lifecycle_event: "basebackup_wal_replay",
+            oid_stability: "oids_stable",
+            catalog_risk: "catalog_rows_replay_with_database",
+            operator_action: "no_reregistration_required",
+            cleanup_surface: "none",
+            migration_surface: "physical_backup",
+            status: "supported",
+            recommendation: "physical backups preserve coordinator index OIDs and remote catalog rows through WAL replay",
+        },
+        SpireRemoteCatalogLifecycleContractRow {
+            lifecycle_ordinal: 4,
+            lifecycle_event: "extension_upgrade_0_1_0_to_0_1_1",
+            oid_stability: "oids_stable",
+            catalog_risk: "remote_catalog_tables_absent_before_upgrade",
+            operator_action: "apply_extension_upgrade_before_remote_transport",
+            cleanup_surface: "none",
+            migration_surface: "ecaz--0.1.0--0.1.1.sql",
+            status: "requires_upgrade_script",
+            recommendation: "extension upgrade must create remote catalog tables before remote transport is enabled",
+        },
+    ]
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct SpireRemoteCountRollup {
     local_count: u64,

@@ -48,6 +48,7 @@ pub(crate) use self::ec_spire::{
     index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
+    remote_catalog_lifecycle_contract_rows as spire_remote_catalog_lifecycle_contract_rows,
     remote_conninfo_secret_resolution_contract_rows as spire_remote_conninfo_secret_resolution_contract_rows,
     remote_degradation_policy_contract_rows as spire_remote_degradation_policy_contract_rows,
     remote_epoch_manifest_plan as spire_remote_epoch_manifest_plan,

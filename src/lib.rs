@@ -5326,6 +5326,38 @@ fn ec_spire_remote_conninfo_secret_resolution_contract() -> TableIterator<
     }))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_catalog_lifecycle_contract() -> TableIterator<
+    'static,
+    (
+        name!(lifecycle_ordinal, i64),
+        name!(lifecycle_event, &'static str),
+        name!(oid_stability, &'static str),
+        name!(catalog_risk, &'static str),
+        name!(operator_action, &'static str),
+        name!(cleanup_surface, &'static str),
+        name!(migration_surface, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_catalog_lifecycle_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.lifecycle_ordinal).expect("lifecycle ordinal should fit in i64"),
+            row.lifecycle_event,
+            row.oid_stability,
+            row.catalog_risk,
+            row.operator_action,
+            row.cleanup_surface,
+            row.migration_surface,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
 #[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
@@ -21096,6 +21128,7 @@ mod tests {
         let operator_entrypoint_from = "FROM ec_spire_remote_operator_entrypoint_contract()";
         let libpq_lifecycle_from = "FROM ec_spire_remote_libpq_connection_lifecycle_contract()";
         let secret_resolution_from = "FROM ec_spire_remote_conninfo_secret_resolution_contract()";
+        let catalog_lifecycle_from = "FROM ec_spire_remote_catalog_lifecycle_contract()";
         let search_result_from = "FROM ec_spire_remote_search_coordinator_result_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
@@ -21283,6 +21316,34 @@ mod tests {
         ))
         .expect("rejected secret provider storage query should succeed")
         .expect("rejected secret provider storage should exist");
+        let catalog_lifecycle_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_lifecycle_from}"))
+                .expect("catalog lifecycle count query should succeed")
+                .expect("catalog lifecycle count should exist");
+        let dump_restore_status = Spi::get_one::<String>(&format!(
+            "SELECT status {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'pg_dump_restore'"
+        ))
+        .expect("dump restore lifecycle query should succeed")
+        .expect("dump restore lifecycle should exist");
+        let drop_index_cleanup_surface = Spi::get_one::<String>(&format!(
+            "SELECT cleanup_surface {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'drop_index'"
+        ))
+        .expect("drop index lifecycle query should succeed")
+        .expect("drop index lifecycle should exist");
+        let basebackup_status = Spi::get_one::<String>(&format!(
+            "SELECT status {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'basebackup_wal_replay'"
+        ))
+        .expect("basebackup lifecycle query should succeed")
+        .expect("basebackup lifecycle should exist");
+        let upgrade_migration_surface = Spi::get_one::<String>(&format!(
+            "SELECT migration_surface {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'extension_upgrade_0_1_0_to_0_1_1'"
+        ))
+        .expect("upgrade lifecycle query should succeed")
+        .expect("upgrade lifecycle should exist");
 
         assert_eq!(degradation_count, 8);
         assert_eq!(degraded_unavailable_action, "skip_and_report");
@@ -21340,6 +21401,14 @@ mod tests {
             rejected_provider_storage,
             "never_store_raw_conninfo_in_extension_catalog"
         );
+        assert_eq!(catalog_lifecycle_count, 4);
+        assert_eq!(dump_restore_status, "requires_operator_reregistration");
+        assert_eq!(
+            drop_index_cleanup_surface,
+            "ec_spire_remote_catalog_orphan_cleanup"
+        );
+        assert_eq!(basebackup_status, "supported");
+        assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
     }
 
     #[pg_test]
