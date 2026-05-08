@@ -701,6 +701,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             pg_type: "text",
             semantic_role: "remote_index_locator",
             required: true,
+            // Registration resolves this in the remote node catalog, not in the coordinator.
             validator: "must_resolve_on_remote_node",
         },
         SpireRemoteNodeDescriptorContractRow {
@@ -750,6 +751,93 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             semantic_role: "last_health_or_search_error",
             required: false,
             validator: "diagnostic_only",
+        },
+    ]
+}
+
+pub(crate) fn remote_node_descriptor_registration_contract_rows(
+) -> Vec<SpireRemoteNodeDescriptorRegistrationContractRow> {
+    vec![
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 1,
+            step_name: "bind_coordinator_index",
+            input_field: "coordinator_index_oid",
+            semantic_role: "coordinator_index_identity",
+            validator: "must_equal_local_index_oid",
+            persistence_action: "bind_descriptor_to_index",
+            failure_status: "invalid_descriptor",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 2,
+            step_name: "validate_remote_node",
+            input_field: "node_id",
+            semantic_role: "coordinator_scoped_node",
+            validator: "must_be_nonzero_remote_node",
+            persistence_action: "upsert_node_descriptor_key",
+            failure_status: "invalid_descriptor",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 3,
+            step_name: "record_secret_reference",
+            input_field: "conninfo_secret_name",
+            semantic_role: "indirect_connection_secret",
+            validator: "must_be_nonempty_secret_reference",
+            persistence_action: "persist_secret_reference_only",
+            failure_status: "invalid_descriptor",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 4,
+            step_name: "resolve_remote_index",
+            input_field: "remote_index_regclass",
+            semantic_role: "remote_index_locator",
+            validator: "must_resolve_on_remote_node",
+            persistence_action: "persist_remote_index_locator",
+            failure_status: "remote_capability_failed",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 5,
+            step_name: "verify_remote_identity",
+            input_field: "remote_index_identity",
+            semantic_role: "remote_index_identity",
+            validator: "must_match_remote_capability_echo",
+            persistence_action: "persist_remote_identity",
+            failure_status: "remote_capability_failed",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 6,
+            step_name: "verify_epoch_window",
+            input_field: "last_served_epoch,min_retained_epoch",
+            semantic_role: "served_epoch_window",
+            validator: "must_cover_active_epoch_and_retention_floor",
+            persistence_action: "persist_served_retained_epochs",
+            failure_status: "remote_epoch_not_served",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 7,
+            step_name: "verify_extension_version",
+            input_field: "extension_version",
+            semantic_role: "remote_extension_version",
+            validator: "must_match_required_extension_version",
+            persistence_action: "persist_capability_version",
+            failure_status: "incompatible_extension_version",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 8,
+            step_name: "apply_policy_state",
+            input_field: "state",
+            semantic_role: "remote_node_policy_state",
+            validator: "must_be_active_or_draining_for_reads",
+            persistence_action: "persist_descriptor_state",
+            failure_status: "disabled_remote_node",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 9,
+            step_name: "publish_generation",
+            input_field: "generation",
+            semantic_role: "membership_generation",
+            validator: "must_advance_descriptor_generation",
+            persistence_action: "atomically_replace_descriptor",
+            failure_status: "stale_descriptor_generation",
         },
     ]
 }

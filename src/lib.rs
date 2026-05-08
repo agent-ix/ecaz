@@ -1322,6 +1322,34 @@ fn ec_spire_remote_node_descriptor_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_node_descriptor_registration_contract() -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(input_field, &'static str),
+        name!(semantic_role, &'static str),
+        name!(validator, &'static str),
+        name!(persistence_action, &'static str),
+        name!(failure_status, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_node_descriptor_registration_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.step_ordinal).expect("step ordinal should fit in i64"),
+            row.step_name,
+            row.input_field,
+            row.semantic_role,
+            row.validator,
+            row.persistence_action,
+            row.failure_status,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_descriptor_readiness(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -12548,6 +12576,44 @@ mod tests {
         assert_eq!(secret_validator, "must_be_nonempty_secret_reference");
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(required_epoch_fields, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_node_descriptor_registration_contract() {
+        let contract_from = "FROM ec_spire_remote_node_descriptor_registration_contract()";
+        let step_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
+            .expect("descriptor registration contract count query should succeed")
+            .expect("descriptor registration contract count should exist");
+        let secret_action = Spi::get_one::<String>(&format!(
+            "SELECT persistence_action {contract_from} \
+             WHERE input_field = 'conninfo_secret_name'"
+        ))
+        .expect("descriptor registration secret action query should succeed")
+        .expect("descriptor registration secret action should exist");
+        let generation_action = Spi::get_one::<String>(&format!(
+            "SELECT persistence_action {contract_from} \
+             WHERE input_field = 'generation'"
+        ))
+        .expect("descriptor registration generation action query should succeed")
+        .expect("descriptor registration generation action should exist");
+        let epoch_failure = Spi::get_one::<String>(&format!(
+            "SELECT failure_status {contract_from} \
+             WHERE input_field = 'last_served_epoch,min_retained_epoch'"
+        ))
+        .expect("descriptor registration epoch failure query should succeed")
+        .expect("descriptor registration epoch failure should exist");
+        let raw_conninfo_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {contract_from} \
+             WHERE input_field = 'conninfo' OR semantic_role = 'raw_connection_string'"
+        ))
+        .expect("descriptor registration raw conninfo query should succeed")
+        .expect("descriptor registration raw conninfo count should exist");
+
+        assert_eq!(step_count, 9);
+        assert_eq!(secret_action, "persist_secret_reference_only");
+        assert_eq!(generation_action, "atomically_replace_descriptor");
+        assert_eq!(epoch_failure, "remote_epoch_not_served");
+        assert_eq!(raw_conninfo_count, 0);
     }
 
     #[pg_test]

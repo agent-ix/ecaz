@@ -1477,6 +1477,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_node_descriptor_contract()` now exposes the durable
   descriptor fields required before real libpq fanout can run; conninfo remains
   an indirect secret reference rather than a raw connection string.
+  `ec_spire_remote_node_descriptor_registration_contract()` now exposes the
+  ordered validation and persistence actions for descriptor registration,
+  including secret-reference-only storage, remote identity/capability checks,
+  served-epoch window validation, policy state handling, and atomic generation
+  replacement.
   `ec_spire_remote_node_descriptor_readiness(...)` and
   `ec_spire_remote_node_descriptor_readiness_summary(...)` now project that
   contract onto remote nodes so required missing descriptor fields are visible

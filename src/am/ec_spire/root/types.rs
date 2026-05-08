@@ -762,6 +762,17 @@ pub(crate) struct SpireRemoteNodeDescriptorContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteNodeDescriptorRegistrationContractRow {
+    pub(crate) step_ordinal: u64,
+    pub(crate) step_name: &'static str,
+    pub(crate) input_field: &'static str,
+    pub(crate) semantic_role: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) persistence_action: &'static str,
+    pub(crate) failure_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteNodeDescriptorReadinessRow {
     pub(crate) active_epoch: u64,
     pub(crate) node_id: u32,
