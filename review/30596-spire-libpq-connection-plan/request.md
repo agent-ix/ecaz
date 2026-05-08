@@ -18,6 +18,9 @@ Changes:
   surfaced.
 - Preserves fail-closed behavior for missing descriptors by reporting
   `requires_remote_node_descriptor` and no pipeline mode.
+- Follow-up for reviewer feedback: connection descriptor resolution now loads
+  only `active` and `draining` catalog rows, so `failed` or `disabled`
+  descriptors cannot report `secret_reference_ready` or `libpq_pipeline`.
 - Aggregates descriptor-resolved, missing-descriptor, pipeline, remote-PID, and
   blocked-PID counts into one coordinator gate row.
 - Exposes the pre-I/O dispatch action, receive validator, request shape, and
@@ -37,12 +40,13 @@ Changes:
 
 ## Validation
 
-Head SHA: `40197495`
+Head SHA: `9866d033`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_search_libpq_req`
 - `cargo pgrx test pg18 remote_search_coordinator_gate_summary`
-- `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
+- `cargo pgrx test pg18 remote_node_descriptor`
+- `cargo pgrx test pg18 remote_node_desc_failed_blocks_libpq_dispatch`
 - `git diff --check`
 
 Result:
@@ -54,13 +58,22 @@ Result:
   - `pg_test_ec_spire_remote_search_coordinator_gate_summary`
   - Confirms the top-level coordinator gate reports libpq dispatch count/status
     for local-only and missing-descriptor plans.
-- PG18 `remote_node_descriptor_catalog_active` filter passed:
+- PG18 `remote_node_descriptor` filter passed:
+  - `pg_test_ec_spire_remote_node_descriptor_registration_contract`
+  - `pg_test_ec_spire_remote_node_descriptor_contract`
+  - `pg_test_ec_spire_remote_node_descriptor_readiness_missing`
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
+  - `pg_test_ec_spire_remote_node_descriptor_stale_generation_rejected`
   - Confirms the connection summary reports one descriptor-resolved pipeline
     connection and preserves `requires_libpq_transport`.
   - Confirms the dispatch plan reports
     `open_pipeline_and_send_remote_search` plus
     `validate_remote_search_candidate_batch` for registered descriptors.
+- PG18 `remote_node_desc_failed_blocks_libpq_dispatch` filter passed:
+  - `pg_test_ec_spire_remote_node_desc_failed_blocks_libpq_dispatch`
+  - Confirms the connection plan reports `requires_remote_node_descriptor`,
+    `pipeline_mode = none`, and blocked dispatch for a registered `failed`
+    descriptor.
 
 ## Notes
 

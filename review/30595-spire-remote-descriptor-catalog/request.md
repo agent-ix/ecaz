@@ -26,6 +26,11 @@ Changes:
 - Extends that coverage through execution-plan and libpq-request envelope
   summaries so registered descriptors stay blocked on transport, not descriptor
   registration.
+- Follow-up for reviewer feedback: descriptor upserts now fail closed unless
+  `descriptor_generation` advances the existing catalog row.
+- Follow-up for reviewer feedback: failed/disabled descriptors are normalized
+  to the read-blocked descriptor status before request/execution/libpq summary
+  rollups consume them.
 - Updates the Phase 7 task note with the durable catalog surface.
 
 ## Files
@@ -40,11 +45,11 @@ Changes:
 
 ## Validation
 
-Head SHA: `9eb91d01`
+Head SHA: `9866d033`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_node_descriptor`
-- `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
+- `cargo pgrx test pg18 remote_node_desc_failed_blocks_libpq_dispatch`
 - `git diff --check`
 
 Result:
@@ -54,17 +59,18 @@ Result:
   - `pg_test_ec_spire_remote_node_descriptor_contract`
   - `pg_test_ec_spire_remote_node_descriptor_readiness_missing`
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
-- PG18 `remote_node_descriptor_catalog_active` filter passed:
-  - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
-  - Confirms descriptor registration returns `true` after the coordinator index
-    validation path accepts the target `ec_spire` index.
-- `cargo fmt --check` was run after formatting touched files and restoring
-  unrelated known rustfmt churn. It still reports only the pre-existing
-  unrelated differences in:
+  - `pg_test_ec_spire_remote_node_descriptor_stale_generation_rejected`
+- PG18 `remote_node_desc_failed_blocks_libpq_dispatch` filter passed:
+  - `pg_test_ec_spire_remote_node_desc_failed_blocks_libpq_dispatch`
+  - Confirms a failed descriptor remains visible as descriptor state
+    `failed`, but read readiness, connection planning, and dispatch planning
+    all block with `requires_remote_node_descriptor`.
+- `cargo fmt` was run, then the known unrelated rustfmt churn was restored in:
   - `src/am/ec_ivf/scan.rs`
   - `src/am/ec_spire/options.rs`
   - `src/am/ec_spire/scan.rs`
   - `src/am/ec_spire/update.rs`
+- `git diff --check` passed.
 
 ## Notes
 

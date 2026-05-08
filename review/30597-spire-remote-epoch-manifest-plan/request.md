@@ -13,6 +13,13 @@ Changes:
   `include_remote_node` or `block_manifest`.
 - Reports the final manifest decision for local-only, blocked distributed, and
   distributed-ready publish states.
+- Follow-up for reviewer feedback: publish readiness now derives blocked state
+  from the per-node publish plan, so stale served-epoch or retention-window
+  gaps block the manifest through `remote_epoch_window` even when the remote
+  descriptor exists.
+- Cross-cutting descriptor feedback is also closed at this head: descriptor
+  registration requires advancing generation, and failed/disabled descriptors
+  cannot resolve as libpq pipeline-ready.
 - Keeps this as pre-publish contract work; no remote manifest persistence or
   libpq I/O is introduced.
 - Updates the Phase 7 task note with the manifest planning surface.
@@ -27,23 +34,26 @@ Changes:
 
 ## Validation
 
-Head SHA: `442325fb`
+Head SHA: `9866d033`
 
 - `cargo check --lib --no-default-features --features pg18`
-- `cargo pgrx test pg18 remote_node_cap_summary`
-- `cargo pgrx test pg18 remote_epoch_publish_plan_missing`
-- `cargo pgrx test pg18 remote_node_descriptor_catalog_active`
+- `cargo pgrx test pg18 remote_node_descriptor`
+- `cargo pgrx test pg18 remote_node_desc_failed_blocks_libpq_dispatch`
+- `cargo pgrx test pg18 remote_epoch_publish_manifest_stale_descriptor`
 - `git diff --check`
 
 Result:
 
-- PG18 `remote_node_cap_summary` filter passed:
-  - `pg_test_ec_spire_remote_node_cap_summary_local`
-  - `pg_test_ec_spire_remote_node_cap_summary_missing`
-- PG18 `remote_epoch_publish_plan_missing` filter passed:
-  - `pg_test_ec_spire_remote_epoch_publish_plan_missing`
-- PG18 `remote_node_descriptor_catalog_active` filter passed:
+- PG18 `remote_node_descriptor` filter passed:
+  - `pg_test_ec_spire_remote_node_descriptor_registration_contract`
+  - `pg_test_ec_spire_remote_node_descriptor_contract`
+  - `pg_test_ec_spire_remote_node_descriptor_readiness_missing`
   - `pg_test_ec_spire_remote_node_descriptor_catalog_active`
+  - `pg_test_ec_spire_remote_node_descriptor_stale_generation_rejected`
+- PG18 `remote_node_desc_failed_blocks_libpq_dispatch` filter passed:
+  - `pg_test_ec_spire_remote_node_desc_failed_blocks_libpq_dispatch`
+- PG18 `remote_epoch_publish_manifest_stale_descriptor` filter passed:
+  - `pg_test_ec_spire_remote_epoch_publish_manifest_stale_descriptor`
 
 ## Notes
 
