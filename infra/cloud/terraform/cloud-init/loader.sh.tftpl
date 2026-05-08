@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# ecaz cloud — loader host bootstrap (Amazon Linux 2023, aarch64).
+#
+# Tagged for FR-047. Installs prerequisites and clones ecaz so SSM-exec'd
+# corpus stage/load runs can use the existing `ecaz corpus prepare` and
+# `ecaz corpus load` code paths against the DB's private IP.
+
+set -euxo pipefail
+
+ECAZ_REF='${ecaz_git_ref}'
+ECAZ_URL='${ecaz_git_url}'
+S3_BUCKET='${bucket}'
+
+dnf -y update
+dnf -y install --allowerasing \
+  git gcc gcc-c++ make clang \
+  openssl-devel zlib-devel \
+  postgresql18 awscli2 jq
+
+useradd -m loader || true
+
+sudo -u loader bash -c '
+  curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+'
+
+sudo -u loader bash -lc "
+  set -eux
+  export PATH=\$HOME/.cargo/bin:\$PATH
+  rm -rf \$HOME/ecaz
+  git clone $ECAZ_URL \$HOME/ecaz
+  cd \$HOME/ecaz
+  git checkout $ECAZ_REF
+  cargo build --release -p ecaz-cli
+  install -Dm755 target/release/ecaz /usr/local/bin/ecaz
+"
+
+aws s3 cp - "s3://$S3_BUCKET/state/loader/ready" <<<"$(date -Is)"

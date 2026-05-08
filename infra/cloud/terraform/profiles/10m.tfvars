@@ -1,0 +1,7 @@
+profile              = "10m"
+db_instance_type     = "m7g.4xlarge"
+db_volume_gb         = 500
+db_volume_iops       = 6000
+db_volume_throughput = 250
+loader_instance_type = "c7g.2xlarge"
+ecaz_git_ref         = "main"

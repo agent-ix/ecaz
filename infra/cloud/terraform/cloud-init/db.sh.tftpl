@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# ecaz cloud — DB host bootstrap (Amazon Linux 2023, aarch64 / Graviton).
+#
+# Tagged for FR-045: install PG18, build ecaz from a passed git ref, attach
+# data EBS at /dev/sdf, place PGDATA on it, run CREATE EXTENSION ecaz.
+#
+# Status: Bootstrap stub. The real build of pgrx + ecaz on Graviton is
+# checkpoint 4. This script provisions the disk and Postgres scaffolding so
+# checkpoints 3 (`ecaz cloud up`) can connect; checkpoint 4 fills in the
+# extension build.
+
+set -euxo pipefail
+
+PGDATA=/var/lib/pgsql/18/data
+PG_BIN_DIR=/usr/pgsql-18/bin
+DATA_DEV=/dev/nvme1n1   # EBS /dev/sdf maps to nvme1n1 on Nitro
+ECAZ_REF='${ecaz_git_ref}'
+ECAZ_URL='${ecaz_git_url}'
+S3_BUCKET='${bucket}'
+PROFILE='${profile}'
+
+dnf -y update
+dnf -y install --allowerasing \
+  git gcc gcc-c++ make clang clang-devel llvm llvm-devel \
+  openssl-devel readline-devel zlib-devel bzip2-devel \
+  parquet-tools jq awscli2 cmake pkgconfig perl
+
+# --- Postgres 18 -----------------------------------------------------------
+# AL2023 ships PG via the postgresql packages in the dnf module; pinning
+# specifically to 18 here. Adjust if AL2023 lags upstream PG18 GA.
+dnf -y module enable postgresql:18 || true
+dnf -y install postgresql18-server postgresql18-contrib postgresql18-devel
+
+# --- Mount data volume -----------------------------------------------------
+if ! blkid "$DATA_DEV" >/dev/null 2>&1; then
+  mkfs.xfs -f "$DATA_DEV"
+fi
+mkdir -p /var/lib/pgsql/18
+echo "$DATA_DEV /var/lib/pgsql/18 xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+chown -R postgres:postgres /var/lib/pgsql
+
+# --- initdb if first boot --------------------------------------------------
+if [ ! -s "$PGDATA/PG_VERSION" ]; then
+  sudo -u postgres "$PG_BIN_DIR/initdb" -D "$PGDATA" --locale=C --encoding=UTF8
+fi
+
+cat > "$PGDATA/postgresql.auto.conf" <<EOF
+listen_addresses = '*'
+port = 5432
+shared_preload_libraries = 'ecaz'
+max_parallel_workers_per_gather = 4
+max_parallel_workers = 8
+work_mem = '64MB'
+maintenance_work_mem = '512MB'
+EOF
+
+cat > "$PGDATA/pg_hba.conf" <<EOF
+local all all                     trust
+host  all all 127.0.0.1/32        trust
+host  all all 10.42.0.0/16        trust
+EOF
+
+systemctl enable postgresql-18
+systemctl start postgresql-18
+
+# --- Rust toolchain (for cargo pgrx) --------------------------------------
+sudo -u postgres bash -c '
+  curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+  source $HOME/.cargo/env
+  cargo install --locked cargo-pgrx@0.17 --features pg18
+  cargo pgrx init --pg18 /usr/pgsql-18/bin/pg_config
+'
+
+# --- Build & install ecaz extension at the requested ref ------------------
+sudo -u postgres bash -lc "
+  set -eux
+  export PATH=\$HOME/.cargo/bin:\$PATH
+  rm -rf /var/lib/pgsql/build
+  mkdir -p /var/lib/pgsql/build
+  cd /var/lib/pgsql/build
+  git clone $ECAZ_URL ecaz
+  cd ecaz
+  git checkout $ECAZ_REF
+  cargo pgrx install --release --pg-config /usr/pgsql-18/bin/pg_config
+"
+
+systemctl restart postgresql-18
+
+sudo -u postgres psql -c 'CREATE EXTENSION IF NOT EXISTS ecaz;'
+
+# --- Tag readiness in S3 so `ecaz cloud install` can poll -----------------
+aws s3 cp - "s3://$S3_BUCKET/state/$PROFILE/db-ready" <<<"$(date -Is)"
