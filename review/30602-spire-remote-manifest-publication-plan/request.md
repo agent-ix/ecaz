@@ -19,6 +19,8 @@ Changes:
   when publication is blocked on missing or stale persisted manifest state.
 - Aggregates per-node publication rows into one publication decision with
   ready, persistence-required, refresh-required, and blocked counts.
+- Reports local-only manifest publication as `not_required` in both catalog and
+  publication summaries.
 - Updates the Phase 7 task note with the publication-plan surface.
 
 ## Files
@@ -28,10 +30,11 @@ Changes:
 
 ## Validation
 
-Head SHA: `2955716c`
+Head SHA: `219beddd`
 
 - `cargo check --lib --no-default-features --features pg18`
 - `cargo pgrx test pg18 remote_epoch_manifest_persist_ready`
+- `cargo pgrx test pg18 remote_node_cap_summary_local`
 - `cargo fmt`
 - Restored known unrelated rustfmt churn in:
   - `src/am/ec_ivf/scan.rs`
@@ -44,8 +47,12 @@ Result:
 
 - PG18 `remote_epoch_manifest_persist_ready` filter passed:
   - `pg_test_ec_spire_remote_epoch_manifest_persist_ready`
+- PG18 `remote_node_cap_summary_local` filter passed:
+  - `pg_test_ec_spire_remote_node_cap_summary_local`
 - The test covers ready persisted-manifest publication and stale persisted-entry
   refresh blocking, including the publication summary.
+- The local summary test covers local-only `not_required` catalog and
+  publication summaries.
 
 ## Notes
 
