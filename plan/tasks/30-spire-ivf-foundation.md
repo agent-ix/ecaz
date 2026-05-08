@@ -1525,7 +1525,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_local_heap_candidates(...)` and
   `ec_spire_remote_search_local_heap_candidate_summary(...)` now attach decoded
   coordinator-local heap block/offset work items to ranked candidates while
-  preserving the fail-closed remote-target gate.
+  preserving the fail-closed remote-target gate. Mixed local/degraded-skipped
+  plans now preserve `degraded_ready` through merge, finalization, heap
+  resolution, and local heap candidate summaries.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

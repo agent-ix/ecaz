@@ -11873,6 +11873,117 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_remote_search_local_heap_degraded_skip_status() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_local_heap_degraded_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_local_heap_degraded_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_local_heap_degraded_sql_idx \
+             ON ec_spire_remote_local_heap_degraded_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_local_heap_degraded_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_local_heap_degraded_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_local_heap_degraded_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pids[1] as u64, "skipped");
+        }
+        let args = format!(
+            "'ec_spire_remote_local_heap_degraded_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'degraded'",
+            selected_pids[0], selected_pids[1],
+        );
+        let merge_from = format!("FROM ec_spire_remote_search_merge_input_summary({args})");
+        let final_from = format!("FROM ec_spire_remote_search_finalization_summary({args})");
+        let heap_from = format!("FROM ec_spire_remote_search_heap_resolution_summary({args})");
+        let candidate_from = format!("FROM ec_spire_remote_search_local_heap_candidates({args})");
+        let candidate_summary_from =
+            format!("FROM ec_spire_remote_search_local_heap_candidate_summary({args})");
+
+        let merge_status = Spi::get_one::<String>(&format!("SELECT status {merge_from}"))
+            .expect("degraded merge status query should succeed")
+            .expect("degraded merge status should exist");
+        let skipped_batch_count =
+            Spi::get_one::<i64>(&format!("SELECT skipped_batch_count {merge_from}"))
+                .expect("degraded merge skipped query should succeed")
+                .expect("degraded merge skipped count should exist");
+        let local_batch_count =
+            Spi::get_one::<i64>(&format!("SELECT local_batch_count {merge_from}"))
+                .expect("degraded merge local query should succeed")
+                .expect("degraded merge local count should exist");
+        let final_status = Spi::get_one::<String>(&format!("SELECT status {final_from}"))
+            .expect("degraded final status query should succeed")
+            .expect("degraded final status should exist");
+        let final_heap_fetch_status =
+            Spi::get_one::<String>(&format!("SELECT final_heap_fetch_status {final_from}"))
+                .expect("degraded final heap status query should succeed")
+                .expect("degraded final heap status should exist");
+        let heap_status = Spi::get_one::<String>(&format!("SELECT status {heap_from}"))
+            .expect("degraded heap status query should succeed")
+            .expect("degraded heap status should exist");
+        let local_heap_resolution_status =
+            Spi::get_one::<String>(&format!("SELECT local_heap_resolution_status {heap_from}"))
+                .expect("degraded local heap resolution query should succeed")
+                .expect("degraded local heap resolution status should exist");
+        let decoded_local_locator_count =
+            Spi::get_one::<i64>(&format!("SELECT decoded_local_locator_count {heap_from}"))
+                .expect("degraded decoded locator query should succeed")
+                .expect("degraded decoded locator count should exist");
+        let candidate_count = Spi::get_one::<i64>(&format!("SELECT count(*) {candidate_from}"))
+            .expect("degraded local candidate count query should succeed")
+            .expect("degraded local candidate count should exist");
+        let returned_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {candidate_summary_from}"
+        ))
+        .expect("degraded candidate summary count query should succeed")
+        .expect("degraded candidate summary count should exist");
+        let candidate_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {candidate_summary_from}"))
+                .expect("degraded candidate summary status query should succeed")
+                .expect("degraded candidate summary status should exist");
+
+        assert_eq!(merge_status, "degraded_ready");
+        assert_eq!(skipped_batch_count, 1);
+        assert_eq!(local_batch_count, 1);
+        assert_eq!(final_status, "degraded_ready");
+        assert_eq!(final_heap_fetch_status, "local_ready");
+        assert_eq!(heap_status, "degraded_ready");
+        assert_eq!(local_heap_resolution_status, "ready");
+        assert_eq!(decoded_local_locator_count, 1);
+        assert_eq!(candidate_count, 1);
+        assert_eq!(returned_candidate_count, 1);
+        assert_eq!(candidate_summary_status, "degraded_ready");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_heap_resolution_summary_blocks_remote() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_heap_res_summary_sql \

@@ -1233,6 +1233,8 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
             SPIRE_REMOTE_STATUS_EMPTY_TOP_K
         } else if blocked_batch_count > 0 {
             execution_summary.status
+        } else if execution_summary.degraded_skipped_plan_count > 0 {
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
         } else if remote_batch_count > 0 || local_batch_count > 0 {
             SPIRE_REMOTE_STATUS_READY
         } else if skipped_batch_count > 0 {
@@ -1406,7 +1408,7 @@ pub(crate) unsafe fn remote_search_finalization_summary_row(
     } else if merge_summary.local_batch_count > 0 {
         (
             SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
-            SPIRE_REMOTE_STATUS_READY,
+            merge_summary.status,
             SPIRE_REMOTE_NONE,
         )
     } else {
