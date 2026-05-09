@@ -44,6 +44,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE top-graph frontier contract | `ADR-054-spire-top-graph-frontier-contract.md` | ACCEPTED | Top graph nodes are the active root/top routing object's child frontier; root fanout, graph node count, and leaf count must be diagnosed separately. |
 | SPIRE vector identity contract | `ADR-055-spire-vector-identity-contract.md` | ACCEPTED | Global `0x02` vec IDs dedupe across nodes; existing local `0x01` vec IDs are node-scoped during remote merge. |
 | SPIRE eager bounded scan contract | `ADR-056-spire-eager-bounded-scan-contract.md` | ACCEPTED | Current AM scans materialize a bounded candidate cursor in `amrescan`; `amgettuple` remains forward-only cursor drain until a separate streaming ADR is accepted. |
+| SPIRE local-store read scheduling contract | `ADR-057-spire-local-store-read-scheduling-contract.md` | ACCEPTED | Local store reads are grouped by `(node_id, local_store_id)` and prefetched before sequential scoring inside one backend; true parallel store execution requires a later ADR and benchmark packet. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 

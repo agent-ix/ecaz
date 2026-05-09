@@ -80,9 +80,11 @@ that Phase 9 establishes.
 - [x] Add per-store route/candidate/read diagnostics.
 - [x] Split chained top-graph diagnostics enough for I/O attribution, including
   meta-tuple versus segment-tuple counts or equivalent block-level visibility.
-- [ ] Overlap local-store reads where PostgreSQL backend constraints allow it,
+- [x] Overlap local-store reads where PostgreSQL backend constraints allow it,
   or make the sequential limitation explicit if read-stream prefetch is the
-  only safe primitive.
+  only safe primitive. ADR-057 accepts PostgreSQL relation prefetch/read-stream
+  as the Phase 10 overlap primitive and keeps decoding/scoring sequential
+  inside one backend.
 - [x] Decode delta objects once per leaf/query and reuse the decoded rows for
   delete suppression and insert candidate scoring.
 - [x] Replace linear local-store lookup with an indexed map if store counts

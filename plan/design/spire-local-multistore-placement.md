@@ -268,10 +268,12 @@ selected PIDs
 
 Candidate scoring should stay close to the bytes read from each store group.
 The first implementation may execute store groups synchronously inside one
-backend while preserving this grouping boundary. Any claim that the runtime
-performs or benefits from parallel multi-NVMe reads must wait for a benchmark
-packet that compares one-store and multi-store layouts on real multi-NVMe
-hardware.
+backend while preserving this grouping boundary. ADR-057 accepts PostgreSQL
+relation prefetch/read-stream as the Phase 10 overlap primitive and keeps
+object decoding plus scoring sequential inside that backend. Any claim that the
+runtime performs or benefits from parallel multi-NVMe reads must wait for a
+benchmark packet that compares one-store and multi-store layouts on real
+multi-NVMe hardware.
 
 ## Diagnostics
 
