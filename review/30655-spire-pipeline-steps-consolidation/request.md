@@ -6,6 +6,7 @@ Task 30 Phase 8 preflight now has a consolidated remote pipeline diagnostic:
 `ec_spire_remote_pipeline_steps(...)`.
 
 Code checkpoint: `544d2512` (`Add SPIRE remote pipeline steps`)
+Docs checkpoint: `1cf9a5c1` (`Document SPIRE remote pipeline steps`)
 
 ## Scope
 
@@ -20,6 +21,7 @@ Code checkpoint: `544d2512` (`Add SPIRE remote pipeline steps`)
 - Adds the new surface to `ec_spire_remote_operator_entrypoint_contract()`.
 - Extends PG18 coverage so consolidated rows are compared against the existing
   per-surface status/count contracts in the loopback executor fixture.
+- Documents the new operator surface in `docs/SPIRE_DIAGNOSTICS.md`.
 
 ## Validation
 
