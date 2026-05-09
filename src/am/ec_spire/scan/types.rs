@@ -181,6 +181,9 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) deduped_candidate_row_count: usize,
     pub(super) deduped_primary_candidate_row_count: usize,
     pub(super) deduped_boundary_replica_candidate_row_count: usize,
+    pub(super) truncated_candidate_row_count: usize,
+    pub(super) truncated_primary_candidate_row_count: usize,
+    pub(super) truncated_boundary_replica_candidate_row_count: usize,
     pub(super) candidate_winner_count: usize,
     pub(super) primary_candidate_winner_count: usize,
     pub(super) boundary_replica_candidate_winner_count: usize,
@@ -220,6 +223,14 @@ trait SpireRoutedScanObserver {
     }
 
     fn deduped_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn truncated_candidate(
         &mut self,
         _epoch: u64,
         _placement: &SpirePlacementEntry,
@@ -277,6 +288,9 @@ impl SpireScanPlacementDiagnosticsObserver {
                 deduped_candidate_row_count: 0,
                 deduped_primary_candidate_row_count: 0,
                 deduped_boundary_replica_candidate_row_count: 0,
+                truncated_candidate_row_count: 0,
+                truncated_primary_candidate_row_count: 0,
+                truncated_boundary_replica_candidate_row_count: 0,
                 candidate_winner_count: 0,
                 primary_candidate_winner_count: 0,
                 boundary_replica_candidate_winner_count: 0,
@@ -352,6 +366,21 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             assignment_flags,
             &mut entry.deduped_primary_candidate_row_count,
             &mut entry.deduped_boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn truncated_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.truncated_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.truncated_primary_candidate_row_count,
+            &mut entry.truncated_boundary_replica_candidate_row_count,
         );
     }
 

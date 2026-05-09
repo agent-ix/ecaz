@@ -541,9 +541,7 @@ fn append_quantized_v2_column_candidates(
             heap_tid: row.heap_tid,
             score: -ip,
         };
-        if let Some(suppressed) = accumulator.append(candidate) {
-            observe_deduped_candidate(snapshot, observer, &suppressed)?;
-        }
+        observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
     }
     Ok(())
 }
@@ -603,9 +601,7 @@ fn append_quantized_delta_candidates_for_routes(
                 heap_tid: assignment.heap_tid,
                 score: -ip,
             };
-            if let Some(suppressed) = accumulator.append(candidate) {
-                observe_deduped_candidate(snapshot, observer, &suppressed)?;
-            }
+            observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
         }
     }
     Ok(())
@@ -679,9 +675,7 @@ fn append_quantized_v1_leaf_candidates(
             heap_tid: assignment.heap_tid,
             score: -ip,
         };
-        if let Some(suppressed) = accumulator.append(candidate) {
-            observe_deduped_candidate(snapshot, observer, &suppressed)?;
-        }
+        observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
     }
     Ok(())
 }
@@ -728,6 +722,20 @@ where
     Ok(accumulator.into_ranked())
 }
 
+fn observe_candidate_append_outcome(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    observer: &mut impl SpireRoutedScanObserver,
+    outcome: SpireCandidateAppendOutcome,
+) -> Result<(), String> {
+    if let Some(candidate) = outcome.deduped {
+        observe_deduped_candidate(snapshot, observer, &candidate)?;
+    }
+    if let Some(candidate) = outcome.truncated {
+        observe_truncated_candidate(snapshot, observer, &candidate)?;
+    }
+    Ok(())
+}
+
 fn observe_deduped_candidate(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     observer: &mut impl SpireRoutedScanObserver,
@@ -735,6 +743,20 @@ fn observe_deduped_candidate(
 ) -> Result<(), String> {
     let lookup = snapshot.require_lookup(candidate.pid, "scan deduped candidate diagnostics")?;
     observer.deduped_candidate(
+        snapshot.epoch_manifest().epoch,
+        lookup.placement,
+        candidate.assignment_flags,
+    );
+    Ok(())
+}
+
+fn observe_truncated_candidate(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    observer: &mut impl SpireRoutedScanObserver,
+    candidate: &SpireScoredScanCandidate,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(candidate.pid, "scan truncated candidate diagnostics")?;
+    observer.truncated_candidate(
         snapshot.epoch_manifest().epoch,
         lookup.placement,
         candidate.assignment_flags,
@@ -783,6 +805,28 @@ fn candidate_assignment_role_rank(candidate: &SpireScoredScanCandidate) -> u8 {
     u8::from(candidate.assignment_flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0)
 }
 
+#[derive(Default)]
+struct SpireCandidateAppendOutcome {
+    deduped: Option<SpireScoredScanCandidate>,
+    truncated: Option<SpireScoredScanCandidate>,
+}
+
+impl SpireCandidateAppendOutcome {
+    fn deduped(candidate: SpireScoredScanCandidate) -> Self {
+        Self {
+            deduped: Some(candidate),
+            truncated: None,
+        }
+    }
+
+    fn truncated(candidate: SpireScoredScanCandidate) -> Self {
+        Self {
+            deduped: None,
+            truncated: Some(candidate),
+        }
+    }
+}
+
 struct SpireScoredCandidateAccumulator {
     limit: Option<usize>,
     dedupe_mode: SpireCandidateDedupeMode,
@@ -802,18 +846,14 @@ impl SpireScoredCandidateAccumulator {
         }
     }
 
-    fn append(
-        &mut self,
-        candidate: SpireScoredScanCandidate,
-    ) -> Option<SpireScoredScanCandidate> {
+    fn append(&mut self, candidate: SpireScoredScanCandidate) -> SpireCandidateAppendOutcome {
         match (self.dedupe_mode, self.limit) {
             (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, None) => {
                 self.candidates.push(candidate);
-                None
+                SpireCandidateAppendOutcome::default()
             }
             (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, Some(limit)) => {
-                self.append_bounded(candidate, limit);
-                None
+                self.append_bounded(candidate, limit)
             }
             (SpireCandidateDedupeMode::VecIdDedupeEnabled, None) => {
                 self.append_unbounded_deduped(candidate)
@@ -827,33 +867,40 @@ impl SpireScoredCandidateAccumulator {
     fn append_unbounded_deduped(
         &mut self,
         candidate: SpireScoredScanCandidate,
-    ) -> Option<SpireScoredScanCandidate> {
+    ) -> SpireCandidateAppendOutcome {
         // With vec-id dedupe enabled, return the row suppressed by the
         // collision regardless of whether the incoming or incumbent candidate
         // wins.
         match self.candidates_by_vec_id.entry(candidate.vec_id.clone()) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
-                    Some(std::mem::replace(entry.get_mut(), candidate))
+                    SpireCandidateAppendOutcome::deduped(std::mem::replace(
+                        entry.get_mut(),
+                        candidate,
+                    ))
                 } else {
-                    Some(candidate)
+                    SpireCandidateAppendOutcome::deduped(candidate)
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
-                None
+                SpireCandidateAppendOutcome::default()
             }
         }
     }
 
-    fn append_bounded(&mut self, candidate: SpireScoredScanCandidate, limit: usize) {
+    fn append_bounded(
+        &mut self,
+        candidate: SpireScoredScanCandidate,
+        limit: usize,
+    ) -> SpireCandidateAppendOutcome {
         if limit == 0 {
-            return;
+            return SpireCandidateAppendOutcome::truncated(candidate);
         }
         let entry = SpireScoredScanCandidateHeapEntry { candidate };
         if self.heap.len() < limit {
             self.heap.push(entry);
-            return;
+            return SpireCandidateAppendOutcome::default();
         }
 
         if self
@@ -861,18 +908,23 @@ impl SpireScoredCandidateAccumulator {
             .peek()
             .is_some_and(|worst| scored_candidate_cmp(&entry.candidate, &worst.candidate).is_lt())
         {
-            self.heap.pop();
+            let truncated = self.heap.pop().map(|entry| entry.candidate);
             self.heap.push(entry);
+            if let Some(candidate) = truncated {
+                return SpireCandidateAppendOutcome::truncated(candidate);
+            }
+            return SpireCandidateAppendOutcome::default();
         }
+        SpireCandidateAppendOutcome::truncated(entry.candidate)
     }
 
     fn append_bounded_deduped(
         &mut self,
         candidate: SpireScoredScanCandidate,
         limit: usize,
-    ) -> Option<SpireScoredScanCandidate> {
+    ) -> SpireCandidateAppendOutcome {
         if limit == 0 {
-            return None;
+            return SpireCandidateAppendOutcome::truncated(candidate);
         }
 
         if self.candidates_by_vec_id.contains_key(&candidate.vec_id) {
@@ -885,7 +937,7 @@ impl SpireScoredCandidateAccumulator {
             });
             self.candidates_by_vec_id
                 .insert(candidate.vec_id.clone(), candidate);
-            return None;
+            return SpireCandidateAppendOutcome::default();
         }
 
         let Some(worst) = self.peek_live_worst_deduped() else {
@@ -894,7 +946,7 @@ impl SpireScoredCandidateAccumulator {
             });
             self.candidates_by_vec_id
                 .insert(candidate.vec_id.clone(), candidate);
-            return None;
+            return SpireCandidateAppendOutcome::default();
         };
         if scored_candidate_cmp(&candidate, &worst).is_lt() {
             let evicted = self.pop_live_worst_deduped().expect("peeked live worst");
@@ -904,14 +956,15 @@ impl SpireScoredCandidateAccumulator {
             });
             self.candidates_by_vec_id
                 .insert(candidate.vec_id.clone(), candidate);
+            return SpireCandidateAppendOutcome::truncated(evicted);
         }
-        None
+        SpireCandidateAppendOutcome::truncated(candidate)
     }
 
     fn replace_retained_deduped(
         &mut self,
         candidate: SpireScoredScanCandidate,
-    ) -> Option<SpireScoredScanCandidate> {
+    ) -> SpireCandidateAppendOutcome {
         let incumbent = self
             .candidates_by_vec_id
             .get_mut(&candidate.vec_id)
@@ -919,9 +972,9 @@ impl SpireScoredCandidateAccumulator {
         if scored_candidate_cmp(&candidate, incumbent) == Ordering::Less {
             let suppressed = std::mem::replace(incumbent, candidate.clone());
             self.heap.push(SpireScoredScanCandidateHeapEntry { candidate });
-            Some(suppressed)
+            SpireCandidateAppendOutcome::deduped(suppressed)
         } else {
-            Some(candidate)
+            SpireCandidateAppendOutcome::deduped(candidate)
         }
     }
 

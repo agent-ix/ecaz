@@ -6461,6 +6461,9 @@ fn ec_spire_index_scan_placement_snapshot(
         name!(deduped_candidate_row_count, i64),
         name!(deduped_primary_candidate_row_count, i64),
         name!(deduped_boundary_replica_candidate_row_count, i64),
+        name!(truncated_candidate_row_count, i64),
+        name!(truncated_primary_candidate_row_count, i64),
+        name!(truncated_boundary_replica_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
         name!(primary_candidate_winner_count, i64),
         name!(boundary_replica_candidate_winner_count, i64),
@@ -6501,6 +6504,12 @@ fn ec_spire_index_scan_placement_snapshot(
                 .expect("deduped primary candidate row count should fit in i64"),
             i64::try_from(row.deduped_boundary_replica_candidate_row_count)
                 .expect("deduped boundary replica candidate row count should fit in i64"),
+            i64::try_from(row.truncated_candidate_row_count)
+                .expect("truncated candidate row count should fit in i64"),
+            i64::try_from(row.truncated_primary_candidate_row_count)
+                .expect("truncated primary candidate row count should fit in i64"),
+            i64::try_from(row.truncated_boundary_replica_candidate_row_count)
+                .expect("truncated boundary replica candidate row count should fit in i64"),
             i64::try_from(row.candidate_winner_count)
                 .expect("candidate winner count should fit in i64"),
             i64::try_from(row.primary_candidate_winner_count)
@@ -14215,6 +14224,13 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let truncated_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT truncated_candidate_row_count FROM \
+             ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
         let routing_row_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM ec_spire_index_scan_routing_snapshot(\
              'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
@@ -14242,6 +14258,7 @@ mod tests {
         assert!(candidate_row_count > 0);
         assert_eq!(primary_candidate_row_count, 1);
         assert_eq!(candidate_winner_count, 1);
+        assert_eq!(truncated_candidate_row_count, 0);
         assert_eq!(routing_row_count, 1);
         assert_eq!(routing_deduped_route_count, 1);
         assert_eq!(routing_truncation_reason, "none");
@@ -14309,6 +14326,34 @@ mod tests {
         assert_eq!(delta_delta_candidate_row_count, 1);
         assert_eq!(delete_delta_row_count, 0);
         assert_eq!(dropped_unselected_delta_route_count, 0);
+
+        Spi::run("SET ec_spire.max_candidate_rows = 1")
+            .expect("candidate cap override should succeed");
+        let capped_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let capped_truncated_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT truncated_candidate_row_count FROM \
+             ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let capped_candidate_winner_count = Spi::get_one::<i64>(
+            "SELECT candidate_winner_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        Spi::run("RESET ec_spire.max_candidate_rows")
+            .expect("candidate cap override reset should succeed");
+
+        assert_eq!(capped_candidate_row_count, 2);
+        assert_eq!(capped_truncated_candidate_row_count, 1);
+        assert_eq!(capped_candidate_winner_count, 1);
     }
 
     #[pg_test]

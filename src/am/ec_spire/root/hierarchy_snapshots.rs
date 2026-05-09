@@ -1640,6 +1640,12 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
                 deduped_boundary_replica_candidate_row_count: store
                     .deduped_boundary_replica_candidate_row_count
                     as u64,
+                truncated_candidate_row_count: store.truncated_candidate_row_count as u64,
+                truncated_primary_candidate_row_count: store.truncated_primary_candidate_row_count
+                    as u64,
+                truncated_boundary_replica_candidate_row_count: store
+                    .truncated_boundary_replica_candidate_row_count
+                    as u64,
                 candidate_winner_count: store.candidate_winner_count as u64,
                 primary_candidate_winner_count: store.primary_candidate_winner_count as u64,
                 boundary_replica_candidate_winner_count: store

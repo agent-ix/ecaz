@@ -110,7 +110,11 @@ runtime side of that contract with primary versus boundary-replica candidate
 rows, vec-id duplicate candidates suppressed by scan dedupe, and final
 candidate winners after dedupe and candidate limits. The aggregate
 `candidate_row_count` is the pre-dedupe total; its role split is
-`primary_candidate_row_count + boundary_replica_candidate_row_count`.
+`primary_candidate_row_count + boundary_replica_candidate_row_count`. Candidate
+rows retained by the bounded collection path are reported as
+`candidate_winner_count`; rows dropped only by the candidate-row cap are
+reported as `truncated_candidate_row_count` with matching primary versus
+boundary-replica role splits.
 
 `ec_spire_remote_pipeline_steps(...)` reports six stable `step_name` values:
 `dispatch_plan`, `connection_check`, `candidates`, `heap_candidates`,

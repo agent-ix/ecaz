@@ -36,7 +36,7 @@ that Phase 9 establishes.
   `rerank_width = 0`.
 - [x] Keep a bounded heap while scanning leaf and delta rows rather than
   materializing all routed candidates before ranking.
-- [ ] Surface diagnostics for candidate rows seen, deduped, retained, and
+- [x] Surface diagnostics for candidate rows seen, deduped, retained, and
   truncated.
 - [ ] Preserve deterministic ordering and boundary-replica tie-break behavior.
 
