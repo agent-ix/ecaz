@@ -112,6 +112,12 @@ struct SpireDeltaObjectRoute {
     object_version: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireLoadedDeltaObjectRoute {
+    route: SpireDeltaObjectRoute,
+    rows: Vec<SpireDeltaScanRow>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireLeafObjectReadRoute {
     leaf_pid: u64,

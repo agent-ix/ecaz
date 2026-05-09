@@ -519,6 +519,127 @@
     }
 
     #[test]
+    fn load_delta_rows_for_routes_reads_each_delta_object_once() {
+        struct CountingDeltaReader {
+            delta_object: SpireDeltaPartitionObject,
+            read_pids: RefCell<Vec<u64>>,
+        }
+
+        impl SpireObjectReader for CountingDeltaReader {
+            fn read_object_header(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpirePartitionObjectHeader, String> {
+                unreachable!("delta load test should not read object headers")
+            }
+
+            fn read_routing_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireRoutingPartitionObject, String> {
+                unreachable!("delta load test should not read routing objects")
+            }
+
+            fn read_leaf_object(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<SpireLeafPartitionObject, String> {
+                unreachable!("delta load test should not read leaf objects")
+            }
+
+            fn read_leaf_object_v2(
+                &self,
+                _placement: &SpirePlacementEntry,
+            ) -> Result<crate::am::ec_spire::storage::SpireLeafPartitionObjectV2, String>
+            {
+                unreachable!("delta load test should not read leaf V2 objects")
+            }
+
+            fn read_delta_object(
+                &self,
+                placement: &SpirePlacementEntry,
+            ) -> Result<SpireDeltaPartitionObject, String> {
+                self.read_pids.borrow_mut().push(placement.pid);
+                Ok(self.delta_object.clone())
+            }
+        }
+
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let delta_pid = SPIRE_FIRST_PID + 11;
+        let delta_placement = SpirePlacementEntry::local_store_available_by_id(
+            7,
+            delta_pid,
+            2,
+            502,
+            1,
+            tid(61, 1),
+            100,
+        );
+        let object_manifest =
+            SpireObjectManifest::from_entries(7, vec![manifest_entry_for(&delta_placement)])
+                .unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![delta_placement]).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+        let delta_object = SpireDeltaPartitionObject::new(
+            delta_pid,
+            1,
+            leaf_pid,
+            vec![
+                assignment_row_with_payload(
+                    SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+                    1,
+                    10,
+                    1,
+                    vec![1, 2, 3],
+                ),
+                delete_assignment_row(2, 10, 2),
+            ],
+        )
+        .unwrap();
+        let reader = CountingDeltaReader {
+            delta_object,
+            read_pids: RefCell::new(Vec::new()),
+        };
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+
+        let loaded = load_delta_rows_for_routes(
+            &snapshot,
+            &reader,
+            &[SpireDeltaObjectRoute {
+                delta_pid,
+                parent_leaf_pid: leaf_pid,
+                placement: delta_placement,
+                object_version: 1,
+            }],
+            &mut observer,
+        )
+        .unwrap();
+        let deleted_vec_ids = collect_delta_delete_vec_ids_for_loaded_routes(&loaded);
+
+        assert_eq!(*reader.read_pids.borrow(), vec![delta_pid]);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].rows.len(), 2);
+        assert!(deleted_vec_ids.contains(&SpireVecId::local(2)));
+
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].local_store_id, 2);
+        assert_eq!(stores[0].delta_pid_count, 1);
+        assert_eq!(stores[0].delete_delta_row_count, 1);
+    }
+
+    #[test]
     fn prefetch_store_object_read_groups_prefetches_leaf_and_delta_routes() {
         struct RecordingPrefetchReader {
             prefetched_pids: RefCell<Vec<u64>>,

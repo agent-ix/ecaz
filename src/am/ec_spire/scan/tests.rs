@@ -2,6 +2,7 @@
 mod tests {
     use super::{
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
+        collect_delta_delete_vec_ids_for_loaded_routes,
         collect_reranked_quantized_routed_probe_candidates, collect_scan_routing_diagnostics,
         collect_single_level_scan_plan_placement_diagnostics,
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
@@ -9,8 +10,8 @@ mod tests {
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_top_graph_routed_probe_leaf_rows,
         collect_snapshot_visible_primary_rows, collect_top_graph_scan_plan_reranked_candidates,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
-        group_leaf_and_delta_reads_by_local_store, load_snapshot_routing_hierarchy,
-        heap_rerank_prefetch_block_numbers, load_snapshot_top_graph_object,
+        group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
+        load_delta_rows_for_routes, load_snapshot_routing_hierarchy, load_snapshot_top_graph_object,
         prefetch_store_object_read_groups, rank_routed_leaf_rows_by_ip,
         rerank_scored_candidates_by_ip, rerank_scored_candidates_by_ip_with_prefetch,
         route_recursive_routing_objects_to_leaf_pids,

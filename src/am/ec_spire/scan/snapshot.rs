@@ -367,12 +367,14 @@ fn collect_validated_quantized_leaf_route_candidates(
                 .get(&leaf_pid)
                 .map(Vec::as_slice)
                 .unwrap_or(&[]);
-            let deleted_vec_ids = collect_delta_delete_vec_ids_for_routes(
+            let loaded_delta_routes = load_delta_rows_for_routes(
                 snapshot,
                 object_store,
                 leaf_delta_routes,
                 observer,
             )?;
+            let deleted_vec_ids =
+                collect_delta_delete_vec_ids_for_loaded_routes(&loaded_delta_routes);
             append_quantized_leaf_candidates_for_pid(
                 snapshot,
                 object_store,
@@ -382,10 +384,9 @@ fn collect_validated_quantized_leaf_route_candidates(
                 &mut accumulator,
                 observer,
             )?;
-            append_quantized_delta_candidates_for_routes(
+            append_quantized_delta_candidates_for_loaded_routes(
                 snapshot,
-                object_store,
-                leaf_delta_routes,
+                &loaded_delta_routes,
                 scorer,
                 &deleted_vec_ids,
                 &mut accumulator,

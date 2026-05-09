@@ -75,7 +75,7 @@ that Phase 9 establishes.
 
 ## Phase 10.4: Multi-NVMe Read Overlap
 
-- [ ] Keep the existing `(node_id, local_store_id)` grouping as the scheduling
+- [x] Keep the existing `(node_id, local_store_id)` grouping as the scheduling
   unit.
 - [ ] Add per-store route/candidate/read diagnostics.
 - [ ] Split chained top-graph diagnostics enough for I/O attribution, including
@@ -83,7 +83,7 @@ that Phase 9 establishes.
 - [ ] Overlap local-store reads where PostgreSQL backend constraints allow it,
   or make the sequential limitation explicit if read-stream prefetch is the
   only safe primitive.
-- [ ] Decode delta objects once per leaf/query and reuse the decoded rows for
+- [x] Decode delta objects once per leaf/query and reuse the decoded rows for
   delete suppression and insert candidate scoring.
 - [ ] Replace linear local-store lookup with an indexed map if store counts
   grow beyond the current small bounded surface.

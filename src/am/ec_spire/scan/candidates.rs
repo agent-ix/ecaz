@@ -643,46 +643,33 @@ fn append_quantized_v2_column_candidates(
     Ok(())
 }
 
-fn append_quantized_delta_candidates_for_routes(
+fn append_quantized_delta_candidates_for_loaded_routes(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    delta_routes: &[SpireDeltaObjectRoute],
+    delta_routes: &[SpireLoadedDeltaObjectRoute],
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
     accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
-    for route in delta_routes {
-        let placement = &route.placement;
-        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
-            continue;
-        }
-
-        let delta_object = object_store.read_delta_object(placement)?;
-        if delta_object.header.parent_pid != route.parent_leaf_pid {
-            return Err(format!(
-                "ec_spire delta route parent {} does not match object parent {}",
-                route.parent_leaf_pid, delta_object.header.parent_pid
-            ));
-        }
-        for (row_index, assignment) in delta_object.assignments.into_iter().enumerate() {
-            if is_delete_delta_assignment(&assignment) {
+    for loaded_route in delta_routes {
+        let placement = &loaded_route.route.placement;
+        for row in &loaded_route.rows {
+            let assignment = &row.assignment;
+            if is_delete_delta_assignment(assignment) {
                 continue;
             }
-            if !is_visible_scored_assignment(&assignment) {
+            if !is_visible_scored_assignment(assignment) {
                 continue;
             }
             if deleted_vec_ids.contains(&assignment.vec_id) {
                 continue;
             }
-            let ip = scorer.score_assignment_ip(&assignment)?;
+            let ip = scorer.score_assignment_ip(assignment)?;
             if !ip.is_finite() {
                 return Err(
                     "ec_spire routed delta candidate scorer returned a non-finite score".to_owned(),
                 );
             }
-            let row_index = u32::try_from(row_index)
-                .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
             observer.visible_delta_candidate(
                 snapshot.epoch_manifest().epoch,
                 placement,
@@ -690,11 +677,11 @@ fn append_quantized_delta_candidates_for_routes(
             );
             let candidate = SpireScoredScanCandidate {
                 epoch: snapshot.epoch_manifest().epoch,
-                pid: route.delta_pid,
-                object_version: route.object_version,
-                row_index,
+                pid: row.pid,
+                object_version: row.object_version,
+                row_index: row.row_index,
                 assignment_flags: assignment.flags,
-                vec_id: assignment.vec_id,
+                vec_id: assignment.vec_id.clone(),
                 heap_tid: assignment.heap_tid,
                 score: -ip,
             };
@@ -704,13 +691,13 @@ fn append_quantized_delta_candidates_for_routes(
     Ok(())
 }
 
-fn collect_delta_delete_vec_ids_for_routes(
+fn load_delta_rows_for_routes(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     delta_routes: &[SpireDeltaObjectRoute],
     observer: &mut impl SpireRoutedScanObserver,
-) -> Result<HashSet<SpireVecId>, String> {
-    let mut deleted_vec_ids = HashSet::new();
+) -> Result<Vec<SpireLoadedDeltaObjectRoute>, String> {
+    let mut loaded_routes = Vec::with_capacity(delta_routes.len());
     for route in delta_routes {
         let placement = &route.placement;
         if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
@@ -722,18 +709,44 @@ fn collect_delta_delete_vec_ids_for_routes(
         let delta_object = object_store.read_delta_object(placement)?;
         if delta_object.header.parent_pid != route.parent_leaf_pid {
             return Err(format!(
-                "ec_spire delete delta route parent {} does not match object parent {}",
+                "ec_spire delta route parent {} does not match object parent {}",
                 route.parent_leaf_pid, delta_object.header.parent_pid
             ));
         }
-        for assignment in delta_object.assignments {
+        let mut rows = Vec::with_capacity(delta_object.assignments.len());
+        for (row_index, assignment) in delta_object.assignments.into_iter().enumerate() {
+            let row_index = u32::try_from(row_index)
+                .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
             if is_delete_delta_assignment(&assignment) {
                 observer.delete_delta_row(snapshot.epoch_manifest().epoch, placement);
-                deleted_vec_ids.insert(assignment.vec_id);
+            }
+            rows.push(SpireDeltaScanRow {
+                pid: route.delta_pid,
+                object_version: route.object_version,
+                row_index,
+                assignment,
+            });
+        }
+        loaded_routes.push(SpireLoadedDeltaObjectRoute {
+            route: *route,
+            rows,
+        });
+    }
+    Ok(loaded_routes)
+}
+
+fn collect_delta_delete_vec_ids_for_loaded_routes(
+    delta_routes: &[SpireLoadedDeltaObjectRoute],
+) -> HashSet<SpireVecId> {
+    let mut deleted_vec_ids = HashSet::new();
+    for loaded_route in delta_routes {
+        for row in &loaded_route.rows {
+            if is_delete_delta_assignment(&row.assignment) {
+                deleted_vec_ids.insert(row.assignment.vec_id.clone());
             }
         }
     }
-    Ok(deleted_vec_ids)
+    deleted_vec_ids
 }
 
 fn append_quantized_v1_leaf_candidates(
