@@ -23472,6 +23472,18 @@ mod tests {
         ))
         .expect("drop index lifecycle query should succeed")
         .expect("drop index lifecycle should exist");
+        let drop_index_migration_surface = Spi::get_one::<String>(&format!(
+            "SELECT migration_surface {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'drop_index'"
+        ))
+        .expect("drop index migration lifecycle query should succeed")
+        .expect("drop index migration lifecycle should exist");
+        let drop_index_status = Spi::get_one::<String>(&format!(
+            "SELECT status {catalog_lifecycle_from} \
+             WHERE lifecycle_event = 'drop_index'"
+        ))
+        .expect("drop index status lifecycle query should succeed")
+        .expect("drop index status lifecycle should exist");
         let basebackup_status = Spi::get_one::<String>(&format!(
             "SELECT status {catalog_lifecycle_from} \
              WHERE lifecycle_event = 'basebackup_wal_replay'"
@@ -23521,7 +23533,7 @@ mod tests {
             manifest_send_input,
             "ec_spire_remote_epoch_manifest_libpq_parameter_contract"
         );
-        assert_eq!(search_result_count, 3);
+        assert_eq!(search_result_count, 4);
         assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
         assert_eq!(operator_entrypoint_count, 10);
         assert_eq!(operator_entrypoint_reachable_count, 10);
@@ -23558,6 +23570,11 @@ mod tests {
             drop_index_cleanup_surface,
             "ec_spire_remote_catalog_index_cleanup,ec_spire_remote_catalog_orphan_cleanup"
         );
+        assert_eq!(
+            drop_index_migration_surface,
+            "ec_spire_remote_catalog_drop_index_cleanup"
+        );
+        assert_eq!(drop_index_status, "automatic_event_trigger_cleanup");
         assert_eq!(basebackup_status, "supported");
         assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
         assert_eq!(upgrade_status, "supported_after_upgrade_script");
@@ -23764,6 +23781,85 @@ mod tests {
         assert_eq!(cleanup_counts, vec![1, 1, 1]);
         assert_eq!(cleanup_status, "removed_index_remote_catalog_rows");
         assert_eq!(post_cleanup_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_catalog_drop_index_event_cleanup() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_catalog_drop_event_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("drop event table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_catalog_drop_event_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("drop event insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_catalog_drop_event_sql_idx \
+             ON ec_spire_remote_catalog_drop_event_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("drop event index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_catalog_drop_event_sql_idx'::regclass::oid",
+        )
+        .expect("drop event index oid query should succeed")
+        .expect("drop event index oid should exist");
+        let index_oid_u32 = u32::from(index_oid);
+
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_node_descriptor \
+             (coordinator_index_oid, node_id, descriptor_generation, conninfo_secret_name, \
+              remote_index_identity, remote_index_regclass, descriptor_state, \
+              last_served_epoch, min_retained_epoch, extension_version, last_error) \
+             VALUES ('{index_oid_u32}'::oid, 4, 1, 'spire/remote/drop-event', '\\x01'::bytea, \
+                     'drop_event_idx', 'active', 1, 1, 'test', 'none')"
+        ))
+        .expect("drop event descriptor insert should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_epoch_manifest \
+             (coordinator_index_oid, active_epoch, manifest_scope, manifest_decision, \
+              manifest_entry_count, included_remote_node_count, remote_placement_count, \
+              publish_decision, status, persisted_at_micros) \
+             VALUES ('{index_oid_u32}'::oid, 1, 'distributed', \
+                     'emit_distributed_epoch_manifest', 1, 1, 1, \
+                     'publish_remote_epoch_manifest', 'ready', 1)"
+        ))
+        .expect("drop event manifest insert should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_epoch_manifest_entry \
+             (coordinator_index_oid, active_epoch, node_id, descriptor_state, placement_count, \
+              required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+              min_retained_epoch, epoch_window_status, manifest_action, status) \
+             VALUES ('{index_oid_u32}'::oid, 1, 4, 'active', 1, 1, 1, 1, 1, \
+                     'ready', 'include_remote_node', 'ready')"
+        ))
+        .expect("drop event manifest entry insert should succeed");
+
+        Spi::run("DROP INDEX ec_spire_remote_catalog_drop_event_sql_idx")
+            .expect("drop event index drop should succeed");
+        let remaining_count = Spi::get_one::<i64>(&format!(
+            "SELECT \
+                (SELECT count(*) FROM ec_spire_remote_node_descriptor \
+                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
+                (SELECT count(*) FROM ec_spire_remote_epoch_manifest \
+                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
+                (SELECT count(*) FROM ec_spire_remote_epoch_manifest_entry \
+                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid)"
+        ))
+        .expect("drop event remaining remote catalog query should succeed")
+        .expect("drop event remaining remote catalog count should exist");
+        let event_trigger_enabled = Spi::get_one::<bool>(
+            "SELECT evtenabled <> 'D' \
+               FROM pg_event_trigger \
+              WHERE evtname = 'ec_spire_remote_catalog_drop_index_cleanup'",
+        )
+        .expect("drop event trigger enabled query should succeed")
+        .expect("drop event trigger should exist");
+
+        assert_eq!(remaining_count, 0);
+        assert!(event_trigger_enabled);
     }
 
     #[pg_test]

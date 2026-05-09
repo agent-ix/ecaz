@@ -178,6 +178,30 @@ CREATE TABLE ec_spire_remote_epoch_manifest_applied_entry (
         ON DELETE CASCADE
 );
 
+DROP EVENT TRIGGER IF EXISTS ec_spire_remote_catalog_drop_index_cleanup;
+
+CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
+RETURNS event_trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    dropped_object record;
+BEGIN
+    FOR dropped_object IN
+        SELECT *
+          FROM pg_event_trigger_dropped_objects()
+         WHERE object_type = 'index'
+    LOOP
+        PERFORM 1
+          FROM ec_spire_remote_catalog_index_cleanup(dropped_object.objid::oid);
+    END LOOP;
+END
+$$;
+
+CREATE EVENT TRIGGER ec_spire_remote_catalog_drop_index_cleanup
+ON sql_drop
+EXECUTE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event();
+
 CREATE FUNCTION ecvector_inner_product(ecvector, ecvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
