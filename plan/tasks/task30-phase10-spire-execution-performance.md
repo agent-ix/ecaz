@@ -67,10 +67,10 @@ that Phase 9 establishes.
 
 ## Phase 10.3: Heap Rerank I/O
 
-- [ ] Batch exact heap rerank TIDs before fetching source vectors.
-- [ ] Add heap prefetch where PostgreSQL APIs permit it.
+- [x] Batch exact heap rerank TIDs before fetching source vectors.
+- [x] Add heap prefetch where PostgreSQL APIs permit it.
 - [ ] Measure rerank width against recall and latency floors.
-- [ ] Ensure missing/dead heap rows do not perturb candidate ordering beyond
+- [x] Ensure missing/dead heap rows do not perturb candidate ordering beyond
   the existing visibility contract.
 
 ## Phase 10.4: Multi-NVMe Read Overlap

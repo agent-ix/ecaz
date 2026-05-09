@@ -35,6 +35,28 @@ pub(super) fn collect_single_level_scan_plan_reranked_candidates<F>(
 where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
+    collect_single_level_scan_plan_reranked_candidates_with_prefetch(
+        snapshot,
+        object_store,
+        query_vector,
+        scan_plan,
+        |_| Ok(()),
+        exact_score_ip,
+    )
+}
+
+fn collect_single_level_scan_plan_reranked_candidates_with_prefetch<F, P>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    scan_plan: SpireSingleLevelScanPlan,
+    prefetch_candidates: P,
+    exact_score_ip: F,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+    P: FnMut(&[SpireScoredScanCandidate]) -> Result<(), String>,
+{
     if scan_plan.nprobe == 0 {
         return Ok(Vec::new());
     }
@@ -49,7 +71,12 @@ where
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
     )?;
-    rerank_scored_candidates_by_ip(&mut candidates, scan_plan.rerank_width, exact_score_ip)?;
+    rerank_scored_candidates_by_ip_with_prefetch(
+        &mut candidates,
+        scan_plan.rerank_width,
+        prefetch_candidates,
+        exact_score_ip,
+    )?;
     Ok(candidates)
 }
 
@@ -136,6 +163,30 @@ pub(super) fn collect_top_graph_scan_plan_reranked_candidates<F>(
 where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
+    collect_top_graph_scan_plan_reranked_candidates_with_prefetch(
+        snapshot,
+        object_store,
+        query_vector,
+        scan_plan,
+        top_graph_plan,
+        |_| Ok(()),
+        exact_score_ip,
+    )
+}
+
+fn collect_top_graph_scan_plan_reranked_candidates_with_prefetch<F, P>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query_vector: &[f32],
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+    prefetch_candidates: P,
+    exact_score_ip: F,
+) -> Result<Vec<SpireScoredScanCandidate>, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+    P: FnMut(&[SpireScoredScanCandidate]) -> Result<(), String>,
+{
     if scan_plan.nprobe == 0 {
         return Ok(Vec::new());
     }
@@ -160,7 +211,12 @@ where
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
     )?;
-    rerank_scored_candidates_by_ip(&mut candidates, scan_plan.rerank_width, exact_score_ip)?;
+    rerank_scored_candidates_by_ip_with_prefetch(
+        &mut candidates,
+        scan_plan.rerank_width,
+        prefetch_candidates,
+        exact_score_ip,
+    )?;
     Ok(candidates)
 }
 
@@ -174,24 +230,48 @@ pub(super) fn prepare_single_level_snapshot_scan_candidates<F>(
 where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
+    prepare_single_level_snapshot_scan_candidates_with_prefetch(
+        snapshot,
+        object_store,
+        query,
+        options,
+        |_| Ok(()),
+        exact_score_ip,
+    )
+}
+
+fn prepare_single_level_snapshot_scan_candidates_with_prefetch<F, P>(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+    prefetch_candidates: P,
+    exact_score_ip: F,
+) -> Result<SpirePreparedScanCandidates, String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+    P: FnMut(&[SpireScoredScanCandidate]) -> Result<(), String>,
+{
     let top_graph_plan = options.top_graph_plan()?;
     let leaf_count = count_snapshot_recursive_leaf_pids(snapshot, object_store)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
     let candidates = if top_graph_plan.enabled {
-        collect_top_graph_scan_plan_reranked_candidates(
+        collect_top_graph_scan_plan_reranked_candidates_with_prefetch(
             snapshot,
             object_store,
             query.values(),
             scan_plan,
             top_graph_plan,
+            prefetch_candidates,
             exact_score_ip,
         )?
     } else {
-        collect_single_level_scan_plan_reranked_candidates(
+        collect_single_level_scan_plan_reranked_candidates_with_prefetch(
             snapshot,
             object_store,
             query.values(),
             scan_plan,
+            prefetch_candidates,
             exact_score_ip,
         )?
     };
@@ -284,16 +364,33 @@ fn collect_validated_single_level_scan_placement_diagnostics(
 pub(super) fn rerank_scored_candidates_by_ip<F>(
     candidates: &mut Vec<SpireScoredScanCandidate>,
     rerank_width: usize,
+    exact_score_ip: F,
+) -> Result<(), String>
+where
+    F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+{
+    rerank_scored_candidates_by_ip_with_prefetch(candidates, rerank_width, |_| Ok(()), exact_score_ip)
+}
+
+fn rerank_scored_candidates_by_ip_with_prefetch<F, P>(
+    candidates: &mut Vec<SpireScoredScanCandidate>,
+    rerank_width: usize,
+    mut prefetch_candidates: P,
     mut exact_score_ip: F,
 ) -> Result<(), String>
 where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
+    P: FnMut(&[SpireScoredScanCandidate]) -> Result<(), String>,
 {
     let rerank_len = if rerank_width == 0 {
         candidates.len()
     } else {
         rerank_width.min(candidates.len())
     };
+
+    if rerank_len > 0 {
+        prefetch_candidates(&candidates[..rerank_len])?;
+    }
 
     let mut reranked = Vec::with_capacity(rerank_len);
     let mut tail = candidates.split_off(rerank_len);

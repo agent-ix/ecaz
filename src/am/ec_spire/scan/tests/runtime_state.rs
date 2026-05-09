@@ -69,6 +69,47 @@
     }
 
     #[test]
+    fn rerank_scored_candidates_by_ip_prefetches_prefix_before_fetching() {
+        let mut candidates = vec![
+            scored_candidate(1, 10, 1, -5.0),
+            scored_candidate(2, 20, 2, -4.0),
+            scored_candidate(3, 30, 3, -3.0),
+        ];
+        let events = RefCell::new(Vec::new());
+
+        rerank_scored_candidates_by_ip_with_prefetch(
+            &mut candidates,
+            2,
+            |prefetch_candidates| {
+                let sequences = prefetch_candidates
+                    .iter()
+                    .map(|candidate| candidate.vec_id.local_sequence().unwrap())
+                    .collect::<Vec<_>>();
+                events.borrow_mut().push(format!("prefetch:{sequences:?}"));
+                Ok(())
+            },
+            |candidate| {
+                let sequence = candidate.vec_id.local_sequence().unwrap();
+                events.borrow_mut().push(format!("score:{sequence}"));
+                Ok(Some(sequence as f32))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            events.into_inner(),
+            vec![
+                "prefetch:[1, 2]".to_owned(),
+                "score:1".to_owned(),
+                "score:2".to_owned(),
+            ]
+        );
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+    }
+
+    #[test]
     fn rerank_scored_candidates_by_ip_rejects_non_finite_scores() {
         let mut candidates = vec![scored_candidate(1, 10, 1, -5.0)];
 
@@ -76,6 +117,21 @@
             rerank_scored_candidates_by_ip(&mut candidates, 0, |_| Ok(Some(f32::INFINITY)))
                 .unwrap_err()
                 .contains("non-finite")
+        );
+    }
+
+    #[test]
+    fn heap_rerank_prefetch_block_numbers_dedupes_and_sorts_blocks() {
+        let candidates = vec![
+            scored_candidate(1, 30, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 30, 3, -3.0),
+            scored_candidate(4, 20, 4, -2.0),
+        ];
+
+        assert_eq!(
+            heap_rerank_prefetch_block_numbers(&candidates),
+            vec![10, 20, 30]
         );
     }
 
