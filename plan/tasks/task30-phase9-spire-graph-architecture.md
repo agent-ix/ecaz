@@ -130,6 +130,11 @@ before Phase 10 optimizes execution.
 These remain below the structural graph work. Do not start them until
 top-graph frontier, global beam, and identity contracts are stable.
 
+Canonical local baseline: `review/30686-spire-phase9-quality-baseline`
+records the real10k pre-treatment baseline on the main machine across
+`nprobe=8,16,24,32` and `rerank_width=0,25,50`. The treatment items below
+remain open until implemented or explicitly ADR-deferred.
+
 - [ ] IMI reshape of centroid/routing storage for A/B comparison.
 - [ ] Adaptive `nprobe` or adaptive beam policy.
 - [ ] Anisotropic centroid scoring as the headline quality target.
