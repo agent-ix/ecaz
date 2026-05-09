@@ -1046,8 +1046,9 @@ unsafe fn rerank_probe_candidates_heap_f32(
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(opaque.heap_rerank_source_attnum);
-    let query_values =
-        unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
+    let query_values = unsafe {
+        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+    };
 
     unsafe { prefetch_heap_rerank_blocks(opaque.heap_rerank_relation, candidates) };
 

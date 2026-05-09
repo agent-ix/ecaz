@@ -20,8 +20,8 @@ use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,
     is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafObjectColumns,
     SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRelationObjectStoreSet, SpireRoutingPartitionObject, SpireVecId,
-    SpireTopGraphPartitionObject, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SpireRelationObjectStoreSet, SpireRoutingPartitionObject, SpireTopGraphPartitionObject,
+    SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;
