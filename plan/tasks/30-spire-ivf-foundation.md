@@ -1878,8 +1878,11 @@ replication execution, and global vector identity.
   the Phase 8 scale packet unless the operator explicitly waives that claim.
   Architecture/design work may proceed under an operator waiver using local
   PG18 functionality evidence.
-- [ ] **Top-graph frontier contract.** Decouple top graph node count from root
+- [x] **Top-graph frontier contract.** Decouple top graph node count from root
   fanout and define which routing frontier the graph covers.
+  Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
+  root/top routing child frontier, and top-graph diagnostics now distinguish
+  frontier node count, root child count, routing levels, and active leaf count.
 - [ ] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
   through segmented, chained, or graph-row storage.
 - [ ] **Cached or borrowed graph routing.** Avoid per-query adjacency copies

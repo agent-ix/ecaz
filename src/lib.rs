@@ -6680,6 +6680,12 @@ fn ec_spire_index_top_graph_snapshot(
         name!(top_graph_count, i64),
         name!(top_graph_pid, i64),
         name!(root_pid, i64),
+        name!(frontier_kind, &'static str),
+        name!(frontier_parent_level, i32),
+        name!(frontier_child_level, i32),
+        name!(frontier_node_count, i64),
+        name!(root_child_count, i64),
+        name!(active_leaf_count, i64),
         name!(object_version, i64),
         name!(published_epoch_backref, i64),
         name!(level, i32),
@@ -6710,6 +6716,12 @@ fn ec_spire_index_top_graph_snapshot(
         i64::try_from(snapshot.top_graph_count).expect("top graph count should fit in i64"),
         i64::try_from(snapshot.top_graph_pid).expect("top graph pid should fit in i64"),
         i64::try_from(snapshot.root_pid).expect("root pid should fit in i64"),
+        snapshot.frontier_kind,
+        i32::from(snapshot.frontier_parent_level),
+        i32::from(snapshot.frontier_child_level),
+        i64::try_from(snapshot.frontier_node_count).expect("frontier node count should fit in i64"),
+        i64::try_from(snapshot.root_child_count).expect("root child count should fit in i64"),
+        i64::try_from(snapshot.active_leaf_count).expect("active leaf count should fit in i64"),
         i64::try_from(snapshot.object_version).expect("object version should fit in i64"),
         i64::try_from(snapshot.published_epoch_backref)
             .expect("published epoch backref should fit in i64"),
@@ -17415,6 +17427,30 @@ mod tests {
         )
         .expect("top graph snapshot query should succeed")
         .expect("top graph row should exist");
+        let frontier_kind = Spi::get_one::<String>(
+            "SELECT frontier_kind FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("frontier kind should exist");
+        let root_child_count = Spi::get_one::<i64>(
+            "SELECT root_child_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("root child count should exist");
+        let active_leaf_count = Spi::get_one::<i64>(
+            "SELECT active_leaf_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("active leaf count should exist");
+        let frontier_child_level = Spi::get_one::<i32>(
+            "SELECT frontier_child_level FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("frontier child level should exist");
         let object_snapshot_top_graph_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM ec_spire_index_object_snapshot(\
              'ec_spire_top_graph_sql_idx'::regclass) WHERE object_kind = 'top_graph'",
@@ -17429,6 +17465,10 @@ mod tests {
         assert_eq!(configured_search, 3);
         assert_eq!(effective_search, 3);
         assert!(top_graph_enabled);
+        assert_eq!(frontier_kind, "root_top_routing_children");
+        assert_eq!(root_child_count, node_count);
+        assert_eq!(active_leaf_count, 4);
+        assert_eq!(frontier_child_level, 1);
         assert_eq!(object_snapshot_top_graph_count, 1);
     }
 

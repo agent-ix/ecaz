@@ -41,6 +41,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE multi-probe centroid scoring | `ADR-051-multi-probe-centroid-scoring-deferred.md` | DEFERRED | Deferred from Task 30 Phase 9 because anisotropic centroid scoring is expected to subsume the main benefit. |
 | SPIRE learned NN-routing classifier | `ADR-052-learned-nn-routing-classifier-deferred.md` | DEFERRED | Deferred research track until drift, retraining, artifact, and eval-harness questions are answered. |
 | SPIRE learned routing reranker | `ADR-053-routing-reranker-deferred.md` | DEFERRED | Deferred research track until deterministic Phase 9 routing-quality baselines and false-negative risk measurements exist. |
+| SPIRE top-graph frontier contract | `ADR-054-spire-top-graph-frontier-contract.md` | ACCEPTED | Top graph nodes are the active root/top routing object's child frontier; root fanout, graph node count, and leaf count must be diagnosed separately. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 

@@ -37,17 +37,21 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.1: Top-Graph Frontier Contract
 
-- [ ] Decide what the top graph is built over:
-  - root children only;
-  - all routing objects at a configured hierarchy level;
-  - a size-bounded routing frontier selected during build; or
-  - another explicit SPIRE frontier.
-- [ ] Record the decision in an ADR or design note if the selected frontier is
-  not already covered by `plan/design/spire-top-level-graph.md`.
-- [ ] Update manifest/diagnostic terminology so operators can distinguish
-  root fanout, graph node count, routing level, and leaf count.
-- [ ] Add validation that rejects ambiguous graph/root mismatches with an
-  actionable error.
+- [x] Decide what the top graph is built over: ADR-054 chooses the active
+  root/top routing object's child frontier. The future scale build must make
+  that root/top child set large enough for graph routing instead of compressing
+  it down to `recursive_fanout`.
+- [x] Record the decision in an ADR or design note if the selected frontier is
+  not already covered by `plan/design/spire-top-level-graph.md`. Recorded in
+  `spec/adr/ADR-054-spire-top-graph-frontier-contract.md`.
+- [x] Update manifest/diagnostic terminology so operators can distinguish
+  root fanout, graph node count, routing level, and leaf count. The top-graph
+  snapshot now exposes frontier kind, parent/child levels, frontier node count,
+  root child count, and active leaf count.
+- [x] Add validation that rejects ambiguous graph/root mismatches with an
+  actionable error. Strict scan validation already rejects graph/root shape
+  mismatches; the top-graph snapshot now also reports root, level, or frontier
+  mismatch statuses instead of calling such graphs ready.
 
 ## Phase 9.2: Scalable Top-Graph Storage
 

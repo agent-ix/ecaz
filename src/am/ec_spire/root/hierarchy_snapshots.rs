@@ -57,6 +57,12 @@ fn empty_top_graph_snapshot(
         top_graph_count: 0,
         top_graph_pid: 0,
         root_pid: 0,
+        frontier_kind: "root_top_routing_children",
+        frontier_parent_level: 0,
+        frontier_child_level: 0,
+        frontier_node_count: 0,
+        root_child_count: 0,
+        active_leaf_count: 0,
         object_version: 0,
         published_epoch_backref: 0,
         level: 0,
@@ -75,6 +81,31 @@ fn empty_top_graph_snapshot(
         status,
         recommendation,
     }
+}
+
+fn active_root_top_frontier_summary(
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+) -> Result<Option<(u64, u16, u64)>, String> {
+    let mut root = None;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "top graph root frontier summary")?;
+        if lookup.placement.state != meta::SpirePlacementState::Available {
+            continue;
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind != storage::SpirePartitionObjectKind::Root {
+            continue;
+        }
+        if root.is_some() {
+            return Err("ec_spire top graph snapshot found multiple available root objects".to_owned());
+        }
+        let root_object = object_store.read_routing_object(lookup.placement)?;
+        let child_count = u64::try_from(root_object.child_count())
+            .map_err(|_| "ec_spire top graph root child count exceeds u64".to_owned())?;
+        root = Some((manifest_entry.pid, root_object.header.level, child_count));
+    }
+    Ok(root)
 }
 
 fn parse_remote_search_consistency_mode(input: &str) -> Result<meta::SpireConsistencyMode, String> {
@@ -1086,6 +1117,11 @@ pub(crate) unsafe fn index_top_graph_snapshot(
             &object_store,
             relation_options.recursive_fanout().is_some(),
         )?;
+        let active_leaf_count_u64 = u64::from(active_leaf_count);
+        let root_frontier_summary = active_root_top_frontier_summary(&snapshot, &object_store)?;
+        let (active_root_pid, active_root_level, root_child_count) =
+            root_frontier_summary.unwrap_or((0, 0, 0));
+        let frontier_child_level = active_root_level.saturating_sub(1);
         let relation_nprobe = u32::try_from(relation_options.nprobe)
             .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
         let nprobe = options::resolve_scan_nprobe(active_leaf_count, relation_nprobe);
@@ -1127,6 +1163,11 @@ pub(crate) unsafe fn index_top_graph_snapshot(
                 status,
                 recommendation,
             );
+            snapshot.root_pid = active_root_pid;
+            snapshot.frontier_parent_level = active_root_level;
+            snapshot.frontier_child_level = frontier_child_level;
+            snapshot.root_child_count = root_child_count;
+            snapshot.active_leaf_count = active_leaf_count_u64;
             snapshot.effective_route_count = nprobe.effective_nprobe;
             snapshot.effective_search_list_size = effective_search_list_size;
             return Ok(snapshot);
@@ -1138,6 +1179,8 @@ pub(crate) unsafe fn index_top_graph_snapshot(
         let (placement, top_graph) = &top_graphs[0];
         let mut edge_count = 0_u64;
         let mut max_node_degree = 0_u64;
+        let node_count = u64::try_from(top_graph.node_count())
+            .map_err(|_| "ec_spire top graph snapshot node count exceeds u64".to_owned())?;
         for node in &top_graph.nodes {
             let node_degree = u64::try_from(node.neighbors.len())
                 .map_err(|_| "ec_spire top graph snapshot node degree exceeds u64".to_owned())?;
@@ -1146,15 +1189,35 @@ pub(crate) unsafe fn index_top_graph_snapshot(
                 .ok_or_else(|| "ec_spire top graph snapshot edge count overflow".to_owned())?;
             max_node_degree = max_node_degree.max(node_degree);
         }
-        let (status, recommendation) = if top_graph_count == 1 && top_graph_plan.enabled {
-            ("ready", "none")
-        } else if top_graph_count == 1 {
-            ("available_disabled", "none")
-        } else {
+        let (status, recommendation) = if top_graph_count > 1 {
             (
                 "multiple_top_graphs",
                 "repair or rebuild the index; enabled scans fail closed when multiple top graph objects are visible",
             )
+        } else if active_root_pid == 0 {
+            (
+                "missing_root",
+                "repair or rebuild the index; top graph snapshots require one available root routing object",
+            )
+        } else if top_graph.root_pid != active_root_pid {
+            (
+                "root_mismatch",
+                "repair or rebuild the index; top graph root_pid does not match the active root routing object",
+            )
+        } else if top_graph.header.level != active_root_level {
+            (
+                "level_mismatch",
+                "repair or rebuild the index; top graph parent level does not match the active root routing level",
+            )
+        } else if node_count != root_child_count {
+            (
+                "frontier_mismatch",
+                "repair or rebuild the index; top graph node count does not match the active root/top routing child frontier",
+            )
+        } else if top_graph_count == 1 && top_graph_plan.enabled {
+            ("ready", "none")
+        } else {
+            ("available_disabled", "none")
         };
 
         Ok(SpireIndexTopGraphSnapshot {
@@ -1163,11 +1226,16 @@ pub(crate) unsafe fn index_top_graph_snapshot(
             top_graph_count,
             top_graph_pid: top_graph.header.pid,
             root_pid: top_graph.root_pid,
+            frontier_kind: "root_top_routing_children",
+            frontier_parent_level: active_root_level,
+            frontier_child_level,
+            frontier_node_count: node_count,
+            root_child_count,
+            active_leaf_count: active_leaf_count_u64,
             object_version: top_graph.header.object_version,
             published_epoch_backref: top_graph.header.published_epoch_backref,
             level: top_graph.header.level,
-            node_count: u64::try_from(top_graph.node_count())
-                .map_err(|_| "ec_spire top graph snapshot node count exceeds u64".to_owned())?,
+            node_count,
             dimensions: top_graph.dimensions,
             graph_degree: top_graph.graph_degree,
             build_list_size: top_graph.build_list_size,
