@@ -50,6 +50,9 @@ pub struct PgvectorArgs {
     /// (`ef_search` for HNSW, `list_size` for DiskANN).
     #[arg(long = "ecaz-sweep", alias = "ecaz-ef-search", default_value_t = 100)]
     pub ecaz_sweep: i32,
+    /// Matched sweep values for ecaz and pgvector `hnsw.ef_search`.
+    #[arg(long, value_delimiter = ',')]
+    pub sweep: Vec<i32>,
     /// pgvector-side `hnsw.ef_search` for the timed queries.
     #[arg(long, default_value_t = 100)]
     pub pgvector_ef_search: i32,
@@ -83,6 +86,11 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let ecaz_guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to set", profile.name))?;
+    let sweep_values = if args.sweep.is_empty() {
+        vec![args.ecaz_sweep]
+    } else {
+        args.sweep.clone()
+    };
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -151,52 +159,60 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     crate::ecaz_eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
     psql::prefer_ordered_ann_path(&client).await?;
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
-    let ecaz_label =
-        configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep);
-    let pgv_label = configured_engine_label("pgvector", "ef_search", args.pgvector_ef_search);
-
-    // Ecaz side.
-    client
-        .batch_execute(&format!("SET {ecaz_guc} = {}", args.ecaz_sweep))
-        .await
-        .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
     let ecaz_sql = build_knn_sql(profile, &corpus_table);
-    let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
-        &client,
-        &ecaz_label,
-        &ecaz_sql,
-        &queries,
-        &gt,
-        &corpus_ids,
-        &truth_ids,
-        args.k,
-        EngineBinds::Ecaz,
-    )
-    .await?;
-
-    // pgvector side.
-    client
-        .batch_execute(&format!("SET hnsw.ef_search = {}", args.pgvector_ef_search))
-        .await
-        .wrap_err("SET hnsw.ef_search")?;
     let pgv_sql = build_pgvector_knn_sql(&sidecar_table, dim);
-    let (pgv_recall, pgv_ndcg, pgv_stats) = measure_engine(
-        &client,
-        &pgv_label,
-        &pgv_sql,
-        &queries,
-        &gt,
-        &corpus_ids,
-        &truth_ids,
-        args.k,
-        EngineBinds::Pgvector,
-    )
-    .await?;
+    let mut rows = Vec::with_capacity(sweep_values.len() * 2);
+    for value in sweep_values {
+        let ecaz_label = configured_engine_label(profile.name, profile.sweep_axis_label(), value);
+        client
+            .batch_execute(&format!("SET {ecaz_guc} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
+        let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
+            &client,
+            &ecaz_label,
+            &ecaz_sql,
+            &queries,
+            &gt,
+            &corpus_ids,
+            &truth_ids,
+            args.k,
+            EngineBinds::Ecaz,
+        )
+        .await?;
+        rows.push(ComparisonRow::with_sweep(
+            &ecaz_label,
+            value,
+            ecaz_recall,
+            ecaz_ndcg,
+            ecaz_stats,
+        ));
 
-    let rows = vec![
-        ComparisonRow::new(&ecaz_label, ecaz_recall, ecaz_ndcg, ecaz_stats),
-        ComparisonRow::new(&pgv_label, pgv_recall, pgv_ndcg, pgv_stats),
-    ];
+        client
+            .batch_execute(&format!("SET hnsw.ef_search = {value}"))
+            .await
+            .wrap_err("SET hnsw.ef_search")?;
+        let pgv_label = configured_engine_label("pgvector", "ef_search", value);
+        let (pgv_recall, pgv_ndcg, pgv_stats) = measure_engine(
+            &client,
+            &pgv_label,
+            &pgv_sql,
+            &queries,
+            &gt,
+            &corpus_ids,
+            &truth_ids,
+            args.k,
+            EngineBinds::Pgvector,
+        )
+        .await?;
+        rows.push(ComparisonRow::with_sweep(
+            &pgv_label,
+            value,
+            pgv_recall,
+            pgv_ndcg,
+            pgv_stats,
+        ));
+    }
     print_comparison(&rows);
     Ok(())
 }
@@ -326,6 +342,15 @@ async fn ensure_pgvector_sidecar(
             .wrap_err("creating pgvector index")?;
         crate::ecaz_eprintln!("[compare] built {index_name} in {:.2?}", t0.elapsed());
     }
+    let size: i64 = client
+        .query_one(
+            &format!("SELECT pg_relation_size('{index_name}'::regclass)"),
+            &[],
+        )
+        .await
+        .wrap_err("reading pgvector index size")?
+        .get(0);
+    crate::ecaz_eprintln!("[compare] {index_name} pg_relation_size={size} bytes");
     Ok(())
 }
 
@@ -381,15 +406,23 @@ async fn measure_engine(
 #[derive(Debug, Clone)]
 pub struct ComparisonRow {
     pub engine: String,
+    pub sweep: Option<i32>,
     pub recall: f64,
     pub ndcg: f64,
     pub stats: LatencyStats,
 }
 
 impl ComparisonRow {
-    pub fn new(engine: &str, recall: f64, ndcg: f64, stats: LatencyStats) -> Self {
+    pub fn with_sweep(
+        engine: &str,
+        sweep: i32,
+        recall: f64,
+        ndcg: f64,
+        stats: LatencyStats,
+    ) -> Self {
         Self {
             engine: engine.to_owned(),
+            sweep: Some(sweep),
             recall,
             ndcg,
             stats,
@@ -400,12 +433,24 @@ impl ComparisonRow {
 fn print_comparison(rows: &[ComparisonRow]) {
     let mut t = Table::new();
     t.load_preset(UTF8_FULL);
-    t.set_header(vec![
-        "engine", "recall@k", "ndcg@k", "p50", "p95", "p99", "mean",
-    ]);
+    let include_sweep = rows.iter().any(|row| row.sweep.is_some());
+    if include_sweep {
+        t.set_header(vec![
+            "engine", "sweep", "recall@k", "ndcg@k", "p50", "p95", "p99", "mean",
+        ]);
+    } else {
+        t.set_header(vec![
+            "engine", "recall@k", "ndcg@k", "p50", "p95", "p99", "mean",
+        ]);
+    }
     for r in rows {
-        t.add_row(vec![
-            Cell::new(&r.engine),
+        let mut cells = vec![Cell::new(&r.engine)];
+        if include_sweep {
+            cells.push(Cell::new(
+                r.sweep.map(|value| value.to_string()).unwrap_or_else(|| "-".into()),
+            ));
+        }
+        cells.extend([
             Cell::new(format!("{:.4}", r.recall)),
             Cell::new(format!("{:.4}", r.ndcg)),
             Cell::new(format_ms(r.stats.p50)),
@@ -413,8 +458,9 @@ fn print_comparison(rows: &[ComparisonRow]) {
             Cell::new(format_ms(r.stats.p99)),
             Cell::new(format_ms(r.stats.mean)),
         ]);
+        t.add_row(cells);
     }
-    if rows.len() == 2 {
+    if rows.len() == 2 && !include_sweep {
         let a = &rows[0];
         let b = &rows[1];
         t.add_row(vec![
@@ -536,6 +582,7 @@ mod tests {
         let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
         assert_eq!(args.prefix, "dbpedia_10k");
         assert_eq!(args.ecaz_sweep, 200);
+        assert!(args.sweep.is_empty());
     }
 
     #[test]
@@ -552,6 +599,22 @@ mod tests {
             .unwrap();
         let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
         assert_eq!(args.ecaz_sweep, 160);
+    }
+
+    #[test]
+    fn pgvector_args_accept_matched_sweep_list() {
+        let cmd = PgvectorArgs::augment_args(Command::new("pgvector"));
+        let matches = cmd
+            .try_get_matches_from([
+                "pgvector",
+                "--prefix",
+                "dbpedia_10k",
+                "--sweep",
+                "64,128,200",
+            ])
+            .unwrap();
+        let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
+        assert_eq!(args.sweep, vec![64, 128, 200]);
     }
 
     #[test]
@@ -617,8 +680,15 @@ mod tests {
             p99: Duration::from_millis(7),
             max: Duration::from_millis(8),
         };
-        let row = ComparisonRow::new("ec_diskann[list_size=200]", 0.9, 0.8, stats);
+        let row = ComparisonRow {
+            engine: "ec_diskann[list_size=200]".into(),
+            sweep: None,
+            recall: 0.9,
+            ndcg: 0.8,
+            stats,
+        };
         assert_eq!(row.engine, "ec_diskann[list_size=200]");
+        assert_eq!(row.sweep, None);
         assert!((row.recall - 0.9).abs() < 1e-9);
         assert!((row.ndcg - 0.8).abs() < 1e-9);
         assert_eq!(row.stats.count, 10);

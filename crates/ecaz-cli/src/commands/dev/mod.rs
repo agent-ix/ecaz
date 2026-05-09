@@ -14,7 +14,7 @@ mod test;
 
 #[derive(Subcommand, Debug)]
 pub enum DevCommand {
-    /// Local install/setup helpers for ecaz and pgvector development.
+    /// Local install/setup helpers for ecaz, pgvector, and pgvectorscale development.
     Install {
         #[command(subcommand)]
         command: install::InstallCommand,

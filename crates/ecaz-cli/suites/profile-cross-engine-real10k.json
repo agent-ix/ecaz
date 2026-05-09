@@ -1,0 +1,131 @@
+{
+  "name": "profile-cross-engine-real10k",
+  "schema_version": 1,
+  "artifact_dir": "artifacts/benchmark-profiles/profile-cross-engine-real10k",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 500,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-diskann-real10k",
+      "tags": ["load", "diskann", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_diskann",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ],
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/load-diskann-real10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-real10k",
+      "tags": ["recall", "diskann", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/truth-real10k-k10.json",
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/recall-diskann-real10k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real10k",
+      "tags": ["latency", "diskann", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/latency-diskann-real10k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-diskann-real10k",
+      "tags": ["storage", "diskann", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_diskann",
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/storage-diskann-real10k.log"
+    },
+    {
+      "kind": "compare-vectorscale",
+      "name": "compare-vectorscale-real10k",
+      "tags": ["compare", "vectorscale", "diskann", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "vectorscale_num_neighbors": 32,
+      "vectorscale_build_search_list_size": 100,
+      "vectorscale_max_alpha": 1.2,
+      "rebuild": true,
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/compare-vectorscale-real10k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-real10k",
+      "tags": ["load", "hnsw", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_hnsw",
+      "m": [32],
+      "ef_construction": 100,
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/load-hnsw-real10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real10k",
+      "tags": ["recall", "hnsw", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/truth-real10k-k10.json",
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/recall-hnsw-real10k.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k",
+      "tags": ["latency", "hnsw", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "artifacts/benchmark-profiles/profile-cross-engine-real10k/latency-hnsw-real10k.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-hnsw-real10k",
+      "tags": ["storage", "hnsw", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_hnsw",
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/storage-hnsw-real10k.log"
+    },
+    {
+      "kind": "compare-pgvector",
+      "name": "compare-pgvector-real10k",
+      "tags": ["compare", "pgvector", "hnsw", "real10k", "cross-engine"],
+      "prefix": "profile_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "pgvector_m": 32,
+      "pgvector_ef_construction": 100,
+      "rebuild": true,
+      "log_file": "artifacts/benchmark-profiles/profile-cross-engine-real10k/compare-pgvector-real10k.log"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "profile-ivf-50k",
+  "schema_version": 1,
+  "artifact_dir": "artifacts/benchmark-profiles/profile-ivf-50k",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-real50k-n64-w750",
+      "tags": ["load", "ivf", "real50k", "n64", "w750"],
+      "prefix": "profile_real50k_pqg8_n64",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750"
+      ],
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-50k/load-real50k-n64-w750.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-real50k-n64-w750",
+      "tags": ["recall", "ivf", "real50k", "n64", "w750"],
+      "prefix": "profile_real50k_pqg8_n64",
+      "k": 10,
+      "sweep": [32, 48, 64],
+      "rerank_width": 750,
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-ivf-50k/truth-real50k-k10.json",
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-50k/recall10-real50k-n64-w750.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real50k-n64-w750",
+      "tags": ["latency", "ivf", "real50k", "n64", "w750"],
+      "prefix": "profile_real50k_pqg8_n64",
+      "k": 10,
+      "sweep": [32, 48, 64],
+      "rerank_width": 750,
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-50k/latency-real50k-n64-w750.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-n64",
+      "tags": ["storage", "ivf", "real50k", "n64"],
+      "prefix": "profile_real50k_pqg8_n64",
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-50k/storage-real50k-n64.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-real50k-n64-w750",
+      "tags": ["explain", "ivf", "real50k", "n64", "w750"],
+      "prefix": "profile_real50k_pqg8_n64",
+      "index_name": "profile_real50k_pqg8_n64_idx",
+      "nprobe": 48,
+      "rerank_width": 750,
+      "sql_file": "artifacts/benchmark-profiles/profile-ivf-50k/explain-real50k-n64-w750.sql",
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-50k/explain-real50k-n64-w750.log"
+    }
+  ]
+}

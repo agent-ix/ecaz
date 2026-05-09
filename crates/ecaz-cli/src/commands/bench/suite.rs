@@ -194,6 +194,8 @@ enum SuiteStep {
     Latency(LatencyStep),
     Storage(StorageStep),
     Explain(ExplainStep),
+    ComparePgvector(ComparePgvectorStep),
+    CompareVectorscale(CompareVectorscaleStep),
     Raw(RawStep),
 }
 
@@ -217,6 +219,10 @@ struct LoadStep {
     bits: Option<i32>,
     #[serde(default)]
     seed: Option<i64>,
+    #[serde(default)]
+    m: Vec<i32>,
+    #[serde(default)]
+    ef_construction: Option<i32>,
     #[serde(default)]
     reloptions: Vec<String>,
     #[serde(default)]
@@ -316,6 +322,66 @@ struct ExplainStep {
     port: Option<u16>,
     sql_file: PathBuf,
     log_output: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComparePgvectorStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    #[serde(default)]
+    sweep: Vec<i32>,
+    #[serde(default)]
+    ecaz_sweep: Option<i32>,
+    #[serde(default)]
+    pgvector_ef_search: Option<i32>,
+    #[serde(default)]
+    pgvector_m: Option<i32>,
+    #[serde(default)]
+    pgvector_ef_construction: Option<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    rebuild: bool,
+    #[serde(default)]
+    log_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompareVectorscaleStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    #[serde(default)]
+    sweep: Vec<i32>,
+    #[serde(default)]
+    ecaz_sweep: Option<i32>,
+    #[serde(default)]
+    vectorscale_num_neighbors: Option<i32>,
+    #[serde(default)]
+    vectorscale_build_search_list_size: Option<i32>,
+    #[serde(default)]
+    vectorscale_max_alpha: Option<f32>,
+    #[serde(default)]
+    vectorscale_storage_layout: Option<String>,
+    #[serde(default)]
+    vectorscale_query_rescore: Option<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    rebuild: bool,
+    #[serde(default)]
+    log_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -926,6 +992,32 @@ fn parse_result_rows(
                 values,
             })
             .collect(),
+        "compare-pgvector" | "compare-vectorscale" => {
+            let mut rows: Vec<ResultRow> = parse_compare_table_rows(raw)
+                .into_iter()
+                .map(|values| ResultRow {
+                    suite: manifest.suite.clone(),
+                    step: step.name.clone(),
+                    kind: step.kind.clone(),
+                    metric: "compare".into(),
+                    artifact: artifact.into(),
+                    values,
+                })
+                .collect();
+            rows.extend(
+                parse_compare_summary_rows(raw)
+                    .into_iter()
+                    .map(|(metric, values)| ResultRow {
+                        suite: manifest.suite.clone(),
+                        step: step.name.clone(),
+                        kind: step.kind.clone(),
+                        metric,
+                        artifact: artifact.into(),
+                        values,
+                    }),
+            );
+            rows
+        }
         _ => Vec::new(),
     }
 }
@@ -972,6 +1064,38 @@ fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     rows
 }
 
+fn parse_compare_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
+    parse_table_rows(raw)
+        .into_iter()
+        .filter(|row| {
+            row.get("engine")
+                .map(|engine| !engine.starts_with('Δ'))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn parse_compare_summary_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    let mut rows = Vec::new();
+    for line in raw.lines() {
+        if let Some((name, seconds)) = parse_compare_timed_line(line, "built ") {
+            rows.push((
+                "compare_build".into(),
+                BTreeMap::from([
+                    ("subject".into(), name),
+                    ("seconds".into(), seconds),
+                ]),
+            ));
+        } else if let Some((name, bytes)) = parse_compare_size_line(line) {
+            rows.push((
+                "compare_index_size".into(),
+                BTreeMap::from([("subject".into(), name), ("bytes".into(), bytes)]),
+            ));
+        }
+    }
+    rows
+}
+
 fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     let mut rows = Vec::new();
     for line in raw.lines() {
@@ -1002,6 +1126,23 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
         }
     }
     rows
+}
+
+fn parse_compare_timed_line(line: &str, prefix: &str) -> Option<(String, String)> {
+    let rest = line
+        .trim_start()
+        .strip_prefix("[compare] ")?
+        .strip_prefix(prefix)?;
+    let (name, duration) = rest.rsplit_once(" in ")?;
+    Some((name.trim().into(), duration_seconds(duration.trim())?))
+}
+
+fn parse_compare_size_line(line: &str) -> Option<(String, String)> {
+    let rest = line.trim_start().strip_prefix("[compare] ")?;
+    let (name, bytes) = rest.rsplit_once(" pg_relation_size=")?;
+    let bytes = bytes.strip_suffix(" bytes")?.trim();
+    bytes.parse::<u64>().ok()?;
+    Some((name.trim().into(), bytes.into()))
 }
 
 fn parse_timed_loader_line(line: &str, prefix: &str) -> Option<(String, String)> {
@@ -1170,6 +1311,8 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
+            SuiteStep::ComparePgvector(step) => &step.name,
+            SuiteStep::CompareVectorscale(step) => &step.name,
             SuiteStep::Raw(step) => &step.name,
         }
     }
@@ -1181,6 +1324,8 @@ impl SuiteStep {
             SuiteStep::Latency(_) => "latency",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
+            SuiteStep::ComparePgvector(_) => "compare-pgvector",
+            SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
             SuiteStep::Raw(_) => "raw",
         }
     }
@@ -1192,6 +1337,8 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
+            SuiteStep::ComparePgvector(step) => &step.tags,
+            SuiteStep::CompareVectorscale(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
         }
     }
@@ -1218,6 +1365,22 @@ impl SuiteStep {
                     step.name
                 )
             }
+            SuiteStep::ComparePgvector(step)
+                if step.sweep.is_empty() && step.ecaz_sweep.is_none() =>
+            {
+                bail!(
+                    "compare-pgvector step {:?} must include sweep or ecaz_sweep",
+                    step.name
+                )
+            }
+            SuiteStep::CompareVectorscale(step)
+                if step.sweep.is_empty() && step.ecaz_sweep.is_none() =>
+            {
+                bail!(
+                    "compare-vectorscale step {:?} must include sweep or ecaz_sweep",
+                    step.name
+                )
+            }
             SuiteStep::Raw(step) if step.args.is_empty() => {
                 bail!("raw step {:?} must include args", step.name)
             }
@@ -1232,6 +1395,8 @@ impl SuiteStep {
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
+            SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
+            SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
         }
     }
@@ -1243,6 +1408,8 @@ impl SuiteStep {
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
+            SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Raw(step) => step.expected_artifacts.clone(),
         }
     }
@@ -1324,6 +1491,16 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
+    if !step.m.is_empty() {
+        push_arg(&mut args, "--m", &join_i32(&step.m));
+    }
+    if let Some(ef_construction) = step.ef_construction {
+        push_arg(
+            &mut args,
+            "--ef-construction",
+            &ef_construction.to_string(),
+        );
+    }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
     }
@@ -1455,6 +1632,109 @@ fn expand_explain(
     args.push("--raw".into());
     push_arg_path(&mut args, "--file", &step.sql_file);
     push_arg_path(&mut args, "--log-output", &step.log_output);
+    args
+}
+
+fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = Vec::new();
+    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
+    args.extend(["compare".into(), "pgvector".into()]);
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_arg(
+        &mut args,
+        "--profile",
+        &profile(defaults, step.profile.as_deref()),
+    );
+    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    if !step.sweep.is_empty() {
+        push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    } else if let Some(ecaz_sweep) = step.ecaz_sweep {
+        push_arg(&mut args, "--ecaz-sweep", &ecaz_sweep.to_string());
+        push_arg(
+            &mut args,
+            "--pgvector-ef-search",
+            &step.pgvector_ef_search.unwrap_or(ecaz_sweep).to_string(),
+        );
+    }
+    if let Some(pgvector_m) = step.pgvector_m {
+        push_arg(&mut args, "--pgvector-m", &pgvector_m.to_string());
+    }
+    if let Some(pgvector_ef_construction) = step.pgvector_ef_construction {
+        push_arg(
+            &mut args,
+            "--pgvector-ef-construction",
+            &pgvector_ef_construction.to_string(),
+        );
+    }
+    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
+        push_arg(&mut args, "--queries-limit", &limit.to_string());
+    }
+    if step.rebuild {
+        args.push("--rebuild".into());
+    }
+    args
+}
+
+fn expand_compare_vectorscale(
+    step: &CompareVectorscaleStep,
+    defaults: &SuiteDefaults,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
+    args.extend(["compare".into(), "vectorscale".into()]);
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_arg(
+        &mut args,
+        "--profile",
+        &profile(defaults, step.profile.as_deref()),
+    );
+    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    if !step.sweep.is_empty() {
+        push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    } else if let Some(ecaz_sweep) = step.ecaz_sweep {
+        push_arg(&mut args, "--ecaz-sweep", &ecaz_sweep.to_string());
+    }
+    if let Some(num_neighbors) = step.vectorscale_num_neighbors {
+        push_arg(
+            &mut args,
+            "--vectorscale-num-neighbors",
+            &num_neighbors.to_string(),
+        );
+    }
+    if let Some(search_list_size) = step.vectorscale_build_search_list_size {
+        push_arg(
+            &mut args,
+            "--vectorscale-build-search-list-size",
+            &search_list_size.to_string(),
+        );
+    }
+    if let Some(max_alpha) = step.vectorscale_max_alpha {
+        push_arg(
+            &mut args,
+            "--vectorscale-max-alpha",
+            &max_alpha.to_string(),
+        );
+    }
+    if let Some(storage_layout) = step.vectorscale_storage_layout.as_deref() {
+        push_arg(
+            &mut args,
+            "--vectorscale-storage-layout",
+            storage_layout,
+        );
+    }
+    if let Some(query_rescore) = step.vectorscale_query_rescore {
+        push_arg(
+            &mut args,
+            "--vectorscale-query-rescore",
+            &query_rescore.to_string(),
+        );
+    }
+    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
+        push_arg(&mut args, "--queries-limit", &limit.to_string());
+    }
+    if step.rebuild {
+        args.push("--rebuild".into());
+    }
     args
 }
 
