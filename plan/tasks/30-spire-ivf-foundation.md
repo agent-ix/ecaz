@@ -1501,10 +1501,13 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `requires_libpq_transport` gate rather than a missing-descriptor blocker. The
   registration upsert validates the coordinator OID as an `ec_spire` index
   before mutating the descriptor catalog and fails closed unless
-  `descriptor_generation` advances the existing row. Read-side libpq connection
-  descriptors now accept only `active` and `draining` catalog states, so
-  `disabled` or `failed` descriptors continue to block dispatch instead of
-  resolving as pipeline-ready.
+  `descriptor_generation` advances the existing row. Descriptor registration
+  now also rejects distinct `conninfo_secret_name` values that sanitize to the
+  same external provider lookup key for one coordinator index, preventing
+  accidental env-var secret aliasing. Read-side libpq connection descriptors
+  now accept only `active` and `draining` catalog states, so `disabled` or
+  `failed` descriptors continue to block dispatch instead of resolving as
+  pipeline-ready.
   `ec_spire_remote_node_capability_plan(...)`
   now exposes the pre-libpq capability-check contract per node: required epoch
   window, candidate format, extension version, conninfo source, identity status,
@@ -1628,6 +1631,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   first external-provider lookup surface by mapping secret references to
   executor-owned environment keys and reporting only lookup key, byte count,
   status, and recommendation; raw libpq conninfo remains unreturned from SQL.
+  Descriptor registration uses the same lookup-key derivation to reject
+  colliding secret references before they can share one provider entry by
+  accident.
   `ec_spire_remote_catalog_orphan_summary()` and
   `ec_spire_remote_catalog_orphan_cleanup()` now expose the first remote
   catalog lifecycle cleanup path: rows keyed by coordinator OIDs that no longer

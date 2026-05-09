@@ -1140,7 +1140,7 @@ pub(crate) fn remote_node_descriptor_contract_rows(
             pg_type: "text",
             semantic_role: "indirect_connection_secret",
             required: true,
-            validator: "must_be_nonempty_secret_reference",
+            validator: "must_be_nonempty_noncolliding_secret_reference",
         },
         SpireRemoteNodeDescriptorContractRow {
             field_ordinal: 5,
@@ -1288,7 +1288,7 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
             step_name: "record_secret_reference",
             input_field: "conninfo_secret_name",
             semantic_role: "indirect_connection_secret",
-            validator: "must_be_nonempty_secret_reference",
+            validator: "must_be_nonempty_noncolliding_secret_reference",
             persistence_action: "persist_secret_reference_only",
             failure_status: "invalid_descriptor",
         },

@@ -1429,12 +1429,60 @@ fn ec_spire_register_remote_node_descriptor(
     if extension_version.is_empty() {
         pgrx::error!("ec_spire_register_remote_node_descriptor extension_version must be nonempty");
     }
+    let conninfo_provider_lookup_key =
+        am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire_register_remote_node_descriptor {e}"));
 
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_register_remote_node_descriptor") };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     let result = Spi::connect_mut(|client| {
+        client
+            .update(
+                "LOCK TABLE ec_spire_remote_node_descriptor IN SHARE ROW EXCLUSIVE MODE",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire remote node descriptor lock failed: {e}"))?;
+        let existing_secret_names = client
+            .select(
+                "SELECT conninfo_secret_name \
+                   FROM ec_spire_remote_node_descriptor \
+                  WHERE coordinator_index_oid = $1::oid \
+                    AND node_id <> $2::integer",
+                None,
+                &[index_oid.into(), node_id.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote node descriptor secret collision scan failed: {e}")
+            })?
+            .map(|row| {
+                row["conninfo_secret_name"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire remote node descriptor conninfo secret decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire remote node descriptor conninfo secret is null".to_owned()
+                    })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        for existing_secret_name in existing_secret_names {
+            if existing_secret_name == conninfo_secret_name {
+                continue;
+            }
+            let existing_lookup_key =
+                am::spire_remote_conninfo_secret_provider_lookup_key(&existing_secret_name)?;
+            if existing_lookup_key == conninfo_provider_lookup_key {
+                return Err(format!(
+                    "ec_spire_register_remote_node_descriptor conninfo_secret_name maps to provider_lookup_key {conninfo_provider_lookup_key}, which collides with existing conninfo_secret_name {existing_secret_name}"
+                ));
+            }
+        }
+
         client
             .select(
                 "INSERT INTO ec_spire_remote_node_descriptor \
@@ -19739,7 +19787,10 @@ mod tests {
 
         assert_eq!(field_count, 12);
         assert_eq!(secret_role, "indirect_connection_secret");
-        assert_eq!(secret_validator, "must_be_nonempty_secret_reference");
+        assert_eq!(
+            secret_validator,
+            "must_be_nonempty_noncolliding_secret_reference"
+        );
         assert_eq!(raw_conninfo_count, 0);
         assert_eq!(required_epoch_fields, 2);
     }
@@ -19834,11 +19885,72 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "conninfo_secret_name maps to provider_lookup_key EC_SPIRE_REMOTE_CONNINFO_NODE_1"
+    )]
+    fn test_ec_spire_remote_secret_key_collision_rejected() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_node_desc_secret_collision_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_desc_secret_collision_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_node_desc_secret_collision_sql_idx \
+             ON ec_spire_remote_node_desc_secret_collision_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_node_desc_secret_collision_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_node_desc_secret_collision_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        let first_registered = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 1, 'node-1', decode('01', 'hex'), \
+                     'remote_spire_idx_a', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("first descriptor registration should succeed")
+        .expect("first descriptor registration result should exist");
+        assert!(first_registered);
+
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 3, 1, 'node_1', decode('02', 'hex'), \
+                     'remote_spire_idx_b', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("colliding descriptor registration should fail before this point");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_node_descriptor_registration_contract() {
         let contract_from = "FROM ec_spire_remote_node_descriptor_registration_contract()";
         let step_count = Spi::get_one::<i64>(&format!("SELECT count(*) {contract_from}"))
             .expect("descriptor registration contract count query should succeed")
             .expect("descriptor registration contract count should exist");
+        let secret_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {contract_from} \
+             WHERE input_field = 'conninfo_secret_name'"
+        ))
+        .expect("descriptor registration secret validator query should succeed")
+        .expect("descriptor registration secret validator should exist");
         let secret_action = Spi::get_one::<String>(&format!(
             "SELECT persistence_action {contract_from} \
              WHERE input_field = 'conninfo_secret_name'"
@@ -19865,6 +19977,10 @@ mod tests {
         .expect("descriptor registration raw conninfo count should exist");
 
         assert_eq!(step_count, 9);
+        assert_eq!(
+            secret_validator,
+            "must_be_nonempty_noncolliding_secret_reference"
+        );
         assert_eq!(secret_action, "persist_secret_reference_only");
         assert_eq!(generation_action, "atomically_replace_descriptor");
         assert_eq!(epoch_failure, "remote_epoch_not_served");

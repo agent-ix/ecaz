@@ -220,7 +220,9 @@ pub(crate) fn remote_conninfo_secret_resolution_contract_rows(
     ]
 }
 
-fn remote_conninfo_secret_env_key(conninfo_secret_name: &str) -> Result<String, String> {
+pub(crate) fn remote_conninfo_secret_provider_lookup_key(
+    conninfo_secret_name: &str,
+) -> Result<String, String> {
     if conninfo_secret_name.is_empty() {
         return Err("conninfo_secret_name must be nonempty".to_owned());
     }
@@ -239,7 +241,7 @@ fn remote_conninfo_secret_env_key(conninfo_secret_name: &str) -> Result<String, 
 pub(crate) fn remote_conninfo_secret_resolution_status_row(
     conninfo_secret_name: &str,
 ) -> SpireRemoteConninfoSecretResolutionStatusRow {
-    let provider_lookup_key = remote_conninfo_secret_env_key(conninfo_secret_name)
+    let provider_lookup_key = remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)
         .unwrap_or_else(|e| pgrx::error!("ec_spire remote conninfo secret reference invalid: {e}"));
 
     match std::env::var(&provider_lookup_key) {
