@@ -513,6 +513,34 @@ pub(crate) struct SpireRemoteSearchLibpqDispatchSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqSecretPlanRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) conninfo_secret_name: String,
+    pub(crate) provider_lookup_key: String,
+    pub(crate) resolved_conninfo_bytes: u64,
+    pub(crate) raw_conninfo_exposed: bool,
+    pub(crate) secret_resolution_action: &'static str,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqSecretSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) secret_count: u64,
+    pub(crate) resolved_secret_count: u64,
+    pub(crate) blocked_secret_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) blocked_pid_count: u64,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqExecutorReadinessRow {
     pub(crate) requested_epoch: u64,
     pub(crate) dispatch_count: u64,

@@ -1776,6 +1776,183 @@ fn remote_search_libpq_dispatch_summary_from_plan_rows(
         })
 }
 
+pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {
+    let dispatch_rows = unsafe {
+        remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+
+    remote_search_libpq_secret_plan_rows_from_dispatch(&dispatch_rows)
+}
+
+fn remote_search_libpq_secret_plan_rows_from_dispatch(
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+) -> Vec<SpireRemoteSearchLibpqSecretPlanRow> {
+    dispatch_rows
+        .iter()
+        .map(|row| {
+            if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+                return SpireRemoteSearchLibpqSecretPlanRow {
+                    requested_epoch: row.requested_epoch,
+                    node_id: row.node_id,
+                    selected_pids: row.selected_pids.clone(),
+                    pid_count: row.pid_count,
+                    conninfo_secret_name: row.conninfo_secret_name.clone(),
+                    provider_lookup_key: SPIRE_REMOTE_NONE.to_owned(),
+                    resolved_conninfo_bytes: 0,
+                    raw_conninfo_exposed: false,
+                    secret_resolution_action: SPIRE_REMOTE_NONE,
+                    next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+                    status: row.status,
+                    recommendation: "resolve descriptor gate before conninfo secret lookup",
+                };
+            }
+
+            let secret_status =
+                remote_conninfo_secret_resolution_status_row(&row.conninfo_secret_name);
+            let (secret_resolution_action, next_executor_step) =
+                if secret_status.status == SPIRE_REMOTE_CONNINFO_RESOLVED {
+                    ("resolved_conninfo_secret_reference", "open_libpq_connection")
+                } else {
+                    (
+                        "resolve_conninfo_secret_reference",
+                        SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+                    )
+                };
+
+            SpireRemoteSearchLibpqSecretPlanRow {
+                requested_epoch: row.requested_epoch,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids.clone(),
+                pid_count: row.pid_count,
+                conninfo_secret_name: row.conninfo_secret_name.clone(),
+                provider_lookup_key: secret_status.provider_lookup_key,
+                resolved_conninfo_bytes: secret_status.resolved_conninfo_bytes,
+                raw_conninfo_exposed: secret_status.raw_conninfo_exposed,
+                secret_resolution_action,
+                next_executor_step,
+                status: secret_status.status,
+                recommendation: secret_status.recommendation,
+            }
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_libpq_secret_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqSecretSummaryRow {
+    let rows = unsafe {
+        remote_search_libpq_secret_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    remote_search_libpq_secret_summary_from_plan_rows(requested_epoch, &rows)
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_secret_summary_from_plan_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqSecretPlanRow],
+) -> Result<SpireRemoteSearchLibpqSecretSummaryRow, String> {
+    let mut resolved_secret_count = 0_u64;
+    let mut blocked_secret_count = 0_u64;
+    let mut descriptor_blocked_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut blocked_pid_count = 0_u64;
+    let mut first_descriptor_status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
+
+    for row in rows {
+        add_remote_count(
+            &mut remote_pid_count,
+            row.pid_count,
+            "remote search libpq secret summary",
+            "remote PID",
+        )?;
+        if row.status == SPIRE_REMOTE_CONNINFO_RESOLVED {
+            add_remote_count(
+                &mut resolved_secret_count,
+                1,
+                "remote search libpq secret summary",
+                "resolved secret",
+            )?;
+        } else {
+            add_remote_count(
+                &mut blocked_pid_count,
+                row.pid_count,
+                "remote search libpq secret summary",
+                "blocked PID",
+            )?;
+            if row.next_executor_step == SPIRE_REMOTE_EXECUTOR_STEP_SECRET {
+                add_remote_count(
+                    &mut blocked_secret_count,
+                    1,
+                    "remote search libpq secret summary",
+                    "blocked secret",
+                )?;
+            } else {
+                if descriptor_blocked_count == 0 {
+                    first_descriptor_status = row.status;
+                }
+                add_remote_count(
+                    &mut descriptor_blocked_count,
+                    1,
+                    "remote search libpq secret summary",
+                    "descriptor-blocked row",
+                )?;
+            }
+        }
+    }
+
+    let secret_count = u64::try_from(rows.len())
+        .map_err(|_| "remote search libpq secret count exceeds u64")?;
+    let (next_executor_step, status) = if secret_count == 0 {
+        (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY)
+    } else if descriptor_blocked_count > 0 {
+        (SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR, first_descriptor_status)
+    } else if blocked_secret_count > 0 {
+        (
+            SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+            SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+        )
+    } else {
+        ("open_libpq_connection", SPIRE_REMOTE_CONNINFO_RESOLVED)
+    };
+
+    Ok(SpireRemoteSearchLibpqSecretSummaryRow {
+        requested_epoch,
+        secret_count,
+        resolved_secret_count,
+        blocked_secret_count,
+        remote_pid_count,
+        blocked_pid_count,
+        next_executor_step,
+        status,
+    })
+}
+
 pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,

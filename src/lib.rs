@@ -7452,6 +7452,161 @@ fn ec_spire_remote_search_libpq_bind_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_secret_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pids, Vec<i64>),
+        name!(pid_count, i64),
+        name!(conninfo_secret_name, String),
+        name!(provider_lookup_key, String),
+        name!(resolved_conninfo_bytes, i64),
+        name!(raw_conninfo_exposed, bool),
+        name!(secret_resolution_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_secret_plan requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_secret_plan top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_secret_plan selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_secret_plan") };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_secret_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.selected_pids
+                .into_iter()
+                .map(|pid| i64::try_from(pid).expect("pid should fit in i64"))
+                .collect::<Vec<_>>(),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            row.conninfo_secret_name,
+            row.provider_lookup_key,
+            i64::try_from(row.resolved_conninfo_bytes)
+                .expect("resolved conninfo byte count should fit in i64"),
+            row.raw_conninfo_exposed,
+            row.secret_resolution_action,
+            row.next_executor_step,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_secret_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(secret_count, i64),
+        name!(resolved_secret_count, i64),
+        name!(blocked_secret_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_secret_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_secret_summary top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_secret_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_libpq_secret_summary")
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_secret_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.secret_count).expect("secret count should fit in i64"),
+        i64::try_from(row.resolved_secret_count).expect("resolved secret count should fit in i64"),
+        i64::try_from(row.blocked_secret_count).expect("blocked secret count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.blocked_pid_count).expect("blocked pid count should fit in i64"),
+        row.next_executor_step,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -18812,6 +18967,12 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_remote_node_descriptor_catalog_active() {
+        let _env_lock = env_var_test_lock();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_2",
+            "host=remote.example.invalid dbname=ecaz",
+        );
+
         Spi::run(
             "CREATE TABLE ec_spire_remote_node_desc_catalog_sql \
              (id bigint primary key, embedding ecvector)",
@@ -18942,6 +19103,18 @@ mod tests {
         );
         let dispatch_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_dispatch_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let secret_plan_from = format!(
+            "FROM ec_spire_remote_search_libpq_secret_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let secret_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_secret_summary(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
@@ -19172,6 +19345,50 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
                 .expect("dispatch summary status query should succeed")
                 .expect("dispatch summary status should exist");
+        let secret_provider_lookup_key =
+            Spi::get_one::<String>(&format!("SELECT provider_lookup_key {secret_plan_from}"))
+                .expect("secret provider lookup key query should succeed")
+                .expect("secret provider lookup key should exist");
+        let secret_plan_status =
+            Spi::get_one::<String>(&format!("SELECT status {secret_plan_from}"))
+                .expect("secret plan status query should succeed")
+                .expect("secret plan status should exist");
+        let secret_plan_raw_exposed =
+            Spi::get_one::<bool>(&format!("SELECT raw_conninfo_exposed {secret_plan_from}"))
+                .expect("secret raw exposure query should succeed")
+                .expect("secret raw exposure should exist");
+        let secret_plan_resolved_bytes = Spi::get_one::<i64>(&format!(
+            "SELECT resolved_conninfo_bytes {secret_plan_from}"
+        ))
+        .expect("secret resolved bytes query should succeed")
+        .expect("secret resolved bytes should exist");
+        let secret_plan_action = Spi::get_one::<String>(&format!(
+            "SELECT secret_resolution_action {secret_plan_from}"
+        ))
+        .expect("secret resolution action query should succeed")
+        .expect("secret resolution action should exist");
+        let secret_plan_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {secret_plan_from}"))
+                .expect("secret next step query should succeed")
+                .expect("secret next step should exist");
+        let secret_summary_resolved_count = Spi::get_one::<i64>(&format!(
+            "SELECT resolved_secret_count {secret_summary_from}"
+        ))
+        .expect("secret summary resolved count query should succeed")
+        .expect("secret summary resolved count should exist");
+        let secret_summary_blocked_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_secret_count {secret_summary_from}"
+        ))
+        .expect("secret summary blocked count query should succeed")
+        .expect("secret summary blocked count should exist");
+        let secret_summary_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {secret_summary_from}"))
+                .expect("secret summary next step query should succeed")
+                .expect("secret summary next step should exist");
+        let secret_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {secret_summary_from}"))
+                .expect("secret summary status query should succeed")
+                .expect("secret summary status should exist");
         let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
             .expect("executor readiness status query should succeed")
             .expect("executor readiness status should exist");
@@ -19274,6 +19491,19 @@ mod tests {
         assert_eq!(work_summary_status, "requires_libpq_executor");
         assert_eq!(dispatch_pipeline_count, 1);
         assert_eq!(dispatch_summary_status, "requires_libpq_transport");
+        assert_eq!(
+            secret_provider_lookup_key,
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_2"
+        );
+        assert_eq!(secret_plan_status, "resolved_conninfo");
+        assert!(!secret_plan_raw_exposed);
+        assert!(secret_plan_resolved_bytes > 0);
+        assert_eq!(secret_plan_action, "resolved_conninfo_secret_reference");
+        assert_eq!(secret_plan_next_step, "open_libpq_connection");
+        assert_eq!(secret_summary_resolved_count, 1);
+        assert_eq!(secret_summary_blocked_count, 0);
+        assert_eq!(secret_summary_next_step, "open_libpq_connection");
+        assert_eq!(secret_summary_status, "resolved_conninfo");
         assert_eq!(executor_status, "requires_libpq_executor");
         assert_eq!(executor_next_step, "conninfo_secret_resolution");
         assert_eq!(executor_secret_action, "resolve_conninfo_secret_reference");

@@ -1557,6 +1557,11 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   ordered executor step contract so descriptor, secret, connection, pipeline,
   send, receive-validation, and merge-handoff names can be checked without a
   specific query plan.
+  `ec_spire_remote_search_libpq_secret_plan(...)` and
+  `ec_spire_remote_search_libpq_secret_summary(...)` now project the external
+  conninfo secret-provider status onto per-node remote search rows, reporting
+  resolved/missing secret blockers and the next executor step without exposing
+  raw conninfo or opening sockets.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,
