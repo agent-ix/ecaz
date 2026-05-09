@@ -195,6 +195,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "mean q-time",
     ]);
 
+    let rerank_width_guc = rerank_width_guc(profile);
     for value in &sweep_values {
         if args.force_index {
             client
@@ -203,10 +204,12 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 .wrap_err("SET enable_seqscan = off")?;
         }
         if let Some(rerank_width) = args.rerank_width {
-            client
-                .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
-                .await
-                .wrap_err_with(|| format!("SET ec_ivf.rerank_width = {rerank_width}"))?;
+            if let Some(rerank_width_guc) = rerank_width_guc {
+                client
+                    .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
+                    .await
+                    .wrap_err_with(|| format!("SET {rerank_width_guc} = {rerank_width}"))?;
+            }
         }
         client
             .batch_execute(&format!("SET {guc} = {value}"))
@@ -218,13 +221,15 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 .unwrap(),
         );
         let msg = match args.rerank_width {
-            Some(rerank_width) => {
+            Some(rerank_width) if rerank_width_guc.is_some() => {
                 format!(
-                    "{} ec_ivf.rerank_width={rerank_width}",
-                    super::sweep_value_label(profile, *value)
+                    "{} {}={rerank_width}",
+                    super::sweep_value_label(profile, *value),
+                    rerank_width_guc.unwrap()
                 )
             }
             None => super::sweep_value_label(profile, *value),
+            _ => super::sweep_value_label(profile, *value),
         };
         bar.set_message(msg);
         bar.enable_steady_tick(Duration::from_millis(250));
@@ -527,15 +532,23 @@ fn validate_rerank_width_arg(
     let Some(value) = rerank_width else {
         return Ok(());
     };
-    if profile.name != "ec_ivf" {
+    if rerank_width_guc(profile).is_none() {
         return Err(eyre!(
-            "--rerank-width is only supported with --profile ec_ivf"
+            "--rerank-width is only supported with --profile ec_ivf or ec_spire"
         ));
     }
     if value < -1 {
         return Err(eyre!("--rerank-width must be >= -1"));
     }
     Ok(())
+}
+
+fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.rerank_width"),
+        "ec_spire" => Some("ec_spire.rerank_width"),
+        _ => None,
+    }
 }
 
 /// `fetch_sources` reachable from sibling modules (e.g. `compare::pgvector`)
