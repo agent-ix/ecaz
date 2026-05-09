@@ -1433,7 +1433,7 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   then returns compact quantized candidate rows with epoch/node/object identity,
   vec-id bytes, opaque row locator bytes, and score. Coordinator libpq fanout and
   retained-epoch serving remain separate Phase 7 work.
-- [ ] **Coordinator transport.** Use libpq pipeline mode first for
+- [x] **Coordinator transport.** Use libpq pipeline mode first for
   coordinator-to-node fanout; do not invent a custom network protocol until the
   SQL/protocol shape fails measurement. Coordinator-side fanout planning now
   groups selected leaf PIDs into local work, per-remote-node target requests,
@@ -1656,7 +1656,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   sweeping unrelated orphaned rows. The same exact cleanup now also removes
   applied manifest header/entry rows keyed by `remote_index_oid`, so dropping a
   remote-side apply target does not leave inert applied-catalog rows behind.
-- [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
+  Phase 7 coordinator transport closeout is validated by packet
+  `30654-spire-result-composition-closeout`, including the multicluster smoke
+  artifact at `review/30654-spire-result-composition-closeout/artifacts/`.
+- [x] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
   the pre-publish remote-node descriptor gate for active placement metadata:
@@ -1750,7 +1753,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_epoch_manifest_publication_contract()` now publishes the
   ordered prerequisite/action contract for manifest publication: publish gate,
   persisted catalog, entry freshness, per-node plan readiness, and future
-  libpq-pipeline transport.
+  libpq-pipeline transport. Phase 7 distributed manifest closeout is validated
+  by packet `30654-spire-result-composition-closeout`, including remote manifest
+  apply evidence in
+  `review/30654-spire-result-composition-closeout/artifacts/`.
 - [x] **Graceful degradation policy.** Define strict fail-closed and degraded
   recall modes for unavailable or stale nodes/stores, with degraded mode
   reporting skipped placements explicitly. The coordinator-local summary now
