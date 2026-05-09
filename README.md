@@ -134,9 +134,12 @@ for full results, source packets, and methodology.
 
 ### Compression And Storage Format
 
-For 1536-dimensional vectors, raw fp32 is 6,144 bytes per vector. The
-TurboQuant 4-bit artifact is 783 bytes per vector, or 7.85x smaller
-(about 9 tuples per 8KB page vs about 1 for fp32).
+For 1536-dimensional vectors:
+
+| Representation | Bytes per vector | Relative size | 8KB page density |
+| --- | ---: | ---: | ---: |
+| Raw fp32 | 6,144 B | 1.00x | about 1 tuple |
+| TurboQuant 4-bit artifact | 783 B | 7.85x smaller | about 9 tuples |
 
 Index footprint depends on both access method and storage format. On the local
 IVF 10K/25K matched-width lane (`nlists=64`, `nprobe=48`,
