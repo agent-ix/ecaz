@@ -12146,6 +12146,21 @@ mod tests {
             .expect("env-var test lock should not be poisoned")
     }
 
+    #[pg_extern]
+    fn ec_spire_test_rewrite_placement_node(
+        index_oid: pg_sys::Oid,
+        pid: i64,
+        node_id: i32,
+    ) -> bool {
+        let pid = u64::try_from(pid)
+            .unwrap_or_else(|_| pgrx::error!("test placement rewrite pid must be non-negative"));
+        let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+            pgrx::error!("test placement rewrite node_id must be non-negative")
+        });
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, pid, node_id) };
+        true
+    }
+
     fn current_pg_test_loopback_conninfo() -> String {
         let socket_dirs = Spi::get_one::<String>("SHOW unix_socket_directories")
             .expect("socket directory query should succeed")

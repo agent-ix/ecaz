@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PGBIN="${PGBIN:-/home/peter/.pgrx/18.3/pgrx-install/bin}"
+PG_CTL="${PG_CTL:-$PGBIN/pg_ctl}"
+PSQL="${PSQL:-$PGBIN/psql}"
+REMOTE_PORT="${REMOTE_PORT:-39218}"
+COORD_PORT="${COORD_PORT:-39219}"
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+RUN_DIR="${RUN_DIR:-$ROOT_DIR/target/spire-multicluster-pg18-$RUN_ID}"
+LOG_DIR="${LOG_DIR:-$RUN_DIR/logs}"
+REMOTE_DATA="$RUN_DIR/remote"
+COORD_DATA="$RUN_DIR/coord"
+SOCKET_DIR="$RUN_DIR/sockets"
+
+if [[ -e "$RUN_DIR" ]]; then
+  echo "RUN_DIR already exists: $RUN_DIR" >&2
+  exit 2
+fi
+
+mkdir -p "$LOG_DIR" "$SOCKET_DIR"
+
+cleanup() {
+  "$PG_CTL" -D "$COORD_DATA" -m fast stop >/dev/null 2>&1 || true
+  "$PG_CTL" -D "$REMOTE_DATA" -m fast stop >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo "run_dir=$RUN_DIR"
+echo "remote_port=$REMOTE_PORT"
+echo "coord_port=$COORD_PORT"
+
+if [[ "${ECAZ_SKIP_INSTALL:-0}" != "1" ]]; then
+  (cd "$ROOT_DIR" && cargo pgrx install --test --pg-config "$PGBIN/pg_config" \
+    --features "pg18 pg_test" --no-default-features)
+fi
+
+"$PG_CTL" initdb -D "$REMOTE_DATA" -o "-A trust -U postgres" >/dev/null
+"$PG_CTL" initdb -D "$COORD_DATA" -o "-A trust -U postgres" >/dev/null
+
+export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_MULTICLUSTER="host=$SOCKET_DIR port=$REMOTE_PORT dbname=postgres user=postgres"
+
+"$PG_CTL" -w -D "$REMOTE_DATA" -l "$LOG_DIR/remote-postgres.log" \
+  -o "-p $REMOTE_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+"$PG_CTL" -w -D "$COORD_DATA" -l "$LOG_DIR/coord-postgres.log" \
+  -o "-p $COORD_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+
+remote_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE_PORT" -U postgres -d postgres)
+coord_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U postgres -d postgres)
+
+"${remote_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
+"${coord_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
+
+"${remote_psql[@]}" <<'SQL' >/dev/null
+CREATE TABLE ec_spire_multicluster_remote_sql
+    (id bigint primary key, embedding ecvector);
+INSERT INTO ec_spire_multicluster_remote_sql (id, embedding) VALUES
+    (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+    (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
+CREATE INDEX ec_spire_multicluster_remote_idx
+    ON ec_spire_multicluster_remote_sql USING ec_spire
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 1);
+SQL
+
+"${coord_psql[@]}" <<'SQL' >/dev/null
+CREATE TABLE ec_spire_multicluster_coord_sql
+    (id bigint primary key, embedding ecvector);
+INSERT INTO ec_spire_multicluster_coord_sql (id, embedding) VALUES
+    (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)),
+    (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
+CREATE INDEX ec_spire_multicluster_coord_idx
+    ON ec_spire_multicluster_coord_sql USING ec_spire
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 1);
+SQL
+
+remote_epoch="$("${remote_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_multicluster_remote_idx'::regclass)")"
+coord_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_multicluster_coord_idx'::regclass)")"
+remote_pid="$("${remote_psql[@]}" -At -c "SELECT min(leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_multicluster_remote_idx'::regclass)")"
+coord_pid="$("${coord_psql[@]}" -At -c "SELECT min(leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_multicluster_coord_idx'::regclass)")"
+extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHERE extname = 'ecaz'")"
+
+if [[ "$remote_epoch" != "$coord_epoch" ]]; then
+  echo "epoch mismatch remote=$remote_epoch coord=$coord_epoch" >&2
+  exit 3
+fi
+if [[ "$remote_pid" != "$coord_pid" ]]; then
+  echo "leaf pid mismatch remote=$remote_pid coord=$coord_pid" >&2
+  exit 4
+fi
+
+"${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v coord_pid="$coord_pid" -v extversion="$extversion" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_placement_node(
+    'ec_spire_multicluster_coord_idx'::regclass::oid,
+    :coord_pid::bigint,
+    2
+);
+SELECT ec_spire_register_remote_node_descriptor(
+    'ec_spire_multicluster_coord_idx'::regclass,
+    2,
+    1,
+    'spire/remote/multicluster',
+    decode('01', 'hex'),
+    'ec_spire_multicluster_remote_idx',
+    'active',
+    :coord_epoch::bigint,
+    :coord_epoch::bigint,
+    :'extversion',
+    'none'
+);
+SQL
+
+conn_status="$("${coord_psql[@]}" -At -c "SELECT connection_status || ',' || conninfo_lookup_kind FROM ec_spire_remote_search_libpq_executor_connection_check('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
+candidate_count="$("${coord_psql[@]}" -At -c "SELECT count(*) FROM ec_spire_remote_search_libpq_executor_candidates('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
+heap_summary="$("${coord_psql[@]}" -At -c "SELECT result_source || ',' || status || ',' || returned_candidate_count::text FROM ec_spire_remote_search_libpq_executor_heap_candidate_summary('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
+heap_row="$("${coord_psql[@]}" -At -c "SELECT node_id::text || ',' || heap_lookup_owner || ',' || (heap_offset > 0)::text FROM ec_spire_remote_search_libpq_executor_heap_candidates('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict') LIMIT 1")"
+
+"${coord_psql[@]}" -c "SELECT ec_spire_persist_remote_epoch_manifest('ec_spire_multicluster_coord_idx'::regclass)" >/dev/null
+manifest_executor="$("${coord_psql[@]}" -At -c "SELECT connection_status || ',' || validation_result_status || ',' || status FROM ec_spire_remote_epoch_manifest_libpq_executor_results('ec_spire_multicluster_coord_idx'::regclass)")"
+remote_manifest_applied="$("${remote_psql[@]}" -At -c "SELECT count(*)::text || ',' || coalesce(sum(included_remote_node_count), 0)::text FROM ec_spire_remote_epoch_manifest_applied WHERE remote_index_oid = 'ec_spire_multicluster_remote_idx'::regclass AND active_epoch = $remote_epoch::bigint")"
+remote_manifest_entries="$("${remote_psql[@]}" -At -c "SELECT count(*)::text || ',' || coalesce(sum(placement_count), 0)::text FROM ec_spire_remote_epoch_manifest_applied_entry WHERE remote_index_oid = 'ec_spire_multicluster_remote_idx'::regclass AND active_epoch = $remote_epoch::bigint")"
+
+echo "connection_status=$conn_status"
+echo "candidate_count=$candidate_count"
+echo "heap_summary=$heap_summary"
+echo "heap_row=$heap_row"
+echo "manifest_executor=$manifest_executor"
+echo "remote_manifest_applied=$remote_manifest_applied"
+echo "remote_manifest_entries=$remote_manifest_entries"
+
+[[ "$conn_status" == "libpq_connection_opened,secret_provider" ]]
+[[ "$candidate_count" == "1" ]]
+[[ "$heap_summary" == "remote_heap_candidates,ready,1" ]]
+[[ "$heap_row" == "2,origin_node_row_locator,true" ]]
+[[ "$manifest_executor" == "libpq_connection_opened,ready,ready" ]]
+[[ "$remote_manifest_applied" == "1,1" ]]
+[[ "$remote_manifest_entries" == "1,1" ]]
+
+echo "SPIRE multicluster PG18 smoke passed"
