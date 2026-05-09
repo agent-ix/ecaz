@@ -132,26 +132,47 @@ OpenAI embeddings. Corpus sizes differ across index families; comprehensive
 cross-index benchmarks are in progress. See [Benchmarks](docs/benchmarks.md)
 for full results, source packets, and methodology.
 
-**Compression:** 7.85x vs fp32 — 783 bytes per 1536-dim vector
-(~9 tuples per 8KB page vs ~1 for fp32).
+### Compression And Storage Format
 
-**HNSW vs DiskANN** (10K corpus, `m=32` / `graph_degree=32`):
+For 1536-dimensional vectors, raw fp32 is 6,144 bytes per vector. The
+TurboQuant 4-bit artifact is 783 bytes per vector, or 7.85x smaller
+(about 9 tuples per 8KB page vs about 1 for fp32).
 
-| Index | Recall@10 | Mean latency | Index size |
-| --- | ---: | ---: | ---: |
-| `ec_hnsw` | 96.95–97.15% | 2.91 ms | 15.1 MB |
-| `ec_diskann` | 99.65–99.75% | 7.80–9.34 ms | 4.9 MB |
+Index footprint depends on both access method and storage format. On the local
+IVF 10K/25K matched-width lane (`nlists=64`, `nprobe=48`,
+`rerank='heap_f32'`, `rerank_width=750`), the storage-format tradeoff was:
 
-Source: `review/11109-task29d-final-readiness/`
+| Corpus | IVF storage format | Recall@100 | p50 | Index size |
+| --- | --- | ---: | ---: | ---: |
+| 10K | `turboquant` | 99.66% | 130.6 ms | 9.6 MB |
+| 10K | `pq_fastscan`, `pq_group_size=8` | 93.60% | 77.3 ms | 2.5 MB |
+| 10K | `rabitq` | 99.30% | 344.2 ms | 9.6 MB |
+| 25K | `turboquant` | 99.29% | 284.5 ms | 23.3 MB |
+| 25K | `pq_fastscan`, `pq_group_size=8` | 92.56% | 116.8 ms | 5.3 MB |
+| 25K | `rabitq` | 99.15% | 775.7 ms | 23.5 MB |
 
-**IVF** (100K corpus, `pq_fastscan`, `nlists=128`, `nprobe=96`):
+Source: `review/30145-task28-ivf-a10-current-closure/`
 
-| Tuning | Recall@100 | p50 | p99 |
-| --- | ---: | ---: | ---: |
-| balanced (`rerank_width=500`) | 96.76% | 10.7 ms | 12.1 ms |
-| quality (`rerank_width=1000`) | 99.20% | 12.1 ms | 13.7 ms |
+For high-dimensional 100K IVF surfaces, the measured recommendation is explicit
+`storage_format = 'pq_fastscan', pq_group_size = 8`; smaller 10K/25K workloads
+may prefer the higher recall@100 behavior of `turboquant`.
 
-Source: `review/30203-task31-current-m5-candidate-decision/`
+### Index Family Snapshot
+
+These rows are not a single controlled cross-index benchmark; they are the
+current local engineering anchors for each access method.
+
+| Access method | Corpus / platform | Configuration | Recall | Latency | Index size |
+| --- | --- | --- | ---: | ---: | ---: |
+| `ec_hnsw` | 10K local PG18 | `m=32`, `ef_construction=100` | 96.95-97.15% @10 | mean 2.91 ms | 15.1 MB |
+| `ec_ivf` | 100K local PG18 | `pq_fastscan` g8, `nlists=128`, `nprobe=48`, `rerank_width=500` | 99.20% @10 / 95.52% @100 | p50 169.3 ms / p99 194.4 ms | 19.8 MB |
+| `ec_ivf` | 100K Apple M5, balanced | `pq_fastscan` g8, `nlists=128`, `nprobe=96`, `rerank_width=500` | 96.76% @100 | p50 10.7 ms / p99 12.1 ms | same surface |
+| `ec_ivf` | 100K Apple M5, quality | `pq_fastscan` g8, `nlists=128`, `nprobe=96`, `rerank_width=1000` | 99.20% @100 | p50 12.1 ms / p99 13.7 ms | same surface |
+| `ec_diskann` | 10K local PG18 | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 99.65-99.75% @10 | mean 7.80-9.34 ms | 4.9 MB |
+
+Sources: `review/11109-task29d-final-readiness/`,
+`review/30145-task28-ivf-a10-current-closure/`,
+`review/30203-task31-current-m5-candidate-decision/`
 
 ## Choosing An Index
 
