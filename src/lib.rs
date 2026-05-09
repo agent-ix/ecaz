@@ -8709,6 +8709,98 @@ fn ec_spire_remote_search_libpq_executor_heap_candidates(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_heap_candidate_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(returned_candidate_count, i64),
+        name!(heap_lookup_owner, &'static str),
+        name!(result_source, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_heap_candidate_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_heap_candidate_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_heap_candidate_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_executor_heap_candidate_summary",
+        )
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_executor_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let returned_candidate_count =
+        i64::try_from(rows.len()).expect("returned candidate count should fit in i64");
+    let (heap_lookup_owner, result_source, status, recommendation) = if top_k == 0 {
+        ("none", "none", "empty_top_k", "none")
+    } else if returned_candidate_count > 0 {
+        (
+            "origin_node_row_locator",
+            "remote_heap_candidates",
+            "ready",
+            "none",
+        )
+    } else {
+        (
+            "origin_node_row_locator",
+            "remote_heap_candidates",
+            "no_candidate_batches",
+            "inspect remote search candidate availability",
+        )
+    };
+
+    TableIterator::once((
+        i64::try_from(requested_epoch).expect("requested epoch should fit in i64"),
+        returned_candidate_count,
+        heap_lookup_owner,
+        result_source,
+        status,
+        recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -20830,6 +20922,9 @@ mod tests {
             format!("FROM ec_spire_remote_search_libpq_executor_candidates({nonempty_args})");
         let heap_candidates_from =
             format!("FROM ec_spire_remote_search_libpq_executor_heap_candidates({nonempty_args})");
+        let heap_candidate_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_heap_candidate_summary({nonempty_args})"
+        );
         let connection_status =
             Spi::get_one::<String>(&format!("SELECT connection_status {connection_check_from}"))
                 .expect("executor connection status query should succeed")
@@ -20884,6 +20979,20 @@ mod tests {
         ))
         .expect("executor heap candidate owner query should succeed")
         .expect("executor heap candidate owner should exist");
+        let heap_summary_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {heap_candidate_summary_from}"
+        ))
+        .expect("executor heap summary count query should succeed")
+        .expect("executor heap summary count should exist");
+        let heap_summary_source = Spi::get_one::<String>(&format!(
+            "SELECT result_source {heap_candidate_summary_from}"
+        ))
+        .expect("executor heap summary source query should succeed")
+        .expect("executor heap summary source should exist");
+        let heap_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {heap_candidate_summary_from}"))
+                .expect("executor heap summary status query should succeed")
+                .expect("executor heap summary status should exist");
 
         assert!(register_result);
         assert!(connection_attempted);
@@ -20898,6 +21007,9 @@ mod tests {
         assert_eq!(heap_candidate_node, 2);
         assert!(heap_candidate_offset > 0);
         assert_eq!(heap_candidate_owner, "origin_node_row_locator");
+        assert_eq!(heap_summary_count, 1);
+        assert_eq!(heap_summary_source, "remote_heap_candidates");
+        assert_eq!(heap_summary_status, "ready");
     }
 
     #[pg_test]
