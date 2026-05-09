@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Ecaz operator CLI: corpus loading, benchmarking, and cross-engine comparison for the Ecaz Postgres extension."
 rust-version = "1.78"
+license = "MIT"
 
 [[bin]]
 name = "ecaz"
