@@ -27,21 +27,6 @@ of quantization and index options rather than a single fixed architecture.
 - `ec_ivf` — IVF posting-list index
 - `ec_diskann` — DiskANN/Vamana-style graph index
 
-## This software was written 100% by AI
-
-Ecaz is an Agentic Engineering experiment: an attempt to develop a complex
-database system written solely by AI. A human worked with AI to design the
-architecture and navigate the many design decisions, but 100% of the code was 
-written by GPT >=5.4 and Claude Opus >=4.6.
-
-**The ethos is to pursue quality, testing,
-and benchmarking rigorously, but the project should not yet be considered
-production-ready.**
-
-Having achieved the initial goal of support for well-known index
-families, the project now aims to build proof-of-concept implementations for
-frontier vector database research.
-
 ## Quick Start
 
 The most repeatable local path is a pgrx-managed PostgreSQL 18 instance.
@@ -228,3 +213,18 @@ make pg-test-pg17
 ## License
 
 MIT
+
+## This software was written 100% by AI
+
+Ecaz is an Agentic Engineering experiment: an attempt to develop a complex
+database system written solely by AI. A human worked with AI to design the
+architecture and navigate the many design decisions, but 100% of the code was
+written by GPT >=5.4 and Claude Opus >=4.6.
+
+**The ethos is to pursue quality, testing,
+and benchmarking rigorously, but the project should not yet be considered
+production-ready.**
+
+Having achieved the initial goal of support for well-known index
+families, the project now aims to build proof-of-concept implementations for
+frontier vector database research.
