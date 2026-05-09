@@ -299,6 +299,20 @@ mod tests {
     }
 
     #[test]
+    fn remote_candidate_dedupe_key_prefixes_do_not_overlap_vec_id_discriminators() {
+        assert_eq!(SPIRE_REMOTE_VEC_ID_KEY_GLOBAL, 0xA0);
+        assert_eq!(SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL, 0xA1);
+        assert_ne!(
+            SPIRE_REMOTE_VEC_ID_KEY_GLOBAL,
+            storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR
+        );
+        assert_ne!(
+            SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL,
+            storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR
+        );
+    }
+
+    #[test]
     fn remote_heap_candidate_result_merge_scopes_local_vec_ids_by_node() {
         let local = remote_local_vec_id(7);
         let node_two = remote_heap_candidate(

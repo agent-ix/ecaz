@@ -47,6 +47,8 @@ that Phase 9 establishes.
 - [x] If a shared traversal helper is too invasive, add a property test proving
   diagnostic selected/deduped route counts match production route sets on a
   recursive fixture.
+- [ ] Extend the routing diagnostic drift guard to a depth > 2 fixture or a
+  parameterized hierarchy so intermediate recursive levels are covered.
 
 ## Phase 10.2: Streaming AM Scan Shape
 
@@ -101,6 +103,8 @@ that Phase 9 establishes.
 
 - [ ] Define whether remote heap candidates are resolved on the origin node or
   returned as opaque locators to a higher-level executor.
+- [ ] Add or require writer-side global vector ID allocation before claiming
+  cross-node boundary-replica dedupe is end-to-end safe.
 - [ ] If resolving remotely, return only heap-visible rows from the origin node
   under the requested epoch/consistency contract.
 - [ ] If resolving later, expose that state as an explicit blocked/deferred
