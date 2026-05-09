@@ -1897,8 +1897,9 @@ replication execution, and global vector identity.
   semantics, route integration, dedupe behavior, opt-in defaults, and
   primary/replica/deduped/winner scan diagnostics are now covered for boundary
   replicas.
-- [ ] **Global vector identity.** Define and enforce the durable `SpireVecId`
-  scope needed for boundary replicas and multi-node merge.
+- [x] **Global vector identity.** ADR-055 defines cross-node global vec IDs and
+  remote merge now scopes existing local vec IDs by `node_id`, preventing
+  unrelated node-local IDs from deduping across nodes.
 - [ ] **Quality experiments.** Keep IMI reshape, adaptive `nprobe`,
   anisotropic centroid scoring, and query difficulty estimation below the
   structural graph work.

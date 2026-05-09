@@ -48,6 +48,9 @@ const SPIRE_REMOTE_CONNINFO_RESOLVED: &str = "resolved_conninfo";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
+const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local_vec_id";
+const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0x01;
+const SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL: u8 = 0x02;
 const SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION: &str = "coordinator_local_heap";
 const SPIRE_REMOTE_HEAP_RESOLUTION: &str = "origin_node_row_locator";
 const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
@@ -156,6 +159,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             operator_use: "consolidated_remote_pipeline_steps",
             status_source: "step_name,status,item_count,next_blocker",
             next_action: "inspect_first_non_ready_step_before_opening_narrow_surfaces",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 12,
+            entrypoint_name: "ec_spire_remote_search_vector_identity_contract",
+            area: "search",
+            operator_use: "remote_dedupe_identity_contract",
+            status_source: "contract_item,contract_value,status",
+            next_action: "require_global_vec_ids_before_cross_node_replica_dedupe",
         },
     ]
 }
@@ -3007,7 +3018,7 @@ fn remote_search_merge_input_summary_from_execution(
         local_pid_count: execution_summary.local_pid_count,
         skipped_pid_count: execution_summary.skipped_pid_count,
         merge_function: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
-        dedupe_key: "vec_id",
+        dedupe_key: SPIRE_REMOTE_VEC_ID_DEDUPE_KEY,
         tie_breaker: "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator",
         top_k: execution_summary.top_k,
         status,
@@ -3098,6 +3109,42 @@ pub(crate) fn remote_search_row_locator_contract_rows(
             contract_item: "remote_heap_resolution",
             contract_value: "requires_origin_node_resolution",
             status: "deferred_until_remote_heap_fetch",
+        },
+    ]
+}
+
+pub(crate) fn remote_search_vector_identity_contract_rows(
+) -> Vec<SpireRemoteSearchVectorIdentityContractRow> {
+    vec![
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "global_vec_id_format",
+            contract_value: "0x02 || stable_global_payload_bytes",
+            status: "active_contract",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "local_vec_id_format",
+            contract_value: "0x01 || little_endian_u64",
+            status: "compatibility_contract",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "remote_merge_dedupe_key",
+            contract_value: SPIRE_REMOTE_VEC_ID_DEDUPE_KEY,
+            status: "active_contract",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "local_vec_id_remote_scope",
+            contract_value: "node_id || local_vec_id_bytes",
+            status: "compatibility_fallback",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "boundary_replica_identity",
+            contract_value: "primary_and_boundary_replica_rows_share_identical_vec_id_bytes",
+            status: "active_contract",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "cross_node_replica_dedupe",
+            contract_value: "requires_global_vec_id_format",
+            status: "global_id_required",
         },
     ]
 }
@@ -3433,10 +3480,42 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
     }
 }
 
+fn validate_remote_candidate_vec_id(
+    candidate: &SpireRemoteSearchCandidateRow,
+    context: &str,
+) -> Result<storage::SpireVecId, String> {
+    storage::SpireVecId::from_bytes(&candidate.vec_id).map_err(|e| {
+        format!(
+            "ec_spire {context} candidate PID {} row_index {} has invalid vec_id {}: {e}",
+            candidate.pid,
+            candidate.row_index,
+            hex::encode(&candidate.vec_id)
+        )
+    })
+}
+
+fn remote_search_candidate_dedupe_key(
+    candidate: &SpireRemoteSearchCandidateRow,
+) -> Result<Vec<u8>, String> {
+    let vec_id = validate_remote_candidate_vec_id(candidate, "remote candidate merge")?;
+    let mut key = Vec::new();
+    if vec_id.discriminator() == storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR {
+        key.reserve_exact(1 + candidate.vec_id.len());
+        key.push(SPIRE_REMOTE_VEC_ID_KEY_GLOBAL);
+        key.extend_from_slice(&candidate.vec_id);
+    } else {
+        key.reserve_exact(1 + std::mem::size_of::<u32>() + candidate.vec_id.len());
+        key.push(SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL);
+        key.extend_from_slice(&candidate.node_id.to_le_bytes());
+        key.extend_from_slice(&candidate.vec_id);
+    }
+    Ok(key)
+}
+
 /// Validates one target-scoped remote candidate receive batch.
 ///
 /// The batch must match the requested epoch, expected node, selected PID set,
-/// visible assignment flags, nonempty vec_id, nonempty opaque row_locator, and
+/// visible assignment flags, valid vec_id, nonempty opaque row_locator, and
 /// finite score contract before candidates can enter the merge path.
 pub(crate) fn validate_remote_search_candidate_batch(
     requested_epoch: u64,
@@ -3496,9 +3575,7 @@ pub(crate) fn validate_remote_search_candidate_batch(
                 candidate.pid, candidate.assignment_flags
             ));
         }
-        if candidate.vec_id.is_empty() {
-            return Err("ec_spire remote candidate batch received empty vec_id".to_owned());
-        }
+        validate_remote_candidate_vec_id(candidate, "remote candidate batch")?;
         if candidate.row_locator.is_empty() {
             return Err(format!(
                 "ec_spire remote candidate batch candidate PID {} has empty row_locator",
@@ -3513,12 +3590,9 @@ pub(crate) fn validate_remote_search_candidate_batch(
     Ok(())
 }
 
-/// Merges candidates that share one coordinator-scoped `vec_id` namespace.
-///
-/// Current local SPIRE writers allocate node-local vec-id bytes. Until the
-/// global vec-id format lands, multi-node callers must only use this helper
-/// when they can prove the input vec-id bytes are globally unique by
-/// construction.
+/// Merges candidates using globally comparable vec-id bytes when available and
+/// node-scoped local vec-id bytes for compatibility with existing local-only
+/// indexes.
 pub(crate) fn merge_remote_search_candidates<I>(
     candidates: I,
     limit: Option<usize>,
@@ -3537,11 +3611,9 @@ where
         if !candidate.score.is_finite() {
             return Err("ec_spire remote candidate merge received non-finite score".to_owned());
         }
-        if candidate.vec_id.is_empty() {
-            return Err("ec_spire remote candidate merge received empty vec_id".to_owned());
-        }
+        let dedupe_key = remote_search_candidate_dedupe_key(&candidate)?;
 
-        match best_by_vec_id.entry(candidate.vec_id.clone()) {
+        match best_by_vec_id.entry(dedupe_key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 duplicate_vec_id_count =
                     duplicate_vec_id_count.checked_add(1).ok_or_else(|| {
@@ -3572,8 +3644,8 @@ where
 
 /// Validates each target-scoped receive batch before global candidate merge.
 ///
-/// The same global-vec-id precondition as `merge_remote_search_candidates`
-/// applies when batches span more than one node.
+/// Global vec-id bytes dedupe across nodes. Local vec-id bytes dedupe only
+/// within their origin node as a compatibility fallback.
 pub(crate) fn merge_validated_remote_search_candidate_batches(
     requested_epoch: u64,
     batches: Vec<SpireRemoteSearchCandidateBatch>,

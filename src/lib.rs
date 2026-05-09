@@ -10194,6 +10194,23 @@ fn ec_spire_remote_search_row_locator_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_vector_identity_contract() -> TableIterator<
+    'static,
+    (
+        name!(contract_item, &'static str),
+        name!(contract_value, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_vector_identity_contract_rows();
+    TableIterator::new(
+        rows.into_iter()
+            .map(|row| (row.contract_item, row.contract_value, row.status)),
+    )
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_heap_resolution_contract() -> TableIterator<
     'static,
     (
@@ -19981,7 +19998,7 @@ mod tests {
             merge_function,
             "merge_validated_remote_search_candidate_batches"
         );
-        assert_eq!(dedupe_key, "vec_id");
+        assert_eq!(dedupe_key, "global_vec_id_or_node_scoped_local_vec_id");
         assert_eq!(
             tie_breaker,
             "score_then_assignment_role_then_epoch_desc_then_node_pid_version_row_locator"
@@ -19992,10 +20009,27 @@ mod tests {
     #[pg_test]
     fn test_ec_spire_remote_search_final_contract() {
         let locator_contract_from = "FROM ec_spire_remote_search_row_locator_contract()";
+        let identity_contract_from = "FROM ec_spire_remote_search_vector_identity_contract()";
         let heap_contract_from = "FROM ec_spire_remote_search_heap_resolution_contract()";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {locator_contract_from}"))
             .expect("row locator contract count query should succeed")
             .expect("row locator contract count should exist");
+        let identity_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {identity_contract_from}"))
+                .expect("vector identity contract count query should succeed")
+                .expect("vector identity contract count should exist");
+        let dedupe_key = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {identity_contract_from} \
+             WHERE contract_item = 'remote_merge_dedupe_key'"
+        ))
+        .expect("vector identity dedupe key query should succeed")
+        .expect("vector identity dedupe key should exist");
+        let local_scope = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {identity_contract_from} \
+             WHERE contract_item = 'local_vec_id_remote_scope'"
+        ))
+        .expect("vector identity local scope query should succeed")
+        .expect("vector identity local scope should exist");
         let interpretation = Spi::get_one::<String>(&format!(
             "SELECT contract_value {locator_contract_from} \
              WHERE contract_item = 'coordinator_interpretation'"
@@ -20029,6 +20063,9 @@ mod tests {
         .expect("remote heap resolution locator should exist");
 
         assert_eq!(row_count, 4);
+        assert_eq!(identity_count, 6);
+        assert_eq!(dedupe_key, "global_vec_id_or_node_scoped_local_vec_id");
+        assert_eq!(local_scope, "node_id || local_vec_id_bytes");
         assert_eq!(interpretation, "opaque_bytes");
         assert_eq!(remote_resolution_status, "deferred_until_remote_heap_fetch");
         assert_eq!(heap_resolution_count, 2);
@@ -24134,6 +24171,7 @@ mod tests {
         let catalog_lifecycle_from = "FROM ec_spire_remote_catalog_lifecycle_contract()";
         let search_result_from = "FROM ec_spire_remote_search_coordinator_result_contract()";
         let merge_order_from = "FROM ec_spire_remote_search_merge_order_contract()";
+        let identity_contract_from = "FROM ec_spire_remote_search_vector_identity_contract()";
         let degradation_count = Spi::get_one::<i64>(&format!("SELECT count(*) {degradation_from}"))
             .expect("degradation contract count query should succeed")
             .expect("degradation contract count should exist");
@@ -24173,6 +24211,12 @@ mod tests {
         ))
         .expect("merge order aggregate query should succeed")
         .expect("merge order aggregate should exist");
+        let remote_dedupe_key = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {identity_contract_from} \
+             WHERE contract_item = 'remote_merge_dedupe_key'"
+        ))
+        .expect("remote vector identity dedupe key query should succeed")
+        .expect("remote vector identity dedupe key should exist");
         let publication_step_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {publication_from}"))
                 .expect("manifest publication contract count query should succeed")
@@ -24416,8 +24460,12 @@ mod tests {
         );
         assert_eq!(search_result_count, 4);
         assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
-        assert_eq!(operator_entrypoint_count, 11);
-        assert_eq!(operator_entrypoint_reachable_count, 11);
+        assert_eq!(
+            remote_dedupe_key,
+            "global_vec_id_or_node_scoped_local_vec_id"
+        );
+        assert_eq!(operator_entrypoint_count, 12);
+        assert_eq!(operator_entrypoint_reachable_count, 12);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"

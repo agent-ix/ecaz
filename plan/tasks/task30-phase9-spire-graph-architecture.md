@@ -105,17 +105,25 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.6: Global Vector Identity
 
-- [ ] Define the durable global `SpireVecId` format for multi-node search.
-- [ ] Decide whether the identity is:
+- [x] Define the durable global `SpireVecId` format for multi-node search.
+  ADR-055 records `0x02 || stable_global_payload_bytes` as the cross-node
+  dedupe identity.
+- [x] Decide whether the identity is:
   - coordinator-assigned global ID;
   - node-id plus local sequence;
   - original-vector ID plus serving-placement metadata; or
   - another stable encoded form.
-- [ ] Ensure boundary replicas share the same original-vector identity for
-  dedupe, even when stored in different leaves or on different nodes.
-- [ ] Update remote merge preconditions so multi-node callers cannot silently
-  dedupe unrelated node-local IDs.
-- [ ] Add migration/compatibility behavior for existing local-only IDs.
+  The accepted shape is global payload bytes for cross-node identity plus
+  node-scoped local IDs as compatibility fallback.
+- [x] Ensure boundary replicas share the same original-vector identity for
+  dedupe, even when stored in different leaves or on different nodes. Cross-node
+  replica dedupe requires the global `0x02` form.
+- [x] Update remote merge preconditions so multi-node callers cannot silently
+  dedupe unrelated node-local IDs. Remote merge now scopes local `0x01` IDs by
+  origin `node_id`.
+- [x] Add migration/compatibility behavior for existing local-only IDs.
+  Existing local IDs remain valid and node-scoped until a future rewrite or
+  source-ID allocation path emits global IDs.
 
 ## Phase 9.7: Quality Experiments
 

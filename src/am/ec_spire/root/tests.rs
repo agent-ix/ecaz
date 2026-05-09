@@ -50,11 +50,22 @@ mod tests {
             .expect("empty leaf object should store")
     }
 
+    fn remote_local_vec_id(local_vec_seq: u64) -> Vec<u8> {
+        storage::SpireVecId::local(local_vec_seq).as_bytes().to_vec()
+    }
+
+    fn remote_global_vec_id(payload: &[u8]) -> Vec<u8> {
+        storage::SpireVecId::global(payload)
+            .expect("global vec_id payload should be valid")
+            .as_bytes()
+            .to_vec()
+    }
+
     fn remote_candidate(
         node_id: u32,
         pid: u64,
         row_index: u32,
-        vec_id: &[u8],
+        vec_id: impl AsRef<[u8]>,
         score: f32,
         assignment_flags: u16,
     ) -> SpireRemoteSearchCandidateRow {
@@ -65,9 +76,35 @@ mod tests {
             object_version: 11,
             row_index,
             assignment_flags,
-            vec_id: vec_id.to_vec(),
+            vec_id: vec_id.as_ref().to_vec(),
             row_locator: vec![node_id as u8, row_index as u8],
             score,
+        }
+    }
+
+    fn remote_heap_candidate(
+        node_id: u32,
+        pid: u64,
+        row_index: u32,
+        vec_id: impl AsRef<[u8]>,
+        score: f32,
+        heap_lookup_owner: &'static str,
+    ) -> SpireRemoteSearchLocalHeapCandidateRow {
+        SpireRemoteSearchLocalHeapCandidateRow {
+            requested_epoch: 7,
+            served_epoch: 7,
+            node_id,
+            pid,
+            object_version: 11,
+            row_index,
+            assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: vec_id.as_ref().to_vec(),
+            row_locator: vec![node_id as u8, row_index as u8],
+            heap_block: 10 + node_id,
+            heap_offset: 1 + row_index as u16,
+            score,
+            heap_lookup_owner,
+            status: SPIRE_REMOTE_STATUS_READY,
         }
     }
 
@@ -127,16 +164,19 @@ mod tests {
 
     #[test]
     fn remote_candidate_merge_dedupes_vec_ids_and_keeps_best_ranked_row() {
+        let same = remote_global_vec_id(b"same");
+        let other = remote_global_vec_id(b"other");
         let boundary = remote_candidate(
             2,
             20,
             0,
-            b"same",
+            &same,
             1.0,
             storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
         );
-        let primary = remote_candidate(1, 10, 0, b"same", 1.0, 0);
-        let better_score = remote_candidate(3, 30, 0, b"other", 0.5, 0);
+        let primary = remote_candidate(1, 10, 0, &same, 1.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let better_score =
+            remote_candidate(3, 30, 0, &other, 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
 
         let merged = merge_remote_search_candidates(
             vec![boundary, primary.clone(), better_score.clone()],
@@ -151,10 +191,15 @@ mod tests {
 
     #[test]
     fn remote_candidate_merge_applies_top_k_after_global_dedupe() {
-        let duplicate_worse = remote_candidate(1, 10, 0, b"a", 3.0, 0);
-        let duplicate_best = remote_candidate(1, 11, 0, b"a", 0.3, 0);
-        let second = remote_candidate(1, 12, 0, b"b", 0.4, 0);
-        let truncated = remote_candidate(1, 13, 0, b"c", 0.5, 0);
+        let a = remote_global_vec_id(b"a");
+        let b = remote_global_vec_id(b"b");
+        let c = remote_global_vec_id(b"c");
+        let duplicate_worse =
+            remote_candidate(1, 10, 0, &a, 3.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let duplicate_best =
+            remote_candidate(1, 11, 0, &a, 0.3, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let second = remote_candidate(1, 12, 0, &b, 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let truncated = remote_candidate(1, 13, 0, &c, 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
 
         let merged = merge_remote_search_candidates(
             vec![
@@ -175,27 +220,152 @@ mod tests {
     #[test]
     fn remote_candidate_merge_rejects_invalid_candidate_envelope() {
         let nan_error = merge_remote_search_candidates(
-            vec![remote_candidate(1, 10, 0, b"a", f32::NAN, 0)],
+            vec![remote_candidate(
+                1,
+                10,
+                0,
+                remote_global_vec_id(b"a"),
+                f32::NAN,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            )],
             None,
         )
         .expect_err("nan scores should fail");
         assert!(nan_error.contains("non-finite score"));
 
         let empty_vec_id_error =
-            merge_remote_search_candidates(vec![remote_candidate(1, 10, 0, b"", 1.0, 0)], None)
-                .expect_err("empty vec_id should fail");
-        assert!(empty_vec_id_error.contains("empty vec_id"));
+            merge_remote_search_candidates(
+                vec![remote_candidate(1, 10, 0, b"", 1.0, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY)],
+                None,
+            )
+            .expect_err("empty vec_id should fail");
+        assert!(empty_vec_id_error.contains("invalid vec_id"));
+    }
+
+    #[test]
+    fn remote_candidate_merge_scopes_local_vec_ids_by_node() {
+        let local = remote_local_vec_id(7);
+        let node_two = remote_candidate(
+            2,
+            10,
+            0,
+            &local,
+            0.4,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        let node_three = remote_candidate(
+            3,
+            20,
+            0,
+            &local,
+            0.3,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+
+        let merged =
+            merge_remote_search_candidates(vec![node_two.clone(), node_three.clone()], None)
+                .expect("node-local vec_ids should merge without cross-node dedupe");
+
+        assert_eq!(merged.duplicate_vec_id_count, 0);
+        assert_eq!(merged.candidates, vec![node_three, node_two]);
+    }
+
+    #[test]
+    fn remote_candidate_merge_dedupes_global_vec_ids_across_nodes() {
+        let global = remote_global_vec_id(b"global-7");
+        let local_best = remote_candidate(
+            2,
+            10,
+            0,
+            &global,
+            0.2,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        let remote_replica = remote_candidate(
+            3,
+            20,
+            0,
+            &global,
+            0.4,
+            storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+        );
+
+        let merged =
+            merge_remote_search_candidates(vec![remote_replica, local_best.clone()], None)
+                .expect("global vec_ids should dedupe across nodes");
+
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates, vec![local_best]);
+    }
+
+    #[test]
+    fn remote_heap_candidate_result_merge_scopes_local_vec_ids_by_node() {
+        let local = remote_local_vec_id(7);
+        let node_two = remote_heap_candidate(
+            2,
+            10,
+            0,
+            &local,
+            0.4,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let node_three = remote_heap_candidate(
+            3,
+            20,
+            0,
+            &local,
+            0.3,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+
+        let merged = merge_remote_search_heap_candidates_for_result(
+            vec![node_two.clone(), node_three.clone()],
+            10,
+        )
+        .expect("node-local heap candidates should merge without cross-node dedupe");
+
+        assert_eq!(merged, vec![node_three, node_two]);
+    }
+
+    #[test]
+    fn remote_heap_candidate_result_merge_dedupes_global_vec_ids_across_nodes() {
+        let global = remote_global_vec_id(b"global-heap");
+        let local_best = remote_heap_candidate(
+            2,
+            10,
+            0,
+            &global,
+            0.2,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let remote_replica =
+            remote_heap_candidate(3, 20, 0, &global, 0.4, SPIRE_REMOTE_HEAP_RESOLUTION);
+
+        let merged = merge_remote_search_heap_candidates_for_result(
+            vec![remote_replica, local_best.clone()],
+            10,
+        )
+        .expect("global heap candidates should dedupe across nodes");
+
+        assert_eq!(merged, vec![local_best]);
     }
 
     #[test]
     fn remote_candidate_batch_validation_accepts_expected_envelope() {
         let candidates = vec![
-            remote_candidate(2, 10, 0, b"a", 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY),
+            remote_candidate(
+                2,
+                10,
+                0,
+                remote_local_vec_id(1),
+                0.5,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
             remote_candidate(
                 2,
                 11,
                 0,
-                b"b",
+                remote_local_vec_id(2),
                 0.6,
                 storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
             ),
@@ -207,8 +377,14 @@ mod tests {
 
     #[test]
     fn remote_candidate_batch_validation_rejects_receive_contract_drift() {
-        let wrong_epoch =
-            remote_candidate(2, 10, 0, b"a", 0.5, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let wrong_epoch = remote_candidate(
+            2,
+            10,
+            0,
+            remote_local_vec_id(1),
+            0.5,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
         let mut wrong_epoch = SpireRemoteSearchCandidateRow {
             served_epoch: 8,
             ..wrong_epoch
@@ -250,12 +426,20 @@ mod tests {
 
     #[test]
     fn remote_candidate_batch_merge_validates_batches_before_merge() {
-        let first = remote_candidate(2, 10, 0, b"a", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let first = remote_candidate(
+            2,
+            10,
+            0,
+            remote_local_vec_id(1),
+            0.4,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        let dup = remote_global_vec_id(b"dup");
         let duplicate_best = remote_candidate(
             3,
             20,
             0,
-            b"dup",
+            &dup,
             0.3,
             storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
         );
@@ -263,7 +447,7 @@ mod tests {
             3,
             21,
             0,
-            b"dup",
+            &dup,
             0.9,
             storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
         );
@@ -290,8 +474,14 @@ mod tests {
 
     #[test]
     fn remote_candidate_batch_merge_rejects_invalid_batch_before_merge() {
-        let mut invalid =
-            remote_candidate(2, 10, 0, b"a", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let mut invalid = remote_candidate(
+            2,
+            10,
+            0,
+            remote_local_vec_id(1),
+            0.4,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
         invalid.node_id = 9;
         let batches = vec![SpireRemoteSearchCandidateBatch {
             node_id: 2,
@@ -307,15 +497,21 @@ mod tests {
 
     #[test]
     fn remote_local_heap_locator_decode_error_includes_candidate_context() {
-        let candidate =
-            remote_candidate(2, 10, 7, b"abc", 0.4, storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        let candidate = remote_candidate(
+            2,
+            10,
+            7,
+            remote_local_vec_id(1),
+            0.4,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
         let error = decode_remote_search_local_heap_locator(&candidate, "unit test")
             .expect_err("short locator should fail to decode");
 
         assert!(error.contains("unit test"));
         assert!(error.contains("pid 10"));
         assert!(error.contains("row_index 7"));
-        assert!(error.contains("vec_id 616263"));
+        assert!(error.contains("vec_id 010100000000000000"));
     }
 
     #[test]

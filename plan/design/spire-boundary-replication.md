@@ -183,6 +183,11 @@ scan diagnostics report primary candidate rows, boundary-replica candidate
 rows, duplicate candidates suppressed by `vec_id`, and final candidate winners
 after dedupe and candidate limits.
 
+ADR-055 defines the multi-node identity contract. Replicas that need to dedupe
+across nodes must use the global `SpireVecId` form; existing local-only
+`SpireVecId` rows remain compatible but remote merge scopes them by origin
+`node_id` to avoid false cross-node dedupe.
+
 ## Measurement Gate
 
 The first recall/storage packet should compare:

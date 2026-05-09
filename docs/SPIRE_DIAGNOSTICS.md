@@ -113,6 +113,12 @@ status string for that step plus counts and a next blocker/recommendation, so
 operators can start from one ordered pipeline view before opening narrower
 remote-search diagnostics.
 
+`ec_spire_remote_search_vector_identity_contract()` records the Phase 9 vector
+identity contract. Global `0x02` vec IDs dedupe across nodes. Existing local
+`0x01` vec IDs remain valid but remote merge scopes them by `node_id`, so
+unrelated local sequences from different nodes cannot silently collapse into one
+candidate.
+
 ## Maintenance And Cleanup
 
 SPIRE maintenance uses epoch publication. The operator-controlled periodic-job

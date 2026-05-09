@@ -798,13 +798,30 @@ fn remote_search_heap_candidate_cmp_for_result(
     )
 }
 
+fn remote_search_heap_candidate_dedupe_key_for_result(
+    candidate: &SpireRemoteSearchLocalHeapCandidateRow,
+) -> Result<Vec<u8>, String> {
+    remote_search_candidate_dedupe_key(&SpireRemoteSearchCandidateRow {
+        served_epoch: candidate.served_epoch,
+        node_id: candidate.node_id,
+        pid: candidate.pid,
+        object_version: candidate.object_version,
+        row_index: candidate.row_index,
+        assignment_flags: candidate.assignment_flags,
+        vec_id: candidate.vec_id.clone(),
+        row_locator: candidate.row_locator.clone(),
+        score: candidate.score,
+    })
+}
+
 fn merge_remote_search_heap_candidates_for_result(
     candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
     top_k: usize,
-) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
     let mut best_by_vec_id = HashMap::<Vec<u8>, SpireRemoteSearchLocalHeapCandidateRow>::new();
     for candidate in candidates {
-        match best_by_vec_id.entry(candidate.vec_id.clone()) {
+        let dedupe_key = remote_search_heap_candidate_dedupe_key_for_result(&candidate)?;
+        match best_by_vec_id.entry(dedupe_key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 if remote_search_heap_candidate_cmp_for_result(&candidate, entry.get()).is_lt() {
                     *entry.get_mut() = candidate;
@@ -819,7 +836,7 @@ fn merge_remote_search_heap_candidates_for_result(
     let mut candidates = best_by_vec_id.into_values().collect::<Vec<_>>();
     candidates.sort_by(remote_search_heap_candidate_cmp_for_result);
     candidates.truncate(top_k);
-    candidates
+    Ok(candidates)
 }
 
 pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
@@ -868,7 +885,8 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
             )
         });
     }
-    let heap_candidates = merge_remote_search_heap_candidates_for_result(heap_candidates, top_k);
+    let heap_candidates = merge_remote_search_heap_candidates_for_result(heap_candidates, top_k)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
 
     let returned_candidate_count = u64::try_from(heap_candidates.len())
         .unwrap_or_else(|_| pgrx::error!("ec_spire coordinator result candidate count overflow"));

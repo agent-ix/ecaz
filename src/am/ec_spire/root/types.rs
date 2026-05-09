@@ -675,6 +675,13 @@ pub(crate) struct SpireRemoteSearchRowLocatorContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchVectorIdentityContractRow {
+    pub(crate) contract_item: &'static str,
+    pub(crate) contract_value: &'static str,
+    pub(crate) status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchFinalizationSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) remote_batch_count: u64,
