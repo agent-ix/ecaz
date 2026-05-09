@@ -1900,9 +1900,10 @@ replication execution, and global vector identity.
 - [x] **Global vector identity.** ADR-055 defines cross-node global vec IDs and
   remote merge now scopes existing local vec IDs by `node_id`, preventing
   unrelated node-local IDs from deduping across nodes.
-- [ ] **Quality experiments.** Keep IMI reshape, adaptive `nprobe`,
-  anisotropic centroid scoring, and query difficulty estimation below the
-  structural graph work.
+- [x] **Quality experiments.** Phase 9.7 now has canonical local baseline
+  evidence, adaptive `nprobe` treatment in `review/30687-spire-adaptive-nprobe`,
+  and ADR deferrals for IMI, anisotropic centroid scoring, and query difficulty
+  estimation. Details live in `plan/tasks/task30-phase9-spire-graph-architecture.md`.
 - [x] **ADR defer multi-probe centroid scoring.** ADR-051 records that
   standalone multi-probe centroid scoring is deferred because anisotropic
   centroid scoring is expected to subsume it.

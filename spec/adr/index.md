@@ -47,6 +47,9 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE local-store read scheduling contract | `ADR-057-spire-local-store-read-scheduling-contract.md` | ACCEPTED | Local store reads are grouped by `(node_id, local_store_id)` and prefetched before sequential scoring inside one backend; true parallel store execution requires a later ADR and benchmark packet. |
 | SPIRE remote libpq executor boundary | `ADR-058-spire-remote-libpq-executor-boundary.md` | ACCEPTED | Current SQL-visible libpq executor remains diagnostic/operator-only; production remote AM execution still needs concurrent pipeline/async dispatch, cancellation, timeouts, identity validation, fail-closed behavior, and final row delivery. |
 | SPIRE remote heap resolution contract | `ADR-059-spire-remote-heap-resolution-contract.md` | ACCEPTED | Remote heap resolution is origin-node owned; coordinator row locators stay opaque and production remote final rows remain blocked until origin-node heap visibility plus global vec-id allocation land. |
+| SPIRE anisotropic centroid scoring | `ADR-060-spire-anisotropic-centroid-scoring-deferred.md` | DEFERRED | Deferred until a harder local fixture or hard-query subset exposes measurable recall headroom beyond the saturated real10k baseline. |
+| SPIRE IMI reshape | `ADR-061-spire-imi-reshape-deferred.md` | DEFERRED | Deferred until a larger local fixture can exercise the storage-format and routing-space A/B. |
+| SPIRE query difficulty estimator | `ADR-062-spire-query-difficulty-estimator-deferred.md` | DEFERRED | Deferred to research track; adaptive `nprobe` diagnostics are the input signal for future estimator work. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 
