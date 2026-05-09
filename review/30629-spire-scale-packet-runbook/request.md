@@ -5,6 +5,10 @@
 This packet prepares the controlled scale-packet runbook and artifact manifest.
 It does not make a product-scale claim.
 
+Current status: Phase 8 local functionality/operator readiness is complete, but
+the formal Phase 8 product-scale gate remains open because the controlled
+AWS/RDS-class performance run has not been executed or explicitly waived.
+
 Code checkpoint: `2ce7e477` (`Add SPIRE old epoch cleanup packet`)
 Local preflight checkpoint: `9f9869c0` (`Fix SPIRE suite rerank width CLI`)
 
