@@ -27,10 +27,66 @@ each remaining item.
 
 ## Phase 9.7 closeout requirements
 
-Each item below is either **landed with measurement evidence** or
-**ADR-deferred with measured baseline + rationale**. No item
-disappears silently; no item ships without recall/latency numbers
-on a real fixture.
+**Operator directive (2026-05-09):**
+1. **Quality work happens now, on the local main machine.** AWS
+   testing is deferred to a final phase much further out, after
+   quality is done. AWS is no longer a near-term gate.
+2. **Every Phase 9.7 item gets a recorded local baseline** on the
+   main machine, regardless of whether the treatment lands or
+   defers. The baselines are the durable reference future
+   experiments will compare against.
+3. **Items that can land cleanly locally must land.** No silent
+   skipping.
+4. **Items blocked by available-fixture limits get baseline +
+   ADR-deferred-treatment.** The treatment waits for a larger
+   local fixture or a different query construction, *not* for
+   AWS.
+
+The classification per item is in each section below. Each item
+has:
+- a **baseline requirement** (always required, regardless of
+  treatment disposition);
+- a **treatment disposition** (land now, or ADR-defer with
+  conditions for revisit).
+
+No item disappears silently; ADR-deferred items still need a
+written ADR recording the rationale and the conditions that would
+revisit the decision.
+
+## Baseline benchmark requirement (applies to all 9.7 items)
+
+Before any 9.7 treatment work — and as a Phase 9 closeout
+artifact — record a **canonical local baseline** on the main
+machine covering every fixture and lane combination future
+experiments will compare against. This is the durable reference;
+treatments add A/B columns to it, they do not replace it.
+
+Required:
+
+1. **Per-fixture baseline runs.** For each checked-in corpus
+   (currently real10k; add real50k / real100k if available),
+   record load + storage + explain + latency + recall lanes using
+   the existing pre-9.7 code path. Same shape as the 30629
+   preflight manifest.
+2. **Per-knob baseline sweeps.** Within each fixture, record
+   baseline at the canonical `nprobe` sweep (e.g. 8, 16, 24, 32),
+   `rerank_width` (e.g. 0, 25, 50), and any other knob the 9.7
+   treatments will vary.
+3. **Single baseline packet:** open
+   `30676-spire-phase9-quality-baseline` (or next free number) to
+   collect these artifacts under
+   `artifacts/manifest.md`. Head SHA pinned to the pre-9.7
+   checkpoint.
+4. **Re-run reproducer.** The exact `ecaz` commands recorded so
+   the baseline is rerunnable on the same machine after any
+   environment refresh.
+5. **Baseline summary in `request.md`** listing the canonical
+   recall/latency table at each (fixture, nprobe, rerank_width)
+   point. This is the table 9.7 treatment packets will diff
+   against.
+
+The baseline packet is a Phase 9 closeout artifact, not a
+treatment. It lands once, then 9.7 treatment packets cite it.
 
 ### Quality bar — applies to every 9.7 item
 
@@ -58,35 +114,51 @@ need to be recorded, not silently dropped.**
 
 ### Item 1 — Anisotropic centroid scoring (headline)
 
-Per the 2026-05-09-02 addendum on `30555`, this is the highest-leverage
-item past vanilla SPIRE — ScaNN-style anisotropic loss applied to
-centroid scoring. Expected ~1.5-2× recall at same QPS on dense
-embeddings.
+**Classification: blocked on harder local fixture or harder query
+construction.** Local recall@10 on real10k saturates at 0.99 at
+both `nprobe=8` and `nprobe=24`, so a recall-improvement
+treatment can't be demonstrated against the current baseline. Per
+2026-05-09-02 addendum on `30555`, this is the highest-leverage
+item past vanilla SPIRE — expected ~1.5–2× recall at same QPS on
+dense embeddings.
 
-**Closeout requires:**
-- Implementation behind a reloption (`anisotropic_scoring=on/off`,
+**Required regardless of treatment disposition:**
+- Baseline measurement on real10k (already in the canonical
+  baseline packet).
+- Baseline on any larger checked-in fixture if added.
+- Baseline on a "hard query" subset against real10k if one is
+  constructed (queries that fall below 0.95 recall on the
+  baseline). This may be cheap to build by selecting query
+  vectors with low max-cosine to any corpus row.
+
+**Treatment path A (land now, preferred):**
+- Construct a hard-query subset against real10k where baseline
+  recall@10 drops below ~0.95, **or** add a checked-in real50k
+  fixture, then:
+- Implementation behind reloption (`anisotropic_scoring=on/off`,
   default off until evidence lands).
-- Local PG18 measurement on real10k showing recall@10 improvement
-  at fixed `nprobe` and `rerank_width`. The 30629 preflight at
-  `nprobe=8` and `nprobe=24` both reached recall=0.9900 on real10k —
-  the fixture is too small to demonstrate the win. **Either:**
-  (a) add a checked-in larger fixture (e.g. real50k or real100k)
-  with a real recall floor below 0.99, or (b) measure on a harder
-  query set against real10k where the baseline drops below 0.99.
-- ADR recording the loss formulation, the chosen anisotropic
-  parameter (`α`), how it interacts with the existing
-  `nprobe_per_level` policy, and the recall/latency table from the
-  measurement run.
+- Treatment measurement showing recall@10 improvement at fixed
+  `nprobe` and `rerank_width` against the baseline.
+- ADR recording loss formulation, chosen `α`, interaction with
+  `nprobe_per_level`, and the recall/latency A/B table.
 - Reviewer sign-off before the reloption default flips to `on`.
 
-If anisotropic does *not* move recall on the available fixtures,
-the closeout still ships — but as an ADR documenting the negative
-result and the fixture-size gap, not as silent omission.
+**Treatment path B (defer treatment, baseline only):**
+- ADR recording: implementation deferred until a fixture/query
+  set exists locally where baseline recall drops measurably; the
+  current saturation gap on real10k; the expected recall delta
+  per ScaNN literature; and the conditions under which the
+  implementation should land (specifically: when a hard-query
+  subset or a larger local fixture exposes the baseline ceiling).
+- Plan checkbox flipped `[x]` with the deferral ADR cited inline.
+- The canonical baseline packet records the saturation evidence
+  so future-you can find the deferral rationale quickly.
 
 ### Item 2 — Adaptive `nprobe` / adaptive beam policy
 
-Low-risk runtime change: probe count scales with query difficulty
-or per-query frontier signal.
+**Classification: must-land locally.** Low-risk runtime change;
+adaptation rule is per-query and demonstrable on real10k (easy vs
+hard queries within the same fixture). No fixture-size dependency.
 
 **Closeout requires:**
 - A concrete adaptation rule (e.g. "if frontier-head score gap > θ,
@@ -103,29 +175,42 @@ or per-query frontier signal.
 
 ### Item 3 — IMI (Inverted Multi-Index) reshape
 
-Centroid-table reshape; A/B-able against current single-IVF
-storage.
+**Classification: blocked on larger local fixture (defer
+treatment, record baseline).** IMI is a storage-format A/B that
+mainly pays off at larger fixture sizes; on real10k the existing
+single-IVF storage is unlikely to demonstrate a meaningful
+storage-cost or recall delta.
 
-**Closeout requires:**
-- Either implementation + measurement, **or** ADR-deferred with
-  explicit rationale. IMI requires storage-format work and may not
-  pay off until larger fixtures are available.
-- If deferred: ADR records why now is wrong (e.g. "anisotropic +
-  current storage already meet the recall bar; IMI's storage cost
-  isn't justified at current corpus sizes"), the fixture size at
-  which it should be revisited, and what would change the answer.
-- If implemented: same measurement requirements as Item 1.
+**Required regardless of disposition:**
+- Baseline storage-format measurement on real10k (already in
+  canonical baseline packet, single-IVF).
+
+**Treatment path A (defer, preferred until larger local fixture
+exists):**
+- ADR-deferred with rationale: storage-format A/B at real10k
+  scale doesn't change the answer; decision waits for a larger
+  local fixture. Plan checkbox `[x]` with deferral ADR cited.
+
+**Treatment path B (land):**
+- Implementation behind reloption (`storage_format=imi/single_ivf`,
+  default unchanged). Treatment measurement against baseline.
+  ADR recording the storage/recall A/B table.
 
 ### Item 4 — Query difficulty estimator (stretch)
 
-Closest L3-cousin item; only worth landing if 1–3 already give
-adaptive-`nprobe` signal that needs better triggers.
+**Classification: research-track / defer.** Already framed as
+deferrable in 2026-05-09-02. Only worth landing if Item 2
+adaptive-`nprobe` signals need better triggers.
 
-**Closeout requires:**
-- Either a narrow estimator (cheap to prototype if Phase 9 has
-  bandwidth) **or** ADR-deferred with rationale. Per the original
-  addendum, deferral with an open-questions ADR is acceptable for
-  L3 items if eval/drift/retraining infrastructure isn't ready.
+**Required regardless of disposition:**
+- No baseline-specific work; Item 2's adaptive-nprobe diagnostics
+  serve as the input signal for any future estimator design.
+
+**Treatment requires:**
+- Either a narrow estimator (cheap to prototype if Item 2 leaves a
+  visible gap) **or** ADR-deferred with rationale. Per the original
+  addendum, deferral with an open-questions ADR is the expected
+  shape.
 - If deferred: cite ADR-052 (NN-routing classifier) and ADR-053
   (routing reranker) as the existing deferred-research-track ADRs,
   and either fold this into one of those or open a sibling ADR.
@@ -171,28 +256,42 @@ needs:
 
 ## Recommended order
 
-1. **Anisotropic centroid scoring first.** It's the headline; if
-   it lands cleanly the rest of 9.7 has a baseline to A/B against.
-2. **Adaptive `nprobe` next.** Cheap, low-risk, and the diagnostic
-   surface from 9.4 is already in place to feed it.
-3. **IMI third — implement or defer.** Decision driven by what
-   anisotropic shows. If anisotropic gets the recall to ceiling
-   on available fixtures, IMI can ADR-defer until larger fixtures
-   exist.
-4. **Query difficulty estimator last — likely defer.** Per the
-   original 2026-05-09-02 addendum, this is a stretch item.
+1. **Canonical baseline packet first.** Land
+   `30676-spire-phase9-quality-baseline` (or next free number)
+   with full per-fixture, per-knob baseline measurements on the
+   main machine. Everything else cites this.
+2. **Adaptive `nprobe` next.** Cheap, low-risk,
+   demonstrable on real10k. Item 2's diagnostic surface from 9.4
+   is already in place. Lands as a real treatment.
+3. **Hard-query subset construction or larger local fixture.**
+   If achievable, this unlocks Item 1 (anisotropic) for real
+   treatment landing. If not, go to step 4.
+4. **Item 1 disposition.** Either land treatment (if step 3
+   gave a fixture/query set with measurable baseline failure) or
+   ADR-defer treatment with the saturation evidence cited.
+5. **Item 3 IMI disposition.** Almost certainly ADR-defer until
+   step 3 exists; the decision rule is the same as Item 1.
+6. **Item 4 estimator disposition.** Defer (research track).
 
-Coder is welcome to do the work in parallel; this order reflects
-information-value-per-effort for closeout, not strict dependency.
+Coder may do these in parallel where independent; the order
+reflects information-value-per-effort for closeout, not strict
+dependency.
 
-## Phase 7 + Phase 8 baseline
+## Phase 7 + Phase 8 + AWS gate
 
-Unchanged. Phase 7 closed; Phase 8 closed except the AWS/RDS-class
-scale measurement (operator-deferred). Phase 9.7 work runs on the
-existing local PG18 baseline, not the AWS gate. Local PG18 recall
-evidence is sufficient for *direction* claims (X improves recall
-relative to Y on the same fixture); it is *not* sufficient for
-absolute product-scale recall claims, which still wait on Phase 8
-AWS evidence per ADR.
+- **Phase 7:** closed. Unchanged.
+- **Phase 8 (excluding AWS scale measurement):** closed.
+  Unchanged.
+- **AWS/RDS-class scale measurement:** per 2026-05-09 operator
+  directive, deferred to a final phase much further down — after
+  quality work (Phase 9 + 10 + any later quality slices) is done.
+  Phase 8's scale-packet checkbox stays `[ ]` and the runbook
+  scaffold (`30629`) waits.
+
+Local PG18 recall evidence on the main machine is the active
+reference for all 9.7 work. Direction claims (X improves recall
+relative to Y on the same fixture) require local A/B evidence;
+absolute product-scale recall claims wait on the eventual AWS
+phase per ADR.
 
 — reviewer (claude-opus-4-7, 2026-05-09)
