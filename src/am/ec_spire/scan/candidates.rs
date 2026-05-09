@@ -175,7 +175,7 @@ where
     F: FnMut(&SpireScoredScanCandidate) -> Result<Option<f32>, String>,
 {
     let top_graph_plan = options.top_graph_plan()?;
-    let leaf_count = count_snapshot_single_level_leaf_pids(snapshot, object_store)?;
+    let leaf_count = count_snapshot_recursive_leaf_pids(snapshot, object_store)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
     let candidates = if top_graph_plan.enabled {
         collect_top_graph_scan_plan_reranked_candidates(
@@ -209,16 +209,15 @@ pub(super) fn collect_single_level_scan_placement_diagnostics(
     options: EcSpireOptions,
 ) -> Result<SpireScanPlacementDiagnostics, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
-    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
-    let leaf_count = u32::try_from(root_object.child_count())
-        .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
     collect_validated_single_level_scan_placement_diagnostics(
         &snapshot,
         object_store,
         query,
-        root_pid,
-        root_object,
+        &hierarchy,
         scan_plan,
     )
 }
@@ -230,9 +229,9 @@ pub(super) fn collect_single_level_scan_plan_placement_diagnostics(
     scan_plan: SpireSingleLevelScanPlan,
 ) -> Result<SpireScanPlacementDiagnostics, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
-    let (root_pid, root_object) = load_snapshot_root_routing_object(&snapshot, object_store)?;
-    let leaf_count = u32::try_from(root_object.child_count())
-        .map_err(|_| "ec_spire scan root child count exceeds u32".to_owned())?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
     if scan_plan.leaf_count != leaf_count {
         return Err(format!(
             "ec_spire scan placement diagnostics plan leaf_count {} does not match snapshot leaf_count {leaf_count}",
@@ -243,8 +242,7 @@ pub(super) fn collect_single_level_scan_plan_placement_diagnostics(
         &snapshot,
         object_store,
         query,
-        root_pid,
-        root_object,
+        &hierarchy,
         scan_plan,
     )
 }
@@ -253,8 +251,7 @@ fn collect_validated_single_level_scan_placement_diagnostics(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     query: &SpireScanQuery,
-    root_pid: u64,
-    root_object: SpireRoutingPartitionObject,
+    hierarchy: &SpireLoadedRoutingHierarchy,
     scan_plan: SpireSingleLevelScanPlan,
 ) -> Result<SpireScanPlacementDiagnostics, String> {
     if scan_plan.nprobe == 0 {
@@ -265,13 +262,13 @@ fn collect_validated_single_level_scan_placement_diagnostics(
     }
 
     let mut observer = SpireScanPlacementDiagnosticsObserver::new();
-    let _candidates = collect_validated_quantized_routed_probe_candidates(
+    let _candidates = collect_validated_recursive_quantized_routed_probe_candidates(
         snapshot,
         object_store,
         query.values(),
-        root_pid,
-        &root_object,
-        scan_plan.nprobe,
+        hierarchy,
+        &scan_plan.recursive_nprobe_policy,
+        scan_plan.recursive_route_budget,
         scan_plan.payload_format,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,

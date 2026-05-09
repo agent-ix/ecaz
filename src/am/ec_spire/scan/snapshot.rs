@@ -157,6 +157,51 @@ pub(super) fn count_snapshot_recursive_leaf_pids(
     count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)
 }
 
+pub(super) fn collect_scan_routing_diagnostics(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+) -> Result<SpireScanRoutingDiagnostics, String> {
+    let top_graph_plan = options.top_graph_plan()?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    if scan_plan.nprobe == 0 {
+        return Ok(SpireScanRoutingDiagnostics {
+            scan_plan,
+            levels: Vec::new(),
+        });
+    }
+
+    let levels = if top_graph_plan.enabled {
+        let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
+            .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
+        collect_top_graph_routing_level_diagnostics(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            &top_graph,
+            query.values(),
+            top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+            scan_plan.nprobe,
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+        )?
+    } else {
+        collect_recursive_routing_level_diagnostics_with_budget(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            query.values(),
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+        )?
+    };
+
+    Ok(SpireScanRoutingDiagnostics { scan_plan, levels })
+}
+
 pub(super) fn collect_ranked_routed_probe_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

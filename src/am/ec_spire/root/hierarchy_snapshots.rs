@@ -1623,6 +1623,99 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn index_scan_routing_snapshot(
+    index_relation: pg_sys::Relation,
+    query_values: Vec<f32>,
+) -> Vec<SpireIndexScanRoutingSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanRoutingSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) =
+            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let diagnostics = scan::collect_scan_routing_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            options::relation_options(index_relation),
+        )?;
+        let scan_plan = diagnostics.scan_plan;
+        let rows = diagnostics
+            .levels
+            .into_iter()
+            .map(|level| {
+                Ok(SpireIndexScanRoutingSnapshotRow {
+                    active_epoch: epoch_manifest.epoch,
+                    effective_nprobe: scan_plan.nprobe,
+                    effective_nprobe_source: scan_plan.nprobe_source,
+                    recursive_beam_width: u64::try_from(
+                        scan_plan.recursive_route_budget.beam_width,
+                    )
+                    .map_err(|_| {
+                        "ec_spire routing diagnostics beam width exceeds u64".to_owned()
+                    })?,
+                    max_leaf_routes: u64::try_from(
+                        scan_plan.recursive_route_budget.max_leaf_routes,
+                    )
+                    .map_err(|_| {
+                        "ec_spire routing diagnostics max leaf routes exceeds u64".to_owned()
+                    })?,
+                    max_routing_expansions: u64::try_from(
+                        scan_plan.recursive_route_budget.max_routing_expansions,
+                    )
+                    .map_err(|_| {
+                        "ec_spire routing diagnostics max routing expansions exceeds u64"
+                            .to_owned()
+                    })?,
+                    routing_level: level.level,
+                    input_frontier_width: u64::try_from(level.input_frontier_width).map_err(
+                        |_| {
+                            "ec_spire routing diagnostics input frontier width exceeds u64"
+                                .to_owned()
+                        },
+                    )?,
+                    expanded_parent_count: u64::try_from(level.expanded_parent_count).map_err(
+                        |_| {
+                            "ec_spire routing diagnostics expanded parent count exceeds u64"
+                                .to_owned()
+                        },
+                    )?,
+                    selected_child_count: u64::try_from(level.selected_child_count).map_err(
+                        |_| {
+                            "ec_spire routing diagnostics selected child count exceeds u64"
+                                .to_owned()
+                        },
+                    )?,
+                    deduped_route_count: u64::try_from(level.deduped_route_count).map_err(
+                        |_| {
+                            "ec_spire routing diagnostics deduped route count exceeds u64"
+                                .to_owned()
+                        },
+                    )?,
+                    truncation_reason: level.truncation_reason,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn index_root_routing_snapshot(
     index_relation: pg_sys::Relation,
 ) -> Vec<SpireIndexRootRoutingSnapshotRow> {

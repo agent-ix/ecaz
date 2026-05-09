@@ -1208,6 +1208,22 @@ pub(crate) struct SpireIndexScanPlacementSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexScanRoutingSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) recursive_beam_width: u64,
+    pub(crate) max_leaf_routes: u64,
+    pub(crate) max_routing_expansions: u64,
+    pub(crate) routing_level: u16,
+    pub(crate) input_frontier_width: u64,
+    pub(crate) expanded_parent_count: u64,
+    pub(crate) selected_child_count: u64,
+    pub(crate) deduped_route_count: u64,
+    pub(crate) truncation_reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexRootRoutingSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) root_pid: u64,

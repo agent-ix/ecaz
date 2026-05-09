@@ -208,6 +208,118 @@
     }
 
     #[test]
+    fn collect_scan_routing_diagnostics_reports_recursive_levels_and_truncation() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![0.9, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 30, vec![0.8, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![1.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![0.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 21, vec![1.4, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![0.4, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_c = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 30,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 31, vec![1.3, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 32, vec![0.3, 0.0]),
+            ],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store.insert_routing_object(7, &internal_a).unwrap(),
+            object_store.insert_routing_object(7, &internal_b).unwrap(),
+            object_store.insert_routing_object(7, &internal_c).unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let options = EcSpireOptions {
+            nprobe: 2,
+            nprobe_per_level: Some("3".to_owned()),
+            ..EcSpireOptions::DEFAULT
+        };
+
+        let diagnostics =
+            collect_scan_routing_diagnostics(&snapshot, &object_store, &query, options).unwrap();
+
+        assert_eq!(diagnostics.scan_plan.leaf_count, 6);
+        assert_eq!(diagnostics.scan_plan.nprobe, 2);
+        assert_eq!(diagnostics.scan_plan.recursive_route_budget.beam_width, 2);
+        assert_eq!(
+            diagnostics
+                .levels
+                .iter()
+                .map(|level| {
+                    (
+                        level.level,
+                        level.input_frontier_width,
+                        level.expanded_parent_count,
+                        level.selected_child_count,
+                        level.deduped_route_count,
+                        level.truncation_reason,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (2, 1, 1, 3, 2, "beam_width"),
+                (1, 2, 2, 4, 2, "max_leaf_routes"),
+            ]
+        );
+    }
+
+    #[test]
     fn count_snapshot_single_level_leaf_pids_uses_root_routing_children() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();

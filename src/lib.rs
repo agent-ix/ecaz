@@ -6493,6 +6493,56 @@ fn ec_spire_index_scan_placement_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_routing_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(recursive_beam_width, i64),
+        name!(max_leaf_routes, i64),
+        name!(max_routing_expansions, i64),
+        name!(routing_level, i64),
+        name!(input_frontier_width, i64),
+        name!(expanded_parent_count, i64),
+        name!(selected_child_count, i64),
+        name!(deduped_route_count, i64),
+        name!(truncation_reason, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_routing_snapshot") };
+    let rows = unsafe { am::spire_index_scan_routing_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            i64::try_from(row.recursive_beam_width)
+                .expect("recursive beam width should fit in i64"),
+            i64::try_from(row.max_leaf_routes).expect("max leaf routes should fit in i64"),
+            i64::try_from(row.max_routing_expansions)
+                .expect("max routing expansions should fit in i64"),
+            i64::from(row.routing_level),
+            i64::try_from(row.input_frontier_width)
+                .expect("input frontier width should fit in i64"),
+            i64::try_from(row.expanded_parent_count)
+                .expect("expanded parent count should fit in i64"),
+            i64::try_from(row.selected_child_count)
+                .expect("selected child count should fit in i64"),
+            i64::try_from(row.deduped_route_count).expect("deduped route count should fit in i64"),
+            row.truncation_reason.to_owned(),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_root_routing_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -14112,6 +14162,24 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let routing_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan routing query should succeed")
+        .expect("routing count should exist");
+        let routing_deduped_route_count = Spi::get_one::<i64>(
+            "SELECT deduped_route_count FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan routing query should succeed")
+        .expect("routing diagnostic row should exist");
+        let routing_truncation_reason = Spi::get_one::<String>(
+            "SELECT truncation_reason FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan routing query should succeed")
+        .expect("routing diagnostic row should exist");
 
         assert_eq!(row_count, 1);
         assert_eq!(effective_nprobe, 1);
@@ -14119,6 +14187,9 @@ mod tests {
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
+        assert_eq!(routing_row_count, 1);
+        assert_eq!(routing_deduped_route_count, 1);
+        assert_eq!(routing_truncation_reason, "none");
 
         Spi::run(
             "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \

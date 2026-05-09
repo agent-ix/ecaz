@@ -37,6 +37,7 @@ Start with:
 | `ec_spire_index_epoch_cleanup_run(index_oid)` | operator | You need to reclaim cleanup-eligible old-epoch object tuples under the SPIRE publish lock. |
 | `ec_spire_index_placement_snapshot(index_oid)` | operator | You need per-store placement counts, availability counts, and object bytes by kind. |
 | `ec_spire_index_scan_placement_snapshot(index_oid, query)` | operator/debug | You need the stores, leaf PIDs, delta PIDs, and candidate rows touched by one query. |
+| `ec_spire_index_scan_routing_snapshot(index_oid, query)` | operator/debug | You need per-routing-level frontier widths, expansion counts, deduped route counts, and truncation reasons for one query. |
 | `ec_spire_index_root_routing_snapshot(index_oid)` | debug | You need root centroid-to-child routing rows and child placement metadata. |
 | `ec_spire_index_hierarchy_snapshot(index_oid)` | operator/debug | You need the current hierarchy shape and single-level foundation capability flags. |
 | `ec_spire_index_object_snapshot(index_oid)` | debug | You need one row per active manifest object PID with kind, version, placement, and readability. |
@@ -77,6 +78,15 @@ as `recursive_beam_width`, `max_leaf_routes`, and `max_routing_expansions`.
 These are derived from active leaf count and effective `nprobe`; they cap the
 global recursive routing frontier while `nprobe_per_level` remains the local
 per-parent input.
+
+`ec_spire_index_scan_routing_snapshot(index_oid, query)` reports one row per
+routing level touched by the query. `input_frontier_width` is the number of
+parent routes entering that level; `expanded_parent_count` is the number
+actually expanded before the route-expansion guard; `selected_child_count` is
+the local per-parent routing output before global dedupe; and
+`deduped_route_count` is the route count left after global dedupe and the level
+cap. `truncation_reason` uses stable labels: `none`,
+`max_routing_expansions`, `beam_width`, and `max_leaf_routes`.
 
 `ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` and
 `local_store_tablespaces` as the requested local placement surface. Repeated

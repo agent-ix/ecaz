@@ -147,6 +147,22 @@ pub(super) struct SpirePreparedScanCandidates {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireRoutingLevelDiagnostics {
+    pub(super) level: u16,
+    pub(super) input_frontier_width: usize,
+    pub(super) expanded_parent_count: usize,
+    pub(super) selected_child_count: usize,
+    pub(super) deduped_route_count: usize,
+    pub(super) truncation_reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireScanRoutingDiagnostics {
+    pub(super) scan_plan: SpireSingleLevelScanPlan,
+    pub(super) levels: Vec<SpireRoutingLevelDiagnostics>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireStoreScanDiagnostics {
     pub(super) epoch: u64,
     pub(super) node_id: u32,

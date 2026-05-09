@@ -84,7 +84,7 @@ before Phase 10 optimizes execution.
   - `max_candidate_rows` remains covered by the existing rerank/candidate
     limit path until Phase 10 revisits candidate row caps.
 - [x] Dedupe leaf routes before storage reads.
-- [ ] Expose routing diagnostics per level: input frontier width, expanded
+- [x] Expose routing diagnostics per level: input frontier width, expanded
   parent count, selected child count, deduped route count, and truncation
   reason.
 - [x] Keep existing `nprobe_per_level` as a local per-parent or per-level

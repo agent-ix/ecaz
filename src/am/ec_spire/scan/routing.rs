@@ -278,8 +278,19 @@ fn route_top_graph_object_to_leaf_routes(
         return Ok(leaf_routes);
     }
 
-    let mut current_parents = Vec::with_capacity(selected_child_routes.len());
+    let mut current_parents = Vec::with_capacity(
+        selected_child_routes
+            .len()
+            .min(route_budget.beam_width),
+    );
+    let mut seen_child_pids = HashSet::new();
     for route in selected_child_routes {
+        if current_parents.len() >= route_budget.beam_width {
+            break;
+        }
+        if !seen_child_pids.insert(route.child_pid) {
+            continue;
+        }
         let child = require_recursive_internal_child(
             routing_objects_by_pid,
             route.child_pid,
@@ -499,6 +510,263 @@ fn route_recursive_routing_objects_to_leaf_routes_with_budget(
         nprobe_policy,
         route_budget,
     )
+}
+
+fn collect_recursive_routing_level_diagnostics_with_budget(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
+) -> Result<Vec<SpireRoutingLevelDiagnostics>, String> {
+    if root_object.header.kind != SpirePartitionObjectKind::Root {
+        return Err("ec_spire recursive routing diagnostics require a root routing object".to_owned());
+    }
+    collect_recursive_parent_routing_level_diagnostics(
+        vec![SpireRecursiveParentRoute {
+            parent: root_object.clone(),
+            path_score: 0.0,
+        }],
+        routing_objects_by_pid,
+        query_vector,
+        nprobe_policy,
+        route_budget,
+        0,
+    )
+}
+
+fn collect_top_graph_routing_level_diagnostics(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    top_graph: &SpireTopGraphPartitionObject,
+    query_vector: &[f32],
+    search_list_size: u32,
+    top_route_count: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
+) -> Result<Vec<SpireRoutingLevelDiagnostics>, String> {
+    let selected_child_routes = route_top_graph_view_to_routes(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        top_route_count,
+    )?;
+    let selected_child_count = selected_child_routes.len();
+    if root_object.header.level == 1 {
+        let unique_leaf_count = unique_child_pid_count(&selected_child_routes);
+        return Ok(vec![SpireRoutingLevelDiagnostics {
+            level: root_object.header.level,
+            input_frontier_width: 1,
+            expanded_parent_count: 1,
+            selected_child_count,
+            deduped_route_count: unique_leaf_count.min(route_budget.max_leaf_routes),
+            truncation_reason: if unique_leaf_count > route_budget.max_leaf_routes {
+                "max_leaf_routes"
+            } else {
+                "none"
+            },
+        }]);
+    }
+
+    let mut unique_child_count = 0usize;
+    let mut current_parents = Vec::with_capacity(selected_child_count.min(route_budget.beam_width));
+    let mut seen_child_pids = HashSet::new();
+    for route in selected_child_routes {
+        if !seen_child_pids.insert(route.child_pid) {
+            continue;
+        }
+        unique_child_count += 1;
+        if current_parents.len() < route_budget.beam_width {
+            let child = require_recursive_internal_child(
+                routing_objects_by_pid,
+                route.child_pid,
+                root_object,
+            )?;
+            current_parents.push(SpireRecursiveParentRoute {
+                parent: (*child).clone(),
+                path_score: -route.distance,
+            });
+        }
+    }
+    let mut levels = vec![SpireRoutingLevelDiagnostics {
+        level: root_object.header.level,
+        input_frontier_width: 1,
+        expanded_parent_count: 1,
+        selected_child_count,
+        deduped_route_count: unique_child_count.min(route_budget.beam_width),
+        truncation_reason: if unique_child_count > route_budget.beam_width {
+            "beam_width"
+        } else {
+            "none"
+        },
+    }];
+    if current_parents.is_empty() {
+        return Err("ec_spire recursive scan routing produced no internal children".to_owned());
+    }
+    levels.extend(collect_recursive_parent_routing_level_diagnostics(
+        current_parents,
+        routing_objects_by_pid,
+        query_vector,
+        nprobe_policy,
+        route_budget,
+        0,
+    )?);
+    Ok(levels)
+}
+
+fn collect_recursive_parent_routing_level_diagnostics(
+    mut current_parents: Vec<SpireRecursiveParentRoute>,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
+    mut expanded_parent_count: usize,
+) -> Result<Vec<SpireRoutingLevelDiagnostics>, String> {
+    if current_parents.is_empty() {
+        return Err("ec_spire recursive routing diagnostics produced no parent routes".to_owned());
+    }
+
+    let mut levels = Vec::new();
+    loop {
+        let parent_level = current_parents[0].parent.header.level;
+        if parent_level == 1 {
+            let input_frontier_width = current_parents.len();
+            let mut level_expanded_parent_count = 0usize;
+            let mut leaf_candidates = Vec::new();
+            for parent_route in &current_parents {
+                let parent = &parent_route.parent;
+                if parent.header.level != 1 {
+                    return Err("ec_spire recursive routing diagnostics parent levels drifted"
+                        .to_owned());
+                }
+                if expanded_parent_count >= route_budget.max_routing_expansions {
+                    break;
+                }
+                expanded_parent_count += 1;
+                level_expanded_parent_count += 1;
+                for route in route_routing_object_to_child_routes(
+                    parent,
+                    query_vector,
+                    nprobe_policy.nprobe_for_parent_level(parent.header.level),
+                )? {
+                    leaf_candidates.push(SpireRecursiveScoredChildRoute {
+                        parent_pid: parent.header.pid,
+                        parent_level: parent.header.level,
+                        child_pid: route.child_pid,
+                        centroid_index: route.centroid_index,
+                        path_score: parent_route.path_score,
+                        score: route.score,
+                    });
+                }
+            }
+            leaf_candidates.sort_by(recursive_scored_child_route_cmp);
+            let selected_child_count = leaf_candidates.len();
+            let mut seen_leaf_pids = HashSet::new();
+            for route in leaf_candidates {
+                seen_leaf_pids.insert(route.child_pid);
+            }
+            let unique_leaf_count = seen_leaf_pids.len();
+            let expansion_truncated = level_expanded_parent_count < input_frontier_width;
+            let deduped_route_count = unique_leaf_count.min(route_budget.max_leaf_routes);
+            levels.push(SpireRoutingLevelDiagnostics {
+                level: parent_level,
+                input_frontier_width,
+                expanded_parent_count: level_expanded_parent_count,
+                selected_child_count,
+                deduped_route_count,
+                truncation_reason: route_truncation_reason(
+                    expansion_truncated,
+                    unique_leaf_count > route_budget.max_leaf_routes,
+                    "max_leaf_routes",
+                ),
+            });
+            if deduped_route_count == 0 {
+                return Err("ec_spire recursive scan routing produced no leaf routes".to_owned());
+            }
+            return Ok(levels);
+        }
+
+        let input_frontier_width = current_parents.len();
+        let mut level_expanded_parent_count = 0usize;
+        let mut child_candidates = Vec::new();
+        for parent_route in &current_parents {
+            let parent = &parent_route.parent;
+            if parent.header.kind != SpirePartitionObjectKind::Root
+                && parent.header.kind != SpirePartitionObjectKind::Internal
+            {
+                return Err(
+                    "ec_spire recursive routing diagnostics parent must be a routing object"
+                        .to_owned(),
+                );
+            }
+            if parent.header.level != parent_level {
+                return Err(
+                    "ec_spire recursive routing diagnostics parent levels drifted".to_owned(),
+                );
+            }
+            if expanded_parent_count >= route_budget.max_routing_expansions {
+                break;
+            }
+            expanded_parent_count += 1;
+            level_expanded_parent_count += 1;
+            for route in route_routing_object_to_child_routes(
+                parent,
+                query_vector,
+                nprobe_policy.nprobe_for_parent_level(parent.header.level),
+            )? {
+                child_candidates.push(SpireRecursiveScoredChildRoute {
+                    parent_pid: parent.header.pid,
+                    parent_level: parent.header.level,
+                    child_pid: route.child_pid,
+                    centroid_index: route.centroid_index,
+                    path_score: parent_route.path_score,
+                    score: route.score,
+                });
+            }
+        }
+        child_candidates.sort_by(recursive_scored_child_route_cmp);
+        let selected_child_count = child_candidates.len();
+        let mut unique_child_count = 0usize;
+        let mut next_parents = Vec::new();
+        let mut seen_child_pids = HashSet::new();
+        for route in child_candidates {
+            if !seen_child_pids.insert(route.child_pid) {
+                continue;
+            }
+            unique_child_count += 1;
+            if next_parents.len() < route_budget.beam_width {
+                let child = require_recursive_internal_child_for_parent(
+                    routing_objects_by_pid,
+                    route.child_pid,
+                    route.parent_pid,
+                    route.parent_level,
+                )?;
+                next_parents.push(SpireRecursiveParentRoute {
+                    parent: (*child).clone(),
+                    path_score: route.total_score(),
+                });
+            }
+        }
+        let expansion_truncated = level_expanded_parent_count < input_frontier_width;
+        let deduped_route_count = unique_child_count.min(route_budget.beam_width);
+        levels.push(SpireRoutingLevelDiagnostics {
+            level: parent_level,
+            input_frontier_width,
+            expanded_parent_count: level_expanded_parent_count,
+            selected_child_count,
+            deduped_route_count,
+            truncation_reason: route_truncation_reason(
+                expansion_truncated,
+                unique_child_count > route_budget.beam_width,
+                "beam_width",
+            ),
+        });
+        if next_parents.is_empty() {
+            return Err("ec_spire recursive scan routing produced no internal children".to_owned());
+        }
+        current_parents = next_parents;
+    }
 }
 
 fn route_recursive_parent_objects_to_leaf_routes(
@@ -823,6 +1091,28 @@ fn recursive_scored_child_route_cmp(
         .then_with(|| left.parent_pid.cmp(&right.parent_pid))
         .then_with(|| left.centroid_index.cmp(&right.centroid_index))
         .then_with(|| left.child_pid.cmp(&right.child_pid))
+}
+
+fn unique_child_pid_count(routes: &[SpireTopGraphRoute]) -> usize {
+    routes
+        .iter()
+        .map(|route| route.child_pid)
+        .collect::<HashSet<_>>()
+        .len()
+}
+
+fn route_truncation_reason(
+    expansion_truncated: bool,
+    route_truncated: bool,
+    route_cap_label: &'static str,
+) -> &'static str {
+    if expansion_truncated {
+        "max_routing_expansions"
+    } else if route_truncated {
+        route_cap_label
+    } else {
+        "none"
+    }
 }
 
 fn validate_routing_query_vector(query_vector: &[f32], dimensions: usize) -> Result<(), String> {

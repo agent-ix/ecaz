@@ -134,7 +134,7 @@ pub(super) struct SpireLocalStoreTablespacePlanEntry {
 }
 
 impl EcSpireOptions {
-    const DEFAULT: Self = Self {
+    pub(super) const DEFAULT: Self = Self {
         nlists: EC_SPIRE_DEFAULT_NLISTS,
         recursive_fanout: EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
         local_store_count: EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
