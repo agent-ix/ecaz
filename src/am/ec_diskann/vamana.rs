@@ -49,6 +49,21 @@ impl VamanaGraph {
     }
 }
 
+pub trait VamanaGraphView {
+    fn node_count(&self) -> usize;
+    fn neighbors(&self, node: u32) -> &[u32];
+}
+
+impl VamanaGraphView for VamanaGraph {
+    fn node_count(&self) -> usize {
+        self.node_count()
+    }
+
+    fn neighbors(&self, node: u32) -> &[u32] {
+        &self.neighbors[node as usize]
+    }
+}
+
 /// Aggregate summary for build-time counters captured by
 /// [`build_vamana_graph_with_stats`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -180,6 +195,19 @@ pub fn greedy_search<D>(
 where
     D: Fn(u32) -> f32,
 {
+    greedy_search_view(graph, start, list_size, query_dist)
+}
+
+pub fn greedy_search_view<G, D>(
+    graph: &G,
+    start: u32,
+    list_size: usize,
+    query_dist: D,
+) -> GreedySearchResult
+where
+    G: VamanaGraphView + ?Sized,
+    D: Fn(u32) -> f32,
+{
     let n = graph.node_count();
     let mut in_frontier = vec![false; n];
     let mut visited_flag = vec![false; n];
@@ -205,7 +233,7 @@ where
         visited_flag[picked.node as usize] = true;
         visited_order.push(picked.node);
 
-        for &neighbor in &graph.neighbors[picked.node as usize] {
+        for &neighbor in graph.neighbors(picked.node) {
             if in_frontier[neighbor as usize] {
                 continue;
             }

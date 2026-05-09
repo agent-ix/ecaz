@@ -119,6 +119,22 @@ trait SpireTopGraphRouteView {
     fn route_node(&self, index: usize) -> SpireTopGraphRouteNode<'_>;
 }
 
+struct SpireTopGraphGreedyView<'a, T: SpireTopGraphRouteView + ?Sized> {
+    top_graph: &'a T,
+}
+
+impl<T: SpireTopGraphRouteView + ?Sized> crate::am::VamanaGraphView
+    for SpireTopGraphGreedyView<'_, T>
+{
+    fn node_count(&self) -> usize {
+        self.top_graph.nodes_len()
+    }
+
+    fn neighbors(&self, node: u32) -> &[u32] {
+        self.top_graph.route_node(node as usize).neighbors
+    }
+}
+
 impl SpireTopGraphRouteView for SpireTopGraphBuildDraft {
     fn root_pid(&self) -> u64 {
         self.root_pid
@@ -304,20 +320,14 @@ fn route_top_graph_view_to_routes(
         .map_err(|_| "ec_spire top graph search list size exceeds usize".to_owned())?;
     let route_count = usize::try_from(route_count)
         .map_err(|_| "ec_spire top graph route count exceeds usize".to_owned())?;
-    let graph = crate::am::VamanaGraph {
-        neighbors: (0..top_graph.nodes_len())
-            .map(|index| top_graph.route_node(index).neighbors.to_vec())
-            .collect(),
-        max_degree: usize::try_from(top_graph.graph_degree())
-            .map_err(|_| "ec_spire top graph degree exceeds usize".to_owned())?,
-    };
-    let query_distance_offset = max_query_centroid_inner_product(root_object, query_vector)?;
-    let search = crate::am::greedy_search(&graph, top_graph.entry_node(), search_list_size, |node| {
-        let centroid = root_object
-            .child_centroid(node as usize)
-            .expect("top graph route validation checked node centroid");
-        (query_distance_offset - inner_product(query_vector, centroid)).max(0.0)
-    });
+    let graph = SpireTopGraphGreedyView { top_graph };
+    let search =
+        crate::am::greedy_search_view(&graph, top_graph.entry_node(), search_list_size, |node| {
+            let centroid = root_object
+                .child_centroid(node as usize)
+                .expect("top graph route validation checked node centroid");
+            -inner_product(query_vector, centroid)
+        });
     let mut routes = search
         .frontier
         .into_iter()
@@ -672,20 +682,6 @@ fn validate_top_graph_route_inputs(
         }
     }
     Ok(())
-}
-
-fn max_query_centroid_inner_product(
-    root_object: &SpireRoutingPartitionObject,
-    query_vector: &[f32],
-) -> Result<f32, String> {
-    let mut max_ip = f32::NEG_INFINITY;
-    for child in root_object.children() {
-        max_ip = max_ip.max(inner_product(query_vector, child.centroid));
-    }
-    if !max_ip.is_finite() {
-        return Err("ec_spire top graph query-to-centroid score must be finite".to_owned());
-    }
-    Ok(max_ip)
 }
 
 fn top_graph_route_cmp(left: &SpireTopGraphRoute, right: &SpireTopGraphRoute) -> Ordering {

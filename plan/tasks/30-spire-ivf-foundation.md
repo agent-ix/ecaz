@@ -1886,7 +1886,7 @@ replication execution, and global vector identity.
 - [x] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
   by reusing the relation-object V2 chain format for top graphs and surfacing
   byte, tuple, and segment diagnostics.
-- [ ] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
+- [x] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
   and avoid full centroid offset scans when the comparator can use monotonic
   inner-product ordering.
 - [ ] **Global recursive beam.** Add route budgets such as `beam_width`,

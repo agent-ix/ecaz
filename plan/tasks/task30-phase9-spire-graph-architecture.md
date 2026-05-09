@@ -65,13 +65,13 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.3: Cached / Borrowed Graph Routing
 
-- [ ] Stop rebuilding a `VamanaGraph` by copying all neighbor lists on every
+- [x] Stop rebuilding a `VamanaGraph` by copying all neighbor lists on every
   query.
-- [ ] Add a borrowed graph view or cached scan/relcache structure for
+- [x] Add a borrowed graph view or cached scan/relcache structure for
   top-graph adjacency.
-- [ ] Avoid the full query-to-centroid offset scan if routing can compare
+- [x] Avoid the full query-to-centroid offset scan if routing can compare
   monotonic `-inner_product` scores directly.
-- [ ] Keep deterministic tie-breaks visible in tests and diagnostics.
+- [x] Keep deterministic tie-breaks visible in tests and diagnostics.
 
 ## Phase 9.4: Global Recursive Beam
 
