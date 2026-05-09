@@ -1,6 +1,6 @@
 # Task 32: DiskANN M5 Optimization
 
-Status: proposed
+Status: proposed, baseline round reviewed
 Owner: coder1 / runtime-index track
 Priority: 2
 
@@ -14,6 +14,44 @@ Task 29d already made the initial path landable: build dropped to the accepted
 local target, recall stayed near exact, and scan latency beat pgvectorscale at
 higher search-list sizes. The remaining work is targeted optimization, not
 foundation repair.
+
+## Current Evidence
+
+The first M5-specific rerank-path round is packeted under:
+
+- `30204`: NEON exact rerank kernel
+- `30205`: heap-TID-ordered rerank fetch
+- `30206`: heap-block prefetch trial (negative result, reverted)
+- `30207`: decision packet
+
+Current best measured M5 code state from that round: NEON exact rerank plus
+heap-TID-ordered rerank fetch. Both changes preserved recall on the measured
+real-10K warm-cache fixture and improved the rerank-heavy lane; the prefetch
+trial did not promote.
+
+## Benchmark Completeness
+
+The current M5 benchmark set is complete enough for a narrow conclusion and
+incomplete for a broad one.
+
+Complete enough:
+
+- to show the exact-rerank NEON kernel is correct and measurably faster on the
+  rerank-heavy lane;
+- to show heap-TID ordering improves warm-cache rerank locality on the same
+  lane;
+- to record synchronous read-stream prefetch as a negative result on that
+  fixture.
+
+Still incomplete:
+
+- no full Task 29d cross-engine re-sweep on the final M5-optimized code state;
+- no cold-cache or larger-than-shared-buffers rerun, so prefetch and broader
+  IO claims remain open;
+- no refreshed build-time M5 packet after the source-distance SIMD change, even
+  though build may be the larger Apple-Silicon beneficiary of that kernel;
+- no claim-ready benchmark hardware, so all evidence remains local engineering
+  guidance.
 
 ## Baseline Rules
 
@@ -81,3 +119,14 @@ Recommended order:
   constant factors without a single ≥30% profile target.
 - Defer larger scale curves until IVF has consumed the first M5 optimization
   pass.
+
+## Next Useful Benchmark Work
+
+If this task is resumed, the next benchmark additions should be:
+
+1. Re-run the full Task 29d sweep on the final M5 code state so the public
+   `ec_diskann` row reflects post-M5 code instead of only the pre-round
+   baseline.
+2. Add a focused M5 build packet after the source-distance SIMD change.
+3. Only revisit prefetch after a cold-cache harness or larger corpus makes
+   buffer miss overlap measurable.

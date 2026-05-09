@@ -105,6 +105,54 @@ beats it from tuning value 200 upward on this local surface.
 
 Source packet: `review/11109-task29d-final-readiness/`.
 
+### DiskANN M5 Apple-Silicon Follow-Up
+
+Task 32's first Apple-Silicon round was a narrower warm-cache optimization pass
+over the DiskANN rerank path, not a replacement for the Task 29d baseline
+tables above.
+
+The M5 packet set held the same real-10K fixture and measured three
+Apple-specific levers on a kernel-stress lane:
+`m5_diskann_real10k_w800`, `L=800`, `rerank_budget=800`, 200 iterations, two
+passes per arm, `--force-index`, warm cache.
+
+| Trial | Change | p50 delta vs scalar baseline | p99 delta vs scalar baseline | Recall |
+| --- | --- | ---: | ---: | ---: |
+| `30204` | NEON exact rerank kernel | `-1.1 ms` (`-6.7%`) | `-2.2 ms` (`-11.6%`) | 1.0000 |
+| `30205` | Heap-TID-ordered rerank fetch on top of NEON | `-1.8 ms` (`-11.0%`) | `-3.3 ms` (`-17.5%`) | 1.0000 |
+| `30206` | Heap-block prefetch trial on top of `30205` | `-1.6 ms` (`-9.8%`) | worse than `30205` | 1.0000 |
+
+Interpretation:
+
+- The two real M5 wins were the NEON exact-rerank kernel and heap-TID-sorted
+  rerank fetch.
+- The prefetch trial did not promote and was reverted; on this warm-cache
+  fixture it added overhead without useful overlap.
+- At default rerank budget the NEON effect was real but small. The clean M5
+  wins surfaced on the rerank-heavy lane rather than the default-config path.
+
+Current completeness assessment for the M5 benchmark set:
+
+- Complete enough to justify the two landed warm-cache rerank-path
+  optimizations on Apple Silicon.
+- Complete enough to record the prefetch experiment as a negative result on the
+  measured fixture.
+- Not complete enough to claim a broad end-to-end M5 DiskANN speedup at
+  default settings, because the post-optimization round did not re-run the full
+  cross-engine Task 29d sweep on the final M5 code state.
+- Not complete enough to judge cold-cache or IO-bound behavior; the prefetch
+  packet was explicitly warm-cache and the corpus fits the local development
+  surface.
+- Not complete enough for product claims; these remain local engineering
+  measurements only.
+
+Source packets:
+
+- `review/30204-task29-diskann-m5-neon-rerank/`
+- `review/30205-task29-diskann-m5-rerank-heap-order/`
+- `review/30206-task29-diskann-m5-rerank-prefetch/`
+- `review/30207-task29-diskann-m5-decision/`
+
 ## Storage
 
 | Metric | Value |
