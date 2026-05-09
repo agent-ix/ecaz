@@ -20141,10 +20141,17 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 0, 'strict'"
         );
+        let nonempty_args = format!(
+            "'ec_spire_remote_executor_loopback_coord_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 1, 'strict'"
+        );
         let connection_check_from =
             format!("FROM ec_spire_remote_search_libpq_executor_connection_check({args})");
         let candidates_from =
             format!("FROM ec_spire_remote_search_libpq_executor_candidates({args})");
+        let nonempty_candidates_from =
+            format!("FROM ec_spire_remote_search_libpq_executor_candidates({nonempty_args})");
         let connection_status =
             Spi::get_one::<String>(&format!("SELECT connection_status {connection_check_from}"))
                 .expect("executor connection status query should succeed")
@@ -20162,12 +20169,34 @@ mod tests {
         let candidate_count = Spi::get_one::<i64>(&format!("SELECT count(*) {candidates_from}"))
             .expect("executor candidate count query should succeed")
             .expect("executor candidate count should exist");
+        let nonempty_candidate_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {nonempty_candidates_from}"))
+                .expect("executor nonempty candidate count query should succeed")
+                .expect("executor nonempty candidate count should exist");
+        let nonempty_candidate_node =
+            Spi::get_one::<i64>(&format!("SELECT node_id {nonempty_candidates_from} LIMIT 1"))
+                .expect("executor nonempty candidate node query should succeed")
+                .expect("executor nonempty candidate node should exist");
+        let nonempty_candidate_epoch = Spi::get_one::<i64>(&format!(
+            "SELECT served_epoch {nonempty_candidates_from} LIMIT 1"
+        ))
+        .expect("executor nonempty candidate epoch query should succeed")
+        .expect("executor nonempty candidate epoch should exist");
+        let nonempty_candidate_locator_bytes = Spi::get_one::<i32>(&format!(
+            "SELECT length(row_locator) {nonempty_candidates_from} LIMIT 1"
+        ))
+        .expect("executor nonempty candidate locator query should succeed")
+        .expect("executor nonempty candidate locator should exist");
 
         assert!(register_result);
         assert!(connection_attempted);
         assert_eq!(connection_status, "libpq_connection_opened");
         assert!(!raw_conninfo_exposed);
         assert_eq!(candidate_count, 0);
+        assert_eq!(nonempty_candidate_count, 1);
+        assert_eq!(nonempty_candidate_node, 2);
+        assert_eq!(nonempty_candidate_epoch, active_epoch);
+        assert!(nonempty_candidate_locator_bytes > 0);
     }
 
     #[pg_test]
