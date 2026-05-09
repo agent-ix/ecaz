@@ -47,7 +47,7 @@ that Phase 9 establishes.
 - [x] If a shared traversal helper is too invasive, add a property test proving
   diagnostic selected/deduped route counts match production route sets on a
   recursive fixture.
-- [ ] Extend the routing diagnostic drift guard to a depth > 2 fixture or a
+- [x] Extend the routing diagnostic drift guard to a depth > 2 fixture or a
   parameterized hierarchy so intermediate recursive levels are covered.
 
 ## Phase 10.2: Streaming AM Scan Shape

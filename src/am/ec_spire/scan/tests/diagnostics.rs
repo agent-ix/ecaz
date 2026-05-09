@@ -623,6 +623,214 @@
     }
 
     #[test]
+    fn collect_scan_routing_diagnostics_matches_production_on_three_level_hierarchy() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            3,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 100, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 200, vec![-1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_2_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 100,
+            1,
+            2,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 110, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 120, vec![0.4, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_2_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 200,
+            1,
+            2,
+            SPIRE_FIRST_PID,
+            2,
+            vec![routing_child(0, SPIRE_FIRST_PID + 210, vec![-0.5, 0.0])],
+        )
+        .unwrap();
+        let level_1_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 110,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 111, vec![2.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 112, vec![1.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_1_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 120,
+            1,
+            1,
+            SPIRE_FIRST_PID + 100,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 121, vec![3.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 122, vec![2.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let level_1_c = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 210,
+            1,
+            1,
+            SPIRE_FIRST_PID + 200,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 211, vec![-2.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 212, vec![-3.0, 0.0]),
+            ],
+        )
+        .unwrap();
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store.insert_routing_object(7, &level_2_a).unwrap(),
+            object_store.insert_routing_object(7, &level_2_b).unwrap(),
+            object_store.insert_routing_object(7, &level_1_a).unwrap(),
+            object_store.insert_routing_object(7, &level_1_b).unwrap(),
+            object_store.insert_routing_object(7, &level_1_c).unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let options = EcSpireOptions {
+            nprobe: 6,
+            nprobe_per_level: Some("2,2".to_owned()),
+            ..EcSpireOptions::DEFAULT
+        };
+        let routing_objects_by_pid = HashMap::from([
+            (level_2_a.header.pid, level_2_a),
+            (level_2_b.header.pid, level_2_b),
+            (level_1_a.header.pid, level_1_a),
+            (level_1_b.header.pid, level_1_b),
+            (level_1_c.header.pid, level_1_c),
+        ]);
+
+        let diagnostics =
+            collect_scan_routing_diagnostics(&snapshot, &object_store, &query, options).unwrap();
+        let production_leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            query.values(),
+            &diagnostics.scan_plan.recursive_nprobe_policy,
+            diagnostics.scan_plan.recursive_route_budget,
+        )
+        .unwrap();
+
+        assert_eq!(
+            diagnostics
+                .levels
+                .iter()
+                .map(|level| level.level)
+                .collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        assert_eq!(
+            diagnostics
+                .levels
+                .iter()
+                .map(|level| level.truncation_reason)
+                .collect::<Vec<_>>(),
+            vec!["none", "none", "none"]
+        );
+
+        let root_level = &diagnostics.levels[0];
+        let middle_level = &diagnostics.levels[1];
+        let leaf_level = &diagnostics.levels[2];
+        let production_level_1_parent_pids = production_leaf_routes
+            .iter()
+            .map(|route| route.parent_pid)
+            .collect::<HashSet<_>>();
+        let production_level_2_parent_pids = production_level_1_parent_pids
+            .iter()
+            .map(|parent_pid| {
+                routing_objects_by_pid
+                    .get(parent_pid)
+                    .expect("production leaf parent should exist in fixture")
+                    .header
+                    .parent_pid
+            })
+            .collect::<HashSet<_>>();
+        let middle_selected_child_count = production_level_2_parent_pids
+            .iter()
+            .map(|parent_pid| {
+                let parent = routing_objects_by_pid
+                    .get(parent_pid)
+                    .expect("production level-2 parent should exist in fixture");
+                route_routing_object_to_child_pids(
+                    parent,
+                    query.values(),
+                    diagnostics
+                        .scan_plan
+                        .recursive_nprobe_policy
+                        .nprobe_for_parent_level(parent.header.level),
+                )
+                .expect("fixture level-2 parent should route to level-1 children")
+                .len()
+            })
+            .sum::<usize>();
+        let leaf_selected_child_count = production_level_1_parent_pids
+            .iter()
+            .map(|parent_pid| {
+                let parent = routing_objects_by_pid
+                    .get(parent_pid)
+                    .expect("production level-1 parent should exist in fixture");
+                route_routing_object_to_child_pids(
+                    parent,
+                    query.values(),
+                    diagnostics
+                        .scan_plan
+                        .recursive_nprobe_policy
+                        .nprobe_for_parent_level(parent.header.level),
+                )
+                .expect("fixture level-1 parent should route to leaf children")
+                .len()
+            })
+            .sum::<usize>();
+
+        assert_eq!(
+            root_level.deduped_route_count,
+            production_level_2_parent_pids.len()
+        );
+        assert_eq!(
+            middle_level.deduped_route_count,
+            production_level_1_parent_pids.len()
+        );
+        assert_eq!(leaf_level.deduped_route_count, production_leaf_routes.len());
+        assert_eq!(middle_level.selected_child_count, middle_selected_child_count);
+        assert_eq!(leaf_level.selected_child_count, leaf_selected_child_count);
+    }
+
+    #[test]
     fn count_snapshot_single_level_leaf_pids_uses_root_routing_children() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
