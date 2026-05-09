@@ -101,6 +101,10 @@ replication planning state through `boundary_replica_count`,
 `boundary_replica_count = 0` keeps primary-only assignment and reports
 `scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
 can see when scan plans must deduplicate replicated vector identities.
+`ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
+runtime side of that contract with primary versus boundary-replica candidate
+rows, vec-id duplicate candidates suppressed by scan dedupe, and final
+candidate winners after dedupe and candidate limits.
 
 `ec_spire_remote_pipeline_steps(...)` reports six stable `step_name` values:
 `dispatch_plan`, `connection_check`, `candidates`, `heap_candidates`,

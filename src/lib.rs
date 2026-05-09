@@ -6456,6 +6456,14 @@ fn ec_spire_index_scan_placement_snapshot(
         name!(candidate_row_count, i64),
         name!(leaf_candidate_row_count, i64),
         name!(delta_candidate_row_count, i64),
+        name!(primary_candidate_row_count, i64),
+        name!(boundary_replica_candidate_row_count, i64),
+        name!(deduped_candidate_row_count, i64),
+        name!(deduped_primary_candidate_row_count, i64),
+        name!(deduped_boundary_replica_candidate_row_count, i64),
+        name!(candidate_winner_count, i64),
+        name!(primary_candidate_winner_count, i64),
+        name!(boundary_replica_candidate_winner_count, i64),
         name!(delete_delta_row_count, i64),
         name!(dropped_unselected_delta_route_count, i64),
     ),
@@ -6483,6 +6491,22 @@ fn ec_spire_index_scan_placement_snapshot(
                 .expect("leaf candidate row count should fit in i64"),
             i64::try_from(row.delta_candidate_row_count)
                 .expect("delta candidate row count should fit in i64"),
+            i64::try_from(row.primary_candidate_row_count)
+                .expect("primary candidate row count should fit in i64"),
+            i64::try_from(row.boundary_replica_candidate_row_count)
+                .expect("boundary replica candidate row count should fit in i64"),
+            i64::try_from(row.deduped_candidate_row_count)
+                .expect("deduped candidate row count should fit in i64"),
+            i64::try_from(row.deduped_primary_candidate_row_count)
+                .expect("deduped primary candidate row count should fit in i64"),
+            i64::try_from(row.deduped_boundary_replica_candidate_row_count)
+                .expect("deduped boundary replica candidate row count should fit in i64"),
+            i64::try_from(row.candidate_winner_count)
+                .expect("candidate winner count should fit in i64"),
+            i64::try_from(row.primary_candidate_winner_count)
+                .expect("primary candidate winner count should fit in i64"),
+            i64::try_from(row.boundary_replica_candidate_winner_count)
+                .expect("boundary replica candidate winner count should fit in i64"),
             i64::try_from(row.delete_delta_row_count)
                 .expect("delete delta row count should fit in i64"),
             i64::try_from(row.dropped_unselected_delta_route_count)
@@ -14162,6 +14186,18 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let primary_candidate_row_count = Spi::get_one::<i64>(
+            "SELECT primary_candidate_row_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let candidate_winner_count = Spi::get_one::<i64>(
+            "SELECT candidate_winner_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
         let routing_row_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM ec_spire_index_scan_routing_snapshot(\
              'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
@@ -14187,6 +14223,8 @@ mod tests {
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
+        assert_eq!(primary_candidate_row_count, 1);
+        assert_eq!(candidate_winner_count, 1);
         assert_eq!(routing_row_count, 1);
         assert_eq!(routing_deduped_route_count, 1);
         assert_eq!(routing_truncation_reason, "none");

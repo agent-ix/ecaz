@@ -176,6 +176,14 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) candidate_row_count: usize,
     pub(super) leaf_candidate_row_count: usize,
     pub(super) delta_candidate_row_count: usize,
+    pub(super) primary_candidate_row_count: usize,
+    pub(super) boundary_replica_candidate_row_count: usize,
+    pub(super) deduped_candidate_row_count: usize,
+    pub(super) deduped_primary_candidate_row_count: usize,
+    pub(super) deduped_boundary_replica_candidate_row_count: usize,
+    pub(super) candidate_winner_count: usize,
+    pub(super) primary_candidate_winner_count: usize,
+    pub(super) boundary_replica_candidate_winner_count: usize,
     pub(super) delete_delta_row_count: usize,
     pub(super) dropped_unselected_delta_route_count: usize,
 }
@@ -195,9 +203,37 @@ trait SpireRoutedScanObserver {
 
     fn dropped_unselected_delta_route(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
-    fn visible_leaf_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+    fn visible_leaf_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
 
-    fn visible_delta_candidate(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+    fn visible_delta_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn deduped_candidate(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
+
+    fn candidate_winner(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _assignment_flags: u16,
+    ) {
+    }
 }
 
 struct SpireNoopRoutedScanObserver;
@@ -236,6 +272,14 @@ impl SpireScanPlacementDiagnosticsObserver {
                 candidate_row_count: 0,
                 leaf_candidate_row_count: 0,
                 delta_candidate_row_count: 0,
+                primary_candidate_row_count: 0,
+                boundary_replica_candidate_row_count: 0,
+                deduped_candidate_row_count: 0,
+                deduped_primary_candidate_row_count: 0,
+                deduped_boundary_replica_candidate_row_count: 0,
+                candidate_winner_count: 0,
+                primary_candidate_winner_count: 0,
+                boundary_replica_candidate_winner_count: 0,
                 delete_delta_row_count: 0,
                 dropped_unselected_delta_route_count: 0,
             })
@@ -264,16 +308,74 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             .dropped_unselected_delta_route_count += 1;
     }
 
-    fn visible_leaf_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+    fn visible_leaf_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
         let entry = self.entry(epoch, placement);
         entry.candidate_row_count += 1;
         entry.leaf_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_row_count,
+            &mut entry.boundary_replica_candidate_row_count,
+        );
     }
 
-    fn visible_delta_candidate(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+    fn visible_delta_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
         let entry = self.entry(epoch, placement);
         entry.candidate_row_count += 1;
         entry.delta_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_row_count,
+            &mut entry.boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn deduped_candidate(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.deduped_candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.deduped_primary_candidate_row_count,
+            &mut entry.deduped_boundary_replica_candidate_row_count,
+        );
+    }
+
+    fn candidate_winner(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        assignment_flags: u16,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.candidate_winner_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut entry.primary_candidate_winner_count,
+            &mut entry.boundary_replica_candidate_winner_count,
+        );
+    }
+}
+
+fn count_candidate_role(flags: u16, primary_count: &mut usize, replica_count: &mut usize) {
+    if flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+        *replica_count += 1;
+    } else {
+        *primary_count += 1;
     }
 }
 

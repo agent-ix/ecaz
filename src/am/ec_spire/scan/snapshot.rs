@@ -404,7 +404,9 @@ fn collect_validated_quantized_leaf_route_candidates(
         candidates.extend(candidates_by_vec_id.into_values());
     }
 
-    Ok(rank_bounded_scored_candidates(candidates, limit))
+    let ranked = rank_bounded_scored_candidates(candidates, limit);
+    observe_candidate_winners(snapshot, observer, &ranked)?;
+    Ok(ranked)
 }
 
 fn prefetch_store_object_read_groups(

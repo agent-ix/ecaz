@@ -40,7 +40,8 @@ before Phase 10 optimizes execution.
 - [x] Decide what the top graph is built over: ADR-054 chooses the active
   root/top routing object's child frontier. The future scale build must make
   that root/top child set large enough for graph routing instead of compressing
-  it down to `recursive_fanout`.
+  it down to `recursive_fanout`. Review packet:
+  `review/30660-spire-top-graph-frontier-contract/request.md`.
 - [x] Record the decision in an ADR or design note if the selected frontier is
   not already covered by `plan/design/spire-top-level-graph.md`. Recorded in
   `spec/adr/ADR-054-spire-top-graph-frontier-contract.md`.
@@ -92,14 +93,14 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.5: Boundary Replication Execution Contract
 
-- [ ] Finish the runtime contract for the existing boundary-replica build path:
+- [x] Finish the runtime contract for the existing boundary-replica build path:
   primary row, replica row, assignment flags, route selection, and dedupe.
-- [ ] Define how replicas interact with top-graph/frontier routing. A query
+- [x] Define how replicas interact with top-graph/frontier routing. A query
   should not need to know whether a candidate came from a primary or replica
   placement until merge tie-breaks.
-- [ ] Add recall/storage diagnostics that separate primary rows, replica rows,
+- [x] Add recall/storage diagnostics that separate primary rows, replica rows,
   duplicate candidates suppressed, and candidate winners.
-- [ ] Keep boundary replication opt-in until recall and storage overhead are
+- [x] Keep boundary replication opt-in until recall and storage overhead are
   measured.
 
 ## Phase 9.6: Global Vector Identity

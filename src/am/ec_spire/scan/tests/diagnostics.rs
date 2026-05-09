@@ -92,6 +92,12 @@
         assert_eq!(store.candidate_row_count, 1);
         assert_eq!(store.leaf_candidate_row_count, 0);
         assert_eq!(store.delta_candidate_row_count, 1);
+        assert_eq!(store.primary_candidate_row_count, 1);
+        assert_eq!(store.boundary_replica_candidate_row_count, 0);
+        assert_eq!(store.deduped_candidate_row_count, 0);
+        assert_eq!(store.candidate_winner_count, 1);
+        assert_eq!(store.primary_candidate_winner_count, 1);
+        assert_eq!(store.boundary_replica_candidate_winner_count, 0);
         assert_eq!(store.delete_delta_row_count, 1);
         assert_eq!(store.dropped_unselected_delta_route_count, 0);
 
@@ -204,7 +210,112 @@
         assert_eq!(store.candidate_row_count, 1);
         assert_eq!(store.leaf_candidate_row_count, 1);
         assert_eq!(store.delta_candidate_row_count, 0);
+        assert_eq!(store.primary_candidate_row_count, 1);
+        assert_eq!(store.boundary_replica_candidate_row_count, 0);
+        assert_eq!(store.deduped_candidate_row_count, 0);
+        assert_eq!(store.candidate_winner_count, 1);
+        assert_eq!(store.primary_candidate_winner_count, 1);
+        assert_eq!(store.boundary_replica_candidate_winner_count, 0);
         assert_eq!(store.delete_delta_row_count, 0);
+    }
+
+    #[test]
+    fn collect_scan_placement_diagnostics_reports_boundary_dedupe_and_winners() {
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![0.9, 0.0]),
+            ],
+        )
+        .unwrap();
+        let encoded = encode_assignment_input(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            tid(10, 1),
+            &[1.0, 0.0],
+        )
+        .unwrap();
+        let primary_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::local(7),
+            heap_tid: encoded.heap_tid,
+            payload_format: encoded.payload_format,
+            gamma: encoded.gamma,
+            encoded_payload: encoded.encoded_payload.clone(),
+        };
+        let replica_row = SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+            vec_id: SpireVecId::local(7),
+            heap_tid: encoded.heap_tid,
+            payload_format: encoded.payload_format,
+            gamma: encoded.gamma,
+            encoded_payload: encoded.encoded_payload,
+        };
+        let placements = vec![
+            object_store.insert_routing_object(7, &root).unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 1, 1, SPIRE_FIRST_PID, &[primary_row])
+                .unwrap(),
+            object_store
+                .insert_leaf_object_v2_from_rows(7, SPIRE_FIRST_PID + 2, 1, SPIRE_FIRST_PID, &[replica_row])
+                .unwrap(),
+        ];
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest = SpireObjectManifest::from_entries(
+            7,
+            placements.iter().map(manifest_entry_for).collect(),
+        )
+        .unwrap();
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 2,
+            nprobe: 2,
+            nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 10,
+            rerank_width_source: "relation",
+            candidate_limit: Some(10),
+            dedupe_mode: SpireCandidateDedupeMode::VecIdDedupeEnabled,
+        };
+
+        let diagnostics = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.stores.len(), 1);
+        let store = &diagnostics.stores[0];
+        assert_eq!(store.candidate_row_count, 2);
+        assert_eq!(store.primary_candidate_row_count, 1);
+        assert_eq!(store.boundary_replica_candidate_row_count, 1);
+        assert_eq!(store.deduped_candidate_row_count, 1);
+        assert_eq!(store.deduped_primary_candidate_row_count, 0);
+        assert_eq!(store.deduped_boundary_replica_candidate_row_count, 1);
+        assert_eq!(store.candidate_winner_count, 1);
+        assert_eq!(store.primary_candidate_winner_count, 1);
+        assert_eq!(store.boundary_replica_candidate_winner_count, 0);
     }
 
     #[test]

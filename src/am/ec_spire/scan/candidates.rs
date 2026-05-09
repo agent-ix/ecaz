@@ -451,6 +451,7 @@ fn append_quantized_leaf_candidates_for_pid(
             for columns in leaf_object.column_segments()? {
                 let columns = columns?;
                 append_quantized_v2_column_candidates(
+                    snapshot,
                     columns,
                     snapshot.epoch_manifest().epoch,
                     leaf_pid,
@@ -472,6 +473,7 @@ fn append_quantized_leaf_candidates_for_pid(
                 )
             })?;
             append_quantized_v1_leaf_candidates(
+                snapshot,
                 leaf_object,
                 snapshot.epoch_manifest().epoch,
                 leaf_pid,
@@ -488,6 +490,7 @@ fn append_quantized_leaf_candidates_for_pid(
 }
 
 fn append_quantized_v2_column_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
     columns: SpireLeafObjectColumns<'_>,
     epoch: u64,
     pid: u64,
@@ -531,7 +534,7 @@ fn append_quantized_v2_column_candidates(
         if deleted_vec_ids.contains(&vec_id) {
             continue;
         }
-        observer.visible_leaf_candidate(epoch, placement);
+        observer.visible_leaf_candidate(epoch, placement, row.flags);
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
@@ -542,7 +545,10 @@ fn append_quantized_v2_column_candidates(
             heap_tid: row.heap_tid,
             score: -ip,
         };
-        append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+        if let Some(suppressed) = append_scored_candidate(candidate, candidates, candidates_by_vec_id)
+        {
+            observe_deduped_candidate(snapshot, observer, &suppressed)?;
+        }
     }
     Ok(())
 }
@@ -588,7 +594,11 @@ fn append_quantized_delta_candidates_for_routes(
             }
             let row_index = u32::try_from(row_index)
                 .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
-            observer.visible_delta_candidate(snapshot.epoch_manifest().epoch, placement);
+            observer.visible_delta_candidate(
+                snapshot.epoch_manifest().epoch,
+                placement,
+                assignment.flags,
+            );
             let candidate = SpireScoredScanCandidate {
                 epoch: snapshot.epoch_manifest().epoch,
                 pid: route.delta_pid,
@@ -599,7 +609,11 @@ fn append_quantized_delta_candidates_for_routes(
                 heap_tid: assignment.heap_tid,
                 score: -ip,
             };
-            append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+            if let Some(suppressed) =
+                append_scored_candidate(candidate, candidates, candidates_by_vec_id)
+            {
+                observe_deduped_candidate(snapshot, observer, &suppressed)?;
+            }
         }
     }
     Ok(())
@@ -638,6 +652,7 @@ fn collect_delta_delete_vec_ids_for_routes(
 }
 
 fn append_quantized_v1_leaf_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
     leaf_object: SpireLeafPartitionObject,
     epoch: u64,
     pid: u64,
@@ -662,7 +677,7 @@ fn append_quantized_v1_leaf_candidates(
         }
         let row_index = u32::try_from(row_index)
             .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
-        observer.visible_leaf_candidate(epoch, placement);
+        observer.visible_leaf_candidate(epoch, placement, assignment.flags);
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
@@ -673,7 +688,10 @@ fn append_quantized_v1_leaf_candidates(
             heap_tid: assignment.heap_tid,
             score: -ip,
         };
-        append_scored_candidate(candidate, candidates, candidates_by_vec_id);
+        if let Some(suppressed) = append_scored_candidate(candidate, candidates, candidates_by_vec_id)
+        {
+            observe_deduped_candidate(snapshot, observer, &suppressed)?;
+        }
     }
     Ok(())
 }
@@ -717,7 +735,7 @@ where
                 heap_tid: row.assignment.heap_tid,
                 score: -ip,
             };
-            append_scored_candidate(candidate, &mut candidates, &mut candidates_by_vec_id);
+            let _ = append_scored_candidate(candidate, &mut candidates, &mut candidates_by_vec_id);
         }
     }
 
@@ -728,24 +746,58 @@ where
     Ok(rank_bounded_scored_candidates(candidates, limit))
 }
 
+fn observe_deduped_candidate(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    observer: &mut impl SpireRoutedScanObserver,
+    candidate: &SpireScoredScanCandidate,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(candidate.pid, "scan deduped candidate diagnostics")?;
+    observer.deduped_candidate(
+        snapshot.epoch_manifest().epoch,
+        lookup.placement,
+        candidate.assignment_flags,
+    );
+    Ok(())
+}
+
+fn observe_candidate_winners(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    observer: &mut impl SpireRoutedScanObserver,
+    candidates: &[SpireScoredScanCandidate],
+) -> Result<(), String> {
+    for candidate in candidates {
+        let lookup = snapshot.require_lookup(candidate.pid, "scan candidate winner diagnostics")?;
+        observer.candidate_winner(
+            snapshot.epoch_manifest().epoch,
+            lookup.placement,
+            candidate.assignment_flags,
+        );
+    }
+    Ok(())
+}
+
 fn append_scored_candidate(
     candidate: SpireScoredScanCandidate,
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
-) {
+) -> Option<SpireScoredScanCandidate> {
     if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
         match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
-                    *entry.get_mut() = candidate;
+                    Some(std::mem::replace(entry.get_mut(), candidate))
+                } else {
+                    Some(candidate)
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
+                None
             }
         }
     } else {
         candidates.push(candidate);
+        None
     }
 }
 

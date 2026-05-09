@@ -176,6 +176,12 @@ the assignment diagnostics supply the logical overhead denominator.
 
 Scan diagnostics should count duplicate candidates suppressed by vec-id dedupe
 so operators can see whether boundary replicas are affecting the scan path.
+The Phase 9 execution contract keeps routing role-agnostic: top-graph and
+recursive frontier routing choose leaf PIDs, not primary/replica rows. Primary
+and boundary-replica rows become distinct only during candidate scoring, where
+scan diagnostics report primary candidate rows, boundary-replica candidate
+rows, duplicate candidates suppressed by `vec_id`, and final candidate winners
+after dedupe and candidate limits.
 
 ## Measurement Gate
 

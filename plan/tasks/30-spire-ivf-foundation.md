@@ -1883,6 +1883,7 @@ replication execution, and global vector identity.
   Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
   root/top routing child frontier, and top-graph diagnostics now distinguish
   frontier node count, root child count, routing levels, and active leaf count.
+  Review packet: `review/30660-spire-top-graph-frontier-contract/request.md`.
 - [x] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
   by reusing the relation-object V2 chain format for top graphs and surfacing
   byte, tuple, and segment diagnostics.
@@ -1892,9 +1893,10 @@ replication execution, and global vector identity.
 - [x] **Global recursive beam.** Core scan route budgets, global scored
   expansion, leaf-route dedupe, and per-level routing diagnostics have landed
   in the Phase 9.4 implementation slices.
-- [ ] **Boundary replication execution contract.** Finish primary/replica row
-  semantics, route integration, recall/storage diagnostics, and dedupe behavior
-  for opt-in boundary replicas.
+- [x] **Boundary replication execution contract.** Primary/replica row
+  semantics, route integration, dedupe behavior, opt-in defaults, and
+  primary/replica/deduped/winner scan diagnostics are now covered for boundary
+  replicas.
 - [ ] **Global vector identity.** Define and enforce the durable `SpireVecId`
   scope needed for boundary replicas and multi-node merge.
 - [ ] **Quality experiments.** Keep IMI reshape, adaptive `nprobe`,
