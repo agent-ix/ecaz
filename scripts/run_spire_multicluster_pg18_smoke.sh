@@ -8,11 +8,97 @@ PSQL="${PSQL:-$PGBIN/psql}"
 REMOTE_PORT="${REMOTE_PORT:-39218}"
 COORD_PORT="${COORD_PORT:-39219}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
-RUN_DIR="${RUN_DIR:-$ROOT_DIR/target/spire-multicluster-pg18-$RUN_ID}"
-LOG_DIR="${LOG_DIR:-$RUN_DIR/logs}"
+RUN_DIR_OVERRIDE="${RUN_DIR:-}"
+LOG_DIR_OVERRIDE="${LOG_DIR:-}"
+SMOKE_LOG="${SMOKE_LOG:-}"
+ARTIFACT_DIR=""
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/run_spire_multicluster_pg18_smoke.sh [options]
+
+Options:
+  --artifact-dir DIR  Store smoke and PostgreSQL logs in DIR.
+  --coord-port PORT   Coordinator PostgreSQL port. Default: 39219.
+  --log-dir DIR       Store PostgreSQL logs in DIR.
+  --pgbin DIR         PostgreSQL bin directory. Default: $PGBIN.
+  --remote-port PORT  Remote PostgreSQL port. Default: 39218.
+  --run-dir DIR       Run directory. Default: target/spire-multicluster-pg18-$RUN_ID.
+  --run-id ID         Run id used in the default run directory.
+  --skip-install      Skip cargo pgrx install.
+  --smoke-log FILE    Tee smoke output to FILE.
+  -h, --help          Show this help.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --artifact-dir)
+      ARTIFACT_DIR="$2"
+      shift 2
+      ;;
+    --coord-port)
+      COORD_PORT="$2"
+      shift 2
+      ;;
+    --log-dir)
+      LOG_DIR_OVERRIDE="$2"
+      shift 2
+      ;;
+    --pgbin)
+      PGBIN="$2"
+      PG_CTL="$PGBIN/pg_ctl"
+      PSQL="$PGBIN/psql"
+      shift 2
+      ;;
+    --remote-port)
+      REMOTE_PORT="$2"
+      shift 2
+      ;;
+    --run-dir)
+      RUN_DIR_OVERRIDE="$2"
+      shift 2
+      ;;
+    --run-id)
+      RUN_ID="$2"
+      shift 2
+      ;;
+    --skip-install)
+      ECAZ_SKIP_INSTALL=1
+      shift
+      ;;
+    --smoke-log)
+      SMOKE_LOG="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+RUN_DIR="${RUN_DIR_OVERRIDE:-$ROOT_DIR/target/spire-multicluster-pg18-$RUN_ID}"
+if [[ -n "$ARTIFACT_DIR" ]]; then
+  LOG_DIR="$ARTIFACT_DIR"
+  SMOKE_LOG="${SMOKE_LOG:-$ARTIFACT_DIR/multicluster-smoke-success.log}"
+else
+  LOG_DIR="${LOG_DIR_OVERRIDE:-$RUN_DIR/logs}"
+fi
 REMOTE_DATA="$RUN_DIR/remote"
 COORD_DATA="$RUN_DIR/coord"
 SOCKET_DIR="$RUN_DIR/sockets"
+
+if [[ -n "$SMOKE_LOG" && "${ECAZ_SPIRE_SMOKE_LOG_ACTIVE:-0}" != "1" ]]; then
+  mkdir -p "${SMOKE_LOG%/*}"
+  export ECAZ_SPIRE_SMOKE_LOG_ACTIVE=1
+  exec > >(tee "$SMOKE_LOG") 2>&1
+fi
 
 if [[ -e "$RUN_DIR" ]]; then
   echo "RUN_DIR already exists: $RUN_DIR" >&2
