@@ -1,8 +1,8 @@
 # Artifact Manifest
 
-- head SHA: `efd0a5cb4468f49e686f5c58a7b6e6a911432217`
+- head SHA: `226d7e4232c64155aa8f9bb542b6c6c3a3d01a0c`
 - packet/topic: `30651-spire-remote-heap-libpq-candidates`
-- timestamp: `2026-05-09T05:42:24Z`
+- timestamp: `2026-05-09T05:47:50Z`
 - isolated one-index-per-table or shared-table surfaces: isolated one-index-per-table loopback fixture
 
 ## Validation Runs
