@@ -105,53 +105,45 @@ beats it from tuning value 200 upward on this local surface.
 
 Source packet: `review/11109-task29d-final-readiness/`.
 
-### DiskANN M5 Apple-Silicon Follow-Up
+### Apple-Silicon M5 Inventory
 
-Task 32's first Apple-Silicon round was a narrower warm-cache optimization pass
-over the DiskANN rerank path, not a replacement for the Task 29d baseline
-tables above.
+This section is a benchmark inventory, not a benchmark narrative.
+Every populated row below is backed by a packet-local measurement.
+`--` means the benchmark slot belongs in the M5 roadmap but no checked-in,
+packet-local number exists yet.
 
-The M5 packet set held the same real-10K fixture and measured three
-Apple-specific levers on a kernel-stress lane:
-`m5_diskann_real10k_w800`, `L=800`, `rerank_budget=800`, 200 iterations, two
-passes per arm, `--force-index`, warm cache.
+#### IVF M5
 
-| Trial | Change | p50 delta vs scalar baseline | p99 delta vs scalar baseline | Recall |
-| --- | --- | ---: | ---: | ---: |
-| `30204` | NEON exact rerank kernel | `-1.1 ms` (`-6.7%`) | `-2.2 ms` (`-11.6%`) | 1.0000 |
-| `30205` | Heap-TID-ordered rerank fetch on top of NEON | `-1.8 ms` (`-11.0%`) | `-3.3 ms` (`-17.5%`) | 1.0000 |
-| `30206` | Heap-block prefetch trial on top of `30205` | `-1.6 ms` (`-9.8%`) | worse than `30205` | 1.0000 |
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_ivf` | balanced quality point | 100K, `pq_fastscan`, `pq_group_size=8`, `nlists=128`, `nprobe=96`, `rerank_width=500` | recall@100 `0.9676`, p50 `10.7 ms`, p95 `11.6 ms`, p99 `12.1 ms` | `review/30203-task31-current-m5-candidate-decision/` |
+| `ec_ivf` | quality point | 100K, `pq_fastscan`, `pq_group_size=8`, `nlists=128`, `nprobe=96`, `rerank_width=1000` | recall@100 `0.9920`, mean q-time `12.38 ms`, p50 `12.1 ms`, p95 `13.0 ms`, p99 `13.7 ms` | `review/30203-task31-current-m5-candidate-decision/` |
+| `ec_ivf` | 10K baseline | -- | -- | -- |
+| `ec_ivf` | 25K baseline | -- | -- | -- |
+| `ec_ivf` | 50K baseline | -- | -- | -- |
+| `ec_ivf` | 990K directional point | -- | -- | -- |
 
-Interpretation:
+#### DiskANN M5
 
-- The two real M5 wins were the NEON exact-rerank kernel and heap-TID-sorted
-  rerank fetch.
-- The prefetch trial did not promote and was reverted; on this warm-cache
-  fixture it added overhead without useful overlap.
-- At default rerank budget the NEON effect was real but small. The clean M5
-  wins surfaced on the rerank-heavy lane rather than the default-config path.
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_diskann` | build A/B, scalar vs NEON | real10K, `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | scalar `32.61 s`; NEON mean `6.81 s`; recall@10 identical at `0.9965 / 0.9970 / 0.9975` for `L=64/200/800` | `review/30208-task29-diskann-m5-build-neon-followup/` |
+| `ec_diskann` | default rerank NEON A/B | real10K, default `rerank_budget=64`, `L=64/200/800`, warm cache | p50 scalar/neon `1.98/1.93 ms`, `2.20/2.15 ms`, `2.76/2.70 ms`; recall@10 identical at `0.9965 / 0.9970 / 0.9975` | `review/30204-task29-diskann-m5-neon-rerank/` |
+| `ec_diskann` | kernel-stress rerank NEON A/B | real10K_w800, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 scalar/neon `16.3/15.2 ms`; p95 `17.15/15.85 ms`; p99 `18.9/16.7 ms`; recall@10 `1.0000` | `review/30204-task29-diskann-m5-neon-rerank/` |
+| `ec_diskann` | heap-TID rerank fetch A/B | real10K_w800, post-NEON, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/post `15.5/14.8 ms`; p95 `16.15/15.45 ms`; p99 `17.9/16.8 ms`; recall@10 `1.0000` | `review/30205-task29-diskann-m5-rerank-heap-order/` |
+| `ec_diskann` | heap-block prefetch A/B | real10K_w800, post-heap-order, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/trial `14.8/15.0 ms`; p95 `15.45/15.6 ms`; p99 `16.8/16.85 ms`; recall@10 `1.0000` | `review/30206-task29-diskann-m5-rerank-prefetch/` |
+| `ec_diskann` | full post-M5 cross-engine sweep | final M5 code state, Task 29d search-list sweep `64/128/200/400/800` | -- | -- |
+| `ec_diskann` | cold-cache rerank lane | real10K_w800 or larger-than-shared-buffers corpus, cold cache | -- | -- |
+| `ec_diskann` | async-overlap prefetch trial | cold-cache rerank lane | -- | -- |
+| `ec_diskann` | same-page-run grouping trial | cold-cache rerank lane | -- | -- |
 
-Current completeness assessment for the M5 benchmark set:
+#### HNSW M5
 
-- Complete enough to justify the two landed warm-cache rerank-path
-  optimizations on Apple Silicon.
-- Complete enough to record the prefetch experiment as a negative result on the
-  measured fixture.
-- Not complete enough to claim a broad end-to-end M5 DiskANN speedup at
-  default settings, because the post-optimization round did not re-run the full
-  cross-engine Task 29d sweep on the final M5 code state.
-- Not complete enough to judge cold-cache or IO-bound behavior; the prefetch
-  packet was explicitly warm-cache and the corpus fits the local development
-  surface.
-- Not complete enough for product claims; these remain local engineering
-  measurements only.
-
-Source packets:
-
-- `review/30204-task29-diskann-m5-neon-rerank/`
-- `review/30205-task29-diskann-m5-rerank-heap-order/`
-- `review/30206-task29-diskann-m5-rerank-prefetch/`
-- `review/30207-task29-diskann-m5-decision/`
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_hnsw` | 50K reference refresh | current default `ConcurrentDsm`, worker sweep | -- | -- |
+| `ec_hnsw` | larger-corpus reference refresh | current default `ConcurrentDsm`, worker sweep | -- | -- |
+| `ec_hnsw` | build worker curve | `1/2/4/8` requested workers with PG18 headroom recorded | -- | -- |
 
 ## Storage
 

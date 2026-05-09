@@ -97,7 +97,8 @@ Apple-Silicon follow-up work found two narrow warm-cache DiskANN wins on M5:
 an exact-rerank NEON kernel and heap-TID-ordered rerank fetch. Those packeted
 results improve the rerank-heavy lane without changing recall, but they do not
 yet replace the full Task 29d cross-engine baseline table above. See
-[Benchmarks](docs/benchmarks.md) for the M5 breakdown and completeness limits.
+[Benchmarks](docs/benchmarks.md) for the M5 benchmark inventory and packet
+sources.
 
 **IVF** (100K corpus, `pq_fastscan`, `nlists=128`, `nprobe=96`):
 
