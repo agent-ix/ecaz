@@ -9289,6 +9289,12 @@ fn ec_spire_remote_search_coordinator_result_contract() -> TableIterator<
                 "must_have_positive_returned_candidate_count",
             ),
             (
+                "remote_heap_candidates",
+                "ready",
+                "origin_node_heap_result_rows",
+                "must_have_positive_returned_candidate_count_and_origin_node_heap_owner",
+            ),
+            (
                 "blocked",
                 "blocked",
                 "pre_result_gate_blocked",
@@ -20993,6 +20999,12 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {heap_candidate_summary_from}"))
                 .expect("executor heap summary status query should succeed")
                 .expect("executor heap summary status should exist");
+        let heap_summary_contract = Spi::get_one::<String>(
+            "SELECT validator FROM ec_spire_remote_search_coordinator_result_contract() \
+             WHERE result_source = 'remote_heap_candidates'",
+        )
+        .expect("executor heap summary contract query should succeed")
+        .expect("executor heap summary contract should exist");
 
         assert!(register_result);
         assert!(connection_attempted);
@@ -21010,6 +21022,10 @@ mod tests {
         assert_eq!(heap_summary_count, 1);
         assert_eq!(heap_summary_source, "remote_heap_candidates");
         assert_eq!(heap_summary_status, "ready");
+        assert_eq!(
+            heap_summary_contract,
+            "must_have_positive_returned_candidate_count_and_origin_node_heap_owner"
+        );
     }
 
     #[pg_test]
