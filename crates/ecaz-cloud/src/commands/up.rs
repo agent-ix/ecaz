@@ -32,7 +32,10 @@ pub struct UpArgs {
 
 impl UpArgs {
     pub async fn run(self, repo_root: PathBuf) -> Result<()> {
-        if matches!(self.profile, Profile::P1m | Profile::P10m | Profile::P100m) {
+        if matches!(
+            self.profile,
+            Profile::P1m | Profile::P10m | Profile::P100m | Profile::P1b
+        ) {
             let projected = self.profile.estimated_daily_usd().round() as u64;
             match self.confirm_cost {
                 Some(c) if c == projected => {}

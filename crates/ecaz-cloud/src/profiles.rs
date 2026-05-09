@@ -15,6 +15,11 @@ pub enum Profile {
     P1m,
     P10m,
     P100m,
+    /// 1B vectors via RaBitQ / IVF / SPIRE (compressed indexes only). Sizing
+    /// assumes ~500 GB total used (RaBitQ 1-bit + PQ-fastscan rerank +
+    /// posting metadata), not raw fp32. fp32-raw at 1B is intentionally
+    /// not a profile — it would be benchmarking the wrong code path.
+    P1b,
 }
 
 impl Profile {
@@ -25,6 +30,7 @@ impl Profile {
             "1m" => Some(Profile::P1m),
             "10m" => Some(Profile::P10m),
             "100m" => Some(Profile::P100m),
+            "1b" => Some(Profile::P1b),
             _ => None,
         }
     }
@@ -36,6 +42,7 @@ impl Profile {
             Profile::P1m => "1m",
             Profile::P10m => "10m",
             Profile::P100m => "100m",
+            Profile::P1b => "1b",
         }
     }
 
@@ -45,6 +52,7 @@ impl Profile {
             Profile::P1m => "m7g.xlarge",
             Profile::P10m => "m7g.4xlarge",
             Profile::P100m => "r7g.4xlarge",
+            Profile::P1b => "r7g.8xlarge",
         }
     }
 
@@ -52,7 +60,7 @@ impl Profile {
         match self {
             Profile::P10k | Profile::Dev => "c7g.large",
             Profile::P1m | Profile::P10m => "c7g.2xlarge",
-            Profile::P100m => "c7g.4xlarge",
+            Profile::P100m | Profile::P1b => "c7g.4xlarge",
         }
     }
 
@@ -63,6 +71,7 @@ impl Profile {
             Profile::P1m => 100,
             Profile::P10m => 500,
             Profile::P100m => 2048,
+            Profile::P1b => 1024,
         }
     }
 
@@ -74,11 +83,12 @@ impl Profile {
             Profile::P1m => 0.1632,                    // m7g.xlarge
             Profile::P10m => 0.6528,                   // m7g.4xlarge
             Profile::P100m => 0.8568,                  // r7g.4xlarge
+            Profile::P1b => 1.7136,                    // r7g.8xlarge
         };
         let loader = match self {
             Profile::P10k | Profile::Dev => 0.0725,    // c7g.large
             Profile::P1m | Profile::P10m => 0.29,      // c7g.2xlarge
-            Profile::P100m => 0.58,                    // c7g.4xlarge
+            Profile::P100m | Profile::P1b => 0.58,     // c7g.4xlarge
         };
         db + loader
     }
