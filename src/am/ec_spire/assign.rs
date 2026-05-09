@@ -235,6 +235,7 @@ fn build_boundary_assignment_placements(
                 return Err("ec_spire boundary assignment replica pids must be unique".to_owned());
             }
         }
+        validate_assignment_input(&input.assignment)?;
 
         let vec_id = allocator.allocate()?;
         rows.push(SpireLeafAssignmentPlacement {
@@ -281,6 +282,7 @@ fn build_allocated_assignment_rows(
 ) -> Result<Vec<SpireLeafAssignmentRow>, String> {
     let mut rows = Vec::with_capacity(inputs.len());
     for input in inputs {
+        validate_assignment_input(&input)?;
         let vec_id = allocator.allocate()?;
         rows.push(build_assignment_row(input, vec_id, flags)?);
     }
@@ -292,14 +294,7 @@ fn build_assignment_row(
     vec_id: SpireVecId,
     flags: u16,
 ) -> Result<SpireLeafAssignmentRow, String> {
-    if input.heap_tid == ItemPointer::INVALID {
-        return Err("ec_spire assignment input heap_tid must be valid".to_owned());
-    }
-    if !input.gamma.is_finite() {
-        return Err("ec_spire assignment input gamma must be finite".to_owned());
-    }
-    u32::try_from(input.encoded_payload.len())
-        .map_err(|_| "ec_spire assignment input payload length exceeds u32".to_owned())?;
+    validate_assignment_input(&input)?;
 
     let row = SpireLeafAssignmentRow {
         flags,
@@ -311,6 +306,18 @@ fn build_assignment_row(
     };
     row.encode()?;
     Ok(row)
+}
+
+fn validate_assignment_input(input: &SpireLeafAssignmentInput) -> Result<(), String> {
+    if input.heap_tid == ItemPointer::INVALID {
+        return Err("ec_spire assignment input heap_tid must be valid".to_owned());
+    }
+    if !input.gamma.is_finite() {
+        return Err("ec_spire assignment input gamma must be finite".to_owned());
+    }
+    u32::try_from(input.encoded_payload.len())
+        .map_err(|_| "ec_spire assignment input payload length exceeds u32".to_owned())?;
+    Ok(())
 }
 
 pub(super) fn observe_assignment_vec_ids(

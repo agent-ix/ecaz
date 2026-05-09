@@ -124,7 +124,7 @@ fn selected_leaf_routes_from_snapshot(
     Ok(routes)
 }
 
-fn collect_top_graph_scan_plan_reranked_candidates<F>(
+pub(super) fn collect_top_graph_scan_plan_reranked_candidates<F>(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
     query_vector: &[f32],

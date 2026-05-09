@@ -145,11 +145,13 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
         ));
     }
 
-    let assignments_by_centroid = group_assignments_by_centroid(
-        input.assignments.clone(),
-        &input.centroid_plan.assignment_indexes,
-        centroid_count,
-    )?;
+    if input.centroid_plan.assignment_indexes.len() != input.assignments.len() {
+        return Err(format!(
+            "ec_spire recursive build centroid assignment count {} does not match assignment count {}",
+            input.centroid_plan.assignment_indexes.len(),
+            input.assignments.len()
+        ));
+    }
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
     let mut leaf_pids = Vec::with_capacity(centroid_count);
@@ -183,7 +185,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
     let rows_by_leaf_pid = build_recursive_leaf_rows_by_pid(
         input.assignments,
         input.source_vectors,
-        assignments_by_centroid,
+        &input.centroid_plan.assignment_indexes,
         &route_map,
         input.boundary_replica_count,
         &mut local_vec_id_cursor,
@@ -226,7 +228,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
 fn build_recursive_leaf_rows_by_pid(
     assignments: Vec<SpireLeafAssignmentInput>,
     source_vectors: Vec<Vec<f32>>,
-    _assignments_by_centroid: Vec<Vec<SpireLeafAssignmentInput>>,
+    assignment_indexes: &[u32],
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
     local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
@@ -239,12 +241,29 @@ fn build_recursive_leaf_rows_by_pid(
     let boundary_inputs = assignments
         .into_iter()
         .zip(source_vectors.into_iter())
-        .map(|(assignment, source_vector)| {
-            let plan =
-                route_map.route_boundary_assignment_for_vector(&source_vector, boundary_replica_count)?;
+        .zip(assignment_indexes.iter())
+        .map(|((assignment, source_vector), assignment_index)| {
+            let primary_pid = route_map
+                .get(*assignment_index)
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire recursive build assignment index {} has no leaf route",
+                        assignment_index
+                    )
+                })?
+                .pid;
+            let boundary_plan = route_map.route_boundary_assignment_for_vector(
+                &source_vector,
+                boundary_replica_count.saturating_add(1),
+            )?;
+            let replica_pids = std::iter::once(boundary_plan.primary_pid)
+                .chain(boundary_plan.replica_pids.into_iter())
+                .filter(|pid| *pid != primary_pid)
+                .take(usize::try_from(boundary_replica_count).unwrap_or(usize::MAX))
+                .collect();
             Ok(SpireBoundaryLeafAssignmentInput {
-                primary_pid: plan.primary_pid,
-                replica_pids: plan.replica_pids,
+                primary_pid,
+                replica_pids,
                 assignment,
             })
         })

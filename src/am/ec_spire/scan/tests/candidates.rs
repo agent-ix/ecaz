@@ -971,11 +971,14 @@
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 
-        let prepared = prepare_single_level_snapshot_scan_candidates(
+        let leaf_count = count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap();
+        let scan_plan =
+            resolve_single_level_scan_plan_values(leaf_count, options, -1, -1).unwrap();
+        let candidates = collect_single_level_scan_plan_reranked_candidates(
             &snapshot,
             &object_store,
-            &query,
-            options,
+            query.values(),
+            scan_plan,
             |candidate| {
                 Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 1.0,
@@ -986,14 +989,14 @@
         )
         .unwrap();
 
-        assert_eq!(prepared.scan_plan.leaf_count, 2);
-        assert_eq!(prepared.scan_plan.nprobe, 2);
-        assert_eq!(prepared.scan_plan.nprobe_source, "relation");
-        assert_eq!(prepared.candidates.len(), 2);
-        assert_eq!(prepared.candidates[0].vec_id.local_sequence(), Some(2));
-        assert_eq!(prepared.candidates[0].score, -10.0);
-        assert_eq!(prepared.candidates[1].vec_id.local_sequence(), Some(1));
-        assert_eq!(prepared.candidates[1].score, -1.0);
+        assert_eq!(scan_plan.leaf_count, 2);
+        assert_eq!(scan_plan.nprobe, 2);
+        assert_eq!(scan_plan.nprobe_source, "relation");
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[1].score, -1.0);
     }
 
     #[test]
@@ -1133,11 +1136,16 @@
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 
-        let prepared = prepare_single_level_snapshot_scan_candidates(
+        let top_graph_plan = options.top_graph_plan().unwrap();
+        let leaf_count = count_snapshot_single_level_leaf_pids(&snapshot, &object_store).unwrap();
+        let scan_plan =
+            resolve_single_level_scan_plan_values(leaf_count, options, -1, -1).unwrap();
+        let candidates = collect_top_graph_scan_plan_reranked_candidates(
             &snapshot,
             &object_store,
-            &query,
-            options,
+            query.values(),
+            scan_plan,
+            top_graph_plan,
             |candidate| {
                 Ok(Some(match candidate.vec_id.local_sequence().unwrap() {
                     1 => 10.0,
@@ -1147,11 +1155,11 @@
         )
         .unwrap();
 
-        assert_eq!(prepared.scan_plan.nprobe, 1);
-        assert_eq!(prepared.candidates.len(), 1);
-        assert_eq!(prepared.candidates[0].vec_id.local_sequence(), Some(1));
-        assert_eq!(prepared.candidates[0].heap_tid, tid(10, 1));
-        assert_eq!(prepared.candidates[0].score, -10.0);
+        assert_eq!(scan_plan.nprobe, 1);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(1));
+        assert_eq!(candidates[0].heap_tid, tid(10, 1));
+        assert_eq!(candidates[0].score, -10.0);
     }
 
     #[test]

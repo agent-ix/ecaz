@@ -451,7 +451,7 @@ pub(super) fn resolve_single_level_scan_plan(
     )
 }
 
-fn resolve_single_level_scan_plan_values(
+pub(super) fn resolve_single_level_scan_plan_values(
     leaf_count: u32,
     options: EcSpireOptions,
     session_nprobe_value: i32,
