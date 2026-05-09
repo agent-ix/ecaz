@@ -52,14 +52,18 @@ that Phase 9 establishes.
 
 ## Phase 10.2: Streaming AM Scan Shape
 
-- [ ] Decide whether the AM should remain eager in `amrescan` with bounded work
-  or move toward incremental `amgettuple` production.
-- [ ] If staying eager, document the memory and latency ceiling and enforce
-  limits.
-- [ ] If streaming, define snapshot/object-store ownership so scan state can
-  advance safely across `amgettuple` calls.
-- [ ] Keep PostgreSQL executor semantics simple: forward scan only until a
-  broader AM contract is intentionally added.
+- [x] Decide whether the AM should remain eager in `amrescan` with bounded work
+  or move toward incremental `amgettuple` production. ADR-056 keeps Phase 10 on
+  the eager bounded path.
+- [x] If staying eager, document the memory and latency ceiling and enforce
+  limits. ADR-056 records the route/candidate ceilings and the first-tuple
+  latency tradeoff.
+- [x] If streaming, define snapshot/object-store ownership so scan state can
+  advance safely across `amgettuple` calls. ADR-056 rejects streaming for this
+  phase and requires a separate ownership ADR before that change.
+- [x] Keep PostgreSQL executor semantics simple: forward scan only until a
+  broader AM contract is intentionally added. `amcanbackward = false` and
+  `amgettuple` rejects non-forward scan directions.
 
 ## Phase 10.3: Heap Rerank I/O
 
