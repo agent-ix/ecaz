@@ -7825,6 +7825,136 @@ fn ec_spire_remote_search_libpq_connection_open_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_connection_check(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(pid_count, i64),
+        name!(conninfo_secret_name, String),
+        name!(provider_lookup_key, String),
+        name!(connection_attempted, bool),
+        name!(connection_status, &'static str),
+        name!(raw_conninfo_exposed, bool),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_connection_check requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_connection_check top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_connection_check selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_executor_connection_check",
+        )
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_connection_open_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        let (connection_attempted, connection_status, next_executor_step, status, recommendation) =
+            if row.connection_action != "open_libpq_connection" {
+                (
+                    false,
+                    "blocked_before_connection",
+                    row.next_executor_step,
+                    row.status,
+                    row.recommendation,
+                )
+            } else {
+                match std::env::var(&row.provider_lookup_key) {
+                    Ok(conninfo) if !conninfo.is_empty() => {
+                        match postgres::Client::connect(&conninfo, postgres::NoTls) {
+                            Ok(_) => (
+                                true,
+                                "libpq_connection_opened",
+                                "enter_libpq_pipeline_mode",
+                                "requires_libpq_executor",
+                                "enter libpq pipeline mode and send remote search request",
+                            ),
+                            Err(_) => (
+                                true,
+                                "libpq_connection_open_failed",
+                                "open_libpq_connection",
+                                "libpq_connection_failed",
+                                "verify conninfo secret target and remote node availability",
+                            ),
+                        }
+                    }
+                    Ok(_) => (
+                        false,
+                        "conninfo_secret_empty",
+                        "conninfo_secret_resolution",
+                        "requires_conninfo_secret_resolution",
+                        "configure a nonempty conninfo value in the external secret provider",
+                    ),
+                    Err(_) => (
+                        false,
+                        "conninfo_secret_missing",
+                        "conninfo_secret_resolution",
+                        "requires_conninfo_secret_resolution",
+                        "configure the external secret provider entry for conninfo_secret_name",
+                    ),
+                }
+            };
+
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            row.conninfo_secret_name,
+            row.provider_lookup_key,
+            connection_attempted,
+            connection_status,
+            false,
+            next_executor_step,
+            status,
+            recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -19188,7 +19318,7 @@ mod tests {
         let _env_lock = env_var_test_lock();
         let _conninfo_secret = ScopedEnvVar::set(
             "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_2",
-            "host=remote.example.invalid dbname=ecaz",
+            "host=/tmp/ecaz-missing-socket dbname=ecaz connect_timeout=1",
         );
 
         Spi::run(
@@ -19345,6 +19475,12 @@ mod tests {
         );
         let connection_open_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_connection_open_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let executor_connection_check_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_connection_check(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
@@ -19659,6 +19795,30 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {connection_open_summary_from}"))
                 .expect("connection open summary status query should succeed")
                 .expect("connection open summary status should exist");
+        let executor_connection_attempted = Spi::get_one::<bool>(&format!(
+            "SELECT connection_attempted {executor_connection_check_from}"
+        ))
+        .expect("executor connection check attempted query should succeed")
+        .expect("executor connection check attempted should exist");
+        let executor_connection_status = Spi::get_one::<String>(&format!(
+            "SELECT connection_status {executor_connection_check_from}"
+        ))
+        .expect("executor connection check status query should succeed")
+        .expect("executor connection check status should exist");
+        let executor_connection_raw_exposed = Spi::get_one::<bool>(&format!(
+            "SELECT raw_conninfo_exposed {executor_connection_check_from}"
+        ))
+        .expect("executor connection check raw exposure query should succeed")
+        .expect("executor connection check raw exposure should exist");
+        let executor_connection_next_step = Spi::get_one::<String>(&format!(
+            "SELECT next_executor_step {executor_connection_check_from}"
+        ))
+        .expect("executor connection check next step query should succeed")
+        .expect("executor connection check next step should exist");
+        let executor_connection_terminal_status =
+            Spi::get_one::<String>(&format!("SELECT status {executor_connection_check_from}"))
+                .expect("executor connection check terminal status query should succeed")
+                .expect("executor connection check terminal status should exist");
         let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
             .expect("executor readiness status query should succeed")
             .expect("executor readiness status should exist");
@@ -19786,6 +19946,14 @@ mod tests {
             "enter_libpq_pipeline_mode"
         );
         assert_eq!(connection_open_summary_status, "requires_libpq_executor");
+        assert!(executor_connection_attempted);
+        assert_eq!(executor_connection_status, "libpq_connection_open_failed");
+        assert!(!executor_connection_raw_exposed);
+        assert_eq!(executor_connection_next_step, "open_libpq_connection");
+        assert_eq!(
+            executor_connection_terminal_status,
+            "libpq_connection_failed"
+        );
         assert_eq!(executor_status, "requires_libpq_executor");
         assert_eq!(executor_next_step, "open_libpq_connection");
         assert_eq!(executor_secret_action, "resolve_conninfo_secret_reference");
