@@ -44,11 +44,17 @@ frontier vector database research.
 
 ## Quick Start
 
+The most repeatable local path is a pgrx-managed PostgreSQL 18 instance.
+This avoids depending on whichever `pg_config` happens to be first on `PATH`.
+
 ```bash
 cargo install cargo-pgrx@0.17
-cargo pgrx init
-cargo pgrx install --sudo --release
+cargo pgrx init --pg18 download
+cargo pgrx run --release pg18
 ```
+
+`cargo pgrx run` builds the extension, installs it into the managed PG18
+cluster, starts PostgreSQL if needed, and opens `psql`.
 
 ```sql
 CREATE EXTENSION ecaz;
@@ -73,6 +79,31 @@ SELECT * FROM memories
 ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
 ```
+
+See [Build From Source](docs/build-from-source.md) for the full repeatable
+setup path, including native prerequisites, existing-PostgreSQL installs,
+operator CLI setup, PG17 compatibility, and validation commands.
+
+## Build From Source
+
+Ecaz targets PG18 by default, with PG17 kept as a compatibility build. A
+complete source setup has five parts:
+
+1. Install Rust stable, native build tools, and PostgreSQL build dependencies.
+2. Install the matching pgrx toolchain: `cargo install cargo-pgrx@0.17`.
+3. Initialize pgrx for PG18: `cargo pgrx init --pg18 download`.
+4. Build and install into a pgrx-managed PG18: `cargo pgrx run --release pg18`.
+5. Install the operator CLI for repeatable local SQL, corpus, and benchmark
+   commands: `cargo install --path crates/ecaz-cli`.
+
+For an already-installed PostgreSQL server, install with an explicit
+`pg_config` instead:
+
+```bash
+cargo pgrx install --sudo --release --pg-config /path/to/pg_config
+```
+
+The detailed guide is [docs/build-from-source.md](docs/build-from-source.md).
 
 ## Performance
 
@@ -179,10 +210,11 @@ WITH (
 
 - [Rust](https://rustup.rs/) stable
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) `0.17`
-- PostgreSQL 17 or 18 development headers
+- Native PostgreSQL build dependencies, or PostgreSQL 17/18 development
+  headers if using an existing server
 
 ```bash
-cargo pgrx init
+cargo pgrx init --pg18 download
 make fmt
 make lint
 make lint-pg17
@@ -196,6 +228,7 @@ make pg-test-pg17
 | Document | Description |
 | --- | --- |
 | [Getting Started](docs/getting-started.md) | Prerequisites, installation, first query |
+| [Build From Source](docs/build-from-source.md) | Full repeatable local build and setup path |
 | [Usage Guide](docs/usage.md) | Encoding parameters, index tuning, query patterns |
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
 | [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |

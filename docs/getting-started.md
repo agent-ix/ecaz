@@ -5,21 +5,25 @@
 - [Rust](https://rustup.rs/) stable toolchain
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17:
   `cargo install cargo-pgrx@0.17`
-- PostgreSQL 17 or 18 development headers
+- Native PostgreSQL build dependencies, or PostgreSQL 17/18 development
+  headers if using an existing server
 
 ## Setup
 
-Initialize a local PostgreSQL instance for development:
+Initialize a local PostgreSQL 18 instance for development:
 
 ```bash
-cargo pgrx init
+cargo pgrx init --pg18 download
 ```
 
-Build and install the extension:
+Build, install, start PostgreSQL, and open `psql`:
 
 ```bash
-cargo pgrx install --sudo --release
+cargo pgrx run --release pg18
 ```
+
+For platform prerequisites, existing-PostgreSQL installs, operator CLI setup,
+and validation commands, see [Build From Source](build-from-source.md).
 
 ## First Query
 
@@ -76,6 +80,7 @@ WITH (graph_degree = 32, build_list_size = 100, list_size = 100);
 ## Next Steps
 
 - [Usage Guide](usage.md) - encoding, index choices, and tuning knobs
+- [Build From Source](build-from-source.md) - full repeatable build and setup path
 - [Benchmarks](benchmarks.md) - local results and methodology
 - [Operator CLI](../crates/ecaz-cli/README.md) - corpus loading, benchmarks, comparisons, and dev helpers
 - [Contributing](contributing.md) - development workflow, testing, CI
