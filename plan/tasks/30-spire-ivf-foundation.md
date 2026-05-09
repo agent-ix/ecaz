@@ -1627,6 +1627,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   provider keyed by `conninfo_secret_name`, keeps raw conninfo out of extension
   SQL/catalog surfaces, leaves FDW-style mappings as a future option, and
   rejects an extension-owned raw conninfo table.
+  PG18 contract coverage now also verifies that the descriptor-state CHECK in
+  `sql/bootstrap.sql` and `ecaz--0.1.0--0.1.1.sql` both match the Rust catalog
+  state registry, preventing upgrade/bootstrap drift.
   `ec_spire_remote_conninfo_secret_resolution_status(...)` now implements the
   first external-provider lookup surface by mapping secret references to
   executor-owned environment keys and reporting only lookup key, byte count,

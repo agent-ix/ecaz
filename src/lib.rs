@@ -19885,6 +19885,55 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_remote_state_upgrade_check_matches_bootstrap() {
+        fn descriptor_state_check_values(sql: &str) -> Vec<String> {
+            let marker = "descriptor_state text NOT NULL CHECK (\n        descriptor_state IN (";
+            let start = sql
+                .find(marker)
+                .expect("descriptor_state CHECK marker should exist")
+                + marker.len();
+            let tail = &sql[start..];
+            let end = tail
+                .find(')')
+                .expect("descriptor_state CHECK list should close");
+            tail[..end]
+                .split(',')
+                .map(|state| state.trim().trim_matches('\'').to_owned())
+                .collect()
+        }
+
+        let bootstrap_states = descriptor_state_check_values(include_str!("../sql/bootstrap.sql"));
+        let upgrade_states =
+            descriptor_state_check_values(include_str!("../ecaz--0.1.0--0.1.1.sql"));
+        let catalog_states = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT descriptor_state \
+                       FROM ec_spire_remote_node_descriptor_state_contract() \
+                      WHERE state_source = 'catalog' \
+                      ORDER BY descriptor_state",
+                    None,
+                    &[],
+                )
+                .expect("catalog state contract query should succeed")
+                .map(|row| {
+                    row["descriptor_state"]
+                        .value::<String>()
+                        .expect("catalog state decode should succeed")
+                        .expect("catalog state should exist")
+                })
+                .collect::<Vec<_>>()
+        });
+        let mut bootstrap_states_sorted = bootstrap_states;
+        bootstrap_states_sorted.sort();
+        let mut upgrade_states_sorted = upgrade_states;
+        upgrade_states_sorted.sort();
+
+        assert_eq!(bootstrap_states_sorted, catalog_states);
+        assert_eq!(upgrade_states_sorted, catalog_states);
+    }
+
+    #[pg_test]
     #[should_panic(
         expected = "conninfo_secret_name maps to provider_lookup_key EC_SPIRE_REMOTE_CONNINFO_NODE_1"
     )]
