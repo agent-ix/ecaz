@@ -1168,10 +1168,11 @@ diagnostics without scoring assignments.
 These items came out of the Phase 3 closeout review and are carried forward
 explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
-- [ ] Durable per-level `nprobe` metadata/configuration. Phase 3 exposes the
-  effective policy through diagnostics, but still uses configured
-  relation/session `nprobe` at level 1 and a conservative one-child probe above
-  level 1.
+- [x] Durable per-level `nprobe` metadata/configuration. Phase 8 pull-forward
+  added the `nprobe_per_level` reloption, ordered from level 2 upward.
+  Diagnostics now report configured upper-level entries as
+  `configured_above_level_1`, while omitted upper levels retain the
+  conservative one-child policy.
 - [ ] Durable per-level parameter storage. Phase 3 exposes level parameters
   through diagnostics reconstructed from active routing objects and reloptions.
 - [ ] Explicit user-facing per-level fanout configuration. Phase 3 exposes

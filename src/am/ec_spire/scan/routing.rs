@@ -234,7 +234,7 @@ fn route_top_graph_object_to_leaf_routes(
     query_vector: &[f32],
     search_list_size: u32,
     top_route_count: u32,
-    leaf_nprobe: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     let selected_child_pids = route_top_graph_object_to_child_pids(
         root_object,
@@ -266,7 +266,7 @@ fn route_top_graph_object_to_leaf_routes(
         current_parents,
         routing_objects_by_pid,
         query_vector,
-        SpireConservativeRecursiveNprobePolicy::new(leaf_nprobe)?,
+        nprobe_policy,
     )
 }
 
@@ -401,10 +401,24 @@ fn route_recursive_routing_objects_to_leaf_routes(
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    let nprobe_policy = SpireRecursiveNprobePolicy::conservative(nprobe)?;
+    route_recursive_routing_objects_to_leaf_routes_with_policy(
+        root_object,
+        routing_objects_by_pid,
+        query_vector,
+        &nprobe_policy,
+    )
+}
+
+fn route_recursive_routing_objects_to_leaf_routes_with_policy(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
-    let nprobe_policy = SpireConservativeRecursiveNprobePolicy::new(nprobe)?;
     if root_object.header.level == 1 {
         return Ok(route_root_object_to_leaf_pids(
             root_object,
@@ -431,7 +445,7 @@ fn route_recursive_parent_objects_to_leaf_routes(
     mut current_parents: Vec<SpireRoutingPartitionObject>,
     routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
     query_vector: &[f32],
-    nprobe_policy: SpireConservativeRecursiveNprobePolicy,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     if current_parents.is_empty() {
         return Err("ec_spire recursive scan routing produced no parent routes".to_owned());

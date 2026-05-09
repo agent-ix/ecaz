@@ -888,6 +888,7 @@
             leaf_count: 2,
             nprobe: 2,
             nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 2,
             rerank_width_source: "relation",
@@ -966,6 +967,7 @@
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::TurboQuant,
             local_store_tablespaces: None,
         };
@@ -1131,6 +1133,7 @@
             top_graph_build_list_size: 2,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 2,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::TurboQuant,
             local_store_tablespaces: None,
         };
@@ -1181,6 +1184,7 @@
             leaf_count: 0,
             nprobe: 0,
             nprobe_source: "none",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(0).unwrap(),
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 0,
             rerank_width_source: "relation",

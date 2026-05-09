@@ -277,7 +277,12 @@ fn collect_level_parameter_snapshot_rows(
         .into_iter()
         .map(|(level, entry)| {
             let (session_nprobe, effective_nprobe, effective_nprobe_source, nprobe_policy) =
-                level_nprobe_resolution(level, active_leaf_count, relation_options)?;
+                level_nprobe_resolution(
+                    level,
+                    active_leaf_count,
+                    entry.routing_child_count,
+                    relation_options,
+                )?;
             Ok(SpireIndexLevelParameterSnapshotRow {
                 active_epoch: snapshot.epoch_manifest().epoch,
                 level,

@@ -67,8 +67,10 @@ scannability with these `assignment_payload_status` values:
 `effective_nprobe_per_level` and `nprobe_policy_per_level`. Single-level
 indexes report one `single_level` entry. Recursive indexes report one entry per
 active routing level, ordered from level 1 upward. Phase 3 recursive routing is
-conservative: relation or session `nprobe` applies at level 1, and levels above
-1 probe one child until durable per-level nprobe configuration lands.
+conservative by default: relation or session `nprobe` applies at level 1, and
+levels above 1 probe one child unless the index is configured with
+`nprobe_per_level`. That reloption is a comma-separated list ordered from level
+2 upward.
 
 `ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` and
 `local_store_tablespaces` as the requested local placement surface. Repeated

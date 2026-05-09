@@ -39,17 +39,17 @@ where
         return Ok(Vec::new());
     }
 
-    collect_reranked_quantized_routed_probe_candidates(
+    let mut candidates = collect_quantized_routed_probe_candidates_with_policy(
         snapshot,
         object_store,
         query_vector,
-        scan_plan.nprobe,
+        &scan_plan.recursive_nprobe_policy,
         scan_plan.payload_format,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
-        scan_plan.rerank_width,
-        exact_score_ip,
-    )
+    )?;
+    rerank_scored_candidates_by_ip(&mut candidates, scan_plan.rerank_width, exact_score_ip)?;
+    Ok(candidates)
 }
 
 pub(super) fn collect_quantized_selected_leaf_candidates(
@@ -150,7 +150,7 @@ where
         query_vector,
         top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
         scan_plan.nprobe,
-        scan_plan.nprobe,
+        &scan_plan.recursive_nprobe_policy,
     )?;
     let mut candidates = rank_routed_leaf_rows_by_ip(
         routed_rows,

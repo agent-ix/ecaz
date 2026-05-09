@@ -68,6 +68,7 @@ mod tests {
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: super::options::SpireStorageFormat::TurboQuant,
             local_store_tablespaces: None,
         }

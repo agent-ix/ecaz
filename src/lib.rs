@@ -14893,7 +14893,7 @@ mod tests {
             "CREATE INDEX ec_spire_options_recursive_sql_idx \
              ON ec_spire_options_recursive_sql USING ec_spire \
              (embedding ecvector_spire_ip_ops) \
-             WITH (nlists = 4, recursive_fanout = 2)",
+             WITH (nlists = 4, recursive_fanout = 2, nprobe = 4, nprobe_per_level = '2')",
         )
         .expect("recursive options ec_spire index creation should succeed");
         let recursive_fanout = Spi::get_one::<i32>(
@@ -14930,10 +14930,10 @@ mod tests {
         assert_eq!(recursive_fanout, 2);
         assert!(recursive_build_enabled);
         assert_eq!(recursive_active_leaf_count, 4);
-        assert_eq!(recursive_effective_nprobe_per_level, vec![4, 1]);
+        assert_eq!(recursive_effective_nprobe_per_level, vec![4, 2]);
         assert_eq!(
             recursive_nprobe_policy_per_level,
-            vec!["relation_or_session_leaf_level", "one_child_above_level_1"]
+            vec!["relation_or_session_leaf_level", "configured_above_level_1"]
         );
 
         Spi::run(

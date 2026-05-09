@@ -96,29 +96,6 @@ struct SpireStoreObjectReadGroup {
     delta_routes: Vec<SpireDeltaObjectRoute>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SpireConservativeRecursiveNprobePolicy {
-    leaf_level_nprobe: u32,
-}
-
-impl SpireConservativeRecursiveNprobePolicy {
-    fn new(leaf_level_nprobe: u32) -> Result<Self, String> {
-        if leaf_level_nprobe == 0 {
-            return Err("ec_spire recursive scan requires leaf-level nprobe > 0".to_owned());
-        }
-        Ok(Self { leaf_level_nprobe })
-    }
-
-    fn nprobe_for_parent_level(self, parent_level: u16) -> u32 {
-        if parent_level <= 1 {
-            self.leaf_level_nprobe
-        } else {
-            // TODO: replace this conservative default when durable per-level nprobe controls land.
-            1
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SpireScanOutput {
     pub(super) heap_tid: ItemPointer,

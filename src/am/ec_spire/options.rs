@@ -27,6 +27,7 @@ use super::{
 
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 
 static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
 static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
@@ -50,6 +51,7 @@ struct EcSpireReloptions {
     top_graph_build_list_size: i32,
     top_graph_alpha: f64,
     top_graph_search_list_size: i32,
+    nprobe_per_level_offset: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     local_store_tablespaces_offset: i32,
@@ -111,6 +113,7 @@ pub(super) struct EcSpireOptions {
     pub(super) top_graph_build_list_size: i32,
     pub(super) top_graph_alpha: f32,
     pub(super) top_graph_search_list_size: i32,
+    pub(super) nprobe_per_level: Option<String>,
     pub(super) storage_format: SpireStorageFormat,
     pub(super) local_store_tablespaces: Option<String>,
 }
@@ -146,6 +149,7 @@ impl EcSpireOptions {
         top_graph_build_list_size: EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
         top_graph_alpha: EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA,
         top_graph_search_list_size: EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
+        nprobe_per_level: None,
         storage_format: SpireStorageFormat::Auto,
         local_store_tablespaces: None,
     };
@@ -193,6 +197,79 @@ impl EcSpireOptions {
                 })?),
             },
         })
+    }
+
+    pub(super) fn nprobe_per_level_values(&self) -> Result<Vec<u32>, String> {
+        self.nprobe_per_level
+            .as_deref()
+            .map(parse_nprobe_per_level_reloption)
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireRecursiveNprobePolicy {
+    leaf_level_nprobe: u32,
+    nprobe_per_level: [u32; EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES],
+    nprobe_per_level_len: usize,
+}
+
+impl SpireRecursiveNprobePolicy {
+    pub(super) fn conservative(leaf_level_nprobe: u32) -> Result<Self, String> {
+        Self::from_level_values(leaf_level_nprobe, Vec::new())
+    }
+
+    pub(super) fn from_level_values(
+        leaf_level_nprobe: u32,
+        nprobe_per_level: Vec<u32>,
+    ) -> Result<Self, String> {
+        if leaf_level_nprobe == 0 && !nprobe_per_level.is_empty() {
+            return Err(
+                "ec_spire recursive scan requires leaf-level nprobe > 0 when per-level nprobe is configured"
+                    .to_owned(),
+            );
+        }
+        if nprobe_per_level.len() > EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES {
+            return Err(format!(
+                "ec_spire nprobe_per_level supports at most {EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES} entries"
+            ));
+        }
+        if nprobe_per_level.contains(&0) {
+            return Err("ec_spire nprobe_per_level entries must be greater than 0".to_owned());
+        }
+        let nprobe_per_level_len = nprobe_per_level.len();
+        let mut nprobe_per_level_array = [0; EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES];
+        nprobe_per_level_array[..nprobe_per_level_len].copy_from_slice(&nprobe_per_level);
+        Ok(Self {
+            leaf_level_nprobe,
+            nprobe_per_level: nprobe_per_level_array,
+            nprobe_per_level_len,
+        })
+    }
+
+    pub(super) fn nprobe_for_parent_level(&self, parent_level: u16) -> u32 {
+        if parent_level <= 1 {
+            return self.leaf_level_nprobe;
+        }
+        let level_index = usize::from(parent_level - 2);
+        if level_index < self.nprobe_per_level_len {
+            self.nprobe_per_level[level_index]
+        } else {
+            1
+        }
+    }
+
+    pub(super) fn configured_nprobe_for_level(&self, level: u16) -> Option<u32> {
+        if level <= 1 {
+            return None;
+        }
+        let level_index = usize::from(level - 2);
+        if level_index < self.nprobe_per_level_len {
+            Some(self.nprobe_per_level[level_index])
+        } else {
+            None
+        }
     }
 }
 
@@ -303,6 +380,36 @@ fn normalize_local_store_tablespaces_reloption(
     Ok(names.join(","))
 }
 
+fn parse_nprobe_per_level_reloption(value: &str) -> Result<Vec<u32>, String> {
+    let levels = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if levels.is_empty() || levels.iter().any(|level| level.is_empty()) {
+        return Err(
+            "ec_spire nprobe_per_level reloption must not contain empty entries".to_owned(),
+        );
+    }
+    if levels.len() > EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES {
+        return Err(format!(
+            "ec_spire nprobe_per_level supports at most {EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES} entries"
+        ));
+    }
+    levels
+        .into_iter()
+        .map(|level| {
+            let parsed = level.parse::<u32>().map_err(|_| {
+                format!(
+                    "ec_spire nprobe_per_level reloption entries must be positive integers, got '{level}'"
+                )
+            })?;
+            if parsed == 0 || parsed > EC_SPIRE_MAX_NPROBE as u32 {
+                return Err(format!(
+                    "ec_spire nprobe_per_level entries must be between 1 and {EC_SPIRE_MAX_NPROBE}, got {parsed}"
+                ));
+            }
+            Ok(parsed)
+        })
+        .collect()
+}
+
 pub(super) fn plan_local_store_tablespaces_with_resolver(
     local_store_count: i32,
     index_tablespace_oid: u32,
@@ -393,6 +500,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) leaf_count: u32,
     pub(super) nprobe: u32,
     pub(super) nprobe_source: &'static str,
+    pub(super) recursive_nprobe_policy: SpireRecursiveNprobePolicy,
     pub(super) payload_format: SpireAssignmentPayloadFormat,
     pub(super) rerank_width: usize,
     pub(super) rerank_width_source: &'static str,
@@ -464,6 +572,10 @@ pub(super) fn resolve_single_level_scan_plan_values(
     }
 
     let nprobe = resolve_scan_nprobe_values(leaf_count, relation_nprobe, session_nprobe_value);
+    let recursive_nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(
+        nprobe.effective_nprobe,
+        options.nprobe_per_level_values()?,
+    )?;
     let rerank_width =
         resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
     let rerank_width_usize = usize::try_from(rerank_width.effective_rerank_width)
@@ -478,6 +590,7 @@ pub(super) fn resolve_single_level_scan_plan_values(
         leaf_count,
         nprobe: nprobe.effective_nprobe,
         nprobe_source: nprobe.source,
+        recursive_nprobe_policy,
         payload_format: options.assignment_payload_format(),
         rerank_width: rerank_width_usize,
         rerank_width_source: rerank_width.source,
@@ -697,6 +810,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
             );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
+                c"nprobe_per_level".as_ptr(),
+                c"Comma-separated recursive SPIRE nprobe values for levels above 1, ordered from level 2 upward; omitted levels use the conservative policy."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcSpireReloptions, nprobe_per_level_offset) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
                 c"storage_format".as_ptr(),
                 c"SPIRE assignment payload quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
                     .as_ptr(),
@@ -814,6 +937,17 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     });
+    let nprobe_per_level = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.nprobe_per_level_offset,
+            "nprobe_per_level",
+        )
+    }
+    .map(|value| {
+        parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"));
+        value
+    });
 
     EcSpireOptions {
         nlists: reloptions.nlists,
@@ -830,6 +964,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         top_graph_build_list_size: reloptions.top_graph_build_list_size,
         top_graph_alpha: reloptions.top_graph_alpha as f32,
         top_graph_search_list_size: reloptions.top_graph_search_list_size,
+        nprobe_per_level,
         storage_format,
         local_store_tablespaces,
     }
@@ -838,11 +973,12 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_local_store_tablespaces_reloption, plan_local_store_tablespaces_with_resolver,
-        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, validate_boundary_replica_count_value,
-        validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireStorageFormat, SpireTopGraphOptionPlan,
+        normalize_local_store_tablespaces_reloption, parse_nprobe_per_level_reloption,
+        plan_local_store_tablespaces_with_resolver, resolve_scan_nprobe_values,
+        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
+        validate_boundary_replica_count_value, validate_local_store_count_value,
+        validate_recursive_fanout_value, EcSpireOptions, SpireCandidateDedupeMode,
+        SpireStorageFormat, SpireTopGraphOptionPlan,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -981,6 +1117,18 @@ mod tests {
     }
 
     #[test]
+    fn nprobe_per_level_reloption_parses_upper_level_values() {
+        assert_eq!(
+            parse_nprobe_per_level_reloption("2, 3").unwrap(),
+            vec![2, 3]
+        );
+        assert!(parse_nprobe_per_level_reloption("0").is_err());
+        assert!(parse_nprobe_per_level_reloption("2,").is_err());
+        assert!(parse_nprobe_per_level_reloption("bad").is_err());
+        assert!(parse_nprobe_per_level_reloption(&["1"; 33].join(",")).is_err());
+    }
+
+    #[test]
     fn scan_rerank_width_resolution_uses_session_or_relation() {
         let relation = resolve_scan_rerank_width_values(128, -1);
         assert_eq!(relation.effective_rerank_width, 128);
@@ -1017,6 +1165,7 @@ mod tests {
             }
         );
         assert_eq!(options.storage_format, SpireStorageFormat::Auto);
+        assert_eq!(options.nprobe_per_level, None);
         assert_eq!(options.local_store_tablespaces, None);
         assert_eq!(
             options.assignment_payload_format(),
@@ -1041,6 +1190,7 @@ mod tests {
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::RaBitQ,
             local_store_tablespaces: Some("fast_a".to_owned()),
         };
@@ -1062,6 +1212,23 @@ mod tests {
     }
 
     #[test]
+    fn single_level_scan_plan_carries_recursive_per_level_nprobe_policy() {
+        let options = EcSpireOptions {
+            nprobe: 2,
+            nprobe_per_level: Some("3,4".to_owned()),
+            ..EcSpireOptions::DEFAULT
+        };
+
+        let plan = resolve_single_level_scan_plan_values(17, options, -1, -1).unwrap();
+
+        assert_eq!(plan.nprobe, 2);
+        assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(1), 2);
+        assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(2), 3);
+        assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(3), 4);
+        assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(4), 1);
+    }
+
+    #[test]
     fn single_level_scan_plan_uses_session_overrides_and_full_rerank() {
         let options = EcSpireOptions {
             nlists: 17,
@@ -1078,6 +1245,7 @@ mod tests {
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };
@@ -1116,6 +1284,7 @@ mod tests {
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };
@@ -1146,6 +1315,7 @@ mod tests {
             top_graph_build_list_size: 100,
             top_graph_alpha: 1.2,
             top_graph_search_list_size: 0,
+            nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
             local_store_tablespaces: None,
         };

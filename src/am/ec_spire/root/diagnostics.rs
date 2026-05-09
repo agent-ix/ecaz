@@ -157,6 +157,7 @@ fn level_target_fanout(
 fn level_nprobe_resolution(
     level: u16,
     leaf_count: u32,
+    observed_child_count: u64,
     relation_options: &options::EcSpireOptions,
 ) -> Result<(Option<i32>, u32, &'static str, &'static str), String> {
     let relation_nprobe = u32::try_from(relation_options.nprobe)
@@ -171,6 +172,20 @@ fn level_nprobe_resolution(
             resolved.effective_nprobe,
             resolved.source,
             "relation_or_session_leaf_level",
+        ));
+    }
+    let nprobe_policy = options::SpireRecursiveNprobePolicy::from_level_values(
+        options::resolve_scan_nprobe(leaf_count, relation_nprobe).effective_nprobe,
+        relation_options.nprobe_per_level_values()?,
+    )?;
+    if let Some(configured_nprobe) = nprobe_policy.configured_nprobe_for_level(level) {
+        let observed_child_count = u32::try_from(observed_child_count)
+            .map_err(|_| "ec_spire observed routing child count exceeds u32".to_owned())?;
+        return Ok((
+            None,
+            configured_nprobe.clamp(1, observed_child_count.max(1)),
+            "relation_per_level",
+            "configured_above_level_1",
         ));
     }
     Ok((
