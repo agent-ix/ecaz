@@ -5577,6 +5577,95 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
     ))
 }
 
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_catalog_index_cleanup(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(descriptor_removed_count, i64),
+        name!(manifest_removed_count, i64),
+        name!(manifest_entry_removed_count, i64),
+        name!(status, String),
+    ),
+> {
+    let result = Spi::connect_mut(|client| {
+        let counts = client
+            .select(
+                "SELECT \
+                    (SELECT count(*)::bigint \
+                       FROM ec_spire_remote_node_descriptor \
+                      WHERE coordinator_index_oid = $1::oid) \
+                        AS descriptor_removed_count, \
+                    (SELECT count(*)::bigint \
+                       FROM ec_spire_remote_epoch_manifest \
+                      WHERE coordinator_index_oid = $1::oid) \
+                        AS manifest_removed_count, \
+                    (SELECT count(*)::bigint \
+                       FROM ec_spire_remote_epoch_manifest_entry \
+                      WHERE coordinator_index_oid = $1::oid) \
+                        AS manifest_entry_removed_count",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire remote catalog index cleanup count failed: {e}"))?
+            .map(|row| {
+                Ok::<(i64, i64, i64), String>((
+                    row["descriptor_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("descriptor removed count decode failed: {e}"))?
+                        .ok_or_else(|| "descriptor removed count is null".to_owned())?,
+                    row["manifest_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest removed count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest removed count is null".to_owned())?,
+                    row["manifest_entry_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest entry removed count decode failed: {e}"))?
+                        .ok_or_else(|| "manifest entry removed count is null".to_owned())?,
+                ))
+            })
+            .next()
+            .transpose()?
+            .unwrap_or((0, 0, 0));
+        client
+            .update(
+                "DELETE FROM ec_spire_remote_epoch_manifest \
+                  WHERE coordinator_index_oid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire remote catalog index manifest cleanup failed: {e}"))?;
+        client
+            .update(
+                "DELETE FROM ec_spire_remote_node_descriptor \
+                  WHERE coordinator_index_oid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire remote catalog index descriptor cleanup failed: {e}"))?;
+        Ok::<(i64, i64, i64), String>(counts)
+    });
+    let (descriptor_removed_count, manifest_removed_count, manifest_entry_removed_count) =
+        result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    let removed_any = descriptor_removed_count > 0
+        || manifest_removed_count > 0
+        || manifest_entry_removed_count > 0;
+    let status = if removed_any {
+        "removed_index_remote_catalog_rows"
+    } else {
+        "ready"
+    };
+
+    TableIterator::once((
+        descriptor_removed_count,
+        manifest_removed_count,
+        manifest_entry_removed_count,
+        status.to_owned(),
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_degradation_policy_contract() -> TableIterator<
@@ -21440,7 +21529,7 @@ mod tests {
         assert_eq!(dump_restore_status, "requires_operator_reregistration");
         assert_eq!(
             drop_index_cleanup_surface,
-            "ec_spire_remote_catalog_orphan_cleanup"
+            "ec_spire_remote_catalog_index_cleanup,ec_spire_remote_catalog_orphan_cleanup"
         );
         assert_eq!(basebackup_status, "supported");
         assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
@@ -21578,6 +21667,76 @@ mod tests {
         assert_eq!(summary_status, "orphaned_remote_catalog_rows");
         assert_eq!(cleanup_counts, vec![1, 1, 1]);
         assert_eq!(post_cleanup_status, "ready");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_catalog_index_cleanup() {
+        Spi::run(
+            "INSERT INTO ec_spire_remote_node_descriptor \
+             (coordinator_index_oid, node_id, descriptor_generation, conninfo_secret_name, \
+              remote_index_identity, remote_index_regclass, descriptor_state, \
+              last_served_epoch, min_retained_epoch, extension_version, last_error) \
+             VALUES ('4294967293'::oid, 3, 1, 'spire/remote/index-cleanup', '\\x01'::bytea, \
+                     'cleanup_idx', 'active', 1, 1, 'test', 'none')",
+        )
+        .expect("index cleanup descriptor insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest \
+             (coordinator_index_oid, active_epoch, manifest_scope, manifest_decision, \
+              manifest_entry_count, included_remote_node_count, remote_placement_count, \
+              publish_decision, status, persisted_at_micros) \
+             VALUES ('4294967293'::oid, 1, 'distributed', \
+                     'emit_distributed_epoch_manifest', 1, 1, 1, \
+                     'publish_remote_epoch_manifest', 'ready', 1)",
+        )
+        .expect("index cleanup manifest insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest_entry \
+             (coordinator_index_oid, active_epoch, node_id, descriptor_state, placement_count, \
+              required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+              min_retained_epoch, epoch_window_status, manifest_action, status) \
+             VALUES ('4294967293'::oid, 1, 3, 'active', 1, 1, 1, 1, 1, \
+                     'ready', 'include_remote_node', 'ready')",
+        )
+        .expect("index cleanup manifest entry insert should succeed");
+
+        Spi::run(
+            "CREATE TEMP TABLE ec_spire_remote_catalog_index_cleanup_result AS \
+             SELECT * FROM ec_spire_remote_catalog_index_cleanup('4294967293'::oid)",
+        )
+        .expect("index cleanup result materialization should succeed");
+        let cleanup_from = "FROM ec_spire_remote_catalog_index_cleanup_result";
+        let cleanup_counts = Spi::get_one::<String>(&format!(
+            "SELECT descriptor_removed_count::text || ',' || \
+                    manifest_removed_count::text || ',' || \
+                    manifest_entry_removed_count::text \
+               {cleanup_from}"
+        ))
+        .expect("index cleanup count query should succeed")
+        .expect("index cleanup counts should exist");
+        let cleanup_status = Spi::get_one::<String>(&format!("SELECT status {cleanup_from}"))
+            .expect("index cleanup status query should succeed")
+            .expect("index cleanup status should exist");
+        let post_cleanup_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_remote_node_descriptor \
+              WHERE coordinator_index_oid = '4294967293'::oid",
+        )
+        .expect("post index cleanup descriptor query should succeed")
+        .expect("post index cleanup descriptor count should exist");
+
+        let cleanup_counts = cleanup_counts
+            .split(',')
+            .map(|value| {
+                value
+                    .parse::<i64>()
+                    .expect("index cleanup count should parse as i64")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(cleanup_counts, vec![1, 1, 1]);
+        assert_eq!(cleanup_status, "removed_index_remote_catalog_rows");
+        assert_eq!(post_cleanup_count, 0);
     }
 
     #[pg_test]

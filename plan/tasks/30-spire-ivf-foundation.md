@@ -1622,7 +1622,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_catalog_orphan_cleanup()` now expose the first remote
   catalog lifecycle cleanup path: rows keyed by coordinator OIDs that no longer
   resolve to live `ec_spire` indexes are reported and removable from the
-  descriptor and manifest catalogs.
+  descriptor and manifest catalogs. `ec_spire_remote_catalog_index_cleanup()`
+  now adds an exact coordinator-OID cleanup target that a future DROP INDEX hook
+  can call without sweeping unrelated orphaned remote catalog rows.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes
