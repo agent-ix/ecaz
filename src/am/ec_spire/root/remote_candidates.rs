@@ -1258,6 +1258,8 @@ fn remote_search_execution_summary_from_plan_rows(
 
 const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str =
@@ -2534,6 +2536,68 @@ fn decode_remote_search_candidate_pg_row(
     })
 }
 
+fn decode_remote_search_heap_candidate_pg_row(
+    row: &postgres::Row,
+    expected_requested_epoch: u64,
+    expected_node_id: u32,
+) -> Result<SpireRemoteSearchLocalHeapCandidateRow, String> {
+    let requested_epoch = row
+        .try_get::<_, i64>("requested_epoch")
+        .map_err(|_| {
+            "ec_spire remote heap executor requested_epoch decode failed".to_owned()
+        })
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire remote heap executor requested_epoch is negative".to_owned()
+            })
+        })?;
+    if requested_epoch != expected_requested_epoch {
+        return Err(format!(
+            "ec_spire remote heap executor requested_epoch {requested_epoch} does not match expected epoch {expected_requested_epoch}"
+        ));
+    }
+    let candidate = decode_remote_search_candidate_pg_row(row, expected_node_id)?;
+    let heap_block = row
+        .try_get::<_, i64>("heap_block")
+        .map_err(|_| "ec_spire remote heap executor heap_block decode failed".to_owned())
+        .and_then(|value| {
+            u32::try_from(value)
+                .map_err(|_| "ec_spire remote heap executor heap_block is invalid".to_owned())
+        })?;
+    let heap_offset = row
+        .try_get::<_, i32>("heap_offset")
+        .map_err(|_| "ec_spire remote heap executor heap_offset decode failed".to_owned())
+        .and_then(|value| {
+            u16::try_from(value)
+                .map_err(|_| "ec_spire remote heap executor heap_offset is invalid".to_owned())
+        })?;
+    let status = row
+        .try_get::<_, String>("status")
+        .map_err(|_| "ec_spire remote heap executor status decode failed".to_owned())?;
+    if status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire remote heap executor returned non-ready heap candidate status {status}"
+        ));
+    }
+
+    Ok(SpireRemoteSearchLocalHeapCandidateRow {
+        requested_epoch,
+        served_epoch: candidate.served_epoch,
+        node_id: candidate.node_id,
+        pid: candidate.pid,
+        object_version: candidate.object_version,
+        row_index: candidate.row_index,
+        assignment_flags: candidate.assignment_flags,
+        vec_id: candidate.vec_id,
+        row_locator: candidate.row_locator,
+        heap_block,
+        heap_offset,
+        score: candidate.score,
+        heap_lookup_owner: SPIRE_REMOTE_HEAP_RESOLUTION,
+        status: SPIRE_REMOTE_STATUS_READY,
+    })
+}
+
 fn remote_search_libpq_executor_candidates_for_dispatch(
     row: &SpireRemoteSearchLibpqDispatchPlanRow,
     query: &[f32],
@@ -2628,6 +2692,120 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
     Ok(candidates)
 }
 
+fn remote_search_libpq_executor_heap_candidates_for_dispatch(
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+        return Err(format!(
+            "ec_spire remote heap executor dispatch for node_id {} is blocked with status {}",
+            row.node_id, row.status
+        ));
+    }
+
+    let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire remote heap executor conninfo secret for node_id {} is not resolved: {status}",
+            row.node_id
+        )
+    })?;
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
+        format!(
+            "ec_spire remote heap executor failed to open connection for node_id {}",
+            row.node_id
+        )
+    })?;
+    let remote_index_oid = client
+        .query_one(
+            "SELECT to_regclass($1)::oid",
+            &[&row.remote_index_regclass.as_str()],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire remote heap executor failed to resolve remote index for node_id {}",
+                row.node_id
+            )
+        })?
+        .try_get::<_, Option<u32>>(0)
+        .map_err(|_| {
+            format!(
+                "ec_spire remote heap executor remote index oid decode failed for node_id {}",
+                row.node_id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote heap executor remote index is missing for node_id {}",
+                row.node_id
+            )
+        })?;
+    let requested_epoch = i64::try_from(row.requested_epoch)
+        .map_err(|_| "ec_spire remote heap executor requested_epoch exceeds i64")?;
+    let selected_pids = row
+        .selected_pids
+        .iter()
+        .map(|pid| {
+            i64::try_from(*pid)
+                .map_err(|_| "ec_spire remote heap executor selected PID exceeds i64")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let top_k =
+        i32::try_from(top_k).map_err(|_| "ec_spire remote heap executor top_k exceeds i32")?;
+
+    let result_rows = client
+        .query(
+            SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
+            &[
+                &remote_index_oid,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &top_k,
+                &consistency_mode,
+            ],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire remote heap executor remote heap query failed for node_id {}",
+                row.node_id
+            )
+        })?;
+    let candidates = result_rows
+        .iter()
+        .map(|candidate_row| {
+            decode_remote_search_heap_candidate_pg_row(
+                candidate_row,
+                row.requested_epoch,
+                row.node_id,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let merge_candidates = candidates
+        .iter()
+        .map(|candidate| SpireRemoteSearchCandidateRow {
+            served_epoch: candidate.served_epoch,
+            node_id: candidate.node_id,
+            pid: candidate.pid,
+            object_version: candidate.object_version,
+            row_index: candidate.row_index,
+            assignment_flags: candidate.assignment_flags,
+            vec_id: candidate.vec_id.clone(),
+            row_locator: candidate.row_locator.clone(),
+            score: candidate.score,
+        })
+        .collect::<Vec<_>>();
+    validate_remote_search_candidate_batch(
+        row.requested_epoch,
+        row.node_id,
+        &row.selected_pids,
+        &merge_candidates,
+    )?;
+
+    Ok(candidates)
+}
+
 pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -2656,6 +2834,66 @@ pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
                 consistency_mode,
             )?);
         }
+        Ok(candidates)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query.clone(),
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut candidates = Vec::new();
+        for row in &dispatch_rows {
+            candidates.extend(remote_search_libpq_executor_heap_candidates_for_dispatch(
+                row,
+                &query,
+                top_k,
+                consistency_mode,
+            )?);
+        }
+        candidates.sort_by(|left, right| {
+            remote_search_candidate_cmp(
+                &SpireRemoteSearchCandidateRow {
+                    served_epoch: left.served_epoch,
+                    node_id: left.node_id,
+                    pid: left.pid,
+                    object_version: left.object_version,
+                    row_index: left.row_index,
+                    assignment_flags: left.assignment_flags,
+                    vec_id: left.vec_id.clone(),
+                    row_locator: left.row_locator.clone(),
+                    score: left.score,
+                },
+                &SpireRemoteSearchCandidateRow {
+                    served_epoch: right.served_epoch,
+                    node_id: right.node_id,
+                    pid: right.pid,
+                    object_version: right.object_version,
+                    row_index: right.row_index,
+                    assignment_flags: right.assignment_flags,
+                    vec_id: right.vec_id.clone(),
+                    row_locator: right.row_locator.clone(),
+                    score: right.score,
+                },
+            )
+        });
+        candidates.truncate(top_k);
         Ok(candidates)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
