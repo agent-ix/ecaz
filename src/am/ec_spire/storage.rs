@@ -1,7 +1,7 @@
 //! PID-addressed partition-object storage codecs.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     mem::size_of,
     ptr,
 };

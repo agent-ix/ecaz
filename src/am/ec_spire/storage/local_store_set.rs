@@ -2,6 +2,7 @@
 pub(super) struct SpireLocalObjectStoreSet {
     config: SpireLocalStoreConfig,
     stores: Vec<SpireLocalObjectStore>,
+    store_indexes_by_id: HashMap<u32, usize>,
 }
 
 impl SpireLocalObjectStoreSet {
@@ -10,12 +11,27 @@ impl SpireLocalObjectStoreSet {
         page_size: usize,
     ) -> Result<Self, String> {
         let mut stores = Vec::with_capacity(config.stores.len());
+        let mut store_indexes_by_id = HashMap::with_capacity(config.stores.len());
         for descriptor in &config.stores {
+            let store_index = stores.len();
+            if store_indexes_by_id
+                .insert(descriptor.local_store_id, store_index)
+                .is_some()
+            {
+                return Err(format!(
+                    "ec_spire local object store set duplicate local_store_id {}",
+                    descriptor.local_store_id
+                ));
+            }
             stores.push(SpireLocalObjectStore::for_store_descriptor(
                 descriptor, page_size,
             )?);
         }
-        Ok(Self { config, stores })
+        Ok(Self {
+            config,
+            stores,
+            store_indexes_by_id,
+        })
     }
 
     pub(super) fn insert_routing_object(
@@ -58,16 +74,19 @@ impl SpireLocalObjectStoreSet {
     }
 
     fn store_mut_for_pid(&mut self, pid: u64) -> Result<&mut SpireLocalObjectStore, String> {
-        let descriptor = *self.config.store_for_pid(pid)?;
-        self.stores
-            .iter_mut()
-            .find(|store| store.local_store_id == descriptor.local_store_id)
+        let local_store_id = self.config.store_for_pid(pid)?.local_store_id;
+        let store_index = *self
+            .store_indexes_by_id
+            .get(&local_store_id)
             .ok_or_else(|| {
                 format!(
                     "ec_spire local object store set is missing local_store_id {}",
-                    descriptor.local_store_id
+                    local_store_id
                 )
-            })
+            })?;
+        self.stores.get_mut(store_index).ok_or_else(|| {
+            format!("ec_spire local object store set has stale index for local_store_id {local_store_id}")
+        })
     }
 
     fn store_for_placement(
@@ -75,15 +94,21 @@ impl SpireLocalObjectStoreSet {
         placement: &SpirePlacementEntry,
     ) -> Result<&SpireLocalObjectStore, String> {
         self.config.validate_placement(placement)?;
-        self.stores
-            .iter()
-            .find(|store| store.local_store_id == placement.local_store_id)
+        let store_index = *self
+            .store_indexes_by_id
+            .get(&placement.local_store_id)
             .ok_or_else(|| {
                 format!(
                     "ec_spire local object store set is missing local_store_id {}",
                     placement.local_store_id
                 )
-            })
+            })?;
+        self.stores.get(store_index).ok_or_else(|| {
+            format!(
+                "ec_spire local object store set has stale index for local_store_id {}",
+                placement.local_store_id
+            )
+        })
     }
 }
 

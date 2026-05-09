@@ -1235,6 +1235,7 @@ impl SpireObjectReader for SpireRelationObjectStore {
 pub(super) struct SpireRelationObjectStoreSet {
     config: Option<SpireLocalStoreConfig>,
     stores: Vec<SpireRelationObjectStore>,
+    store_indexes_by_key: HashMap<(u32, u32), usize>,
     opened_relations: Vec<(pg_sys::Relation, pg_sys::LOCKMODE)>,
 }
 
@@ -1277,6 +1278,7 @@ impl SpireRelationObjectStoreSet {
         }
         let index_relid: u32 = unsafe { (*index_relation).rd_id }.into();
         let mut stores = Vec::with_capacity(config.stores.len());
+        let mut store_indexes_by_key = HashMap::with_capacity(config.stores.len());
         let mut opened_relations = OpenedRelationsGuard::new();
 
         for descriptor in &config.stores {
@@ -1305,11 +1307,25 @@ impl SpireRelationObjectStoreSet {
                 descriptor.local_store_id,
                 descriptor.store_relid,
             ));
+            let store_index = stores.len() - 1;
+            if store_indexes_by_key
+                .insert(
+                    (descriptor.local_store_id, descriptor.store_relid),
+                    store_index,
+                )
+                .is_some()
+            {
+                return Err(format!(
+                    "ec_spire relation object store set duplicate local_store_id {} relid {}",
+                    descriptor.local_store_id, descriptor.store_relid
+                ));
+            }
         }
 
         Ok(Self {
             config: Some(config),
             stores,
+            store_indexes_by_key,
             opened_relations: opened_relations.into_inner(),
         })
     }
@@ -1338,6 +1354,7 @@ impl SpireRelationObjectStoreSet {
         }
 
         let mut stores = Vec::with_capacity(relid_by_store_id.len());
+        let mut store_indexes_by_key = HashMap::with_capacity(relid_by_store_id.len());
         let mut opened_relations = OpenedRelationsGuard::new();
         for (local_store_id, store_relid) in relid_by_store_id {
             let store_relation = if store_relid == index_relid {
@@ -1358,11 +1375,21 @@ impl SpireRelationObjectStoreSet {
                 local_store_id,
                 store_relid,
             ));
+            let store_index = stores.len() - 1;
+            if store_indexes_by_key
+                .insert((local_store_id, store_relid), store_index)
+                .is_some()
+            {
+                return Err(format!(
+                    "ec_spire relation object store set duplicate local_store_id {local_store_id} relid {store_relid}"
+                ));
+            }
         }
 
         Ok(Self {
             config: None,
             stores,
+            store_indexes_by_key,
             opened_relations: opened_relations.into_inner(),
         })
     }
@@ -1455,26 +1482,24 @@ impl SpireRelationObjectStoreSet {
         &self,
         placements: &[SpirePlacementEntry],
     ) -> Result<(), String> {
-        let store_keys = self
-            .stores
-            .iter()
-            .map(|store| (store.local_store_id, store.store_relid))
-            .collect::<Vec<_>>();
+        let store_keys = self.store_indexes_by_key.keys().copied().collect::<Vec<_>>();
         let groups = relation_object_prefetch_groups(&store_keys, placements)?;
         for group in groups {
-            let store = self
-                .stores
-                .iter()
-                .find(|store| {
-                    store.local_store_id == group.local_store_id
-                        && store.store_relid == group.store_relid
-                })
+            let store_index = *self
+                .store_indexes_by_key
+                .get(&(group.local_store_id, group.store_relid))
                 .ok_or_else(|| {
                     format!(
                         "ec_spire relation object store set is missing local_store_id {} relid {}",
                         group.local_store_id, group.store_relid
                     )
                 })?;
+            let store = self.stores.get(store_index).ok_or_else(|| {
+                format!(
+                    "ec_spire relation object store set has stale index for local_store_id {} relid {}",
+                    group.local_store_id, group.store_relid
+                )
+            })?;
             unsafe { store.prefetch_object_blocks(&group.block_numbers)? };
         }
         Ok(())
@@ -1486,36 +1511,42 @@ impl SpireRelationObjectStoreSet {
             .as_ref()
             .ok_or_else(|| "ec_spire relation object store set was opened read-only".to_owned())?;
         let descriptor = *config.store_for_pid(pid)?;
-        self.stores
-            .iter_mut()
-            .find(|store| {
-                store.local_store_id == descriptor.local_store_id
-                    && store.store_relid == descriptor.store_relid
-            })
+        let store_index = *self
+            .store_indexes_by_key
+            .get(&(descriptor.local_store_id, descriptor.store_relid))
             .ok_or_else(|| {
                 format!(
                     "ec_spire relation object store set is missing writable local_store_id {} relid {}",
                     descriptor.local_store_id, descriptor.store_relid
                 )
-            })
+            })?;
+        self.stores.get_mut(store_index).ok_or_else(|| {
+            format!(
+                "ec_spire relation object store set has stale writable index for local_store_id {} relid {}",
+                descriptor.local_store_id, descriptor.store_relid
+            )
+        })
     }
 
     fn store_for_placement(
         &self,
         placement: &SpirePlacementEntry,
     ) -> Result<&SpireRelationObjectStore, String> {
-        self.stores
-            .iter()
-            .find(|store| {
-                store.local_store_id == placement.local_store_id
-                    && store.store_relid == placement.store_relid
-            })
+        let store_index = *self
+            .store_indexes_by_key
+            .get(&(placement.local_store_id, placement.store_relid))
             .ok_or_else(|| {
                 format!(
                     "ec_spire relation object store set is missing local_store_id {} relid {}",
                     placement.local_store_id, placement.store_relid
                 )
-            })
+            })?;
+        self.stores.get(store_index).ok_or_else(|| {
+            format!(
+                "ec_spire relation object store set has stale index for local_store_id {} relid {}",
+                placement.local_store_id, placement.store_relid
+            )
+        })
     }
 
     fn store_mut_for_placement(
@@ -1525,18 +1556,21 @@ impl SpireRelationObjectStoreSet {
         if let Some(config) = &self.config {
             config.validate_placement(placement)?;
         }
-        self.stores
-            .iter_mut()
-            .find(|store| {
-                store.local_store_id == placement.local_store_id
-                    && store.store_relid == placement.store_relid
-            })
+        let store_index = *self
+            .store_indexes_by_key
+            .get(&(placement.local_store_id, placement.store_relid))
             .ok_or_else(|| {
                 format!(
                     "ec_spire relation object store set is missing writable local_store_id {} relid {}",
                     placement.local_store_id, placement.store_relid
                 )
-            })
+            })?;
+        self.stores.get_mut(store_index).ok_or_else(|| {
+            format!(
+                "ec_spire relation object store set has stale writable index for local_store_id {} relid {}",
+                placement.local_store_id, placement.store_relid
+            )
+        })
     }
 }
 

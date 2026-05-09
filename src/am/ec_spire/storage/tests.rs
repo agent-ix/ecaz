@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use super::super::meta::{
-        SpireLocalStoreDescriptor, SpireLocalStoreState, SpirePlacementEntry, SpirePlacementState,
+        SpireLocalStoreConfig, SpireLocalStoreDescriptor, SpireLocalStoreState,
+        SpirePlacementEntry, SpirePlacementState,
     };
     use super::{
         decode_leaf_v2_local_vec_id, decode_relation_object_chain_meta,
@@ -12,8 +13,9 @@ mod tests {
         plan_local_store_relations,
         relation_object_prefetch_groups,
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-        SpireLeafPartitionObject, SpireLocalObjectStore, SpirePartitionObjectHeader,
-        SpirePartitionObjectKind, SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet,
+        SpireObjectReader, SpirePartitionObjectHeader, SpirePartitionObjectKind,
+        SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireVecId,
         SpireTopGraphNodeRecord, SpireTopGraphPartitionObject, SpireVecIdKind,
         PARTITION_OBJECT_V2_CHAIN_META_FLAG, PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,

@@ -85,7 +85,7 @@ that Phase 9 establishes.
   only safe primitive.
 - [x] Decode delta objects once per leaf/query and reuse the decoded rows for
   delete suppression and insert candidate scoring.
-- [ ] Replace linear local-store lookup with an indexed map if store counts
+- [x] Replace linear local-store lookup with an indexed map if store counts
   grow beyond the current small bounded surface.
 
 ## Phase 10.5: Remote Libpq Executor
