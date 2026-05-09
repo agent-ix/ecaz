@@ -1,0 +1,27 @@
+SET
+SET
+SET
+                                                                                         QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=31.53..33.35 rows=10 width=12) (actual time=68.229..72.186 rows=10.00 loops=1)
+   Buffers: shared hit=547 read=1
+   InitPlan 1
+     ->  Limit  (cost=0.14..0.22 rows=1 width=26) (actual time=0.047..0.048 rows=1.00 loops=1)
+           Buffers: shared hit=1 read=1
+           ->  Index Scan using task30_spire_scale_local_queries_pkey on task30_spire_scale_local_queries  (cost=0.14..16.14 rows=200 width=26) (actual time=0.046..0.047 rows=1.00 loops=1)
+                 Index Searches: 1
+                 Buffers: shared hit=1 read=1
+   ->  Index Scan using task30_spire_scale_local_idx on task30_spire_scale_local_corpus  (cost=31.31..1848.06 rows=10000 width=12) (actual time=68.227..72.179 rows=10.00 loops=1)
+         Order By: (embedding <#> (InitPlan 1).col1)
+         Index Searches: 0
+         Buffers: shared hit=547 read=1
+ Planning:
+   Buffers: shared hit=346 read=3 dirtied=1
+ Planning Time: 12.015 ms
+ Execution Time: 72.306 ms
+(16 rows)
+
+ recursive_fanout | effective_nprobe_per_level |                  nprobe_policy_per_level                  | active_leaf_count
+------------------+----------------------------+-----------------------------------------------------------+-------------------
+                2 | {24,2}                     | {relation_or_session_leaf_level,configured_above_level_1} |                32
+(1 row)
