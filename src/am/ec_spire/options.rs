@@ -641,6 +641,9 @@ pub(super) fn resolve_recursive_route_budget(
         .map_err(|_| "ec_spire recursive max leaf routes exceeds usize".to_owned())?;
     let leaf_count_usize = usize::try_from(leaf_count)
         .map_err(|_| "ec_spire recursive leaf count exceeds usize".to_owned())?;
+    // `nprobe_per_level` remains a local per-parent exploration input. Until a
+    // separate beam reloption lands, the leaf-level effective nprobe is the
+    // final global cap for routed internal parents and leaf routes.
     Ok(SpireRecursiveRouteBudget {
         beam_width,
         max_leaf_routes: max_leaf_routes.min(leaf_count_usize),

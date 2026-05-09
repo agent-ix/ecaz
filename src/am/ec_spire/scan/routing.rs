@@ -344,6 +344,8 @@ fn route_top_graph_view_to_routes(
         .map_err(|_| "ec_spire top graph search list size exceeds usize".to_owned())?;
     let route_count = usize::try_from(route_count)
         .map_err(|_| "ec_spire top graph route count exceeds usize".to_owned())?;
+    // The view borrows the scan-owned top-graph snapshot only for this greedy
+    // traversal; future scan caching should preserve the same lifetime shape.
     let graph = SpireTopGraphGreedyView { top_graph };
     let search =
         crate::am::greedy_search_view(&graph, top_graph.entry_node(), search_list_size, |node| {

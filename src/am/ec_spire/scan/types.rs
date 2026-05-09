@@ -85,6 +85,9 @@ struct SpireRecursiveParentRoute {
     path_score: f32,
 }
 
+// Recursive routing accumulates inner-product scores across levels. Top-graph
+// routes enter this same contract by converting their search distance back to a
+// score before the recursive descent continues.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SpireRecursiveScoredChildRoute {
     parent_pid: u64,
