@@ -20,6 +20,8 @@ Start with:
   and physical cleanup status need one operator row.
 - `ec_spire_index_epoch_cleanup_run(index_oid)` when the cleanup summary reports
   eligible old-epoch tuple debt.
+- `ec_spire_remote_pipeline_steps(...)` when remote search spans multiple
+  libpq/manifest/result diagnostic surfaces and you need one step list.
 
 ## Function Map
 
@@ -46,6 +48,7 @@ Start with:
 | `ec_spire_index_maintenance_scheduler_plan(index_oid)` | operator | You need to decide whether an operator-controlled periodic job should call maintenance. |
 | `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
+| `ec_spire_remote_pipeline_steps(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need one consolidated remote-search pipeline row per dispatch, connection, candidate, heap, manifest, and result step. |
 
 ## Stable Labels
 
@@ -80,6 +83,13 @@ replication planning state through `boundary_replica_count`,
 `boundary_replica_count = 0` keeps primary-only assignment and reports
 `scan_dedupe_mode = none`; replica-capable indexes report `vec_id` so operators
 can see when scan plans must deduplicate replicated vector identities.
+
+`ec_spire_remote_pipeline_steps(...)` reports six stable `step_name` values:
+`dispatch_plan`, `connection_check`, `candidates`, `heap_candidates`,
+`manifest_apply`, and `coordinator_result`. Each row carries the existing
+status string for that step plus counts and a next blocker/recommendation, so
+operators can start from one ordered pipeline view before opening narrower
+remote-search diagnostics.
 
 ## Maintenance And Cleanup
 
