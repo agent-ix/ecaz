@@ -118,7 +118,9 @@ pub(crate) struct SpireIndexTopGraphSnapshot {
     pub(crate) configured_search_list_size: Option<u32>,
     pub(crate) object_bytes: u64,
     pub(crate) object_tuple_count: u64,
+    pub(crate) object_meta_tuple_count: u64,
     pub(crate) object_segment_count: u64,
+    pub(crate) object_segment_tuple_count: u64,
     pub(crate) status: &'static str,
     pub(crate) recommendation: &'static str,
 }

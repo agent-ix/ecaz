@@ -6794,7 +6794,9 @@ fn ec_spire_index_top_graph_snapshot(
         name!(configured_search_list_size, Option<i64>),
         name!(object_bytes, i64),
         name!(object_tuple_count, i64),
+        name!(object_meta_tuple_count, i64),
         name!(object_segment_count, i64),
+        name!(object_segment_tuple_count, i64),
         name!(status, String),
         name!(recommendation, String),
     ),
@@ -6833,8 +6835,12 @@ fn ec_spire_index_top_graph_snapshot(
         snapshot.configured_search_list_size.map(i64::from),
         i64::try_from(snapshot.object_bytes).expect("object bytes should fit in i64"),
         i64::try_from(snapshot.object_tuple_count).expect("object tuple count should fit in i64"),
+        i64::try_from(snapshot.object_meta_tuple_count)
+            .expect("object meta tuple count should fit in i64"),
         i64::try_from(snapshot.object_segment_count)
             .expect("object segment count should fit in i64"),
+        i64::try_from(snapshot.object_segment_tuple_count)
+            .expect("object segment tuple count should fit in i64"),
         snapshot.status.to_owned(),
         snapshot.recommendation.to_owned(),
     ))
@@ -17678,12 +17684,24 @@ mod tests {
         )
         .expect("top graph snapshot query should succeed")
         .expect("object tuple count should exist");
+        let object_meta_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_meta_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object meta tuple count should exist");
         let object_segment_count = Spi::get_one::<i64>(
             "SELECT object_segment_count FROM \
              ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
         )
         .expect("top graph snapshot query should succeed")
         .expect("object segment count should exist");
+        let object_segment_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_segment_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment tuple count should exist");
         let object_snapshot_top_graph_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM ec_spire_index_object_snapshot(\
              'ec_spire_top_graph_sql_idx'::regclass) WHERE object_kind = 'top_graph'",
@@ -17703,7 +17721,9 @@ mod tests {
         assert_eq!(active_leaf_count, 4);
         assert_eq!(frontier_child_level, 1);
         assert_eq!(object_tuple_count, 1);
+        assert_eq!(object_meta_tuple_count, 1);
         assert_eq!(object_segment_count, 0);
+        assert_eq!(object_segment_tuple_count, 0);
         assert_eq!(object_snapshot_top_graph_count, 1);
     }
 
@@ -17751,17 +17771,31 @@ mod tests {
         )
         .expect("top graph snapshot query should succeed")
         .expect("object tuple count should exist");
+        let object_meta_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_meta_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object meta tuple count should exist");
         let object_segment_count = Spi::get_one::<i64>(
             "SELECT object_segment_count FROM \
              ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
         )
         .expect("top graph snapshot query should succeed")
         .expect("object segment count should exist");
+        let object_segment_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_segment_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment tuple count should exist");
 
         assert_eq!(status, "ready");
         assert!(object_bytes > 8192);
         assert!(object_tuple_count > 1);
+        assert_eq!(object_meta_tuple_count, 1);
         assert!(object_segment_count > 0);
+        assert_eq!(object_segment_tuple_count, object_segment_count);
         assert_eq!(object_tuple_count, object_segment_count + 1);
     }
 

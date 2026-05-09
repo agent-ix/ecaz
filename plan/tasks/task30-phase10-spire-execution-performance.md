@@ -78,7 +78,7 @@ that Phase 9 establishes.
 - [x] Keep the existing `(node_id, local_store_id)` grouping as the scheduling
   unit.
 - [x] Add per-store route/candidate/read diagnostics.
-- [ ] Split chained top-graph diagnostics enough for I/O attribution, including
+- [x] Split chained top-graph diagnostics enough for I/O attribution, including
   meta-tuple versus segment-tuple counts or equivalent block-level visibility.
 - [ ] Overlap local-store reads where PostgreSQL backend constraints allow it,
   or make the sequential limitation explicit if read-stream prefetch is the
