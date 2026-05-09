@@ -6701,6 +6701,8 @@ fn ec_spire_index_top_graph_snapshot(
         name!(effective_search_list_size, i64),
         name!(configured_search_list_size, Option<i64>),
         name!(object_bytes, i64),
+        name!(object_tuple_count, i64),
+        name!(object_segment_count, i64),
         name!(status, String),
         name!(recommendation, String),
     ),
@@ -6738,6 +6740,9 @@ fn ec_spire_index_top_graph_snapshot(
         i64::from(snapshot.effective_search_list_size),
         snapshot.configured_search_list_size.map(i64::from),
         i64::try_from(snapshot.object_bytes).expect("object bytes should fit in i64"),
+        i64::try_from(snapshot.object_tuple_count).expect("object tuple count should fit in i64"),
+        i64::try_from(snapshot.object_segment_count)
+            .expect("object segment count should fit in i64"),
         snapshot.status.to_owned(),
         snapshot.recommendation.to_owned(),
     ))
@@ -17451,6 +17456,18 @@ mod tests {
         )
         .expect("top graph snapshot query should succeed")
         .expect("frontier child level should exist");
+        let object_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object tuple count should exist");
+        let object_segment_count = Spi::get_one::<i64>(
+            "SELECT object_segment_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_top_graph_sql_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment count should exist");
         let object_snapshot_top_graph_count = Spi::get_one::<i64>(
             "SELECT count(*) FROM ec_spire_index_object_snapshot(\
              'ec_spire_top_graph_sql_idx'::regclass) WHERE object_kind = 'top_graph'",
@@ -17469,7 +17486,67 @@ mod tests {
         assert_eq!(root_child_count, node_count);
         assert_eq!(active_leaf_count, 4);
         assert_eq!(frontier_child_level, 1);
+        assert_eq!(object_tuple_count, 1);
+        assert_eq!(object_segment_count, 0);
         assert_eq!(object_snapshot_top_graph_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_large_top_graph_uses_chain_storage() {
+        Spi::run(
+            "CREATE TABLE ec_spire_large_top_graph_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_large_top_graph_sql (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * d + d * d) % 997)::real / 997.0)::real \
+                     FROM generate_series(1, 16) AS d), \
+               4, 42) \
+             FROM generate_series(1, 512) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_large_top_graph_idx \
+             ON ec_spire_large_top_graph_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 128, recursive_fanout = 128, top_graph_enabled = 1, \
+                   top_graph_degree = 64, top_graph_build_list_size = 128, \
+                   top_graph_search_list_size = 16)",
+        )
+        .expect("large top graph ec_spire index creation should succeed");
+
+        let status = Spi::get_one::<String>(
+            "SELECT status FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("top graph row should exist");
+        let object_bytes = Spi::get_one::<i64>(
+            "SELECT object_bytes FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object bytes should exist");
+        let object_tuple_count = Spi::get_one::<i64>(
+            "SELECT object_tuple_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object tuple count should exist");
+        let object_segment_count = Spi::get_one::<i64>(
+            "SELECT object_segment_count FROM \
+             ec_spire_index_top_graph_snapshot('ec_spire_large_top_graph_idx'::regclass)",
+        )
+        .expect("top graph snapshot query should succeed")
+        .expect("object segment count should exist");
+
+        assert_eq!(status, "ready");
+        assert!(object_bytes > 8192);
+        assert!(object_tuple_count > 1);
+        assert!(object_segment_count > 0);
+        assert_eq!(object_tuple_count, object_segment_count + 1);
     }
 
     #[pg_test]

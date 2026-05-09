@@ -78,6 +78,8 @@ fn empty_top_graph_snapshot(
         effective_search_list_size: top_graph_plan.search_list_size.unwrap_or(0),
         configured_search_list_size: top_graph_plan.search_list_size,
         object_bytes: 0,
+        object_tuple_count: 0,
+        object_segment_count: 0,
         status,
         recommendation,
     }
@@ -1177,6 +1179,10 @@ pub(crate) unsafe fn index_top_graph_snapshot(
         let top_graph_count = u64::try_from(top_graphs.len())
             .map_err(|_| "ec_spire top graph snapshot count exceeds u64".to_owned())?;
         let (placement, top_graph) = &top_graphs[0];
+        let object_tuple_count =
+            u64::try_from(unsafe { object_store.active_object_tuple_locators(placement)? }.len())
+                .map_err(|_| "ec_spire top graph object tuple count exceeds u64".to_owned())?;
+        let object_segment_count = object_tuple_count.saturating_sub(1);
         let mut edge_count = 0_u64;
         let mut max_node_degree = 0_u64;
         let node_count = u64::try_from(top_graph.node_count())
@@ -1247,6 +1253,8 @@ pub(crate) unsafe fn index_top_graph_snapshot(
             effective_search_list_size,
             configured_search_list_size: top_graph_plan.search_list_size,
             object_bytes: u64::from(placement.object_bytes),
+            object_tuple_count,
+            object_segment_count,
             status,
             recommendation,
         })

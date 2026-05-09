@@ -1883,8 +1883,9 @@ replication execution, and global vector identity.
   Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
   root/top routing child frontier, and top-graph diagnostics now distinguish
   frontier node count, root child count, routing levels, and active leaf count.
-- [ ] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
-  through segmented, chained, or graph-row storage.
+- [x] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
+  by reusing the relation-object V2 chain format for top graphs and surfacing
+  byte, tuple, and segment diagnostics.
 - [ ] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
   and avoid full centroid offset scans when the comparator can use monotonic
   inner-product ordering.

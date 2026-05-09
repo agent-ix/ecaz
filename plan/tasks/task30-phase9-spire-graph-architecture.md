@@ -55,14 +55,12 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.2: Scalable Top-Graph Storage
 
-- [ ] Remove the single-tuple top-graph storage ceiling.
-- [ ] Choose one storage shape:
-  - segmented top-graph object, analogous to V2 leaf segments;
-  - routing-object chain format reuse; or
-  - relation-local graph rows keyed by graph PID and segment ordinal.
-- [ ] Preserve epoch/placement validation: graph segments must be visible only
+- [x] Remove the single-tuple top-graph storage ceiling.
+- [x] Choose one storage shape: reuse the relation-object V2 chain format for
+  routing and top-graph objects, with generic partition-object chain codecs.
+- [x] Preserve epoch/placement validation: graph segments must be visible only
   through the active manifest and must not be read outside their epoch.
-- [ ] Add diagnostics for graph byte size, segment count, node count, degree,
+- [x] Add diagnostics for graph byte size, segment count, node count, degree,
   and build/search list sizes.
 
 ## Phase 9.3: Cached / Borrowed Graph Routing
