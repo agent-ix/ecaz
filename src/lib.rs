@@ -7955,6 +7955,84 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_candidates(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(score, f32),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_candidates requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_libpq_executor_candidates top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_candidates selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_executor_candidates",
+        )
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_executor_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+            i64::from(row.node_id),
+            i64::try_from(row.pid).expect("pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            row.score,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -11292,6 +11370,28 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
             .expect("env-var test lock should not be poisoned")
+    }
+
+    fn current_pg_test_loopback_conninfo() -> String {
+        let socket_dirs = Spi::get_one::<String>("SHOW unix_socket_directories")
+            .expect("socket directory query should succeed")
+            .expect("socket directory should exist");
+        let socket_dir = socket_dirs
+            .split(',')
+            .next()
+            .expect("at least one socket directory should exist")
+            .trim();
+        let port = Spi::get_one::<String>("SHOW port")
+            .expect("port query should succeed")
+            .expect("port should exist");
+        let database = Spi::get_one::<String>("SELECT current_database()::text")
+            .expect("database query should succeed")
+            .expect("database should exist");
+        let user = Spi::get_one::<String>("SELECT current_user::text")
+            .expect("user query should succeed")
+            .expect("user should exist");
+
+        format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
     }
     use rand::Rng;
     use rand::SeedableRng;
@@ -19962,6 +20062,112 @@ mod tests {
             "validate_remote_search_candidate_batch"
         );
         assert_eq!(executor_contract_mismatch_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_libpq_executor_loopback_empty() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_LOOPBACK",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_remote_executor_loopback_remote_sql; \
+                 CREATE TABLE ec_spire_remote_executor_loopback_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_remote_executor_loopback_remote_sql (id, embedding) VALUES \
+                     (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_remote_executor_loopback_remote_sql_idx \
+                     ON ec_spire_remote_executor_loopback_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+            )
+            .expect("loopback remote fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_executor_loopback_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_executor_loopback_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_executor_loopback_coord_sql_idx \
+             ON ec_spire_remote_executor_loopback_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_executor_loopback_coord_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_executor_loopback_coord_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_executor_loopback_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 8, 'spire/remote/loopback', decode('01', 'hex'), \
+                     'ec_spire_remote_executor_loopback_remote_sql_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+
+        let args = format!(
+            "'ec_spire_remote_executor_loopback_coord_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 0, 'strict'"
+        );
+        let connection_check_from =
+            format!("FROM ec_spire_remote_search_libpq_executor_connection_check({args})");
+        let candidates_from =
+            format!("FROM ec_spire_remote_search_libpq_executor_candidates({args})");
+        let connection_status =
+            Spi::get_one::<String>(&format!("SELECT connection_status {connection_check_from}"))
+                .expect("executor connection status query should succeed")
+                .expect("executor connection status should exist");
+        let connection_attempted = Spi::get_one::<bool>(&format!(
+            "SELECT connection_attempted {connection_check_from}"
+        ))
+        .expect("executor connection attempted query should succeed")
+        .expect("executor connection attempted should exist");
+        let raw_conninfo_exposed = Spi::get_one::<bool>(&format!(
+            "SELECT raw_conninfo_exposed {connection_check_from}"
+        ))
+        .expect("executor connection exposure query should succeed")
+        .expect("executor connection exposure should exist");
+        let candidate_count = Spi::get_one::<i64>(&format!("SELECT count(*) {candidates_from}"))
+            .expect("executor candidate count query should succeed")
+            .expect("executor candidate count should exist");
+
+        assert!(register_result);
+        assert!(connection_attempted);
+        assert_eq!(connection_status, "libpq_connection_opened");
+        assert!(!raw_conninfo_exposed);
+        assert_eq!(candidate_count, 0);
     }
 
     #[pg_test]

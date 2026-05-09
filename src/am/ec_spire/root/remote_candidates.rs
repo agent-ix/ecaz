@@ -2449,6 +2449,218 @@ pub(crate) fn remote_search_libpq_result_contract_rows(
     ]
 }
 
+fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, String> {
+    let provider_lookup_key = remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)?;
+    match std::env::var(provider_lookup_key) {
+        Ok(conninfo) if !conninfo.is_empty() => Ok(conninfo),
+        Ok(_) => Err("conninfo_secret_empty".to_owned()),
+        Err(_) => Err("conninfo_secret_missing".to_owned()),
+    }
+}
+
+fn decode_remote_search_candidate_pg_row(
+    row: &postgres::Row,
+    expected_node_id: u32,
+) -> Result<SpireRemoteSearchCandidateRow, String> {
+    let served_epoch = row
+        .try_get::<_, i64>("served_epoch")
+        .map_err(|_| "ec_spire remote search executor served_epoch decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| "ec_spire remote search executor served_epoch is negative".to_owned())
+        })?;
+    let remote_node_id = row
+        .try_get::<_, i64>("node_id")
+        .map_err(|_| "ec_spire remote search executor node_id decode failed".to_owned())
+        .and_then(|value| {
+            u32::try_from(value)
+                .map_err(|_| "ec_spire remote search executor node_id is invalid".to_owned())
+        })?;
+    let node_id = if remote_node_id == meta::SPIRE_LOCAL_NODE_ID {
+        expected_node_id
+    } else {
+        remote_node_id
+    };
+    let pid = row
+        .try_get::<_, i64>("pid")
+        .map_err(|_| "ec_spire remote search executor pid decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| "ec_spire remote search executor pid is negative".to_owned())
+        })?;
+    let object_version = row
+        .try_get::<_, i64>("object_version")
+        .map_err(|_| "ec_spire remote search executor object_version decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire remote search executor object_version is negative".to_owned()
+            })
+        })?;
+    let row_index = row
+        .try_get::<_, i64>("row_index")
+        .map_err(|_| "ec_spire remote search executor row_index decode failed".to_owned())
+        .and_then(|value| {
+            u32::try_from(value)
+                .map_err(|_| "ec_spire remote search executor row_index is invalid".to_owned())
+        })?;
+    let assignment_flags = row
+        .try_get::<_, i16>("assignment_flags")
+        .map_err(|_| "ec_spire remote search executor assignment_flags decode failed".to_owned())
+        .and_then(|value| {
+            u16::try_from(value).map_err(|_| {
+                "ec_spire remote search executor assignment_flags is negative".to_owned()
+            })
+        })?;
+    let vec_id = row
+        .try_get::<_, Vec<u8>>("vec_id")
+        .map_err(|_| "ec_spire remote search executor vec_id decode failed".to_owned())?;
+    let row_locator = row
+        .try_get::<_, Vec<u8>>("row_locator")
+        .map_err(|_| "ec_spire remote search executor row_locator decode failed".to_owned())?;
+    let score = row
+        .try_get::<_, f32>("score")
+        .map_err(|_| "ec_spire remote search executor score decode failed".to_owned())?;
+
+    Ok(SpireRemoteSearchCandidateRow {
+        served_epoch,
+        node_id,
+        pid,
+        object_version,
+        row_index,
+        assignment_flags,
+        vec_id,
+        row_locator,
+        score,
+    })
+}
+
+fn remote_search_libpq_executor_candidates_for_dispatch(
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+        return Err(format!(
+            "ec_spire remote search libpq executor dispatch for node_id {} is blocked with status {}",
+            row.node_id, row.status
+        ));
+    }
+
+    let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire remote search libpq executor conninfo secret for node_id {} is not resolved: {status}",
+            row.node_id
+        )
+    })?;
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
+        format!(
+            "ec_spire remote search libpq executor failed to open connection for node_id {}",
+            row.node_id
+        )
+    })?;
+    let remote_index_oid = client
+        .query_one(
+            "SELECT to_regclass($1)::oid",
+            &[&row.remote_index_regclass.as_str()],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire remote search libpq executor failed to resolve remote index for node_id {}",
+                row.node_id
+            )
+        })?
+        .try_get::<_, Option<u32>>(0)
+        .map_err(|_| {
+            format!(
+                "ec_spire remote search libpq executor remote index oid decode failed for node_id {}",
+                row.node_id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote search libpq executor remote index is missing for node_id {}",
+                row.node_id
+            )
+        })?;
+    let requested_epoch = i64::try_from(row.requested_epoch)
+        .map_err(|_| "ec_spire remote search libpq executor requested_epoch exceeds i64")?;
+    let selected_pids = row
+        .selected_pids
+        .iter()
+        .map(|pid| {
+            i64::try_from(*pid)
+                .map_err(|_| "ec_spire remote search libpq executor selected PID exceeds i64")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let top_k = i32::try_from(top_k)
+        .map_err(|_| "ec_spire remote search libpq executor top_k exceeds i32")?;
+
+    let result_rows = client
+        .query(
+            SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+            &[
+                &remote_index_oid,
+                &requested_epoch,
+                &query,
+                &selected_pids,
+                &top_k,
+                &consistency_mode,
+            ],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire remote search libpq executor remote search query failed for node_id {}",
+                row.node_id
+            )
+        })?;
+    let candidates = result_rows
+        .iter()
+        .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, row.node_id))
+        .collect::<Result<Vec<_>, _>>()?;
+    validate_remote_search_candidate_batch(
+        row.requested_epoch,
+        row.node_id,
+        &row.selected_pids,
+        &candidates,
+    )?;
+
+    Ok(candidates)
+}
+
+pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query.clone(),
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut candidates = Vec::new();
+        for row in &dispatch_rows {
+            candidates.extend(remote_search_libpq_executor_candidates_for_dispatch(
+                row,
+                &query,
+                top_k,
+                consistency_mode,
+            )?);
+        }
+        Ok(candidates)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn remote_search_receive_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
