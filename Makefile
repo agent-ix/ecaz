@@ -1,7 +1,7 @@
 .PHONY: fmt fmt-check lint lint-pg17 test pg-test pg-test-pg17 deny audit-unsafe build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode
-.PHONY: ci-quick ci-nightly
+.PHONY: ci-quick ci-nightly spire-multicluster-smoke
 
 ## Format all source files
 fmt:
@@ -28,6 +28,11 @@ pg-test:
 
 pg-test-pg17:
 	cargo pgrx test pg17
+
+SPIRE_MULTICLUSTER_SMOKE_FLAGS ?= --skip-install
+
+spire-multicluster-smoke:
+	scripts/run_spire_multicluster_pg18_smoke.sh $(SPIRE_MULTICLUSTER_SMOKE_FLAGS)
 
 ## Check dependency licenses
 deny:

@@ -6210,6 +6210,8 @@ fn ec_spire_remote_catalog_index_cleanup(
         name!(descriptor_removed_count, i64),
         name!(manifest_removed_count, i64),
         name!(manifest_entry_removed_count, i64),
+        name!(applied_manifest_removed_count, i64),
+        name!(applied_manifest_entry_removed_count, i64),
         name!(status, String),
     ),
 > {
@@ -6228,13 +6230,21 @@ fn ec_spire_remote_catalog_index_cleanup(
                     (SELECT count(*)::bigint \
                        FROM ec_spire_remote_epoch_manifest_entry \
                       WHERE coordinator_index_oid = $1::oid) \
-                        AS manifest_entry_removed_count",
+                        AS manifest_entry_removed_count, \
+                    (SELECT count(*)::bigint \
+                       FROM ec_spire_remote_epoch_manifest_applied \
+                      WHERE remote_index_oid = $1::oid) \
+                        AS applied_manifest_removed_count, \
+                    (SELECT count(*)::bigint \
+                       FROM ec_spire_remote_epoch_manifest_applied_entry \
+                      WHERE remote_index_oid = $1::oid) \
+                        AS applied_manifest_entry_removed_count",
                 None,
                 &[index_oid.into()],
             )
             .map_err(|e| format!("ec_spire remote catalog index cleanup count failed: {e}"))?
             .map(|row| {
-                Ok::<(i64, i64, i64), String>((
+                Ok::<(i64, i64, i64, i64, i64), String>((
                     row["descriptor_removed_count"]
                         .value::<i64>()
                         .map_err(|e| format!("descriptor removed count decode failed: {e}"))?
@@ -6247,11 +6257,29 @@ fn ec_spire_remote_catalog_index_cleanup(
                         .value::<i64>()
                         .map_err(|e| format!("manifest entry removed count decode failed: {e}"))?
                         .ok_or_else(|| "manifest entry removed count is null".to_owned())?,
+                    row["applied_manifest_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("applied manifest removed count decode failed: {e}"))?
+                        .ok_or_else(|| "applied manifest removed count is null".to_owned())?,
+                    row["applied_manifest_entry_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("applied manifest entry removed count decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "applied manifest entry removed count is null".to_owned())?,
                 ))
             })
             .next()
             .transpose()?
-            .unwrap_or((0, 0, 0));
+            .unwrap_or((0, 0, 0, 0, 0));
+        client
+            .update(
+                "DELETE FROM ec_spire_remote_epoch_manifest_applied \
+                  WHERE remote_index_oid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire remote catalog applied manifest cleanup failed: {e}"))?;
         client
             .update(
                 "DELETE FROM ec_spire_remote_epoch_manifest \
@@ -6268,13 +6296,20 @@ fn ec_spire_remote_catalog_index_cleanup(
                 &[index_oid.into()],
             )
             .map_err(|e| format!("ec_spire remote catalog index descriptor cleanup failed: {e}"))?;
-        Ok::<(i64, i64, i64), String>(counts)
+        Ok::<(i64, i64, i64, i64, i64), String>(counts)
     });
-    let (descriptor_removed_count, manifest_removed_count, manifest_entry_removed_count) =
-        result.unwrap_or_else(|e| pgrx::error!("{e}"));
+    let (
+        descriptor_removed_count,
+        manifest_removed_count,
+        manifest_entry_removed_count,
+        applied_manifest_removed_count,
+        applied_manifest_entry_removed_count,
+    ) = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     let removed_any = descriptor_removed_count > 0
         || manifest_removed_count > 0
-        || manifest_entry_removed_count > 0;
+        || manifest_entry_removed_count > 0
+        || applied_manifest_removed_count > 0
+        || applied_manifest_entry_removed_count > 0;
     let status = if removed_any {
         "removed_index_remote_catalog_rows"
     } else {
@@ -6285,6 +6320,8 @@ fn ec_spire_remote_catalog_index_cleanup(
         descriptor_removed_count,
         manifest_removed_count,
         manifest_entry_removed_count,
+        applied_manifest_removed_count,
+        applied_manifest_entry_removed_count,
         status.to_owned(),
     ))
 }
@@ -20869,8 +20906,8 @@ mod tests {
                  CREATE TABLE ec_spire_remote_executor_loopback_remote_sql \
                      (id bigint primary key, embedding ecvector); \
                  INSERT INTO ec_spire_remote_executor_loopback_remote_sql (id, embedding) VALUES \
-                     (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-                     (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
                  CREATE INDEX ec_spire_remote_executor_loopback_remote_sql_idx \
                      ON ec_spire_remote_executor_loopback_remote_sql USING ec_spire \
                      (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
@@ -20912,6 +20949,13 @@ mod tests {
         )
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid should exist");
+        let local_pid = Spi::get_one::<i64>(
+            "SELECT max(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_executor_loopback_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot local PID query should succeed")
+        .expect("leaf local PID should exist");
+        assert_ne!(selected_pid, local_pid);
 
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let register_result = Spi::get_one::<bool>(&format!(
@@ -20935,6 +20979,11 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 1, 'strict'"
         );
+        let mixed_args = format!(
+            "'ec_spire_remote_executor_loopback_coord_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}, {local_pid}]::bigint[], 2, 'strict'"
+        );
         let connection_check_from =
             format!("FROM ec_spire_remote_search_libpq_executor_connection_check({args})");
         let candidates_from =
@@ -20946,6 +20995,10 @@ mod tests {
         let heap_candidate_summary_from = format!(
             "FROM ec_spire_remote_search_libpq_executor_heap_candidate_summary({nonempty_args})"
         );
+        let result_summary_from =
+            format!("FROM ec_spire_remote_search_coordinator_result_summary({nonempty_args})");
+        let mixed_result_summary_from =
+            format!("FROM ec_spire_remote_search_coordinator_result_summary({mixed_args})");
         let connection_status =
             Spi::get_one::<String>(&format!("SELECT connection_status {connection_check_from}"))
                 .expect("executor connection status query should succeed")
@@ -21020,6 +21073,51 @@ mod tests {
         )
         .expect("executor heap summary contract query should succeed")
         .expect("executor heap summary contract should exist");
+        let coordinator_result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {result_summary_from}"))
+                .expect("coordinator remote result source query should succeed")
+                .expect("coordinator remote result source should exist");
+        let coordinator_returned_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {result_summary_from}"
+        ))
+        .expect("coordinator remote returned count query should succeed")
+        .expect("coordinator remote returned count should exist");
+        let coordinator_final_heap_status = Spi::get_one::<String>(&format!(
+            "SELECT final_heap_fetch_status {result_summary_from}"
+        ))
+        .expect("coordinator remote final heap status query should succeed")
+        .expect("coordinator remote final heap status should exist");
+        let coordinator_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {result_summary_from}"))
+                .expect("coordinator remote next blocker query should succeed")
+                .expect("coordinator remote next blocker should exist");
+        let coordinator_status =
+            Spi::get_one::<String>(&format!("SELECT status {result_summary_from}"))
+                .expect("coordinator remote status query should succeed")
+                .expect("coordinator remote status should exist");
+        let mixed_coordinator_result_source =
+            Spi::get_one::<String>(&format!("SELECT result_source {mixed_result_summary_from}"))
+                .expect("mixed coordinator result source query should succeed")
+                .expect("mixed coordinator result source should exist");
+        let mixed_coordinator_returned_count = Spi::get_one::<i64>(&format!(
+            "SELECT returned_candidate_count {mixed_result_summary_from}"
+        ))
+        .expect("mixed coordinator returned count query should succeed")
+        .expect("mixed coordinator returned count should exist");
+        let mixed_coordinator_decoded_count = Spi::get_one::<i64>(&format!(
+            "SELECT decoded_local_locator_count {mixed_result_summary_from}"
+        ))
+        .expect("mixed coordinator decoded count query should succeed")
+        .expect("mixed coordinator decoded count should exist");
+        let mixed_coordinator_final_heap_status = Spi::get_one::<String>(&format!(
+            "SELECT final_heap_fetch_status {mixed_result_summary_from}"
+        ))
+        .expect("mixed coordinator final heap status query should succeed")
+        .expect("mixed coordinator final heap status should exist");
+        let mixed_coordinator_status =
+            Spi::get_one::<String>(&format!("SELECT status {mixed_result_summary_from}"))
+                .expect("mixed coordinator status query should succeed")
+                .expect("mixed coordinator status should exist");
 
         assert!(register_result);
         assert!(connection_attempted);
@@ -21041,6 +21139,16 @@ mod tests {
             heap_summary_contract,
             "must_have_positive_returned_candidate_count_and_origin_node_heap_owner"
         );
+        assert_eq!(coordinator_result_source, "remote_heap_candidates");
+        assert_eq!(coordinator_returned_count, 1);
+        assert_eq!(coordinator_final_heap_status, "remote_ready");
+        assert_eq!(coordinator_next_blocker, "none");
+        assert_eq!(coordinator_status, "ready");
+        assert_eq!(mixed_coordinator_result_source, "remote_heap_candidates");
+        assert_eq!(mixed_coordinator_returned_count, 2);
+        assert_eq!(mixed_coordinator_decoded_count, 1);
+        assert_eq!(mixed_coordinator_final_heap_status, "remote_ready");
+        assert_eq!(mixed_coordinator_status, "ready");
     }
 
     #[pg_test]
@@ -23758,6 +23866,25 @@ mod tests {
                      'ready', 'include_remote_node', 'ready')",
         )
         .expect("index cleanup manifest entry insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest_applied \
+             (remote_index_oid, active_epoch, manifest_payload_format, manifest_scope, \
+              manifest_decision, manifest_entry_count, included_remote_node_count, \
+              remote_placement_count, publish_decision, status, applied_at_micros) \
+             VALUES ('4294967293'::oid, 1, 'ec_spire_remote_epoch_manifest_v1', \
+                     'distributed', 'emit_distributed_epoch_manifest', 1, 1, 1, \
+                     'publish_remote_epoch_manifest', 'ready', 1)",
+        )
+        .expect("index cleanup applied manifest insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_epoch_manifest_applied_entry \
+             (remote_index_oid, active_epoch, node_id, descriptor_state, placement_count, \
+              required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+              min_retained_epoch, epoch_window_status, manifest_action, status) \
+             VALUES ('4294967293'::oid, 1, 3, 'active', 1, 1, 1, 1, 1, \
+                     'ready', 'include_remote_node', 'ready')",
+        )
+        .expect("index cleanup applied manifest entry insert should succeed");
 
         Spi::run(
             "CREATE TEMP TABLE ec_spire_remote_catalog_index_cleanup_result AS \
@@ -23768,7 +23895,9 @@ mod tests {
         let cleanup_counts = Spi::get_one::<String>(&format!(
             "SELECT descriptor_removed_count::text || ',' || \
                     manifest_removed_count::text || ',' || \
-                    manifest_entry_removed_count::text \
+                    manifest_entry_removed_count::text || ',' || \
+                    applied_manifest_removed_count::text || ',' || \
+                    applied_manifest_entry_removed_count::text \
                {cleanup_from}"
         ))
         .expect("index cleanup count query should succeed")
@@ -23783,6 +23912,13 @@ mod tests {
         )
         .expect("post index cleanup descriptor query should succeed")
         .expect("post index cleanup descriptor count should exist");
+        let post_applied_cleanup_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_remote_epoch_manifest_applied \
+              WHERE remote_index_oid = '4294967293'::oid",
+        )
+        .expect("post index cleanup applied query should succeed")
+        .expect("post index cleanup applied count should exist");
 
         let cleanup_counts = cleanup_counts
             .split(',')
@@ -23793,9 +23929,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(cleanup_counts, vec![1, 1, 1]);
+        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1]);
         assert_eq!(cleanup_status, "removed_index_remote_catalog_rows");
         assert_eq!(post_cleanup_count, 0);
+        assert_eq!(post_applied_cleanup_count, 0);
     }
 
     #[pg_test]
@@ -23851,6 +23988,25 @@ mod tests {
                      'ready', 'include_remote_node', 'ready')"
         ))
         .expect("drop event manifest entry insert should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_epoch_manifest_applied \
+             (remote_index_oid, active_epoch, manifest_payload_format, manifest_scope, \
+              manifest_decision, manifest_entry_count, included_remote_node_count, \
+              remote_placement_count, publish_decision, status, applied_at_micros) \
+             VALUES ('{index_oid_u32}'::oid, 1, 'ec_spire_remote_epoch_manifest_v1', \
+                     'distributed', 'emit_distributed_epoch_manifest', 1, 1, 1, \
+                     'publish_remote_epoch_manifest', 'ready', 1)"
+        ))
+        .expect("drop event applied manifest insert should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_remote_epoch_manifest_applied_entry \
+             (remote_index_oid, active_epoch, node_id, descriptor_state, placement_count, \
+              required_last_served_epoch, required_min_retained_epoch, last_served_epoch, \
+              min_retained_epoch, epoch_window_status, manifest_action, status) \
+             VALUES ('{index_oid_u32}'::oid, 1, 4, 'active', 1, 1, 1, 1, 1, \
+                     'ready', 'include_remote_node', 'ready')"
+        ))
+        .expect("drop event applied manifest entry insert should succeed");
 
         Spi::run("DROP INDEX ec_spire_remote_catalog_drop_event_sql_idx")
             .expect("drop event index drop should succeed");
@@ -23861,7 +24017,11 @@ mod tests {
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest \
                   WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest_entry \
-                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid)"
+                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
+                (SELECT count(*) FROM ec_spire_remote_epoch_manifest_applied \
+                  WHERE remote_index_oid = '{index_oid_u32}'::oid) + \
+                (SELECT count(*) FROM ec_spire_remote_epoch_manifest_applied_entry \
+                  WHERE remote_index_oid = '{index_oid_u32}'::oid)"
         ))
         .expect("drop event remaining remote catalog query should succeed")
         .expect("drop event remaining remote catalog count should exist");

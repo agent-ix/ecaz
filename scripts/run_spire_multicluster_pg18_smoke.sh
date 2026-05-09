@@ -106,6 +106,8 @@ if [[ -e "$RUN_DIR" ]]; then
 fi
 
 mkdir -p "$LOG_DIR" "$SOCKET_DIR"
+: > "$LOG_DIR/remote-postgres.log"
+: > "$LOG_DIR/coord-postgres.log"
 
 cleanup() {
   "$PG_CTL" -D "$COORD_DATA" -m fast stop >/dev/null 2>&1 || true
@@ -200,6 +202,7 @@ conn_status="$("${coord_psql[@]}" -At -c "SELECT connection_status || ',' || con
 candidate_count="$("${coord_psql[@]}" -At -c "SELECT count(*) FROM ec_spire_remote_search_libpq_executor_candidates('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
 heap_summary="$("${coord_psql[@]}" -At -c "SELECT result_source || ',' || status || ',' || returned_candidate_count::text FROM ec_spire_remote_search_libpq_executor_heap_candidate_summary('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
 heap_row="$("${coord_psql[@]}" -At -c "SELECT node_id::text || ',' || heap_lookup_owner || ',' || (heap_offset > 0)::text FROM ec_spire_remote_search_libpq_executor_heap_candidates('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict') LIMIT 1")"
+coordinator_result="$("${coord_psql[@]}" -At -c "SELECT result_source || ',' || status || ',' || final_heap_fetch_status || ',' || returned_candidate_count::text FROM ec_spire_remote_search_coordinator_result_summary('ec_spire_multicluster_coord_idx'::regclass, $coord_epoch::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[$coord_pid::bigint], 1, 'strict')")"
 
 "${coord_psql[@]}" -c "SELECT ec_spire_persist_remote_epoch_manifest('ec_spire_multicluster_coord_idx'::regclass)" >/dev/null
 manifest_executor="$("${coord_psql[@]}" -At -c "SELECT connection_status || ',' || validation_result_status || ',' || status FROM ec_spire_remote_epoch_manifest_libpq_executor_results('ec_spire_multicluster_coord_idx'::regclass)")"
@@ -210,6 +213,7 @@ echo "connection_status=$conn_status"
 echo "candidate_count=$candidate_count"
 echo "heap_summary=$heap_summary"
 echo "heap_row=$heap_row"
+echo "coordinator_result=$coordinator_result"
 echo "manifest_executor=$manifest_executor"
 echo "remote_manifest_applied=$remote_manifest_applied"
 echo "remote_manifest_entries=$remote_manifest_entries"
@@ -218,6 +222,7 @@ echo "remote_manifest_entries=$remote_manifest_entries"
 [[ "$candidate_count" == "1" ]]
 [[ "$heap_summary" == "remote_heap_candidates,ready,1" ]]
 [[ "$heap_row" == "2,origin_node_row_locator,true" ]]
+[[ "$coordinator_result" == "remote_heap_candidates,ready,remote_ready,1" ]]
 [[ "$manifest_executor" == "libpq_connection_opened,ready,ready" ]]
 [[ "$remote_manifest_applied" == "1,1" ]]
 [[ "$remote_manifest_entries" == "1,1" ]]

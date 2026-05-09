@@ -1613,10 +1613,14 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   `ec_spire_remote_search_coordinator_result_summary(...)` now composes the
   final coordinator gate into one row with result source, returned local heap
   candidate count, decoded locator count, receive status, final heap-fetch
-  status, and next blocker.
+  status, and next blocker. It now also consumes libpq executor heap candidates
+  for ready remote plans, merges them with any coordinator-local heap rows,
+  dedupes by vec-id under the remote merge ordering contract, and reports
+  `remote_heap_candidates,ready,remote_ready` once remote origin-node heap rows
+  are available.
   `ec_spire_remote_search_coordinator_result_contract()` now names the final
-  search result-source states for local heap candidates, blocked pre-result
-  gates, and empty-top-k outcomes.
+  search result-source states for local heap candidates, remote heap
+  candidates, blocked pre-result gates, and empty-top-k outcomes.
   `ec_spire_remote_operator_entrypoint_contract()` now names the compact
   operator-facing subset of the larger remote diagnostic surface for search,
   descriptor readiness, capability, manifest persistence, and manifest
@@ -1649,7 +1653,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   now adds an exact coordinator-OID cleanup target, and
   `ec_spire_remote_catalog_drop_index_cleanup` wires that target to a `sql_drop`
   event trigger so DROP INDEX removes matching remote catalog rows without
-  sweeping unrelated orphaned rows.
+  sweeping unrelated orphaned rows. The same exact cleanup now also removes
+  applied manifest header/entry rows keyed by `remote_index_oid`, so dropping a
+  remote-side apply target does not leave inert applied-catalog rows behind.
 - [ ] **Distributed epoch manifest.** Publish root/hierarchy/placement metadata
   only after all nodes can serve the requested epoch or report an explicit
   stale-node state. `ec_spire_remote_epoch_publish_readiness(...)` now exposes

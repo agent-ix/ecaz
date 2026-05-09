@@ -378,6 +378,129 @@ unsafe fn remote_search_coordinator_local_candidates_result(
     Ok(merged.candidates)
 }
 
+unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    if requested_epoch == 0 {
+        return Err(
+            "ec_spire remote search coordinator requested_epoch must be greater than 0".to_owned(),
+        );
+    }
+    if top_k == 0 {
+        return Ok(Vec::new());
+    }
+
+    let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let query = scan::SpireScanQuery::new(query)?;
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch != requested_epoch {
+        return Err(format!(
+            "ec_spire remote search coordinator requested epoch {requested_epoch} does not match active epoch {}",
+            root_control.active_epoch
+        ));
+    }
+
+    let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+        load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+    };
+    if epoch_manifest.consistency_mode != requested_consistency_mode {
+        return Err(format!(
+            "ec_spire remote search coordinator requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
+            consistency_mode_name(epoch_manifest.consistency_mode)
+        ));
+    }
+    let snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let plan = plan_remote_search_fanout(&snapshot, &selected_pids)?;
+    if plan.local_selected_pids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let local_pid_set = plan
+        .local_selected_pids
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let local_placement_directory = meta::SpirePlacementDirectory::from_entries(
+        placement_directory.epoch,
+        placement_directory
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry.node_id == meta::SPIRE_LOCAL_NODE_ID && local_pid_set.contains(&entry.pid)
+            })
+            .cloned()
+            .collect(),
+    )?;
+    let local_object_manifest = meta::SpireObjectManifest::from_entries(
+        object_manifest.epoch,
+        object_manifest
+            .entries
+            .iter()
+            .filter(|entry| local_pid_set.contains(&entry.pid))
+            .copied()
+            .collect(),
+    )?;
+    let local_snapshot = meta::SpirePublishedEpochSnapshot::new(
+        &epoch_manifest,
+        &local_object_manifest,
+        &local_placement_directory,
+    )?;
+    let object_store = unsafe {
+        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+            index_relation,
+            &local_placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?
+    };
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let candidates = scan::collect_quantized_selected_leaf_candidates(
+        &local_snapshot,
+        &object_store,
+        query.values(),
+        &plan.local_selected_pids,
+        relation_options.assignment_payload_format(),
+        if relation_options.boundary_replica_count > 0 {
+            options::SpireCandidateDedupeMode::VecIdDedupeEnabled
+        } else {
+            options::SpireCandidateDedupeMode::NoReplicaDedupeDisabled
+        },
+        Some(top_k),
+    )?
+    .into_iter()
+    .map(|candidate| SpireRemoteSearchCandidateRow {
+        served_epoch: candidate.epoch,
+        node_id: meta::SPIRE_LOCAL_NODE_ID,
+        pid: candidate.pid,
+        object_version: candidate.object_version,
+        row_index: candidate.row_index,
+        assignment_flags: candidate.assignment_flags,
+        vec_id: candidate.vec_id.as_bytes().to_vec(),
+        row_locator: remote_search_row_locator(candidate.heap_tid),
+        score: candidate.score,
+    })
+    .collect();
+    let merged = merge_validated_remote_search_candidate_batches(
+        requested_epoch,
+        vec![SpireRemoteSearchCandidateBatch {
+            node_id: meta::SPIRE_LOCAL_NODE_ID,
+            selected_pids: plan.local_selected_pids,
+            candidates,
+        }],
+        Some(top_k),
+    )?;
+
+    Ok(merged.candidates)
+}
+
 pub(crate) unsafe fn remote_search_coordinator_local_summary(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -491,6 +614,54 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let candidates = unsafe {
+            remote_search_coordinator_local_candidates_for_result_summary(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )?
+        };
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let heap_tid = decode_remote_search_local_heap_locator(
+                    &candidate,
+                    "coordinator result summary local heap candidates",
+                )?;
+                Ok(SpireRemoteSearchLocalHeapCandidateRow {
+                    requested_epoch,
+                    served_epoch: candidate.served_epoch,
+                    node_id: candidate.node_id,
+                    pid: candidate.pid,
+                    object_version: candidate.object_version,
+                    row_index: candidate.row_index,
+                    assignment_flags: candidate.assignment_flags,
+                    vec_id: candidate.vec_id,
+                    row_locator: candidate.row_locator,
+                    heap_block: heap_tid.block_number,
+                    heap_offset: heap_tid.offset_number,
+                    score: candidate.score,
+                    heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                    status: SPIRE_REMOTE_STATUS_READY,
+                })
+            })
+            .collect()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -564,6 +735,60 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     }
 }
 
+fn remote_search_heap_candidate_cmp_for_result(
+    left: &SpireRemoteSearchLocalHeapCandidateRow,
+    right: &SpireRemoteSearchLocalHeapCandidateRow,
+) -> std::cmp::Ordering {
+    remote_search_candidate_cmp(
+        &SpireRemoteSearchCandidateRow {
+            served_epoch: left.served_epoch,
+            node_id: left.node_id,
+            pid: left.pid,
+            object_version: left.object_version,
+            row_index: left.row_index,
+            assignment_flags: left.assignment_flags,
+            vec_id: left.vec_id.clone(),
+            row_locator: left.row_locator.clone(),
+            score: left.score,
+        },
+        &SpireRemoteSearchCandidateRow {
+            served_epoch: right.served_epoch,
+            node_id: right.node_id,
+            pid: right.pid,
+            object_version: right.object_version,
+            row_index: right.row_index,
+            assignment_flags: right.assignment_flags,
+            vec_id: right.vec_id.clone(),
+            row_locator: right.row_locator.clone(),
+            score: right.score,
+        },
+    )
+}
+
+fn merge_remote_search_heap_candidates_for_result(
+    candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
+    top_k: usize,
+) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
+    let mut best_by_vec_id = HashMap::<Vec<u8>, SpireRemoteSearchLocalHeapCandidateRow>::new();
+    for candidate in candidates {
+        match best_by_vec_id.entry(candidate.vec_id.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if remote_search_heap_candidate_cmp_for_result(&candidate, entry.get()).is_lt() {
+                    *entry.get_mut() = candidate;
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+            }
+        }
+    }
+
+    let mut candidates = best_by_vec_id.into_values().collect::<Vec<_>>();
+    candidates.sort_by(remote_search_heap_candidate_cmp_for_result);
+    candidates.truncate(top_k);
+    candidates
+}
+
 pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -582,28 +807,84 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
             consistency_mode,
         )
     };
-    let local_summary = unsafe {
-        remote_search_local_heap_candidate_summary_from_gate(
-            index_relation,
-            &gate,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
-    let result_source = if local_summary.returned_candidate_count > 0 {
+    let mut heap_candidates = Vec::new();
+    if gate.local_plan_count > 0
+        && (remote_search_status_allows_local_heap_rows(gate.status)
+            || gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED)
+    {
+        heap_candidates.extend(unsafe {
+            remote_search_local_heap_candidate_rows_for_result_summary(
+                index_relation,
+                requested_epoch,
+                query.clone(),
+                selected_pids.clone(),
+                top_k,
+                consistency_mode,
+            )
+        });
+    }
+    if gate.remote_plan_count > 0 && gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
+        heap_candidates.extend(unsafe {
+            remote_search_libpq_executor_heap_candidate_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        });
+    }
+    let heap_candidates = merge_remote_search_heap_candidates_for_result(heap_candidates, top_k);
+
+    let returned_candidate_count = u64::try_from(heap_candidates.len())
+        .unwrap_or_else(|_| pgrx::error!("ec_spire coordinator result candidate count overflow"));
+    let decoded_local_locator_count = heap_candidates
+        .iter()
+        .filter(|row| row.heap_lookup_owner == SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION)
+        .count()
+        .try_into()
+        .unwrap_or_else(|_| {
+            pgrx::error!("ec_spire coordinator result local locator count overflow")
+        });
+    let has_remote_heap_candidates = heap_candidates
+        .iter()
+        .any(|row| row.heap_lookup_owner == SPIRE_REMOTE_HEAP_RESOLUTION);
+
+    let result_source = if has_remote_heap_candidates {
+        SPIRE_REMOTE_RESULT_SOURCE_REMOTE_HEAP_CANDIDATES
+    } else if returned_candidate_count > 0 {
         SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES
     } else if gate.next_blocker != SPIRE_REMOTE_NONE {
         SPIRE_REMOTE_RESULT_SOURCE_BLOCKED
     } else {
         SPIRE_REMOTE_NONE
     };
-    let recommendation = if gate.recommendation != SPIRE_REMOTE_NONE {
+    let final_heap_fetch_status = if has_remote_heap_candidates {
+        SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY
+    } else {
+        gate.final_heap_fetch_status
+    };
+    let next_blocker = if returned_candidate_count > 0 {
+        SPIRE_REMOTE_NONE
+    } else {
+        gate.next_blocker
+    };
+    let status = if returned_candidate_count > 0 {
+        if gate.skipped_plan_count > 0 {
+            SPIRE_REMOTE_STATUS_DEGRADED_READY
+        } else {
+            SPIRE_REMOTE_STATUS_READY
+        }
+    } else {
+        gate.status
+    };
+    let recommendation = if returned_candidate_count > 0 {
+        SPIRE_REMOTE_NONE
+    } else if gate.recommendation != SPIRE_REMOTE_NONE {
         gate.recommendation
     } else {
-        local_summary.recommendation
+        SPIRE_REMOTE_NONE
     };
 
     SpireRemoteSearchCoordinatorResultSummaryRow {
@@ -614,14 +895,14 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
         local_pid_count: gate.local_pid_count,
         remote_pid_count: gate.remote_pid_count,
         skipped_pid_count: gate.skipped_pid_count,
-        decoded_local_locator_count: local_summary.decoded_local_locator_count,
-        returned_candidate_count: local_summary.returned_candidate_count,
+        decoded_local_locator_count,
+        returned_candidate_count,
         result_source,
         libpq_receive_count: gate.libpq_receive_count,
         libpq_receive_status: gate.libpq_receive_status,
-        final_heap_fetch_status: gate.final_heap_fetch_status,
-        next_blocker: gate.next_blocker,
-        status: gate.status,
+        final_heap_fetch_status,
+        next_blocker,
+        status,
         recommendation,
     }
 }
