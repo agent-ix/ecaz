@@ -40,6 +40,14 @@ that Phase 9 establishes.
   truncated.
 - [ ] Preserve deterministic ordering and boundary-replica tie-break behavior.
 
+## Phase 10.1a: Routing Diagnostic Drift Guard
+
+- [ ] Remove the parallel production-vs-diagnostic recursive routing loop, or
+  extract the traversal behind a shared collector/helper.
+- [ ] If a shared traversal helper is too invasive, add a property test proving
+  diagnostic selected/deduped route counts match production route sets on a
+  recursive fixture.
+
 ## Phase 10.2: Streaming AM Scan Shape
 
 - [ ] Decide whether the AM should remain eager in `amrescan` with bounded work
@@ -102,6 +110,9 @@ that Phase 9 establishes.
 
 - [ ] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
   remote fanout.
+- [ ] Add a unified local scan pipeline snapshot that orders routing,
+  placement, candidate, and heap-rerank steps, mirroring the remote
+  `ec_spire_remote_pipeline_steps` operator shape.
 - [ ] Record local development numbers separately from AWS/RDS-class numbers.
 - [ ] Include one-index-per-table fixtures for cross-AM comparisons unless a
   packet explicitly measures shared-table planner behavior.

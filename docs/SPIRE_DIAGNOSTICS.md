@@ -104,7 +104,9 @@ can see when scan plans must deduplicate replicated vector identities.
 `ec_spire_index_scan_placement_snapshot(index_oid, query)` then reports the
 runtime side of that contract with primary versus boundary-replica candidate
 rows, vec-id duplicate candidates suppressed by scan dedupe, and final
-candidate winners after dedupe and candidate limits.
+candidate winners after dedupe and candidate limits. The aggregate
+`candidate_row_count` is the pre-dedupe total; its role split is
+`primary_candidate_row_count + boundary_replica_candidate_row_count`.
 
 `ec_spire_remote_pipeline_steps(...)` reports six stable `step_name` values:
 `dispatch_plan`, `connection_check`, `candidates`, `heap_candidates`,

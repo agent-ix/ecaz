@@ -781,6 +781,8 @@ fn append_scored_candidate(
     candidates: &mut Vec<SpireScoredScanCandidate>,
     candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
 ) -> Option<SpireScoredScanCandidate> {
+    // With vec-id dedupe enabled, return the row suppressed by the collision
+    // regardless of whether the incoming or incumbent candidate wins.
     if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
         match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
