@@ -1961,23 +1961,44 @@ pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqExecutorReadinessRow {
-    let dispatch_summary = unsafe {
-        remote_search_libpq_dispatch_summary_row(
-            index_relation,
+    let result = (|| -> Result<SpireRemoteSearchLibpqExecutorReadinessRow, String> {
+        let query_for_empty_plan = query.clone();
+        let top_k_for_empty_plan = u64::try_from(top_k)
+            .map_err(|_| "ec_spire remote search libpq executor readiness top_k exceeds u64")?;
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let dispatch_summary = remote_search_libpq_dispatch_summary_from_plan_rows(
             requested_epoch,
-            query,
-            selected_pids,
-            top_k,
+            &dispatch_rows,
+            query_for_empty_plan,
+            top_k_for_empty_plan,
             consistency_mode,
-        )
-    };
+        )?;
+        let secret_rows = remote_search_libpq_secret_plan_rows_from_dispatch(&dispatch_rows);
+        let secret_summary =
+            remote_search_libpq_secret_summary_from_plan_rows(requested_epoch, &secret_rows)?;
 
-    remote_search_libpq_executor_readiness_from_dispatch_summary(requested_epoch, &dispatch_summary)
+        Ok(remote_search_libpq_executor_readiness_from_summaries(
+            requested_epoch,
+            &dispatch_summary,
+            &secret_summary,
+        ))
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-fn remote_search_libpq_executor_readiness_from_dispatch_summary(
+fn remote_search_libpq_executor_readiness_from_summaries(
     requested_epoch: u64,
     dispatch_summary: &SpireRemoteSearchLibpqDispatchSummaryRow,
+    secret_summary: &SpireRemoteSearchLibpqSecretSummaryRow,
 ) -> SpireRemoteSearchLibpqExecutorReadinessRow {
     let blocked_dispatch_count = dispatch_summary
         .dispatch_count
@@ -2004,6 +2025,20 @@ fn remote_search_libpq_executor_readiness_from_dispatch_summary(
             SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
             SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
             "register active or draining remote node descriptors before libpq executor startup",
+        )
+    } else if dispatch_summary.pipeline_dispatch_count > 0
+        && secret_summary.status == SPIRE_REMOTE_CONNINFO_RESOLVED
+    {
+        (
+            "resolve_conninfo_secret_reference",
+            "open_libpq_connection",
+            "enter_libpq_pipeline_mode",
+            "send_remote_search_request",
+            SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
+            "open_libpq_connection",
+            SPIRE_REMOTE_EXECUTOR_REQUIRED,
+            "open executor-owned libpq connections before remote dispatch",
         )
     } else if dispatch_summary.pipeline_dispatch_count > 0 {
         (
@@ -2583,9 +2618,13 @@ impl SpireCoordinatorPipeline {
         let receive_rows = remote_search_receive_plan_rows_from_requests(&request_rows);
         let merge_summary = remote_search_merge_input_summary_from_execution(&execution_summary);
         let finalization_summary = remote_search_finalization_summary_from_merge(&merge_summary);
-        let executor_readiness = remote_search_libpq_executor_readiness_from_dispatch_summary(
+        let secret_rows = remote_search_libpq_secret_plan_rows_from_dispatch(&dispatch_rows);
+        let secret_summary =
+            remote_search_libpq_secret_summary_from_plan_rows(requested_epoch, &secret_rows)?;
+        let executor_readiness = remote_search_libpq_executor_readiness_from_summaries(
             requested_epoch,
             &dispatch_summary,
+            &secret_summary,
         );
 
         Ok(Self {

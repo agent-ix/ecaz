@@ -19450,9 +19450,9 @@ mod tests {
             "requires_libpq_transport"
         );
         assert_eq!(coordinator_status, "requires_libpq_executor");
-        assert_eq!(coordinator_next_blocker, "conninfo_secret_resolution");
+        assert_eq!(coordinator_next_blocker, "open_libpq_connection");
         assert_eq!(coordinator_executor_status, "requires_libpq_executor");
-        assert_eq!(coordinator_executor_next_step, "conninfo_secret_resolution");
+        assert_eq!(coordinator_executor_next_step, "open_libpq_connection");
         assert_eq!(target_status, "requires_libpq_transport");
         assert_eq!(execution_status, "requires_libpq_transport");
         assert_eq!(execution_transport, "libpq_pipeline");
@@ -19505,7 +19505,7 @@ mod tests {
         assert_eq!(secret_summary_next_step, "open_libpq_connection");
         assert_eq!(secret_summary_status, "resolved_conninfo");
         assert_eq!(executor_status, "requires_libpq_executor");
-        assert_eq!(executor_next_step, "conninfo_secret_resolution");
+        assert_eq!(executor_next_step, "open_libpq_connection");
         assert_eq!(executor_secret_action, "resolve_conninfo_secret_reference");
         assert_eq!(
             executor_receive_action,
