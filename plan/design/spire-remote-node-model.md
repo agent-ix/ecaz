@@ -274,4 +274,6 @@ creating a separate placement vocabulary.
 - cross-node object rebalancing;
 - global `vec_id` rewrite implementation;
 - remote row fetch and final row delivery mechanics;
-- libpq pipeline execution and retry policy.
+- production AM remote libpq execution. ADR-058 keeps the current SQL-visible
+  libpq executor diagnostic/operator-only until pipeline or async fanout,
+  cancellation, timeout, fail-closed, and final row delivery semantics land.

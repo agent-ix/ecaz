@@ -45,6 +45,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE vector identity contract | `ADR-055-spire-vector-identity-contract.md` | ACCEPTED | Global `0x02` vec IDs dedupe across nodes; existing local `0x01` vec IDs are node-scoped during remote merge. |
 | SPIRE eager bounded scan contract | `ADR-056-spire-eager-bounded-scan-contract.md` | ACCEPTED | Current AM scans materialize a bounded candidate cursor in `amrescan`; `amgettuple` remains forward-only cursor drain until a separate streaming ADR is accepted. |
 | SPIRE local-store read scheduling contract | `ADR-057-spire-local-store-read-scheduling-contract.md` | ACCEPTED | Local store reads are grouped by `(node_id, local_store_id)` and prefetched before sequential scoring inside one backend; true parallel store execution requires a later ADR and benchmark packet. |
+| SPIRE remote libpq executor boundary | `ADR-058-spire-remote-libpq-executor-boundary.md` | ACCEPTED | Current SQL-visible libpq executor remains diagnostic/operator-only; production remote AM execution still needs concurrent pipeline/async dispatch, cancellation, timeouts, identity validation, fail-closed behavior, and final row delivery. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 

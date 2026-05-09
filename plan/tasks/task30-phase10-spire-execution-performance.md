@@ -92,9 +92,12 @@ that Phase 9 establishes.
 
 ## Phase 10.5: Remote Libpq Executor
 
-- [ ] Decide whether the current SQL-visible libpq executor remains diagnostic
-  only or becomes the production AM remote query path.
-- [ ] If production-bound, implement:
+- [x] Decide whether the current SQL-visible libpq executor remains diagnostic
+  only or becomes the production AM remote query path. ADR-058 keeps it
+  diagnostic/operator-only.
+- [x] If production-bound, implement the following. ADR-058 chooses
+  diagnostic-only for the current executor, so these production requirements
+  are deferred to a future production remote executor ADR/checkpoint:
   - concurrent dispatch across ready remote nodes;
   - libpq pipeline mode or async receive;
   - bounded remote connection fanout;
@@ -102,8 +105,12 @@ that Phase 9 establishes.
   - cancel propagation on local query cancellation;
   - cached remote index identity validation;
   - clear degraded/fail-closed behavior for partial remote failure.
-- [ ] Keep raw conninfo out of SQL-visible surfaces.
-- [ ] Preserve receive-batch validation before merge.
+- [x] Keep raw conninfo out of SQL-visible surfaces for the diagnostic
+  executor. ADR-058 preserves the `conninfo_secret_name` indirection and
+  executor-owned secret lookup.
+- [x] Preserve receive-batch validation before merge. The diagnostic executor
+  decodes rows into the result contract and calls
+  `validate_remote_search_candidate_batch` before global merge.
 
 ## Phase 10.6: Remote Heap Resolution
 
