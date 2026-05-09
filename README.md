@@ -112,10 +112,16 @@ for full results, source packets, and methodology.
 
 For 1536-dimensional vectors:
 
-| Representation | Bytes per vector | Relative size | 8KB page density |
-| --- | ---: | ---: | ---: |
-| Raw fp32 | 6,144 B | 1.00x | about 1 tuple |
-| TurboQuant 4-bit artifact | 783 B | 7.85x smaller | about 9 tuples |
+| Representation | Bytes per vector | Relative size | 8KB intuition |
+| --- | ---: | ---: | --- |
+| Raw fp32 | 6,144 B | 1.00x | about 1 source vector |
+| TurboQuant 4-bit artifact | 783 B | 7.85x smaller | about 9 tuples with ordinary tuple overhead |
+| PQ-FastScan g8 search code | 96 B | 64.0x smaller | about 85 code payloads before AM overhead |
+| RaBitQ 4-bit IVF code | 780 B | 7.88x smaller | about 10 code payloads before AM overhead |
+
+The PQ-FastScan and RaBitQ rows are per-vector code payloads from the current
+implementation. Full index footprint also includes access-method tuple/list or
+graph overhead, codebooks, and any rerank sidecar data.
 
 Index footprint depends on both access method and storage format. On the local
 IVF 10K/25K matched-width lane (`nlists=64`, `nprobe=48`,
