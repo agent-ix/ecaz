@@ -44,6 +44,7 @@ where
         object_store,
         query_vector,
         &scan_plan.recursive_nprobe_policy,
+        scan_plan.recursive_route_budget,
         scan_plan.payload_format,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
@@ -151,6 +152,7 @@ where
         top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
+        scan_plan.recursive_route_budget,
     )?;
     let mut candidates = rank_routed_leaf_rows_by_ip(
         routed_rows,

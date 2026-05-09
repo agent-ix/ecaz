@@ -251,8 +251,9 @@ fn route_top_graph_object_to_leaf_routes(
     search_list_size: u32,
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
-    let selected_child_pids = route_top_graph_object_to_child_pids(
+    let selected_child_routes = route_top_graph_view_to_routes(
         root_object,
         top_graph,
         query_vector,
@@ -260,29 +261,41 @@ fn route_top_graph_object_to_leaf_routes(
         top_route_count,
     )?;
     if root_object.header.level == 1 {
-        return Ok(selected_child_pids
-            .into_iter()
-            .map(|leaf_pid| SpireRecursiveLeafRoute {
-                leaf_pid,
+        let mut seen_leaf_pids = HashSet::new();
+        let mut leaf_routes = Vec::new();
+        for route in selected_child_routes {
+            if leaf_routes.len() >= route_budget.max_leaf_routes {
+                break;
+            }
+            if !seen_leaf_pids.insert(route.child_pid) {
+                continue;
+            }
+            leaf_routes.push(SpireRecursiveLeafRoute {
+                leaf_pid: route.child_pid,
                 parent_pid: root_object.header.pid,
-            })
-            .collect());
+            });
+        }
+        return Ok(leaf_routes);
     }
 
-    let mut current_parents = Vec::with_capacity(selected_child_pids.len());
-    for child_pid in selected_child_pids {
+    let mut current_parents = Vec::with_capacity(selected_child_routes.len());
+    for route in selected_child_routes {
         let child = require_recursive_internal_child(
             routing_objects_by_pid,
-            child_pid,
+            route.child_pid,
             root_object,
         )?;
-        current_parents.push((*child).clone());
+        current_parents.push(SpireRecursiveParentRoute {
+            parent: (*child).clone(),
+            path_score: -route.distance,
+        });
     }
     route_recursive_parent_objects_to_leaf_routes(
         current_parents,
         routing_objects_by_pid,
         query_vector,
         nprobe_policy,
+        route_budget,
     )
 }
 
@@ -351,6 +364,17 @@ fn route_routing_object_to_child_pids(
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<u64>, String> {
+    Ok(route_routing_object_to_child_routes(routing_object, query_vector, nprobe)?
+        .into_iter()
+        .map(|route| route.child_pid)
+        .collect())
+}
+
+fn route_routing_object_to_child_routes(
+    routing_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+    nprobe: u32,
+) -> Result<Vec<SpireRoutingChildRoute>, String> {
     if routing_object.header.kind != SpirePartitionObjectKind::Root
         && routing_object.header.kind != SpirePartitionObjectKind::Internal
     {
@@ -375,17 +399,22 @@ fn route_routing_object_to_child_pids(
         }),
     )?;
 
-    let mut selected_pids = Vec::with_capacity(requested.min(scored_children.len()));
+    let mut selected_routes = Vec::with_capacity(requested.min(scored_children.len()));
+    let mut selected_pids = HashSet::new();
     for child in scored_children {
-        if selected_pids.contains(&child.pid) {
+        if !selected_pids.insert(child.pid) {
             continue;
         }
-        selected_pids.push(child.pid);
-        if selected_pids.len() == requested {
+        selected_routes.push(SpireRoutingChildRoute {
+            centroid_index: child.centroid_index,
+            child_pid: child.pid,
+            score: child.score,
+        });
+        if selected_routes.len() == requested {
             break;
         }
     }
-    Ok(selected_pids)
+    Ok(selected_routes)
 }
 
 fn route_recursive_routing_objects_to_leaf_pids(
@@ -426,6 +455,22 @@ fn route_recursive_routing_objects_to_leaf_routes_with_policy(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    route_recursive_routing_objects_to_leaf_routes_with_budget(
+        root_object,
+        routing_objects_by_pid,
+        query_vector,
+        nprobe_policy,
+        SpireRecursiveRouteBudget::unbounded(),
+    )
+}
+
+fn route_recursive_routing_objects_to_leaf_routes_with_budget(
+    root_object: &SpireRoutingPartitionObject,
+    routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
+    query_vector: &[f32],
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     if root_object.header.kind != SpirePartitionObjectKind::Root {
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
@@ -436,6 +481,7 @@ fn route_recursive_routing_objects_to_leaf_routes_with_policy(
             nprobe_policy.nprobe_for_parent_level(root_object.header.level),
         )?
         .into_iter()
+        .take(route_budget.max_leaf_routes)
         .map(|leaf_pid| SpireRecursiveLeafRoute {
             leaf_pid,
             parent_pid: root_object.header.pid,
@@ -444,48 +490,80 @@ fn route_recursive_routing_objects_to_leaf_routes_with_policy(
     }
 
     route_recursive_parent_objects_to_leaf_routes(
-        vec![root_object.clone()],
+        vec![SpireRecursiveParentRoute {
+            parent: root_object.clone(),
+            path_score: 0.0,
+        }],
         routing_objects_by_pid,
         query_vector,
         nprobe_policy,
+        route_budget,
     )
 }
 
 fn route_recursive_parent_objects_to_leaf_routes(
-    mut current_parents: Vec<SpireRoutingPartitionObject>,
+    mut current_parents: Vec<SpireRecursiveParentRoute>,
     routing_objects_by_pid: &HashMap<u64, SpireRoutingPartitionObject>,
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
     if current_parents.is_empty() {
         return Err("ec_spire recursive scan routing produced no parent routes".to_owned());
     }
+    let mut expanded_parent_count = 0usize;
     loop {
-        let parent_level = current_parents[0].header.level;
+        let parent_level = current_parents[0].parent.header.level;
         if parent_level == 1 {
-            let mut leaf_routes = Vec::new();
-            for parent in &current_parents {
+            let mut leaf_candidates = Vec::new();
+            for parent_route in &current_parents {
+                let parent = &parent_route.parent;
                 if parent.header.level != 1 {
                     return Err("ec_spire recursive scan routing parent levels drifted".to_owned());
                 }
-                leaf_routes.extend(
-                    route_routing_object_to_child_pids(
-                        parent,
-                        query_vector,
-                        nprobe_policy.nprobe_for_parent_level(parent.header.level),
-                    )?
-                    .into_iter()
-                    .map(|leaf_pid| SpireRecursiveLeafRoute {
-                        leaf_pid,
+                if expanded_parent_count >= route_budget.max_routing_expansions {
+                    break;
+                }
+                expanded_parent_count += 1;
+                for route in route_routing_object_to_child_routes(
+                    parent,
+                    query_vector,
+                    nprobe_policy.nprobe_for_parent_level(parent.header.level),
+                )? {
+                    leaf_candidates.push(SpireRecursiveScoredChildRoute {
                         parent_pid: parent.header.pid,
-                    }),
-                );
+                        parent_level: parent.header.level,
+                        child_pid: route.child_pid,
+                        centroid_index: route.centroid_index,
+                        path_score: parent_route.path_score,
+                        score: route.score,
+                    });
+                }
+            }
+            leaf_candidates.sort_by(recursive_scored_child_route_cmp);
+            let mut seen_leaf_pids = HashSet::new();
+            let mut leaf_routes = Vec::new();
+            for route in leaf_candidates {
+                if leaf_routes.len() >= route_budget.max_leaf_routes {
+                    break;
+                }
+                if !seen_leaf_pids.insert(route.child_pid) {
+                    continue;
+                }
+                leaf_routes.push(SpireRecursiveLeafRoute {
+                    leaf_pid: route.child_pid,
+                    parent_pid: route.parent_pid,
+                });
+            }
+            if leaf_routes.is_empty() {
+                return Err("ec_spire recursive scan routing produced no leaf routes".to_owned());
             }
             return Ok(leaf_routes);
         }
 
-        let mut next_parents = Vec::new();
-        for parent in &current_parents {
+        let mut child_candidates = Vec::new();
+        for parent_route in &current_parents {
+            let parent = &parent_route.parent;
             if parent.header.kind != SpirePartitionObjectKind::Root
                 && parent.header.kind != SpirePartitionObjectKind::Internal
             {
@@ -494,16 +572,45 @@ fn route_recursive_parent_objects_to_leaf_routes(
             if parent.header.level != parent_level {
                 return Err("ec_spire recursive scan routing parent levels drifted".to_owned());
             }
-            let child_pids = route_routing_object_to_child_pids(
+            if expanded_parent_count >= route_budget.max_routing_expansions {
+                break;
+            }
+            expanded_parent_count += 1;
+            for route in route_routing_object_to_child_routes(
                 parent,
                 query_vector,
                 nprobe_policy.nprobe_for_parent_level(parent.header.level),
-            )?;
-            for child_pid in child_pids {
-                let child =
-                    require_recursive_internal_child(routing_objects_by_pid, child_pid, parent)?;
-                next_parents.push((*child).clone());
+            )? {
+                child_candidates.push(SpireRecursiveScoredChildRoute {
+                    parent_pid: parent.header.pid,
+                    parent_level: parent.header.level,
+                    child_pid: route.child_pid,
+                    centroid_index: route.centroid_index,
+                    path_score: parent_route.path_score,
+                    score: route.score,
+                });
             }
+        }
+        child_candidates.sort_by(recursive_scored_child_route_cmp);
+        let mut next_parents = Vec::new();
+        let mut seen_child_pids = HashSet::new();
+        for route in child_candidates {
+            if next_parents.len() >= route_budget.beam_width {
+                break;
+            }
+            if !seen_child_pids.insert(route.child_pid) {
+                continue;
+            }
+            let child = require_recursive_internal_child_for_parent(
+                routing_objects_by_pid,
+                route.child_pid,
+                route.parent_pid,
+                route.parent_level,
+            )?;
+            next_parents.push(SpireRecursiveParentRoute {
+                parent: (*child).clone(),
+                path_score: route.total_score(),
+            });
         }
         if next_parents.is_empty() {
             return Err("ec_spire recursive scan routing produced no internal children".to_owned());
@@ -571,6 +678,20 @@ fn require_recursive_internal_child<'a>(
     child_pid: u64,
     parent: &SpireRoutingPartitionObject,
 ) -> Result<&'a SpireRoutingPartitionObject, String> {
+    require_recursive_internal_child_for_parent(
+        routing_objects_by_pid,
+        child_pid,
+        parent.header.pid,
+        parent.header.level,
+    )
+}
+
+fn require_recursive_internal_child_for_parent<'a>(
+    routing_objects_by_pid: &'a HashMap<u64, SpireRoutingPartitionObject>,
+    child_pid: u64,
+    parent_pid: u64,
+    parent_level: u16,
+) -> Result<&'a SpireRoutingPartitionObject, String> {
     let child = routing_objects_by_pid.get(&child_pid).ok_or_else(|| {
         format!("ec_spire recursive scan missing internal routing child pid {child_pid}")
     })?;
@@ -579,16 +700,16 @@ fn require_recursive_internal_child<'a>(
             "ec_spire recursive scan child pid {child_pid} is not an internal routing object"
         ));
     }
-    if child.header.parent_pid != parent.header.pid {
+    if child.header.parent_pid != parent_pid {
         return Err(format!(
             "ec_spire recursive scan child pid {child_pid} parent_pid {} does not match parent pid {}",
-            child.header.parent_pid, parent.header.pid
+            child.header.parent_pid, parent_pid
         ));
     }
-    if child.header.level.checked_add(1) != Some(parent.header.level) {
+    if child.header.level.checked_add(1) != Some(parent_level) {
         return Err(format!(
             "ec_spire recursive scan child pid {child_pid} level {} is not one below parent level {}",
-            child.header.level, parent.header.level
+            child.header.level, parent_level
         ));
     }
     Ok(child)
@@ -690,6 +811,18 @@ fn top_graph_route_cmp(left: &SpireTopGraphRoute, right: &SpireTopGraphRoute) ->
         .then_with(|| left.centroid_ordinal.cmp(&right.centroid_ordinal))
         .then_with(|| left.child_pid.cmp(&right.child_pid))
         .then_with(|| left.node_ordinal.cmp(&right.node_ordinal))
+}
+
+fn recursive_scored_child_route_cmp(
+    left: &SpireRecursiveScoredChildRoute,
+    right: &SpireRecursiveScoredChildRoute,
+) -> Ordering {
+    right
+        .total_score()
+        .total_cmp(&left.total_score())
+        .then_with(|| left.parent_pid.cmp(&right.parent_pid))
+        .then_with(|| left.centroid_index.cmp(&right.centroid_index))
+        .then_with(|| left.child_pid.cmp(&right.child_pid))
 }
 
 fn validate_routing_query_vector(query_vector: &[f32], dimensions: usize) -> Result<(), String> {

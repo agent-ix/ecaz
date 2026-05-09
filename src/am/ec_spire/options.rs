@@ -273,6 +273,23 @@ impl SpireRecursiveNprobePolicy {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireRecursiveRouteBudget {
+    pub(super) beam_width: usize,
+    pub(super) max_leaf_routes: usize,
+    pub(super) max_routing_expansions: usize,
+}
+
+impl SpireRecursiveRouteBudget {
+    pub(super) const fn unbounded() -> Self {
+        Self {
+            beam_width: usize::MAX,
+            max_leaf_routes: usize::MAX,
+            max_routing_expansions: usize::MAX,
+        }
+    }
+}
+
 fn validate_recursive_fanout_value(value: i32) -> Result<(), String> {
     if value == 0 || value >= 2 {
         Ok(())
@@ -501,6 +518,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) nprobe: u32,
     pub(super) nprobe_source: &'static str,
     pub(super) recursive_nprobe_policy: SpireRecursiveNprobePolicy,
+    pub(super) recursive_route_budget: SpireRecursiveRouteBudget,
     pub(super) payload_format: SpireAssignmentPayloadFormat,
     pub(super) rerank_width: usize,
     pub(super) rerank_width_source: &'static str,
@@ -576,6 +594,8 @@ pub(super) fn resolve_single_level_scan_plan_values(
         nprobe.effective_nprobe,
         options.nprobe_per_level_values()?,
     )?;
+    let recursive_route_budget =
+        resolve_recursive_route_budget(leaf_count, nprobe.effective_nprobe)?;
     let rerank_width =
         resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
     let rerank_width_usize = usize::try_from(rerank_width.effective_rerank_width)
@@ -591,6 +611,7 @@ pub(super) fn resolve_single_level_scan_plan_values(
         nprobe: nprobe.effective_nprobe,
         nprobe_source: nprobe.source,
         recursive_nprobe_policy,
+        recursive_route_budget,
         payload_format: options.assignment_payload_format(),
         rerank_width: rerank_width_usize,
         rerank_width_source: rerank_width.source,
@@ -600,6 +621,30 @@ pub(super) fn resolve_single_level_scan_plan_values(
         } else {
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         },
+    })
+}
+
+pub(super) fn resolve_recursive_route_budget(
+    leaf_count: u32,
+    effective_nprobe: u32,
+) -> Result<SpireRecursiveRouteBudget, String> {
+    if leaf_count == 0 || effective_nprobe == 0 {
+        return Ok(SpireRecursiveRouteBudget {
+            beam_width: 0,
+            max_leaf_routes: 0,
+            max_routing_expansions: 0,
+        });
+    }
+    let beam_width = usize::try_from(effective_nprobe)
+        .map_err(|_| "ec_spire recursive beam width exceeds usize".to_owned())?;
+    let max_leaf_routes = usize::try_from(effective_nprobe)
+        .map_err(|_| "ec_spire recursive max leaf routes exceeds usize".to_owned())?;
+    let leaf_count_usize = usize::try_from(leaf_count)
+        .map_err(|_| "ec_spire recursive leaf count exceeds usize".to_owned())?;
+    Ok(SpireRecursiveRouteBudget {
+        beam_width,
+        max_leaf_routes: max_leaf_routes.min(leaf_count_usize),
+        max_routing_expansions: leaf_count_usize.max(beam_width),
     })
 }
 
@@ -974,11 +1019,12 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
 mod tests {
     use super::{
         normalize_local_store_tablespaces_reloption, parse_nprobe_per_level_reloption,
-        plan_local_store_tablespaces_with_resolver, resolve_scan_nprobe_values,
-        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
-        validate_boundary_replica_count_value, validate_local_store_count_value,
-        validate_recursive_fanout_value, EcSpireOptions, SpireCandidateDedupeMode,
-        SpireStorageFormat, SpireTopGraphOptionPlan,
+        plan_local_store_tablespaces_with_resolver, resolve_recursive_route_budget,
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
+        resolve_single_level_scan_plan_values, validate_boundary_replica_count_value,
+        validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
+        SpireCandidateDedupeMode, SpireRecursiveRouteBudget, SpireStorageFormat,
+        SpireTopGraphOptionPlan,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -1205,6 +1251,14 @@ mod tests {
         assert_eq!(plan.rerank_width_source, "relation");
         assert_eq!(plan.candidate_limit, Some(128));
         assert_eq!(
+            plan.recursive_route_budget,
+            SpireRecursiveRouteBudget {
+                beam_width: 3,
+                max_leaf_routes: 3,
+                max_routing_expansions: 17,
+            }
+        );
+        assert_eq!(
             plan.dedupe_mode,
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         );
@@ -1226,6 +1280,37 @@ mod tests {
         assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(2), 3);
         assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(3), 4);
         assert_eq!(plan.recursive_nprobe_policy.nprobe_for_parent_level(4), 1);
+        assert_eq!(plan.recursive_route_budget.beam_width, 2);
+        assert_eq!(plan.recursive_route_budget.max_leaf_routes, 2);
+        assert_eq!(plan.recursive_route_budget.max_routing_expansions, 17);
+    }
+
+    #[test]
+    fn recursive_route_budget_resolves_finite_scan_guardrails() {
+        assert_eq!(
+            resolve_recursive_route_budget(100, 7).unwrap(),
+            SpireRecursiveRouteBudget {
+                beam_width: 7,
+                max_leaf_routes: 7,
+                max_routing_expansions: 100,
+            }
+        );
+        assert_eq!(
+            resolve_recursive_route_budget(3, 7).unwrap(),
+            SpireRecursiveRouteBudget {
+                beam_width: 7,
+                max_leaf_routes: 3,
+                max_routing_expansions: 7,
+            }
+        );
+        assert_eq!(
+            resolve_recursive_route_budget(0, 7).unwrap(),
+            SpireRecursiveRouteBudget {
+                beam_width: 0,
+                max_leaf_routes: 0,
+                max_routing_expansions: 0,
+            }
+        );
     }
 
     #[test]

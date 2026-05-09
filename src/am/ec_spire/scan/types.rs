@@ -72,6 +72,35 @@ struct SpireRecursiveLeafRoute {
     parent_pid: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireRoutingChildRoute {
+    centroid_index: u32,
+    child_pid: u64,
+    score: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpireRecursiveParentRoute {
+    parent: SpireRoutingPartitionObject,
+    path_score: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireRecursiveScoredChildRoute {
+    parent_pid: u64,
+    parent_level: u16,
+    child_pid: u64,
+    centroid_index: u32,
+    path_score: f32,
+    score: f32,
+}
+
+impl SpireRecursiveScoredChildRoute {
+    fn total_score(&self) -> f32 {
+        self.path_score + self.score
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireDeltaObjectRoute {
     delta_pid: u64,

@@ -11030,6 +11030,9 @@ fn ec_spire_index_options_snapshot(
         name!(effective_nprobe_source, String),
         name!(effective_nprobe_per_level, Vec<i64>),
         name!(nprobe_policy_per_level, Vec<String>),
+        name!(recursive_beam_width, i64),
+        name!(max_leaf_routes, i64),
+        name!(max_routing_expansions, i64),
         name!(relation_rerank_width, i32),
         name!(session_rerank_width, Option<i32>),
         name!(effective_rerank_width, i32),
@@ -11073,6 +11076,11 @@ fn ec_spire_index_options_snapshot(
             .into_iter()
             .map(str::to_owned)
             .collect(),
+        i64::try_from(snapshot.recursive_beam_width)
+            .expect("recursive beam width should fit in i64"),
+        i64::try_from(snapshot.max_leaf_routes).expect("max leaf routes should fit in i64"),
+        i64::try_from(snapshot.max_routing_expansions)
+            .expect("max routing expansions should fit in i64"),
         snapshot.relation_rerank_width,
         snapshot.session_rerank_width,
         snapshot.effective_rerank_width,

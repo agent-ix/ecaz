@@ -391,9 +391,147 @@
             leaf_pids,
             vec![
                 SPIRE_FIRST_PID + 12,
-                SPIRE_FIRST_PID + 11,
                 SPIRE_FIRST_PID + 22,
+                SPIRE_FIRST_PID + 11,
                 SPIRE_FIRST_PID + 21,
+            ]
+        );
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_routes_with_budget_uses_global_leaf_budget() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![0.9, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 21, vec![0.4, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![1.4, 0.0]),
+            ],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+        let nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(2, vec![2]).unwrap();
+        let route_budget = SpireRecursiveRouteBudget {
+            beam_width: 2,
+            max_leaf_routes: 2,
+            max_routing_expansions: 10,
+        };
+
+        let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+        )
+        .unwrap();
+
+        assert_eq!(
+            leaf_routes
+                .into_iter()
+                .map(|route| (route.parent_pid, route.leaf_pid))
+                .collect::<Vec<_>>(),
+            vec![
+                (SPIRE_FIRST_PID + 10, SPIRE_FIRST_PID + 12),
+                (SPIRE_FIRST_PID + 20, SPIRE_FIRST_PID + 22),
+            ]
+        );
+    }
+
+    #[test]
+    fn route_recursive_routing_objects_to_leaf_routes_dedupes_global_leaf_budget() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![0.9, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 12, vec![1.4, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![1.3, 0.0]),
+            ],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+        let nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(2, vec![2]).unwrap();
+        let route_budget = SpireRecursiveRouteBudget {
+            beam_width: 2,
+            max_leaf_routes: 2,
+            max_routing_expansions: 10,
+        };
+
+        let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+        )
+        .unwrap();
+
+        assert_eq!(
+            leaf_routes
+                .into_iter()
+                .map(|route| (route.parent_pid, route.leaf_pid))
+                .collect::<Vec<_>>(),
+            vec![
+                (SPIRE_FIRST_PID + 10, SPIRE_FIRST_PID + 12),
+                (SPIRE_FIRST_PID + 20, SPIRE_FIRST_PID + 22),
             ]
         );
     }
@@ -695,6 +833,7 @@
             2,
             1,
             &SpireRecursiveNprobePolicy::conservative(1).unwrap(),
+            SpireRecursiveRouteBudget::unbounded(),
         )
         .unwrap();
 
@@ -810,6 +949,7 @@
             2,
             1,
             &SpireRecursiveNprobePolicy::conservative(1).unwrap(),
+            SpireRecursiveRouteBudget::unbounded(),
         )
         .unwrap();
 

@@ -1889,9 +1889,9 @@ replication execution, and global vector identity.
 - [x] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
   and avoid full centroid offset scans when the comparator can use monotonic
   inner-product ordering.
-- [ ] **Global recursive beam.** Add route budgets such as `beam_width`,
-  `max_leaf_routes`, and `max_routing_expansions` so deep hierarchies cannot
-  multiply routes without a cap.
+- [ ] **Global recursive beam.** Core scan route budgets, global scored
+  expansion, and leaf-route dedupe have landed in the Phase 9.4 implementation
+  slice; per-level routing diagnostics remain before this milestone closes.
 - [ ] **Boundary replication execution contract.** Finish primary/replica row
   semantics, route integration, recall/storage diagnostics, and dedupe behavior
   for opt-in boundary replicas.

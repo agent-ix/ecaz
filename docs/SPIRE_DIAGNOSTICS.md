@@ -72,6 +72,12 @@ levels above 1 probe one child unless the index is configured with
 `nprobe_per_level`. That reloption is a comma-separated list ordered from level
 2 upward.
 
+The same options snapshot reports the effective Phase 9 route-budget guardrails
+as `recursive_beam_width`, `max_leaf_routes`, and `max_routing_expansions`.
+These are derived from active leaf count and effective `nprobe`; they cap the
+global recursive routing frontier while `nprobe_per_level` remains the local
+per-parent input.
+
 `ec_spire_index_options_snapshot(index_oid)` reports `local_store_count` and
 `local_store_tablespaces` as the requested local placement surface. Repeated
 tablespace names are allowed so same-device baseline runs can be configured and

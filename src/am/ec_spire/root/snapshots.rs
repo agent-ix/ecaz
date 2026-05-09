@@ -147,6 +147,8 @@ pub(crate) unsafe fn index_options_snapshot(
                 )
             };
         let rerank_width = options::resolve_scan_rerank_width(relation_options.rerank_width);
+        let route_budget =
+            options::resolve_recursive_route_budget(active_leaf_count, nprobe.effective_nprobe)?;
         let assignment_payload_format = relation_options.assignment_payload_format();
         let (
             assignment_payload_scannable,
@@ -176,6 +178,12 @@ pub(crate) unsafe fn index_options_snapshot(
             effective_nprobe_source: nprobe.source,
             effective_nprobe_per_level,
             nprobe_policy_per_level,
+            recursive_beam_width: u64::try_from(route_budget.beam_width)
+                .map_err(|_| "ec_spire recursive beam width exceeds u64".to_owned())?,
+            max_leaf_routes: u64::try_from(route_budget.max_leaf_routes)
+                .map_err(|_| "ec_spire max leaf routes exceeds u64".to_owned())?,
+            max_routing_expansions: u64::try_from(route_budget.max_routing_expansions)
+                .map_err(|_| "ec_spire max routing expansions exceeds u64".to_owned())?,
             relation_rerank_width: relation_options.rerank_width,
             session_rerank_width: rerank_width.session_rerank_width,
             effective_rerank_width: rerank_width.effective_rerank_width,

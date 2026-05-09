@@ -102,6 +102,7 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
     search_list_size: u32,
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
@@ -115,6 +116,7 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
         search_list_size,
         top_route_count,
         nprobe_policy,
+        route_budget,
     )?;
     let epoch = snapshot.epoch_manifest().epoch;
 
@@ -187,6 +189,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
         object_store,
         query_vector,
         &nprobe_policy,
+        SpireRecursiveRouteBudget::unbounded(),
         payload_format,
         dedupe_mode,
         limit,
@@ -198,6 +201,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
     object_store: &impl SpireObjectReader,
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -211,6 +215,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
         query_vector,
         &hierarchy,
         nprobe_policy,
+        route_budget,
         payload_format,
         dedupe_mode,
         limit,
@@ -224,6 +229,7 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
     query_vector: &[f32],
     hierarchy: &SpireLoadedRoutingHierarchy,
     nprobe_policy: &SpireRecursiveNprobePolicy,
+    route_budget: SpireRecursiveRouteBudget,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -231,11 +237,12 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
-    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_policy(
+    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         query_vector,
         nprobe_policy,
+        route_budget,
     )?;
     collect_validated_quantized_leaf_route_candidates(
         snapshot,

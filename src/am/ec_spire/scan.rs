@@ -12,7 +12,8 @@ use super::meta::{
 };
 use super::options::{
     relation_options, resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
-    SpireRecursiveNprobePolicy, SpireSingleLevelScanPlan, SpireTopGraphOptionPlan,
+    SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
+    SpireTopGraphOptionPlan,
 };
 use super::page;
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};

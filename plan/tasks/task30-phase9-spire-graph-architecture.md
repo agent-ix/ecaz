@@ -75,18 +75,19 @@ before Phase 10 optimizes execution.
 
 ## Phase 9.4: Global Recursive Beam
 
-- [ ] Replace per-parent independent top-N expansion with a scored global
+- [x] Replace per-parent independent top-N expansion with a scored global
   frontier.
-- [ ] Add explicit scan controls:
+- [x] Add explicit scan controls:
   - `beam_width`;
   - `max_leaf_routes`;
   - `max_routing_expansions`;
-  - optionally `max_candidate_rows` if Phase 10 has not landed it first.
-- [ ] Dedupe leaf routes before storage reads.
+  - `max_candidate_rows` remains covered by the existing rerank/candidate
+    limit path until Phase 10 revisits candidate row caps.
+- [x] Dedupe leaf routes before storage reads.
 - [ ] Expose routing diagnostics per level: input frontier width, expanded
   parent count, selected child count, deduped route count, and truncation
   reason.
-- [ ] Keep existing `nprobe_per_level` as a local per-parent or per-level
+- [x] Keep existing `nprobe_per_level` as a local per-parent or per-level
   budget input, but make the global beam the final guardrail.
 
 ## Phase 9.5: Boundary Replication Execution Contract
