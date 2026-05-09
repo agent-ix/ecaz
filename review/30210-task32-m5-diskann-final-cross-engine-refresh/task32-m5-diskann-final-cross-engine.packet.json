@@ -1,0 +1,136 @@
+{
+  "name": "task32-m5-diskann-final-cross-engine-refresh",
+  "schema_version": 1,
+  "artifact_dir": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 500,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-diskann-real10k-final",
+      "tags": ["load", "diskann", "real10k", "final"],
+      "prefix": "task32_m5_diskann_final",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_diskann",
+      "reloptions": [
+        "graph_degree=32",
+        "build_list_size=100",
+        "alpha=1.2"
+      ],
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/load-diskann-real10k-final.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-real10k-final",
+      "tags": ["recall", "diskann", "real10k", "final"],
+      "prefix": "task32_m5_diskann_final",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/truth_real10k_k10.json",
+      "log_output": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/recall-diskann-real10k-final-table.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real10k-final",
+      "tags": ["latency", "diskann", "real10k", "final"],
+      "prefix": "task32_m5_diskann_final",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/latency-diskann-real10k-final-table.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-diskann-real10k-final",
+      "tags": ["storage", "diskann", "real10k", "final"],
+      "prefix": "task32_m5_diskann_final",
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-diskann-real10k-final.log"
+    },
+    {
+      "kind": "raw",
+      "name": "compare-vectorscale-real10k-final",
+      "tags": ["compare", "vectorscale", "real10k", "final"],
+      "args": [
+        "compare",
+        "vectorscale",
+        "--prefix",
+        "task32_m5_diskann_final",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--vectorscale-num-neighbors",
+        "32",
+        "--vectorscale-build-search-list-size",
+        "100",
+        "--vectorscale-max-alpha",
+        "1.2",
+        "--rebuild",
+        "--log-file",
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
+      ],
+      "expected_artifacts": [
+        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-real10k-final",
+      "tags": ["load", "hnsw", "real10k", "final"],
+      "prefix": "task32_m5_hnsw_final",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_hnsw",
+      "reloptions": [
+        "m=32",
+        "ef_construction=100"
+      ],
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/load-hnsw-real10k-final.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real10k-final",
+      "tags": ["recall", "hnsw", "real10k", "final"],
+      "prefix": "task32_m5_hnsw_final",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/truth_real10k_k10.json",
+      "log_output": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/recall-hnsw-real10k-final-table.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k-final",
+      "tags": ["latency", "hnsw", "real10k", "final"],
+      "prefix": "task32_m5_hnsw_final",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/latency-hnsw-real10k-final-table.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-hnsw-real10k-final",
+      "tags": ["storage", "hnsw", "real10k", "final"],
+      "prefix": "task32_m5_hnsw_final",
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-hnsw-real10k-final.log"
+    }
+  ]
+}

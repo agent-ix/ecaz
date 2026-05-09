@@ -12,6 +12,10 @@ instead of only the pre-round baseline.
 
 This is a benchmark/reporting packet, not a new optimization slice.
 
+Suite config:
+
+- `review/30210-task32-m5-diskann-final-cross-engine-refresh/task32-m5-diskann-final-cross-engine.packet.json`
+
 ## Benchmark Surface
 
 - hardware: Apple M5 local development machine
@@ -55,6 +59,12 @@ packet-local source of truth.
 
 Add a normalized `artifacts/results.jsonl` with one object per engine/tuning
 row using the schema recorded in `artifacts/manifest.md`.
+
+Suggested suite flow:
+
+1. `ecaz bench suite audit --config <packet-json>`
+2. `ecaz bench suite run --config <packet-json> --manifest-output ... --results-output ...`
+3. `ecaz bench suite report --manifest <suite-manifest.json> --results-output ...`
 
 Expected raw artifact categories:
 
