@@ -80,15 +80,6 @@ ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
 ```
 
-Expected first smoke result:
-
-```text
- id
-----
-  1
-(1 row)
-```
-
 See [Build From Source](docs/build-from-source.md) for the full repeatable
 setup path, including native prerequisites, existing-PostgreSQL installs,
 operator CLI setup, PG17 compatibility, and validation commands.
