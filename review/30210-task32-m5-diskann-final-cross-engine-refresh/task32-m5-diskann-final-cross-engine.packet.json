@@ -60,33 +60,18 @@
       "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-diskann-real10k-final.log"
     },
     {
-      "kind": "raw",
+      "kind": "compare-vectorscale",
       "name": "compare-vectorscale-real10k-final",
       "tags": ["compare", "vectorscale", "real10k", "final"],
-      "args": [
-        "compare",
-        "vectorscale",
-        "--prefix",
-        "task32_m5_diskann_final",
-        "--profile",
-        "ec_diskann",
-        "--k",
-        "10",
-        "--sweep",
-        "64,128,200,400,800",
-        "--vectorscale-num-neighbors",
-        "32",
-        "--vectorscale-build-search-list-size",
-        "100",
-        "--vectorscale-max-alpha",
-        "1.2",
-        "--rebuild",
-        "--log-file",
-        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
-      ],
-      "expected_artifacts": [
-        "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
-      ]
+      "prefix": "task32_m5_diskann_final",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "vectorscale_num_neighbors": 32,
+      "vectorscale_build_search_list_size": 100,
+      "vectorscale_max_alpha": 1.2,
+      "rebuild": true,
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-vectorscale-real10k-final.log"
     },
     {
       "kind": "load",
@@ -98,10 +83,8 @@
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "allow_manifest_mismatch": true,
       "profile": "ec_hnsw",
-      "reloptions": [
-        "m=32",
-        "ef_construction=100"
-      ],
+      "m": [32],
+      "ef_construction": 100,
       "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/load-hnsw-real10k-final.log"
     },
     {
@@ -131,6 +114,19 @@
       "tags": ["storage", "hnsw", "real10k", "final"],
       "prefix": "task32_m5_hnsw_final",
       "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/storage-hnsw-real10k-final.log"
+    },
+    {
+      "kind": "compare-pgvector",
+      "name": "compare-pgvector-real10k-hnsw-final",
+      "tags": ["compare", "pgvector", "hnsw", "real10k", "final"],
+      "prefix": "task32_m5_hnsw_final",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "pgvector_m": 32,
+      "pgvector_ef_construction": 100,
+      "rebuild": true,
+      "log_file": "review/30210-task32-m5-diskann-final-cross-engine-refresh/artifacts/compare-pgvector-real10k-hnsw-final.log"
     }
   ]
 }
