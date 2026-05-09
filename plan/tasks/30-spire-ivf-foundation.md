@@ -1851,9 +1851,60 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   exists. Landed in packet 30627: `docs/SPIRE_DIAGNOSTICS.md` now documents the
   operator-controlled scheduler flow and old-epoch cleanup summary status.
 
+## Phase 9 — SPIRE Routing Quality
+
+Phase 9 is the routing-quality ladder opened after Phase 8 closeout. It is not
+part of the Phase 8 ship-readiness gate. The goal is to improve recall/QPS and
+large-hierarchy behavior on top of the already validated SPIRE partition-object,
+epoch, placement, remote, and operator surfaces.
+
+Reviewer scoping packet:
+`review/30653-spire-multicluster-pg18-smoke/feedback/2026-05-09-02-reviewer.md`.
+The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
+30656; the remaining items below stay in Phase 9.
+
+- [ ] **Phase 9 entry gate.** Do not begin quality implementation until the
+  Phase 8 controlled AWS/RDS-class scale measurement packet is either complete
+  or explicitly waived by the operator. Local PG18 preflight artifacts in packet
+  30629 prove command readiness only; they are not the controlled scale gate.
+- [ ] **Recursive depth catch-up.** Extend recursive SPIRE build/query coverage
+  from the current shallow validation to 4-6 routing levels, matching the
+  hierarchy shape ADR-049 cites for large SPIRE deployments. Keep the existing
+  per-level `nprobe` policy visible in diagnostics at every level.
+- [ ] **Boundary replication execution.** Implement the Phase 5 design in
+  `plan/design/spire-boundary-replication.md`: opt-in assignment fanout,
+  primary plus boundary-replica rows, vec-id dedupe, placement-preserving
+  replica storage, and recall/storage diagnostics.
+- [ ] **Top-level routing graph catch-up.** Build on
+  `plan/design/spire-top-level-graph.md` and the existing SPIRE top-graph
+  plumbing to make graph-assisted top-level routing the large-hierarchy path,
+  with flat routing retained as fallback/comparison.
+- [ ] **IMI reshape.** Prototype an inverted multi-index reshaping of the
+  centroid table so routing can be A/B-tested against current centroid storage
+  without introducing a learned model.
+- [ ] **Adaptive `nprobe`.** Add a runtime policy that spends fewer probes on
+  easy queries and preserves or expands probes on hard queries, using
+  diagnostics that show the selected budget and source.
+- [ ] **Anisotropic centroid scoring.** Make ScaNN-style anisotropic centroid
+  scoring the headline Phase 9 quality target. Gate it with recall/QPS
+  measurements against the baseline recursive and top-graph paths.
+- [ ] **Query difficulty estimator stretch.** If the adaptive `nprobe` lane
+  leaves room, prototype a light estimator for hard-query detection. Treat this
+  as stretch because it introduces learned or calibrated behavior.
+- [x] **ADR defer multi-probe centroid scoring.** ADR-051 records that
+  standalone multi-probe centroid scoring is deferred because anisotropic
+  centroid scoring is expected to subsume it.
+- [x] **ADR defer NN-routing classifier.** ADR-052 records the deferred
+  research track and the open drift/retraining/evaluation questions.
+- [x] **ADR defer routing reranker.** ADR-053 records the deferred research
+  track and the open cost-of-being-wrong/evaluation questions.
+
 ## Dependencies
 
 - ADR-049 — accepted staging and partition-object storage decision.
+- ADR-051 — multi-probe centroid scoring deferred.
+- ADR-052 — learned NN-routing classifier deferred.
+- ADR-053 — routing reranker deferred.
 - Task 28 — landed IVF implementation and local benchmark substrate.
 - Task 10 — benchmark result-capture discipline and packet-local artifacts.
 - Task 19 — PG18 primary target and diagnostics surface.

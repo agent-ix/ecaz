@@ -38,6 +38,9 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Vamana vacuum lock ordering | `ADR-047-vamana-vacuum-lock-ordering.md` | ACCEPTED | Historical duplicate ID; applies to `ec_diskann`. |
 | SPIRE partition-object IVF | `ADR-049-spire-on-single-level-ivf-foundation.md` | PROPOSED | Phase 0 chooses relation-backed PID objects, epoch manifests, index-local `vec_id`s, and Phase 1 `ec_spire`; preserve boundary replication, local multi-NVMe stores, future node placement, and epoch publication. |
 | Configured benchmark suite runner | `ADR-050-configured-benchmark-suite-runner.md` | PROPOSED | Declarative long-running `ecaz bench suite` orchestration for index and architecture onboarding. |
+| SPIRE multi-probe centroid scoring | `ADR-051-multi-probe-centroid-scoring-deferred.md` | DEFERRED | Deferred from Task 30 Phase 9 because anisotropic centroid scoring is expected to subsume the main benefit. |
+| SPIRE learned NN-routing classifier | `ADR-052-learned-nn-routing-classifier-deferred.md` | DEFERRED | Deferred research track until drift, retraining, artifact, and eval-harness questions are answered. |
+| SPIRE learned routing reranker | `ADR-053-routing-reranker-deferred.md` | DEFERRED | Deferred research track until deterministic Phase 9 routing-quality baselines and false-negative risk measurements exist. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 
