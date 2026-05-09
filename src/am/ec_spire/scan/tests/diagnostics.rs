@@ -401,9 +401,22 @@
             nprobe_per_level: Some("3".to_owned()),
             ..EcSpireOptions::DEFAULT
         };
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+            (internal_c.header.pid, internal_c),
+        ]);
 
         let diagnostics =
             collect_scan_routing_diagnostics(&snapshot, &object_store, &query, options).unwrap();
+        let production_leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &root,
+            &routing_objects_by_pid,
+            query.values(),
+            &diagnostics.scan_plan.recursive_nprobe_policy,
+            diagnostics.scan_plan.recursive_route_budget,
+        )
+        .unwrap();
 
         assert_eq!(diagnostics.scan_plan.leaf_count, 6);
         assert_eq!(diagnostics.scan_plan.nprobe, 2);
@@ -427,6 +440,62 @@
                 (2, 1, 1, 3, 2, "beam_width"),
                 (1, 2, 2, 4, 2, "max_leaf_routes"),
             ]
+        );
+
+        let root_level = diagnostics
+            .levels
+            .first()
+            .expect("recursive diagnostics should include the root level");
+        let leaf_level = diagnostics
+            .levels
+            .last()
+            .expect("recursive diagnostics should include the leaf level");
+        let production_parent_pids = production_leaf_routes
+            .iter()
+            .map(|route| route.parent_pid)
+            .collect::<HashSet<_>>();
+        let production_leaf_pids = production_leaf_routes
+            .iter()
+            .map(|route| route.leaf_pid)
+            .collect::<Vec<_>>();
+        let production_leaf_candidate_count = production_parent_pids
+            .iter()
+            .map(|parent_pid| {
+                let parent = routing_objects_by_pid
+                    .get(parent_pid)
+                    .expect("production route parent should exist in fixture");
+                route_routing_object_to_child_pids(
+                    parent,
+                    query.values(),
+                    diagnostics
+                        .scan_plan
+                        .recursive_nprobe_policy
+                        .nprobe_for_parent_level(parent.header.level),
+                )
+                .expect("fixture parent should route to leaf children")
+                .len()
+            })
+            .sum::<usize>();
+
+        assert_eq!(root_level.deduped_route_count, production_parent_pids.len());
+        assert_eq!(
+            root_level.selected_child_count,
+            route_routing_object_to_child_pids(
+                &root,
+                query.values(),
+                diagnostics
+                    .scan_plan
+                    .recursive_nprobe_policy
+                    .nprobe_for_parent_level(root.header.level),
+            )
+            .unwrap()
+            .len()
+        );
+        assert_eq!(leaf_level.selected_child_count, production_leaf_candidate_count);
+        assert_eq!(leaf_level.deduped_route_count, production_leaf_routes.len());
+        assert_eq!(
+            production_leaf_pids,
+            vec![SPIRE_FIRST_PID + 11, SPIRE_FIRST_PID + 21]
         );
     }
 

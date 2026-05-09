@@ -44,7 +44,7 @@ that Phase 9 establishes.
 
 - [ ] Remove the parallel production-vs-diagnostic recursive routing loop, or
   extract the traversal behind a shared collector/helper.
-- [ ] If a shared traversal helper is too invasive, add a property test proving
+- [x] If a shared traversal helper is too invasive, add a property test proving
   diagnostic selected/deduped route counts match production route sets on a
   recursive fixture.
 
