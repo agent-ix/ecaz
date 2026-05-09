@@ -58,3 +58,42 @@ The first sandboxed smoke attempt failed because PostgreSQL could not bind its
 Unix socket from inside the sandbox. The passing smoke run used the approved
 `make spire-multicluster-smoke` command outside the sandbox and stores its logs
 in this packet.
+
+## Post-Review Closeout
+
+Post-review checkpoint: `3cb45efcaa15` (`Fix SPIRE PG18 closeout regressions`)
+
+- Resolved the P1 plan mismatch in `5a5ed267` by marking Phase 7 coordinator
+  transport and distributed epoch manifest complete with links back to this
+  packet's smoke evidence.
+- Resolved the P3 formatter drift in `0e64adba`; `cargo fmt --check` now exits
+  0, with only the existing stable-rustfmt warnings about unstable
+  `imports_granularity` / `group_imports`.
+- The first broad `cargo pgrx test pg18` run exposed five closeout failures:
+  allocator advancement on invalid SPIRE assignment rows, recursive primary
+  leaf placement ignoring centroid assignment indexes, and two Rust unit tests
+  reading pgrx GUCs from parallel test threads. `3cb45efcaa15` fixes those.
+- Re-run `cargo pgrx test pg18` passes. Raw log:
+  `artifacts/cargo-pgrx-test-pg18-success.log`.
+- `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+  was run and still fails on repository-wide lint debt unrelated to
+  `3cb45efcaa15`; raw log:
+  `artifacts/cargo-clippy-pg18-failure.log`.
+- P2 (`ec_spire_remote_pipeline_steps(index_oid)`) is intentionally deferred
+  as a Phase 8 preflight/follow-up packet rather than part of Phase 7 closeout.
+
+Key PG18 result lines:
+
+```text
+test result: ok. 1462 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 2 passed; 0 failed; 21 ignored; 0 measured; 0 filtered out
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Key clippy failure shape:
+
+```text
+error: could not compile `ecaz` (lib) due to 120 previous errors
+error: could not compile `ecaz` (lib test) due to 133 previous errors
+```
