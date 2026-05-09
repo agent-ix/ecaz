@@ -137,9 +137,10 @@ that Phase 9 establishes.
 
 - [ ] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
   remote fanout.
-- [ ] Add a unified local scan pipeline snapshot that orders routing,
+- [x] Add a unified local scan pipeline snapshot that orders routing,
   placement, candidate, and heap-rerank steps, mirroring the remote
-  `ec_spire_remote_pipeline_steps` operator shape.
+  `ec_spire_remote_pipeline_steps` operator shape. Added
+  `ec_spire_index_scan_pipeline_snapshot`.
 - [ ] Record local development numbers separately from AWS/RDS-class numbers.
 - [ ] Include one-index-per-table fixtures for cross-AM comparisons unless a
   packet explicitly measures shared-table planner behavior.

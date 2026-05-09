@@ -6585,6 +6585,213 @@ fn ec_spire_index_scan_routing_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_pipeline_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(active_epoch, i64),
+        name!(status, &'static str),
+        name!(item_count, i64),
+        name!(ready_count, i64),
+        name!(blocked_count, i64),
+        name!(route_count, i64),
+        name!(candidate_count, i64),
+        name!(heap_rerank_row_count, i64),
+        name!(remote_fanout_count, i64),
+        name!(next_blocker, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_scan_pipeline_snapshot") };
+    let routing_rows =
+        unsafe { am::spire_index_scan_routing_snapshot(index_relation, query.clone()) };
+    let placement_rows = unsafe { am::spire_index_scan_placement_snapshot(index_relation, query) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let active_epoch = placement_rows
+        .first()
+        .map(|row| row.active_epoch)
+        .or_else(|| routing_rows.first().map(|row| row.active_epoch))
+        .unwrap_or(0);
+    let routing_route_count = routing_rows
+        .last()
+        .map(|row| row.deduped_route_count)
+        .unwrap_or(0);
+    let routing_truncated = routing_rows
+        .iter()
+        .any(|row| row.truncation_reason != "none");
+    let store_count = u64::try_from(placement_rows.len()).expect("store count should fit in u64");
+    let route_count = placement_rows
+        .iter()
+        .fold(0_u64, |count, row| count.saturating_add(row.route_count));
+    let prefetched_object_count = placement_rows.iter().fold(0_u64, |count, row| {
+        count.saturating_add(row.prefetched_object_count)
+    });
+    let candidate_count = placement_rows.iter().fold(0_u64, |count, row| {
+        count.saturating_add(row.candidate_row_count)
+    });
+    let candidate_winner_count = placement_rows.iter().fold(0_u64, |count, row| {
+        count.saturating_add(row.candidate_winner_count)
+    });
+    let truncated_candidate_count = placement_rows.iter().fold(0_u64, |count, row| {
+        count.saturating_add(row.truncated_candidate_row_count)
+    });
+    let effective_rerank_width = placement_rows
+        .iter()
+        .map(|row| row.effective_rerank_width)
+        .max()
+        .unwrap_or(0);
+    let heap_rerank_row_count = if effective_rerank_width == 0 {
+        candidate_winner_count
+    } else {
+        candidate_winner_count.min(effective_rerank_width)
+    };
+
+    let active_epoch = i64::try_from(active_epoch).expect("active epoch should fit in i64");
+    let routing_level_count =
+        i64::try_from(routing_rows.len()).expect("routing level count should fit in i64");
+    let store_count = i64::try_from(store_count).expect("store count should fit in i64");
+    let route_count = i64::try_from(route_count).expect("route count should fit in i64");
+    let routing_route_count =
+        i64::try_from(routing_route_count).expect("routing route count should fit in i64");
+    let prefetched_object_count =
+        i64::try_from(prefetched_object_count).expect("prefetched object count should fit in i64");
+    let candidate_count =
+        i64::try_from(candidate_count).expect("candidate count should fit in i64");
+    let candidate_winner_count =
+        i64::try_from(candidate_winner_count).expect("candidate winner count should fit in i64");
+    let truncated_candidate_count = i64::try_from(truncated_candidate_count)
+        .expect("truncated candidate count should fit in i64");
+    let heap_rerank_row_count =
+        i64::try_from(heap_rerank_row_count).expect("heap rerank row count should fit in i64");
+
+    let rows = vec![
+        (
+            1,
+            "routing",
+            active_epoch,
+            if routing_truncated {
+                "truncated"
+            } else {
+                "ready"
+            },
+            routing_level_count,
+            routing_level_count,
+            0,
+            routing_route_count,
+            0,
+            0,
+            0,
+            if routing_truncated {
+                "routing_budget"
+            } else {
+                "none"
+            },
+            if routing_truncated {
+                "increase recursive route budget or inspect routing diagnostics"
+            } else {
+                "none"
+            },
+        ),
+        (
+            2,
+            "placement",
+            active_epoch,
+            "ready",
+            store_count,
+            store_count,
+            0,
+            route_count,
+            0,
+            0,
+            0,
+            "none",
+            "none",
+        ),
+        (
+            3,
+            "prefetch",
+            active_epoch,
+            "ready",
+            prefetched_object_count,
+            prefetched_object_count,
+            0,
+            route_count,
+            0,
+            0,
+            0,
+            "none",
+            "none",
+        ),
+        (
+            4,
+            "candidates",
+            active_epoch,
+            if truncated_candidate_count > 0 {
+                "truncated"
+            } else {
+                "ready"
+            },
+            candidate_count,
+            candidate_winner_count,
+            truncated_candidate_count,
+            route_count,
+            candidate_count,
+            0,
+            0,
+            if truncated_candidate_count > 0 {
+                "candidate_budget"
+            } else {
+                "none"
+            },
+            if truncated_candidate_count > 0 {
+                "increase max_candidate_rows or inspect candidate diagnostics"
+            } else {
+                "none"
+            },
+        ),
+        (
+            5,
+            "heap_rerank",
+            active_epoch,
+            "ready",
+            heap_rerank_row_count,
+            heap_rerank_row_count,
+            0,
+            0,
+            candidate_winner_count,
+            heap_rerank_row_count,
+            0,
+            "none",
+            "none",
+        ),
+        (
+            6,
+            "remote_fanout",
+            active_epoch,
+            "not_applicable_local_scan",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "none",
+            "use ec_spire_remote_pipeline_steps for remote fanout diagnostics",
+        ),
+    ];
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_root_routing_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -14397,6 +14604,82 @@ mod tests {
         assert_eq!(capped_candidate_row_count, 2);
         assert_eq!(capped_truncated_candidate_row_count, 1);
         assert_eq!(capped_candidate_winner_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_scan_pipeline_snapshot_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_scan_pipeline_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_scan_pipeline_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_scan_pipeline_sql_idx \
+             ON ec_spire_scan_pipeline_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 1, rerank_width = 10)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let snapshot_from = "FROM ec_spire_index_scan_pipeline_snapshot(\
+             'ec_spire_scan_pipeline_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])";
+        let step_names = Spi::get_one::<Vec<String>>(&format!(
+            "SELECT array_agg(step_name ORDER BY step_ordinal) {snapshot_from}"
+        ))
+        .expect("scan pipeline step query should succeed")
+        .expect("scan pipeline steps should exist");
+        let routing_route_count = Spi::get_one::<i64>(&format!(
+            "SELECT route_count {snapshot_from} WHERE step_name = 'routing'"
+        ))
+        .expect("scan pipeline routing query should succeed")
+        .expect("routing step should exist");
+        let placement_item_count = Spi::get_one::<i64>(&format!(
+            "SELECT item_count {snapshot_from} WHERE step_name = 'placement'"
+        ))
+        .expect("scan pipeline placement query should succeed")
+        .expect("placement step should exist");
+        let prefetch_item_count = Spi::get_one::<i64>(&format!(
+            "SELECT item_count {snapshot_from} WHERE step_name = 'prefetch'"
+        ))
+        .expect("scan pipeline prefetch query should succeed")
+        .expect("prefetch step should exist");
+        let candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT candidate_count {snapshot_from} WHERE step_name = 'candidates'"
+        ))
+        .expect("scan pipeline candidate query should succeed")
+        .expect("candidate step should exist");
+        let heap_rerank_row_count = Spi::get_one::<i64>(&format!(
+            "SELECT heap_rerank_row_count {snapshot_from} WHERE step_name = 'heap_rerank'"
+        ))
+        .expect("scan pipeline heap rerank query should succeed")
+        .expect("heap rerank step should exist");
+        let remote_fanout_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_fanout_count {snapshot_from} WHERE step_name = 'remote_fanout'"
+        ))
+        .expect("scan pipeline remote fanout query should succeed")
+        .expect("remote fanout step should exist");
+
+        assert_eq!(
+            step_names,
+            vec![
+                "routing".to_owned(),
+                "placement".to_owned(),
+                "prefetch".to_owned(),
+                "candidates".to_owned(),
+                "heap_rerank".to_owned(),
+                "remote_fanout".to_owned()
+            ]
+        );
+        assert_eq!(routing_route_count, 1);
+        assert_eq!(placement_item_count, 1);
+        assert_eq!(prefetch_item_count, 1);
+        assert!(candidate_count > 0);
+        assert_eq!(heap_rerank_row_count, 1);
+        assert_eq!(remote_fanout_count, 0);
     }
 
     #[pg_test]
