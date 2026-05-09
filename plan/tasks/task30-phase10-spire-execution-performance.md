@@ -42,8 +42,10 @@ that Phase 9 establishes.
 
 ## Phase 10.1a: Routing Diagnostic Drift Guard
 
-- [ ] Remove the parallel production-vs-diagnostic recursive routing loop, or
-  extract the traversal behind a shared collector/helper.
+- [x] Remove the parallel production-vs-diagnostic recursive routing loop, or
+  extract the traversal behind a shared collector/helper. Deferred for Phase 10
+  after review packet `30669` accepted the fallback drift-guard path; packets
+  `30669` and `30674` now guard selected/deduped counts across recursive depth.
 - [x] If a shared traversal helper is too invasive, add a property test proving
   diagnostic selected/deduped route counts match production route sets on a
   recursive fixture.
