@@ -21620,6 +21620,18 @@ mod tests {
         ))
         .expect("operator publication result entrypoint query should succeed")
         .expect("operator publication result entrypoint should exist");
+        let search_secret_next_action = Spi::get_one::<String>(&format!(
+            "SELECT next_action {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_libpq_secret_summary'"
+        ))
+        .expect("operator search secret entrypoint query should succeed")
+        .expect("operator search secret entrypoint should exist");
+        let single_secret_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_conninfo_secret_resolution_status'"
+        ))
+        .expect("operator single secret entrypoint query should succeed")
+        .expect("operator single secret entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -21731,13 +21743,18 @@ mod tests {
         );
         assert_eq!(search_result_count, 3);
         assert_eq!(search_blocked_validator, "must_preserve_next_blocker");
-        assert_eq!(operator_entrypoint_count, 8);
-        assert_eq!(operator_entrypoint_reachable_count, 8);
+        assert_eq!(operator_entrypoint_count, 10);
+        assert_eq!(operator_entrypoint_reachable_count, 10);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
         );
         assert_eq!(publication_result_use, "manifest_publication_result");
+        assert_eq!(
+            search_secret_next_action,
+            "resolve_missing_conninfo_secrets_before_opening_libpq_connections"
+        );
+        assert_eq!(single_secret_use, "single_conninfo_secret_probe");
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");
         assert_eq!(

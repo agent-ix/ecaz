@@ -131,6 +131,22 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "result_source,status,next_blocker",
             next_action: "run_libpq_executor_or_resolve_publication_blocker",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 9,
+            entrypoint_name: "ec_spire_remote_search_libpq_secret_summary",
+            area: "search",
+            operator_use: "search_conninfo_secret_gate",
+            status_source: "status,next_executor_step,blocked_secret_count",
+            next_action: "resolve_missing_conninfo_secrets_before_opening_libpq_connections",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 10,
+            entrypoint_name: "ec_spire_remote_conninfo_secret_resolution_status",
+            area: "secret",
+            operator_use: "single_conninfo_secret_probe",
+            status_source: "status,provider_lookup_key,resolved_conninfo_bytes",
+            next_action: "set_executor_owned_secret_provider_value_without_exposing_raw_conninfo",
+        },
     ]
 }
 
