@@ -114,14 +114,22 @@ that Phase 9 establishes.
 
 ## Phase 10.6: Remote Heap Resolution
 
-- [ ] Define whether remote heap candidates are resolved on the origin node or
-  returned as opaque locators to a higher-level executor.
-- [ ] Add or require writer-side global vector ID allocation before claiming
-  cross-node boundary-replica dedupe is end-to-end safe.
-- [ ] If resolving remotely, return only heap-visible rows from the origin node
-  under the requested epoch/consistency contract.
-- [ ] If resolving later, expose that state as an explicit blocked/deferred
-  result rather than a partially ready candidate set.
+- [x] Define whether remote heap candidates are resolved on the origin node or
+  returned as opaque locators to a higher-level executor. ADR-059 assigns
+  remote heap resolution to the origin node; the coordinator keeps
+  `row_locator` opaque.
+- [x] Add or require writer-side global vector ID allocation before claiming
+  cross-node boundary-replica dedupe is end-to-end safe. ADR-059 requires
+  writer-side global `0x02` vec IDs before a production cross-node
+  replica-dedupe claim.
+- [x] If resolving remotely, return only heap-visible rows from the origin node
+  under the requested epoch/consistency contract. ADR-059 makes this mandatory
+  for any future production remote-heap-ready state; the current production
+  state remains blocked rather than partially ready.
+- [x] If resolving later, expose that state as an explicit blocked/deferred
+  result rather than a partially ready candidate set. Existing coordinator
+  summaries expose `requires_remote_heap_resolution`, and ADR-059 keeps that as
+  the production state until origin-node resolution lands.
 
 ## Phase 10.7: Performance Harness
 

@@ -230,7 +230,9 @@ fail closed on any requested epoch mismatch.
 
 `row_locator` is opaque to the coordinator until a row-delivery design lands.
 It may encode a remote heap TID plus relation identity, but the coordinator
-must not treat it as a local heap TID.
+must not treat it as a local heap TID. ADR-059 assigns production remote heap
+resolution to the origin node and keeps remote final rows blocked until
+origin-node heap visibility checks and global vector IDs land.
 
 ## Publish Boundaries
 
