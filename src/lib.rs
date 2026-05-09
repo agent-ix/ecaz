@@ -4768,6 +4768,279 @@ fn ec_spire_remote_epoch_manifest_libpq_receive_summary(
     TableIterator::once(row)
 }
 
+#[derive(Debug)]
+struct SpireManifestExecutorDispatchRow {
+    active_epoch: i64,
+    node_id: i64,
+    conninfo_secret_name: String,
+    remote_index_regclass: String,
+    manifest_payload: pgrx::JsonB,
+    dispatch_action: String,
+    status: String,
+}
+
+fn load_spire_manifest_executor_dispatch_rows(
+    index_oid: pg_sys::Oid,
+) -> Result<Vec<SpireManifestExecutorDispatchRow>, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT active_epoch, node_id, conninfo_secret_name, remote_index_regclass, \
+                        manifest_payload, dispatch_action, status \
+                   FROM ec_spire_remote_epoch_manifest_libpq_dispatch_plan($1::oid) \
+                  ORDER BY node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire manifest executor dispatch read failed: {e}"))?
+            .map(|row| {
+                Ok::<_, String>(SpireManifestExecutorDispatchRow {
+                    active_epoch: row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest executor active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "manifest executor active_epoch is null".to_owned())?,
+                    node_id: row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("manifest executor node_id decode failed: {e}"))?
+                        .ok_or_else(|| "manifest executor node_id is null".to_owned())?,
+                    conninfo_secret_name: row["conninfo_secret_name"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor conninfo_secret_name decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor conninfo_secret_name is null".to_owned()
+                        })?,
+                    remote_index_regclass: row["remote_index_regclass"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor remote_index_regclass decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "manifest executor remote_index_regclass is null".to_owned()
+                        })?,
+                    manifest_payload: row["manifest_payload"]
+                        .value::<pgrx::JsonB>()
+                        .map_err(|e| {
+                            format!("manifest executor manifest_payload decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor manifest_payload is null".to_owned())?,
+                    dispatch_action: row["dispatch_action"]
+                        .value::<String>()
+                        .map_err(|e| {
+                            format!("manifest executor dispatch_action decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "manifest executor dispatch_action is null".to_owned())?,
+                    status: row["status"]
+                        .value::<String>()
+                        .map_err(|e| format!("manifest executor status decode failed: {e}"))?
+                        .ok_or_else(|| "manifest executor status is null".to_owned())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_libpq_executor_results(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(connection_attempted, bool),
+        name!(connection_status, &'static str),
+        name!(validated_entry_count, i64),
+        name!(validation_result_status, String),
+        name!(raw_conninfo_exposed, bool),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_epoch_manifest_libpq_executor_results",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let dispatch_rows = load_spire_manifest_executor_dispatch_rows(index_oid)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let rows = dispatch_rows
+        .into_iter()
+        .map(|row| {
+            if row.dispatch_action != "open_pipeline_and_send_remote_epoch_manifest" {
+                return (
+                    row.active_epoch,
+                    row.node_id,
+                    false,
+                    "blocked_before_connection",
+                    0_i64,
+                    row.status,
+                    false,
+                    "manifest_dispatch",
+                    "blocked",
+                    "resolve manifest publication blockers before executor send",
+                );
+            }
+
+            let provider_lookup_key =
+                am::spire_remote_conninfo_secret_provider_lookup_key(&row.conninfo_secret_name)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_spire manifest executor conninfo secret reference invalid: {e}"
+                        )
+                    });
+            let conninfo = match std::env::var(&provider_lookup_key) {
+                Ok(conninfo) if !conninfo.is_empty() => conninfo,
+                Ok(_) => {
+                    return (
+                        row.active_epoch,
+                        row.node_id,
+                        false,
+                        "conninfo_secret_empty",
+                        0_i64,
+                        "requires_conninfo_secret_resolution".to_owned(),
+                        false,
+                        "conninfo_secret_resolution",
+                        "requires_conninfo_secret_resolution",
+                        "configure a nonempty conninfo value in the external secret provider",
+                    )
+                }
+                Err(_) => {
+                    return (
+                        row.active_epoch,
+                        row.node_id,
+                        false,
+                        "conninfo_secret_missing",
+                        0_i64,
+                        "requires_conninfo_secret_resolution".to_owned(),
+                        false,
+                        "conninfo_secret_resolution",
+                        "requires_conninfo_secret_resolution",
+                        "configure the external secret provider entry for conninfo_secret_name",
+                    )
+                }
+            };
+
+            let mut client = match postgres::Client::connect(&conninfo, postgres::NoTls) {
+                Ok(client) => client,
+                Err(_) => {
+                    return (
+                        row.active_epoch,
+                        row.node_id,
+                        true,
+                        "libpq_connection_open_failed",
+                        0_i64,
+                        "libpq_connection_failed".to_owned(),
+                        false,
+                        "libpq_connection_open",
+                        "libpq_connection_failed",
+                        "verify conninfo secret target and remote node availability",
+                    )
+                }
+            };
+            let remote_index_oid = match client.query_one(
+                "SELECT to_regclass($1)::oid",
+                &[&row.remote_index_regclass.as_str()],
+            ) {
+                Ok(result) => match result.try_get::<_, Option<u32>>(0) {
+                    Ok(Some(oid)) => oid,
+                    _ => {
+                        return (
+                            row.active_epoch,
+                            row.node_id,
+                            true,
+                            "libpq_connection_opened",
+                            0_i64,
+                            "remote_index_resolution_failed".to_owned(),
+                            false,
+                            "send_manifest_request",
+                            "remote_index_resolution_failed",
+                            "verify remote_index_regclass on the target node",
+                        )
+                    }
+                },
+                Err(_) => {
+                    return (
+                        row.active_epoch,
+                        row.node_id,
+                        true,
+                        "libpq_connection_opened",
+                        0_i64,
+                        "remote_index_resolution_failed".to_owned(),
+                        false,
+                        "send_manifest_request",
+                        "remote_index_resolution_failed",
+                        "verify remote_index_regclass on the target node",
+                    )
+                }
+            };
+            let payload = row.manifest_payload.0.to_string();
+            let result = client.query_one(
+                "SELECT active_epoch, validated_entry_count, status \
+                   FROM ec_spire_validate_remote_epoch_manifest_payload($1::oid, $2::bigint, $3::text::jsonb)",
+                &[&remote_index_oid, &row.active_epoch, &payload],
+            );
+            let result = match result {
+                Ok(result) => result,
+                Err(_) => {
+                    return (
+                        row.active_epoch,
+                        row.node_id,
+                        true,
+                        "libpq_connection_opened",
+                        0_i64,
+                        "manifest_validation_request_failed".to_owned(),
+                        false,
+                        "send_manifest_request",
+                        "manifest_validation_request_failed",
+                        "verify remote manifest validation endpoint and payload contract",
+                    )
+                }
+            };
+            let validated_entry_count = result
+                .try_get::<_, i64>("validated_entry_count")
+                .unwrap_or(0);
+            let validation_status = result
+                .try_get::<_, String>("status")
+                .unwrap_or_else(|_| "manifest_validation_result_decode_failed".to_owned());
+            let (next_executor_step, status, recommendation) = if validation_status == "ready" {
+                (
+                    "none",
+                    "ready",
+                    "remote manifest payload validation succeeded",
+                )
+            } else {
+                (
+                    "receive_payload_validation_result",
+                    "remote_manifest_validation_failed",
+                    "inspect remote manifest payload validation status",
+                )
+            };
+
+            (
+                row.active_epoch,
+                row.node_id,
+                true,
+                "libpq_connection_opened",
+                validated_entry_count,
+                validation_status,
+                false,
+                next_executor_step,
+                status,
+                recommendation,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    TableIterator::new(rows.into_iter())
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_publication_gate_summary(
@@ -20173,10 +20446,11 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT count(*) {nonempty_candidates_from}"))
                 .expect("executor nonempty candidate count query should succeed")
                 .expect("executor nonempty candidate count should exist");
-        let nonempty_candidate_node =
-            Spi::get_one::<i64>(&format!("SELECT node_id {nonempty_candidates_from} LIMIT 1"))
-                .expect("executor nonempty candidate node query should succeed")
-                .expect("executor nonempty candidate node should exist");
+        let nonempty_candidate_node = Spi::get_one::<i64>(&format!(
+            "SELECT node_id {nonempty_candidates_from} LIMIT 1"
+        ))
+        .expect("executor nonempty candidate node query should succeed")
+        .expect("executor nonempty candidate node should exist");
         let nonempty_candidate_epoch = Spi::get_one::<i64>(&format!(
             "SELECT served_epoch {nonempty_candidates_from} LIMIT 1"
         ))
@@ -22087,6 +22361,125 @@ mod tests {
             stale_publication_summary_next_blocker,
             "remote_epoch_manifest_refresh"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_epoch_manifest_libpq_executor_loopback() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_MANIFEST_LOOPBACK",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_remote_manifest_executor_remote_sql; \
+                 CREATE TABLE ec_spire_remote_manifest_executor_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_remote_manifest_executor_remote_sql (id, embedding) VALUES \
+                     (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_remote_manifest_executor_remote_sql_idx \
+                     ON ec_spire_remote_manifest_executor_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+            )
+            .expect("loopback remote manifest fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_manifest_executor_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_manifest_executor_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_manifest_executor_coord_sql_idx \
+             ON ec_spire_remote_manifest_executor_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_manifest_executor_coord_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_manifest_executor_coord_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_manifest_executor_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 12, 'spire/remote/manifest/loopback', decode('05', 'hex'), \
+                     'ec_spire_remote_manifest_executor_remote_sql_idx', 'active', \
+                     {active_epoch}, {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        let persist_result = Spi::get_one::<bool>(
+            "SELECT ec_spire_persist_remote_epoch_manifest(\
+             'ec_spire_remote_manifest_executor_coord_sql_idx'::regclass)",
+        )
+        .expect("remote manifest persist should succeed")
+        .expect("remote manifest persist result should exist");
+
+        let executor_from = "FROM ec_spire_remote_epoch_manifest_libpq_executor_results(\
+             'ec_spire_remote_manifest_executor_coord_sql_idx'::regclass)";
+        let connection_attempted =
+            Spi::get_one::<bool>(&format!("SELECT connection_attempted {executor_from}"))
+                .expect("manifest executor connection attempted query should succeed")
+                .expect("manifest executor connection attempted should exist");
+        let connection_status =
+            Spi::get_one::<String>(&format!("SELECT connection_status {executor_from}"))
+                .expect("manifest executor connection status query should succeed")
+                .expect("manifest executor connection status should exist");
+        let validated_entry_count =
+            Spi::get_one::<i64>(&format!("SELECT validated_entry_count {executor_from}"))
+                .expect("manifest executor validated entry query should succeed")
+                .expect("manifest executor validated entry should exist");
+        let validation_status =
+            Spi::get_one::<String>(&format!("SELECT validation_result_status {executor_from}"))
+                .expect("manifest executor validation status query should succeed")
+                .expect("manifest executor validation status should exist");
+        let raw_conninfo_exposed =
+            Spi::get_one::<bool>(&format!("SELECT raw_conninfo_exposed {executor_from}"))
+                .expect("manifest executor raw exposure query should succeed")
+                .expect("manifest executor raw exposure should exist");
+        let next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
+                .expect("manifest executor next step query should succeed")
+                .expect("manifest executor next step should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
+            .expect("manifest executor status query should succeed")
+            .expect("manifest executor status should exist");
+
+        assert!(register_result);
+        assert!(persist_result);
+        assert!(connection_attempted);
+        assert_eq!(connection_status, "libpq_connection_opened");
+        assert_eq!(validated_entry_count, 1);
+        assert_eq!(validation_status, "ready");
+        assert!(!raw_conninfo_exposed);
+        assert_eq!(next_step, "none");
+        assert_eq!(status, "ready");
     }
 
     #[pg_test]
