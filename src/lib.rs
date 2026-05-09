@@ -6450,6 +6450,10 @@ fn ec_spire_index_scan_placement_snapshot(
         name!(effective_rerank_width_source, String),
         name!(node_id, i64),
         name!(local_store_id, i64),
+        name!(route_count, i64),
+        name!(leaf_route_count, i64),
+        name!(delta_route_count, i64),
+        name!(prefetched_object_count, i64),
         name!(scanned_pid_count, i64),
         name!(leaf_pid_count, i64),
         name!(delta_pid_count, i64),
@@ -6486,6 +6490,11 @@ fn ec_spire_index_scan_placement_snapshot(
             row.effective_rerank_width_source.to_owned(),
             i64::from(row.node_id),
             i64::from(row.local_store_id),
+            i64::try_from(row.route_count).expect("route count should fit in i64"),
+            i64::try_from(row.leaf_route_count).expect("leaf route count should fit in i64"),
+            i64::try_from(row.delta_route_count).expect("delta route count should fit in i64"),
+            i64::try_from(row.prefetched_object_count)
+                .expect("prefetched object count should fit in i64"),
             i64::try_from(row.scanned_pid_count).expect("scanned pid count should fit in i64"),
             i64::try_from(row.leaf_pid_count).expect("leaf pid count should fit in i64"),
             i64::try_from(row.delta_pid_count).expect("delta pid count should fit in i64"),
@@ -14194,6 +14203,18 @@ mod tests {
         )
         .expect("scan placement query should succeed")
         .expect("diagnostic row should exist");
+        let route_count = Spi::get_one::<i64>(
+            "SELECT route_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let prefetched_object_count = Spi::get_one::<i64>(
+            "SELECT prefetched_object_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
         let scanned_pid_count = Spi::get_one::<i64>(
             "SELECT scanned_pid_count FROM ec_spire_index_scan_placement_snapshot(\
              'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
@@ -14253,6 +14274,8 @@ mod tests {
         assert_eq!(row_count, 1);
         assert_eq!(effective_nprobe, 1);
         assert_eq!(leaf_pid_count, 1);
+        assert_eq!(route_count, 1);
+        assert_eq!(prefetched_object_count, 1);
         assert_eq!(scanned_pid_count, 1);
         assert_eq!(delta_pid_count, 0);
         assert!(candidate_row_count > 0);
@@ -14276,6 +14299,18 @@ mod tests {
         .expect("diagnostic row should exist");
         let delta_leaf_pid_count = Spi::get_one::<i64>(
             "SELECT leaf_pid_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_route_count = Spi::get_one::<i64>(
+            "SELECT route_count FROM ec_spire_index_scan_placement_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan placement query should succeed")
+        .expect("diagnostic row should exist");
+        let delta_prefetched_object_count = Spi::get_one::<i64>(
+            "SELECT prefetched_object_count FROM ec_spire_index_scan_placement_snapshot(\
              'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
         )
         .expect("scan placement query should succeed")
@@ -14320,6 +14355,8 @@ mod tests {
 
         assert_eq!(delta_scanned_pid_count, 2);
         assert_eq!(delta_leaf_pid_count, 1);
+        assert_eq!(delta_route_count, 2);
+        assert_eq!(delta_prefetched_object_count, 2);
         assert_eq!(delta_delta_pid_count, 1);
         assert_eq!(delta_candidate_row_count, 2);
         assert_eq!(delta_leaf_candidate_row_count, 1);

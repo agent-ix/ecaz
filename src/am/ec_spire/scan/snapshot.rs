@@ -350,7 +350,12 @@ fn collect_validated_quantized_leaf_route_candidates(
     let mut delta_routes_by_parent = HashMap::<u64, Vec<SpireDeltaObjectRoute>>::new();
     let route_groups =
         group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, delta_routes, observer)?;
-    prefetch_store_object_read_groups(object_store, &route_groups)?;
+    prefetch_store_object_read_groups(
+        object_store,
+        snapshot.epoch_manifest().epoch,
+        &route_groups,
+        observer,
+    )?;
     for route_group in &route_groups {
         for route in &route_group.delta_routes {
             delta_routes_by_parent
@@ -402,13 +407,19 @@ fn collect_validated_quantized_leaf_route_candidates(
 
 fn prefetch_store_object_read_groups(
     object_store: &impl SpireObjectReader,
+    epoch: u64,
     route_groups: &[SpireStoreObjectReadGroup],
+    observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let mut placements = Vec::new();
     for route_group in route_groups {
         collect_store_object_read_group_prefetch_placements(route_group, &mut placements);
     }
-    object_store.prefetch_objects(&placements)
+    object_store.prefetch_objects(&placements)?;
+    for placement in placements {
+        observer.prefetched_object(epoch, &placement);
+    }
+    Ok(())
 }
 
 fn collect_snapshot_delta_object_routes(
@@ -471,6 +482,7 @@ fn group_leaf_and_delta_reads_by_local_store(
             placement: *placement,
             object_version: lookup.manifest_entry.object_version,
         };
+        observer.routed_leaf(snapshot.epoch_manifest().epoch, placement);
         reads_by_store
             .entry((placement.node_id, placement.local_store_id))
             .or_insert_with(|| SpireStoreObjectReadGroup {
@@ -489,6 +501,7 @@ fn group_leaf_and_delta_reads_by_local_store(
             observer.dropped_unselected_delta_route(snapshot.epoch_manifest().epoch, placement);
             continue;
         }
+        observer.routed_delta(snapshot.epoch_manifest().epoch, placement);
         reads_by_store
             .entry((placement.node_id, placement.local_store_id))
             .or_insert_with(|| SpireStoreObjectReadGroup {

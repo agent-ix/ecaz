@@ -176,6 +176,10 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) epoch: u64,
     pub(super) node_id: u32,
     pub(super) local_store_id: u32,
+    pub(super) route_count: usize,
+    pub(super) leaf_route_count: usize,
+    pub(super) delta_route_count: usize,
+    pub(super) prefetched_object_count: usize,
     pub(super) scanned_pid_count: usize,
     pub(super) leaf_pid_count: usize,
     pub(super) delta_pid_count: usize,
@@ -204,6 +208,12 @@ pub(super) struct SpireScanPlacementDiagnostics {
 }
 
 trait SpireRoutedScanObserver {
+    fn routed_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn routed_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
+    fn prefetched_object(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
+
     fn scanned_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn scanned_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
@@ -283,6 +293,10 @@ impl SpireScanPlacementDiagnosticsObserver {
                 epoch,
                 node_id: placement.node_id,
                 local_store_id: placement.local_store_id,
+                route_count: 0,
+                leaf_route_count: 0,
+                delta_route_count: 0,
+                prefetched_object_count: 0,
                 scanned_pid_count: 0,
                 leaf_pid_count: 0,
                 delta_pid_count: 0,
@@ -307,6 +321,22 @@ impl SpireScanPlacementDiagnosticsObserver {
 }
 
 impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
+    fn routed_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.route_count += 1;
+        entry.leaf_route_count += 1;
+    }
+
+    fn routed_delta(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        let entry = self.entry(epoch, placement);
+        entry.route_count += 1;
+        entry.delta_route_count += 1;
+    }
+
+    fn prefetched_object(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
+        self.entry(epoch, placement).prefetched_object_count += 1;
+    }
+
     fn scanned_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
         let entry = self.entry(epoch, placement);
         entry.scanned_pid_count += 1;

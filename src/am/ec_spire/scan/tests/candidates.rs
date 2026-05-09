@@ -502,9 +502,25 @@
         .unwrap();
 
         let stores = observer.into_stores();
-        assert_eq!(stores.len(), 1);
-        assert_eq!(stores[0].local_store_id, 1);
-        assert_eq!(stores[0].dropped_unselected_delta_route_count, 1);
+        assert_eq!(stores.len(), 3);
+        let selected_leaf_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 0)
+            .unwrap();
+        assert_eq!(selected_leaf_store.route_count, 1);
+        assert_eq!(selected_leaf_store.leaf_route_count, 1);
+        let dropped_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 1)
+            .unwrap();
+        assert_eq!(dropped_store.route_count, 0);
+        assert_eq!(dropped_store.dropped_unselected_delta_route_count, 1);
+        let selected_delta_store = stores
+            .iter()
+            .find(|store| store.local_store_id == 2)
+            .unwrap();
+        assert_eq!(selected_delta_store.route_count, 1);
+        assert_eq!(selected_delta_store.delta_route_count, 1);
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].local_store_id, 0);
@@ -756,9 +772,19 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_groups(&reader, std::slice::from_ref(&groups[0])).unwrap();
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+        prefetch_store_object_read_groups(
+            &reader,
+            7,
+            std::slice::from_ref(&groups[0]),
+            &mut observer,
+        )
+        .unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].prefetched_object_count, 2);
     }
 
     #[test]
@@ -856,9 +882,14 @@
             prefetched_pids: RefCell::new(Vec::new()),
         };
 
-        prefetch_store_object_read_groups(&reader, &groups).unwrap();
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+        prefetch_store_object_read_groups(&reader, 7, &groups, &mut observer).unwrap();
 
         assert_eq!(*reader.prefetched_pids.borrow(), vec![leaf_pid, delta_pid]);
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 2);
+        assert_eq!(stores[0].prefetched_object_count, 1);
+        assert_eq!(stores[1].prefetched_object_count, 1);
     }
 
     #[test]

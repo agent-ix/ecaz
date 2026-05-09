@@ -86,6 +86,10 @@
         assert_eq!(store.epoch, 8);
         assert_eq!(store.node_id, 0);
         assert_eq!(store.local_store_id, 0);
+        assert_eq!(store.route_count, 2);
+        assert_eq!(store.leaf_route_count, 1);
+        assert_eq!(store.delta_route_count, 1);
+        assert_eq!(store.prefetched_object_count, 2);
         assert_eq!(store.scanned_pid_count, 2);
         assert_eq!(store.leaf_pid_count, 1);
         assert_eq!(store.delta_pid_count, 1);
