@@ -184,6 +184,40 @@ CREATE TABLE ec_spire_remote_epoch_manifest_entry (
         ON DELETE CASCADE
 );
 
+CREATE TABLE ec_spire_remote_epoch_manifest_applied (
+    remote_index_oid oid NOT NULL,
+    active_epoch bigint NOT NULL CHECK (active_epoch > 0),
+    manifest_payload_format text NOT NULL CHECK (length(manifest_payload_format) > 0),
+    manifest_scope text NOT NULL CHECK (length(manifest_scope) > 0),
+    manifest_decision text NOT NULL CHECK (length(manifest_decision) > 0),
+    manifest_entry_count bigint NOT NULL CHECK (manifest_entry_count >= 0),
+    included_remote_node_count bigint NOT NULL CHECK (included_remote_node_count >= 0),
+    remote_placement_count bigint NOT NULL CHECK (remote_placement_count >= 0),
+    publish_decision text NOT NULL CHECK (length(publish_decision) > 0),
+    status text NOT NULL CHECK (length(status) > 0),
+    applied_at_micros bigint NOT NULL CHECK (applied_at_micros > 0),
+    PRIMARY KEY (remote_index_oid, active_epoch)
+);
+
+CREATE TABLE ec_spire_remote_epoch_manifest_applied_entry (
+    remote_index_oid oid NOT NULL,
+    active_epoch bigint NOT NULL CHECK (active_epoch > 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    descriptor_state text NOT NULL CHECK (length(descriptor_state) > 0),
+    placement_count bigint NOT NULL CHECK (placement_count > 0),
+    required_last_served_epoch bigint NOT NULL CHECK (required_last_served_epoch >= 0),
+    required_min_retained_epoch bigint NOT NULL CHECK (required_min_retained_epoch >= 0),
+    last_served_epoch bigint NOT NULL CHECK (last_served_epoch >= 0),
+    min_retained_epoch bigint NOT NULL CHECK (min_retained_epoch >= 0),
+    epoch_window_status text NOT NULL CHECK (length(epoch_window_status) > 0),
+    manifest_action text NOT NULL CHECK (manifest_action = 'include_remote_node'),
+    status text NOT NULL CHECK (length(status) > 0),
+    PRIMARY KEY (remote_index_oid, active_epoch, node_id),
+    FOREIGN KEY (remote_index_oid, active_epoch)
+        REFERENCES ec_spire_remote_epoch_manifest_applied (remote_index_oid, active_epoch)
+        ON DELETE CASCADE
+);
+
 CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE

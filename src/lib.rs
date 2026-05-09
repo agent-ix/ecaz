@@ -3051,7 +3051,7 @@ fn ec_spire_remote_epoch_manifest_libpq_request_plan(
                     "remote_node_descriptor".to_owned(),
                     "ec_spire_remote_epoch_manifest_catalog".to_owned(),
                     "ec_spire_remote_epoch_manifest_v1".to_owned(),
-                    "SELECT * FROM ec_spire_validate_remote_epoch_manifest_payload($1::oid, $2::bigint, $3::jsonb)"
+                    "SELECT * FROM ec_spire_apply_remote_epoch_manifest_payload($1::oid, $2::bigint, $3::jsonb)"
                         .to_owned(),
                     3_i64,
                     3_i64,
@@ -3504,6 +3504,263 @@ fn ec_spire_validate_remote_epoch_manifest_payload(
     }
 
     TableIterator::once((active_epoch, validated_entry_count, "ready".to_owned()))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_apply_remote_epoch_manifest_payload(
+    remote_index_oid: pg_sys::Oid,
+    active_epoch: i64,
+    manifest_payload: pgrx::JsonB,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(validated_entry_count, i64),
+        name!(status, String),
+    ),
+> {
+    if active_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_apply_remote_epoch_manifest_payload active_epoch must be greater than 0"
+        );
+    }
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            remote_index_oid,
+            "ec_spire_apply_remote_epoch_manifest_payload",
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let payload = manifest_payload.0;
+    let Some(object) = payload.as_object() else {
+        return TableIterator::once((active_epoch, 0, "invalid_manifest_payload".to_owned()));
+    };
+    let payload_format = object
+        .get("manifest_payload_format")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none");
+    if payload_format != "ec_spire_remote_epoch_manifest_v1" {
+        return TableIterator::once((
+            active_epoch,
+            0,
+            "invalid_manifest_payload_format".to_owned(),
+        ));
+    }
+    let Some(payload_epoch) = object.get("active_epoch").and_then(|value| value.as_i64()) else {
+        return TableIterator::once((active_epoch, 0, "missing_manifest_epoch".to_owned()));
+    };
+    if payload_epoch != active_epoch {
+        return TableIterator::once((active_epoch, 0, "manifest_epoch_mismatch".to_owned()));
+    }
+    let Some(entries) = object.get("entries").and_then(|value| value.as_array()) else {
+        return TableIterator::once((active_epoch, 0, "missing_manifest_entries".to_owned()));
+    };
+    if entries.is_empty() {
+        return TableIterator::once((active_epoch, 0, "empty_manifest_entries".to_owned()));
+    }
+
+    let manifest_scope = object
+        .get("manifest_scope")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none")
+        .to_owned();
+    let manifest_decision = object
+        .get("manifest_decision")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none")
+        .to_owned();
+    let manifest_entry_count = object
+        .get("manifest_entry_count")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let included_remote_node_count = object
+        .get("included_remote_node_count")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let remote_placement_count = object
+        .get("remote_placement_count")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let publish_decision = object
+        .get("publish_decision")
+        .and_then(|value| value.as_str())
+        .unwrap_or("none")
+        .to_owned();
+
+    let mut parsed_entries = Vec::new();
+    for entry in entries {
+        let Some(entry_object) = entry.as_object() else {
+            return TableIterator::once((active_epoch, 0, "invalid_manifest_entry".to_owned()));
+        };
+        let Some(node_id) = entry_object.get("node_id").and_then(|value| value.as_i64()) else {
+            return TableIterator::once((
+                active_epoch,
+                0,
+                "missing_manifest_entry_node".to_owned(),
+            ));
+        };
+        if node_id <= 0 {
+            return TableIterator::once((
+                active_epoch,
+                0,
+                "invalid_manifest_entry_node".to_owned(),
+            ));
+        }
+        let descriptor_state = entry_object
+            .get("descriptor_state")
+            .and_then(|value| value.as_str())
+            .unwrap_or("none")
+            .to_owned();
+        let placement_count = entry_object
+            .get("placement_count")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let required_last_served_epoch = entry_object
+            .get("required_last_served_epoch")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let required_min_retained_epoch = entry_object
+            .get("required_min_retained_epoch")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let last_served_epoch = entry_object
+            .get("last_served_epoch")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let min_retained_epoch = entry_object
+            .get("min_retained_epoch")
+            .and_then(|value| value.as_i64())
+            .unwrap_or(0);
+        let epoch_window_status = entry_object
+            .get("epoch_window_status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("none")
+            .to_owned();
+        let manifest_action = entry_object
+            .get("manifest_action")
+            .and_then(|value| value.as_str())
+            .unwrap_or("none")
+            .to_owned();
+        if manifest_action != "include_remote_node" {
+            return TableIterator::once((
+                active_epoch,
+                0,
+                "invalid_manifest_entry_action".to_owned(),
+            ));
+        }
+        let status = entry_object
+            .get("status")
+            .and_then(|value| value.as_str())
+            .unwrap_or("none")
+            .to_owned();
+        if status != "ready" {
+            return TableIterator::once((active_epoch, 0, "manifest_entry_not_ready".to_owned()));
+        }
+        parsed_entries.push((
+            i32::try_from(node_id).unwrap_or_else(|_| {
+                pgrx::error!("ec_spire apply remote epoch manifest node_id exceeds integer")
+            }),
+            descriptor_state,
+            placement_count,
+            required_last_served_epoch,
+            required_min_retained_epoch,
+            last_served_epoch,
+            min_retained_epoch,
+            epoch_window_status,
+            manifest_action,
+            status,
+        ));
+    }
+
+    let applied_entry_count =
+        i64::try_from(parsed_entries.len()).expect("applied entry count should fit in i64");
+    let result = Spi::connect_mut(|client| {
+        client
+            .update(
+                "INSERT INTO ec_spire_remote_epoch_manifest_applied \
+                 (remote_index_oid, active_epoch, manifest_payload_format, manifest_scope, \
+                  manifest_decision, manifest_entry_count, included_remote_node_count, \
+                  remote_placement_count, publish_decision, status, applied_at_micros) \
+                 VALUES ($1::oid, $2::bigint, $3::text, $4::text, $5::text, $6::bigint, \
+                         $7::bigint, $8::bigint, $9::text, $10::text, \
+                         (extract(epoch from clock_timestamp()) * 1000000)::bigint) \
+                 ON CONFLICT (remote_index_oid, active_epoch) DO UPDATE SET \
+                     manifest_payload_format = EXCLUDED.manifest_payload_format, \
+                     manifest_scope = EXCLUDED.manifest_scope, \
+                     manifest_decision = EXCLUDED.manifest_decision, \
+                     manifest_entry_count = EXCLUDED.manifest_entry_count, \
+                     included_remote_node_count = EXCLUDED.included_remote_node_count, \
+                     remote_placement_count = EXCLUDED.remote_placement_count, \
+                     publish_decision = EXCLUDED.publish_decision, \
+                     status = EXCLUDED.status, \
+                     applied_at_micros = EXCLUDED.applied_at_micros",
+                None,
+                &[
+                    remote_index_oid.into(),
+                    active_epoch.into(),
+                    payload_format.into(),
+                    manifest_scope.into(),
+                    manifest_decision.into(),
+                    manifest_entry_count.into(),
+                    included_remote_node_count.into(),
+                    remote_placement_count.into(),
+                    publish_decision.into(),
+                    "ready".into(),
+                ],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest applied header failed: {e}"))?;
+        client
+            .update(
+                "DELETE FROM ec_spire_remote_epoch_manifest_applied_entry \
+                  WHERE remote_index_oid = $1::oid AND active_epoch = $2::bigint",
+                None,
+                &[remote_index_oid.into(), active_epoch.into()],
+            )
+            .map_err(|e| {
+                format!("ec_spire remote epoch manifest applied entry replace failed: {e}")
+            })?;
+
+        for entry in parsed_entries {
+            client
+                .update(
+                    "INSERT INTO ec_spire_remote_epoch_manifest_applied_entry \
+                     (remote_index_oid, active_epoch, node_id, descriptor_state, \
+                      placement_count, required_last_served_epoch, required_min_retained_epoch, \
+                      last_served_epoch, min_retained_epoch, epoch_window_status, \
+                      manifest_action, status) \
+                     VALUES ($1::oid, $2::bigint, $3::integer, $4::text, $5::bigint, \
+                             $6::bigint, $7::bigint, $8::bigint, $9::bigint, $10::text, \
+                             $11::text, $12::text)",
+                    None,
+                    &[
+                        remote_index_oid.into(),
+                        active_epoch.into(),
+                        entry.0.into(),
+                        entry.1.into(),
+                        entry.2.into(),
+                        entry.3.into(),
+                        entry.4.into(),
+                        entry.5.into(),
+                        entry.6.into(),
+                        entry.7.into(),
+                        entry.8.into(),
+                        entry.9.into(),
+                    ],
+                )
+                .map_err(|e| {
+                    format!(
+                        "ec_spire remote epoch manifest applied entry failed for node_id {}: {e}",
+                        entry.0
+                    )
+                })?;
+        }
+        Ok::<(), String>(())
+    });
+    result.unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((active_epoch, applied_entry_count, "ready".to_owned()))
 }
 
 #[pg_extern(stable, strict)]
@@ -4779,6 +5036,50 @@ struct SpireManifestExecutorDispatchRow {
     status: String,
 }
 
+#[derive(Debug)]
+struct SpireManifestExecutorResultRow {
+    active_epoch: i64,
+    node_id: i64,
+    connection_attempted: bool,
+    connection_status: &'static str,
+    validated_entry_count: i64,
+    validation_result_status: String,
+    conninfo_lookup_kind: &'static str,
+    next_executor_step: &'static str,
+    status: &'static str,
+    recommendation: &'static str,
+}
+
+impl SpireManifestExecutorResultRow {
+    fn into_tuple(
+        self,
+    ) -> (
+        i64,
+        i64,
+        bool,
+        &'static str,
+        i64,
+        String,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
+        (
+            self.active_epoch,
+            self.node_id,
+            self.connection_attempted,
+            self.connection_status,
+            self.validated_entry_count,
+            self.validation_result_status,
+            self.conninfo_lookup_kind,
+            self.next_executor_step,
+            self.status,
+            self.recommendation,
+        )
+    }
+}
+
 fn load_spire_manifest_executor_dispatch_rows(
     index_oid: pg_sys::Oid,
 ) -> Result<Vec<SpireManifestExecutorDispatchRow>, String> {
@@ -4854,7 +5155,7 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
         name!(connection_status, &'static str),
         name!(validated_entry_count, i64),
         name!(validation_result_status, String),
-        name!(raw_conninfo_exposed, bool),
+        name!(conninfo_lookup_kind, &'static str),
         name!(next_executor_step, &'static str),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -4874,18 +5175,18 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
         .into_iter()
         .map(|row| {
             if row.dispatch_action != "open_pipeline_and_send_remote_epoch_manifest" {
-                return (
-                    row.active_epoch,
-                    row.node_id,
-                    false,
-                    "blocked_before_connection",
-                    0_i64,
-                    row.status,
-                    false,
-                    "manifest_dispatch",
-                    "blocked",
-                    "resolve manifest publication blockers before executor send",
-                );
+                return SpireManifestExecutorResultRow {
+                    active_epoch: row.active_epoch,
+                    node_id: row.node_id,
+                    connection_attempted: false,
+                    connection_status: "blocked_before_connection",
+                    validated_entry_count: 0,
+                    validation_result_status: row.status,
+                    conninfo_lookup_kind: "not_attempted",
+                    next_executor_step: "manifest_dispatch",
+                    status: "blocked",
+                    recommendation: "resolve manifest publication blockers before executor send",
+                };
             }
 
             let provider_lookup_key =
@@ -4898,50 +5199,50 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
             let conninfo = match std::env::var(&provider_lookup_key) {
                 Ok(conninfo) if !conninfo.is_empty() => conninfo,
                 Ok(_) => {
-                    return (
-                        row.active_epoch,
-                        row.node_id,
-                        false,
-                        "conninfo_secret_empty",
-                        0_i64,
-                        "requires_conninfo_secret_resolution".to_owned(),
-                        false,
-                        "conninfo_secret_resolution",
-                        "requires_conninfo_secret_resolution",
-                        "configure a nonempty conninfo value in the external secret provider",
-                    )
+                    return SpireManifestExecutorResultRow {
+                        active_epoch: row.active_epoch,
+                        node_id: row.node_id,
+                        connection_attempted: false,
+                        connection_status: "conninfo_secret_empty",
+                        validated_entry_count: 0,
+                        validation_result_status: "requires_conninfo_secret_resolution".to_owned(),
+                        conninfo_lookup_kind: "secret_provider",
+                        next_executor_step: "conninfo_secret_resolution",
+                        status: "requires_conninfo_secret_resolution",
+                        recommendation: "configure a nonempty conninfo value in the external secret provider",
+                    };
                 }
                 Err(_) => {
-                    return (
-                        row.active_epoch,
-                        row.node_id,
-                        false,
-                        "conninfo_secret_missing",
-                        0_i64,
-                        "requires_conninfo_secret_resolution".to_owned(),
-                        false,
-                        "conninfo_secret_resolution",
-                        "requires_conninfo_secret_resolution",
-                        "configure the external secret provider entry for conninfo_secret_name",
-                    )
+                    return SpireManifestExecutorResultRow {
+                        active_epoch: row.active_epoch,
+                        node_id: row.node_id,
+                        connection_attempted: false,
+                        connection_status: "conninfo_secret_missing",
+                        validated_entry_count: 0,
+                        validation_result_status: "requires_conninfo_secret_resolution".to_owned(),
+                        conninfo_lookup_kind: "secret_provider",
+                        next_executor_step: "conninfo_secret_resolution",
+                        status: "requires_conninfo_secret_resolution",
+                        recommendation: "configure the external secret provider entry for conninfo_secret_name",
+                    };
                 }
             };
 
             let mut client = match postgres::Client::connect(&conninfo, postgres::NoTls) {
                 Ok(client) => client,
                 Err(_) => {
-                    return (
-                        row.active_epoch,
-                        row.node_id,
-                        true,
-                        "libpq_connection_open_failed",
-                        0_i64,
-                        "libpq_connection_failed".to_owned(),
-                        false,
-                        "libpq_connection_open",
-                        "libpq_connection_failed",
-                        "verify conninfo secret target and remote node availability",
-                    )
+                    return SpireManifestExecutorResultRow {
+                        active_epoch: row.active_epoch,
+                        node_id: row.node_id,
+                        connection_attempted: true,
+                        connection_status: "libpq_connection_open_failed",
+                        validated_entry_count: 0,
+                        validation_result_status: "libpq_connection_failed".to_owned(),
+                        conninfo_lookup_kind: "secret_provider",
+                        next_executor_step: "libpq_connection_open",
+                        status: "libpq_connection_failed",
+                        recommendation: "verify conninfo secret target and remote node availability",
+                    };
                 }
             };
             let remote_index_oid = match client.query_one(
@@ -4951,56 +5252,56 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
                 Ok(result) => match result.try_get::<_, Option<u32>>(0) {
                     Ok(Some(oid)) => oid,
                     _ => {
-                        return (
-                            row.active_epoch,
-                            row.node_id,
-                            true,
-                            "libpq_connection_opened",
-                            0_i64,
-                            "remote_index_resolution_failed".to_owned(),
-                            false,
-                            "send_manifest_request",
-                            "remote_index_resolution_failed",
-                            "verify remote_index_regclass on the target node",
-                        )
+                        return SpireManifestExecutorResultRow {
+                            active_epoch: row.active_epoch,
+                            node_id: row.node_id,
+                            connection_attempted: true,
+                            connection_status: "libpq_connection_opened",
+                            validated_entry_count: 0,
+                            validation_result_status: "remote_index_resolution_failed".to_owned(),
+                            conninfo_lookup_kind: "secret_provider",
+                            next_executor_step: "send_manifest_request",
+                            status: "remote_index_resolution_failed",
+                            recommendation: "verify remote_index_regclass on the target node",
+                        };
                     }
                 },
                 Err(_) => {
-                    return (
-                        row.active_epoch,
-                        row.node_id,
-                        true,
-                        "libpq_connection_opened",
-                        0_i64,
-                        "remote_index_resolution_failed".to_owned(),
-                        false,
-                        "send_manifest_request",
-                        "remote_index_resolution_failed",
-                        "verify remote_index_regclass on the target node",
-                    )
+                    return SpireManifestExecutorResultRow {
+                        active_epoch: row.active_epoch,
+                        node_id: row.node_id,
+                        connection_attempted: true,
+                        connection_status: "libpq_connection_opened",
+                        validated_entry_count: 0,
+                        validation_result_status: "remote_index_resolution_failed".to_owned(),
+                        conninfo_lookup_kind: "secret_provider",
+                        next_executor_step: "send_manifest_request",
+                        status: "remote_index_resolution_failed",
+                        recommendation: "verify remote_index_regclass on the target node",
+                    };
                 }
             };
             let payload = row.manifest_payload.0.to_string();
             let result = client.query_one(
                 "SELECT active_epoch, validated_entry_count, status \
-                   FROM ec_spire_validate_remote_epoch_manifest_payload($1::oid, $2::bigint, $3::text::jsonb)",
+                   FROM ec_spire_apply_remote_epoch_manifest_payload($1::oid, $2::bigint, $3::text::jsonb)",
                 &[&remote_index_oid, &row.active_epoch, &payload],
             );
             let result = match result {
                 Ok(result) => result,
                 Err(_) => {
-                    return (
-                        row.active_epoch,
-                        row.node_id,
-                        true,
-                        "libpq_connection_opened",
-                        0_i64,
-                        "manifest_validation_request_failed".to_owned(),
-                        false,
-                        "send_manifest_request",
-                        "manifest_validation_request_failed",
-                        "verify remote manifest validation endpoint and payload contract",
-                    )
+                    return SpireManifestExecutorResultRow {
+                        active_epoch: row.active_epoch,
+                        node_id: row.node_id,
+                        connection_attempted: true,
+                        connection_status: "libpq_connection_opened",
+                        validated_entry_count: 0,
+                        validation_result_status: "manifest_validation_request_failed".to_owned(),
+                        conninfo_lookup_kind: "secret_provider",
+                        next_executor_step: "send_manifest_request",
+                        status: "manifest_validation_request_failed",
+                        recommendation: "verify remote manifest validation endpoint and payload contract",
+                    };
                 }
             };
             let validated_entry_count = result
@@ -5023,19 +5324,20 @@ fn ec_spire_remote_epoch_manifest_libpq_executor_results(
                 )
             };
 
-            (
-                row.active_epoch,
-                row.node_id,
-                true,
-                "libpq_connection_opened",
+            SpireManifestExecutorResultRow {
+                active_epoch: row.active_epoch,
+                node_id: row.node_id,
+                connection_attempted: true,
+                connection_status: "libpq_connection_opened",
                 validated_entry_count,
-                validation_status,
-                false,
+                validation_result_status: validation_status,
+                conninfo_lookup_kind: "secret_provider",
                 next_executor_step,
                 status,
                 recommendation,
-            )
+            }
         })
+        .map(SpireManifestExecutorResultRow::into_tuple)
         .collect::<Vec<_>>();
 
     TableIterator::new(rows.into_iter())
@@ -8115,7 +8417,7 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
         name!(provider_lookup_key, String),
         name!(connection_attempted, bool),
         name!(connection_status, &'static str),
-        name!(raw_conninfo_exposed, bool),
+        name!(conninfo_lookup_kind, &'static str),
         name!(next_executor_step, &'static str),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -8164,51 +8466,62 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     TableIterator::new(rows.into_iter().map(|row| {
-        let (connection_attempted, connection_status, next_executor_step, status, recommendation) =
-            if row.connection_action != "open_libpq_connection" {
-                (
-                    false,
-                    "blocked_before_connection",
-                    row.next_executor_step,
-                    row.status,
-                    row.recommendation,
-                )
-            } else {
-                match std::env::var(&row.provider_lookup_key) {
-                    Ok(conninfo) if !conninfo.is_empty() => {
-                        match postgres::Client::connect(&conninfo, postgres::NoTls) {
-                            Ok(_) => (
-                                true,
-                                "libpq_connection_opened",
-                                "enter_libpq_pipeline_mode",
-                                "requires_libpq_executor",
-                                "enter libpq pipeline mode and send remote search request",
-                            ),
-                            Err(_) => (
-                                true,
-                                "libpq_connection_open_failed",
-                                "open_libpq_connection",
-                                "libpq_connection_failed",
-                                "verify conninfo secret target and remote node availability",
-                            ),
-                        }
+        let (
+            connection_attempted,
+            connection_status,
+            conninfo_lookup_kind,
+            next_executor_step,
+            status,
+            recommendation,
+        ) = if row.connection_action != "open_libpq_connection" {
+            (
+                false,
+                "blocked_before_connection",
+                "not_attempted",
+                row.next_executor_step,
+                row.status,
+                row.recommendation,
+            )
+        } else {
+            match std::env::var(&row.provider_lookup_key) {
+                Ok(conninfo) if !conninfo.is_empty() => {
+                    match postgres::Client::connect(&conninfo, postgres::NoTls) {
+                        Ok(_) => (
+                            true,
+                            "libpq_connection_opened",
+                            "secret_provider",
+                            "enter_libpq_pipeline_mode",
+                            "requires_libpq_executor",
+                            "enter libpq pipeline mode and send remote search request",
+                        ),
+                        Err(_) => (
+                            true,
+                            "libpq_connection_open_failed",
+                            "secret_provider",
+                            "open_libpq_connection",
+                            "libpq_connection_failed",
+                            "verify conninfo secret target and remote node availability",
+                        ),
                     }
-                    Ok(_) => (
-                        false,
-                        "conninfo_secret_empty",
-                        "conninfo_secret_resolution",
-                        "requires_conninfo_secret_resolution",
-                        "configure a nonempty conninfo value in the external secret provider",
-                    ),
-                    Err(_) => (
-                        false,
-                        "conninfo_secret_missing",
-                        "conninfo_secret_resolution",
-                        "requires_conninfo_secret_resolution",
-                        "configure the external secret provider entry for conninfo_secret_name",
-                    ),
                 }
-            };
+                Ok(_) => (
+                    false,
+                    "conninfo_secret_empty",
+                    "secret_provider",
+                    "conninfo_secret_resolution",
+                    "requires_conninfo_secret_resolution",
+                    "configure a nonempty conninfo value in the external secret provider",
+                ),
+                Err(_) => (
+                    false,
+                    "conninfo_secret_missing",
+                    "secret_provider",
+                    "conninfo_secret_resolution",
+                    "requires_conninfo_secret_resolution",
+                    "configure the external secret provider entry for conninfo_secret_name",
+                ),
+            }
+        };
 
         (
             i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
@@ -8218,7 +8531,7 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
             row.provider_lookup_key,
             connection_attempted,
             connection_status,
-            false,
+            conninfo_lookup_kind,
             next_executor_step,
             status,
             recommendation,
@@ -20178,11 +20491,11 @@ mod tests {
         ))
         .expect("executor connection check status query should succeed")
         .expect("executor connection check status should exist");
-        let executor_connection_raw_exposed = Spi::get_one::<bool>(&format!(
-            "SELECT raw_conninfo_exposed {executor_connection_check_from}"
+        let executor_connection_lookup_kind = Spi::get_one::<String>(&format!(
+            "SELECT conninfo_lookup_kind {executor_connection_check_from}"
         ))
-        .expect("executor connection check raw exposure query should succeed")
-        .expect("executor connection check raw exposure should exist");
+        .expect("executor connection check lookup kind query should succeed")
+        .expect("executor connection check lookup kind should exist");
         let executor_connection_next_step = Spi::get_one::<String>(&format!(
             "SELECT next_executor_step {executor_connection_check_from}"
         ))
@@ -20321,7 +20634,7 @@ mod tests {
         assert_eq!(connection_open_summary_status, "requires_libpq_executor");
         assert!(executor_connection_attempted);
         assert_eq!(executor_connection_status, "libpq_connection_open_failed");
-        assert!(!executor_connection_raw_exposed);
+        assert_eq!(executor_connection_lookup_kind, "secret_provider");
         assert_eq!(executor_connection_next_step, "open_libpq_connection");
         assert_eq!(
             executor_connection_terminal_status,
@@ -20434,11 +20747,11 @@ mod tests {
         ))
         .expect("executor connection attempted query should succeed")
         .expect("executor connection attempted should exist");
-        let raw_conninfo_exposed = Spi::get_one::<bool>(&format!(
-            "SELECT raw_conninfo_exposed {connection_check_from}"
+        let conninfo_lookup_kind = Spi::get_one::<String>(&format!(
+            "SELECT conninfo_lookup_kind {connection_check_from}"
         ))
-        .expect("executor connection exposure query should succeed")
-        .expect("executor connection exposure should exist");
+        .expect("executor connection lookup kind query should succeed")
+        .expect("executor connection lookup kind should exist");
         let candidate_count = Spi::get_one::<i64>(&format!("SELECT count(*) {candidates_from}"))
             .expect("executor candidate count query should succeed")
             .expect("executor candidate count should exist");
@@ -20465,7 +20778,7 @@ mod tests {
         assert!(register_result);
         assert!(connection_attempted);
         assert_eq!(connection_status, "libpq_connection_opened");
-        assert!(!raw_conninfo_exposed);
+        assert_eq!(conninfo_lookup_kind, "secret_provider");
         assert_eq!(candidate_count, 0);
         assert_eq!(nonempty_candidate_count, 1);
         assert_eq!(nonempty_candidate_node, 2);
@@ -22234,7 +22547,7 @@ mod tests {
             "conninfo_secret_resolution"
         );
         assert_eq!(libpq_request_action, "send_remote_epoch_manifest");
-        assert!(libpq_request_sql.contains("ec_spire_validate_remote_epoch_manifest_payload"));
+        assert!(libpq_request_sql.contains("ec_spire_apply_remote_epoch_manifest_payload"));
         assert_eq!(libpq_request_parameter_count, 3);
         assert_eq!(libpq_request_executor_status, "requires_libpq_executor");
         assert_eq!(libpq_request_summary_count, 1);
@@ -22459,10 +22772,10 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT validation_result_status {executor_from}"))
                 .expect("manifest executor validation status query should succeed")
                 .expect("manifest executor validation status should exist");
-        let raw_conninfo_exposed =
-            Spi::get_one::<bool>(&format!("SELECT raw_conninfo_exposed {executor_from}"))
-                .expect("manifest executor raw exposure query should succeed")
-                .expect("manifest executor raw exposure should exist");
+        let conninfo_lookup_kind =
+            Spi::get_one::<String>(&format!("SELECT conninfo_lookup_kind {executor_from}"))
+                .expect("manifest executor lookup kind query should succeed")
+                .expect("manifest executor lookup kind should exist");
         let next_step =
             Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
                 .expect("manifest executor next step query should succeed")
@@ -22470,6 +22783,34 @@ mod tests {
         let status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
             .expect("manifest executor status query should succeed")
             .expect("manifest executor status should exist");
+        let remote_index_oid = loopback_client
+            .query_one(
+                "SELECT 'ec_spire_remote_manifest_executor_remote_sql_idx'::regclass::oid",
+                &[],
+            )
+            .expect("remote index oid query should succeed")
+            .try_get::<_, u32>(0)
+            .expect("remote index oid should decode");
+        let applied_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_remote_epoch_manifest_applied \
+                  WHERE remote_index_oid = $1::oid AND active_epoch = $2::bigint",
+                &[&remote_index_oid, &active_epoch],
+            )
+            .expect("remote applied manifest count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote applied manifest count should decode");
+        let applied_entry_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_remote_epoch_manifest_applied_entry \
+                  WHERE remote_index_oid = $1::oid AND active_epoch = $2::bigint",
+                &[&remote_index_oid, &active_epoch],
+            )
+            .expect("remote applied manifest entry count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote applied manifest entry count should decode");
 
         assert!(register_result);
         assert!(persist_result);
@@ -22477,9 +22818,11 @@ mod tests {
         assert_eq!(connection_status, "libpq_connection_opened");
         assert_eq!(validated_entry_count, 1);
         assert_eq!(validation_status, "ready");
-        assert!(!raw_conninfo_exposed);
+        assert_eq!(conninfo_lookup_kind, "secret_provider");
         assert_eq!(next_step, "none");
         assert_eq!(status, "ready");
+        assert_eq!(applied_count, 1);
+        assert_eq!(applied_entry_count, 1);
     }
 
     #[pg_test]
