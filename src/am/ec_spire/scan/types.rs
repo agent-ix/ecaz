@@ -158,6 +158,9 @@ pub(super) struct SpirePreparedScanCandidates {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireRoutingLevelDiagnostics {
     pub(super) level: u16,
+    pub(super) effective_nprobe: u32,
+    pub(super) effective_nprobe_source: &'static str,
+    pub(super) adaptive_nprobe_decision: &'static str,
     pub(super) input_frontier_width: usize,
     pub(super) expanded_parent_count: usize,
     pub(super) selected_child_count: usize,

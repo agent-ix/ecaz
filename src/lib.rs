@@ -6544,6 +6544,7 @@ fn ec_spire_index_scan_routing_snapshot(
         name!(active_epoch, i64),
         name!(effective_nprobe, i64),
         name!(effective_nprobe_source, String),
+        name!(adaptive_nprobe_decision, String),
         name!(recursive_beam_width, i64),
         name!(max_leaf_routes, i64),
         name!(max_routing_expansions, i64),
@@ -6565,6 +6566,7 @@ fn ec_spire_index_scan_routing_snapshot(
             i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
             i64::from(row.effective_nprobe),
             row.effective_nprobe_source.to_owned(),
+            row.adaptive_nprobe_decision.to_owned(),
             i64::try_from(row.recursive_beam_width)
                 .expect("recursive beam width should fit in i64"),
             i64::try_from(row.max_leaf_routes).expect("max leaf routes should fit in i64"),
@@ -14483,6 +14485,12 @@ mod tests {
         )
         .expect("scan routing query should succeed")
         .expect("routing diagnostic row should exist");
+        let routing_adaptive_nprobe_decision = Spi::get_one::<String>(
+            "SELECT adaptive_nprobe_decision FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_scan_place_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("scan routing query should succeed")
+        .expect("routing diagnostic row should exist");
 
         assert_eq!(row_count, 1);
         assert_eq!(effective_nprobe, 1);
@@ -14498,6 +14506,7 @@ mod tests {
         assert_eq!(routing_row_count, 1);
         assert_eq!(routing_deduped_route_count, 1);
         assert_eq!(routing_truncation_reason, "none");
+        assert_eq!(routing_adaptive_nprobe_decision, "disabled");
 
         Spi::run(
             "INSERT INTO ec_spire_scan_place_sql (id, embedding) VALUES \
@@ -14604,6 +14613,73 @@ mod tests {
         assert_eq!(capped_candidate_row_count, 2);
         assert_eq!(capped_truncated_candidate_row_count, 1);
         assert_eq!(capped_candidate_winner_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_adaptive_nprobe_routing_snapshot_sql() {
+        Spi::run("RESET ec_spire.adaptive_nprobe").expect("adaptive nprobe reset should succeed");
+        Spi::run("RESET ec_spire.adaptive_nprobe_score_gap_micros")
+            .expect("adaptive nprobe threshold reset should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_adaptive_nprobe_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_adaptive_nprobe_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (5, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42)), \
+             (6, encode_to_ecvector(ARRAY[-0.8, -0.2], 4, 42)), \
+             (7, encode_to_ecvector(ARRAY[0.2, 0.8], 4, 42)), \
+             (8, encode_to_ecvector(ARRAY[0.2, -0.8], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_adaptive_nprobe_sql_idx \
+             ON ec_spire_adaptive_nprobe_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 4, nprobe = 4, rerank_width = 10)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let default_decision = Spi::get_one::<String>(
+            "SELECT adaptive_nprobe_decision FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_adaptive_nprobe_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("default routing snapshot should succeed")
+        .expect("routing diagnostic row should exist");
+        Spi::run("SET ec_spire.adaptive_nprobe = on")
+            .expect("adaptive nprobe override should succeed");
+        Spi::run("SET ec_spire.adaptive_nprobe_score_gap_micros = 0")
+            .expect("adaptive nprobe threshold override should succeed");
+        let adaptive_effective_nprobe = Spi::get_one::<i64>(
+            "SELECT effective_nprobe FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_adaptive_nprobe_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("adaptive routing snapshot should succeed")
+        .expect("routing diagnostic row should exist");
+        let adaptive_effective_nprobe_source = Spi::get_one::<String>(
+            "SELECT effective_nprobe_source FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_adaptive_nprobe_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("adaptive routing snapshot should succeed")
+        .expect("routing diagnostic row should exist");
+        let adaptive_decision = Spi::get_one::<String>(
+            "SELECT adaptive_nprobe_decision FROM ec_spire_index_scan_routing_snapshot(\
+             'ec_spire_adaptive_nprobe_sql_idx'::regclass, ARRAY[1.0, 0.0]::real[])",
+        )
+        .expect("adaptive routing snapshot should succeed")
+        .expect("routing diagnostic row should exist");
+        Spi::run("RESET ec_spire.adaptive_nprobe").expect("adaptive nprobe reset should succeed");
+        Spi::run("RESET ec_spire.adaptive_nprobe_score_gap_micros")
+            .expect("adaptive nprobe threshold reset should succeed");
+
+        assert_eq!(default_decision, "disabled");
+        assert_eq!(adaptive_effective_nprobe, 2);
+        assert_eq!(adaptive_effective_nprobe_source, "adaptive");
+        assert_eq!(adaptive_decision, "reduced_score_gap");
     }
 
     #[pg_test]

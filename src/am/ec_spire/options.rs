@@ -31,12 +31,17 @@ const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
+const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
+const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 
 static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
 static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_RERANK_WIDTH_UNSET);
 static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
+static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -221,6 +226,8 @@ pub(super) struct SpireRecursiveNprobePolicy {
     leaf_level_nprobe: u32,
     nprobe_per_level: [u32; EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES],
     nprobe_per_level_len: usize,
+    adaptive_nprobe: bool,
+    adaptive_score_gap_micros: i32,
 }
 
 impl SpireRecursiveNprobePolicy {
@@ -231,6 +238,20 @@ impl SpireRecursiveNprobePolicy {
     pub(super) fn from_level_values(
         leaf_level_nprobe: u32,
         nprobe_per_level: Vec<u32>,
+    ) -> Result<Self, String> {
+        Self::from_level_values_with_adaptive(
+            leaf_level_nprobe,
+            nprobe_per_level,
+            false,
+            EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        )
+    }
+
+    pub(super) fn from_level_values_with_adaptive(
+        leaf_level_nprobe: u32,
+        nprobe_per_level: Vec<u32>,
+        adaptive_nprobe: bool,
+        adaptive_score_gap_micros: i32,
     ) -> Result<Self, String> {
         if leaf_level_nprobe == 0 && !nprobe_per_level.is_empty() {
             return Err(
@@ -246,6 +267,7 @@ impl SpireRecursiveNprobePolicy {
         if nprobe_per_level.contains(&0) {
             return Err("ec_spire nprobe_per_level entries must be greater than 0".to_owned());
         }
+        validate_adaptive_nprobe_score_gap_micros(adaptive_score_gap_micros)?;
         let nprobe_per_level_len = nprobe_per_level.len();
         let mut nprobe_per_level_array = [0; EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES];
         nprobe_per_level_array[..nprobe_per_level_len].copy_from_slice(&nprobe_per_level);
@@ -253,6 +275,8 @@ impl SpireRecursiveNprobePolicy {
             leaf_level_nprobe,
             nprobe_per_level: nprobe_per_level_array,
             nprobe_per_level_len,
+            adaptive_nprobe,
+            adaptive_score_gap_micros,
         })
     }
 
@@ -278,6 +302,14 @@ impl SpireRecursiveNprobePolicy {
         } else {
             None
         }
+    }
+
+    pub(super) fn adaptive_nprobe(&self) -> bool {
+        self.adaptive_nprobe
+    }
+
+    pub(super) fn adaptive_score_gap_micros(&self) -> i32 {
+        self.adaptive_score_gap_micros
     }
 }
 
@@ -333,6 +365,16 @@ fn validate_max_candidate_rows_value(value: i32) -> Result<(), String> {
     } else {
         Err(format!(
             "ec_spire max_candidate_rows reloption must be between {EC_SPIRE_MIN_MAX_CANDIDATE_ROWS} and {EC_SPIRE_MAX_MAX_CANDIDATE_ROWS}, got {value}"
+        ))
+    }
+}
+
+fn validate_adaptive_nprobe_score_gap_micros(value: i32) -> Result<(), String> {
+    if (0..=EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire adaptive_nprobe_score_gap_micros must be between 0 and {EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS}, got {value}"
         ))
     }
 }
@@ -583,6 +625,24 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.adaptive_nprobe",
+        c"Enable deterministic adaptive ec_spire nprobe routing.",
+        c"Diagnostic Phase 9.7 mode; when enabled, routing may reduce per-query nprobe by half when the selected centroid frontier is separated by the configured score-gap threshold.",
+        &EC_SPIRE_ADAPTIVE_NPROBE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.adaptive_nprobe_score_gap_micros",
+        c"Score-gap threshold for ec_spire adaptive nprobe.",
+        c"Inner-product score gap, multiplied by 1,000,000, required between the retained adaptive frontier and the next centroid before adaptive nprobe reduces routing breadth.",
+        &EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC,
+        0,
+        EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -595,6 +655,14 @@ pub(super) fn current_session_rerank_width() -> i32 {
 
 pub(super) fn current_session_max_candidate_rows() -> i32 {
     EC_SPIRE_MAX_CANDIDATE_ROWS_GUC.get()
+}
+
+pub(super) fn current_session_adaptive_nprobe() -> bool {
+    EC_SPIRE_ADAPTIVE_NPROBE_GUC.get()
+}
+
+pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
+    EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {
@@ -618,12 +686,14 @@ pub(super) fn resolve_single_level_scan_plan(
     leaf_count: u32,
     options: EcSpireOptions,
 ) -> Result<SpireSingleLevelScanPlan, String> {
-    resolve_single_level_scan_plan_values_with_candidate_budget(
+    resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         leaf_count,
         options,
         current_session_nprobe(),
         current_session_rerank_width(),
         current_session_max_candidate_rows(),
+        current_session_adaptive_nprobe(),
+        current_session_adaptive_nprobe_score_gap_micros(),
     )
 }
 
@@ -649,6 +719,26 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
     session_rerank_width_value: i32,
     session_max_candidate_rows_value: i32,
 ) -> Result<SpireSingleLevelScanPlan, String> {
+    resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
+        leaf_count,
+        options,
+        session_nprobe_value,
+        session_rerank_width_value,
+        session_max_candidate_rows_value,
+        false,
+        EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    )
+}
+
+fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
+    leaf_count: u32,
+    options: EcSpireOptions,
+    session_nprobe_value: i32,
+    session_rerank_width_value: i32,
+    session_max_candidate_rows_value: i32,
+    adaptive_nprobe: bool,
+    adaptive_score_gap_micros: i32,
+) -> Result<SpireSingleLevelScanPlan, String> {
     let relation_nprobe = u32::try_from(options.nprobe)
         .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
     if options.rerank_width < 0 {
@@ -657,9 +747,11 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
     validate_max_candidate_rows_value(options.max_candidate_rows)?;
 
     let nprobe = resolve_scan_nprobe_values(leaf_count, relation_nprobe, session_nprobe_value);
-    let recursive_nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(
+    let recursive_nprobe_policy = SpireRecursiveNprobePolicy::from_level_values_with_adaptive(
         nprobe.effective_nprobe,
         options.nprobe_per_level_values()?,
+        adaptive_nprobe,
+        adaptive_score_gap_micros,
     )?;
     let recursive_route_budget =
         resolve_recursive_route_budget(leaf_count, nprobe.effective_nprobe)?;

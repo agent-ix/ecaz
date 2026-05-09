@@ -1236,6 +1236,7 @@ pub(crate) struct SpireIndexScanRoutingSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) effective_nprobe: u32,
     pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) adaptive_nprobe_decision: &'static str,
     pub(crate) recursive_beam_width: u64,
     pub(crate) max_leaf_routes: u64,
     pub(crate) max_routing_expansions: u64,

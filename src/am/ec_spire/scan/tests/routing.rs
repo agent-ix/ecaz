@@ -47,6 +47,68 @@
     }
 
     #[test]
+    fn adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![4.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![3.0, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![0.5, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 4, vec![0.25, 0.0]),
+            ],
+        )
+        .unwrap();
+        let nprobe_policy =
+            SpireRecursiveNprobePolicy::from_level_values_with_adaptive(4, vec![], true, 1_000)
+                .unwrap();
+
+        let (routes, choice) =
+            route_routing_object_to_child_routes_with_policy(&root, &[1.0, 0.0], &nprobe_policy)
+                .unwrap();
+
+        assert_eq!(choice.effective_nprobe, 2);
+        assert_eq!(choice.effective_nprobe_source, "adaptive");
+        assert_eq!(choice.decision, "reduced_score_gap");
+        assert_eq!(
+            routes
+                .into_iter()
+                .map(|route| route.child_pid)
+                .collect::<Vec<_>>(),
+            vec![SPIRE_FIRST_PID + 1, SPIRE_FIRST_PID + 2]
+        );
+    }
+
+    #[test]
+    fn adaptive_nprobe_keeps_configured_width_when_boundary_gap_is_small() {
+        let root = SpireRoutingPartitionObject::root(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 1, vec![4.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 2, vec![3.0, 0.0]),
+                routing_child(2, SPIRE_FIRST_PID + 3, vec![2.9995, 0.0]),
+                routing_child(3, SPIRE_FIRST_PID + 4, vec![0.25, 0.0]),
+            ],
+        )
+        .unwrap();
+        let nprobe_policy =
+            SpireRecursiveNprobePolicy::from_level_values_with_adaptive(4, vec![], true, 1_000)
+                .unwrap();
+
+        let (routes, choice) =
+            route_routing_object_to_child_routes_with_policy(&root, &[1.0, 0.0], &nprobe_policy)
+                .unwrap();
+
+        assert_eq!(choice.effective_nprobe, 4);
+        assert_eq!(choice.effective_nprobe_source, "adaptive");
+        assert_eq!(choice.decision, "kept_gap_below_threshold");
+        assert_eq!(routes.len(), 4);
+    }
+
+    #[test]
     fn route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes() {
         let root = SpireRoutingPartitionObject::root(
             SPIRE_FIRST_PID,

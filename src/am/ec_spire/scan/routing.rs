@@ -102,6 +102,23 @@ struct SpireTopGraphRoute {
     distance: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireAdaptiveNprobeChoice {
+    effective_nprobe: u32,
+    effective_nprobe_source: &'static str,
+    decision: &'static str,
+}
+
+impl SpireAdaptiveNprobeChoice {
+    fn disabled(requested_nprobe: u32) -> Self {
+        Self {
+            effective_nprobe: requested_nprobe,
+            effective_nprobe_source: "configured",
+            decision: "disabled",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct SpireTopGraphRouteNode<'a> {
     child_pid: u64,
@@ -253,12 +270,13 @@ fn route_top_graph_object_to_leaf_routes(
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
 ) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
-    let selected_child_routes = route_top_graph_view_to_routes(
+    let (selected_child_routes, _choice) = route_top_graph_view_to_routes_with_policy(
         root_object,
         top_graph,
         query_vector,
         search_list_size,
         top_route_count,
+        nprobe_policy,
     )?;
     if root_object.header.level == 1 {
         let mut seen_leaf_pids = HashSet::new();
@@ -372,6 +390,59 @@ fn route_top_graph_view_to_routes(
     Ok(routes)
 }
 
+fn route_top_graph_view_to_routes_with_policy(
+    root_object: &SpireRoutingPartitionObject,
+    top_graph: &impl SpireTopGraphRouteView,
+    query_vector: &[f32],
+    search_list_size: u32,
+    requested_route_count: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+) -> Result<(Vec<SpireTopGraphRoute>, SpireAdaptiveNprobeChoice), String> {
+    validate_top_graph_route_inputs(
+        root_object,
+        top_graph,
+        query_vector,
+        search_list_size,
+        requested_route_count,
+    )?;
+    let search_list_size = usize::try_from(search_list_size)
+        .map_err(|_| "ec_spire top graph search list size exceeds usize".to_owned())?;
+    let requested_route_count = usize::try_from(requested_route_count)
+        .map_err(|_| "ec_spire top graph route count exceeds usize".to_owned())?;
+    let graph = SpireTopGraphGreedyView { top_graph };
+    let search =
+        crate::am::greedy_search_view(&graph, top_graph.entry_node(), search_list_size, |node| {
+            let centroid = root_object
+                .child_centroid(node as usize)
+                .expect("top graph route validation checked node centroid");
+            -inner_product(query_vector, centroid)
+        });
+    let mut routes = search
+        .frontier
+        .into_iter()
+        .map(|candidate| {
+            let node = top_graph.route_node(candidate.node as usize);
+            SpireTopGraphRoute {
+                node_ordinal: candidate.node,
+                centroid_ordinal: node.centroid_ordinal,
+                child_pid: node.child_pid,
+                distance: candidate.distance,
+            }
+        })
+        .collect::<Vec<_>>();
+    routes.sort_by(top_graph_route_cmp);
+    let choice = choose_adaptive_nprobe_from_top_graph_routes(
+        u32::try_from(requested_route_count)
+            .map_err(|_| "ec_spire top graph route count exceeds u32".to_owned())?,
+        nprobe_policy,
+        &routes,
+    );
+    routes.truncate(usize::try_from(choice.effective_nprobe).map_err(|_| {
+        "ec_spire adaptive top graph route count exceeds usize".to_owned()
+    })?);
+    Ok((routes, choice))
+}
+
 fn route_routing_object_to_child_pids(
     routing_object: &SpireRoutingPartitionObject,
     query_vector: &[f32],
@@ -388,6 +459,34 @@ fn route_routing_object_to_child_routes(
     query_vector: &[f32],
     nprobe: u32,
 ) -> Result<Vec<SpireRoutingChildRoute>, String> {
+    Ok(route_routing_object_to_child_routes_with_choice(
+        routing_object,
+        query_vector,
+        nprobe,
+        None,
+    )?
+    .0)
+}
+
+fn route_routing_object_to_child_routes_with_policy(
+    routing_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+) -> Result<(Vec<SpireRoutingChildRoute>, SpireAdaptiveNprobeChoice), String> {
+    route_routing_object_to_child_routes_with_choice(
+        routing_object,
+        query_vector,
+        nprobe_policy.nprobe_for_parent_level(routing_object.header.level),
+        Some(nprobe_policy),
+    )
+}
+
+fn route_routing_object_to_child_routes_with_choice(
+    routing_object: &SpireRoutingPartitionObject,
+    query_vector: &[f32],
+    nprobe: u32,
+    nprobe_policy: Option<&SpireRecursiveNprobePolicy>,
+) -> Result<(Vec<SpireRoutingChildRoute>, SpireAdaptiveNprobeChoice), String> {
     if routing_object.header.kind != SpirePartitionObjectKind::Root
         && routing_object.header.kind != SpirePartitionObjectKind::Internal
     {
@@ -397,9 +496,6 @@ fn route_routing_object_to_child_routes(
         return Err("ec_spire routed scan requires nprobe > 0".to_owned());
     }
     validate_routing_query_vector(query_vector, usize::from(routing_object.dimensions))?;
-
-    let requested = usize::try_from(nprobe)
-        .map_err(|_| "ec_spire routed scan nprobe exceeds usize".to_owned())?;
 
     let scored_children = rank_centroid_routes_by_ip(
         "ec_spire scan routing",
@@ -411,8 +507,14 @@ fn route_routing_object_to_child_routes(
             centroid: child.centroid,
         }),
     )?;
+    let choice = match nprobe_policy {
+        Some(policy) => choose_adaptive_nprobe_from_ranked_routes(nprobe, policy, &scored_children),
+        None => SpireAdaptiveNprobeChoice::disabled(nprobe),
+    };
 
-    let mut selected_routes = Vec::with_capacity(requested.min(scored_children.len()));
+    let effective = usize::try_from(choice.effective_nprobe)
+        .map_err(|_| "ec_spire adaptive nprobe exceeds usize".to_owned())?;
+    let mut selected_routes = Vec::with_capacity(effective.min(scored_children.len()));
     let mut selected_pids = HashSet::new();
     for child in scored_children {
         if !selected_pids.insert(child.pid) {
@@ -423,11 +525,123 @@ fn route_routing_object_to_child_routes(
             child_pid: child.pid,
             score: child.score,
         });
-        if selected_routes.len() == requested {
+        if selected_routes.len() == effective {
             break;
         }
     }
-    Ok(selected_routes)
+    Ok((selected_routes, choice))
+}
+
+fn choose_adaptive_nprobe_from_ranked_routes(
+    requested_nprobe: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    ranked_routes: &[SpireRankedCentroidRoute],
+) -> SpireAdaptiveNprobeChoice {
+    choose_adaptive_nprobe_by_gap(
+        requested_nprobe,
+        nprobe_policy,
+        ranked_routes.len(),
+        |index| ranked_routes[index - 1].score - ranked_routes[index].score,
+    )
+}
+
+fn choose_adaptive_nprobe_from_top_graph_routes(
+    requested_nprobe: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    routes: &[SpireTopGraphRoute],
+) -> SpireAdaptiveNprobeChoice {
+    choose_adaptive_nprobe_by_gap(
+        requested_nprobe,
+        nprobe_policy,
+        routes.len(),
+        |index| routes[index].distance - routes[index - 1].distance,
+    )
+}
+
+fn choose_adaptive_nprobe_by_gap<F>(
+    requested_nprobe: u32,
+    nprobe_policy: &SpireRecursiveNprobePolicy,
+    ranked_len: usize,
+    score_gap_at: F,
+) -> SpireAdaptiveNprobeChoice
+where
+    F: Fn(usize) -> f32,
+{
+    if !nprobe_policy.adaptive_nprobe() {
+        return SpireAdaptiveNprobeChoice::disabled(requested_nprobe);
+    }
+    if requested_nprobe <= 1 {
+        return SpireAdaptiveNprobeChoice {
+            effective_nprobe: requested_nprobe,
+            effective_nprobe_source: "adaptive",
+            decision: "kept_minimum",
+        };
+    }
+
+    let adaptive_nprobe = (requested_nprobe / 2).max(1);
+    let adaptive_nprobe_usize = adaptive_nprobe as usize;
+    if ranked_len <= adaptive_nprobe_usize {
+        return SpireAdaptiveNprobeChoice {
+            effective_nprobe: requested_nprobe,
+            effective_nprobe_source: "adaptive",
+            decision: "kept_exhausted_frontier",
+        };
+    }
+
+    let raw_gap_micros = score_gap_at(adaptive_nprobe_usize) * 1_000_000.0;
+    let gap_micros = if raw_gap_micros.is_finite() && raw_gap_micros > 0.0 {
+        raw_gap_micros.round() as i32
+    } else {
+        0
+    };
+    if gap_micros >= nprobe_policy.adaptive_score_gap_micros() {
+        SpireAdaptiveNprobeChoice {
+            effective_nprobe: adaptive_nprobe,
+            effective_nprobe_source: "adaptive",
+            decision: "reduced_score_gap",
+        }
+    } else {
+        SpireAdaptiveNprobeChoice {
+            effective_nprobe: requested_nprobe,
+            effective_nprobe_source: "adaptive",
+            decision: "kept_gap_below_threshold",
+        }
+    }
+}
+
+fn summarize_adaptive_choices(
+    choices: &[SpireAdaptiveNprobeChoice],
+) -> (u32, &'static str, &'static str) {
+    if choices.is_empty() {
+        return (0, "configured", "not_expanded");
+    }
+    let effective_nprobe = choices
+        .iter()
+        .map(|choice| choice.effective_nprobe)
+        .max()
+        .unwrap_or(0);
+    let effective_nprobe_source = if choices
+        .iter()
+        .any(|choice| choice.effective_nprobe_source == "adaptive")
+    {
+        "adaptive"
+    } else {
+        "configured"
+    };
+    let first_decision = choices[0].decision;
+    let adaptive_nprobe_decision = if choices
+        .iter()
+        .all(|choice| choice.decision == first_decision)
+    {
+        first_decision
+    } else {
+        "mixed"
+    };
+    (
+        effective_nprobe,
+        effective_nprobe_source,
+        adaptive_nprobe_decision,
+    )
 }
 
 fn route_recursive_routing_objects_to_leaf_pids(
@@ -488,12 +702,14 @@ fn route_recursive_routing_objects_to_leaf_routes_with_budget(
         return Err("ec_spire recursive scan routing requires a root routing object".to_owned());
     }
     if root_object.header.level == 1 {
-        return Ok(route_root_object_to_leaf_pids(
+        let (routes, _choice) = route_routing_object_to_child_routes_with_policy(
             root_object,
             query_vector,
-            nprobe_policy.nprobe_for_parent_level(root_object.header.level),
-        )?
+            nprobe_policy,
+        )?;
+        return Ok(routes
         .into_iter()
+        .map(|route| route.child_pid)
         .take(route_budget.max_leaf_routes)
         .map(|leaf_pid| SpireRecursiveLeafRoute {
             leaf_pid,
@@ -547,18 +763,25 @@ fn collect_top_graph_routing_level_diagnostics(
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
 ) -> Result<Vec<SpireRoutingLevelDiagnostics>, String> {
-    let selected_child_routes = route_top_graph_view_to_routes(
+    let (selected_child_routes, top_choice) = route_top_graph_view_to_routes_with_policy(
         root_object,
         top_graph,
         query_vector,
         search_list_size,
         top_route_count,
+        nprobe_policy,
     )?;
+    let top_choices = [top_choice];
+    let (effective_nprobe, effective_nprobe_source, adaptive_nprobe_decision) =
+        summarize_adaptive_choices(&top_choices);
     let selected_child_count = selected_child_routes.len();
     if root_object.header.level == 1 {
         let unique_leaf_count = unique_child_pid_count(&selected_child_routes);
         return Ok(vec![SpireRoutingLevelDiagnostics {
             level: root_object.header.level,
+            effective_nprobe,
+            effective_nprobe_source,
+            adaptive_nprobe_decision,
             input_frontier_width: 1,
             expanded_parent_count: 1,
             selected_child_count,
@@ -593,6 +816,9 @@ fn collect_top_graph_routing_level_diagnostics(
     }
     let mut levels = vec![SpireRoutingLevelDiagnostics {
         level: root_object.header.level,
+        effective_nprobe,
+        effective_nprobe_source,
+        adaptive_nprobe_decision,
         input_frontier_width: 1,
         expanded_parent_count: 1,
         selected_child_count,
@@ -636,6 +862,7 @@ fn collect_recursive_parent_routing_level_diagnostics(
             let input_frontier_width = current_parents.len();
             let mut level_expanded_parent_count = 0usize;
             let mut leaf_candidates = Vec::new();
+            let mut nprobe_choices = Vec::new();
             for parent_route in &current_parents {
                 let parent = &parent_route.parent;
                 if parent.header.level != 1 {
@@ -647,11 +874,13 @@ fn collect_recursive_parent_routing_level_diagnostics(
                 }
                 expanded_parent_count += 1;
                 level_expanded_parent_count += 1;
-                for route in route_routing_object_to_child_routes(
+                let (routes, choice) = route_routing_object_to_child_routes_with_policy(
                     parent,
                     query_vector,
-                    nprobe_policy.nprobe_for_parent_level(parent.header.level),
-                )? {
+                    nprobe_policy,
+                )?;
+                nprobe_choices.push(choice);
+                for route in routes {
                     leaf_candidates.push(SpireRecursiveScoredChildRoute {
                         parent_pid: parent.header.pid,
                         parent_level: parent.header.level,
@@ -671,8 +900,13 @@ fn collect_recursive_parent_routing_level_diagnostics(
             let unique_leaf_count = seen_leaf_pids.len();
             let expansion_truncated = level_expanded_parent_count < input_frontier_width;
             let deduped_route_count = unique_leaf_count.min(route_budget.max_leaf_routes);
+            let (effective_nprobe, effective_nprobe_source, adaptive_nprobe_decision) =
+                summarize_adaptive_choices(&nprobe_choices);
             levels.push(SpireRoutingLevelDiagnostics {
                 level: parent_level,
+                effective_nprobe,
+                effective_nprobe_source,
+                adaptive_nprobe_decision,
                 input_frontier_width,
                 expanded_parent_count: level_expanded_parent_count,
                 selected_child_count,
@@ -692,6 +926,7 @@ fn collect_recursive_parent_routing_level_diagnostics(
         let input_frontier_width = current_parents.len();
         let mut level_expanded_parent_count = 0usize;
         let mut child_candidates = Vec::new();
+        let mut nprobe_choices = Vec::new();
         for parent_route in &current_parents {
             let parent = &parent_route.parent;
             if parent.header.kind != SpirePartitionObjectKind::Root
@@ -712,11 +947,13 @@ fn collect_recursive_parent_routing_level_diagnostics(
             }
             expanded_parent_count += 1;
             level_expanded_parent_count += 1;
-            for route in route_routing_object_to_child_routes(
+            let (routes, choice) = route_routing_object_to_child_routes_with_policy(
                 parent,
                 query_vector,
-                nprobe_policy.nprobe_for_parent_level(parent.header.level),
-            )? {
+                nprobe_policy,
+            )?;
+            nprobe_choices.push(choice);
+            for route in routes {
                 child_candidates.push(SpireRecursiveScoredChildRoute {
                     parent_pid: parent.header.pid,
                     parent_level: parent.header.level,
@@ -752,8 +989,13 @@ fn collect_recursive_parent_routing_level_diagnostics(
         }
         let expansion_truncated = level_expanded_parent_count < input_frontier_width;
         let deduped_route_count = unique_child_count.min(route_budget.beam_width);
+        let (effective_nprobe, effective_nprobe_source, adaptive_nprobe_decision) =
+            summarize_adaptive_choices(&nprobe_choices);
         levels.push(SpireRoutingLevelDiagnostics {
             level: parent_level,
+            effective_nprobe,
+            effective_nprobe_source,
+            adaptive_nprobe_decision,
             input_frontier_width,
             expanded_parent_count: level_expanded_parent_count,
             selected_child_count,
@@ -795,11 +1037,12 @@ fn route_recursive_parent_objects_to_leaf_routes(
                     break;
                 }
                 expanded_parent_count += 1;
-                for route in route_routing_object_to_child_routes(
+                let (routes, _choice) = route_routing_object_to_child_routes_with_policy(
                     parent,
                     query_vector,
-                    nprobe_policy.nprobe_for_parent_level(parent.header.level),
-                )? {
+                    nprobe_policy,
+                )?;
+                for route in routes {
                     leaf_candidates.push(SpireRecursiveScoredChildRoute {
                         parent_pid: parent.header.pid,
                         parent_level: parent.header.level,
@@ -846,11 +1089,12 @@ fn route_recursive_parent_objects_to_leaf_routes(
                 break;
             }
             expanded_parent_count += 1;
-            for route in route_routing_object_to_child_routes(
+            let (routes, _choice) = route_routing_object_to_child_routes_with_policy(
                 parent,
                 query_vector,
-                nprobe_policy.nprobe_for_parent_level(parent.header.level),
-            )? {
+                nprobe_policy,
+            )?;
+            for route in routes {
                 child_candidates.push(SpireRecursiveScoredChildRoute {
                     parent_pid: parent.header.pid,
                     parent_level: parent.header.level,

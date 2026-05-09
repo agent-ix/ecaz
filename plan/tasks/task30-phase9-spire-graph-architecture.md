@@ -136,7 +136,13 @@ records the real10k pre-treatment baseline on the main machine across
 remain open until implemented or explicitly ADR-deferred.
 
 - [ ] IMI reshape of centroid/routing storage for A/B comparison.
-- [ ] Adaptive `nprobe` or adaptive beam policy.
+- [x] Adaptive `nprobe` or adaptive beam policy. Packet
+  `review/30687-spire-adaptive-nprobe` adds a default-off
+  `ec_spire.adaptive_nprobe` GUC, thresholded deterministic halving policy,
+  routing snapshot diagnostics, `ecaz bench` flags, and local real10k treatment
+  measurements. On the rw50 same-build control, adaptive gap150000 preserved
+  recall@10 `1.0000` and reduced p50/p95/p99 from
+  `117.1/122.7/131.6 ms` to `115.9/121.4/125.4 ms`.
 - [ ] Anisotropic centroid scoring as the headline quality target.
 - [ ] Query difficulty estimator stretch.
 

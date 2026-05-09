@@ -71,7 +71,11 @@ that Phase 9 establishes.
 
 - [x] Batch exact heap rerank TIDs before fetching source vectors.
 - [x] Add heap prefetch where PostgreSQL APIs permit it.
-- [ ] Measure rerank width against recall and latency floors.
+- [x] Measure rerank width against recall and latency floors. Baseline packet
+  `review/30686-spire-phase9-quality-baseline` records the local real10k
+  `nprobe=8,16,24,32` by `rerank_width=0,25,50` recall/latency matrix; adaptive
+  packet `review/30687-spire-adaptive-nprobe` adds a same-build rw25/rw50
+  treatment/control comparison for the Phase 9.7 policy.
 - [x] Ensure missing/dead heap rows do not perturb candidate ordering beyond
   the existing visibility contract.
 
@@ -136,12 +140,19 @@ that Phase 9 establishes.
 ## Phase 10.7: Performance Harness
 
 - [ ] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
-  remote fanout.
+  remote fanout. Partial: packet `review/30687-spire-adaptive-nprobe` adds
+  SPIRE-only `--adaptive-nprobe` and
+  `--adaptive-nprobe-score-gap-micros` to `ecaz bench recall` and
+  `ecaz bench latency`; route-budget sweeps and remote fanout counters remain
+  open.
 - [x] Add a unified local scan pipeline snapshot that orders routing,
   placement, candidate, and heap-rerank steps, mirroring the remote
   `ec_spire_remote_pipeline_steps` operator shape. Added
   `ec_spire_index_scan_pipeline_snapshot`.
-- [ ] Record local development numbers separately from AWS/RDS-class numbers.
+- [x] Record local development numbers separately from AWS/RDS-class numbers.
+  Packets `review/30686-spire-phase9-quality-baseline` and
+  `review/30687-spire-adaptive-nprobe` explicitly label results as local
+  development evidence only.
 - [ ] Include one-index-per-table fixtures for cross-AM comparisons unless a
   packet explicitly measures shared-table planner behavior.
 - [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,

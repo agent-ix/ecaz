@@ -1709,8 +1709,13 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
             .map(|level| {
                 Ok(SpireIndexScanRoutingSnapshotRow {
                     active_epoch: epoch_manifest.epoch,
-                    effective_nprobe: scan_plan.nprobe,
-                    effective_nprobe_source: scan_plan.nprobe_source,
+                    effective_nprobe: level.effective_nprobe,
+                    effective_nprobe_source: if level.effective_nprobe_source == "configured" {
+                        scan_plan.nprobe_source
+                    } else {
+                        level.effective_nprobe_source
+                    },
+                    adaptive_nprobe_decision: level.adaptive_nprobe_decision,
                     recursive_beam_width: u64::try_from(
                         scan_plan.recursive_route_budget.beam_width,
                     )
