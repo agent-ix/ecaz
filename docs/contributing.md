@@ -4,15 +4,19 @@
 
 - [Rust](https://rustup.rs/) stable + nightly (for fuzzing and Miri)
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17
-- PostgreSQL 17 or 18 development headers
+- Native PostgreSQL build dependencies, or PostgreSQL 17/18 development
+  headers if using an existing server
 - [valgrind](https://valgrind.org/) (for iai-callgrind benchmarks)
 - [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (for fuzzing)
 
 ## Development Workflow
 
 ```bash
-cargo pgrx init          # one-time: build local Postgres for testing
+cargo pgrx init --pg18 download     # one-time: build local PG18 for testing
 ```
+
+See [Build From Source](build-from-source.md) for platform prerequisites,
+existing-PostgreSQL installs, and operator CLI setup.
 
 ### Code Quality
 
