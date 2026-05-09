@@ -149,7 +149,7 @@ mod tests {
             (
                 "exact_leaf_coverage_bounded_rerank",
                 "bounded_rerank",
-                "set rerank_width = 0 for full-frontier exact recall sanity checks"
+                "set rerank_width = 0 and max_candidate_rows high enough for full-frontier recall sanity checks"
             )
         );
         assert_eq!(
@@ -157,7 +157,7 @@ mod tests {
             (
                 "exact_leaf_and_frontier_coverage",
                 "full_scan",
-                "use this configuration only for recall sanity checks or small indexes"
+                "use this configuration only when max_candidate_rows covers the expected frontier"
             )
         );
     }

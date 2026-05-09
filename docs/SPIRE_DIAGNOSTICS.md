@@ -79,6 +79,10 @@ These are derived from active leaf count and effective `nprobe`; they cap the
 global recursive routing frontier while `nprobe_per_level` remains the local
 per-parent input.
 
+Phase 10 adds a `max_candidate_rows` scan cap. `max_candidate_rows = 0` means
+`auto`, which resolves to the hard SPIRE candidate ceiling. This cap applies
+before exact heap rerank, including scans with `rerank_width = 0`.
+
 `ec_spire_index_scan_routing_snapshot(index_oid, query)` reports one row per
 routing level touched by the query. `input_frontier_width` is the number of
 parent routes entering that level; `expanded_parent_count` is the number

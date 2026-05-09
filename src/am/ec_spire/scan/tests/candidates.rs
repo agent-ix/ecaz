@@ -960,6 +960,7 @@
             boundary_replica_count: 0,
             nprobe: 2,
             rerank_width: 2,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 0,
             pq_group_size: 0,
@@ -1126,6 +1127,7 @@
             boundary_replica_count: 0,
             nprobe: 1,
             rerank_width: 0,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
@@ -1380,6 +1382,91 @@
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(4));
         assert_eq!(candidates[1].score, -7.0);
+    }
+
+    #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        1,
+                        10,
+                        1,
+                        vec![4],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 1,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        2,
+                        10,
+                        2,
+                        vec![3],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 2,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        3,
+                        10,
+                        3,
+                        vec![10],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 3,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        2,
+                        10,
+                        4,
+                        vec![9],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 4,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        1,
+                        10,
+                        5,
+                        vec![2],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            Some(2),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(3));
+        assert_eq!(candidates[0].score, -10.0);
+        assert_eq!(candidates[1].vec_id.local_sequence(), Some(2));
+        assert_eq!(candidates[1].score, -9.0);
     }
 
     #[test]

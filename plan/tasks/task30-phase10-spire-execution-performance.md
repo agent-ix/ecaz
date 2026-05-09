@@ -32,9 +32,9 @@ that Phase 9 establishes.
 
 ## Phase 10.1: Bounded Candidate Collection
 
-- [ ] Add a hard candidate-row budget that applies even when
+- [x] Add a hard candidate-row budget that applies even when
   `rerank_width = 0`.
-- [ ] Keep a bounded heap while scanning leaf and delta rows rather than
+- [x] Keep a bounded heap while scanning leaf and delta rows rather than
   materializing all routed candidates before ranking.
 - [ ] Surface diagnostics for candidate rows seen, deduped, retained, and
   truncated.

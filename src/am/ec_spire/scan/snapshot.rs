@@ -345,11 +345,7 @@ fn collect_validated_quantized_leaf_route_candidates(
         return Ok(Vec::new());
     }
 
-    let mut candidates = Vec::new();
-    let mut candidates_by_vec_id = match dedupe_mode {
-        SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
-        SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
-    };
+    let mut accumulator = SpireScoredCandidateAccumulator::new(dedupe_mode, limit);
     let delta_routes = collect_snapshot_delta_object_routes(snapshot, object_store)?;
     let mut delta_routes_by_parent = HashMap::<u64, Vec<SpireDeltaObjectRoute>>::new();
     let route_groups =
@@ -383,8 +379,7 @@ fn collect_validated_quantized_leaf_route_candidates(
                 route,
                 scorer,
                 &deleted_vec_ids,
-                &mut candidates,
-                &mut candidates_by_vec_id,
+                &mut accumulator,
                 observer,
             )?;
             append_quantized_delta_candidates_for_routes(
@@ -393,18 +388,13 @@ fn collect_validated_quantized_leaf_route_candidates(
                 leaf_delta_routes,
                 scorer,
                 &deleted_vec_ids,
-                &mut candidates,
-                &mut candidates_by_vec_id,
+                &mut accumulator,
                 observer,
             )?;
         }
     }
 
-    if let Some(candidates_by_vec_id) = candidates_by_vec_id {
-        candidates.extend(candidates_by_vec_id.into_values());
-    }
-
-    let ranked = rank_bounded_scored_candidates(candidates, limit);
+    let ranked = accumulator.into_ranked();
     observe_candidate_winners(snapshot, observer, &ranked)?;
     Ok(ranked)
 }

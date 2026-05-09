@@ -60,6 +60,7 @@ mod tests {
             boundary_replica_count: 0,
             nprobe: 0,
             rerank_width: 0,
+            max_candidate_rows: 0,
             training_sample_rows,
             seed: 7,
             pq_group_size: 0,

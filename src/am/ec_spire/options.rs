@@ -7,31 +7,36 @@ use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 use super::quantizer::SpireAssignmentPayloadFormat;
 use super::{
     EC_SPIRE_DEFAULT_BOUNDARY_REPLICA_COUNT, EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
-    EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE, EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
-    EC_SPIRE_DEFAULT_RECURSIVE_FANOUT, EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED,
-    EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA, EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
-    EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE, EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
-    EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE, EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
-    EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT, EC_SPIRE_MAX_LOCAL_STORE_COUNT, EC_SPIRE_MAX_NLISTS,
+    EC_SPIRE_DEFAULT_MAX_CANDIDATE_ROWS, EC_SPIRE_DEFAULT_NLISTS, EC_SPIRE_DEFAULT_NPROBE,
+    EC_SPIRE_DEFAULT_PQ_GROUP_SIZE, EC_SPIRE_DEFAULT_RECURSIVE_FANOUT,
+    EC_SPIRE_DEFAULT_RERANK_WIDTH, EC_SPIRE_DEFAULT_SEED, EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA,
+    EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE, EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE,
+    EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED, EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
+    EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS, EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT,
+    EC_SPIRE_MAX_LOCAL_STORE_COUNT, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS, EC_SPIRE_MAX_NLISTS,
     EC_SPIRE_MAX_NPROBE, EC_SPIRE_MAX_PQ_GROUP_SIZE, EC_SPIRE_MAX_RECURSIVE_FANOUT,
     EC_SPIRE_MAX_RERANK_WIDTH, EC_SPIRE_MAX_SEED, EC_SPIRE_MAX_TOP_GRAPH_ALPHA,
     EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE, EC_SPIRE_MAX_TOP_GRAPH_DEGREE,
     EC_SPIRE_MAX_TOP_GRAPH_ENABLED, EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE,
     EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS, EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT,
-    EC_SPIRE_MIN_LOCAL_STORE_COUNT, EC_SPIRE_MIN_NLISTS, EC_SPIRE_MIN_NPROBE,
-    EC_SPIRE_MIN_PQ_GROUP_SIZE, EC_SPIRE_MIN_RECURSIVE_FANOUT, EC_SPIRE_MIN_RERANK_WIDTH,
-    EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TOP_GRAPH_ALPHA, EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE,
-    EC_SPIRE_MIN_TOP_GRAPH_DEGREE, EC_SPIRE_MIN_TOP_GRAPH_ENABLED,
-    EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE, EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+    EC_SPIRE_MIN_LOCAL_STORE_COUNT, EC_SPIRE_MIN_MAX_CANDIDATE_ROWS, EC_SPIRE_MIN_NLISTS,
+    EC_SPIRE_MIN_NPROBE, EC_SPIRE_MIN_PQ_GROUP_SIZE, EC_SPIRE_MIN_RECURSIVE_FANOUT,
+    EC_SPIRE_MIN_RERANK_WIDTH, EC_SPIRE_MIN_SEED, EC_SPIRE_MIN_TOP_GRAPH_ALPHA,
+    EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE, EC_SPIRE_MIN_TOP_GRAPH_DEGREE,
+    EC_SPIRE_MIN_TOP_GRAPH_ENABLED, EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE,
+    EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 
 static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
 static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_RERANK_WIDTH_UNSET);
+static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -43,6 +48,7 @@ struct EcSpireReloptions {
     boundary_replica_count: i32,
     nprobe: i32,
     rerank_width: i32,
+    max_candidate_rows: i32,
     training_sample_rows: i32,
     seed: i32,
     pq_group_size: i32,
@@ -105,6 +111,7 @@ pub(super) struct EcSpireOptions {
     pub(super) boundary_replica_count: i32,
     pub(super) nprobe: i32,
     pub(super) rerank_width: i32,
+    pub(super) max_candidate_rows: i32,
     pub(super) training_sample_rows: i32,
     pub(super) seed: i32,
     pub(super) pq_group_size: i32,
@@ -141,6 +148,7 @@ impl EcSpireOptions {
         boundary_replica_count: EC_SPIRE_DEFAULT_BOUNDARY_REPLICA_COUNT,
         nprobe: EC_SPIRE_DEFAULT_NPROBE,
         rerank_width: EC_SPIRE_DEFAULT_RERANK_WIDTH,
+        max_candidate_rows: EC_SPIRE_DEFAULT_MAX_CANDIDATE_ROWS,
         training_sample_rows: EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
         seed: EC_SPIRE_DEFAULT_SEED,
         pq_group_size: EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
@@ -315,6 +323,16 @@ fn validate_boundary_replica_count_value(value: i32) -> Result<(), String> {
     } else {
         Err(format!(
             "ec_spire boundary_replica_count reloption must be between {EC_SPIRE_MIN_BOUNDARY_REPLICA_COUNT} and {EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT}, got {value}"
+        ))
+    }
+}
+
+fn validate_max_candidate_rows_value(value: i32) -> Result<(), String> {
+    if (EC_SPIRE_MIN_MAX_CANDIDATE_ROWS..=EC_SPIRE_MAX_MAX_CANDIDATE_ROWS).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_spire max_candidate_rows reloption must be between {EC_SPIRE_MIN_MAX_CANDIDATE_ROWS} and {EC_SPIRE_MAX_MAX_CANDIDATE_ROWS}, got {value}"
         ))
     }
 }
@@ -507,6 +525,14 @@ pub(super) struct SpireRerankWidthResolution {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireCandidateLimitResolution {
+    pub(super) relation_max_candidate_rows: i32,
+    pub(super) session_max_candidate_rows: Option<i32>,
+    pub(super) effective_max_candidate_rows: i32,
+    pub(super) source: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpireCandidateDedupeMode {
     NoReplicaDedupeDisabled,
     VecIdDedupeEnabled,
@@ -547,6 +573,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.max_candidate_rows",
+        c"Session override for ec_spire quantized candidate row budget.",
+        c"Overrides ec_spire index max_candidate_rows reloption when set to 0 or higher; 0 uses the hard automatic ceiling; -1 uses the relation value.",
+        &EC_SPIRE_MAX_CANDIDATE_ROWS_GUC,
+        EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET,
+        EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -557,6 +593,10 @@ pub(super) fn current_session_rerank_width() -> i32 {
     EC_SPIRE_RERANK_WIDTH_GUC.get()
 }
 
+pub(super) fn current_session_max_candidate_rows() -> i32 {
+    EC_SPIRE_MAX_CANDIDATE_ROWS_GUC.get()
+}
+
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {
     resolve_scan_nprobe_values(nlists, relation_nprobe, current_session_nprobe())
 }
@@ -565,15 +605,25 @@ pub(super) fn resolve_scan_rerank_width(relation_rerank_width: i32) -> SpireRera
     resolve_scan_rerank_width_values(relation_rerank_width, current_session_rerank_width())
 }
 
+pub(super) fn resolve_scan_max_candidate_rows(
+    relation_max_candidate_rows: i32,
+) -> SpireCandidateLimitResolution {
+    resolve_scan_max_candidate_rows_values(
+        relation_max_candidate_rows,
+        current_session_max_candidate_rows(),
+    )
+}
+
 pub(super) fn resolve_single_level_scan_plan(
     leaf_count: u32,
     options: EcSpireOptions,
 ) -> Result<SpireSingleLevelScanPlan, String> {
-    resolve_single_level_scan_plan_values(
+    resolve_single_level_scan_plan_values_with_candidate_budget(
         leaf_count,
         options,
         current_session_nprobe(),
         current_session_rerank_width(),
+        current_session_max_candidate_rows(),
     )
 }
 
@@ -583,11 +633,28 @@ pub(super) fn resolve_single_level_scan_plan_values(
     session_nprobe_value: i32,
     session_rerank_width_value: i32,
 ) -> Result<SpireSingleLevelScanPlan, String> {
+    resolve_single_level_scan_plan_values_with_candidate_budget(
+        leaf_count,
+        options,
+        session_nprobe_value,
+        session_rerank_width_value,
+        EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET,
+    )
+}
+
+pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
+    leaf_count: u32,
+    options: EcSpireOptions,
+    session_nprobe_value: i32,
+    session_rerank_width_value: i32,
+    session_max_candidate_rows_value: i32,
+) -> Result<SpireSingleLevelScanPlan, String> {
     let relation_nprobe = u32::try_from(options.nprobe)
         .map_err(|_| "ec_spire nprobe reloption must be non-negative".to_owned())?;
     if options.rerank_width < 0 {
         return Err("ec_spire rerank_width reloption must be non-negative".to_owned());
     }
+    validate_max_candidate_rows_value(options.max_candidate_rows)?;
 
     let nprobe = resolve_scan_nprobe_values(leaf_count, relation_nprobe, session_nprobe_value);
     let recursive_nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(
@@ -600,10 +667,16 @@ pub(super) fn resolve_single_level_scan_plan_values(
         resolve_scan_rerank_width_values(options.rerank_width, session_rerank_width_value);
     let rerank_width_usize = usize::try_from(rerank_width.effective_rerank_width)
         .map_err(|_| "ec_spire rerank_width exceeds usize".to_owned())?;
+    let max_candidate_rows = resolve_scan_max_candidate_rows_values(
+        options.max_candidate_rows,
+        session_max_candidate_rows_value,
+    );
+    let max_candidate_rows_usize = usize::try_from(max_candidate_rows.effective_max_candidate_rows)
+        .map_err(|_| "ec_spire max_candidate_rows exceeds usize".to_owned())?;
     let candidate_limit = if rerank_width_usize > 0 {
-        Some(rerank_width_usize)
+        Some(rerank_width_usize.min(max_candidate_rows_usize))
     } else {
-        None
+        Some(max_candidate_rows_usize)
     };
 
     Ok(SpireSingleLevelScanPlan {
@@ -704,6 +777,35 @@ fn resolve_scan_rerank_width_values(
     }
 }
 
+fn resolve_scan_max_candidate_rows_values(
+    relation_max_candidate_rows: i32,
+    session_max_candidate_rows_value: i32,
+) -> SpireCandidateLimitResolution {
+    let session_max_candidate_rows = match session_max_candidate_rows_value {
+        value if value >= 0 => Some(value),
+        _ => None,
+    };
+    let (configured, configured_source) = match session_max_candidate_rows {
+        Some(value) => (value, "session"),
+        None => (relation_max_candidate_rows, "relation"),
+    };
+    let (effective_max_candidate_rows, source) = if configured == 0 {
+        (EC_SPIRE_MAX_MAX_CANDIDATE_ROWS, "auto")
+    } else {
+        (
+            configured.clamp(1, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS),
+            configured_source,
+        )
+    };
+
+    SpireCandidateLimitResolution {
+        relation_max_candidate_rows,
+        session_max_candidate_rows,
+        effective_max_candidate_rows,
+        source,
+    }
+}
+
 fn auto_nprobe(nlists: u32) -> u32 {
     if nlists == 0 {
         return 0;
@@ -779,6 +881,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MIN_RERANK_WIDTH,
                 EC_SPIRE_MAX_RERANK_WIDTH,
                 offset_of!(EcSpireReloptions, rerank_width) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                c"max_candidate_rows".as_ptr(),
+                c"Hard cap on quantized candidate rows retained before exact rerank; 0 uses the automatic ceiling."
+                    .as_ptr(),
+                EC_SPIRE_DEFAULT_MAX_CANDIDATE_ROWS,
+                EC_SPIRE_MIN_MAX_CANDIDATE_ROWS,
+                EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+                offset_of!(EcSpireReloptions, max_candidate_rows) as i32,
             );
             pg_sys::add_local_int_reloption(
                 &mut relopts,
@@ -938,6 +1050,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     validate_boundary_replica_count_value(reloptions.boundary_replica_count)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
+    validate_max_candidate_rows_value(reloptions.max_candidate_rows)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     validate_top_graph_enabled_value(reloptions.top_graph_enabled)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     validate_top_graph_degree_value(reloptions.top_graph_degree)
@@ -1004,6 +1118,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         boundary_replica_count: reloptions.boundary_replica_count,
         nprobe: reloptions.nprobe,
         rerank_width: reloptions.rerank_width,
+        max_candidate_rows: reloptions.max_candidate_rows,
         training_sample_rows: reloptions.training_sample_rows,
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
@@ -1023,11 +1138,13 @@ mod tests {
     use super::{
         normalize_local_store_tablespaces_reloption, parse_nprobe_per_level_reloption,
         plan_local_store_tablespaces_with_resolver, resolve_recursive_route_budget,
-        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
-        resolve_single_level_scan_plan_values, validate_boundary_replica_count_value,
-        validate_local_store_count_value, validate_recursive_fanout_value, EcSpireOptions,
+        resolve_scan_max_candidate_rows_values, resolve_scan_nprobe_values,
+        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
+        resolve_single_level_scan_plan_values_with_candidate_budget,
+        validate_boundary_replica_count_value, validate_local_store_count_value,
+        validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
         SpireCandidateDedupeMode, SpireRecursiveRouteBudget, SpireStorageFormat,
-        SpireTopGraphOptionPlan,
+        SpireTopGraphOptionPlan, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -1190,6 +1307,22 @@ mod tests {
     }
 
     #[test]
+    fn scan_max_candidate_rows_resolution_uses_session_relation_and_auto_sources() {
+        let auto = resolve_scan_max_candidate_rows_values(0, -1);
+        assert_eq!(auto.effective_max_candidate_rows, 10_000_000);
+        assert_eq!(auto.source, "auto");
+
+        let relation = resolve_scan_max_candidate_rows_values(128, -1);
+        assert_eq!(relation.effective_max_candidate_rows, 128);
+        assert_eq!(relation.source, "relation");
+
+        let session = resolve_scan_max_candidate_rows_values(128, 7);
+        assert_eq!(session.session_max_candidate_rows, Some(7));
+        assert_eq!(session.effective_max_candidate_rows, 7);
+        assert_eq!(session.source, "session");
+    }
+
+    #[test]
     fn default_options_match_phase1_config_contract() {
         let options = EcSpireOptions::DEFAULT;
 
@@ -1200,6 +1333,7 @@ mod tests {
         assert_eq!(options.boundary_replica_count, 0);
         assert_eq!(options.nprobe, 0);
         assert_eq!(options.rerank_width, 0);
+        assert_eq!(options.max_candidate_rows, 0);
         assert_eq!(options.training_sample_rows, 0);
         assert_eq!(options.seed, 42);
         assert_eq!(options.requested_pq_group_size(), None);
@@ -1231,6 +1365,7 @@ mod tests {
             boundary_replica_count: 0,
             nprobe: 3,
             rerank_width: 128,
+            max_candidate_rows: 0,
             training_sample_rows: 1000,
             seed: 7,
             pq_group_size: 0,
@@ -1325,6 +1460,7 @@ mod tests {
             boundary_replica_count: 0,
             nprobe: 0,
             rerank_width: 128,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
@@ -1348,11 +1484,42 @@ mod tests {
         );
         assert_eq!(plan.rerank_width, 0);
         assert_eq!(plan.rerank_width_source, "session");
-        assert_eq!(plan.candidate_limit, None);
+        assert_eq!(plan.candidate_limit, Some(10_000_000));
         assert_eq!(
             plan.dedupe_mode,
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         );
+    }
+
+    #[test]
+    fn single_level_scan_plan_applies_hard_candidate_budget_to_full_rerank() {
+        let options = EcSpireOptions {
+            nlists: 17,
+            nprobe: 0,
+            rerank_width: 0,
+            max_candidate_rows: 3,
+            ..EcSpireOptions::DEFAULT
+        };
+
+        let plan = resolve_single_level_scan_plan_values(17, options, -1, -1).unwrap();
+
+        assert_eq!(plan.rerank_width, 0);
+        assert_eq!(plan.candidate_limit, Some(3));
+
+        let options = EcSpireOptions {
+            nlists: 17,
+            nprobe: 0,
+            rerank_width: 128,
+            max_candidate_rows: 5,
+            ..EcSpireOptions::DEFAULT
+        };
+
+        let plan =
+            resolve_single_level_scan_plan_values_with_candidate_budget(17, options, -1, -1, 4)
+                .unwrap();
+
+        assert_eq!(plan.rerank_width, 128);
+        assert_eq!(plan.candidate_limit, Some(4));
     }
 
     #[test]
@@ -1364,6 +1531,7 @@ mod tests {
             boundary_replica_count: 0,
             nprobe: -1,
             rerank_width: 0,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,
@@ -1384,6 +1552,13 @@ mod tests {
             ..invalid
         };
         assert!(resolve_single_level_scan_plan_values(1, invalid, -1, -1).is_err());
+
+        let invalid = EcSpireOptions {
+            max_candidate_rows: -1,
+            ..EcSpireOptions::DEFAULT
+        };
+        assert!(resolve_single_level_scan_plan_values(1, invalid, -1, -1).is_err());
+        assert!(validate_max_candidate_rows_value(EC_SPIRE_MAX_MAX_CANDIDATE_ROWS + 1).is_err());
     }
 
     #[test]
@@ -1395,6 +1570,7 @@ mod tests {
             boundary_replica_count: 1,
             nprobe: 3,
             rerank_width: 128,
+            max_candidate_rows: 0,
             training_sample_rows: 0,
             seed: 42,
             pq_group_size: 0,

@@ -421,8 +421,7 @@ fn append_quantized_leaf_candidates_for_pid(
     route: SpireLeafObjectReadRoute,
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
-    candidates: &mut Vec<SpireScoredScanCandidate>,
-    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let leaf_pid = route.leaf_pid;
@@ -458,8 +457,7 @@ fn append_quantized_leaf_candidates_for_pid(
                     route.object_version,
                     scorer,
                     deleted_vec_ids,
-                    candidates,
-                    candidates_by_vec_id,
+                    accumulator,
                     &route.placement,
                     observer,
                 )?;
@@ -480,8 +478,7 @@ fn append_quantized_leaf_candidates_for_pid(
                 route.object_version,
                 scorer,
                 deleted_vec_ids,
-                candidates,
-                candidates_by_vec_id,
+                accumulator,
                 &route.placement,
                 observer,
             )
@@ -497,8 +494,7 @@ fn append_quantized_v2_column_candidates(
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
-    candidates: &mut Vec<SpireScoredScanCandidate>,
-    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
     placement: &SpirePlacementEntry,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
@@ -545,8 +541,7 @@ fn append_quantized_v2_column_candidates(
             heap_tid: row.heap_tid,
             score: -ip,
         };
-        if let Some(suppressed) = append_scored_candidate(candidate, candidates, candidates_by_vec_id)
-        {
+        if let Some(suppressed) = accumulator.append(candidate) {
             observe_deduped_candidate(snapshot, observer, &suppressed)?;
         }
     }
@@ -559,8 +554,7 @@ fn append_quantized_delta_candidates_for_routes(
     delta_routes: &[SpireDeltaObjectRoute],
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
-    candidates: &mut Vec<SpireScoredScanCandidate>,
-    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     for route in delta_routes {
@@ -609,9 +603,7 @@ fn append_quantized_delta_candidates_for_routes(
                 heap_tid: assignment.heap_tid,
                 score: -ip,
             };
-            if let Some(suppressed) =
-                append_scored_candidate(candidate, candidates, candidates_by_vec_id)
-            {
+            if let Some(suppressed) = accumulator.append(candidate) {
                 observe_deduped_candidate(snapshot, observer, &suppressed)?;
             }
         }
@@ -659,8 +651,7 @@ fn append_quantized_v1_leaf_candidates(
     object_version: u64,
     scorer: &SpirePreparedAssignmentScorer,
     deleted_vec_ids: &HashSet<SpireVecId>,
-    candidates: &mut Vec<SpireScoredScanCandidate>,
-    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
     placement: &SpirePlacementEntry,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
@@ -688,8 +679,7 @@ fn append_quantized_v1_leaf_candidates(
             heap_tid: assignment.heap_tid,
             score: -ip,
         };
-        if let Some(suppressed) = append_scored_candidate(candidate, candidates, candidates_by_vec_id)
-        {
+        if let Some(suppressed) = accumulator.append(candidate) {
             observe_deduped_candidate(snapshot, observer, &suppressed)?;
         }
     }
@@ -709,11 +699,7 @@ where
         return Ok(Vec::new());
     }
 
-    let mut candidates = Vec::new();
-    let mut candidates_by_vec_id = match dedupe_mode {
-        SpireCandidateDedupeMode::NoReplicaDedupeDisabled => None,
-        SpireCandidateDedupeMode::VecIdDedupeEnabled => Some(HashMap::new()),
-    };
+    let mut accumulator = SpireScoredCandidateAccumulator::new(dedupe_mode, limit);
     for routed in routed_rows {
         for row in routed.rows {
             if !is_visible_scored_assignment(&row.assignment) {
@@ -735,15 +721,11 @@ where
                 heap_tid: row.assignment.heap_tid,
                 score: -ip,
             };
-            let _ = append_scored_candidate(candidate, &mut candidates, &mut candidates_by_vec_id);
+            let _ = accumulator.append(candidate);
         }
     }
 
-    if let Some(candidates_by_vec_id) = candidates_by_vec_id {
-        candidates.extend(candidates_by_vec_id.into_values());
-    }
-
-    Ok(rank_bounded_scored_candidates(candidates, limit))
+    Ok(accumulator.into_ranked())
 }
 
 fn observe_deduped_candidate(
@@ -776,33 +758,6 @@ fn observe_candidate_winners(
     Ok(())
 }
 
-fn append_scored_candidate(
-    candidate: SpireScoredScanCandidate,
-    candidates: &mut Vec<SpireScoredScanCandidate>,
-    candidates_by_vec_id: &mut Option<HashMap<SpireVecId, SpireScoredScanCandidate>>,
-) -> Option<SpireScoredScanCandidate> {
-    // With vec-id dedupe enabled, return the row suppressed by the collision
-    // regardless of whether the incoming or incumbent candidate wins.
-    if let Some(candidates_by_vec_id) = candidates_by_vec_id.as_mut() {
-        match candidates_by_vec_id.entry(candidate.vec_id.clone()) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
-                    Some(std::mem::replace(entry.get_mut(), candidate))
-                } else {
-                    Some(candidate)
-                }
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(candidate);
-                None
-            }
-        }
-    } else {
-        candidates.push(candidate);
-        None
-    }
-}
-
 fn scored_candidate_cmp(
     left: &SpireScoredScanCandidate,
     right: &SpireScoredScanCandidate,
@@ -828,6 +783,196 @@ fn candidate_assignment_role_rank(candidate: &SpireScoredScanCandidate) -> u8 {
     u8::from(candidate.assignment_flags & SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0)
 }
 
+struct SpireScoredCandidateAccumulator {
+    limit: Option<usize>,
+    dedupe_mode: SpireCandidateDedupeMode,
+    candidates: Vec<SpireScoredScanCandidate>,
+    heap: BinaryHeap<SpireScoredScanCandidateHeapEntry>,
+    candidates_by_vec_id: HashMap<SpireVecId, SpireScoredScanCandidate>,
+}
+
+impl SpireScoredCandidateAccumulator {
+    fn new(dedupe_mode: SpireCandidateDedupeMode, limit: Option<usize>) -> Self {
+        Self {
+            limit,
+            dedupe_mode,
+            candidates: Vec::new(),
+            heap: BinaryHeap::new(),
+            candidates_by_vec_id: HashMap::new(),
+        }
+    }
+
+    fn append(
+        &mut self,
+        candidate: SpireScoredScanCandidate,
+    ) -> Option<SpireScoredScanCandidate> {
+        match (self.dedupe_mode, self.limit) {
+            (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, None) => {
+                self.candidates.push(candidate);
+                None
+            }
+            (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, Some(limit)) => {
+                self.append_bounded(candidate, limit);
+                None
+            }
+            (SpireCandidateDedupeMode::VecIdDedupeEnabled, None) => {
+                self.append_unbounded_deduped(candidate)
+            }
+            (SpireCandidateDedupeMode::VecIdDedupeEnabled, Some(limit)) => {
+                self.append_bounded_deduped(candidate, limit)
+            }
+        }
+    }
+
+    fn append_unbounded_deduped(
+        &mut self,
+        candidate: SpireScoredScanCandidate,
+    ) -> Option<SpireScoredScanCandidate> {
+        // With vec-id dedupe enabled, return the row suppressed by the
+        // collision regardless of whether the incoming or incumbent candidate
+        // wins.
+        match self.candidates_by_vec_id.entry(candidate.vec_id.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if scored_candidate_cmp(&candidate, entry.get()) == Ordering::Less {
+                    Some(std::mem::replace(entry.get_mut(), candidate))
+                } else {
+                    Some(candidate)
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+                None
+            }
+        }
+    }
+
+    fn append_bounded(&mut self, candidate: SpireScoredScanCandidate, limit: usize) {
+        if limit == 0 {
+            return;
+        }
+        let entry = SpireScoredScanCandidateHeapEntry { candidate };
+        if self.heap.len() < limit {
+            self.heap.push(entry);
+            return;
+        }
+
+        if self
+            .heap
+            .peek()
+            .is_some_and(|worst| scored_candidate_cmp(&entry.candidate, &worst.candidate).is_lt())
+        {
+            self.heap.pop();
+            self.heap.push(entry);
+        }
+    }
+
+    fn append_bounded_deduped(
+        &mut self,
+        candidate: SpireScoredScanCandidate,
+        limit: usize,
+    ) -> Option<SpireScoredScanCandidate> {
+        if limit == 0 {
+            return None;
+        }
+
+        if self.candidates_by_vec_id.contains_key(&candidate.vec_id) {
+            return self.replace_retained_deduped(candidate);
+        }
+
+        if self.candidates_by_vec_id.len() < limit {
+            self.heap.push(SpireScoredScanCandidateHeapEntry {
+                candidate: candidate.clone(),
+            });
+            self.candidates_by_vec_id
+                .insert(candidate.vec_id.clone(), candidate);
+            return None;
+        }
+
+        let Some(worst) = self.peek_live_worst_deduped() else {
+            self.heap.push(SpireScoredScanCandidateHeapEntry {
+                candidate: candidate.clone(),
+            });
+            self.candidates_by_vec_id
+                .insert(candidate.vec_id.clone(), candidate);
+            return None;
+        };
+        if scored_candidate_cmp(&candidate, &worst).is_lt() {
+            let evicted = self.pop_live_worst_deduped().expect("peeked live worst");
+            self.candidates_by_vec_id.remove(&evicted.vec_id);
+            self.heap.push(SpireScoredScanCandidateHeapEntry {
+                candidate: candidate.clone(),
+            });
+            self.candidates_by_vec_id
+                .insert(candidate.vec_id.clone(), candidate);
+        }
+        None
+    }
+
+    fn replace_retained_deduped(
+        &mut self,
+        candidate: SpireScoredScanCandidate,
+    ) -> Option<SpireScoredScanCandidate> {
+        let incumbent = self
+            .candidates_by_vec_id
+            .get_mut(&candidate.vec_id)
+            .expect("checked retained vec_id");
+        if scored_candidate_cmp(&candidate, incumbent) == Ordering::Less {
+            let suppressed = std::mem::replace(incumbent, candidate.clone());
+            self.heap.push(SpireScoredScanCandidateHeapEntry { candidate });
+            Some(suppressed)
+        } else {
+            Some(candidate)
+        }
+    }
+
+    fn peek_live_worst_deduped(&mut self) -> Option<SpireScoredScanCandidate> {
+        while let Some(entry) = self.heap.peek() {
+            if self
+                .candidates_by_vec_id
+                .get(&entry.candidate.vec_id)
+                .is_some_and(|candidate| candidate == &entry.candidate)
+            {
+                return Some(entry.candidate.clone());
+            }
+            self.heap.pop();
+        }
+        None
+    }
+
+    fn pop_live_worst_deduped(&mut self) -> Option<SpireScoredScanCandidate> {
+        while let Some(entry) = self.heap.pop() {
+            if self
+                .candidates_by_vec_id
+                .get(&entry.candidate.vec_id)
+                .is_some_and(|candidate| candidate == &entry.candidate)
+            {
+                return Some(entry.candidate);
+            }
+        }
+        None
+    }
+
+    fn into_ranked(mut self) -> Vec<SpireScoredScanCandidate> {
+        let mut ranked = match (self.dedupe_mode, self.limit) {
+            (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, None) => self.candidates,
+            (SpireCandidateDedupeMode::NoReplicaDedupeDisabled, Some(_)) => self
+                .heap
+                .into_iter()
+                .map(|entry| entry.candidate)
+                .collect::<Vec<_>>(),
+            (SpireCandidateDedupeMode::VecIdDedupeEnabled, None) => {
+                self.candidates_by_vec_id.into_values().collect::<Vec<_>>()
+            }
+            (SpireCandidateDedupeMode::VecIdDedupeEnabled, Some(_)) => {
+                while self.pop_live_worst_deduped().is_some() {}
+                self.candidates_by_vec_id.into_values().collect::<Vec<_>>()
+            }
+        };
+        ranked.sort_by(scored_candidate_cmp);
+        ranked
+    }
+}
+
 fn rank_bounded_scored_candidates<I>(
     candidates: I,
     limit: Option<usize>,
@@ -845,7 +990,7 @@ where
         return Vec::new();
     }
 
-    let mut heap = BinaryHeap::with_capacity(limit);
+    let mut heap = BinaryHeap::new();
     for candidate in candidates {
         let entry = SpireScoredScanCandidateHeapEntry { candidate };
         if heap.len() < limit {
