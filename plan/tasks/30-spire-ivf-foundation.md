@@ -1858,44 +1858,44 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
 
 ## Phase 9 — SPIRE Routing Quality
 
-Phase 9 is the routing-quality ladder opened after Phase 8 closeout. It is not
-part of the Phase 8 ship-readiness gate. The goal is to improve recall/QPS and
-large-hierarchy behavior on top of the already validated SPIRE partition-object,
-epoch, placement, remote, and operator surfaces.
+Detailed task file:
+`plan/tasks/task30-phase9-spire-graph-architecture.md`.
+
+Phase 9 is the graph-architecture and routing-quality ladder opened after
+Phase 8 local functionality. It is not part of the Phase 8 ship-readiness gate.
+The goal is to make the SPIRE graph shape composable across many hierarchy
+levels before remote execution and performance work build on it.
 
 Reviewer scoping packet:
 `review/30653-spire-multicluster-pg18-smoke/feedback/2026-05-09-02-reviewer.md`.
 The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
-30656; the remaining items below stay in Phase 9.
+30656. Architecture review packet
+`review/30658-spire-phase9-routing-plan/feedback/2026-05-09-01-reviewer.md`
+expands Phase 9 around top-graph frontier, global recursive beam, boundary
+replication execution, and global vector identity.
 
-- [ ] **Phase 9 entry gate.** Do not begin quality implementation until the
-  Phase 8 controlled AWS/RDS-class scale measurement packet is either complete
-  or explicitly waived by the operator. Local PG18 preflight artifacts in packet
-  30629 prove command readiness only; they are not the controlled scale gate.
-- [ ] **Recursive depth catch-up.** Extend recursive SPIRE build/query coverage
-  from the current shallow validation to 4-6 routing levels, matching the
-  hierarchy shape ADR-049 cites for large SPIRE deployments. Keep the existing
-  per-level `nprobe` policy visible in diagnostics at every level.
-- [ ] **Boundary replication execution.** Implement the Phase 5 design in
-  `plan/design/spire-boundary-replication.md`: opt-in assignment fanout,
-  primary plus boundary-replica rows, vec-id dedupe, placement-preserving
-  replica storage, and recall/storage diagnostics.
-- [ ] **Top-level routing graph catch-up.** Build on
-  `plan/design/spire-top-level-graph.md` and the existing SPIRE top-graph
-  plumbing to make graph-assisted top-level routing the large-hierarchy path,
-  with flat routing retained as fallback/comparison.
-- [ ] **IMI reshape.** Prototype an inverted multi-index reshaping of the
-  centroid table so routing can be A/B-tested against current centroid storage
-  without introducing a learned model.
-- [ ] **Adaptive `nprobe`.** Add a runtime policy that spends fewer probes on
-  easy queries and preserves or expands probes on hard queries, using
-  diagnostics that show the selected budget and source.
-- [ ] **Anisotropic centroid scoring.** Make ScaNN-style anisotropic centroid
-  scoring the headline Phase 9 quality target. Gate it with recall/QPS
-  measurements against the baseline recursive and top-graph paths.
-- [ ] **Query difficulty estimator stretch.** If the adaptive `nprobe` lane
-  leaves room, prototype a light estimator for hard-query detection. Treat this
-  as stretch because it introduces learned or calibrated behavior.
+- [ ] **Phase 9 entry gate.** Keep AWS/RDS-class performance claims gated on
+  the Phase 8 scale packet unless the operator explicitly waives that claim.
+  Architecture/design work may proceed under an operator waiver using local
+  PG18 functionality evidence.
+- [ ] **Top-graph frontier contract.** Decouple top graph node count from root
+  fanout and define which routing frontier the graph covers.
+- [ ] **Scalable top-graph storage.** Remove the single-tuple top-graph ceiling
+  through segmented, chained, or graph-row storage.
+- [ ] **Cached or borrowed graph routing.** Avoid per-query adjacency copies
+  and avoid full centroid offset scans when the comparator can use monotonic
+  inner-product ordering.
+- [ ] **Global recursive beam.** Add route budgets such as `beam_width`,
+  `max_leaf_routes`, and `max_routing_expansions` so deep hierarchies cannot
+  multiply routes without a cap.
+- [ ] **Boundary replication execution contract.** Finish primary/replica row
+  semantics, route integration, recall/storage diagnostics, and dedupe behavior
+  for opt-in boundary replicas.
+- [ ] **Global vector identity.** Define and enforce the durable `SpireVecId`
+  scope needed for boundary replicas and multi-node merge.
+- [ ] **Quality experiments.** Keep IMI reshape, adaptive `nprobe`,
+  anisotropic centroid scoring, and query difficulty estimation below the
+  structural graph work.
 - [x] **ADR defer multi-probe centroid scoring.** ADR-051 records that
   standalone multi-probe centroid scoring is deferred because anisotropic
   centroid scoring is expected to subsume it.
@@ -1903,6 +1903,33 @@ The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
   research track and the open drift/retraining/evaluation questions.
 - [x] **ADR defer routing reranker.** ADR-053 records the deferred research
   track and the open cost-of-being-wrong/evaluation questions.
+
+## Phase 10 — SPIRE Execution and Performance Architecture
+
+Detailed task file:
+`plan/tasks/task30-phase10-spire-execution-performance.md`.
+
+Phase 10 turns the corrected Phase 9 graph semantics into a scalable execution
+path. It owns bounded candidate collection, eager-vs-streaming scan shape,
+heap-rerank I/O, multi-NVMe read overlap, and remote libpq fanout. It should
+not change the graph semantics established in Phase 9.
+
+- [ ] **Bounded candidate collection.** Add hard candidate-row budgets and
+  score/dedupe with a bounded heap while scanning.
+- [ ] **Streaming AM scan decision.** Decide whether `ec_spire` remains eager
+  in `amrescan` with enforced limits or moves toward incremental
+  `amgettuple` production.
+- [ ] **Heap rerank I/O.** Batch or prefetch exact heap rerank and measure
+  rerank width against recall/latency floors.
+- [ ] **Multi-NVMe read overlap.** Keep `(node_id, local_store_id)` grouping,
+  add per-store diagnostics, and overlap or explicitly bound local-store reads.
+- [ ] **Remote libpq executor.** Decide diagnostic-only vs production AM path;
+  if production-bound, add concurrent/pipelined dispatch, timeouts, cancellation,
+  fanout limits, and cached remote index validation.
+- [ ] **Remote heap resolution.** Define origin-node row resolution or explicit
+  deferred locator semantics.
+- [ ] **Performance harness.** Extend `ecaz` measurements for route budgets,
+  candidate budgets, multi-store reads, and remote fanout.
 
 ## Dependencies
 
