@@ -132,8 +132,8 @@ packet-local number exists yet.
 | `ec_diskann` | kernel-stress rerank NEON A/B | real10K_w800, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 scalar/neon `16.3/15.2 ms`; p95 `17.15/15.85 ms`; p99 `18.9/16.7 ms`; recall@10 `1.0000` | `review/30204-task29-diskann-m5-neon-rerank/` |
 | `ec_diskann` | heap-TID rerank fetch A/B | real10K_w800, post-NEON, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/post `15.5/14.8 ms`; p95 `16.15/15.45 ms`; p99 `17.9/16.8 ms`; recall@10 `1.0000` | `review/30205-task29-diskann-m5-rerank-heap-order/` |
 | `ec_diskann` | heap-block prefetch A/B | real10K_w800, post-heap-order, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/trial `14.8/15.0 ms`; p95 `15.45/15.6 ms`; p99 `16.8/16.85 ms`; recall@10 `1.0000` | `review/30206-task29-diskann-m5-rerank-prefetch/` |
+| `ec_diskann` | cold-cache prefetch A/B | real100K, `rerank_budget=800`, `L=800`, heap `12.6x shared_buffers`, first-pass cold start | p50 pre/prefetch `506.2/406.8 ms`; p95 `633.2/426.8 ms`; p99 `676.9/434.3 ms`; recall@10 `0.9978` | `review/30209-task29-diskann-m5-cold-cache-100k/` |
 | `ec_diskann` | full post-M5 cross-engine sweep | final M5 code state, Task 29d search-list sweep `64/128/200/400/800` | -- | -- |
-| `ec_diskann` | cold-cache rerank lane | real10K_w800 or larger-than-shared-buffers corpus, cold cache | -- | -- |
 | `ec_diskann` | async-overlap prefetch trial | cold-cache rerank lane | -- | -- |
 | `ec_diskann` | same-page-run grouping trial | cold-cache rerank lane | -- | -- |
 

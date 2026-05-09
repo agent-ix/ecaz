@@ -205,6 +205,7 @@ make pg-test-pg17
 | [Getting Started](docs/getting-started.md) | Prerequisites, installation, first query |
 | [Usage Guide](docs/usage.md) | Encoding parameters, index tuning, query patterns |
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
+| [Benchmark Index](docs/benchmark-index.md) | Packet directory for benchmark lanes and source artifacts |
 | [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |
