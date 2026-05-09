@@ -149,6 +149,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "status,provider_lookup_key,resolved_conninfo_bytes",
             next_action: "set_executor_owned_secret_provider_value_without_exposing_raw_conninfo",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 11,
+            entrypoint_name: "ec_spire_remote_pipeline_steps",
+            area: "search",
+            operator_use: "consolidated_remote_pipeline_steps",
+            status_source: "step_name,status,item_count,next_blocker",
+            next_action: "inspect_first_non_ready_step_before_opening_narrow_surfaces",
+        },
     ]
 }
 
