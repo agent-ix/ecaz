@@ -455,6 +455,17 @@ pub(crate) struct SpireRemoteConninfoSecretResolutionContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteConninfoSecretResolutionStatusRow {
+    pub(crate) provider_policy: &'static str,
+    pub(crate) conninfo_secret_name: String,
+    pub(crate) provider_lookup_key: String,
+    pub(crate) resolved_conninfo_bytes: u64,
+    pub(crate) raw_conninfo_exposed: bool,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteCatalogLifecycleContractRow {
     pub(crate) lifecycle_ordinal: u64,
     pub(crate) lifecycle_event: &'static str,

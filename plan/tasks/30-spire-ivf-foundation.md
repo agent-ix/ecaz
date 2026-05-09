@@ -1614,6 +1614,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   provider keyed by `conninfo_secret_name`, keeps raw conninfo out of extension
   SQL/catalog surfaces, leaves FDW-style mappings as a future option, and
   rejects an extension-owned raw conninfo table.
+  `ec_spire_remote_conninfo_secret_resolution_status(...)` now implements the
+  first external-provider lookup surface by mapping secret references to
+  executor-owned environment keys and reporting only lookup key, byte count,
+  status, and recommendation; raw libpq conninfo remains unreturned from SQL.
   `ec_spire_remote_catalog_orphan_summary()` and
   `ec_spire_remote_catalog_orphan_cleanup()` now expose the first remote
   catalog lifecycle cleanup path: rows keyed by coordinator OIDs that no longer

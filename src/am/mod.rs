@@ -50,6 +50,7 @@ pub(crate) use self::ec_spire::{
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     remote_catalog_lifecycle_contract_rows as spire_remote_catalog_lifecycle_contract_rows,
     remote_conninfo_secret_resolution_contract_rows as spire_remote_conninfo_secret_resolution_contract_rows,
+    remote_conninfo_secret_resolution_status_row as spire_remote_conninfo_secret_resolution_status_row,
     remote_degradation_policy_contract_rows as spire_remote_degradation_policy_contract_rows,
     remote_epoch_manifest_plan as spire_remote_epoch_manifest_plan,
     remote_epoch_manifest_publication_contract_rows as spire_remote_epoch_manifest_publication_contract_rows,

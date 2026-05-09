@@ -28,6 +28,7 @@ const SPIRE_REMOTE_STATUS_EMPTY_TOP_K: &str = "empty_top_k";
 const SPIRE_REMOTE_STATUS_DEGRADED_READY: &str = "degraded_ready";
 const SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED: &str = "degraded_skipped";
 const SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR: &str = "requires_remote_node_descriptor";
+const SPIRE_REMOTE_STATUS_REQUIRES_SECRET: &str = "requires_conninfo_secret_resolution";
 const SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ: &str = "requires_libpq_transport";
 const SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR: &str = "missing_descriptor";
 const SPIRE_REMOTE_STATUS_OPTIONAL_DESCRIPTOR_MISSING: &str = "optional_descriptor_missing";
@@ -43,6 +44,7 @@ const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
 const SPIRE_REMOTE_CONNINFO_READY: &str = "secret_reference_ready";
+const SPIRE_REMOTE_CONNINFO_RESOLVED: &str = "resolved_conninfo";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -60,6 +62,7 @@ const SPIRE_REMOTE_DESCRIPTOR_STATE_DRAINING: &str = "draining";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED: &str = "disabled";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
+const SPIRE_REMOTE_CONNINFO_ENV_PREFIX: &str = "EC_SPIRE_REMOTE_CONNINFO_";
 
 pub(crate) fn remote_operator_entrypoint_contract_rows(
 ) -> Vec<SpireRemoteOperatorEntrypointContractRow> {
@@ -199,6 +202,60 @@ pub(crate) fn remote_conninfo_secret_resolution_contract_rows(
             recommendation: "use external secret storage instead of an extension-owned conninfo table",
         },
     ]
+}
+
+fn remote_conninfo_secret_env_key(conninfo_secret_name: &str) -> Result<String, String> {
+    if conninfo_secret_name.is_empty() {
+        return Err("conninfo_secret_name must be nonempty".to_owned());
+    }
+
+    let mut key = String::from(SPIRE_REMOTE_CONNINFO_ENV_PREFIX);
+    for byte in conninfo_secret_name.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            key.push(char::from(byte).to_ascii_uppercase());
+        } else {
+            key.push('_');
+        }
+    }
+    Ok(key)
+}
+
+pub(crate) fn remote_conninfo_secret_resolution_status_row(
+    conninfo_secret_name: &str,
+) -> SpireRemoteConninfoSecretResolutionStatusRow {
+    let provider_lookup_key = remote_conninfo_secret_env_key(conninfo_secret_name)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire remote conninfo secret reference invalid: {e}"));
+
+    match std::env::var(&provider_lookup_key) {
+        Ok(conninfo) if !conninfo.is_empty() => SpireRemoteConninfoSecretResolutionStatusRow {
+            provider_policy: "external_executor_secret_provider",
+            conninfo_secret_name: conninfo_secret_name.to_owned(),
+            provider_lookup_key,
+            resolved_conninfo_bytes: u64::try_from(conninfo.len())
+                .expect("conninfo byte length should fit in u64"),
+            raw_conninfo_exposed: false,
+            status: SPIRE_REMOTE_CONNINFO_RESOLVED,
+            recommendation: "open libpq connection with executor-owned resolved conninfo",
+        },
+        Ok(_) => SpireRemoteConninfoSecretResolutionStatusRow {
+            provider_policy: "external_executor_secret_provider",
+            conninfo_secret_name: conninfo_secret_name.to_owned(),
+            provider_lookup_key,
+            resolved_conninfo_bytes: 0,
+            raw_conninfo_exposed: false,
+            status: SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+            recommendation: "configure a nonempty conninfo value in the external secret provider",
+        },
+        Err(_) => SpireRemoteConninfoSecretResolutionStatusRow {
+            provider_policy: "external_executor_secret_provider",
+            conninfo_secret_name: conninfo_secret_name.to_owned(),
+            provider_lookup_key,
+            resolved_conninfo_bytes: 0,
+            raw_conninfo_exposed: false,
+            status: SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+            recommendation: "configure the external secret provider entry for conninfo_secret_name",
+        },
+    }
 }
 
 pub(crate) fn remote_catalog_lifecycle_contract_rows(

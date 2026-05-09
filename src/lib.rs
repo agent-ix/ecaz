@@ -5328,6 +5328,35 @@ fn ec_spire_remote_conninfo_secret_resolution_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_conninfo_secret_resolution_status(
+    conninfo_secret_name: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(provider_policy, &'static str),
+        name!(conninfo_secret_name, String),
+        name!(provider_lookup_key, String),
+        name!(resolved_conninfo_bytes, i64),
+        name!(raw_conninfo_exposed, bool),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let row = am::spire_remote_conninfo_secret_resolution_status_row(&conninfo_secret_name);
+    TableIterator::once((
+        row.provider_policy,
+        row.conninfo_secret_name,
+        row.provider_lookup_key,
+        i64::try_from(row.resolved_conninfo_bytes)
+            .expect("resolved conninfo byte count should fit in i64"),
+        row.raw_conninfo_exposed,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_catalog_lifecycle_contract() -> TableIterator<
     'static,
     (
@@ -21416,6 +21445,59 @@ mod tests {
         assert_eq!(basebackup_status, "supported");
         assert_eq!(upgrade_migration_surface, "ecaz--0.1.0--0.1.1.sql");
         assert_eq!(upgrade_status, "supported_after_upgrade_script");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_conninfo_secret_resolution_status() {
+        let _env_lock = env_var_test_lock();
+        let _missing_secret = ScopedEnvVar {
+            key: "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STATUS",
+            previous: std::env::var_os("EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STATUS"),
+        };
+        std::env::remove_var("EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STATUS");
+
+        let missing_from =
+            "FROM ec_spire_remote_conninfo_secret_resolution_status('spire/remote/status')";
+        let missing_lookup_key =
+            Spi::get_one::<String>(&format!("SELECT provider_lookup_key {missing_from}"))
+                .expect("missing secret lookup key query should succeed")
+                .expect("missing secret lookup key should exist");
+        let missing_status = Spi::get_one::<String>(&format!("SELECT status {missing_from}"))
+            .expect("missing secret status query should succeed")
+            .expect("missing secret status should exist");
+        let missing_raw_exposed =
+            Spi::get_one::<bool>(&format!("SELECT raw_conninfo_exposed {missing_from}"))
+                .expect("missing secret exposure query should succeed")
+                .expect("missing secret exposure should exist");
+
+        assert_eq!(
+            missing_lookup_key,
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STATUS"
+        );
+        assert_eq!(missing_status, "requires_conninfo_secret_resolution");
+        assert!(!missing_raw_exposed);
+
+        let _resolved_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STATUS",
+            "host=remote.example.invalid dbname=ecaz",
+        );
+        let resolved_from =
+            "FROM ec_spire_remote_conninfo_secret_resolution_status('spire/remote/status')";
+        let resolved_status = Spi::get_one::<String>(&format!("SELECT status {resolved_from}"))
+            .expect("resolved secret status query should succeed")
+            .expect("resolved secret status should exist");
+        let resolved_bytes =
+            Spi::get_one::<i64>(&format!("SELECT resolved_conninfo_bytes {resolved_from}"))
+                .expect("resolved secret byte query should succeed")
+                .expect("resolved secret byte count should exist");
+        let resolved_raw_exposed =
+            Spi::get_one::<bool>(&format!("SELECT raw_conninfo_exposed {resolved_from}"))
+                .expect("resolved secret exposure query should succeed")
+                .expect("resolved secret exposure should exist");
+
+        assert_eq!(resolved_status, "resolved_conninfo");
+        assert!(resolved_bytes > 0);
+        assert!(!resolved_raw_exposed);
     }
 
     #[pg_test]
