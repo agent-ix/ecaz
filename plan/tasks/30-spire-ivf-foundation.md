@@ -1569,6 +1569,10 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   summary, so resolved conninfo secrets advance the reported blocker from
   `conninfo_secret_resolution` to `open_libpq_connection` while staying
   fail-closed before socket I/O.
+  `ec_spire_remote_search_libpq_connection_open_plan(...)` and
+  `ec_spire_remote_search_libpq_connection_open_summary(...)` now project
+  resolved secret rows into per-query, no-pooling connection-open work and the
+  next pipeline-mode blocker without opening sockets.
   `ec_spire_remote_search_libpq_parameter_contract()` now names the six bind
   parameters, types, semantic roles, and validators for that request envelope.
   `ec_spire_remote_search_libpq_result_contract()`,

@@ -7655,6 +7655,176 @@ fn ec_spire_remote_search_libpq_secret_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_connection_open_plan(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i64),
+        name!(selected_pids, Vec<i64>),
+        name!(pid_count, i64),
+        name!(conninfo_secret_name, String),
+        name!(provider_lookup_key, String),
+        name!(resolved_conninfo_bytes, i64),
+        name!(connection_lifecycle_policy, &'static str),
+        name!(pooling_policy, &'static str),
+        name!(connection_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_connection_open_plan requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_connection_open_plan top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_connection_open_plan selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_connection_open_plan",
+        )
+    };
+    let rows = unsafe {
+        am::spire_remote_search_libpq_connection_open_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i64::from(row.node_id),
+            row.selected_pids
+                .into_iter()
+                .map(|pid| i64::try_from(pid).expect("pid should fit in i64"))
+                .collect::<Vec<_>>(),
+            i64::try_from(row.pid_count).expect("pid count should fit in i64"),
+            row.conninfo_secret_name,
+            row.provider_lookup_key,
+            i64::try_from(row.resolved_conninfo_bytes)
+                .expect("resolved conninfo byte count should fit in i64"),
+            row.connection_lifecycle_policy,
+            row.pooling_policy,
+            row.connection_action,
+            row.next_executor_step,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_connection_open_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(connection_count, i64),
+        name!(ready_connection_count, i64),
+        name!(blocked_connection_count, i64),
+        name!(remote_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_connection_open_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_connection_open_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_connection_open_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_connection_open_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_connection_open_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.connection_count).expect("connection count should fit in i64"),
+        i64::try_from(row.ready_connection_count)
+            .expect("ready connection count should fit in i64"),
+        i64::try_from(row.blocked_connection_count)
+            .expect("blocked connection count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.blocked_pid_count).expect("blocked pid count should fit in i64"),
+        row.next_executor_step,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -19167,6 +19337,18 @@ mod tests {
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
              ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
         );
+        let connection_open_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_open_plan(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
+        let connection_open_summary_from = format!(
+            "FROM ec_spire_remote_search_libpq_connection_open_summary(\
+             'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{selected_pid}]::bigint[], 3, 'strict')"
+        );
         let executor_from = format!(
             "FROM ec_spire_remote_search_libpq_executor_readiness(\
              'ec_spire_remote_node_desc_catalog_sql_idx'::regclass, \
@@ -19437,6 +19619,46 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {secret_summary_from}"))
                 .expect("secret summary status query should succeed")
                 .expect("secret summary status should exist");
+        let connection_open_action =
+            Spi::get_one::<String>(&format!("SELECT connection_action {connection_open_from}"))
+                .expect("connection open action query should succeed")
+                .expect("connection open action should exist");
+        let connection_open_lifecycle = Spi::get_one::<String>(&format!(
+            "SELECT connection_lifecycle_policy {connection_open_from}"
+        ))
+        .expect("connection open lifecycle query should succeed")
+        .expect("connection open lifecycle should exist");
+        let connection_open_pooling =
+            Spi::get_one::<String>(&format!("SELECT pooling_policy {connection_open_from}"))
+                .expect("connection open pooling query should succeed")
+                .expect("connection open pooling should exist");
+        let connection_open_next_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {connection_open_from}"))
+                .expect("connection open next step query should succeed")
+                .expect("connection open next step should exist");
+        let connection_open_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_open_from}"))
+                .expect("connection open status query should succeed")
+                .expect("connection open status should exist");
+        let connection_open_summary_ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_connection_count {connection_open_summary_from}"
+        ))
+        .expect("connection open summary ready count query should succeed")
+        .expect("connection open summary ready count should exist");
+        let connection_open_summary_blocked_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_connection_count {connection_open_summary_from}"
+        ))
+        .expect("connection open summary blocked count query should succeed")
+        .expect("connection open summary blocked count should exist");
+        let connection_open_summary_next_step = Spi::get_one::<String>(&format!(
+            "SELECT next_executor_step {connection_open_summary_from}"
+        ))
+        .expect("connection open summary next step query should succeed")
+        .expect("connection open summary next step should exist");
+        let connection_open_summary_status =
+            Spi::get_one::<String>(&format!("SELECT status {connection_open_summary_from}"))
+                .expect("connection open summary status query should succeed")
+                .expect("connection open summary status should exist");
         let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
             .expect("executor readiness status query should succeed")
             .expect("executor readiness status should exist");
@@ -19552,6 +19774,18 @@ mod tests {
         assert_eq!(secret_summary_blocked_count, 0);
         assert_eq!(secret_summary_next_step, "open_libpq_connection");
         assert_eq!(secret_summary_status, "resolved_conninfo");
+        assert_eq!(connection_open_action, "open_libpq_connection");
+        assert_eq!(connection_open_lifecycle, "per_query");
+        assert_eq!(connection_open_pooling, "no_pooling_v1");
+        assert_eq!(connection_open_next_step, "enter_libpq_pipeline_mode");
+        assert_eq!(connection_open_status, "requires_libpq_executor");
+        assert_eq!(connection_open_summary_ready_count, 1);
+        assert_eq!(connection_open_summary_blocked_count, 0);
+        assert_eq!(
+            connection_open_summary_next_step,
+            "enter_libpq_pipeline_mode"
+        );
+        assert_eq!(connection_open_summary_status, "requires_libpq_executor");
         assert_eq!(executor_status, "requires_libpq_executor");
         assert_eq!(executor_next_step, "open_libpq_connection");
         assert_eq!(executor_secret_action, "resolve_conninfo_secret_reference");

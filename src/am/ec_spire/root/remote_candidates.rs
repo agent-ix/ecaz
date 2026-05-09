@@ -1971,6 +1971,159 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
     })
 }
 
+pub(crate) unsafe fn remote_search_libpq_connection_open_plan_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {
+    let secret_rows = unsafe {
+        remote_search_libpq_secret_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+
+    remote_search_libpq_connection_open_plan_rows_from_secrets(&secret_rows)
+}
+
+fn remote_search_libpq_connection_open_plan_rows_from_secrets(
+    secret_rows: &[SpireRemoteSearchLibpqSecretPlanRow],
+) -> Vec<SpireRemoteSearchLibpqConnectionOpenPlanRow> {
+    secret_rows
+        .iter()
+        .map(|row| {
+            let (connection_action, next_executor_step, status, recommendation) =
+                if row.status == SPIRE_REMOTE_CONNINFO_RESOLVED {
+                    (
+                        "open_libpq_connection",
+                        "enter_libpq_pipeline_mode",
+                        SPIRE_REMOTE_EXECUTOR_REQUIRED,
+                        "open per-query libpq connection with executor-owned resolved conninfo",
+                    )
+                } else {
+                    (
+                        "blocked_before_connection",
+                        row.next_executor_step,
+                        row.status,
+                        row.recommendation,
+                    )
+                };
+
+            SpireRemoteSearchLibpqConnectionOpenPlanRow {
+                requested_epoch: row.requested_epoch,
+                node_id: row.node_id,
+                selected_pids: row.selected_pids.clone(),
+                pid_count: row.pid_count,
+                conninfo_secret_name: row.conninfo_secret_name.clone(),
+                provider_lookup_key: row.provider_lookup_key.clone(),
+                resolved_conninfo_bytes: row.resolved_conninfo_bytes,
+                connection_lifecycle_policy: "per_query",
+                pooling_policy: "no_pooling_v1",
+                connection_action,
+                next_executor_step,
+                status,
+                recommendation,
+            }
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_libpq_connection_open_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqConnectionOpenSummaryRow {
+    let rows = unsafe {
+        remote_search_libpq_connection_open_plan_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    remote_search_libpq_connection_open_summary_from_plan_rows(requested_epoch, &rows)
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_connection_open_summary_from_plan_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqConnectionOpenPlanRow],
+) -> Result<SpireRemoteSearchLibpqConnectionOpenSummaryRow, String> {
+    let mut ready_connection_count = 0_u64;
+    let mut blocked_connection_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut blocked_pid_count = 0_u64;
+    let mut first_blocked_step = SPIRE_REMOTE_NONE;
+    let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
+
+    for row in rows {
+        add_remote_count(
+            &mut remote_pid_count,
+            row.pid_count,
+            "remote search libpq connection-open summary",
+            "remote PID",
+        )?;
+        if row.connection_action == "open_libpq_connection" {
+            add_remote_count(
+                &mut ready_connection_count,
+                1,
+                "remote search libpq connection-open summary",
+                "ready connection",
+            )?;
+        } else {
+            if blocked_connection_count == 0 {
+                first_blocked_step = row.next_executor_step;
+                first_blocked_status = row.status;
+            }
+            add_remote_count(
+                &mut blocked_connection_count,
+                1,
+                "remote search libpq connection-open summary",
+                "blocked connection",
+            )?;
+            add_remote_count(
+                &mut blocked_pid_count,
+                row.pid_count,
+                "remote search libpq connection-open summary",
+                "blocked PID",
+            )?;
+        }
+    }
+
+    let connection_count = u64::try_from(rows.len())
+        .map_err(|_| "remote search libpq connection-open count exceeds u64")?;
+    let (next_executor_step, status) = if connection_count == 0 {
+        (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY)
+    } else if blocked_connection_count > 0 {
+        (first_blocked_step, first_blocked_status)
+    } else {
+        ("enter_libpq_pipeline_mode", SPIRE_REMOTE_EXECUTOR_REQUIRED)
+    };
+
+    Ok(SpireRemoteSearchLibpqConnectionOpenSummaryRow {
+        requested_epoch,
+        connection_count,
+        ready_connection_count,
+        blocked_connection_count,
+        remote_pid_count,
+        blocked_pid_count,
+        next_executor_step,
+        status,
+    })
+}
+
 pub(crate) unsafe fn remote_search_libpq_executor_readiness_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
