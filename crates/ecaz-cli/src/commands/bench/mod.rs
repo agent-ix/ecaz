@@ -15,6 +15,7 @@ mod graph;
 pub mod latency;
 mod overhead;
 pub mod recall;
+mod spire_pipeline;
 mod storage;
 mod suite;
 
@@ -23,6 +24,7 @@ pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
+pub use spire_pipeline::SpirePipelineArgs;
 pub use storage::StorageArgs;
 pub use suite::SuiteArgs;
 
@@ -126,6 +128,8 @@ pub enum BenchCommand {
     DiskannBuildProbe(BuildProbeArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
+    /// SPIRE routing, local pipeline, and optional remote fanout counters.
+    SpirePipeline(SpirePipelineArgs),
     /// Expand a configured benchmark suite into packet-style ecaz commands.
     Suite(SuiteArgs),
 }
@@ -139,6 +143,7 @@ impl BenchCommand {
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
+            BenchCommand::SpirePipeline(a) => spire_pipeline::run(conn, a).await,
             BenchCommand::Suite(a) => suite::run(conn, a).await,
         }
     }

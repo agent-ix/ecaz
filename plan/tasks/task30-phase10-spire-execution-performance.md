@@ -1,6 +1,7 @@
 # Task 30 Phase 10: SPIRE Execution and Performance Architecture
 
-Status: proposed
+Status: complete for local execution architecture; product-scale claims remain
+gated on the Phase 8 scale packet
 Owner: coder1 / SPIRE execution track
 Priority: 1 after Phase 9 graph contracts
 
@@ -139,12 +140,15 @@ that Phase 9 establishes.
 
 ## Phase 10.7: Performance Harness
 
-- [ ] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
-  remote fanout. Partial: packet `review/30687-spire-adaptive-nprobe` adds
-  SPIRE-only `--adaptive-nprobe` and
-  `--adaptive-nprobe-score-gap-micros` to `ecaz bench recall` and
-  `ecaz bench latency`; route-budget sweeps and remote fanout counters remain
-  open.
+- [x] Extend `ecaz` benchmark commands for Phase 9/10 routing budgets and
+  remote fanout. Packet `review/30687-spire-adaptive-nprobe` adds SPIRE-only
+  `--adaptive-nprobe` and `--adaptive-nprobe-score-gap-micros` to
+  `ecaz bench recall` and `ecaz bench latency`. The Phase 10.7 closeout adds
+  `ecaz bench spire-pipeline`, which sweeps `ec_spire.nprobe`, applies
+  rerank/candidate/adaptive session options, records routing-budget counters
+  from `ec_spire_index_scan_routing_snapshot`, records local route/candidate/
+  heap/remote-fanout counters from `ec_spire_index_scan_pipeline_snapshot`, and
+  can call `ec_spire_remote_pipeline_steps` for remote PID fanout counters.
 - [x] Add a unified local scan pipeline snapshot that orders routing,
   placement, candidate, and heap-rerank steps, mirroring the remote
   `ec_spire_remote_pipeline_steps` operator shape. Added
@@ -153,10 +157,19 @@ that Phase 9 establishes.
   Packets `review/30686-spire-phase9-quality-baseline` and
   `review/30687-spire-adaptive-nprobe` explicitly label results as local
   development evidence only.
-- [ ] Include one-index-per-table fixtures for cross-AM comparisons unless a
-  packet explicitly measures shared-table planner behavior.
-- [ ] Capture recall, latency p50/p95/p99, object bytes, route counts,
-  candidate counts, heap rerank rows, and remote fanout counts.
+- [x] Include one-index-per-table fixtures for cross-AM comparisons unless a
+  packet explicitly measures shared-table planner behavior. Packet
+  `review/30686-spire-phase9-quality-baseline` records the canonical local
+  real10k baseline as isolated one-index-per-table evidence.
+- [x] Capture recall, latency p50/p95/p99, object bytes, route counts,
+  candidate counts, heap rerank rows, and remote fanout counts. Recall and
+  NDCG live in `ecaz bench recall` artifacts, latency p50/p95/p99 in
+  `ecaz bench latency`, object bytes in `ecaz bench storage`, local pipeline
+  route/candidate/heap/remote-fanout counts in
+  `ec_spire_index_scan_pipeline_snapshot` / packet
+  `review/30685-spire-local-scan-pipeline-snapshot`, and repeatable
+  route-budget plus remote-fanout collection is now exposed through
+  `ecaz bench spire-pipeline`.
 
 ## Validation
 

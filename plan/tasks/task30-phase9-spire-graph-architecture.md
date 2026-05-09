@@ -1,6 +1,7 @@
 # Task 30 Phase 9: SPIRE Graph Architecture
 
-Status: proposed
+Status: complete for local architecture; product-scale claims remain gated on
+the Phase 8 scale packet
 Owner: coder1 / SPIRE graph track
 Priority: 1
 

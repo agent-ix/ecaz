@@ -1874,10 +1874,10 @@ The Phase 8 pull-forward from that note, per-level `nprobe`, landed in packet
 expands Phase 9 around top-graph frontier, global recursive beam, boundary
 replication execution, and global vector identity.
 
-- [ ] **Phase 9 entry gate.** Keep AWS/RDS-class performance claims gated on
+- [x] **Phase 9 entry gate.** Keep AWS/RDS-class performance claims gated on
   the Phase 8 scale packet unless the operator explicitly waives that claim.
-  Architecture/design work may proceed under an operator waiver using local
-  PG18 functionality evidence.
+  Architecture/design work proceeded under the operator's local-functionality
+  waiver; product-scale claims remain blocked on the Phase 8 scale packet.
 - [x] **Top-graph frontier contract.** Decouple top graph node count from root
   fanout and define which routing frontier the graph covers.
   Landed in Phase 9.1 planning/code checkpoint: ADR-054 defines the active
@@ -1943,10 +1943,11 @@ not change the graph semantics established in Phase 9.
   resolution to the origin node and keeps coordinator locators opaque until
   writer-side global vector IDs and origin-node visibility filtering are
   available.
-- [ ] **Performance harness.** Extend `ecaz` measurements for route budgets,
+- [x] **Performance harness.** Extend `ecaz` measurements for route budgets,
   candidate budgets, multi-store reads, and remote fanout. The detailed Phase
-  10.7 task file keeps this open while recording the landed adaptive-nprobe
-  bench flags, local pipeline snapshot, and local-vs-AWS evidence split.
+  10.7 task file records the landed adaptive-nprobe bench flags, local
+  pipeline snapshot, local-vs-AWS evidence split, and the
+  `ecaz bench spire-pipeline` route-budget / remote-fanout counter command.
 
 ## Dependencies
 
