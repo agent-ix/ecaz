@@ -75,14 +75,34 @@ USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 
 -- Query nearest neighbors
-SELECT * FROM memories
+SELECT id FROM memories
 ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
+```
+
+Expected first smoke result:
+
+```text
+ id
+----
+  1
+(1 row)
 ```
 
 See [Build From Source](docs/build-from-source.md) for the full repeatable
 setup path, including native prerequisites, existing-PostgreSQL installs,
 operator CLI setup, PG17 compatibility, and validation commands.
+
+## Compatibility
+
+| Area | Status |
+| --- | --- |
+| PostgreSQL | PG18 primary target; PG17 compatibility target |
+| pgrx | `cargo-pgrx` 0.17 |
+| Rust | Stable toolchain |
+| Linux | Active development and test platform on x86_64 |
+| macOS | Active development and benchmark platform on Apple Silicon, including Apple M5 IVF and DiskANN tuning lanes |
+| CPU target | Local builds use `target-cpu=native`; build release artifacts on the same CPU family that will run them |
 
 ## Build From Source
 
@@ -138,73 +158,17 @@ Source: `review/30203-task31-current-m5-candidate-decision/`
 Each index family implements a different search algorithm. Quantization
 (`storage_format`) is a separate concern — it controls how vectors are
 compressed inside the index and is independent of the index family. See
-[Benchmarks](docs/benchmarks.md) for measured recall, latency, and index size
-comparisons.
+[Usage Guide](docs/usage.md) for full SQL examples and [Benchmarks](docs/benchmarks.md)
+for measured recall, latency, and index size comparisons.
 
-### ec_hnsw
+| Access method | Best fit | Storage formats | Notes |
+| --- | --- | --- | --- |
+| `ec_hnsw` | General-purpose ANN graph search | `turboquant`, `pq_fastscan` | Lowest local latency, larger index footprint |
+| `ec_ivf` | Posting-list experiments and high-ingest tradeoffs | `turboquant`, `pq_fastscan`, `rabitq` | Recall controlled by `nprobe`/`nlists`; Apple M5 tuning is active |
+| `ec_diskann` | DiskANN/Vamana research and compact graph indexes | `pq_fastscan` | Requires unit-normalized source vectors; Apple M5 tuning is active |
 
-HNSW builds a multi-layer proximity graph. It offers the lowest query latency
-but carries a larger index footprint. It is the default general-purpose choice.
-
-Supports `turboquant` (default) and `pq_fastscan`. Switching formats requires
-`REINDEX`; there is no in-place upgrade.
-
-```sql
-CREATE INDEX ON memories
-USING ec_hnsw (embedding ecvector_ip_ops)
-WITH (storage_format = 'turboquant', m = 8, ef_construction = 64);
-
-CREATE INDEX ON memories
-USING ec_hnsw (embedding ecvector_ip_ops)
-WITH (storage_format = 'pq_fastscan', m = 8, ef_construction = 64);
-```
-
-### ec_ivf
-
-IVF partitions vectors into posting lists and scans a configurable subset at
-query time via `nprobe`. It scales to larger datasets with a smaller index
-footprint than HNSW, with recall controlled by the `nprobe`/`nlists` ratio.
-
-Supports `turboquant`, `pq_fastscan`, and `rabitq`.
-
-```sql
-CREATE INDEX ON memories
-USING ec_ivf (embedding ecvector_ip_ops)
-WITH (
-    nlists = 4,
-    nprobe = 2,
-    storage_format = 'turboquant',
-    rerank = 'heap_f32'
-);
-```
-
-### ec_diskann
-
-DiskANN/Vamana builds a sparse navigable graph designed for large-scale
-workloads. It delivers near-exact recall with a significantly smaller index
-footprint than HNSW. Requires unit-normalized source vectors.
-
-Supports `pq_fastscan`.
-
-```sql
-CREATE TABLE unit_memories (
-    id bigint generated always as identity primary key,
-    embedding ecvector(4)
-);
-
-INSERT INTO unit_memories (embedding)
-VALUES
-    (encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::float4[], 4, 42)),
-    (encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0]::float4[], 4, 42));
-
-CREATE INDEX ON unit_memories
-USING ec_diskann (embedding ecvector_diskann_ip_ops)
-WITH (
-    graph_degree = 32,
-    build_list_size = 100,
-    list_size = 128
-);
-```
+Changing an index storage format requires `REINDEX`; there is no in-place
+format upgrade.
 
 ## Development
 

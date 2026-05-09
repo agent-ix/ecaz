@@ -8,6 +8,21 @@ The recommended local setup uses a pgrx-managed PG18 under `$PGRX_HOME`
 (`$HOME/.pgrx` by default). That keeps the extension build, PostgreSQL
 installation, socket directory, and test cluster aligned.
 
+## Supported Platforms
+
+| Area | Status |
+| --- | --- |
+| PostgreSQL | PG18 primary target; PG17 compatibility target |
+| pgrx | `cargo-pgrx` 0.17 |
+| Rust | Stable toolchain |
+| Linux | Active development and test platform on x86_64 |
+| macOS | Active development and benchmark platform on Apple Silicon, including Apple M5 IVF and DiskANN tuning lanes |
+| CPU target | Local builds use `target-cpu=native`; build release artifacts on the same CPU family that will run them |
+
+The native CPU setting is intentional for local vector-search development. If
+you need portable binaries or cross-compilation, adjust `.cargo/config.toml`
+before building release artifacts.
+
 ## 1. Install Native Prerequisites
 
 Install Rust stable first:
@@ -108,6 +123,16 @@ ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::float4[]
 LIMIT 2;
 ```
 
+Expected output:
+
+```text
+ id
+----
+  1
+  2
+(2 rows)
+```
+
 The `<#>` operator is negative inner product, so ascending order returns the
 highest inner-product matches first.
 
@@ -129,7 +154,47 @@ Then connect with your normal `psql` command and run:
 CREATE EXTENSION ecaz;
 ```
 
-## 5. Install The Operator CLI
+## 5. Upgrade Or Uninstall
+
+To rebuild and reinstall the current checkout into the same PostgreSQL
+installation, rerun the same install command with the same `pg_config`:
+
+```bash
+cargo pgrx install --sudo --release --pg-config /path/to/pg_config
+```
+
+After installing new extension SQL files, update each database that has Ecaz
+installed:
+
+```sql
+ALTER EXTENSION ecaz UPDATE;
+```
+
+For a specific extension version:
+
+```sql
+ALTER EXTENSION ecaz UPDATE TO '0.1.1';
+```
+
+Reconnect existing sessions after reinstalling the shared library so PostgreSQL
+loads the new extension binary.
+
+To remove Ecaz from a database:
+
+```sql
+DROP EXTENSION ecaz;
+```
+
+If objects depend on Ecaz types, functions, operators, or indexes, PostgreSQL
+will reject the drop unless you remove those objects first or use `CASCADE`:
+
+```sql
+DROP EXTENSION ecaz CASCADE;
+```
+
+Use `CASCADE` carefully; it drops dependent database objects.
+
+## 6. Install The Operator CLI
 
 The `ecaz` CLI is the supported operator surface for repeatable corpus setup,
 benchmarks, stress runs, and local pgrx SQL helpers.
@@ -149,7 +214,7 @@ All CLI commands accept PostgreSQL connection flags such as `--database`,
 fallbacks. See the [Operator CLI README](../crates/ecaz-cli/README.md) for the
 full command tree.
 
-## 6. Validation Commands
+## 7. Validation Commands
 
 For normal development, start with static and unit coverage:
 

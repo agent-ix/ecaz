@@ -54,6 +54,16 @@ ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::float4[]
 LIMIT 2;
 ```
 
+Expected output:
+
+```text
+ id
+----
+  1
+  2
+(2 rows)
+```
+
 `<#>` is negative inner-product distance, so `ORDER BY ... ASC` returns the
 highest inner-product matches first.
 
