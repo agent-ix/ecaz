@@ -1922,22 +1922,31 @@ path. It owns bounded candidate collection, eager-vs-streaming scan shape,
 heap-rerank I/O, multi-NVMe read overlap, and remote libpq fanout. It should
 not change the graph semantics established in Phase 9.
 
-- [ ] **Bounded candidate collection.** Add hard candidate-row budgets and
-  score/dedupe with a bounded heap while scanning.
-- [ ] **Streaming AM scan decision.** Decide whether `ec_spire` remains eager
-  in `amrescan` with enforced limits or moves toward incremental
-  `amgettuple` production.
-- [ ] **Heap rerank I/O.** Batch or prefetch exact heap rerank and measure
-  rerank width against recall/latency floors.
-- [ ] **Multi-NVMe read overlap.** Keep `(node_id, local_store_id)` grouping,
-  add per-store diagnostics, and overlap or explicitly bound local-store reads.
-- [ ] **Remote libpq executor.** Decide diagnostic-only vs production AM path;
-  if production-bound, add concurrent/pipelined dispatch, timeouts, cancellation,
-  fanout limits, and cached remote index validation.
-- [ ] **Remote heap resolution.** Define origin-node row resolution or explicit
-  deferred locator semantics.
+- [x] **Bounded candidate collection.** Hard candidate-row budgets, bounded
+  heap retention, truncation diagnostics, and deterministic tie-break behavior
+  are tracked in the detailed Phase 10.1 section.
+- [x] **Streaming AM scan decision.** ADR-056 keeps Phase 10 on the eager
+  bounded `amrescan` path, documents the ceiling, and leaves incremental
+  `amgettuple` streaming for a future ownership ADR.
+- [x] **Heap rerank I/O.** Batched/prefetched exact heap rerank landed, with
+  rerank-width recall and latency evidence recorded in packets
+  `review/30686-spire-phase9-quality-baseline` and
+  `review/30687-spire-adaptive-nprobe`.
+- [x] **Multi-NVMe read overlap.** Phase 10 keeps `(node_id, local_store_id)`
+  grouping, adds per-store and top-graph I/O attribution, reuses decoded delta
+  rows, and records the PostgreSQL read-stream/prefetch scheduling contract in
+  ADR-057.
+- [x] **Remote libpq executor.** ADR-058 keeps the current custom libpq
+  executor diagnostic/operator-only; production concurrent/pipelined fanout is
+  deferred to a future production remote executor checkpoint.
+- [x] **Remote heap resolution.** ADR-059 assigns future production remote heap
+  resolution to the origin node and keeps coordinator locators opaque until
+  writer-side global vector IDs and origin-node visibility filtering are
+  available.
 - [ ] **Performance harness.** Extend `ecaz` measurements for route budgets,
-  candidate budgets, multi-store reads, and remote fanout.
+  candidate budgets, multi-store reads, and remote fanout. The detailed Phase
+  10.7 task file keeps this open while recording the landed adaptive-nprobe
+  bench flags, local pipeline snapshot, and local-vs-AWS evidence split.
 
 ## Dependencies
 
