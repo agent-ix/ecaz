@@ -1470,6 +1470,55 @@
     }
 
     #[test]
+    fn rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe() {
+        let routed = vec![SpireRoutedLeafScanRows {
+            epoch: 1,
+            root_pid: SPIRE_FIRST_PID,
+            leaf_pid: SPIRE_FIRST_PID + 1,
+            rows: vec![
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 0,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+                        7,
+                        10,
+                        1,
+                        vec![5],
+                    ),
+                },
+                SpireLeafScanRow {
+                    pid: SPIRE_FIRST_PID + 1,
+                    object_version: 1,
+                    row_index: 1,
+                    assignment: assignment_row_with_payload(
+                        SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                        7,
+                        10,
+                        2,
+                        vec![5],
+                    ),
+                },
+            ],
+        }];
+
+        let candidates = rank_routed_leaf_rows_by_ip(
+            routed,
+            |row| Ok(f32::from(row.encoded_payload[0])),
+            SpireCandidateDedupeMode::VecIdDedupeEnabled,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].vec_id.local_sequence(), Some(7));
+        assert_eq!(candidates[0].assignment_flags, SPIRE_ASSIGNMENT_FLAG_PRIMARY);
+        assert_eq!(candidates[0].heap_tid, tid(10, 2));
+        assert_eq!(candidates[0].score, -5.0);
+    }
+
+    #[test]
     fn scored_candidate_tie_break_prefers_newer_epoch_then_primary_role() {
         let older_primary = scored_candidate(1, 10, 1, 1.0);
         let mut newer_replica = scored_candidate(2, 10, 2, 1.0);

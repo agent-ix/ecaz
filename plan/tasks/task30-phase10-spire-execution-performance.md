@@ -38,7 +38,7 @@ that Phase 9 establishes.
   materializing all routed candidates before ranking.
 - [x] Surface diagnostics for candidate rows seen, deduped, retained, and
   truncated.
-- [ ] Preserve deterministic ordering and boundary-replica tie-break behavior.
+- [x] Preserve deterministic ordering and boundary-replica tie-break behavior.
 
 ## Phase 10.1a: Routing Diagnostic Drift Guard
 
