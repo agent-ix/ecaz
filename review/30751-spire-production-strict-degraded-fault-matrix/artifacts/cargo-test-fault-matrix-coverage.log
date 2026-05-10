@@ -1,0 +1,54 @@
+Script started on 2026-05-10 07:29:16-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-320dfae4bc07716b)
+
+running 1 test
+test am::ec_spire::production_executor_state_tests::production_fault_matrix_covers_required_categories ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 1567 filtered out; finished in 0.00s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-27be7fe3085b1e89)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-61b4df959319a491)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-873eb5fcb813a895)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-c7e16572cf24a788)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-190ba22c2dcbfa60)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-261e6dccc785131e)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-e3d7f32d94965bb3)
+
+running 0 tests
+
+test result: [32mok[m. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-10 07:30:26-07:00 [COMMAND_EXIT_CODE="0"]
