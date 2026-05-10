@@ -2375,7 +2375,7 @@ pub(crate) fn remote_search_libpq_parameter_contract_rows(
             parameter_name: "selected_pids",
             pg_type: "bigint[]",
             semantic_role: "selected_leaf_pid_set",
-            validator: "must_be_nonempty_positive_unique_remote_leaf_pids",
+            validator: "must_be_nonempty_positive_unique_remote_leaf_pids_delta_rows_are_leaf_derived",
         },
         SpireRemoteSearchLibpqParameterContractRow {
             parameter_ordinal: 5,
@@ -3061,7 +3061,7 @@ pub(crate) fn remote_search_merge_order_contract_rows(
             order_key: "pid",
             direction: "ascending",
             semantic_role: "deterministic_partition_tie_breaker",
-            validator: "must_be_selected_pid",
+            validator: "must_be_selected_leaf_pid_or_leaf_derived_delta_pid",
         },
         SpireRemoteSearchMergeOrderContractRow {
             order_ordinal: 6,
@@ -3534,9 +3534,15 @@ fn remote_search_candidate_dedupe_key(
 
 /// Validates one target-scoped remote candidate receive batch.
 ///
-/// The batch must match the requested epoch, expected node, selected PID set,
-/// visible assignment flags, valid vec_id, nonempty opaque row_locator, and
-/// finite score contract before candidates can enter the merge path.
+/// The batch must match the requested epoch, expected node, selected leaf PID
+/// set, visible assignment flags, valid vec_id, nonempty opaque row_locator,
+/// and finite score contract before candidates can enter the merge path.
+///
+/// Delta insert rows are leaf-derived: the storage endpoint is selected by
+/// leaf PID, but it returns the delta object PID for row/version tie-breaking.
+/// The coordinator can envelope-validate those rows by their delta flag; the
+/// origin storage endpoint remains responsible for binding each delta row to a
+/// selected parent leaf.
 pub(crate) fn validate_remote_search_candidate_batch(
     requested_epoch: u64,
     expected_node_id: u32,
@@ -3577,9 +3583,11 @@ pub(crate) fn validate_remote_search_candidate_batch(
         if candidate.pid == 0 {
             return Err("ec_spire remote candidate batch candidate PID 0 is invalid".to_owned());
         }
-        if !selected.contains(&candidate.pid) {
+        if !selected.contains(&candidate.pid)
+            && candidate.assignment_flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT == 0
+        {
             return Err(format!(
-                "ec_spire remote candidate batch candidate PID {} was not selected for node_id {expected_node_id}",
+                "ec_spire remote candidate batch candidate PID {} was not selected for node_id {expected_node_id} and is not a delta insert candidate",
                 candidate.pid
             ));
         }

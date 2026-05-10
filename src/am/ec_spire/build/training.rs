@@ -35,10 +35,10 @@ pub(super) fn train_single_level_centroid_plan(
 }
 
 impl SpireBuildState {
-    fn new(options: options::EcSpireOptions, indexed_vector_kind: SpireIndexedVectorKind) -> Self {
+    fn new(options: options::EcSpireOptions, tuple_layout: SpireIndexedTupleLayout) -> Self {
         Self {
             options,
-            indexed_vector_kind,
+            tuple_layout,
             scanned_tuples: 0,
             tuples: Vec::new(),
             dimensions: None,
@@ -111,6 +111,16 @@ impl SpireBuildState {
         self.tuples
             .iter()
             .map(|tuple| tuple.assignment.clone())
+            .collect()
+    }
+
+    fn assignment_identity_inputs(&self) -> Vec<SpireLeafAssignmentIdentityInput> {
+        self.tuples
+            .iter()
+            .map(|tuple| SpireLeafAssignmentIdentityInput {
+                assignment: tuple.assignment.clone(),
+                vec_id_source_identity: tuple.vec_id_source_identity.clone(),
+            })
             .collect()
     }
 

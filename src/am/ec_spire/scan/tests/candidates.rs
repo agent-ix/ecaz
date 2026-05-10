@@ -1123,6 +1123,7 @@
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::TurboQuant,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
@@ -1290,6 +1291,7 @@
             top_graph_search_list_size: 2,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::TurboQuant,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();

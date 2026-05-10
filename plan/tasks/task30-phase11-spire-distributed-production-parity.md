@@ -1,6 +1,6 @@
 # Task 30 Phase 11: SPIRE Distributed Production Parity
 
-Status: proposed
+Status: in progress
 Owner: coder1 / SPIRE distributed production track
 Priority: 1 after Phase 9 and Phase 10 local architecture closeout
 
@@ -88,13 +88,13 @@ Acceptance artifact:
 - [x] Extend the SQL-visible vector identity contract with writer allocation,
   stable source identity, Leaf V2 base-storage blocker, and row-encoded delta
   storage status rows.
-- [ ] Emit durable global `0x02` `SpireVecId` values from the writer/build path
+- [x] Emit durable global `0x02` `SpireVecId` values from the writer/build path
   when a stable source identity is available.
 - [x] Define the stable source-identity input contract for build/insert paths;
   heap TID alone is not a cross-node stable identity. The Phase 11 writer
   contract is a fixed 16-byte source payload, documented in
   `plan/design/spire-stable-source-identity-contract.md`.
-- [ ] Choose and implement the first live source-identity provider, such as an
+- [x] Choose and implement the first live source-identity provider, such as an
   explicit identity column or expression contract, then plumb it into build and
   insert assignment inputs. ADR-063 selects the v1 provider as
   `source_identity = 'include'` with one included UUID or exact-16-byte `bytea`
@@ -107,7 +107,7 @@ Acceptance artifact:
   origin `node_id`, without silently mixing namespaces.
 - [ ] Ensure boundary replicas carry the same global original-vector identity
   across leaves, stores, and remote nodes.
-- [ ] Add migration/rewrite or compatibility diagnostics for indexes that still
+- [x] Add migration/rewrite or compatibility diagnostics for indexes that still
   contain only node-local IDs.
 - [ ] Add tests proving unrelated node-local IDs do not dedupe, while replicated
   global IDs do dedupe.
@@ -250,21 +250,31 @@ Goal: make real build/insert writers capable of emitting stable global IDs.
 
 - [ ] Accept ADR-063 or revise it based on reviewer feedback before wide AM
   callback changes.
-- [ ] Enable the `source_identity = 'include'` reloption and the AM INCLUDE
+- [x] Enable the `source_identity = 'include'` reloption and the AM INCLUDE
   capability behind strict validation:
   one vector key column, zero or one included identity column, no partial index,
   no expression identity in v1.
-- [ ] Canonicalize included `uuid` and exact-16-byte `bytea` values to
+- [x] Canonicalize included `uuid` and exact-16-byte `bytea` values to
   `StableFixedGlobalPayload([u8; 16])`; reject NULL, unsupported types, and
   malformed bytea values.
 - [ ] Thread source identity through populated build, empty-index insert
   bootstrap, live insert deltas, boundary replicas, and scheduled replacement
   paths without advancing local ID sequence for global rows.
-- [ ] Add diagnostics for three index classes: local-only, global-capable but
+- [x] Populated build, empty-index insert bootstrap, live insert deltas, and
+  boundary assignment paths are threaded; scheduled replacement paths remain
+  open before this item can close.
+- [x] Add diagnostics for three index classes: local-only, global-capable but
   not yet remote-published, and global-writer active.
 - [ ] Verification: PG18 DDL tests for accepted/rejected index shapes; build
   and insert tests proving global IDs land in Leaf V2/delta rows; tests proving
   replicas share one global ID and local-only indexes remain node-scoped.
+- [x] Verification landed for accepted/rejected index shapes plus populated
+  build, empty-index bootstrap, and live insert delta global IDs:
+  `cargo test source_identity --lib`,
+  `cargo test remote_candidate_batch_validation --lib`,
+  `cargo pgrx test pg18 test_ec_spire_srcid`, and
+  `cargo pgrx test pg18 test_ec_spire_include_requires_srcid_reloption`.
+  Replica-specific proof and local-only namespace proof remain open.
 
 ### Stage B: Production Remote Endpoint
 

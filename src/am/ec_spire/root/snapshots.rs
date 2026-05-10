@@ -201,6 +201,40 @@ pub(crate) unsafe fn index_options_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn index_writer_identity_snapshot(
+    index_relation: pg_sys::Relation,
+) -> SpireIndexWriterIdentitySnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    let (writer_identity_status, writer_identity_recommendation) =
+        writer_identity_snapshot_status(relation_options.source_identity, root_control.active_epoch);
+    SpireIndexWriterIdentitySnapshot {
+        source_identity_provider: relation_options.source_identity.reloption_name(),
+        writer_identity_status,
+        writer_identity_recommendation,
+    }
+}
+
+fn writer_identity_snapshot_status(
+    source_identity: options::SpireSourceIdentityProvider,
+    active_epoch: u64,
+) -> (&'static str, &'static str) {
+    match (source_identity, active_epoch) {
+        (options::SpireSourceIdentityProvider::None, _) => (
+            "local_only",
+            "use source_identity = 'include' with one UUID or exact-16-byte bytea INCLUDE column for cross-node global vec IDs",
+        ),
+        (options::SpireSourceIdentityProvider::Include, 0) => (
+            "global_capable_not_yet_remote_published",
+            "first visible writer will emit global vec IDs; publish remote manifest readiness before cross-node fanout claims",
+        ),
+        (options::SpireSourceIdentityProvider::Include, _) => (
+            "global_writer_active",
+            "writer emits fixed-width global vec IDs; remote manifest publication remains a separate production gate",
+        ),
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct SpireLevelParameterAccumulator {
     routing_object_count: u64,

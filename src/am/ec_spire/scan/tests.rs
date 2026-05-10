@@ -47,7 +47,7 @@ mod tests {
     use crate::am::ec_spire::options::{
         resolve_single_level_scan_plan_values, EcSpireOptions, SpireCandidateDedupeMode,
         SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
-        SpireStorageFormat,
+        SpireSourceIdentityProvider, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::{
         encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,

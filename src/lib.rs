@@ -11422,6 +11422,30 @@ fn ec_spire_index_options_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_writer_identity_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(source_identity_provider, String),
+        name!(writer_identity_status, String),
+        name!(writer_identity_recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_index_writer_identity_snapshot") };
+    let snapshot = unsafe { am::spire_index_writer_identity_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.source_identity_provider.to_owned(),
+        snapshot.writer_identity_status.to_owned(),
+        snapshot.writer_identity_recommendation.to_owned(),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_level_parameter_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -26014,6 +26038,246 @@ mod tests {
         .expect("ordered empty-bootstrap ec_spire query should succeed")
         .expect("query should return a row");
         assert_eq!(first_id, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_srcid_uuid_global_ids() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_uuid (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_source_identity_uuid (id, source_identity, embedding) VALUES \
+             (1, '00000000-0000-0000-0000-000000000001', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, '00000000-0000-0000-0000-000000000002', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_uuid_idx \
+             ON ec_spire_source_identity_uuid USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include', nlists = 1)",
+        )
+        .expect("source_identity uuid ec_spire index creation should succeed");
+
+        let index_oid = index_oid("ec_spire_source_identity_uuid_idx");
+        let (active_epoch, _next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_local_vec_seq, 1);
+
+        Spi::run(
+            "INSERT INTO ec_spire_source_identity_uuid (id, source_identity, embedding) VALUES \
+             (3, '00000000-0000-0000-0000-000000000003', encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42))",
+        )
+        .expect("post-build source_identity insert should succeed");
+        let (active_epoch, _next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 2);
+        assert_eq!(next_local_vec_seq, 1);
+
+        let vec_ids = Spi::get_one::<String>(
+            "SELECT string_agg(encode(vec_id, 'hex'), ',' ORDER BY encode(vec_id, 'hex')) \
+             FROM ec_spire_remote_search_local_heap_candidates(\
+               'ec_spire_source_identity_uuid_idx'::regclass, \
+               2, \
+               ARRAY[1.0, 0.0]::real[], \
+               ARRAY(SELECT leaf_pid FROM ec_spire_index_leaf_snapshot(\
+                 'ec_spire_source_identity_uuid_idx'::regclass)), \
+               10, \
+               'strict'\
+             )",
+        )
+        .expect("candidate vec_id query should succeed")
+        .expect("candidate vec_id aggregate should exist");
+        assert_eq!(
+            vec_ids,
+            "0200000000000000000000000000000001,\
+0200000000000000000000000000000002,\
+0200000000000000000000000000000003"
+        );
+
+        let writer_identity_status = Spi::get_one::<String>(
+            "SELECT writer_identity_status FROM \
+             ec_spire_index_writer_identity_snapshot(\
+               'ec_spire_source_identity_uuid_idx'::regclass)",
+        )
+        .expect("writer identity snapshot should succeed")
+        .expect("writer identity snapshot row should exist");
+        assert_eq!(writer_identity_status, "global_writer_active");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_srcid_bytea_bootstrap_global() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_bytea (\
+               id bigint primary key, \
+               source_identity bytea not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_bytea_idx \
+             ON ec_spire_source_identity_bytea USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("empty source_identity bytea ec_spire index creation should succeed");
+
+        let writer_identity_status = Spi::get_one::<String>(
+            "SELECT writer_identity_status FROM \
+             ec_spire_index_writer_identity_snapshot(\
+               'ec_spire_source_identity_bytea_idx'::regclass)",
+        )
+        .expect("writer identity snapshot should succeed")
+        .expect("writer identity snapshot row should exist");
+        assert_eq!(
+            writer_identity_status,
+            "global_capable_not_yet_remote_published"
+        );
+
+        Spi::run(
+            "INSERT INTO ec_spire_source_identity_bytea (id, source_identity, embedding) VALUES \
+             (1, decode('11111111111111111111111111111111', 'hex'), \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("first source_identity bytea insert should bootstrap index");
+
+        let index_oid = index_oid("ec_spire_source_identity_bytea_idx");
+        let (active_epoch, _next_pid, next_local_vec_seq) =
+            unsafe { am::debug_spire_root_control(index_oid) };
+        assert_eq!(active_epoch, 1);
+        assert_eq!(next_local_vec_seq, 1);
+
+        let vec_id = Spi::get_one::<String>(
+            "SELECT encode(vec_id, 'hex') \
+             FROM ec_spire_remote_search_local_heap_candidates(\
+               'ec_spire_source_identity_bytea_idx'::regclass, \
+               1, \
+               ARRAY[1.0, 0.0]::real[], \
+               ARRAY(SELECT leaf_pid FROM ec_spire_index_leaf_snapshot(\
+                 'ec_spire_source_identity_bytea_idx'::regclass)), \
+               10, \
+               'strict'\
+             )",
+        )
+        .expect("candidate vec_id query should succeed")
+        .expect("candidate row should exist");
+        assert_eq!(vec_id, "0211111111111111111111111111111111");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "source_identity = 'include' requires exactly one INCLUDE column")]
+    fn test_ec_spire_srcid_requires_include_column() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_missing_include (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_missing_include_idx \
+             ON ec_spire_source_identity_missing_include USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("missing source_identity INCLUDE column should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "INCLUDE columns require WITH (source_identity = 'include')")]
+    fn test_ec_spire_include_requires_srcid_reloption() {
+        Spi::run(
+            "CREATE TABLE ec_spire_include_without_source_identity (\
+               id bigint primary key, \
+               source_identity uuid not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_include_without_source_identity_idx \
+             ON ec_spire_include_without_source_identity USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity)",
+        )
+        .expect("INCLUDE without source_identity reloption should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "source_identity INCLUDE column must be uuid or bytea")]
+    fn test_ec_spire_srcid_rejects_bad_type() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_bad_type (\
+               id bigint primary key, \
+               source_identity text not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_bad_type_idx \
+             ON ec_spire_source_identity_bad_type USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("unsupported source_identity type should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "source_identity INCLUDE column must not be NULL")]
+    fn test_ec_spire_srcid_rejects_null() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_null_value (\
+               id bigint primary key, \
+               source_identity uuid, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_source_identity_null_value (id, source_identity, embedding) VALUES \
+             (1, NULL, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_null_value_idx \
+             ON ec_spire_source_identity_null_value USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("NULL source_identity value should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "source_identity bytea payload length 2 must be 16 bytes")]
+    fn test_ec_spire_srcid_rejects_bad_bytea_width() {
+        Spi::run(
+            "CREATE TABLE ec_spire_source_identity_bad_bytea (\
+               id bigint primary key, \
+               source_identity bytea not null, \
+               embedding ecvector\
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_source_identity_bad_bytea (id, source_identity, embedding) VALUES \
+             (1, decode('1111', 'hex'), encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_source_identity_bad_bytea_idx \
+             ON ec_spire_source_identity_bad_bytea USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("wrong-width source_identity bytea should fail");
     }
 
     #[pg_test]

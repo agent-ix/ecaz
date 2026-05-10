@@ -204,7 +204,7 @@ pub(super) struct SpireLeafAssignmentIdentityInput {
 }
 
 impl SpireLeafAssignmentIdentityInput {
-    fn allocate_local(assignment: SpireLeafAssignmentInput) -> Self {
+    pub(super) fn allocate_local(assignment: SpireLeafAssignmentInput) -> Self {
         Self {
             assignment,
             vec_id_source_identity: SpireVecIdSourceIdentity::AllocateLocal,

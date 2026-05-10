@@ -390,6 +390,32 @@ mod tests {
     }
 
     #[test]
+    fn remote_candidate_batch_validation_accepts_leaf_derived_delta_rows() {
+        let candidates = vec![
+            remote_candidate(
+                2,
+                10,
+                0,
+                remote_local_vec_id(1),
+                0.5,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            ),
+            remote_candidate(
+                2,
+                12,
+                0,
+                remote_local_vec_id(2),
+                0.6,
+                storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY
+                    | storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
+            ),
+        ];
+
+        validate_remote_search_candidate_batch(7, 2, &[10], &candidates)
+            .expect("leaf-derived delta candidate PID should validate");
+    }
+
+    #[test]
     fn remote_candidate_batch_validation_rejects_receive_contract_drift() {
         let wrong_epoch = remote_candidate(
             2,

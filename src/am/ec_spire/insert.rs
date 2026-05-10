@@ -3,8 +3,9 @@ use std::collections::HashSet;
 use pgrx::pg_sys;
 
 use super::assign::{
-    build_boundary_insert_delta_assignment_placements, build_primary_leaf_assignments,
-    SpireBoundaryLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
+    build_boundary_insert_delta_assignment_placements_with_identity,
+    build_primary_leaf_assignments_with_identity, SpireBoundaryLeafAssignmentIdentityInput,
+    SpireLeafAssignmentIdentityInput, SpireLocalVecIdAllocator, SpirePidAllocator,
 };
 use super::build::{
     self, encode_manifest_bundle_for_publish, object_manifest_from_placement_writes,
@@ -58,15 +59,21 @@ unsafe fn publish_insert_delta_epoch(
     let _guard = unsafe { lock_publish_relation(index_relation) };
     let root_control = unsafe { page::read_root_control_page(index_relation) };
     let relation_options = unsafe { options::relation_options(index_relation) };
-    let indexed_vector_kind =
-        unsafe { build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert") };
+    let tuple_layout = unsafe {
+        build::resolve_indexed_tuple_layout(
+            heap_relation,
+            index_info,
+            &relation_options,
+            "aminsert",
+        )
+    };
     let heap_tid = unsafe { build::decode_heap_tid(heap_tid, "aminsert") };
     let tuple = unsafe {
         build::build_spire_index_tuple(
             values,
             isnull,
             heap_tid,
-            indexed_vector_kind,
+            tuple_layout,
             relation_options.assignment_payload_format(),
             "aminsert",
         )
@@ -135,12 +142,15 @@ unsafe fn publish_insert_delta_epoch(
     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
     let mut local_vec_id_allocator =
         SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
-    let assignment_placements = build_boundary_insert_delta_assignment_placements(
+    let assignment_placements = build_boundary_insert_delta_assignment_placements_with_identity(
         &mut local_vec_id_allocator,
-        vec![SpireBoundaryLeafAssignmentInput {
+        vec![SpireBoundaryLeafAssignmentIdentityInput {
             primary_pid: primary_leaf_pid,
             replica_pids: replica_leaf_pids,
-            assignment: tuple.assignment,
+            assignment: SpireLeafAssignmentIdentityInput {
+                assignment: tuple.assignment,
+                vec_id_source_identity: tuple.vec_id_source_identity,
+            },
         }],
     )?;
 
@@ -219,8 +229,13 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
         SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
     let root_pid = pid_allocator.allocate()?;
     let leaf_pid = pid_allocator.allocate()?;
-    let assignments =
-        build_primary_leaf_assignments(&mut local_vec_id_allocator, vec![tuple.assignment])?;
+    let assignments = build_primary_leaf_assignments_with_identity(
+        &mut local_vec_id_allocator,
+        vec![SpireLeafAssignmentIdentityInput {
+            assignment: tuple.assignment,
+            vec_id_source_identity: tuple.vec_id_source_identity,
+        }],
+    )?;
 
     let routing_object = SpireRoutingPartitionObject::root(
         root_pid,

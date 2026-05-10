@@ -6,9 +6,10 @@ use std::ptr;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use super::assign::{
-    build_boundary_leaf_assignment_placements, build_primary_leaf_assignments,
-    SpireBoundaryLeafAssignmentInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
-    SpirePidAllocator,
+    build_boundary_leaf_assignment_placements_with_identity, build_primary_leaf_assignments,
+    SpireBoundaryLeafAssignmentIdentityInput, SpireLeafAssignmentIdentityInput,
+    SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
+    SpireVecIdSourceIdentity, SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
 };
 use super::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,

@@ -459,19 +459,21 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
         return Ok(Vec::new());
     }
 
-    let local_pid_set = plan
-        .local_selected_pids
+    // Keep the local-only snapshot broad enough to include leaf-derived delta
+    // objects. The scan collector still receives only the selected leaf PIDs,
+    // then attaches visible deltas whose parent leaf was selected.
+    let local_pid_set = placement_directory
+        .entries
         .iter()
-        .copied()
+        .filter(|entry| entry.node_id == meta::SPIRE_LOCAL_NODE_ID)
+        .map(|entry| entry.pid)
         .collect::<HashSet<_>>();
     let local_placement_directory = meta::SpirePlacementDirectory::from_entries(
         placement_directory.epoch,
         placement_directory
             .entries
             .iter()
-            .filter(|entry| {
-                entry.node_id == meta::SPIRE_LOCAL_NODE_ID && local_pid_set.contains(&entry.pid)
-            })
+            .filter(|entry| entry.node_id == meta::SPIRE_LOCAL_NODE_ID)
             .cloned()
             .collect(),
     )?;

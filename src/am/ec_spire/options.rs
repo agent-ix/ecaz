@@ -65,6 +65,7 @@ struct EcSpireReloptions {
     nprobe_per_level_offset: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
+    source_identity_offset: i32,
     local_store_tablespaces_offset: i32,
 }
 
@@ -108,6 +109,30 @@ impl SpireStorageFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireSourceIdentityProvider {
+    None,
+    Include,
+}
+
+impl SpireSourceIdentityProvider {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "include" => Ok(Self::Include),
+            other => Err(format!(
+                "invalid ec_spire source_identity reloption: expected 'include', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Include => "include",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct EcSpireOptions {
     pub(super) nlists: i32,
@@ -127,6 +152,7 @@ pub(super) struct EcSpireOptions {
     pub(super) top_graph_search_list_size: i32,
     pub(super) nprobe_per_level: Option<String>,
     pub(super) storage_format: SpireStorageFormat,
+    pub(super) source_identity: SpireSourceIdentityProvider,
     pub(super) local_store_tablespaces: Option<String>,
 }
 
@@ -164,6 +190,7 @@ impl EcSpireOptions {
         top_graph_search_list_size: EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
         nprobe_per_level: None,
         storage_format: SpireStorageFormat::Auto,
+        source_identity: SpireSourceIdentityProvider::None,
         local_store_tablespaces: None,
     };
 
@@ -1092,6 +1119,16 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
             );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
+                c"source_identity".as_ptr(),
+                c"Stable SPIRE vector identity provider: 'include' reads one INCLUDE column as a UUID or exact-16-byte bytea source identity."
+                    .as_ptr(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(EcSpireReloptions, source_identity_offset) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
                 c"local_store_tablespaces".as_ptr(),
                 c"Comma-separated tablespace names for local SPIRE stores; repeated names are allowed for same-device baselines."
                     .as_ptr(),
@@ -1180,6 +1217,17 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
             SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
         })
         .unwrap_or(SpireStorageFormat::Auto);
+    let source_identity = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.source_identity_offset,
+            "source_identity",
+        )
+    }
+    .map(|value| {
+        SpireSourceIdentityProvider::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+    })
+    .unwrap_or(SpireSourceIdentityProvider::None);
     let local_store_tablespaces = unsafe {
         read_string_reloption(
             rd_options,
@@ -1221,6 +1269,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
         top_graph_search_list_size: reloptions.top_graph_search_list_size,
         nprobe_per_level,
         storage_format,
+        source_identity,
         local_store_tablespaces,
     }
 }
@@ -1235,8 +1284,8 @@ mod tests {
         resolve_single_level_scan_plan_values_with_candidate_budget,
         validate_boundary_replica_count_value, validate_local_store_count_value,
         validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
-        SpireCandidateDedupeMode, SpireRecursiveRouteBudget, SpireStorageFormat,
-        SpireTopGraphOptionPlan, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        SpireCandidateDedupeMode, SpireRecursiveRouteBudget, SpireSourceIdentityProvider,
+        SpireStorageFormat, SpireTopGraphOptionPlan, EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
     };
     use crate::am::ec_spire::quantizer::SpireAssignmentPayloadFormat;
 
@@ -1268,6 +1317,19 @@ mod tests {
             SpireStorageFormat::RaBitQ.assignment_payload_format(),
             SpireAssignmentPayloadFormat::RaBitQ
         );
+    }
+
+    #[test]
+    fn source_identity_reloption_parses_provider() {
+        assert_eq!(
+            SpireSourceIdentityProvider::parse_reloption("include").unwrap(),
+            SpireSourceIdentityProvider::Include
+        );
+        assert_eq!(
+            SpireSourceIdentityProvider::Include.reloption_name(),
+            "include"
+        );
+        assert!(SpireSourceIdentityProvider::parse_reloption("uuid").is_err());
     }
 
     #[test]
@@ -1440,6 +1502,7 @@ mod tests {
             }
         );
         assert_eq!(options.storage_format, SpireStorageFormat::Auto);
+        assert_eq!(options.source_identity, SpireSourceIdentityProvider::None);
         assert_eq!(options.nprobe_per_level, None);
         assert_eq!(options.local_store_tablespaces, None);
         assert_eq!(
@@ -1468,6 +1531,7 @@ mod tests {
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::RaBitQ,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: Some("fast_a".to_owned()),
         };
 
@@ -1563,6 +1627,7 @@ mod tests {
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
 
@@ -1634,6 +1699,7 @@ mod tests {
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
         assert!(resolve_single_level_scan_plan_values(1, invalid.clone(), -1, -1).is_err());
@@ -1673,6 +1739,7 @@ mod tests {
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: SpireStorageFormat::Auto,
+            source_identity: SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
         };
 

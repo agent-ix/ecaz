@@ -6,10 +6,11 @@ mod tests {
         build_single_level_leaf_epoch_draft, encode_publish_bundle_for_publish,
         object_manifest_from_placement_writes, object_write_evidence_from_placement_directory,
         placement_write_evidence_from_object_manifest, resolve_training_sample_count,
-        train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple, SpireIndexedVectorKind,
-        SpirePartitionedSingleLevelBuildInput, SpirePublishPlacementWriteEvidence,
-        SpirePublishStage, SpirePublishWritingObjects, SpireRecursiveBuildCoordinatorInput,
-        SpireRecursiveLeafObjectInput, SpireRecursiveRoutingBuildInput,
+        train_single_level_centroid_plan, SpireBuildState, SpireBuildTuple,
+        SpireIndexedTupleLayout, SpireIndexedVectorKind, SpirePartitionedSingleLevelBuildInput,
+        SpirePublishPlacementWriteEvidence, SpirePublishStage, SpirePublishWritingObjects,
+        SpireRecursiveBuildCoordinatorInput, SpireRecursiveLeafObjectInput,
+        SpireRecursiveRoutingBuildInput,
         SpireRecursiveRoutingChildInput, SpireRecursiveRoutingEpochInput,
         SpireRecursiveRoutingEpochObjectInput, SpireRecursiveTopGraphEpochInput,
         SpireSingleLevelBuildInput, SpireSingleLevelCentroidPlan, SpireSingleLevelRouteEntry,
@@ -18,8 +19,8 @@ mod tests {
     };
     use super::{SpirePublishedManifestLocators, SpireSingleLevelBuildDraft};
     use crate::am::ec_spire::assign::{
-        SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
-        SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
+        SpireLeafAssignmentIdentityInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
+        SpirePidAllocator, SpireVecIdSourceIdentity, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::meta::{
         SpireConsistencyMode, SpireEpochState, SpirePublishedEpochSnapshot,
@@ -71,7 +72,15 @@ mod tests {
             top_graph_search_list_size: 0,
             nprobe_per_level: None,
             storage_format: super::options::SpireStorageFormat::TurboQuant,
+            source_identity: super::options::SpireSourceIdentityProvider::None,
             local_store_tablespaces: None,
+        }
+    }
+
+    fn ecvector_local_layout() -> SpireIndexedTupleLayout {
+        SpireIndexedTupleLayout {
+            vector_kind: SpireIndexedVectorKind::Ecvector,
+            source_identity: None,
         }
     }
 
@@ -87,8 +96,19 @@ mod tests {
             heap_tid,
             dimensions: source_vector.len() as u16,
             assignment,
+            vec_id_source_identity: SpireVecIdSourceIdentity::AllocateLocal,
             source_vector,
         }
+    }
+
+    fn local_identity_assignment(
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireLeafAssignmentIdentityInput {
+        SpireLeafAssignmentIdentityInput::allocate_local(assignment_input(
+            block_number,
+            offset_number,
+        ))
     }
 
     fn build_input(assignments: Vec<SpireLeafAssignmentInput>) -> SpireSingleLevelBuildInput {

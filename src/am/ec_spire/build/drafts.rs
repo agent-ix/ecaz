@@ -267,9 +267,9 @@ unsafe fn publish_relation_partitioned_single_level_build(
     leaf_assignments_by_centroid.resize_with(centroid_count, Vec::new);
     let boundary_replica_count = u32::try_from(state.options.boundary_replica_count)
         .map_err(|_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned())?;
-    for placement in build_boundary_leaf_assignment_placements(
+    for placement in build_boundary_leaf_assignment_placements_with_identity(
         &mut local_vec_id_allocator,
-        plan_boundary_assignment_inputs(state, &route_map, boundary_replica_count)?,
+        plan_boundary_assignment_identity_inputs(state, &route_map, boundary_replica_count)?,
     )? {
         let centroid_index = centroid_pids
             .iter()
@@ -332,11 +332,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
     Ok(state.scanned_tuples)
 }
 
-fn plan_boundary_assignment_inputs(
+fn plan_boundary_assignment_identity_inputs(
     state: &SpireBuildState,
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
-) -> Result<Vec<SpireBoundaryLeafAssignmentInput>, String> {
+) -> Result<Vec<SpireBoundaryLeafAssignmentIdentityInput>, String> {
     state
         .tuples
         .iter()
@@ -345,10 +345,13 @@ fn plan_boundary_assignment_inputs(
                 &tuple.source_vector,
                 boundary_replica_count,
             )?;
-            Ok(SpireBoundaryLeafAssignmentInput {
+            Ok(SpireBoundaryLeafAssignmentIdentityInput {
                 primary_pid: plan.primary_pid,
                 replica_pids: plan.replica_pids,
-                assignment: tuple.assignment.clone(),
+                assignment: SpireLeafAssignmentIdentityInput {
+                    assignment: tuple.assignment.clone(),
+                    vec_id_source_identity: tuple.vec_id_source_identity.clone(),
+                },
             })
         })
         .collect()
@@ -380,7 +383,7 @@ unsafe fn publish_relation_recursive_routing_build(
             boundary_replica_count: u32::try_from(state.options.boundary_replica_count).map_err(
                 |_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned(),
             )?,
-            assignments: state.assignment_inputs(),
+            assignments: state.assignment_identity_inputs(),
             source_vectors: state.source_vectors(),
             centroid_plan,
         },
@@ -452,7 +455,7 @@ pub(super) unsafe fn build_spire_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: ItemPointer,
-    indexed_vector_kind: SpireIndexedVectorKind,
+    tuple_layout: SpireIndexedTupleLayout,
     payload_format: SpireAssignmentPayloadFormat,
     context: &str,
 ) -> SpireBuildTuple {
@@ -469,12 +472,76 @@ pub(super) unsafe fn build_spire_index_tuple(
     }
 
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
-    match indexed_vector_kind {
+    let vec_id_source_identity = unsafe {
+        build_source_identity_from_tuple_values(values, isnull, tuple_layout.source_identity, context)
+    };
+    match tuple_layout.vector_kind {
         SpireIndexedVectorKind::Ecvector => {
-            build_spire_ecvector_tuple(heap_tid, &bytes, payload_format, context)
+            build_spire_ecvector_tuple(
+                heap_tid,
+                &bytes,
+                payload_format,
+                vec_id_source_identity,
+                context,
+            )
         }
         SpireIndexedVectorKind::Tqvector => {
-            build_spire_tqvector_tuple(heap_tid, &bytes, payload_format, context)
+            build_spire_tqvector_tuple(
+                heap_tid,
+                &bytes,
+                payload_format,
+                vec_id_source_identity,
+                context,
+            )
         }
     }
+}
+
+unsafe fn build_source_identity_from_tuple_values(
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    source_identity: Option<SpireSourceIdentityAttribute>,
+    context: &str,
+) -> SpireVecIdSourceIdentity {
+    let Some(source_identity) = source_identity else {
+        return SpireVecIdSourceIdentity::AllocateLocal;
+    };
+    let offset = source_identity.index_attr_offset;
+    if unsafe { *isnull.add(offset) } {
+        pgrx::error!("ec_spire {context} source_identity INCLUDE column must not be NULL");
+    }
+    let datum = unsafe { *values.add(offset) };
+    if datum.is_null() {
+        pgrx::error!("ec_spire {context} received a null source_identity datum");
+    }
+
+    let payload = match source_identity.datum_kind {
+        SpireSourceIdentityDatumKind::Uuid => unsafe { uuid_source_identity_payload(datum) },
+        SpireSourceIdentityDatumKind::Bytea16 => unsafe {
+            let bytes = detoasted_varlena_bytes(datum, "source_identity INCLUDE column");
+            <[u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]>::try_from(bytes.as_slice())
+                .unwrap_or_else(|_| {
+                    pgrx::error!(
+                        "ec_spire {context} source_identity bytea payload length {} must be {} bytes",
+                        bytes.len(),
+                        SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES
+                    )
+                })
+        },
+    };
+    SpireVecIdSourceIdentity::stable_fixed_global_payload(payload)
+}
+
+unsafe fn uuid_source_identity_payload(
+    datum: pg_sys::Datum,
+) -> [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES] {
+    let bytes = unsafe {
+        std::slice::from_raw_parts(
+            datum.cast_mut_ptr::<u8>(),
+            SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
+        )
+    };
+    let mut payload = [0_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES];
+    payload.copy_from_slice(bytes);
+    payload
 }

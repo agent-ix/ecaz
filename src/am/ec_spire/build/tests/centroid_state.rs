@@ -95,7 +95,7 @@
 
     #[test]
     fn build_state_collects_assignments_and_training_sample() {
-        let mut state = SpireBuildState::new(options(1), SpireIndexedVectorKind::Ecvector);
+        let mut state = SpireBuildState::new(options(1), ecvector_local_layout());
 
         state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
         state.try_push(build_tuple(2, vec![0.0, 1.0])).unwrap();
@@ -110,7 +110,7 @@
 
     #[test]
     fn build_state_trains_centroid_plan_for_all_collected_rows() {
-        let mut state = SpireBuildState::new(options(1), SpireIndexedVectorKind::Ecvector);
+        let mut state = SpireBuildState::new(options(1), ecvector_local_layout());
         state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
         state.try_push(build_tuple(2, vec![0.0, 1.0])).unwrap();
         state.try_push(build_tuple(3, vec![-1.0, 0.0])).unwrap();
@@ -124,7 +124,7 @@
 
     #[test]
     fn build_state_rejects_invalid_tuple_without_advancing() {
-        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        let mut state = SpireBuildState::new(options(0), ecvector_local_layout());
         state.try_push(build_tuple(1, vec![1.0, 0.0])).unwrap();
         let mut bad = build_tuple(2, vec![0.0, 1.0]);
         bad.dimensions = 3;
@@ -138,7 +138,7 @@
 
     #[test]
     fn build_state_rejects_payload_format_mismatch() {
-        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        let mut state = SpireBuildState::new(options(0), ecvector_local_layout());
         let mut bad = build_tuple(1, vec![1.0, 0.0]);
         bad.assignment.payload_format = SpireAssignmentPayloadFormat::RaBitQ.tag();
 
@@ -150,7 +150,7 @@
 
     #[test]
     fn build_state_rejects_zero_vectors() {
-        let mut state = SpireBuildState::new(options(0), SpireIndexedVectorKind::Ecvector);
+        let mut state = SpireBuildState::new(options(0), ecvector_local_layout());
         let mut bad = build_tuple(1, vec![1.0, 0.0]);
         bad.source_vector = vec![0.0, 0.0];
 

@@ -71,6 +71,13 @@ pub(crate) struct SpireIndexOptionsSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexWriterIdentitySnapshot {
+    pub(crate) source_identity_provider: &'static str,
+    pub(crate) writer_identity_status: &'static str,
+    pub(crate) writer_identity_recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexLevelParameterSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) level: u16,

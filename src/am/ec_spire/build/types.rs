@@ -5,17 +5,37 @@ pub(super) enum SpireIndexedVectorKind {
     Tqvector,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpireSourceIdentityDatumKind {
+    Uuid,
+    Bytea16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireSourceIdentityAttribute {
+    pub(super) index_attr_offset: usize,
+    pub(super) heap_attnum: i32,
+    pub(super) datum_kind: SpireSourceIdentityDatumKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SpireIndexedTupleLayout {
+    pub(super) vector_kind: SpireIndexedVectorKind,
+    pub(super) source_identity: Option<SpireSourceIdentityAttribute>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireBuildTuple {
     pub(super) heap_tid: ItemPointer,
     pub(super) dimensions: u16,
     pub(super) assignment: SpireLeafAssignmentInput,
+    pub(super) vec_id_source_identity: SpireVecIdSourceIdentity,
     pub(super) source_vector: Vec<f32>,
 }
 
 struct SpireBuildState {
     options: options::EcSpireOptions,
-    indexed_vector_kind: SpireIndexedVectorKind,
+    tuple_layout: SpireIndexedTupleLayout,
     scanned_tuples: usize,
     tuples: Vec<SpireBuildTuple>,
     dimensions: Option<u16>,
@@ -116,7 +136,7 @@ pub(super) struct SpireRecursiveBuildCoordinatorInput {
     pub(super) target_fanout: u32,
     pub(super) seed: u64,
     pub(super) boundary_replica_count: u32,
-    pub(super) assignments: Vec<SpireLeafAssignmentInput>,
+    pub(super) assignments: Vec<SpireLeafAssignmentIdentityInput>,
     pub(super) source_vectors: Vec<Vec<f32>>,
     pub(super) centroid_plan: SpireSingleLevelCentroidPlan,
 }

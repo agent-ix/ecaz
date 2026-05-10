@@ -226,7 +226,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
 }
 
 fn build_recursive_leaf_rows_by_pid(
-    assignments: Vec<SpireLeafAssignmentInput>,
+    assignments: Vec<SpireLeafAssignmentIdentityInput>,
     source_vectors: Vec<Vec<f32>>,
     assignment_indexes: &[u32],
     route_map: &SpireSingleLevelRouteMap,
@@ -261,14 +261,16 @@ fn build_recursive_leaf_rows_by_pid(
                 .filter(|pid| *pid != primary_pid)
                 .take(usize::try_from(boundary_replica_count).unwrap_or(usize::MAX))
                 .collect();
-            Ok(SpireBoundaryLeafAssignmentInput {
+            Ok(SpireBoundaryLeafAssignmentIdentityInput {
                 primary_pid,
                 replica_pids,
                 assignment,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    for placement in build_boundary_leaf_assignment_placements(local_vec_id_cursor, boundary_inputs)? {
+    for placement in
+        build_boundary_leaf_assignment_placements_with_identity(local_vec_id_cursor, boundary_inputs)?
+    {
         let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
             format!(
                 "ec_spire recursive boundary assignment resolved unknown leaf pid {}",
