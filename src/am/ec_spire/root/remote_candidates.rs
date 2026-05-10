@@ -2264,6 +2264,13 @@ impl SpireRemoteProductionTransportAdapter {
     fn run_probe_requests(
         requests: Vec<SpireRemoteProductionTransportProbeRequest>,
     ) -> Result<Vec<SpireRemoteProductionTransportProbeRow>, String> {
+        Self::run_probe_requests_with_local_cancel(requests, None)
+    }
+
+    fn run_probe_requests_with_local_cancel(
+        requests: Vec<SpireRemoteProductionTransportProbeRequest>,
+        local_cancel_after_ms: Option<u64>,
+    ) -> Result<Vec<SpireRemoteProductionTransportProbeRow>, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
             .enable_time()
@@ -2275,7 +2282,7 @@ impl SpireRemoteProductionTransportAdapter {
         runtime.block_on(async move {
             let batch_start = std::time::Instant::now();
             let futures = requests.into_iter().map(|request| async move {
-                Self::run_one_probe_request(request, batch_start).await
+                Self::run_one_probe_request(request, batch_start, local_cancel_after_ms).await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -2283,6 +2290,13 @@ impl SpireRemoteProductionTransportAdapter {
 
     fn run_candidate_receive_requests(
         requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+    ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
+        Self::run_candidate_receive_requests_with_local_cancel(requests, None)
+    }
+
+    fn run_candidate_receive_requests_with_local_cancel(
+        requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+        local_cancel_after_ms: Option<u64>,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -2295,7 +2309,12 @@ impl SpireRemoteProductionTransportAdapter {
         runtime.block_on(async move {
             let batch_start = std::time::Instant::now();
             let futures = requests.into_iter().map(|request| async move {
-                Self::run_one_candidate_receive_request(request, batch_start).await
+                Self::run_one_candidate_receive_request(
+                    request,
+                    batch_start,
+                    local_cancel_after_ms,
+                )
+                .await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -2304,6 +2323,7 @@ impl SpireRemoteProductionTransportAdapter {
     async fn run_one_probe_request(
         request: SpireRemoteProductionTransportProbeRequest,
         batch_start: std::time::Instant,
+        local_cancel_after_ms: Option<u64>,
     ) -> SpireRemoteProductionTransportProbeRow {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
@@ -2338,23 +2358,28 @@ impl SpireRemoteProductionTransportAdapter {
             let _ = connection.await;
         });
 
-        let query_result = async {
-            if limits.statement_timeout_ms > 0 {
+        let cancel_token = client.cancel_token();
+        let query_result = Self::run_query_with_optional_local_cancel(
+            cancel_token,
+            async {
+                if limits.statement_timeout_ms > 0 {
+                    client
+                        .batch_execute(&format!(
+                            "SET statement_timeout = {}",
+                            limits.statement_timeout_ms
+                        ))
+                        .await
+                        .map_err(|_| {
+                            SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                        })?;
+                }
                 client
-                    .batch_execute(&format!(
-                        "SET statement_timeout = {}",
-                        limits.statement_timeout_ms
-                    ))
+                    .simple_query(request.sql)
                     .await
-                    .map_err(|_| {
-                        SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
-                    })?;
-            }
-            client
-                .simple_query(request.sql)
-                .await
-                .map_err(|error| production_remote_query_failure_category(&error))
-        }
+                    .map_err(|error| production_remote_query_failure_category(&error))
+            },
+            local_cancel_after_ms,
+        )
         .await;
 
         connection_task.abort();
@@ -2382,6 +2407,7 @@ impl SpireRemoteProductionTransportAdapter {
     async fn run_one_candidate_receive_request(
         request: SpireRemoteProductionCandidateReceiveRequest,
         batch_start: std::time::Instant,
+        local_cancel_after_ms: Option<u64>,
     ) -> SpireRemoteProductionCandidateReceiveResult {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
@@ -2454,50 +2480,55 @@ impl SpireRemoteProductionTransportAdapter {
             let _ = connection.await;
         });
 
-        let result_rows = async {
-            if limits.statement_timeout_ms > 0 {
-                client
-                    .batch_execute(&format!(
-                        "SET statement_timeout = {}",
-                        limits.statement_timeout_ms
-                    ))
+        let cancel_token = client.cancel_token();
+        let result_rows = Self::run_query_with_optional_local_cancel(
+            cancel_token,
+            async {
+                if limits.statement_timeout_ms > 0 {
+                    client
+                        .batch_execute(&format!(
+                            "SET statement_timeout = {}",
+                            limits.statement_timeout_ms
+                        ))
+                        .await
+                        .map_err(|_| {
+                            SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                        })?;
+                }
+                let remote_index_oid = client
+                    .query_one(
+                        "SELECT to_regclass($1)::oid",
+                        &[&request.remote_index_regclass.as_str()],
+                    )
                     .await
-                    .map_err(|_| {
-                        SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
-                    })?;
-            }
-            let remote_index_oid = client
-                .query_one(
-                    "SELECT to_regclass($1)::oid",
-                    &[&request.remote_index_regclass.as_str()],
-                )
-                .await
-                .map_err(|error| {
-                    let category = production_remote_query_failure_category(&error);
-                    if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
-                        SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
-                    } else {
-                        category
-                    }
-                })?
-                .try_get::<_, Option<u32>>(0)
-                .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
-                .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
-            client
-                .query(
-                    SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
-                    &[
-                        &remote_index_oid,
-                        &requested_epoch,
-                        &request.query,
-                        &selected_pids,
-                        &top_k,
-                        &request.consistency_mode,
-                    ],
-                )
-                .await
-                .map_err(|error| production_remote_query_failure_category(&error))
-        }
+                    .map_err(|error| {
+                        let category = production_remote_query_failure_category(&error);
+                        if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
+                            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                        } else {
+                            category
+                        }
+                    })?
+                    .try_get::<_, Option<u32>>(0)
+                    .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                    .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                client
+                    .query(
+                        SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                        &[
+                            &remote_index_oid,
+                            &requested_epoch,
+                            &request.query,
+                            &selected_pids,
+                            &top_k,
+                            &request.consistency_mode,
+                        ],
+                    )
+                    .await
+                    .map_err(|error| production_remote_query_failure_category(&error))
+            },
+            local_cancel_after_ms,
+        )
         .await;
 
         connection_task.abort();
@@ -2556,6 +2587,28 @@ impl SpireRemoteProductionTransportAdapter {
                 selected_pids: request.selected_pids,
                 candidates,
             }),
+        }
+    }
+
+    async fn run_query_with_optional_local_cancel<T, F>(
+        cancel_token: tokio_postgres::CancelToken,
+        query_future: F,
+        local_cancel_after_ms: Option<u64>,
+    ) -> Result<T, &'static str>
+    where
+        F: std::future::Future<Output = Result<T, &'static str>>,
+    {
+        let Some(local_cancel_after_ms) = local_cancel_after_ms else {
+            return query_future.await;
+        };
+        let cancel_delay =
+            tokio::time::sleep(std::time::Duration::from_millis(local_cancel_after_ms));
+        match futures_util::future::select(Box::pin(query_future), Box::pin(cancel_delay)).await {
+            futures_util::future::Either::Left((query_result, _)) => query_result,
+            futures_util::future::Either::Right((_, _query_future)) => {
+                let _ = cancel_token.cancel_query(tokio_postgres::NoTls).await;
+                Err(SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED)
+            }
         }
     }
 }
@@ -2632,11 +2685,35 @@ pub(crate) fn remote_search_production_transport_probe_for_test(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_transport_probe_with_local_cancel_for_test(
+    requests: Vec<SpireRemoteProductionTransportProbeRequest>,
+    local_cancel_after_ms: u64,
+) -> Vec<SpireRemoteProductionTransportProbeRow> {
+    SpireRemoteProductionTransportAdapter::run_probe_requests_with_local_cancel(
+        requests,
+        Some(local_cancel_after_ms),
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn remote_search_production_candidate_receive_for_test(
     requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
 ) -> Vec<SpireRemoteProductionCandidateReceiveResult> {
     SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)
         .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_candidate_receive_with_local_cancel_for_test(
+    requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+    local_cancel_after_ms: u64,
+) -> Vec<SpireRemoteProductionCandidateReceiveResult> {
+    SpireRemoteProductionTransportAdapter::run_candidate_receive_requests_with_local_cancel(
+        requests,
+        Some(local_cancel_after_ms),
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2822,6 +2899,22 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         rows: &[SpireRemoteProductionTransportProbeRow],
     ) -> Result<(), String> {
+        if let Some(cancelled_row) = rows
+            .iter()
+            .find(|row| row.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED)
+        {
+            if !self.dispatches.iter().any(|dispatch| {
+                dispatch.node_id == cancelled_row.node_id
+                    && dispatch.state == SpireRemoteProductionDispatchState::Planned
+            }) {
+                return Err(format!(
+                    "ec_spire production executor transport outcome for node_id {} does not match a planned dispatch",
+                    cancelled_row.node_id
+                ));
+            }
+            self.apply_local_query_cancel();
+            return Ok(());
+        }
         for row in rows {
             let dispatch = self
                 .dispatches
@@ -2845,6 +2938,21 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         results: &[SpireRemoteProductionCandidateReceiveResult],
     ) -> Result<(), String> {
+        if let Some(cancelled_result) = results.iter().find(|result| {
+            result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
+        }) {
+            if !self.dispatches.iter().any(|dispatch| {
+                dispatch.node_id == cancelled_result.node_id
+                    && dispatch.state == SpireRemoteProductionDispatchState::TransportReady
+            }) {
+                return Err(format!(
+                    "ec_spire production executor candidate receive outcome for node_id {} does not match a transport-ready dispatch",
+                    cancelled_result.node_id
+                ));
+            }
+            self.apply_local_query_cancel();
+            return Ok(());
+        }
         for result in results {
             let dispatch = self
                 .dispatches
@@ -7025,6 +7133,60 @@ mod production_executor_state_tests {
             .merge_ready_candidate_batches(Some(1))
             .expect_err("cancelled batches should not merge");
         assert!(error.contains("remote_executor_cancelled"));
+    }
+
+    #[test]
+    fn production_executor_transport_local_cancel_result_cancels_all_dispatches() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&[failed_transport_row(
+                2,
+                SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
+            )])
+            .expect("transport local cancel should apply globally");
+
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(row.cancelled_dispatch_count, 2);
+        assert_eq!(row.first_cancellation_category, "local_query_cancelled");
+        assert_eq!(row.transport_failed_dispatch_count, 0);
+        assert_eq!(row.next_executor_step, "remote_executor_cancellation");
+        assert_eq!(row.status, "remote_executor_cancelled");
+        assert!(executor.dispatches.iter().all(|dispatch| {
+            dispatch.state == SpireRemoteProductionDispatchState::Cancelled
+                && dispatch.candidate_batch.is_none()
+        }));
+    }
+
+    #[test]
+    fn production_executor_receive_local_cancel_result_cancels_all_dispatches() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![failed_candidate_receive_result(
+            2,
+            SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
+        )];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        executor
+            .apply_candidate_receive_results(&receive_results)
+            .expect("receive local cancel should apply globally");
+
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(row.cancelled_dispatch_count, 2);
+        assert_eq!(row.first_cancellation_category, "local_query_cancelled");
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(row.candidate_row_count, 0);
+        assert_eq!(row.next_executor_step, "remote_executor_cancellation");
+        assert_eq!(row.status, "remote_executor_cancelled");
+        assert!(executor.dispatches.iter().all(|dispatch| {
+            dispatch.state == SpireRemoteProductionDispatchState::Cancelled
+                && dispatch.candidate_batch.is_none()
+        }));
     }
 
     #[test]

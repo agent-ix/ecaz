@@ -162,6 +162,15 @@ validated and retained a batch, the transition clears that batch and reports
 Remote statement timeout remains remote-owned and should surface as a remote
 timeout category, distinct from local cancel and local statement timeout.
 
+As of 2026-05-10, the first C2 code slice has a narrow remote-cancel primitive:
+the `tokio-postgres` adapter keeps a cancel token for each in-flight remote
+query, a deterministic test trigger can request remote cancellation, and
+executor state maps `local_query_cancelled` outcomes to global
+`remote_executor_cancelled` dispatch cleanup. The production PostgreSQL
+interrupt bridge is still open; the AM path must still translate actual local
+query cancellation or local statement timeout into that adapter trigger before
+C2 can be marked complete.
+
 Verification:
 
 - PG18/local fixture proving a local cancel releases global and per-node

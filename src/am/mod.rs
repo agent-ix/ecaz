@@ -163,7 +163,9 @@ pub(crate) use self::ec_spire::{
     remote_search_libpq_global_governance_advisory_key_for_test,
     remote_search_libpq_node_governance_advisory_key_for_test,
     remote_search_production_candidate_receive_for_test as spire_remote_search_production_candidate_receive_for_test,
+    remote_search_production_candidate_receive_with_local_cancel_for_test as spire_remote_search_production_candidate_receive_with_local_cancel_for_test,
     remote_search_production_transport_probe_for_test as spire_remote_search_production_transport_probe_for_test,
+    remote_search_production_transport_probe_with_local_cancel_for_test as spire_remote_search_production_transport_probe_with_local_cancel_for_test,
     SpireRemoteProductionCandidateReceiveRequest, SpireRemoteProductionTransportProbeRequest,
 };
 

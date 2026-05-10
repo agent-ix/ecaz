@@ -467,6 +467,12 @@ bundle.
     - [x] Add PG18 fault-taxonomy coverage for remote query cancellation on
       production transport and compact-candidate receive, and remote backend
       termination on compact-candidate receive.
+    - [x] First local-cancel remote-cancel primitive: the async production
+      adapter can request `tokio-postgres` remote query cancellation through a
+      cancel token under a deterministic local-cancel trigger, and executor
+      state maps `local_query_cancelled` outcomes to global
+      `remote_executor_cancelled` instead of ordinary per-node transport or
+      receive failure.
     - [ ] Keep local cancel, local statement timeout, remote statement timeout,
       connect timeout, and remote backend termination as distinct diagnostic
       categories.

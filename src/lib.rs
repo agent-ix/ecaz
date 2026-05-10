@@ -23780,6 +23780,24 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_transport_local_cancel_remote_cancel() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let rows = am::spire_remote_search_production_transport_probe_with_local_cancel_for_test(
+            vec![am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                sql: "SELECT pg_sleep(0.30)",
+            }],
+            25,
+        );
+        let failed = rows.first().expect("local cancel row should exist");
+
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_production_candidate_receive_loopback() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
@@ -24015,6 +24033,90 @@ mod tests {
 
         assert_eq!(failed.status, "remote_candidate_receive_failed");
         assert_eq!(failed.failure_category, "remote_query_cancelled");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_local_cancel_remote_cancel() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_local_cancel_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_local_cancel CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_local_cancel_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_local_cancel_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_local_cancel_remote_idx \
+                     ON ec_spire_candidate_receive_local_cancel_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_local_cancel; \
+                 CREATE FUNCTION ec_spire_candidate_receive_local_cancel.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'aa', 'ready' \
+                     FROM pg_sleep(0.30) \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback local cancel fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_local_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_local_cancel_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let local_cancel_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_local_cancel,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_with_local_cancel_for_test(
+            vec![am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: local_cancel_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_local_cancel_remote_idx"
+                    .to_owned(),
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            }],
+            25,
+        );
+        let failed = rows.first().expect("local cancel row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "local_query_cancelled");
         assert_eq!(failed.candidate_count, 0);
         assert!(failed.batch.is_none());
     }
