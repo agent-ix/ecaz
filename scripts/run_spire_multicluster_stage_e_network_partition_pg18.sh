@@ -238,14 +238,11 @@ run_case() {
 
   local summary
   summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/missing','spire/remote/stage_e/ready']::text[], 0, '$mode')")"
-  local diagnostics
-  diagnostics="$("${coord_psql[@]}" -At -F ',' -c "WITH _ AS (SELECT set_config('ec_spire.remote_search_consistency_mode', '$mode', false)) SELECT consistency_mode, remote_node_count, ready_remote_node_count, blocked_remote_node_count, remote_fanout_count, candidate_batch_count, candidate_row_count, status, next_blocker FROM ec_spire_remote_search_operator_diagnostics('ec_spire_stage_e_coord_idx'::regclass, ARRAY[1.0, 0.0]::real[], 1), _")"
 
   {
     echo "matrix_row=$matrix_row"
     echo "injection_command=EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_MISSING=$EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_MISSING"
     echo "query_command=tests.ec_spire_test_production_transport_probe_summary(..., '$mode')"
-    echo "operator_diagnostic_row=$diagnostics"
     echo "expected_status=$expected_status"
     echo "expected_transport_failed_dispatch_count=$expected_transport_failed"
     echo "expected_degraded_skipped_dispatch_count=$expected_degraded_skipped"
