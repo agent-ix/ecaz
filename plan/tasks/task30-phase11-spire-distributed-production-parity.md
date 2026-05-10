@@ -458,6 +458,10 @@ bundle.
       retained `CandidateReceiveReady` compact batch and reports
       `remote_executor_cancelled` / `local_query_cancelled`, so cancelled
       dispatches cannot enter compact merge or Stage D heap resolution.
+    - [x] First C2 failure-taxonomy slice: async production transport and
+      compact-candidate receive classify remote statement timeout separately
+      from generic remote query failure, with reserved categories for remote
+      query cancellation and remote backend termination.
     - [ ] Keep local cancel, local statement timeout, remote statement timeout,
       connect timeout, and remote backend termination as distinct diagnostic
       categories.

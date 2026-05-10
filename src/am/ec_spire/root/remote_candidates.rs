@@ -75,6 +75,9 @@ const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED: &str = "connect_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED: &str =
     "statement_timeout_setup_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED: &str = "remote_query_failed";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT: &str = "remote_statement_timeout";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED: &str = "remote_query_cancelled";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED: &str = "remote_backend_terminated";
 const SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE: &str = "remote_index_unavailable";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED: &str = "candidate_decode_failed";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
@@ -2350,7 +2353,7 @@ impl SpireRemoteProductionTransportAdapter {
             client
                 .simple_query(request.sql)
                 .await
-                .map_err(|_| SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED)
+                .map_err(|error| production_remote_query_failure_category(&error))
         }
         .await;
 
@@ -2469,7 +2472,14 @@ impl SpireRemoteProductionTransportAdapter {
                     &[&request.remote_index_regclass.as_str()],
                 )
                 .await
-                .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                .map_err(|error| {
+                    let category = production_remote_query_failure_category(&error);
+                    if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
+                        SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                    } else {
+                        category
+                    }
+                })?
                 .try_get::<_, Option<u32>>(0)
                 .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
                 .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
@@ -2486,7 +2496,7 @@ impl SpireRemoteProductionTransportAdapter {
                     ],
                 )
                 .await
-                .map_err(|_| SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED)
+                .map_err(|error| production_remote_query_failure_category(&error))
         }
         .await;
 
@@ -2547,6 +2557,20 @@ impl SpireRemoteProductionTransportAdapter {
                 candidates,
             }),
         }
+    }
+}
+
+fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {
+    let Some(db_error) = error.as_db_error() else {
+        return SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED;
+    };
+    match db_error.code().code() {
+        "57014" if db_error.message().contains("statement timeout") => {
+            SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT
+        }
+        "57014" => SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
+        "57P01" | "57P02" | "57P03" => SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+        _ => SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
     }
 }
 
