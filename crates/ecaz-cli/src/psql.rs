@@ -11,7 +11,7 @@
 //! connection options so commands can target a fixture DB or scratch
 //! cluster without mutating process environment.
 
-use color_eyre::eyre::{Context, Result};
+use color_eyre::eyre::{eyre, Context, Result};
 use tokio_postgres::{Client, Config, NoTls};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +101,91 @@ pub async fn connect<T: ConnectTarget>(target: T) -> Result<Client> {
     });
 
     Ok(client)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionSetting {
+    pub name: String,
+    pub value: String,
+}
+
+impl SessionSetting {
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Result<Self> {
+        let name = name.into();
+        validate_session_guc_name(&name)?;
+        let value = value.into();
+        validate_session_guc_value(&value)?;
+        Ok(Self { name, value })
+    }
+}
+
+pub fn parse_session_setting(raw: &str) -> Result<SessionSetting> {
+    let (name, value) = raw
+        .split_once('=')
+        .ok_or_else(|| eyre!("session setting must have NAME=VALUE shape, got {raw:?}"))?;
+    SessionSetting::new(name.trim(), value.trim())
+}
+
+pub fn session_setting_from_sweep(name: &str, value: i32) -> Result<SessionSetting> {
+    SessionSetting::new(name, value.to_string())
+}
+
+pub fn validate_session_guc_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(eyre!("session GUC name must not be empty"));
+    }
+    for part in name.split('.') {
+        if part.is_empty() {
+            return Err(eyre!(
+                "invalid session GUC name {name:?}: empty identifier part"
+            ));
+        }
+        let mut chars = part.chars();
+        let Some(first) = chars.next() else {
+            return Err(eyre!("invalid session GUC name {name:?}"));
+        };
+        if !(first == '_' || first.is_ascii_alphabetic()) {
+            return Err(eyre!(
+                "invalid session GUC name {name:?}: identifier parts must start with a letter or underscore"
+            ));
+        }
+        if !chars.all(|c| c == '_' || c.is_ascii_alphanumeric()) {
+            return Err(eyre!(
+                "invalid session GUC name {name:?}: only letters, numbers, underscore, and dot are allowed"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_session_guc_value(value: &str) -> Result<()> {
+    if value.is_empty() {
+        return Err(eyre!("session GUC value must not be empty"));
+    }
+    if value
+        .chars()
+        .any(|c| c == '\0' || c == '\n' || c == '\r' || c == ';')
+    {
+        return Err(eyre!(
+            "session GUC value {value:?} contains a disallowed control or statement separator"
+        ));
+    }
+    Ok(())
+}
+
+pub fn build_set_session_guc_sql(setting: &SessionSetting) -> String {
+    let escaped_value = setting.value.replace('\'', "''");
+    format!("SET {} = '{}'", setting.name, escaped_value)
+}
+
+pub async fn apply_session_settings(client: &Client, settings: &[SessionSetting]) -> Result<()> {
+    for setting in settings {
+        client
+            .batch_execute(&build_set_session_guc_sql(setting))
+            .await
+            .wrap_err_with(|| format!("setting session GUC {}", setting.name))?;
+    }
+    Ok(())
 }
 
 fn encode_relkind(relkind: char) -> Result<i8> {
@@ -251,6 +336,29 @@ mod tests {
     fn relkind_rejects_non_ascii_catalog_codes() {
         let err = encode_relkind('λ').unwrap_err().to_string();
         assert!(err.contains("must be an ASCII catalog code"), "got: {err}");
+    }
+
+    #[test]
+    fn parses_safe_session_settings() {
+        let setting = parse_session_setting("ec_diskann.prefilter_kind=grouped_pq").unwrap();
+        assert_eq!(
+            setting,
+            SessionSetting {
+                name: "ec_diskann.prefilter_kind".into(),
+                value: "grouped_pq".into(),
+            }
+        );
+        assert_eq!(
+            build_set_session_guc_sql(&setting),
+            "SET ec_diskann.prefilter_kind = 'grouped_pq'"
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_session_settings() {
+        assert!(parse_session_setting("ec_diskann.prefilter_kind").is_err());
+        assert!(parse_session_setting("bad-name=value").is_err());
+        assert!(parse_session_setting("ec_diskann.prefilter_kind=grouped_pq;RESET ALL").is_err());
     }
 
     #[test]

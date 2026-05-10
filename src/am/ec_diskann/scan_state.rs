@@ -51,7 +51,10 @@ impl DiskannScanOpaque {
             rescan_called: false,
             top_k: reloption_usize(options.top_k, "top_k")?,
             list_size: reloption_usize(scan_tuning.effective_list_size, "list_size")?,
-            rerank_budget: reloption_usize(options.rerank_budget, "rerank_budget")?,
+            rerank_budget: reloption_usize(
+                super::options::resolve_rerank_budget(&options),
+                "rerank_budget",
+            )?,
         })
     }
 

@@ -16,6 +16,8 @@ const ECDISKANN_SESSION_LIST_SIZE_UNSET: i32 = -1;
 
 static ECDISKANN_LIST_SIZE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
+static ECDISKANN_RERANK_BUDGET_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
 static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
     GucSetting::<PrefilterKind>::new(PrefilterKind::Auto);
 
@@ -119,6 +121,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_diskann.rerank_budget",
+        c"Session override for ec_diskann exact rerank budget.",
+        c"Overrides ec_diskann index rerank_budget reloptions when set to 1-10000; -1 uses the relation value.",
+        &ECDISKANN_RERANK_BUDGET_GUC,
+        ECDISKANN_SESSION_LIST_SIZE_UNSET,
+        ECDISKANN_MAX_RERANK_BUDGET,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_enum_guc(
         c"ec_diskann.prefilter_kind",
         c"Session override for ec_diskann traversal prefilter.",
@@ -133,12 +145,25 @@ pub(super) fn current_session_list_size() -> i32 {
     ECDISKANN_LIST_SIZE_GUC.get()
 }
 
+pub(super) fn current_session_rerank_budget() -> i32 {
+    ECDISKANN_RERANK_BUDGET_GUC.get()
+}
+
 pub(super) fn current_prefilter_kind() -> PrefilterKind {
     ECDISKANN_PREFILTER_KIND_GUC.get()
 }
 
 pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {
     resolve_scan_tuning_values(options.list_size, current_session_list_size())
+}
+
+pub(super) fn resolve_rerank_budget(options: &TqDiskannOptions) -> i32 {
+    let session_rerank_budget = current_session_rerank_budget();
+    if session_rerank_budget == ECDISKANN_SESSION_LIST_SIZE_UNSET {
+        options.rerank_budget
+    } else {
+        session_rerank_budget
+    }
 }
 
 fn resolve_scan_tuning_values(relation_list_size: i32, session_list_size: i32) -> ScanTuning {

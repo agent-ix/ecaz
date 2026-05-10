@@ -79,6 +79,12 @@ pub struct PgvectorArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
+    /// Extra ecaz session GUC to set before the sweep, in NAME=VALUE form.
+    #[arg(long = "set-guc")]
+    pub set_gucs: Vec<String>,
+    /// Ecaz session GUC whose value should be set to each sweep point.
+    #[arg(long = "set-guc-from-sweep")]
+    pub set_gucs_from_sweep: Vec<String>,
     /// Cap the query set (default: all rows).
     #[arg(long)]
     pub queries_limit: Option<usize>,
@@ -150,6 +156,14 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to set", profile.name))?;
     validate_rerank_width_arg(profile, args.rerank_width)?;
+    let set_gucs = args
+        .set_gucs
+        .iter()
+        .map(|raw| psql::parse_session_setting(raw))
+        .collect::<Result<Vec<_>>>()?;
+    for name in &args.set_gucs_from_sweep {
+        psql::validate_session_guc_name(name)?;
+    }
     let ecaz_sweep_values = if args.sweep.is_empty() {
         vec![args.ecaz_sweep]
     } else {
@@ -232,6 +246,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let gt = brute_force_top_k(&corpus, &queries, args.k);
     crate::ecaz_eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
     psql::prefer_ordered_ann_path(&client).await?;
+    psql::apply_session_settings(&client, &set_gucs).await?;
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
     let ecaz_sql = build_knn_sql(profile, &corpus_table);
     let pgv_sql = build_pgvector_knn_sql(&sidecar_table, dim);
@@ -249,6 +264,12 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
                 .await
                 .wrap_err_with(|| format!("SET ec_ivf.rerank_width = {rerank_width}"))?;
         }
+        let sweep_settings = args
+            .set_gucs_from_sweep
+            .iter()
+            .map(|name| psql::session_setting_from_sweep(name, ecaz_value))
+            .collect::<Result<Vec<_>>>()?;
+        psql::apply_session_settings(&client, &sweep_settings).await?;
         let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
             &client,
             &ecaz_label,

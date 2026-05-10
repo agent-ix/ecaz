@@ -14,7 +14,7 @@ use std::process::ExitStatus;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
-use crate::psql::ConnectionOptions;
+use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
 pub struct SuiteArgs {
@@ -279,6 +279,10 @@ struct RecallStep {
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
+    set_gucs: Vec<String>,
+    #[serde(default)]
+    set_gucs_from_sweep: Vec<String>,
+    #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
     profile: Option<String>,
@@ -311,6 +315,10 @@ struct LatencyStep {
     iterations: Option<usize>,
     #[serde(default)]
     rerank_width: Option<i32>,
+    #[serde(default)]
+    set_gucs: Vec<String>,
+    #[serde(default)]
+    set_gucs_from_sweep: Vec<String>,
     #[serde(default)]
     profile: Option<String>,
     #[serde(default)]
@@ -394,6 +402,10 @@ struct ComparePgvectorStep {
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
+    set_gucs: Vec<String>,
+    #[serde(default)]
+    set_gucs_from_sweep: Vec<String>,
+    #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
     rebuild: bool,
@@ -425,6 +437,10 @@ struct CompareVectorscaleStep {
     vectorscale_storage_layout: Option<String>,
     #[serde(default)]
     vectorscale_query_rescore: Option<i32>,
+    #[serde(default)]
+    set_gucs: Vec<String>,
+    #[serde(default)]
+    set_gucs_from_sweep: Vec<String>,
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
@@ -1137,10 +1153,7 @@ fn parse_compare_summary_rows(raw: &str) -> Vec<(String, BTreeMap<String, String
         if let Some((name, seconds)) = parse_compare_timed_line(line, "built ") {
             rows.push((
                 "compare_build".into(),
-                BTreeMap::from([
-                    ("subject".into(), name),
-                    ("seconds".into(), seconds),
-                ]),
+                BTreeMap::from([("subject".into(), name), ("seconds".into(), seconds)]),
             ));
         } else if let Some((name, bytes)) = parse_compare_size_line(line) {
             rows.push((
@@ -1450,25 +1463,21 @@ impl SuiteStep {
                 )
             }
             SuiteStep::Load(step)
-                if step.chunked
-                    && (step.corpus_file.is_some() || step.queries_file.is_some()) =>
+                if step.chunked && (step.corpus_file.is_some() || step.queries_file.is_some()) =>
             {
                 bail!(
                     "load step {:?} cannot mix chunked manifest loading with corpus/queries files",
                     step.name
                 )
             }
-            SuiteStep::Load(step)
-                if step.chunked && step.manifest_file.is_none() =>
-            {
+            SuiteStep::Load(step) if step.chunked && step.manifest_file.is_none() => {
                 bail!(
                     "load step {:?} requires manifest_file when chunked=true",
                     step.name
                 )
             }
             SuiteStep::Load(step)
-                if !step.chunked
-                    && (step.corpus_file.is_none() || step.queries_file.is_none()) =>
+                if !step.chunked && (step.corpus_file.is_none() || step.queries_file.is_none()) =>
             {
                 bail!(
                     "load step {:?} requires corpus_file and queries_file unless chunked=true",
@@ -1514,6 +1523,26 @@ impl SuiteStep {
             SuiteStep::Raw(step) if step.args.is_empty() => {
                 bail!("raw step {:?} must include args", step.name)
             }
+            SuiteStep::Recall(step) => validate_session_setting_config(
+                &step.name,
+                &step.set_gucs,
+                &step.set_gucs_from_sweep,
+            ),
+            SuiteStep::Latency(step) => validate_session_setting_config(
+                &step.name,
+                &step.set_gucs,
+                &step.set_gucs_from_sweep,
+            ),
+            SuiteStep::ComparePgvector(step) => validate_session_setting_config(
+                &step.name,
+                &step.set_gucs,
+                &step.set_gucs_from_sweep,
+            ),
+            SuiteStep::CompareVectorscale(step) => validate_session_setting_config(
+                &step.name,
+                &step.set_gucs,
+                &step.set_gucs_from_sweep,
+            ),
             _ => Ok(()),
         }
     }
@@ -1545,7 +1574,8 @@ impl SuiteStep {
                 } else {
                     vec![
                         step.output_dir.join(format!("{}_corpus.tsv", step.profile)),
-                        step.output_dir.join(format!("{}_queries.tsv", step.profile)),
+                        step.output_dir
+                            .join(format!("{}_queries.tsv", step.profile)),
                         manifest,
                     ]
                 }
@@ -1599,7 +1629,10 @@ impl SuiteStep {
                     paths.push(step.output_dir.join(format!("{}_queries", step.profile)));
                 } else {
                     paths.push(step.output_dir.join(format!("{}_corpus.tsv", step.profile)));
-                    paths.push(step.output_dir.join(format!("{}_queries.tsv", step.profile)));
+                    paths.push(
+                        step.output_dir
+                            .join(format!("{}_queries.tsv", step.profile)),
+                    );
                 }
                 paths
             }
@@ -1679,16 +1712,28 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
         push_arg(&mut args, "--m", &join_i32(&step.m));
     }
     if let Some(ef_construction) = step.ef_construction {
-        push_arg(
-            &mut args,
-            "--ef-construction",
-            &ef_construction.to_string(),
-        );
+        push_arg(&mut args, "--ef-construction", &ef_construction.to_string());
     }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
     }
     args
+}
+
+fn validate_session_setting_config(
+    step_name: &str,
+    set_gucs: &[String],
+    set_gucs_from_sweep: &[String],
+) -> Result<()> {
+    for raw in set_gucs {
+        psql::parse_session_setting(raw)
+            .wrap_err_with(|| format!("invalid set_gucs entry in step {step_name:?}"))?;
+    }
+    for name in set_gucs_from_sweep {
+        psql::validate_session_guc_name(name)
+            .wrap_err_with(|| format!("invalid set_gucs_from_sweep entry in step {step_name:?}"))?;
+    }
+    Ok(())
 }
 
 fn expand_corpus_fetch(step: &CorpusFetchStep) -> Vec<String> {
@@ -1740,6 +1785,8 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    push_repeated_arg(&mut args, "--set-guc", &step.set_gucs);
+    push_repeated_arg(&mut args, "--set-guc-from-sweep", &step.set_gucs_from_sweep);
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -1789,6 +1836,8 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    push_repeated_arg(&mut args, "--set-guc", &step.set_gucs);
+    push_repeated_arg(&mut args, "--set-guc-from-sweep", &step.set_gucs_from_sweep);
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
     if step.force_index.or(defaults.force_index).unwrap_or(false) {
@@ -1901,6 +1950,8 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    push_repeated_arg(&mut args, "--set-guc", &step.set_gucs);
+    push_repeated_arg(&mut args, "--set-guc-from-sweep", &step.set_gucs_from_sweep);
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -1944,18 +1995,10 @@ fn expand_compare_vectorscale(
         );
     }
     if let Some(max_alpha) = step.vectorscale_max_alpha {
-        push_arg(
-            &mut args,
-            "--vectorscale-max-alpha",
-            &max_alpha.to_string(),
-        );
+        push_arg(&mut args, "--vectorscale-max-alpha", &max_alpha.to_string());
     }
     if let Some(storage_layout) = step.vectorscale_storage_layout.as_deref() {
-        push_arg(
-            &mut args,
-            "--vectorscale-storage-layout",
-            storage_layout,
-        );
+        push_arg(&mut args, "--vectorscale-storage-layout", storage_layout);
     }
     if let Some(query_rescore) = step.vectorscale_query_rescore {
         push_arg(
@@ -1964,6 +2007,8 @@ fn expand_compare_vectorscale(
             &query_rescore.to_string(),
         );
     }
+    push_repeated_arg(&mut args, "--set-guc", &step.set_gucs);
+    push_repeated_arg(&mut args, "--set-guc-from-sweep", &step.set_gucs_from_sweep);
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -2056,6 +2101,12 @@ fn join_i32(values: &[i32]) -> String {
 fn push_arg(args: &mut Vec<String>, flag: &str, value: &str) {
     args.push(flag.into());
     args.push(value.into());
+}
+
+fn push_repeated_arg(args: &mut Vec<String>, flag: &str, values: &[String]) {
+    for value in values {
+        push_arg(args, flag, value);
+    }
 }
 
 fn push_arg_path(args: &mut Vec<String>, flag: &str, value: &Path) {
@@ -2275,6 +2326,8 @@ mod tests {
             k: 10,
             sweep: vec![48, 96],
             rerank_width: Some(500),
+            set_gucs: vec!["ec_diskann.prefilter_kind=grouped_pq".into()],
+            set_gucs_from_sweep: vec!["ec_diskann.rerank_budget".into()],
             queries_limit: None,
             profile: None,
             bits: None,
@@ -2289,6 +2342,12 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "100"]));
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--set-guc", "ec_diskann.prefilter_kind=grouped_pq"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--set-guc-from-sweep", "ec_diskann.rerank_budget"]));
     }
 
     #[test]
@@ -2319,7 +2378,9 @@ mod tests {
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
-        assert!(args.windows(2).any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
     }
@@ -2371,6 +2432,8 @@ mod tests {
             k: 10,
             sweep: vec![48],
             rerank_width: None,
+            set_gucs: Vec::new(),
+            set_gucs_from_sweep: Vec::new(),
             queries_limit: None,
             profile: None,
             bits: None,

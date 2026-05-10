@@ -58,6 +58,12 @@ pub struct LatencyArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
+    /// Extra session GUC to set before the sweep, in NAME=VALUE form.
+    #[arg(long = "set-guc")]
+    pub set_gucs: Vec<String>,
+    /// Session GUC whose value should be set to each sweep point.
+    #[arg(long = "set-guc-from-sweep")]
+    pub set_gucs_from_sweep: Vec<String>,
     /// Quantization bits used when encoding query vectors (must match loader).
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -114,6 +120,14 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         args.sweep.clone()
     };
     validate_rerank_width_arg(profile, args.rerank_width)?;
+    let set_gucs = args
+        .set_gucs
+        .iter()
+        .map(|raw| psql::parse_session_setting(raw))
+        .collect::<Result<Vec<_>>>()?;
+    for name in &args.set_gucs_from_sweep {
+        psql::validate_session_guc_name(name)?;
+    }
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -173,6 +187,8 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
+            set_gucs.clone(),
+            args.set_gucs_from_sweep.clone(),
             args.bits,
             args.seed,
             args.k,
@@ -229,6 +245,8 @@ async fn run_sweep_point(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
+    set_gucs: Vec<psql::SessionSetting>,
+    set_gucs_from_sweep: Vec<String>,
     bits: i32,
     seed: i64,
     k: usize,
@@ -246,6 +264,10 @@ async fn run_sweep_point(
     bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
+    let sweep_settings = set_gucs_from_sweep
+        .iter()
+        .map(|name| psql::session_setting_from_sweep(name, value))
+        .collect::<Result<Vec<_>>>()?;
 
     let counter = Arc::new(AtomicUsize::new(0));
     let mut handles = Vec::with_capacity(concurrency);
@@ -256,6 +278,8 @@ async fn run_sweep_point(
         let queries = Arc::clone(&queries);
         let counter = Arc::clone(&counter);
         let bar = Arc::clone(&bar);
+        let set_gucs = set_gucs.clone();
+        let sweep_settings = sweep_settings.clone();
         handles.push(tokio::spawn(async move {
             worker(
                 conn,
@@ -268,6 +292,8 @@ async fn run_sweep_point(
                 encode_scan_query,
                 force_index,
                 rerank_width,
+                set_gucs,
+                sweep_settings,
                 bits,
                 seed,
                 k,
@@ -305,6 +331,8 @@ async fn worker(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
+    set_gucs: Vec<psql::SessionSetting>,
+    sweep_settings: Vec<psql::SessionSetting>,
     bits: i32,
     seed: i64,
     k: usize,
@@ -315,6 +343,7 @@ async fn worker(
     // Each worker needs its own connection so the session-local GUC sticks.
     let client = psql::connect(&conn).await?;
     psql::prefer_ordered_ann_path(&client).await?;
+    psql::apply_session_settings(&client, &set_gucs).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
@@ -323,6 +352,7 @@ async fn worker(
             .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
             .await?;
     }
+    psql::apply_session_settings(&client, &sweep_settings).await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }

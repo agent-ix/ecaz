@@ -7,8 +7,8 @@ Usage:
   scripts/run_benchmark_profile.sh <tier> [--dry-run] [ecaz connection args...]
 
 Tiers:
-  small     real10k cross-engine + IVF 25k
-  standard  real10k cross-engine + HNSW 100k + IVF 100k
+  small     real10k cross-engine + DiskANN prefilter + IVF 25k
+  standard  real10k cross-engine + DiskANN prefilter + HNSW 100k + IVF 100k
   full      standard + IVF 25k + IVF 50k checkpoints
   scale     full + IVF 1m fetch/prepare/load lane
 
@@ -38,12 +38,14 @@ case "$tier" in
   small)
     suites=(
       "crates/ecaz-cli/suites/profile-cross-engine-real10k.json"
+      "crates/ecaz-cli/suites/profile-diskann-prefilter-real10k.json"
       "crates/ecaz-cli/suites/profile-ivf-25k.json"
     )
     ;;
   standard)
     suites=(
       "crates/ecaz-cli/suites/profile-cross-engine-real10k.json"
+      "crates/ecaz-cli/suites/profile-diskann-prefilter-real10k.json"
       "crates/ecaz-cli/suites/profile-hnsw-100k.json"
       "crates/ecaz-cli/suites/profile-ivf-100k.json"
     )
@@ -51,6 +53,7 @@ case "$tier" in
   full)
     suites=(
       "crates/ecaz-cli/suites/profile-cross-engine-real10k.json"
+      "crates/ecaz-cli/suites/profile-diskann-prefilter-real10k.json"
       "crates/ecaz-cli/suites/profile-hnsw-100k.json"
       "crates/ecaz-cli/suites/profile-ivf-25k.json"
       "crates/ecaz-cli/suites/profile-ivf-50k.json"
@@ -60,6 +63,7 @@ case "$tier" in
   scale)
     suites=(
       "crates/ecaz-cli/suites/profile-cross-engine-real10k.json"
+      "crates/ecaz-cli/suites/profile-diskann-prefilter-real10k.json"
       "crates/ecaz-cli/suites/profile-hnsw-100k.json"
       "crates/ecaz-cli/suites/profile-ivf-25k.json"
       "crates/ecaz-cli/suites/profile-ivf-50k.json"
