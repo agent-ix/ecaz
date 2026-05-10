@@ -23728,14 +23728,6 @@ mod tests {
                      WITH (nlists = 2, storage_format = 'rabitq')",
             )
             .expect("loopback candidate receive fixture should be created");
-        let remote_index_oid = loopback_client
-            .query_one(
-                "SELECT 'ec_spire_production_candidate_receive_remote_idx'::regclass::oid",
-                &[],
-            )
-            .expect("remote index oid query should succeed")
-            .try_get::<_, u32>(0)
-            .expect("remote index oid should decode");
         let active_epoch = loopback_client
             .query_one(
                 "SELECT active_epoch FROM \
@@ -23761,7 +23753,8 @@ mod tests {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
                 conninfo: loopback_conninfo,
-                remote_index_oid,
+                remote_index_regclass: "ec_spire_production_candidate_receive_remote_idx"
+                    .to_owned(),
                 requested_epoch,
                 query: vec![1.0, 0.0],
                 selected_pids: vec![selected_pid],
@@ -23852,14 +23845,6 @@ mod tests {
                 extension_version = env!("CARGO_PKG_VERSION")
             ))
             .expect("loopback multi-node candidate receive fixture should be created");
-        let remote_index_oid = loopback_client
-            .query_one(
-                "SELECT 'ec_spire_production_candidate_receive_ready_idx'::regclass::oid",
-                &[],
-            )
-            .expect("ready remote index oid query should succeed")
-            .try_get::<_, u32>(0)
-            .expect("ready remote index oid should decode");
         let active_epoch = loopback_client
             .query_one(
                 "SELECT active_epoch FROM \
@@ -23889,70 +23874,95 @@ mod tests {
 
         let request = |node_id: u32,
                        conninfo: String,
-                       remote_index_oid: u32,
+                       remote_index_regclass: &str,
                        requested_epoch: u64,
-                       selected_pids: Vec<u64>| {
+                       query: Vec<f32>,
+                       selected_pids: Vec<u64>,
+                       consistency_mode: &'static str| {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id,
                 conninfo,
-                remote_index_oid,
+                remote_index_regclass: remote_index_regclass.to_owned(),
                 requested_epoch,
-                query: vec![1.0, 0.0],
+                query,
                 selected_pids,
                 top_k: 1,
-                consistency_mode: "strict",
+                consistency_mode,
             }
         };
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             request(
                 2,
                 loopback_conninfo.clone(),
-                remote_index_oid,
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![selected_pid],
+                "strict",
             ),
             request(
                 3,
                 loopback_conninfo.clone(),
-                remote_index_oid,
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![u64::MAX],
+                "strict",
             ),
             request(
                 4,
                 "port=not-a-number dbname=postgres".to_owned(),
-                remote_index_oid,
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![selected_pid],
+                "strict",
             ),
             request(
                 5,
                 "host=/tmp/ecaz_missing_pg_socket_30729 port=6543 dbname=postgres user=postgres connect_timeout=1"
                     .to_owned(),
-                remote_index_oid,
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![selected_pid],
+                "strict",
             ),
             request(
                 6,
                 loopback_conninfo.clone(),
-                0,
+                "ec_spire_missing_candidate_receive_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![selected_pid],
+                "strict",
             ),
             request(
                 7,
-                decode_fail_conninfo,
-                remote_index_oid,
+                loopback_conninfo.clone(),
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0, 0.0],
                 vec![selected_pid],
+                "strict",
             ),
             request(
                 8,
-                validation_fail_conninfo,
-                remote_index_oid,
+                decode_fail_conninfo,
+                "ec_spire_production_candidate_receive_ready_idx",
                 requested_epoch,
+                vec![1.0, 0.0],
                 vec![selected_pid],
+                "strict",
+            ),
+            request(
+                9,
+                validation_fail_conninfo,
+                "ec_spire_production_candidate_receive_ready_idx",
+                requested_epoch,
+                vec![1.0, 0.0],
+                vec![selected_pid],
+                "strict",
             ),
         ]);
         let ready = rows
@@ -23964,12 +23974,13 @@ mod tests {
             (3, "candidate_invalid_parameters"),
             (4, "conninfo_parse_failed"),
             (5, "connect_failed"),
-            (6, "remote_query_failed"),
-            (7, "candidate_decode_failed"),
-            (8, "candidate_batch_validation_failed"),
+            (6, "remote_index_unavailable"),
+            (7, "remote_query_failed"),
+            (8, "candidate_decode_failed"),
+            (9, "candidate_batch_validation_failed"),
         ];
 
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 8);
         assert_eq!(ready.status, "ready");
         assert_eq!(ready.failure_category, "none");
         assert_eq!(ready.candidate_count, 1);

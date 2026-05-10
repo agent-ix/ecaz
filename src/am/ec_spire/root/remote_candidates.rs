@@ -74,6 +74,7 @@ const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED: &str = "connect_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED: &str =
     "statement_timeout_setup_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED: &str = "remote_query_failed";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE: &str = "remote_index_unavailable";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED: &str = "candidate_decode_failed";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
     "candidate_batch_validation_failed";
@@ -2231,7 +2232,7 @@ pub(crate) struct SpireRemoteProductionTransportProbeRequest {
 pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) node_id: u32,
     pub(crate) conninfo: String,
-    pub(crate) remote_index_oid: u32,
+    pub(crate) remote_index_regclass: String,
     pub(crate) requested_epoch: u64,
     pub(crate) query: Vec<f32>,
     pub(crate) selected_pids: Vec<u64>,
@@ -2459,11 +2460,21 @@ impl SpireRemoteProductionTransportAdapter {
                         SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
                     })?;
             }
+            let remote_index_oid = client
+                .query_one(
+                    "SELECT to_regclass($1)::oid",
+                    &[&request.remote_index_regclass.as_str()],
+                )
+                .await
+                .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                .try_get::<_, Option<u32>>(0)
+                .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
             client
                 .query(
                     SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
                     &[
-                        &request.remote_index_oid,
+                        &remote_index_oid,
                         &requested_epoch,
                         &request.query,
                         &selected_pids,

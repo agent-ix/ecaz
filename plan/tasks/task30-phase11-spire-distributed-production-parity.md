@@ -395,6 +395,9 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     `CandidateReceiveReady` handoff contract into Stage D heap resolution.
   - [x] Store ready compact-candidate batches inside production executor state
     and merge only `CandidateReceiveReady` batches for the Stage D handoff.
+  - [x] Resolve remote index regclass on the remote connection in the
+    production candidate-receive adapter instead of requiring coordinator-local
+    remote OIDs.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.
