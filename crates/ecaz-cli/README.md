@@ -113,6 +113,8 @@ ecaz
 │   │   ├── restart               # restart pgrx with runtime env knobs
 │   │   ├── sql                   # run psql against a pgrx scratch cluster
 │   │   └── refresh-debug-helpers # install ADR-030 debug SQL wrappers
+│   ├── spire-multicluster
+│   │   └── transport-overlap-pg18 # one-coordinator/two-remote PG18 fixture
 │   ├── sql         # version-aware pgrx SQL runner with packet-local logging
 │   └── test
 │       ├── pgrx                # run cargo pgrx test

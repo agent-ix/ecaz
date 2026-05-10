@@ -180,4 +180,26 @@ mod tests {
         .expect("cli parses");
         assert_eq!(cli.database, "postgres");
     }
+
+    #[test]
+    fn cli_parses_spire_multicluster_transport_overlap_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "transport-overlap-pg18",
+            "--artifact-dir",
+            "review/30776-spire-cli-multicluster-transport/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
 }

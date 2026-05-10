@@ -783,6 +783,12 @@ Goal: prove distributed correctness locally before AWS.
     `scripts/run_spire_multicluster_transport_overlap_pg18.sh` starts one
     coordinator and two remote PG18 clusters. The `ecaz` operator command and
     the full epoch/lifecycle/fault fixture remain open.
+  - [x] Packet `30776` adds
+    `ecaz dev spire-multicluster transport-overlap-pg18`, a CLI-owned wrapper
+    for the one-coordinator/two-remote PG18 transport-overlap fixture with
+    pgrx install discovery, packet-local artifact/log arguments, explicit port
+    overrides, and setup/teardown delegated to the reviewed fixture script.
+    The full epoch/lifecycle/fault fixture remains open.
 - [ ] Publish remote placement readiness and replica manifest freshness
   diagnostics.
   - [x] Packet `30771` adds the packet-friendly operator diagnostic rollup for

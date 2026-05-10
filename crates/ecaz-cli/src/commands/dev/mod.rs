@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 
 mod install;
 mod scratch;
+mod spire_multicluster;
 mod sql;
 mod support;
 mod test;
@@ -24,6 +25,11 @@ pub enum DevCommand {
         #[command(subcommand)]
         command: scratch::ScratchCommand,
     },
+    /// SPIRE local multi-cluster fixture helpers.
+    SpireMulticluster {
+        #[command(subcommand)]
+        command: spire_multicluster::SpireMulticlusterCommand,
+    },
     /// Run SQL against a local pgrx PostgreSQL install.
     Sql(sql::SqlArgs),
     /// Validation/test entry points.
@@ -38,6 +44,7 @@ impl DevCommand {
         match self {
             DevCommand::Install { command } => command.run(database).await,
             DevCommand::Scratch { command } => command.run(database).await,
+            DevCommand::SpireMulticluster { command } => command.run(database).await,
             DevCommand::Sql(args) => sql::run(database, args).await,
             DevCommand::Test { command } => command.run(database).await,
         }
