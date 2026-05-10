@@ -261,6 +261,12 @@ Acceptance artifact:
 - [ ] Add replica manifest freshness diagnostics: identify which remote node is
   serving each boundary replica, whether its manifest is current, and how
   degraded mode reports stale or missing replica placement.
+  - [x] Packet `30774` adds
+    `ec_spire_remote_epoch_manifest_freshness()`, a per-remote-node assertion
+    surface that composes the current manifest plan, persisted manifest entry,
+    catalog summary, and publication action into `freshness_status` and
+    `next_action`. This covers node-level current-vs-persisted freshness for
+    Stage E evidence. Per-boundary-replica fixture evidence remains open.
 - [ ] Add a fault matrix for connection reset mid-batch, remote backend
   termination, remote statement timeout, local statement timeout/cancel,
   simulated network partition, version skew, and remote OOM. Each case must
@@ -776,6 +782,9 @@ Goal: prove distributed correctness locally before AWS.
     readiness, served epoch range, fanout, candidate batches, heap resolution,
     merge, and AM delivery status. Explicit replica manifest freshness fixture
     evidence remains open with the broader Stage E lifecycle work.
+  - [x] Packet `30774` adds node-level manifest freshness diagnostics through
+    `ec_spire_remote_epoch_manifest_freshness()`. Boundary-replica fixture
+    evidence and local multi-instance logs remain open.
 - [x] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX
   CONCURRENTLY while fanout is planned or in flight.
   - [x] Packet `30772` adds the SQL-visible Stage E lifecycle matrix for

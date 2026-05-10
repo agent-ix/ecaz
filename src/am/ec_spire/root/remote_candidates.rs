@@ -413,6 +413,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "lifecycle_case,strict_action,degraded_action,required_detection,next_executor_step",
             next_action: "implement_drop_reindex_create_concurrently_fixture_against_each_named_case",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 25,
+            entrypoint_name: "ec_spire_remote_epoch_manifest_freshness",
+            area: "manifest",
+            operator_use: "stage_e_manifest_freshness_assertion",
+            status_source: "node_id,freshness_status,persisted_entry_matches,next_action",
+            next_action: "persist_or_refresh_manifest_before_stage_e_fixture_execution",
+        },
     ]
 }
 

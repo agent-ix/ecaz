@@ -328,6 +328,14 @@ remote readiness, served-epoch range, fanout, candidate batches, heap
 resolution, merge/result source, AM delivery blocker, and next blocker in one
 place.
 
+Packet `30774` adds `ec_spire_remote_epoch_manifest_freshness(...)`, the
+node-level manifest freshness assertion surface. Stage E epoch fixtures should
+include it before remote fanout to prove each remote node's current manifest
+plan matches the persisted manifest entry, or to show the required
+`persist_remote_epoch_manifest` / `refresh_remote_epoch_manifest` action before
+claiming fixture readiness. Boundary-replica-specific evidence still belongs in
+the later multi-instance fixture.
+
 The default local simulated-network-partition mechanism is not `iptables` or a
 root-owned route mutation. The fixture should point one remote descriptor's
 executor-owned `conninfo_secret_name` at an unreachable local endpoint and set

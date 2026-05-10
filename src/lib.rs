@@ -2503,6 +2503,213 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_epoch_manifest_freshness(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(node_id, i64),
+        name!(descriptor_state, String),
+        name!(placement_count, i64),
+        name!(required_last_served_epoch, i64),
+        name!(last_served_epoch, i64),
+        name!(required_min_retained_epoch, i64),
+        name!(min_retained_epoch, i64),
+        name!(epoch_window_status, String),
+        name!(manifest_action, String),
+        name!(current_status, String),
+        name!(persisted_entry_present, bool),
+        name!(persisted_entry_matches, bool),
+        name!(catalog_status, String),
+        name!(publication_action, String),
+        name!(publication_status, String),
+        name!(freshness_status, String),
+        name!(next_action, String),
+        name!(recommendation, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_epoch_manifest_freshness") };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "WITH current_plan AS ( \
+                     SELECT active_epoch, node_id, descriptor_state, placement_count, \
+                            required_last_served_epoch, required_min_retained_epoch, \
+                            last_served_epoch, min_retained_epoch, epoch_window_status, \
+                            manifest_action, status AS current_status, recommendation \
+                       FROM ec_spire_remote_epoch_manifest_plan($1::oid) \
+                 ), publication AS ( \
+                     SELECT node_id, persisted_entry_present, persisted_entry_matches, \
+                            publication_action, status AS publication_status, recommendation \
+                       FROM ec_spire_remote_epoch_manifest_publication_plan($1::oid) \
+                 ), catalog AS ( \
+                     SELECT current_manifest_decision, catalog_status, recommendation \
+                       FROM ec_spire_remote_epoch_manifest_catalog_summary($1::oid) \
+                 ) \
+                 SELECT p.active_epoch, p.node_id, p.descriptor_state, p.placement_count, \
+                        p.required_last_served_epoch, p.last_served_epoch, \
+                        p.required_min_retained_epoch, p.min_retained_epoch, \
+                        p.epoch_window_status, p.manifest_action, p.current_status, \
+                        coalesce(pub.persisted_entry_present, false) AS persisted_entry_present, \
+                        coalesce(pub.persisted_entry_matches, false) AS persisted_entry_matches, \
+                        c.catalog_status, \
+                        coalesce(pub.publication_action, 'block_manifest_publication') \
+                            AS publication_action, \
+                        coalesce(pub.publication_status, c.catalog_status) AS publication_status, \
+                        CASE \
+                            WHEN c.current_manifest_decision = 'emit_local_epoch_manifest' \
+                                THEN 'not_required' \
+                            WHEN p.current_status <> 'ready' THEN p.current_status \
+                            WHEN NOT coalesce(pub.persisted_entry_present, false) \
+                                THEN 'requires_remote_epoch_manifest_persistence' \
+                            WHEN NOT coalesce(pub.persisted_entry_matches, false) \
+                                THEN 'stale_remote_epoch_manifest' \
+                            WHEN c.catalog_status <> 'ready' THEN c.catalog_status \
+                            WHEN coalesce(pub.publication_status, c.catalog_status) <> 'ready' \
+                                THEN coalesce(pub.publication_status, c.catalog_status) \
+                            ELSE 'ready' \
+                        END AS freshness_status, \
+                        CASE \
+                            WHEN c.current_manifest_decision = 'emit_local_epoch_manifest' \
+                                THEN 'none' \
+                            WHEN p.current_status <> 'ready' \
+                                THEN 'refresh_remote_node_descriptor_or_epoch_window' \
+                            WHEN NOT coalesce(pub.persisted_entry_present, false) \
+                                THEN 'persist_remote_epoch_manifest' \
+                            WHEN NOT coalesce(pub.persisted_entry_matches, false) \
+                                THEN 'refresh_remote_epoch_manifest' \
+                            WHEN c.catalog_status <> 'ready' \
+                                THEN 'resolve_remote_epoch_manifest_catalog_blocker' \
+                            WHEN coalesce(pub.publication_status, c.catalog_status) <> 'ready' \
+                                THEN 'resolve_remote_epoch_manifest_publication_blocker' \
+                            ELSE 'none' \
+                        END AS next_action, \
+                        CASE \
+                            WHEN c.current_manifest_decision = 'emit_local_epoch_manifest' \
+                                THEN 'none' \
+                            WHEN p.current_status <> 'ready' THEN p.recommendation \
+                            WHEN NOT coalesce(pub.persisted_entry_present, false) \
+                                THEN 'persist distributed remote epoch manifest before Stage E fixture execution' \
+                            WHEN NOT coalesce(pub.persisted_entry_matches, false) \
+                                THEN 'refresh persisted remote epoch manifest before Stage E fixture execution' \
+                            WHEN c.catalog_status <> 'ready' THEN c.recommendation \
+                            WHEN coalesce(pub.publication_status, c.catalog_status) <> 'ready' \
+                                THEN coalesce(pub.recommendation, c.recommendation) \
+                            ELSE 'none' \
+                        END AS recommendation \
+                   FROM current_plan p \
+                   CROSS JOIN catalog c \
+                   LEFT JOIN publication pub ON pub.node_id = p.node_id \
+                  ORDER BY p.node_id",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire remote epoch manifest freshness read failed: {e}"))?
+            .map(|row| {
+                Ok::<_, String>((
+                    row["active_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("freshness active_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "freshness active_epoch is null".to_owned())?,
+                    row["node_id"]
+                        .value::<i64>()
+                        .map_err(|e| format!("freshness node_id decode failed: {e}"))?
+                        .ok_or_else(|| "freshness node_id is null".to_owned())?,
+                    row["descriptor_state"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness descriptor_state decode failed: {e}"))?
+                        .ok_or_else(|| "freshness descriptor_state is null".to_owned())?,
+                    row["placement_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("freshness placement_count decode failed: {e}"))?
+                        .ok_or_else(|| "freshness placement_count is null".to_owned())?,
+                    row["required_last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("freshness required_last_served_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "freshness required_last_served_epoch is null".to_owned()
+                        })?,
+                    row["last_served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("freshness last_served_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "freshness last_served_epoch is null".to_owned())?,
+                    row["required_min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!("freshness required_min_retained_epoch decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "freshness required_min_retained_epoch is null".to_owned()
+                        })?,
+                    row["min_retained_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| format!("freshness min_retained_epoch decode failed: {e}"))?
+                        .ok_or_else(|| "freshness min_retained_epoch is null".to_owned())?,
+                    row["epoch_window_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness epoch_window_status decode failed: {e}"))?
+                        .ok_or_else(|| "freshness epoch_window_status is null".to_owned())?,
+                    row["manifest_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness manifest_action decode failed: {e}"))?
+                        .ok_or_else(|| "freshness manifest_action is null".to_owned())?,
+                    row["current_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness current_status decode failed: {e}"))?
+                        .ok_or_else(|| "freshness current_status is null".to_owned())?,
+                    row["persisted_entry_present"]
+                        .value::<bool>()
+                        .map_err(|e| {
+                            format!("freshness persisted_entry_present decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "freshness persisted_entry_present is null".to_owned())?,
+                    row["persisted_entry_matches"]
+                        .value::<bool>()
+                        .map_err(|e| {
+                            format!("freshness persisted_entry_matches decode failed: {e}")
+                        })?
+                        .ok_or_else(|| "freshness persisted_entry_matches is null".to_owned())?,
+                    row["catalog_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness catalog_status decode failed: {e}"))?
+                        .ok_or_else(|| "freshness catalog_status is null".to_owned())?,
+                    row["publication_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness publication_action decode failed: {e}"))?
+                        .ok_or_else(|| "freshness publication_action is null".to_owned())?,
+                    row["publication_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness publication_status decode failed: {e}"))?
+                        .ok_or_else(|| "freshness publication_status is null".to_owned())?,
+                    row["freshness_status"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness freshness_status decode failed: {e}"))?
+                        .ok_or_else(|| "freshness freshness_status is null".to_owned())?,
+                    row["next_action"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness next_action decode failed: {e}"))?
+                        .ok_or_else(|| "freshness next_action is null".to_owned())?,
+                    row["recommendation"]
+                        .value::<String>()
+                        .map_err(|e| format!("freshness recommendation decode failed: {e}"))?
+                        .ok_or_else(|| "freshness recommendation is null".to_owned())?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::new(rows.into_iter())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_epoch_manifest_publication_plan(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -29072,6 +29279,8 @@ mod tests {
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let publication_from = "FROM ec_spire_remote_epoch_manifest_publication_plan(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
+        let freshness_from = "FROM ec_spire_remote_epoch_manifest_freshness(\
+             'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let publication_summary_from = "FROM ec_spire_remote_epoch_manifest_publication_summary(\
              'ec_spire_remote_manifest_persist_sql_idx'::regclass)";
         let manifest_libpq_request_from = "FROM ec_spire_remote_epoch_manifest_libpq_request_plan(\
@@ -29172,6 +29381,18 @@ mod tests {
         ))
         .expect("manifest publication match query should succeed")
         .expect("manifest publication match should exist");
+        let freshness_status =
+            Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
+                .expect("manifest freshness status query should succeed")
+                .expect("manifest freshness status should exist");
+        let freshness_next_action =
+            Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
+                .expect("manifest freshness action query should succeed")
+                .expect("manifest freshness action should exist");
+        let freshness_entry_matches =
+            Spi::get_one::<bool>(&format!("SELECT persisted_entry_matches {freshness_from}"))
+                .expect("manifest freshness match query should succeed")
+                .expect("manifest freshness match should exist");
         let publication_summary_decision = Spi::get_one::<String>(&format!(
             "SELECT publication_decision {publication_summary_from}"
         ))
@@ -29512,6 +29733,9 @@ mod tests {
         assert_eq!(publication_transport, "libpq_pipeline");
         assert_eq!(publication_status, "ready");
         assert!(publication_entry_matches);
+        assert_eq!(freshness_status, "ready");
+        assert_eq!(freshness_next_action, "none");
+        assert!(freshness_entry_matches);
         assert_eq!(
             publication_summary_decision,
             "publish_remote_epoch_manifest"
@@ -29626,6 +29850,18 @@ mod tests {
         ))
         .expect("stale manifest publication match query should succeed")
         .expect("stale manifest publication match should exist");
+        let stale_freshness_status =
+            Spi::get_one::<String>(&format!("SELECT freshness_status {freshness_from}"))
+                .expect("stale manifest freshness status query should succeed")
+                .expect("stale manifest freshness status should exist");
+        let stale_freshness_next_action =
+            Spi::get_one::<String>(&format!("SELECT next_action {freshness_from}"))
+                .expect("stale manifest freshness action query should succeed")
+                .expect("stale manifest freshness action should exist");
+        let stale_freshness_entry_matches =
+            Spi::get_one::<bool>(&format!("SELECT persisted_entry_matches {freshness_from}"))
+                .expect("stale manifest freshness match query should succeed")
+                .expect("stale manifest freshness match should exist");
         let stale_publication_summary_decision = Spi::get_one::<String>(&format!(
             "SELECT publication_decision {publication_summary_from}"
         ))
@@ -29645,6 +29881,9 @@ mod tests {
         assert_eq!(stale_publication_action, "refresh_remote_epoch_manifest");
         assert_eq!(stale_publication_status, "stale_remote_epoch_manifest");
         assert!(!stale_publication_entry_matches);
+        assert_eq!(stale_freshness_status, "stale_remote_epoch_manifest");
+        assert_eq!(stale_freshness_next_action, "refresh_remote_epoch_manifest");
+        assert!(!stale_freshness_entry_matches);
         assert_eq!(
             stale_publication_summary_decision,
             "refresh_remote_epoch_manifest"
@@ -30217,6 +30456,12 @@ mod tests {
         ))
         .expect("operator Stage E lifecycle matrix entrypoint query should succeed")
         .expect("operator Stage E lifecycle matrix entrypoint should exist");
+        let manifest_freshness_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_epoch_manifest_freshness'"
+        ))
+        .expect("operator manifest freshness entrypoint query should succeed")
+        .expect("operator manifest freshness entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -30344,8 +30589,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 24);
-        assert_eq!(operator_entrypoint_reachable_count, 24);
+        assert_eq!(operator_entrypoint_count, 25);
+        assert_eq!(operator_entrypoint_reachable_count, 25);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -30389,6 +30634,10 @@ mod tests {
         assert_eq!(
             stage_e_lifecycle_matrix_use,
             "local_multi_instance_lifecycle_fixture_contract"
+        );
+        assert_eq!(
+            manifest_freshness_use,
+            "stage_e_manifest_freshness_assertion"
         );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");
