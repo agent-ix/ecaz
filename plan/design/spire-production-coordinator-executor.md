@@ -295,6 +295,50 @@ strict/degraded behavior in the scan path. The Stage D heap-resolution rows in
 the matrix are reserved category names only until the heap executor emits them;
 they are not evidence that remote heap resolution is implemented.
 
+Packet `30770` adds the Stage E fixture-facing matrix
+`ec_spire_remote_search_stage_e_fault_matrix()`. The local multi-instance
+fixture must treat that matrix as the per-case acceptance contract: for every
+`fault_case`, capture one strict-mode log and one degraded-mode log under the
+packet review directory using these names:
+
+```text
+review/{packet}/artifacts/stage_e_fault_{fault_case}_strict.log
+review/{packet}/artifacts/stage_e_fault_{fault_case}_degraded.log
+```
+
+Each log must include:
+
+- the SQL row from `ec_spire_remote_search_stage_e_fault_matrix()` for the
+  case;
+- the command that injected the fault;
+- the strict or degraded query command;
+- `ec_spire_remote_search_operator_diagnostics(...)` output after the query;
+- the expected status string and counter delta named by the matrix row;
+- the observed status string and counter delta.
+
+Lifecycle cases from `ec_spire_remote_search_stage_e_lifecycle_matrix()` use
+the same convention with `stage_e_lifecycle_{lifecycle_case}_{mode}.log`.
+This makes packet review mechanical: every matrix row maps to a named artifact,
+and missing artifacts mean the case is not verified.
+
+Packet `30771` adds `ec_spire_remote_search_operator_diagnostics(...)`, the
+preferred Stage E assertion surface. The fixture should assert the specific
+case counter/status first, then include the diagnostic row so reviewers can see
+remote readiness, served-epoch range, fanout, candidate batches, heap
+resolution, merge/result source, AM delivery blocker, and next blocker in one
+place.
+
+The default local simulated-network-partition mechanism is not `iptables` or a
+root-owned route mutation. The fixture should point one remote descriptor's
+executor-owned `conninfo_secret_name` at an unreachable local endpoint and set
+a short `ec_spire.remote_search_connect_timeout_ms`. Preferred forms are a
+missing Unix-socket directory or a reserved localhost port with no listener.
+The expected category is `connect_failed`; this simulates a coordinator-to-
+remote partition at the connection boundary without requiring privileged host
+network changes. Mid-batch failures remain separate cases and should use a
+remote backend termination or connection-close fixture, not the connect-failure
+partition mechanism.
+
 ### C5: AM Scan Integration
 
 Wire production remote fanout into the coordinator scan path behind an explicit
@@ -415,6 +459,7 @@ Surfaces this runbook reads:
 - `ec_spire_remote_search_libpq_executor_budget_summary(...)`;
 - `ec_spire_remote_search_libpq_identity_cache_summary(...)`;
 - `ec_spire_remote_search_production_executor_state_summary(...)`;
+- `ec_spire_remote_search_operator_diagnostics(...)`;
 - `ec_spire_remote_search_libpq_receive_attempts(...)`;
 - `ec_spire_remote_pipeline_steps(...)` and
   `ec_spire_remote_pipeline_steps_live(...)`.

@@ -273,6 +273,8 @@ Acceptance artifact:
     It also closes the packet `30765` row-materialization mapping matrix
     follow-up by representing missing or stale coordinator mappings under the
     existing `requires_remote_row_materialization` production blocker.
+  - [x] Packet `30773` documents the Stage E per-case artifact convention and
+    network-partition simulation mechanism before fixture implementation.
 - [x] Add operator diagnostics that show remote node readiness, served epoch,
   remote fanout, candidate batches, heap resolution state, and merge status in
   one packet-friendly path.
@@ -281,6 +283,8 @@ Acceptance artifact:
     remote capability readiness, remote last-served epoch range, production
     fanout/candidate batches, heap resolution, merge/result source, and AM
     delivery blocker state.
+  - [x] Packet `30773` names this rollup as the preferred Stage E fixture
+    assertion surface in the production coordinator executor design.
 
 ## Phase 11.7: Local Multi-NVMe and Store Execution Hardening
 
@@ -787,6 +791,11 @@ Goal: prove distributed correctness locally before AWS.
     delta before the fixture is implemented.
     - [x] Packet `30770` lands the SQL-visible Stage E fault matrix and
       operator entrypoint contract for the one-coordinator/two-remote fixture.
+    - [x] Packet `30773` pins review artifact names:
+      `stage_e_fault_{fault_case}_{mode}.log` and
+      `stage_e_lifecycle_{lifecycle_case}_{mode}.log`, and chooses the
+      non-root unreachable-conninfo connect-failure mechanism for simulated
+      network partitions.
 - [ ] Verification: packet-local logs for every fault case, with explicit
   strict failure and degraded skip counts.
 
