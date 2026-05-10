@@ -206,8 +206,12 @@ SQL
   fi
 
   if [[ "$mode" == "degraded" ]]; then
-    "${coord_psql[@]}" -v index_name="$index_name" \
-      -c "SELECT tests.ec_spire_test_rewrite_consistency_mode(:'index_name'::regclass::oid, 'degraded')" >/dev/null
+    "${coord_psql[@]}" -v index_name="$index_name" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    :'index_name'::regclass::oid,
+    'degraded'
+);
+SQL
   fi
 
   "${coord_psql[@]}" -v index_name="$index_name" -v coord_epoch="$coord_epoch" \

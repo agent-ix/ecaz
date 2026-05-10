@@ -285,7 +285,7 @@ async fn run_stage_e_fault_pg18(args: StageEFaultPg18Args) -> Result<()> {
 
     run_status(command)
         .await
-        .wrap_err("running SPIRE PG18 Stage E simulated-network-partition fixture")
+        .wrap_err("running SPIRE PG18 Stage E fault fixture")
 }
 
 fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
