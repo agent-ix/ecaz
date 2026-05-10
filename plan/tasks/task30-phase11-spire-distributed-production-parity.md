@@ -464,6 +464,9 @@ bundle.
       query cancellation and remote backend termination.
     - [x] Classify closed in-flight async remote query connections as
       `remote_backend_terminated` on the production transport path.
+    - [x] Add PG18 fault-taxonomy coverage for remote query cancellation on
+      production transport and compact-candidate receive, and remote backend
+      termination on compact-candidate receive.
     - [ ] Keep local cancel, local statement timeout, remote statement timeout,
       connect timeout, and remote backend termination as distinct diagnostic
       categories.
