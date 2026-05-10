@@ -327,13 +327,27 @@ batches, and then reports `requires_remote_heap_resolution` instead of returning
 remote SQL rows. This keeps the Stage D boundary explicit while proving that the
 coordinator scan plan can feed the production remote executor.
 
+Packet `30755` adds the first Stage D heap-visibility proof surface:
+`ec_spire_remote_search_production_scan_heap_resolution_summary`. It keeps row
+locators opaque at the coordinator, gates remote heap receive on
+`CandidateReceiveReady`, asks the origin node to resolve heap visibility under
+its PostgreSQL snapshot, exact-reranks visible heap rows, fails strict mode when
+an indexed remote locator no longer resolves to a visible heap row, and merges
+ready local plus remote heap candidates with the existing deterministic
+tie-breaker. This is still a summary/proof surface; moving the heap-resolved
+stream into `amrescan` / `amgettuple` remains the final Stage D integration
+slice.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered
   candidate stream.
-- If Stage D is not yet complete, final row delivery reports the existing
-  `requires_remote_heap_resolution` blocker rather than pretending remote rows
-  are SQL-ready.
+- If Stage D heap receive is not yet complete, final row delivery reports the
+  existing `requires_remote_heap_resolution` blocker rather than pretending
+  remote rows are SQL-ready.
+- Once Stage D heap receive is ready, the proof surface reports `remote_ready`
+  only after origin-node heap visibility succeeds; stale or missing remote heap
+  rows report `remote_heap_resolution_failed`.
 
 ### C6: Operator And Harness Readiness
 

@@ -2280,6 +2280,31 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveResult {
     pub(crate) batch: Option<SpireRemoteSearchCandidateBatch>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteProductionHeapReceiveRequest {
+    pub(crate) node_id: u32,
+    pub(crate) conninfo: String,
+    pub(crate) remote_index_regclass: String,
+    pub(crate) remote_index_identity: Vec<u8>,
+    pub(crate) requested_epoch: u64,
+    pub(crate) query: Vec<f32>,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) top_k: usize,
+    pub(crate) consistency_mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteProductionHeapReceiveResult {
+    pub(crate) node_id: u32,
+    pub(crate) started_after_ms: u64,
+    pub(crate) completed_after_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) candidate_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) failure_category: &'static str,
+    pub(crate) candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
+}
+
 struct SpireRemoteProductionTransportAdapter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2384,6 +2409,36 @@ impl SpireRemoteProductionTransportAdapter {
                     local_cancel_source,
                 )
                 .await
+            });
+            Ok(futures_util::future::join_all(futures).await)
+        })
+    }
+
+    fn run_heap_receive_requests(
+        requests: Vec<SpireRemoteProductionHeapReceiveRequest>,
+    ) -> Result<Vec<SpireRemoteProductionHeapReceiveResult>, String> {
+        Self::run_heap_receive_requests_with_local_cancel_source(
+            requests,
+            SpireRemoteLocalCancelSource::production(),
+        )
+    }
+
+    fn run_heap_receive_requests_with_local_cancel_source(
+        requests: Vec<SpireRemoteProductionHeapReceiveRequest>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> Result<Vec<SpireRemoteProductionHeapReceiveResult>, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|_| {
+                "ec_spire production heap receive adapter failed to build runtime".to_owned()
+            })?;
+
+        runtime.block_on(async move {
+            let batch_start = std::time::Instant::now();
+            let futures = requests.into_iter().map(|request| async move {
+                Self::run_one_heap_receive_request(request, batch_start, local_cancel_source).await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -2688,6 +2743,233 @@ impl SpireRemoteProductionTransportAdapter {
         }
     }
 
+    async fn run_one_heap_receive_request(
+        request: SpireRemoteProductionHeapReceiveRequest,
+        batch_start: std::time::Instant,
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> SpireRemoteProductionHeapReceiveResult {
+        let started_after_ms = elapsed_millis_u64(batch_start);
+        let request_start = std::time::Instant::now();
+        let selected_pids = match request
+            .selected_pids
+            .iter()
+            .map(|pid| i64::try_from(*pid))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(selected_pids) => selected_pids,
+            Err(_) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let requested_epoch = match i64::try_from(request.requested_epoch) {
+            Ok(requested_epoch) => requested_epoch,
+            Err(_) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let top_k = match i32::try_from(request.top_k) {
+            Ok(top_k) => top_k,
+            Err(_) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let _governance_permit =
+            match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
+                Ok(permit) => permit,
+                Err(error) => {
+                    return failed_production_heap_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        production_governance_failure_category(&error),
+                    );
+                }
+            };
+        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
+            Ok(config) => config,
+            Err(_) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
+                );
+            }
+        };
+        let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+        if limits.connect_timeout_ms > 0 {
+            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
+        }
+
+        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+            Ok(connection) => connection,
+            Err(_) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                );
+            }
+        };
+        let connection_task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        let cancel_token = client.cancel_token();
+        let result_rows = Self::run_query_with_optional_local_cancel(
+            cancel_token,
+            async {
+                if limits.statement_timeout_ms > 0 {
+                    client
+                        .batch_execute(&format!(
+                            "SET statement_timeout = {}",
+                            limits.statement_timeout_ms
+                        ))
+                        .await
+                        .map_err(|_| {
+                            SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                        })?;
+                }
+                let remote_index_oid = client
+                    .query_one(
+                        "SELECT to_regclass($1)::oid",
+                        &[&request.remote_index_regclass.as_str()],
+                    )
+                    .await
+                    .map_err(|error| {
+                        let category = production_remote_query_failure_category(&error);
+                        if category == SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED {
+                            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+                        } else {
+                            category
+                        }
+                    })?
+                    .try_get::<_, Option<u32>>(0)
+                    .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
+                    .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                let endpoint_identity_row = client
+                    .query_one(
+                        SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+                        &[&remote_index_oid],
+                    )
+                    .await
+                    .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                let endpoint_identity =
+                    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
+                        .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                if endpoint_identity.profile_fingerprint_bytes.as_slice()
+                    != request.remote_index_identity.as_slice()
+                {
+                    return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                }
+                client
+                    .query(
+                        SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
+                        &[
+                            &remote_index_oid,
+                            &requested_epoch,
+                            &request.query,
+                            &selected_pids,
+                            &top_k,
+                            &request.consistency_mode,
+                        ],
+                    )
+                    .await
+                    .map_err(|error| production_remote_query_failure_category(&error))
+            },
+            local_cancel_source,
+        )
+        .await;
+
+        connection_task.abort();
+        let result_rows = match result_rows {
+            Ok(result_rows) => result_rows,
+            Err(failure_category) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                );
+            }
+        };
+        let candidates = match result_rows
+            .iter()
+            .map(|candidate_row| {
+                decode_remote_search_heap_candidate_pg_row(
+                    candidate_row,
+                    request.requested_epoch,
+                    request.node_id,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                return failed_production_heap_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    production_remote_heap_decode_failure_category(&error),
+                );
+            }
+        };
+        let merge_candidates = candidates
+            .iter()
+            .map(|candidate| SpireRemoteSearchCandidateRow {
+                served_epoch: candidate.served_epoch,
+                node_id: candidate.node_id,
+                pid: candidate.pid,
+                object_version: candidate.object_version,
+                row_index: candidate.row_index,
+                assignment_flags: candidate.assignment_flags,
+                vec_id: candidate.vec_id.clone(),
+                row_locator: candidate.row_locator.clone(),
+                score: candidate.score,
+            })
+            .collect::<Vec<_>>();
+        if let Err(error) = validate_remote_search_candidate_batch(
+            request.requested_epoch,
+            request.node_id,
+            &request.selected_pids,
+            &merge_candidates,
+        ) {
+            return failed_production_heap_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                production_remote_heap_decode_failure_category(&error),
+            );
+        }
+        let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+        SpireRemoteProductionHeapReceiveResult {
+            node_id: request.node_id,
+            started_after_ms,
+            completed_after_ms: elapsed_millis_u64(batch_start),
+            elapsed_ms: elapsed_millis_u64(request_start),
+            candidate_count,
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+            candidates,
+        }
+    }
+
     async fn run_query_with_optional_local_cancel<T, F>(
         cancel_token: tokio_postgres::CancelToken,
         query_future: F,
@@ -2823,6 +3105,22 @@ fn production_candidate_validation_failure_category(error: &str) -> &'static str
     }
 }
 
+fn production_remote_heap_decode_failure_category(error: &str) -> &'static str {
+    if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING) {
+        SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING
+    } else if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD) {
+        SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD
+    } else if error.contains(SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE) {
+        SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE
+    } else if remote_search_receive_attempt_failure_status(error)
+        == SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH
+    {
+        SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH
+    } else {
+        SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
+    }
+}
+
 fn failed_production_transport_probe_row(
     node_id: u32,
     batch_start: std::time::Instant,
@@ -2859,6 +3157,24 @@ fn failed_production_candidate_receive_result(
         status: SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
         failure_category,
         batch: None,
+    }
+}
+
+fn failed_production_heap_receive_result(
+    node_id: u32,
+    batch_start: std::time::Instant,
+    request_start: std::time::Instant,
+    failure_category: &'static str,
+) -> SpireRemoteProductionHeapReceiveResult {
+    SpireRemoteProductionHeapReceiveResult {
+        node_id,
+        started_after_ms: elapsed_millis_u64(batch_start),
+        completed_after_ms: elapsed_millis_u64(batch_start),
+        elapsed_ms: elapsed_millis_u64(request_start),
+        candidate_count: 0,
+        status: SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+        failure_category,
+        candidates: Vec::new(),
     }
 }
 
@@ -2910,6 +3226,8 @@ enum SpireRemoteProductionDispatchState {
     TransportFailed,
     CandidateReceiveReady,
     CandidateReceiveFailed,
+    RemoteHeapReady,
+    RemoteHeapFailed,
     DegradedSkipped,
     Cancelled,
 }
@@ -2931,6 +3249,9 @@ struct SpireRemoteProductionDispatch {
     candidate_failure_category: &'static str,
     degraded_skip_category: &'static str,
     candidate_batch: Option<SpireRemoteSearchCandidateBatch>,
+    remote_heap_candidate_count: u64,
+    remote_heap_failure_category: &'static str,
+    remote_heap_candidates: Vec<SpireRemoteSearchLocalHeapCandidateRow>,
 }
 
 impl SpireRemoteProductionDispatch {
@@ -2952,6 +3273,9 @@ impl SpireRemoteProductionDispatch {
                 candidate_failure_category: SPIRE_REMOTE_NONE,
                 degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_batch: None,
+                remote_heap_candidate_count: 0,
+                remote_heap_failure_category: SPIRE_REMOTE_NONE,
+                remote_heap_candidates: Vec::new(),
             }
         } else {
             Self {
@@ -2970,6 +3294,9 @@ impl SpireRemoteProductionDispatch {
                 candidate_failure_category: SPIRE_REMOTE_NONE,
                 degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_batch: None,
+                remote_heap_candidate_count: 0,
+                remote_heap_failure_category: SPIRE_REMOTE_NONE,
+                remote_heap_candidates: Vec::new(),
             }
         }
     }
@@ -3047,12 +3374,18 @@ impl SpireRemoteProductionDispatch {
             }
             self.candidate_count = result.candidate_count;
             self.candidate_batch = Some(batch.clone());
+            self.remote_heap_candidate_count = 0;
+            self.remote_heap_failure_category = SPIRE_REMOTE_NONE;
+            self.remote_heap_candidates.clear();
             self.state = SpireRemoteProductionDispatchState::CandidateReceiveReady;
             self.status = SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP;
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
         } else {
             self.candidate_count = 0;
             self.candidate_batch = None;
+            self.remote_heap_candidate_count = 0;
+            self.remote_heap_failure_category = SPIRE_REMOTE_NONE;
+            self.remote_heap_candidates.clear();
             self.state = SpireRemoteProductionDispatchState::CandidateReceiveFailed;
             self.status = SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED;
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
@@ -3080,15 +3413,74 @@ impl SpireRemoteProductionDispatch {
         self.candidate_count = 0;
         self.candidate_failure_category = failure_category;
         self.candidate_batch = None;
+        self.remote_heap_candidate_count = 0;
+        self.remote_heap_failure_category = SPIRE_REMOTE_NONE;
+        self.remote_heap_candidates.clear();
         self.state = SpireRemoteProductionDispatchState::CandidateReceiveFailed;
         self.status = SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED;
         self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
+    }
+
+    fn apply_remote_heap_receive_result(
+        &mut self,
+        result: &SpireRemoteProductionHeapReceiveResult,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::CandidateReceiveReady {
+            return Err(format!(
+                "ec_spire production executor remote heap outcome for node_id {} cannot apply to dispatch state {:?}",
+                result.node_id, self.state
+            ));
+        }
+
+        self.remote_heap_failure_category = result.failure_category;
+        if result.status == SPIRE_REMOTE_STATUS_READY {
+            let candidate_count = u64::try_from(result.candidates.len()).map_err(|_| {
+                "ec_spire production executor remote heap batch count exceeds u64".to_owned()
+            })?;
+            if result.candidate_count != candidate_count {
+                return Err(format!(
+                    "ec_spire production executor remote heap outcome for node_id {} reports {} candidates but batch contains {}",
+                    result.node_id, result.candidate_count, candidate_count
+                ));
+            }
+            self.remote_heap_candidate_count = result.candidate_count;
+            self.remote_heap_candidates = result.candidates.clone();
+            self.state = SpireRemoteProductionDispatchState::RemoteHeapReady;
+            self.status = SPIRE_REMOTE_STATUS_READY;
+            self.next_executor_step = SPIRE_REMOTE_NONE;
+        } else {
+            self.remote_heap_candidate_count = 0;
+            self.remote_heap_candidates.clear();
+            self.state = SpireRemoteProductionDispatchState::RemoteHeapFailed;
+            self.status = SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED;
+            self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
+        }
+        Ok(())
+    }
+
+    fn apply_remote_heap_receive_degraded_skip(
+        &mut self,
+        result: &SpireRemoteProductionHeapReceiveResult,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::CandidateReceiveReady {
+            return Err(format!(
+                "ec_spire production executor remote heap outcome for node_id {} cannot apply to dispatch state {:?}",
+                result.node_id, self.state
+            ));
+        }
+
+        self.remote_heap_failure_category = result.failure_category;
+        self.apply_degraded_skip(result.failure_category);
+        Ok(())
     }
 
     fn apply_degraded_skip(&mut self, failure_category: &'static str) {
         self.candidate_count = 0;
         self.degraded_skip_category = failure_category;
         self.candidate_batch = None;
+        self.remote_heap_candidate_count = 0;
+        self.remote_heap_failure_category = SPIRE_REMOTE_NONE;
+        self.remote_heap_candidates.clear();
         self.state = SpireRemoteProductionDispatchState::DegradedSkipped;
         self.status = SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED;
         self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
@@ -3099,6 +3491,9 @@ impl SpireRemoteProductionDispatch {
         self.candidate_failure_category = SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
         self.degraded_skip_category = SPIRE_REMOTE_NONE;
         self.candidate_batch = None;
+        self.remote_heap_candidate_count = 0;
+        self.remote_heap_failure_category = SPIRE_REMOTE_NONE;
+        self.remote_heap_candidates.clear();
         self.state = SpireRemoteProductionDispatchState::Cancelled;
         self.status = SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED;
         self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION;
@@ -3236,6 +3631,52 @@ impl SpireRemoteFanoutExecutor {
         Ok(())
     }
 
+    fn apply_remote_heap_receive_results_with_consistency_mode(
+        &mut self,
+        results: &[SpireRemoteProductionHeapReceiveResult],
+        consistency_mode: &str,
+    ) -> Result<(), String> {
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        if let Some(cancelled_result) = results.iter().find(|result| {
+            result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
+                || result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT
+        }) {
+            if !self.dispatches.iter().any(|dispatch| {
+                dispatch.node_id == cancelled_result.node_id
+                    && dispatch.state == SpireRemoteProductionDispatchState::CandidateReceiveReady
+            }) {
+                return Err(format!(
+                    "ec_spire production executor remote heap outcome for node_id {} does not match a candidate-ready dispatch",
+                    cancelled_result.node_id
+                ));
+            }
+            self.apply_local_query_cancel();
+            return Ok(());
+        }
+        for result in results {
+            let dispatch = self
+                .dispatches
+                .iter_mut()
+                .find(|dispatch| {
+                    dispatch.node_id == result.node_id
+                        && dispatch.state == SpireRemoteProductionDispatchState::CandidateReceiveReady
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire production executor remote heap outcome for node_id {} does not match a candidate-ready dispatch",
+                        result.node_id
+                    )
+                })?;
+            if degraded && result.status != SPIRE_REMOTE_STATUS_READY {
+                dispatch.apply_remote_heap_receive_degraded_skip(result)?;
+            } else {
+                dispatch.apply_remote_heap_receive_result(result)?;
+            }
+        }
+        Ok(())
+    }
+
     fn apply_local_query_cancel(&mut self) {
         for dispatch in &mut self.dispatches {
             dispatch.apply_local_query_cancel();
@@ -3308,6 +3749,69 @@ impl SpireRemoteFanoutExecutor {
         self.apply_candidate_receive_results_with_consistency_mode(&results, consistency_mode)
     }
 
+    fn remote_heap_receive_requests(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+    ) -> Result<Vec<SpireRemoteProductionHeapReceiveRequest>, String> {
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
+        let mut requests = Vec::new();
+        let mut secret_lookup_count = self.conninfo_secret_lookup_count;
+        for dispatch in &mut self.dispatches {
+            if dispatch.state != SpireRemoteProductionDispatchState::CandidateReceiveReady {
+                continue;
+            }
+            add_remote_count(
+                &mut secret_lookup_count,
+                1,
+                "remote production executor heap receive request build",
+                "conninfo secret lookup",
+            )?;
+            match remote_conninfo_secret_value(&dispatch.conninfo_secret_name) {
+                Ok(conninfo) => requests.push(SpireRemoteProductionHeapReceiveRequest {
+                    node_id: dispatch.node_id,
+                    conninfo,
+                    remote_index_regclass: dispatch.remote_index_regclass.clone(),
+                    remote_index_identity: dispatch.remote_index_identity.clone(),
+                    requested_epoch: self.requested_epoch,
+                    query: query.to_vec(),
+                    selected_pids: dispatch.selected_pids.clone(),
+                    top_k,
+                    consistency_mode: consistency_mode.to_owned(),
+                }),
+                Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
+                Err(_) => {
+                    let now = std::time::Instant::now();
+                    let result = failed_production_heap_receive_result(
+                        dispatch.node_id,
+                        now,
+                        now,
+                        SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+                    );
+                    dispatch.apply_remote_heap_receive_result(&result)?;
+                }
+            }
+        }
+        self.conninfo_secret_lookup_count = secret_lookup_count;
+        Ok(requests)
+    }
+
+    fn run_remote_heap_receive(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+    ) -> Result<(), String> {
+        let requests = self.remote_heap_receive_requests(query, top_k, consistency_mode)?;
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let results = SpireRemoteProductionTransportAdapter::run_heap_receive_requests(requests)?;
+        self.apply_remote_heap_receive_results_with_consistency_mode(&results, consistency_mode)
+    }
+
     fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
         let mut batches = Vec::new();
         for dispatch in &self.dispatches {
@@ -3326,6 +3830,8 @@ impl SpireRemoteFanoutExecutor {
                 | SpireRemoteProductionDispatchState::TransportReady
                 | SpireRemoteProductionDispatchState::TransportFailed
                 | SpireRemoteProductionDispatchState::CandidateReceiveFailed
+                | SpireRemoteProductionDispatchState::RemoteHeapReady
+                | SpireRemoteProductionDispatchState::RemoteHeapFailed
                 | SpireRemoteProductionDispatchState::Cancelled => {
                     return Err(format!(
                         "ec_spire production executor cannot merge compact candidates while node_id {} is in state {:?} with status {}",
@@ -3347,6 +3853,68 @@ impl SpireRemoteFanoutExecutor {
             self.ready_candidate_batches()?,
             limit,
         )
+    }
+
+    fn ready_remote_heap_candidate_rows(
+        &self,
+    ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let mut candidates = Vec::new();
+        for dispatch in &self.dispatches {
+            match dispatch.state {
+                SpireRemoteProductionDispatchState::RemoteHeapReady => {
+                    candidates.extend(dispatch.remote_heap_candidates.clone());
+                }
+                SpireRemoteProductionDispatchState::DegradedSkipped => {}
+                SpireRemoteProductionDispatchState::BlockedBeforeDispatch
+                | SpireRemoteProductionDispatchState::Planned
+                | SpireRemoteProductionDispatchState::TransportReady
+                | SpireRemoteProductionDispatchState::TransportFailed
+                | SpireRemoteProductionDispatchState::CandidateReceiveReady
+                | SpireRemoteProductionDispatchState::CandidateReceiveFailed
+                | SpireRemoteProductionDispatchState::RemoteHeapFailed
+                | SpireRemoteProductionDispatchState::Cancelled => {
+                    return Err(format!(
+                        "ec_spire production executor cannot merge remote heap candidates while node_id {} is in state {:?} with status {}",
+                        dispatch.node_id, dispatch.state, dispatch.status
+                    ));
+                }
+            }
+        }
+        Ok(candidates)
+    }
+
+    fn remote_heap_resolution_counts(&self) -> Result<(u64, u64, u64), String> {
+        let mut ready_dispatch_count = 0_u64;
+        let mut failed_dispatch_count = 0_u64;
+        let mut candidate_count = 0_u64;
+        for dispatch in &self.dispatches {
+            match dispatch.state {
+                SpireRemoteProductionDispatchState::RemoteHeapReady => {
+                    add_remote_count(
+                        &mut ready_dispatch_count,
+                        1,
+                        "remote production executor heap resolution counts",
+                        "ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_count,
+                        dispatch.remote_heap_candidate_count,
+                        "remote production executor heap resolution counts",
+                        "remote heap candidate",
+                    )?;
+                }
+                SpireRemoteProductionDispatchState::RemoteHeapFailed => {
+                    add_remote_count(
+                        &mut failed_dispatch_count,
+                        1,
+                        "remote production executor heap resolution counts",
+                        "failed dispatch",
+                    )?;
+                }
+                _ => {}
+            }
+        }
+        Ok((ready_dispatch_count, failed_dispatch_count, candidate_count))
     }
 
     fn summary(
@@ -3377,6 +3945,8 @@ impl SpireRemoteFanoutExecutor {
         let mut first_cancellation_category = SPIRE_REMOTE_NONE;
         let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
         let mut first_blocked_step = SPIRE_REMOTE_NONE;
+        let mut remote_heap_ready_dispatch_count = 0_u64;
+        let mut remote_heap_failed_dispatch_count = 0_u64;
 
         for dispatch in &self.dispatches {
             add_remote_count(
@@ -3589,6 +4159,118 @@ impl SpireRemoteFanoutExecutor {
                         "candidate-receive-failed dispatch",
                     )?;
                 }
+                SpireRemoteProductionDispatchState::RemoteHeapReady => {
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_row_count,
+                        dispatch.transport_row_count,
+                        "remote production executor state summary",
+                        "transport row",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_row_count,
+                        dispatch.candidate_count,
+                        "remote production executor state summary",
+                        "candidate row",
+                    )?;
+                    add_remote_count(
+                        &mut remote_heap_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "remote-heap-ready dispatch",
+                    )?;
+                }
+                SpireRemoteProductionDispatchState::RemoteHeapFailed => {
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_row_count,
+                        dispatch.transport_row_count,
+                        "remote production executor state summary",
+                        "transport row",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_row_count,
+                        dispatch.candidate_count,
+                        "remote production executor state summary",
+                        "candidate row",
+                    )?;
+                    add_remote_count(
+                        &mut remote_heap_failed_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "remote-heap-failed dispatch",
+                    )?;
+                }
                 SpireRemoteProductionDispatchState::DegradedSkipped => {
                     if degraded_skipped_dispatch_count == 0 {
                         first_degraded_skip_category = dispatch.degraded_skip_category;
@@ -3665,6 +4347,20 @@ impl SpireRemoteFanoutExecutor {
                 SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE,
                 "wire production compact candidate receive before AM scan merge",
             )
+        } else if remote_heap_failed_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+                SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+                "inspect production remote heap failure category before final row delivery",
+            )
+        } else if remote_heap_ready_dispatch_count > 0 && degraded_skipped_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_STATUS_DEGRADED_READY,
+                "return ready heap-resolved rows and report degraded skipped dispatches",
+            )
+        } else if remote_heap_ready_dispatch_count > 0 {
+            (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
         } else if candidate_receive_ready_dispatch_count > 0 && degraded_skipped_dispatch_count > 0
         {
             (
@@ -4471,6 +5167,247 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             candidate_row_count: summary.candidate_row_count,
             merged_candidate_count,
             duplicate_vec_id_count: merge.duplicate_vec_id_count,
+            final_heap_fetch_status,
+            next_blocker,
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionScanHeapResolutionSummaryRow, String> {
+        let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+        let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
+                requested_epoch: 0,
+                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                consistency_mode,
+                effective_nprobe: 0,
+                selected_pid_count: 0,
+                local_pid_count: 0,
+                remote_pid_count: 0,
+                skipped_pid_count: 0,
+                dispatch_count: 0,
+                compact_candidate_count: 0,
+                remote_heap_ready_dispatch_count: 0,
+                remote_heap_failed_dispatch_count: 0,
+                remote_heap_candidate_count: 0,
+                local_heap_candidate_count: 0,
+                returned_candidate_count: 0,
+                result_source: SPIRE_REMOTE_NONE,
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                next_blocker: SPIRE_REMOTE_NONE,
+                status: "empty_index",
+                recommendation: "publish an active SPIRE epoch before production scan heap resolution",
+            });
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let top_graph_plan = relation_options.top_graph_plan()?;
+        let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+        let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+        let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+            &snapshot,
+            &object_store,
+            &query_for_scan,
+            scan_plan,
+            top_graph_plan,
+        )?;
+        let selected_pid_count = u64::try_from(selected_leaf_pids.len())
+            .map_err(|_| "ec_spire production scan heap selected PID count exceeds u64")?;
+        let execution_summary = unsafe {
+            remote_search_execution_summary_row(
+                index_relation,
+                root_control.active_epoch,
+                query.clone(),
+                selected_leaf_pids.clone(),
+                top_k,
+                consistency_mode,
+            )
+        };
+
+        if top_k == 0 {
+            return Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
+                requested_epoch: root_control.active_epoch,
+                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                consistency_mode,
+                effective_nprobe: u64::from(scan_plan.nprobe),
+                selected_pid_count,
+                local_pid_count: execution_summary.local_pid_count,
+                remote_pid_count: execution_summary.remote_pid_count,
+                skipped_pid_count: execution_summary.skipped_pid_count,
+                dispatch_count: 0,
+                compact_candidate_count: 0,
+                remote_heap_ready_dispatch_count: 0,
+                remote_heap_failed_dispatch_count: 0,
+                remote_heap_candidate_count: 0,
+                local_heap_candidate_count: 0,
+                returned_candidate_count: 0,
+                result_source: SPIRE_REMOTE_NONE,
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                next_blocker: SPIRE_REMOTE_NONE,
+                status: SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
+                recommendation: SPIRE_REMOTE_NONE,
+            });
+        }
+
+        let local_heap_rows = if execution_summary.local_pid_count > 0 {
+            unsafe {
+                remote_search_local_heap_candidate_rows_for_result_summary(
+                    index_relation,
+                    root_control.active_epoch,
+                    query.clone(),
+                    selected_leaf_pids.clone(),
+                    top_k,
+                    consistency_mode,
+                )
+            }
+        } else {
+            Vec::new()
+        };
+        let local_heap_candidate_count = u64::try_from(
+            local_heap_rows
+                .iter()
+                .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+                .count(),
+        )
+        .map_err(|_| "ec_spire production scan heap local candidate count exceeds u64")?;
+
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                root_control.active_epoch,
+                query.clone(),
+                selected_leaf_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let dispatch_count = u64::try_from(dispatch_rows.len())
+            .map_err(|_| "ec_spire production scan heap dispatch count exceeds u64")?;
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(root_control.active_epoch, &dispatch_rows);
+        executor.mark_planned_dispatches_candidate_receive_ready();
+        executor.run_compact_candidate_receive(&query, top_k, consistency_mode)?;
+        let compact_summary = executor.summary(
+            "ec_spire.remote_search_consistency_mode",
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+        )?;
+        let compact_allows_heap = matches!(
+            compact_summary.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+                | SPIRE_REMOTE_STATUS_DEGRADED_READY
+                | SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED
+                | SPIRE_REMOTE_STATUS_READY
+        );
+        if compact_allows_heap {
+            executor.run_remote_heap_receive(&query, top_k, consistency_mode)?;
+        }
+        let (remote_heap_ready_dispatch_count, remote_heap_failed_dispatch_count, remote_heap_candidate_count) =
+            executor.remote_heap_resolution_counts()?;
+        let remote_heap_rows = if compact_allows_heap && remote_heap_failed_dispatch_count == 0 {
+            executor.ready_remote_heap_candidate_rows()?
+        } else {
+            Vec::new()
+        };
+
+        let mut heap_rows = local_heap_rows
+            .into_iter()
+            .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+            .collect::<Vec<_>>();
+        heap_rows.extend(remote_heap_rows);
+        let merged = merge_remote_search_heap_candidates_for_result(heap_rows, top_k)?;
+        let returned_candidate_count = u64::try_from(merged.len())
+            .map_err(|_| "ec_spire production scan heap returned candidate count exceeds u64")?;
+
+        let result_source = if remote_heap_candidate_count > 0 {
+            SPIRE_REMOTE_RESULT_SOURCE_REMOTE_HEAP_CANDIDATES
+        } else if local_heap_candidate_count > 0 {
+            SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES
+        } else if compact_summary.next_executor_step != SPIRE_REMOTE_NONE {
+            SPIRE_REMOTE_RESULT_SOURCE_BLOCKED
+        } else {
+            SPIRE_REMOTE_NONE
+        };
+        let final_heap_fetch_status = if remote_heap_failed_dispatch_count > 0 {
+            SPIRE_REMOTE_FINAL_STATUS_BLOCKED
+        } else if remote_heap_candidate_count > 0 {
+            SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY
+        } else if local_heap_candidate_count > 0 {
+            SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY
+        } else {
+            SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES
+        };
+        let (next_blocker, status, recommendation) = if remote_heap_failed_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+                SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+                "inspect production remote heap failure category before final row delivery",
+            )
+        } else if !compact_allows_heap {
+            (
+                compact_summary.next_executor_step,
+                compact_summary.status,
+                compact_summary.recommendation,
+            )
+        } else if returned_candidate_count > 0 {
+            (
+                SPIRE_REMOTE_NONE,
+                if execution_summary.skipped_pid_count > 0 {
+                    SPIRE_REMOTE_STATUS_DEGRADED_READY
+                } else {
+                    SPIRE_REMOTE_STATUS_READY
+                },
+                SPIRE_REMOTE_NONE,
+            )
+        } else {
+            (
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                "inspect local and remote heap visibility for the selected candidates",
+            )
+        };
+
+        Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
+            requested_epoch: root_control.active_epoch,
+            consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+            consistency_mode,
+            effective_nprobe: u64::from(scan_plan.nprobe),
+            selected_pid_count,
+            local_pid_count: execution_summary.local_pid_count,
+            remote_pid_count: execution_summary.remote_pid_count,
+            skipped_pid_count: execution_summary.skipped_pid_count,
+            dispatch_count,
+            compact_candidate_count: compact_summary.candidate_row_count,
+            remote_heap_ready_dispatch_count,
+            remote_heap_failed_dispatch_count,
+            remote_heap_candidate_count,
+            local_heap_candidate_count,
+            returned_candidate_count,
+            result_source,
             final_heap_fetch_status,
             next_blocker,
             status,

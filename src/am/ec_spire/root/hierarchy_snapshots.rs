@@ -144,6 +144,130 @@ fn decode_remote_search_local_heap_locator(
     })
 }
 
+unsafe fn remote_search_heap_slot(
+    heap_relation: pg_sys::Relation,
+) -> Result<*mut pg_sys::TupleTableSlot, String> {
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        return Err("ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned());
+    }
+    Ok(slot)
+}
+
+fn remote_search_exact_heap_score(
+    query: &[f32],
+    source_vector: &[f32],
+) -> Result<f32, String> {
+    if query.len() != source_vector.len() {
+        return Err(format!(
+            "ec_spire remote heap resolution dimension mismatch: query dim {}, heap dim {}",
+            query.len(),
+            source_vector.len()
+        ));
+    }
+    if source_vector.iter().any(|value| !value.is_finite()) {
+        return Err(
+            "ec_spire remote heap resolution source vector contains a non-finite value".to_owned(),
+        );
+    }
+    let score = crate::am::ec_hnsw::source::inner_product(query, source_vector);
+    if !score.is_finite() {
+        return Err("ec_spire remote heap resolution produced a non-finite score".to_owned());
+    }
+    Ok(score)
+}
+
+unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: &scan::SpireScanQuery,
+    candidates: Vec<SpireRemoteSearchCandidateRow>,
+    heap_lookup_owner: &'static str,
+    context: &str,
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        return Err("ec_spire remote heap resolution could not resolve heap relation".to_owned());
+    }
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Err("ec_spire remote heap resolution requires an active snapshot".to_owned());
+    }
+    let indexed_attribute = unsafe {
+        crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+            heap_relation,
+            index_relation,
+            "ec_spire remote heap resolution indexed column",
+        )
+    };
+    let slot = match unsafe { remote_search_heap_slot(heap_relation) } {
+        Ok(slot) => slot,
+        Err(error) => {
+            unsafe {
+                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
+            return Err(error);
+        }
+    };
+
+    let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let mut rows = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
+            let source_vector = unsafe {
+                scan::load_indexed_source_vector_from_heap_row(
+                    heap_relation,
+                    snapshot,
+                    slot,
+                    indexed_attribute,
+                    heap_tid,
+                    "ec_spire remote heap resolution source vector",
+                )
+            }?;
+            let (score, status) = match source_vector {
+                Some(source_vector) => (
+                    remote_search_exact_heap_score(query.values(), &source_vector)?,
+                    SPIRE_REMOTE_STATUS_READY,
+                ),
+                None => (
+                    candidate.score,
+                    SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
+                ),
+            };
+            rows.push(SpireRemoteSearchLocalHeapCandidateRow {
+                requested_epoch,
+                served_epoch: candidate.served_epoch,
+                node_id: candidate.node_id,
+                pid: candidate.pid,
+                object_version: candidate.object_version,
+                row_index: candidate.row_index,
+                assignment_flags: candidate.assignment_flags,
+                vec_id: candidate.vec_id,
+                row_locator: candidate.row_locator,
+                heap_block: heap_tid.block_number,
+                heap_offset: heap_tid.offset_number,
+                score,
+                heap_lookup_owner,
+                status,
+            });
+        }
+        Ok(rows)
+    })();
+    unsafe {
+        pg_sys::ExecDropSingleTupleTableSlot(slot);
+        pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+    }
+    result
+}
+
 fn remote_search_coordinator_ready_status(skipped_placement_count: u64) -> &'static str {
     if skipped_placement_count > 0 {
         "degraded_ready"
@@ -612,6 +736,7 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let scan_query = scan::SpireScanQuery::new(query.clone())?;
         let candidates = unsafe {
             remote_search_coordinator_local_candidates_result(
                 index_relation,
@@ -622,31 +747,16 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
                 consistency_mode,
             )?
         };
-        candidates
-            .into_iter()
-            .map(|candidate| {
-                let heap_tid = decode_remote_search_local_heap_locator(
-                    &candidate,
-                    "local heap candidate rows",
-                )?;
-                Ok(SpireRemoteSearchLocalHeapCandidateRow {
-                    requested_epoch,
-                    served_epoch: candidate.served_epoch,
-                    node_id: candidate.node_id,
-                    pid: candidate.pid,
-                    object_version: candidate.object_version,
-                    row_index: candidate.row_index,
-                    assignment_flags: candidate.assignment_flags,
-                    vec_id: candidate.vec_id,
-                    row_locator: candidate.row_locator,
-                    heap_block: heap_tid.block_number,
-                    heap_offset: heap_tid.offset_number,
-                    score: candidate.score,
-                    heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                    status: SPIRE_REMOTE_STATUS_READY,
-                })
-            })
-            .collect()
+        unsafe {
+            remote_search_heap_candidate_rows_from_compact_candidates(
+                index_relation,
+                requested_epoch,
+                &scan_query,
+                candidates,
+                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                "local heap candidate rows",
+            )
+        }
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -660,6 +770,7 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let scan_query = scan::SpireScanQuery::new(query.clone())?;
         let candidates = unsafe {
             remote_search_coordinator_local_candidates_for_result_summary(
                 index_relation,
@@ -670,31 +781,16 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
                 consistency_mode,
             )?
         };
-        candidates
-            .into_iter()
-            .map(|candidate| {
-                let heap_tid = decode_remote_search_local_heap_locator(
-                    &candidate,
-                    "coordinator result summary local heap candidates",
-                )?;
-                Ok(SpireRemoteSearchLocalHeapCandidateRow {
-                    requested_epoch,
-                    served_epoch: candidate.served_epoch,
-                    node_id: candidate.node_id,
-                    pid: candidate.pid,
-                    object_version: candidate.object_version,
-                    row_index: candidate.row_index,
-                    assignment_flags: candidate.assignment_flags,
-                    vec_id: candidate.vec_id,
-                    row_locator: candidate.row_locator,
-                    heap_block: heap_tid.block_number,
-                    heap_offset: heap_tid.offset_number,
-                    score: candidate.score,
-                    heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                    status: SPIRE_REMOTE_STATUS_READY,
-                })
-            })
-            .collect()
+        unsafe {
+            remote_search_heap_candidate_rows_from_compact_candidates(
+                index_relation,
+                requested_epoch,
+                &scan_query,
+                candidates,
+                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                "coordinator result summary local heap candidates",
+            )
+        }
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -739,7 +835,7 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
-    let returned_candidate_count = if gate.remote_plan_count == 0
+    let (decoded_local_locator_count, returned_candidate_count) = if gate.remote_plan_count == 0
         && remote_search_status_allows_local_heap_rows(gate.status)
     {
         let rows = unsafe {
@@ -752,10 +848,17 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
                 consistency_mode,
             )
         };
-        u64::try_from(rows.len())
-            .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"))
+        let decoded = u64::try_from(rows.len())
+            .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"));
+        let returned = u64::try_from(
+            rows.iter()
+                .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+                .count(),
+        )
+        .unwrap_or_else(|_| pgrx::error!("ec_spire local heap ready candidate count overflow"));
+        (decoded, returned)
     } else {
-        0
+        (0, 0)
     };
 
     SpireRemoteSearchLocalHeapCandidateSummaryRow {
@@ -765,7 +868,7 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
         skipped_plan_count: gate.skipped_plan_count,
         local_pid_count: gate.local_pid_count,
         remote_pid_count: gate.remote_pid_count,
-        decoded_local_locator_count: returned_candidate_count,
+        decoded_local_locator_count,
         returned_candidate_count,
         status: gate.status,
         recommendation: gate.recommendation,
@@ -824,6 +927,9 @@ fn merge_remote_search_heap_candidates_for_result(
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
     let mut best_by_vec_id = HashMap::<Vec<u8>, SpireRemoteSearchLocalHeapCandidateRow>::new();
     for candidate in candidates {
+        if candidate.status != SPIRE_REMOTE_STATUS_READY {
+            continue;
+        }
         let dedupe_key = remote_search_heap_candidate_dedupe_key_for_result(&candidate)?;
         match best_by_vec_id.entry(dedupe_key) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {

@@ -349,6 +349,13 @@ request before the next item depends on it.
    origin node, keep coordinator locators opaque, and produce one
    coordinator-visible ordered result stream only after local and remote
    candidates are visibility-correct.
+   Packet `30755` lands the first heap-resolution proof surface:
+   `ec_spire_remote_search_production_scan_heap_resolution_summary` gates
+   origin-node heap receive on production compact-candidate readiness, resolves
+   remote heap visibility under the origin PostgreSQL snapshot, exact-reranks
+   visible heap rows, fails strict mode for missing remote heap rows, and merges
+   ready local plus remote heap candidates. The actual `amrescan`/`amgettuple`
+   tuple stream still remains open.
 6. **Stage E local multi-instance matrix.** Build the one-coordinator /
    two-remote local fixture and run the strict/degraded matrix for epoch,
    version, fingerprint, connection, backend termination, timeout, cancel,
@@ -658,15 +665,32 @@ global and per-node permits on the tested production paths.
 
 Goal: make the coordinator-visible result stream production-correct.
 
-- [ ] Keep remote row locators opaque at the coordinator.
-- [ ] Resolve remote heap visibility on the origin node before claiming final
-  SQL row readiness.
-- [ ] Merge local and remote candidates into one ordered stream with deterministic
-  tie-breaks across score, role, epoch, node, PID, object version, row index,
-  and locator.
+- [x] Keep remote row locators opaque at the coordinator for the first heap
+  proof surface; packet `30755` asks the origin node to interpret locators and
+  only receives heap block/offset diagnostics after origin-side visibility
+  resolution.
+- [x] Resolve remote heap visibility on the origin node before claiming
+  heap-resolution summary readiness; packet `30755` fails strict mode with
+  `remote_heap_resolution_failed` when a remote indexed locator no longer
+  resolves to a visible heap row.
+- [x] Merge local and remote heap-resolved candidates into one ordered stream
+  with the existing deterministic tie-breaks across score, role, epoch, node,
+  PID, object version, row index, and locator.
+- [ ] Introduce a narrow Rust-side production scan handoff/result-stream state
+  that `amrescan` / `amgettuple` can consume directly, with SQL summary
+  functions serializing from that state rather than becoming the internal AM
+  contract.
+- [ ] Move the heap-resolved stream from the summary/proof surface into
+  `amrescan` / `amgettuple` final tuple delivery.
 - [ ] Verification: tests for dead/missing remote rows, stale locators,
   duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
   dedupe.
+  - [x] Packet `30755` covers visible remote heap rows and missing remote heap
+    rows in a focused PG18 loopback fixture.
+  - [ ] Add stale locator, duplicate cross-node replica, local-only
+    node-scoped ID, and global-ID dedupe coverage on the final AM tuple path.
+  - [ ] Run a broader PG18 pgrx pass across coordinator fanout call sites once
+    the packet `30753` sandbox loader issue is resolved.
 
 ### Stage E: Multi-Instance Epoch, Lifecycle, and Fault Matrix
 
