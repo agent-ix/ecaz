@@ -22372,7 +22372,8 @@ mod tests {
                      (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
                  CREATE INDEX ec_spire_remote_executor_loopback_remote_sql_idx \
                      ON ec_spire_remote_executor_loopback_remote_sql USING ec_spire \
-                     (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
             )
             .expect("loopback remote fixture should be created");
 

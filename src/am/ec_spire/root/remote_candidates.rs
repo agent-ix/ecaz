@@ -2745,7 +2745,6 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
         "quantizer_profile",
         "scoring_profile",
         "profile_fingerprint",
-        "endpoint_status",
     ] {
         let value = remote_search_candidate_endpoint_text(row, column)?;
         if value.is_empty() {
@@ -2753,6 +2752,13 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
                 "ec_spire remote search executor {column} endpoint identity is empty"
             ));
         }
+    }
+
+    let endpoint_status = remote_search_candidate_endpoint_text(row, "endpoint_status")?;
+    if endpoint_status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire remote search executor endpoint_status {endpoint_status} is not ready"
+        ));
     }
 
     Ok(())

@@ -307,6 +307,9 @@ endpoint.
     in `plan/design/spire-remote-node-model.md`.
 - [ ] Bind RaBitQ profile, code length, training-stat fingerprint, storage
   format, served epoch, extension version, and opclass identity before merge.
+  - [x] Libpq candidate decode now validates endpoint protocol/version and
+    rejects non-ready endpoint identity rows before candidates can enter the
+    merge path; loopback executor coverage uses a RaBitQ remote-serving index.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
   reasons in degraded mode.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
