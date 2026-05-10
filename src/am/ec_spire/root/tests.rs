@@ -475,6 +475,43 @@ mod tests {
     }
 
     #[test]
+    fn production_scan_result_outputs_preserve_heap_resolution_origin() {
+        let local_vec = remote_local_vec_id(7);
+        let remote_vec = remote_global_vec_id(b"remote-stream");
+        let local = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            &local_vec,
+            0.4,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let remote =
+            remote_heap_candidate(3, 20, 1, &remote_vec, 0.2, SPIRE_REMOTE_HEAP_RESOLUTION);
+
+        let outputs = production_scan_outputs_from_heap_candidates(&[local.clone(), remote.clone()]);
+
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].requested_epoch, local.requested_epoch);
+        assert_eq!(outputs[0].node_id, meta::SPIRE_LOCAL_NODE_ID);
+        assert_eq!(outputs[0].heap_block, local.heap_block);
+        assert_eq!(outputs[0].heap_offset, local.heap_offset);
+        assert_eq!(outputs[0].score, local.score);
+        assert_eq!(outputs[0].heap_lookup_owner, SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION);
+        assert_eq!(outputs[0].vec_id, local_vec);
+        assert_eq!(outputs[0].row_locator, local.row_locator);
+
+        assert_eq!(outputs[1].served_epoch, remote.served_epoch);
+        assert_eq!(outputs[1].node_id, 3);
+        assert_eq!(outputs[1].heap_block, remote.heap_block);
+        assert_eq!(outputs[1].heap_offset, remote.heap_offset);
+        assert_eq!(outputs[1].score, remote.score);
+        assert_eq!(outputs[1].heap_lookup_owner, SPIRE_REMOTE_HEAP_RESOLUTION);
+        assert_eq!(outputs[1].vec_id, remote_vec);
+        assert_eq!(outputs[1].row_locator, remote.row_locator);
+    }
+
+    #[test]
     fn remote_candidate_batch_validation_accepts_expected_envelope() {
         let candidates = vec![
             remote_candidate(

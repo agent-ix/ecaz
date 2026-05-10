@@ -338,6 +338,13 @@ tie-breaker. This is still a summary/proof surface; moving the heap-resolved
 stream into `amrescan` / `amgettuple` remains the final Stage D integration
 slice.
 
+Packet `30756` splits the Stage D proof result into a Rust-side
+`SpireRemoteProductionScanResultStream`. The SQL summary surface now serializes
+from that stream instead of being the internal AM contract. The stream carries
+the same summary plus ordered heap-resolved output rows with node, heap
+coordinate, score, vec-id, row-locator, and heap-lookup owner, so the next AM
+slice can cursor over Rust state directly.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

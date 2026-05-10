@@ -5176,37 +5176,65 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
+fn production_scan_output_from_heap_candidate(
+    candidate: &SpireRemoteSearchLocalHeapCandidateRow,
+) -> SpireRemoteProductionScanOutputRow {
+    SpireRemoteProductionScanOutputRow {
+        requested_epoch: candidate.requested_epoch,
+        served_epoch: candidate.served_epoch,
+        node_id: candidate.node_id,
+        heap_block: candidate.heap_block,
+        heap_offset: candidate.heap_offset,
+        score: candidate.score,
+        heap_lookup_owner: candidate.heap_lookup_owner,
+        vec_id: candidate.vec_id.clone(),
+        row_locator: candidate.row_locator.clone(),
+    }
+}
+
+fn production_scan_outputs_from_heap_candidates(
+    candidates: &[SpireRemoteSearchLocalHeapCandidateRow],
+) -> Vec<SpireRemoteProductionScanOutputRow> {
+    candidates
+        .iter()
+        .map(production_scan_output_from_heap_candidate)
+        .collect()
+}
+
+pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream(
     index_relation: pg_sys::Relation,
     query: Vec<f32>,
     top_k: usize,
-) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
-    let result = (|| -> Result<SpireRemoteProductionScanHeapResolutionSummaryRow, String> {
+) -> SpireRemoteProductionScanResultStream {
+    let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
-            return Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
-                requested_epoch: 0,
-                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
-                consistency_mode,
-                effective_nprobe: 0,
-                selected_pid_count: 0,
-                local_pid_count: 0,
-                remote_pid_count: 0,
-                skipped_pid_count: 0,
-                dispatch_count: 0,
-                compact_candidate_count: 0,
-                remote_heap_ready_dispatch_count: 0,
-                remote_heap_failed_dispatch_count: 0,
-                remote_heap_candidate_count: 0,
-                local_heap_candidate_count: 0,
-                returned_candidate_count: 0,
-                result_source: SPIRE_REMOTE_NONE,
-                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
-                next_blocker: SPIRE_REMOTE_NONE,
-                status: "empty_index",
-                recommendation: "publish an active SPIRE epoch before production scan heap resolution",
+            return Ok(SpireRemoteProductionScanResultStream {
+                summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+                    requested_epoch: 0,
+                    consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                    consistency_mode,
+                    effective_nprobe: 0,
+                    selected_pid_count: 0,
+                    local_pid_count: 0,
+                    remote_pid_count: 0,
+                    skipped_pid_count: 0,
+                    dispatch_count: 0,
+                    compact_candidate_count: 0,
+                    remote_heap_ready_dispatch_count: 0,
+                    remote_heap_failed_dispatch_count: 0,
+                    remote_heap_candidate_count: 0,
+                    local_heap_candidate_count: 0,
+                    returned_candidate_count: 0,
+                    result_source: SPIRE_REMOTE_NONE,
+                    final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                    next_blocker: SPIRE_REMOTE_NONE,
+                    status: "empty_index",
+                    recommendation: "publish an active SPIRE epoch before production scan heap resolution",
+                },
+                outputs: Vec::new(),
             });
         }
 
@@ -5250,27 +5278,30 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
         };
 
         if top_k == 0 {
-            return Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
-                requested_epoch: root_control.active_epoch,
-                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
-                consistency_mode,
-                effective_nprobe: u64::from(scan_plan.nprobe),
-                selected_pid_count,
-                local_pid_count: execution_summary.local_pid_count,
-                remote_pid_count: execution_summary.remote_pid_count,
-                skipped_pid_count: execution_summary.skipped_pid_count,
-                dispatch_count: 0,
-                compact_candidate_count: 0,
-                remote_heap_ready_dispatch_count: 0,
-                remote_heap_failed_dispatch_count: 0,
-                remote_heap_candidate_count: 0,
-                local_heap_candidate_count: 0,
-                returned_candidate_count: 0,
-                result_source: SPIRE_REMOTE_NONE,
-                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
-                next_blocker: SPIRE_REMOTE_NONE,
-                status: SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
-                recommendation: SPIRE_REMOTE_NONE,
+            return Ok(SpireRemoteProductionScanResultStream {
+                summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+                    requested_epoch: root_control.active_epoch,
+                    consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                    consistency_mode,
+                    effective_nprobe: u64::from(scan_plan.nprobe),
+                    selected_pid_count,
+                    local_pid_count: execution_summary.local_pid_count,
+                    remote_pid_count: execution_summary.remote_pid_count,
+                    skipped_pid_count: execution_summary.skipped_pid_count,
+                    dispatch_count: 0,
+                    compact_candidate_count: 0,
+                    remote_heap_ready_dispatch_count: 0,
+                    remote_heap_failed_dispatch_count: 0,
+                    remote_heap_candidate_count: 0,
+                    local_heap_candidate_count: 0,
+                    returned_candidate_count: 0,
+                    result_source: SPIRE_REMOTE_NONE,
+                    final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                    next_blocker: SPIRE_REMOTE_NONE,
+                    status: SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
+                    recommendation: SPIRE_REMOTE_NONE,
+                },
+                outputs: Vec::new(),
             });
         }
 
@@ -5391,30 +5422,44 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
             )
         };
 
-        Ok(SpireRemoteProductionScanHeapResolutionSummaryRow {
-            requested_epoch: root_control.active_epoch,
-            consistency_mode_source: "ec_spire.remote_search_consistency_mode",
-            consistency_mode,
-            effective_nprobe: u64::from(scan_plan.nprobe),
-            selected_pid_count,
-            local_pid_count: execution_summary.local_pid_count,
-            remote_pid_count: execution_summary.remote_pid_count,
-            skipped_pid_count: execution_summary.skipped_pid_count,
-            dispatch_count,
-            compact_candidate_count: compact_summary.candidate_row_count,
-            remote_heap_ready_dispatch_count,
-            remote_heap_failed_dispatch_count,
-            remote_heap_candidate_count,
-            local_heap_candidate_count,
-            returned_candidate_count,
-            result_source,
-            final_heap_fetch_status,
-            next_blocker,
-            status,
-            recommendation,
+        Ok(SpireRemoteProductionScanResultStream {
+            summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+                requested_epoch: root_control.active_epoch,
+                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                consistency_mode,
+                effective_nprobe: u64::from(scan_plan.nprobe),
+                selected_pid_count,
+                local_pid_count: execution_summary.local_pid_count,
+                remote_pid_count: execution_summary.remote_pid_count,
+                skipped_pid_count: execution_summary.skipped_pid_count,
+                dispatch_count,
+                compact_candidate_count: compact_summary.candidate_row_count,
+                remote_heap_ready_dispatch_count,
+                remote_heap_failed_dispatch_count,
+                remote_heap_candidate_count,
+                local_heap_candidate_count,
+                returned_candidate_count,
+                result_source,
+                final_heap_fetch_status,
+                next_blocker,
+                status,
+                recommendation,
+            },
+            outputs: production_scan_outputs_from_heap_candidates(&merged),
         })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
+    unsafe {
+        remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k)
+            .summary
+    }
 }
 
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(

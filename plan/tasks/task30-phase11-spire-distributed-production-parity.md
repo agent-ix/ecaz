@@ -676,10 +676,13 @@ Goal: make the coordinator-visible result stream production-correct.
 - [x] Merge local and remote heap-resolved candidates into one ordered stream
   with the existing deterministic tie-breaks across score, role, epoch, node,
   PID, object version, row index, and locator.
-- [ ] Introduce a narrow Rust-side production scan handoff/result-stream state
+- [x] Introduce a narrow Rust-side production scan handoff/result-stream state
   that `amrescan` / `amgettuple` can consume directly, with SQL summary
   functions serializing from that state rather than becoming the internal AM
-  contract.
+  contract. Packet `30756` adds
+  `SpireRemoteProductionScanResultStream`, keeps the existing SQL summary
+  stable, and preserves ordered heap-resolved output rows for the final AM
+  cursor slice.
 - [ ] Move the heap-resolved stream from the summary/proof surface into
   `amrescan` / `amgettuple` final tuple delivery.
 - [ ] Verification: tests for dead/missing remote rows, stale locators,
