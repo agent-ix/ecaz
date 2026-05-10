@@ -3153,8 +3153,8 @@ pub(crate) fn remote_search_vector_identity_contract_rows(
         },
         SpireRemoteSearchVectorIdentityContractRow {
             contract_item: "writer_global_source_identity",
-            contract_value: "stable_source_identity_required_not_heap_tid",
-            status: "phase11_2_required",
+            contract_value: "fixed_16_byte_source_identity_required_not_heap_tid",
+            status: "phase11_2_contract_defined",
         },
         SpireRemoteSearchVectorIdentityContractRow {
             contract_item: "writer_global_base_storage",

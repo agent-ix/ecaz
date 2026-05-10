@@ -9,6 +9,7 @@ use crate::storage::page::ItemPointer;
 
 pub(super) const SPIRE_FIRST_PID: u64 = 1;
 pub(super) const SPIRE_FIRST_LOCAL_VEC_SEQ: u64 = 1;
+pub(super) const SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SpireAllocatorExhaustionDiagnostics {
@@ -130,6 +131,9 @@ impl SpireLocalVecIdAllocator {
     ) -> Result<SpireVecId, String> {
         match source_identity {
             SpireVecIdSourceIdentity::AllocateLocal => self.allocate(),
+            SpireVecIdSourceIdentity::StableFixedGlobalPayload(payload) => {
+                SpireVecId::global(payload)
+            }
             SpireVecIdSourceIdentity::StableGlobalPayload(payload) => SpireVecId::global(payload),
         }
     }
@@ -154,12 +158,34 @@ impl SpireLocalVecIdAllocator {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SpireVecIdSourceIdentity {
     AllocateLocal,
+    StableFixedGlobalPayload([u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]),
     StableGlobalPayload(Vec<u8>),
 }
 
 impl Default for SpireVecIdSourceIdentity {
     fn default() -> Self {
         Self::AllocateLocal
+    }
+}
+
+impl SpireVecIdSourceIdentity {
+    pub(super) fn stable_fixed_global_payload(
+        payload: [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES],
+    ) -> Self {
+        Self::StableFixedGlobalPayload(payload)
+    }
+
+    pub(super) fn stable_fixed_global_payload_from_slice(payload: &[u8]) -> Result<Self, String> {
+        let payload_len = payload.len();
+        let payload =
+            <[u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]>::try_from(payload).map_err(
+                |_| {
+                    format!(
+                        "ec_spire stable global source identity payload length {payload_len} must be {SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES} bytes"
+                    )
+                },
+            )?;
+        Ok(Self::stable_fixed_global_payload(payload))
     }
 }
 
@@ -457,6 +483,7 @@ mod tests {
         SpireBoundaryLeafAssignmentInput, SpireDeleteDeltaInput, SpireLeafAssignmentIdentityInput,
         SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
         SpireVecIdSourceIdentity, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
+        SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
     };
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
@@ -588,6 +615,34 @@ mod tests {
 
         assert_eq!(vec_id, SpireVecId::global(&[1, 2, 3]).unwrap());
         assert_eq!(allocator.next_local_vec_seq(), 10);
+    }
+
+    #[test]
+    fn allocator_uses_fixed_global_source_identity_without_advancing_local_sequence() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+        let payload = [7_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES];
+        let source_identity = SpireVecIdSourceIdentity::stable_fixed_global_payload(payload);
+
+        let vec_id = allocator
+            .allocate_for_source_identity(&source_identity)
+            .unwrap();
+
+        assert_eq!(vec_id, SpireVecId::global(&payload).unwrap());
+        assert_eq!(allocator.next_local_vec_seq(), 10);
+    }
+
+    #[test]
+    fn fixed_global_source_identity_rejects_wrong_width() {
+        let short = vec![1_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES - 1];
+        let long = vec![1_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES + 1];
+
+        let short_err =
+            SpireVecIdSourceIdentity::stable_fixed_global_payload_from_slice(&short).unwrap_err();
+        let long_err =
+            SpireVecIdSourceIdentity::stable_fixed_global_payload_from_slice(&long).unwrap_err();
+
+        assert!(short_err.contains("must be 16 bytes"));
+        assert!(long_err.contains("must be 16 bytes"));
     }
 
     #[test]

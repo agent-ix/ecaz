@@ -90,9 +90,13 @@ Acceptance artifact:
   storage status rows.
 - [ ] Emit durable global `0x02` `SpireVecId` values from the writer/build path
   when a stable source identity is available.
-- [ ] Define the stable source-identity input contract for build/insert paths;
-  heap TID alone is not a cross-node stable identity. The contract must produce
-  fixed-width global payloads when targeting Leaf V2 base objects.
+- [x] Define the stable source-identity input contract for build/insert paths;
+  heap TID alone is not a cross-node stable identity. The Phase 11 writer
+  contract is a fixed 16-byte source payload, documented in
+  `plan/design/spire-stable-source-identity-contract.md`.
+- [ ] Choose and implement the first live source-identity provider, such as an
+  explicit identity column or expression contract, then plumb it into build and
+  insert assignment inputs.
 - [x] Replace or extend Leaf V2 base-object storage so global `0x02` IDs are not
   rejected by the local-only fixed-width vec-id column format. Leaf V2 now
   supports per-object `GlobalBytes` columns when every row has the same global

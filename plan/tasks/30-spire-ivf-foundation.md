@@ -1967,7 +1967,8 @@ production-readiness gate is reviewed.
 - [ ] **Writer-side global vector IDs.** Emit durable global `0x02` IDs when a
   stable fixed-width source identity is available while preserving node-scoped
   local ID compatibility. Allocation hooks and Leaf V2 fixed-width global-ID
-  storage are landed; live writer source-identity plumbing remains.
+  storage are landed, and the stable source contract is fixed at 16 payload
+  bytes; the live identity provider and writer plumbing remain.
 - [ ] **Remote search endpoint.** Promote or add a production remote search
   endpoint that returns compact candidates with served epoch, node identity,
   row locator, score, quantizer/index fingerprint, protocol/version metadata,

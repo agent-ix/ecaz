@@ -20555,7 +20555,7 @@ mod tests {
         assert_eq!(local_scope, "node_id || local_vec_id_bytes");
         assert_eq!(
             writer_global_source_identity,
-            "stable_source_identity_required_not_heap_tid"
+            "fixed_16_byte_source_identity_required_not_heap_tid"
         );
         assert_eq!(writer_global_base_storage_status, "phase11_2_landed");
         assert_eq!(interpretation, "opaque_bytes");
