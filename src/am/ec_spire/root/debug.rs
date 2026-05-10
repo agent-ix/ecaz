@@ -472,6 +472,14 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_node(
     pid: u64,
     node_id: u32,
 ) -> u64 {
+    unsafe { debug_spire_rewrite_placement_nodes(index_oid, &[(pid, node_id)]) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
+    index_oid: pg_sys::Oid,
+    rewrites: &[(u64, u32)],
+) -> u64 {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = unsafe { pg_sys::index_open(index_oid, lockmode) };
     let result = (|| -> Result<u64, String> {
@@ -480,13 +488,17 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_node(
             unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
         let (epoch_manifest, object_manifest, mut placement_directory) =
             unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let placement = placement_directory
-            .entries
-            .iter_mut()
-            .find(|entry| entry.pid == pid)
-            .ok_or_else(|| format!("ec_spire debug placement node rewrite missing pid {pid}"))?;
-        placement.node_id = node_id;
-        placement.local_store_id = node_id;
+        for (pid, node_id) in rewrites {
+            let placement = placement_directory
+                .entries
+                .iter_mut()
+                .find(|entry| entry.pid == *pid)
+                .ok_or_else(|| {
+                    format!("ec_spire debug placement node rewrite missing pid {pid}")
+                })?;
+            placement.node_id = *node_id;
+            placement.local_store_id = *node_id;
+        }
 
         let manifests = build::SpireEncodedManifestBundle {
             epoch_manifest: epoch_manifest.encode()?,

@@ -23465,6 +23465,114 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_libpq_executor_per_node_governance_isolated() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
+            .expect("max concurrent per-node dispatch budget SET should succeed");
+        let (class_id, object_id) =
+            am::remote_search_libpq_node_governance_advisory_key_for_test(2, 0);
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut lock_holder = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback per-node lock-holder connection should succeed");
+        lock_holder
+            .batch_execute(&format!("SELECT pg_advisory_lock({class_id}, {object_id})"))
+            .expect("node 2 governance advisory lock should be held by separate backend");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_libpq_per_node_governance_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_libpq_per_node_governance_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_libpq_per_node_governance_idx \
+             ON ec_spire_libpq_per_node_governance_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_libpq_per_node_governance_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_libpq_per_node_governance_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_libpq_per_node_governance_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid array should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_nodes(
+                index_oid,
+                &[(selected_pids[0] as u64, 2), (selected_pids[1] as u64, 3)],
+            );
+        }
+        for (node_id, generation, secret_name) in [
+            (2, 41, "spire/remote/per-node-governance/2"),
+            (3, 42, "spire/remote/per-node-governance/3"),
+        ] {
+            let register_result = Spi::get_one::<bool>(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                         '{}'::oid, {node_id}, {generation}, '{secret_name}', \
+                         decode('ff', 'hex'), 'ec_spire_remote_per_node_governance_idx', \
+                         'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+                u32::from(index_oid),
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("remote descriptor registration should succeed")
+            .expect("remote descriptor registration result should exist");
+            assert!(register_result);
+        }
+
+        let receive_attempts_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_receive_attempts(\
+                 'ec_spire_libpq_per_node_governance_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{}, {}]::bigint[], 1, 'degraded')",
+            selected_pids[0], selected_pids[1]
+        );
+        let node2_status = Spi::get_one::<String>(&format!(
+            "SELECT status {receive_attempts_from} WHERE node_id = 2"
+        ))
+        .expect("node 2 receive attempt status query should succeed")
+        .expect("node 2 receive attempt status should exist");
+        let node2_blocker = Spi::get_one::<String>(&format!(
+            "SELECT next_blocker {receive_attempts_from} WHERE node_id = 2"
+        ))
+        .expect("node 2 receive attempt blocker query should succeed")
+        .expect("node 2 receive attempt blocker should exist");
+        let node3_status = Spi::get_one::<String>(&format!(
+            "SELECT status {receive_attempts_from} WHERE node_id = 3"
+        ))
+        .expect("node 3 receive attempt status query should succeed")
+        .expect("node 3 receive attempt status should exist");
+        let node3_blocker = Spi::get_one::<String>(&format!(
+            "SELECT next_blocker {receive_attempts_from} WHERE node_id = 3"
+        ))
+        .expect("node 3 receive attempt blocker query should succeed")
+        .expect("node 3 receive attempt blocker should exist");
+
+        assert_eq!(node2_status, "remote_executor_overload");
+        assert_eq!(node2_blocker, "remote_executor_governance");
+        assert_eq!(node3_status, "requires_conninfo_secret_resolution");
+        assert_eq!(node3_blocker, "conninfo_secret_resolution");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_search_libpq_executor_loopback_empty() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();

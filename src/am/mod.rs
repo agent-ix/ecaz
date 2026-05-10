@@ -156,9 +156,11 @@ pub(crate) use self::ec_spire::{
     debug_spire_empty_manifest_publish_roundtrip, debug_spire_relation_leaf_v2_roundtrip,
     debug_spire_relation_object_tuple_roundtrip, debug_spire_relation_two_store_scan_roundtrip,
     debug_spire_rewrite_consistency_mode, debug_spire_rewrite_placement_node,
-    debug_spire_rewrite_placement_state, debug_spire_root_control,
-    debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
+    debug_spire_rewrite_placement_nodes, debug_spire_rewrite_placement_state,
+    debug_spire_root_control, debug_spire_vacuum_bulkdelete_heap_tids,
+    debug_spire_vacuum_remove_heap_tids,
     remote_search_libpq_global_governance_advisory_key_for_test,
+    remote_search_libpq_node_governance_advisory_key_for_test,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

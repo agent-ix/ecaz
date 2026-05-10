@@ -3509,6 +3509,20 @@ pub(crate) fn remote_search_libpq_global_governance_advisory_key_for_test(
     (key.class_id, key.object_id)
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_libpq_node_governance_advisory_key_for_test(
+    node_id: u32,
+    slot: u64,
+) -> (i32, i32) {
+    let key = remote_search_libpq_governance_lock_key(
+        SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE,
+        i32::from_ne_bytes(node_id.to_ne_bytes()),
+        slot,
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    (key.class_id, key.object_id)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SpireRemoteEndpointIdentityCacheKey {
     coordinator_index_oid: u32,

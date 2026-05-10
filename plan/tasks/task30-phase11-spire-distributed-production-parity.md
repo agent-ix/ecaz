@@ -387,6 +387,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
       `plan/design/spire-libpq-executor-budget.md` and ADR-058 so operator
       scripts and future extension features avoid the reserved governance
       class ranges.
+    - [x] Add PG18 coverage that saturating one per-node governance slot does
+      not block a second node with its own per-node slot.
   - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
