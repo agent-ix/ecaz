@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Candidate-receive Stage E fixture family.
+#
+# Supported cases:
+#   fingerprint_mismatch
+#   missing_or_reindexed_remote_index
+#
+# These rows fail after pre-dispatch capability gates have allowed a request to
+# be built. The fixture therefore drives the pg-test production candidate
+# receive helper, which runs the real libpq receive path and then summarizes the
+# strict/degraded executor state.
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PGBIN="${PGBIN:-/home/peter/.pgrx/18.3/pgrx-install/bin}"
 PG_CTL="${PG_CTL:-$PGBIN/pg_ctl}"
@@ -19,6 +30,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_candidate_receive_fault_pg18.sh --case CASE [options]
 
 Cases:
+  fingerprint_mismatch
   missing_or_reindexed_remote_index
 
 Options:
@@ -92,7 +104,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$FAULT_CASE" != "missing_or_reindexed_remote_index" ]]; then
+if [[ "$FAULT_CASE" != "fingerprint_mismatch" \
+  && "$FAULT_CASE" != "missing_or_reindexed_remote_index" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
   usage >&2
   exit 2
@@ -198,6 +211,21 @@ if [[ -z "$missing_pid" || -z "$ready_pid" || -n "${extra_pid:-}" ]]; then
   exit 3
 fi
 
+fault_secret="spire/remote/stage_e/missing_index"
+fault_remote_index="ec_spire_stage_e_missing_remote_idx"
+fault_identity_hex="$remote_ready_identity_hex"
+fault_injection="remote_index_regclass=ec_spire_stage_e_missing_remote_idx"
+strict_first_failure="remote_index_unavailable"
+degraded_first_skip="remote_index_unavailable"
+if [[ "$FAULT_CASE" == "fingerprint_mismatch" ]]; then
+  fault_secret="spire/remote/stage_e/ready"
+  fault_remote_index="ec_spire_stage_e_ready_remote_idx"
+  fault_identity_hex="00"
+  fault_injection="remote_index_identity=00 expected=$remote_ready_identity_hex"
+  strict_first_failure="endpoint_identity_mismatch"
+  degraded_first_skip="endpoint_identity_mismatch"
+fi
+
 run_case() {
   local mode="$1"
   local output_log="$2"
@@ -210,6 +238,12 @@ run_case() {
   local case_coord_identity="$coord_ready_identity_hex"
 
   if [[ "$mode" == "degraded" ]]; then
+    "${remote_ready_psql[@]}" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    'ec_spire_stage_e_ready_remote_idx'::regclass::oid,
+    'degraded'
+);
+SQL
     "${coord_psql[@]}" <<'SQL' >/dev/null
 SELECT tests.ec_spire_test_rewrite_consistency_mode(
     'ec_spire_stage_e_coord_ready_idx'::regclass::oid,
@@ -220,15 +254,15 @@ SQL
   fi
 
   local raw_rows
-  raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_production_candidate_receive(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/missing_index','spire/remote/stage_e/coord_ready']::text[], ARRAY['ec_spire_stage_e_missing_remote_idx','ec_spire_stage_e_coord_ready_idx']::text[], ARRAY['$remote_ready_identity_hex','$case_coord_identity']::text[], ARRAY[$missing_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode') ORDER BY node_id")"
+  raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_production_candidate_receive(ARRAY[2,3]::integer[], ARRAY['$fault_secret','spire/remote/stage_e/coord_ready']::text[], ARRAY['$fault_remote_index','ec_spire_stage_e_coord_ready_idx']::text[], ARRAY['$fault_identity_hex','$case_coord_identity']::text[], ARRAY[$missing_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode') ORDER BY node_id")"
   local direct_ready_rows
   direct_ready_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT served_epoch, node_id, pid, object_version, row_index, assignment_flags, octet_length(vec_id), octet_length(row_locator), score, protocol_version, extension_version, profile_fingerprint, endpoint_status FROM ec_spire_remote_search('ec_spire_stage_e_coord_ready_idx'::regclass, $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], ARRAY[$missing_pid,$ready_pid]::bigint[], 1, '$mode')")"
   local summary
-  summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_candidate_receive_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/missing_index','spire/remote/stage_e/coord_ready']::text[], ARRAY['ec_spire_stage_e_missing_remote_idx','ec_spire_stage_e_coord_ready_idx']::text[], ARRAY['$remote_ready_identity_hex','$case_coord_identity']::text[], ARRAY[$missing_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode')")"
+  summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_candidate_receive_summary(ARRAY[2,3]::integer[], ARRAY['$fault_secret','spire/remote/stage_e/coord_ready']::text[], ARRAY['$fault_remote_index','ec_spire_stage_e_coord_ready_idx']::text[], ARRAY['$fault_identity_hex','$case_coord_identity']::text[], ARRAY[$missing_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode')")"
 
   {
     echo "matrix_row=$matrix_row"
-    echo "injection=remote_index_regclass=ec_spire_stage_e_missing_remote_idx"
+    echo "injection=$fault_injection"
     echo "missing_remote_identity=$remote_ready_identity_hex"
     echo "coord_ready_identity=$case_coord_identity"
     echo "coord_ready_epoch=$coord_ready_epoch"
@@ -263,8 +297,8 @@ SQL
   fi
 }
 
-run_case "strict" "$STRICT_LOG" "remote_candidate_receive_failed" "1" "0" "compact_candidate_receive" "remote_index_unavailable" "none"
-run_case "degraded" "$DEGRADED_LOG" "degraded_ready" "0" "1" "remote_heap_resolution" "none" "remote_index_unavailable"
+run_case "strict" "$STRICT_LOG" "remote_candidate_receive_failed" "1" "0" "compact_candidate_receive" "$strict_first_failure" "none"
+run_case "degraded" "$DEGRADED_LOG" "degraded_ready" "0" "1" "remote_heap_resolution" "none" "$degraded_first_skip"
 
 echo "strict_log=$STRICT_LOG"
 echo "degraded_log=$DEGRADED_LOG"

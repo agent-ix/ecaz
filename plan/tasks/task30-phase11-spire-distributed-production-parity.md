@@ -851,6 +851,14 @@ Goal: prove distributed correctness locally before AWS.
     `remote_index_unavailable` skip and advances the ready batch to
     `remote_heap_resolution`, and strict/degraded logs are packet-local.
     Remaining Stage E fault and lifecycle rows still need fixture logs.
+  - [x] Packet `30782` adds the endpoint fingerprint mismatch candidate
+    receive runtime row: strict mode records one
+    `endpoint_identity_mismatch` candidate-receive failure while a ready
+    loopback candidate batch still decodes, degraded mode records one
+    `endpoint_identity_mismatch` skip and advances the ready batch to
+    `remote_heap_resolution`, and strict/degraded logs are packet-local.
+    Remaining Stage E transport, timeout/cancel, OOM, and lifecycle rows still
+    need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
