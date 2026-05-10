@@ -268,9 +268,14 @@ Acceptance artifact:
     It also closes the packet `30765` row-materialization mapping matrix
     follow-up by representing missing or stale coordinator mappings under the
     existing `requires_remote_row_materialization` production blocker.
-- [ ] Add operator diagnostics that show remote node readiness, served epoch,
+- [x] Add operator diagnostics that show remote node readiness, served epoch,
   remote fanout, candidate batches, heap resolution state, and merge status in
   one packet-friendly path.
+  - [x] Packet `30771` adds
+    `ec_spire_remote_search_operator_diagnostics()`, a single-row rollup over
+    remote capability readiness, remote last-served epoch range, production
+    fanout/candidate batches, heap resolution, merge/result source, and AM
+    delivery blocker state.
 
 ## Phase 11.7: Local Multi-NVMe and Store Execution Hardening
 
@@ -758,6 +763,10 @@ Goal: prove distributed correctness locally before AWS.
     the full epoch/lifecycle/fault fixture remain open.
 - [ ] Publish remote placement readiness and replica manifest freshness
   diagnostics.
+  - [x] Packet `30771` adds the packet-friendly operator diagnostic rollup for
+    readiness, served epoch range, fanout, candidate batches, heap resolution,
+    merge, and AM delivery status. Explicit replica manifest freshness fixture
+    evidence remains open with the broader Stage E lifecycle work.
 - [ ] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX
   CONCURRENTLY while fanout is planned or in flight.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,

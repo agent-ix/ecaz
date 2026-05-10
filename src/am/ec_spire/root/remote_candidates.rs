@@ -397,6 +397,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "fault_case,failure_category,strict_action,degraded_action,counter_delta",
             next_action: "implement_stage_e_fault_fixture_against_each_named_case",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 23,
+            entrypoint_name: "ec_spire_remote_search_operator_diagnostics",
+            area: "search",
+            operator_use: "packet_friendly_production_readiness_rollup",
+            status_source: "remote_readiness_status,candidate_batch_count,final_heap_fetch_status,am_delivery_status,next_blocker",
+            next_action: "inspect_single_rollup_before_running_multi_instance_fault_fixture",
+        },
     ]
 }
 
@@ -5790,6 +5798,96 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_summary_row(
         remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k)
             .summary
     }
+}
+
+pub(crate) unsafe fn remote_search_operator_diagnostics_row(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> SpireRemoteSearchOperatorDiagnosticsRow {
+    let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
+        let capability = unsafe { remote_node_capability_summary(index_relation) };
+        let remote_snapshots = unsafe { remote_node_snapshot(index_relation) }
+            .into_iter()
+            .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)
+            .collect::<Vec<_>>();
+        let min_remote_last_served_epoch = remote_snapshots
+            .iter()
+            .map(|row| row.last_served_epoch)
+            .min()
+            .unwrap_or(0);
+        let max_remote_last_served_epoch = remote_snapshots
+            .iter()
+            .map(|row| row.last_served_epoch)
+            .max()
+            .unwrap_or(0);
+        let ready_remote_node_count = u64::try_from(
+            remote_snapshots
+                .iter()
+                .filter(|row| row.status == SPIRE_REMOTE_STATUS_READY)
+                .count(),
+        )
+        .map_err(|_| "ec_spire operator diagnostics ready remote node count exceeds u64")?;
+        let blocked_remote_node_count = u64::try_from(remote_snapshots.len())
+            .map_err(|_| "ec_spire operator diagnostics remote node count exceeds u64")?
+            .checked_sub(ready_remote_node_count)
+            .ok_or_else(|| "ec_spire operator diagnostics remote node count underflow".to_owned())?;
+        let stream =
+            unsafe { remote_search_production_scan_heap_resolution_result_stream(index_relation, query, top_k) };
+        let summary = stream.summary;
+        let am_delivery = stream.am_delivery;
+
+        let (next_blocker, status, recommendation) =
+            if capability.remote_node_count > 0 && capability.status != SPIRE_REMOTE_STATUS_READY {
+                (
+                    "remote_node_capability",
+                    capability.status,
+                    capability.recommendation,
+                )
+            } else if am_delivery.next_blocker != SPIRE_REMOTE_NONE {
+                (
+                    am_delivery.next_blocker,
+                    am_delivery.status,
+                    am_delivery.recommendation,
+                )
+            } else {
+                (summary.next_blocker, summary.status, summary.recommendation)
+            };
+
+        Ok(SpireRemoteSearchOperatorDiagnosticsRow {
+            active_epoch: summary.requested_epoch,
+            consistency_mode: summary.consistency_mode,
+            remote_node_count: capability.remote_node_count,
+            ready_remote_node_count,
+            blocked_remote_node_count,
+            min_remote_last_served_epoch,
+            max_remote_last_served_epoch,
+            remote_readiness_status: capability.status,
+            effective_nprobe: summary.effective_nprobe,
+            selected_pid_count: summary.selected_pid_count,
+            local_pid_count: summary.local_pid_count,
+            remote_pid_count: summary.remote_pid_count,
+            skipped_pid_count: summary.skipped_pid_count,
+            remote_fanout_count: summary.dispatch_count,
+            candidate_batch_count: summary.dispatch_count,
+            candidate_row_count: summary.compact_candidate_count,
+            remote_heap_ready_dispatch_count: summary.remote_heap_ready_dispatch_count,
+            remote_heap_failed_dispatch_count: summary.remote_heap_failed_dispatch_count,
+            remote_heap_candidate_count: summary.remote_heap_candidate_count,
+            local_heap_candidate_count: summary.local_heap_candidate_count,
+            returned_candidate_count: summary.returned_candidate_count,
+            result_source: summary.result_source,
+            final_heap_fetch_status: summary.final_heap_fetch_status,
+            merge_status: summary.status,
+            am_delivery_status: am_delivery.status,
+            am_deliverable_output_count: am_delivery.am_deliverable_output_count,
+            remote_origin_output_count: am_delivery.remote_origin_output_count,
+            next_blocker,
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(

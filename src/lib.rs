@@ -10296,6 +10296,104 @@ fn ec_spire_remote_search_production_scan_heap_resolution_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_operator_diagnostics(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(consistency_mode, &'static str),
+        name!(remote_node_count, i64),
+        name!(ready_remote_node_count, i64),
+        name!(blocked_remote_node_count, i64),
+        name!(min_remote_last_served_epoch, i64),
+        name!(max_remote_last_served_epoch, i64),
+        name!(remote_readiness_status, &'static str),
+        name!(effective_nprobe, i64),
+        name!(selected_pid_count, i64),
+        name!(local_pid_count, i64),
+        name!(remote_pid_count, i64),
+        name!(skipped_pid_count, i64),
+        name!(remote_fanout_count, i64),
+        name!(candidate_batch_count, i64),
+        name!(candidate_row_count, i64),
+        name!(remote_heap_ready_dispatch_count, i64),
+        name!(remote_heap_failed_dispatch_count, i64),
+        name!(remote_heap_candidate_count, i64),
+        name!(local_heap_candidate_count, i64),
+        name!(returned_candidate_count, i64),
+        name!(result_source, &'static str),
+        name!(final_heap_fetch_status, &'static str),
+        name!(merge_status, &'static str),
+        name!(am_delivery_status, &'static str),
+        name!(am_deliverable_output_count, i64),
+        name!(remote_origin_output_count, i64),
+        name!(next_blocker, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_operator_diagnostics top_k must be non-negative");
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_operator_diagnostics")
+    };
+    let row =
+        unsafe { am::spire_remote_search_operator_diagnostics_row(index_relation, query, top_k) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        row.consistency_mode,
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.ready_remote_node_count)
+            .expect("ready remote node count should fit in i64"),
+        i64::try_from(row.blocked_remote_node_count)
+            .expect("blocked remote node count should fit in i64"),
+        i64::try_from(row.min_remote_last_served_epoch)
+            .expect("minimum remote last served epoch should fit in i64"),
+        i64::try_from(row.max_remote_last_served_epoch)
+            .expect("maximum remote last served epoch should fit in i64"),
+        row.remote_readiness_status,
+        i64::try_from(row.effective_nprobe).expect("effective nprobe should fit in i64"),
+        i64::try_from(row.selected_pid_count).expect("selected pid count should fit in i64"),
+        i64::try_from(row.local_pid_count).expect("local pid count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.skipped_pid_count).expect("skipped pid count should fit in i64"),
+        i64::try_from(row.remote_fanout_count).expect("remote fanout count should fit in i64"),
+        i64::try_from(row.candidate_batch_count).expect("candidate batch count should fit in i64"),
+        i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+        i64::try_from(row.remote_heap_ready_dispatch_count)
+            .expect("remote heap ready dispatch count should fit in i64"),
+        i64::try_from(row.remote_heap_failed_dispatch_count)
+            .expect("remote heap failed dispatch count should fit in i64"),
+        i64::try_from(row.remote_heap_candidate_count)
+            .expect("remote heap candidate count should fit in i64"),
+        i64::try_from(row.local_heap_candidate_count)
+            .expect("local heap candidate count should fit in i64"),
+        i64::try_from(row.returned_candidate_count)
+            .expect("returned candidate count should fit in i64"),
+        row.result_source,
+        row.final_heap_fetch_status,
+        row.merge_status,
+        row.am_delivery_status,
+        i64::try_from(row.am_deliverable_output_count)
+            .expect("AM deliverable output count should fit in i64"),
+        i64::try_from(row.remote_origin_output_count)
+            .expect("remote origin output count should fit in i64"),
+        row.next_blocker,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_readiness(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -25042,6 +25140,76 @@ mod tests {
         assert_eq!(final_heap_status, "remote_ready");
         assert_eq!(status, "ready");
 
+        let diagnostics_from = "FROM ec_spire_remote_search_operator_diagnostics(\
+             'ec_spire_prod_scan_heap_coord_idx'::regclass, \
+             ARRAY[1.0, 0.0]::real[], 2)";
+        let diagnostic_remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_node_count {diagnostics_from}"))
+                .expect("diagnostic remote node count query should succeed")
+                .expect("diagnostic remote node count should exist");
+        let diagnostic_ready_remote_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT ready_remote_node_count {diagnostics_from}"
+        ))
+        .expect("diagnostic ready remote node count query should succeed")
+        .expect("diagnostic ready remote node count should exist");
+        let diagnostic_min_served = Spi::get_one::<i64>(&format!(
+            "SELECT min_remote_last_served_epoch {diagnostics_from}"
+        ))
+        .expect("diagnostic min served epoch query should succeed")
+        .expect("diagnostic min served epoch should exist");
+        let diagnostic_max_served = Spi::get_one::<i64>(&format!(
+            "SELECT max_remote_last_served_epoch {diagnostics_from}"
+        ))
+        .expect("diagnostic max served epoch query should succeed")
+        .expect("diagnostic max served epoch should exist");
+        let diagnostic_fanout =
+            Spi::get_one::<i64>(&format!("SELECT remote_fanout_count {diagnostics_from}"))
+                .expect("diagnostic fanout query should succeed")
+                .expect("diagnostic fanout count should exist");
+        let diagnostic_candidate_batches =
+            Spi::get_one::<i64>(&format!("SELECT candidate_batch_count {diagnostics_from}"))
+                .expect("diagnostic candidate batch query should succeed")
+                .expect("diagnostic candidate batch count should exist");
+        let diagnostic_candidate_rows =
+            Spi::get_one::<i64>(&format!("SELECT candidate_row_count {diagnostics_from}"))
+                .expect("diagnostic candidate row query should succeed")
+                .expect("diagnostic candidate row count should exist");
+        let diagnostic_final_heap = Spi::get_one::<String>(&format!(
+            "SELECT final_heap_fetch_status {diagnostics_from}"
+        ))
+        .expect("diagnostic final heap query should succeed")
+        .expect("diagnostic final heap status should exist");
+        let diagnostic_am_status =
+            Spi::get_one::<String>(&format!("SELECT am_delivery_status {diagnostics_from}"))
+                .expect("diagnostic AM status query should succeed")
+                .expect("diagnostic AM status should exist");
+        let diagnostic_remote_origin_outputs = Spi::get_one::<i64>(&format!(
+            "SELECT remote_origin_output_count {diagnostics_from}"
+        ))
+        .expect("diagnostic remote origin output query should succeed")
+        .expect("diagnostic remote origin output count should exist");
+        let diagnostic_next_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {diagnostics_from}"))
+                .expect("diagnostic next blocker query should succeed")
+                .expect("diagnostic next blocker should exist");
+        let diagnostic_status =
+            Spi::get_one::<String>(&format!("SELECT status {diagnostics_from}"))
+                .expect("diagnostic status query should succeed")
+                .expect("diagnostic status should exist");
+
+        assert_eq!(diagnostic_remote_node_count, 1);
+        assert_eq!(diagnostic_ready_remote_node_count, 1);
+        assert_eq!(diagnostic_min_served, active_epoch);
+        assert_eq!(diagnostic_max_served, active_epoch);
+        assert_eq!(diagnostic_fanout, 1);
+        assert_eq!(diagnostic_candidate_batches, 1);
+        assert_eq!(diagnostic_candidate_rows, 1);
+        assert_eq!(diagnostic_final_heap, "remote_ready");
+        assert_eq!(diagnostic_am_status, "requires_remote_row_materialization");
+        assert_eq!(diagnostic_remote_origin_outputs, 1);
+        assert_eq!(diagnostic_next_blocker, "remote_row_materialization");
+        assert_eq!(diagnostic_status, "requires_remote_row_materialization");
+
         loopback_client
             .batch_execute("DELETE FROM ec_spire_prod_scan_heap_remote_sql")
             .expect("remote heap row delete should succeed");
@@ -29945,6 +30113,12 @@ mod tests {
         ))
         .expect("operator Stage E fault matrix entrypoint query should succeed")
         .expect("operator Stage E fault matrix entrypoint should exist");
+        let operator_diagnostics_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_operator_diagnostics'"
+        ))
+        .expect("operator diagnostics entrypoint query should succeed")
+        .expect("operator diagnostics entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -30072,8 +30246,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 22);
-        assert_eq!(operator_entrypoint_reachable_count, 22);
+        assert_eq!(operator_entrypoint_count, 23);
+        assert_eq!(operator_entrypoint_reachable_count, 23);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -30109,6 +30283,10 @@ mod tests {
         assert_eq!(
             stage_e_fault_matrix_use,
             "local_multi_instance_fault_fixture_contract"
+        );
+        assert_eq!(
+            operator_diagnostics_use,
+            "packet_friendly_production_readiness_rollup"
         );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");

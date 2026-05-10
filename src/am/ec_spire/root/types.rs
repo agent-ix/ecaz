@@ -755,6 +755,40 @@ pub(crate) struct SpireRemoteProductionScanHeapResolutionSummaryRow {
     pub(crate) recommendation: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchOperatorDiagnosticsRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) remote_node_count: u64,
+    pub(crate) ready_remote_node_count: u64,
+    pub(crate) blocked_remote_node_count: u64,
+    pub(crate) min_remote_last_served_epoch: u64,
+    pub(crate) max_remote_last_served_epoch: u64,
+    pub(crate) remote_readiness_status: &'static str,
+    pub(crate) effective_nprobe: u64,
+    pub(crate) selected_pid_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) remote_fanout_count: u64,
+    pub(crate) candidate_batch_count: u64,
+    pub(crate) candidate_row_count: u64,
+    pub(crate) remote_heap_ready_dispatch_count: u64,
+    pub(crate) remote_heap_failed_dispatch_count: u64,
+    pub(crate) remote_heap_candidate_count: u64,
+    pub(crate) local_heap_candidate_count: u64,
+    pub(crate) returned_candidate_count: u64,
+    pub(crate) result_source: &'static str,
+    pub(crate) final_heap_fetch_status: &'static str,
+    pub(crate) merge_status: &'static str,
+    pub(crate) am_delivery_status: &'static str,
+    pub(crate) am_deliverable_output_count: u64,
+    pub(crate) remote_origin_output_count: u64,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireRemoteProductionScanOutputRow {
     pub(crate) requested_epoch: u64,
