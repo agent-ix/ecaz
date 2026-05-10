@@ -171,6 +171,15 @@ interrupt bridge is still open; the AM path must still translate actual local
 query cancellation or local statement timeout into that adapter trigger before
 C2 can be marked complete.
 
+The C5 AM bridge must choose one cancellation source and test it under a real
+backend, not only under deterministic test triggers. Acceptable shapes are:
+the AM scan poll loop observes PostgreSQL interrupt state
+(`CHECK_FOR_INTERRUPTS()` / `QueryCancelPending`) and calls the per-query
+executor cancel handle, or a backend-owned callback raises a signal that a
+watcher task maps to the same cancel handle. Either way, cancellation is
+query-wide, every remote attempt receives a fresh cancel token, and a cancelled
+token must not be reused across retry attempts.
+
 Verification:
 
 - PG18/local fixture proving a local cancel releases global and per-node
@@ -208,6 +217,14 @@ dispatch to `degraded_skipped` under degraded mode, summaries expose the skip
 count and first skip category, and compact merge ignores skipped dispatches
 while consuming only `CandidateReceiveReady` batches. AM-boundary policy and the
 full remote fault matrix still need to land before C4 is complete.
+
+The C5 AM boundary must make strict/degraded mode a single per-query executor
+input, not an ad hoc per-dispatch flag. The source must be named explicitly
+(session GUC or query option), validated before dispatch admission, and threaded
+unchanged into transport, candidate receive, compact merge, and Stage D heap
+resolution. When degraded mode returns SQL-visible results, diagnostics must
+show that the result set is partial by naming skipped nodes, or at minimum
+reporting skipped-node count plus first skip category.
 
 Verification:
 

@@ -134,8 +134,14 @@ Acceptance artifact:
   skipped node and the exact mismatch.
 - [ ] Remote nodes must reject stale/unavailable epochs explicitly in strict
   mode and surface degraded behavior explicitly when allowed.
+  - [x] First production receive strict stale-epoch guard: stale served epochs
+    are categorized as `served_epoch_mismatch` instead of generic candidate
+    batch validation failure.
 - [ ] Add PG18 tests for nonempty remote candidates, stale epoch rejection, and
   empty/top-k-zero behavior.
+  - [x] PG18 production receive coverage now includes nonempty loopback
+    candidates, top-k-zero ready-empty behavior, and stale served-epoch
+    rejection.
 - [ ] Add local version-skew tests with two remotes at different advertised
   contract versions.
 
@@ -162,6 +168,12 @@ Acceptance artifact:
   global connection/work limits, per-remote-node concurrency caps, overload
   shedding behavior, and diagnostics for backpressure decisions.
 - [ ] Propagate local query cancellation to outstanding remote work.
+  - [x] First adapter primitive: production receive and transport use a
+    `tokio-postgres` cancel token and map local cancellation to global
+    dispatch cleanup.
+  - [ ] Before C5 AM integration, pin and implement the PostgreSQL backend
+    interrupt bridge from actual local query cancel / statement timeout into
+    the adapter cancel token; test-only triggers are not production evidence.
 - [ ] Define fail-closed strict mode and explicit degraded mode behavior for
   partial remote failures.
   - [x] First production degraded-state slice: production executor state can
@@ -169,6 +181,13 @@ Acceptance artifact:
     as `degraded_skipped`, preserve the first skip category, and merge only
     ready candidate batches in degraded mode while strict mode remains
     fail-closed.
+  - [ ] Before C5 AM integration, pin AM-boundary consistency-mode policy:
+    source of strict/degraded mode, single per-query threading into executor
+    state, and final diagnostics or warning that name skipped nodes or at
+    least count plus first skip category.
+  - [ ] Add a strict/degraded fault matrix table covering connect, secret,
+    statement timeout, backend termination, query cancellation, validation,
+    identity, version, stale epoch, and heap-resolution failures.
 - [ ] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.
 

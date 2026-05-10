@@ -82,6 +82,7 @@ const SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE: &str = "remote_index_una
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED: &str = "candidate_decode_failed";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
     "candidate_batch_validation_failed";
+const SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH: &str = "served_epoch_mismatch";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_invalid_parameters";
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
@@ -2566,19 +2567,17 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
-        if validate_remote_search_candidate_batch(
+        if let Err(error) = validate_remote_search_candidate_batch(
             request.requested_epoch,
             request.node_id,
             &request.selected_pids,
             &candidates,
-        )
-        .is_err()
-        {
+        ) {
             return failed_production_candidate_receive_result(
                 request.node_id,
                 batch_start,
                 request_start,
-                SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
+                production_candidate_validation_failure_category(&error),
             );
         }
         let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
@@ -2654,6 +2653,16 @@ fn production_candidate_decode_failure_category(error: &str) -> &'static str {
         SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
     } else {
         SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED
+    }
+}
+
+fn production_candidate_validation_failure_category(error: &str) -> &'static str {
+    if remote_search_receive_attempt_failure_status(error)
+        == SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH
+    {
+        SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH
+    } else {
+        SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED
     }
 }
 
