@@ -86,8 +86,10 @@ fn ensure_local_heap_placement_directory_is_deliverable(
         .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
         .expect("remote placement count should have a first remote placement");
     Err(format!(
-        "ec_spire local heap tuple delivery requires remote_row_materialization before consuming {remote_placement_count} remote placement(s); first remote pid {} is on node_id {}",
-        first_remote.pid, first_remote.node_id
+        "ec_spire local heap tuple delivery requires {} before consuming {remote_placement_count} remote placement(s); first remote pid {} is on node_id {}",
+        super::SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+        first_remote.pid,
+        first_remote.node_id
     ))
 }
 
