@@ -685,6 +685,8 @@ pub(crate) struct SpireRemoteProductionExecutorStateSummaryRow {
     pub(crate) candidate_receive_failed_dispatch_count: u64,
     pub(crate) candidate_row_count: u64,
     pub(crate) first_candidate_receive_failure_category: &'static str,
+    pub(crate) degraded_skipped_dispatch_count: u64,
+    pub(crate) first_degraded_skip_category: &'static str,
     pub(crate) cancelled_dispatch_count: u64,
     pub(crate) first_cancellation_category: &'static str,
     pub(crate) next_executor_step: &'static str,

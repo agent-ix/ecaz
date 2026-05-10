@@ -164,6 +164,11 @@ Acceptance artifact:
 - [ ] Propagate local query cancellation to outstanding remote work.
 - [ ] Define fail-closed strict mode and explicit degraded mode behavior for
   partial remote failures.
+  - [x] First production degraded-state slice: production executor state can
+    mark transport, secret-resolution, and compact-candidate receive failures
+    as `degraded_skipped`, preserve the first skip category, and merge only
+    ready candidate batches in degraded mode while strict mode remains
+    fail-closed.
 - [ ] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.
 

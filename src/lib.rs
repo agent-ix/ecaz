@@ -9778,6 +9778,8 @@ fn ec_spire_remote_search_production_executor_state_summary(
         name!(candidate_receive_failed_dispatch_count, i64),
         name!(candidate_row_count, i64),
         name!(first_candidate_receive_failure_category, &'static str),
+        name!(degraded_skipped_dispatch_count, i64),
+        name!(first_degraded_skip_category, &'static str),
         name!(cancelled_dispatch_count, i64),
         name!(first_cancellation_category, &'static str),
         name!(next_executor_step, &'static str),
@@ -9864,6 +9866,9 @@ fn ec_spire_remote_search_production_executor_state_summary(
             .expect("candidate receive failed dispatch count should fit in i64"),
         i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
         row.first_candidate_receive_failure_category,
+        i64::try_from(row.degraded_skipped_dispatch_count)
+            .expect("degraded skipped dispatch count should fit in i64"),
+        row.first_degraded_skip_category,
         i64::try_from(row.cancelled_dispatch_count)
             .expect("cancelled dispatch count should fit in i64"),
         row.first_cancellation_category,
@@ -23623,6 +23628,16 @@ mod tests {
         ))
         .expect("candidate receive failure category query should succeed")
         .expect("candidate receive failure category should exist");
+        let degraded_skipped_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT degraded_skipped_dispatch_count {prod_state_from}"
+        ))
+        .expect("degraded skipped dispatch count query should succeed")
+        .expect("degraded skipped dispatch count should exist");
+        let first_degraded_skip_category = Spi::get_one::<String>(&format!(
+            "SELECT first_degraded_skip_category {prod_state_from}"
+        ))
+        .expect("degraded skip category query should succeed")
+        .expect("degraded skip category should exist");
         let cancelled_dispatch_count = Spi::get_one::<i64>(&format!(
             "SELECT cancelled_dispatch_count {prod_state_from}"
         ))
@@ -23653,6 +23668,8 @@ mod tests {
         assert_eq!(candidate_receive_pending_dispatch_count, 0);
         assert_eq!(candidate_receive_sent_dispatch_count, 0);
         assert_eq!(first_candidate_receive_failure_category, "none");
+        assert_eq!(degraded_skipped_dispatch_count, 0);
+        assert_eq!(first_degraded_skip_category, "none");
         assert_eq!(cancelled_dispatch_count, 0);
         assert_eq!(first_cancellation_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");

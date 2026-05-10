@@ -202,6 +202,13 @@ Normalize all remote failures into explicit strict and degraded outcomes:
 - degraded mode: skip only the failing node or dispatch, preserve exact reason,
   and keep local and other ready remote candidates eligible.
 
+As of 2026-05-10, the first C4 state slice exists in the production executor:
+transport, secret-resolution, and compact-candidate receive failures can move a
+dispatch to `degraded_skipped` under degraded mode, summaries expose the skip
+count and first skip category, and compact merge ignores skipped dispatches
+while consuming only `CandidateReceiveReady` batches. AM-boundary policy and the
+full remote fault matrix still need to land before C4 is complete.
+
 Verification:
 
 - Fault matrix for auth or certificate failure, connection reset, remote

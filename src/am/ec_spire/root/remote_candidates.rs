@@ -2744,6 +2744,7 @@ enum SpireRemoteProductionDispatchState {
     TransportFailed,
     CandidateReceiveReady,
     CandidateReceiveFailed,
+    DegradedSkipped,
     Cancelled,
 }
 
@@ -2762,6 +2763,7 @@ struct SpireRemoteProductionDispatch {
     transport_failure_category: &'static str,
     candidate_count: u64,
     candidate_failure_category: &'static str,
+    degraded_skip_category: &'static str,
     candidate_batch: Option<SpireRemoteSearchCandidateBatch>,
 }
 
@@ -2782,6 +2784,7 @@ impl SpireRemoteProductionDispatch {
                 transport_failure_category: SPIRE_REMOTE_NONE,
                 candidate_count: 0,
                 candidate_failure_category: SPIRE_REMOTE_NONE,
+                degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_batch: None,
             }
         } else {
@@ -2799,6 +2802,7 @@ impl SpireRemoteProductionDispatch {
                 transport_failure_category: SPIRE_REMOTE_NONE,
                 candidate_count: 0,
                 candidate_failure_category: SPIRE_REMOTE_NONE,
+                degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_batch: None,
             }
         }
@@ -2826,6 +2830,23 @@ impl SpireRemoteProductionDispatch {
             self.status = row.status;
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT;
         }
+        Ok(())
+    }
+
+    fn apply_transport_degraded_skip(
+        &mut self,
+        row: &SpireRemoteProductionTransportProbeRow,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::Planned {
+            return Err(format!(
+                "ec_spire production executor transport outcome for node_id {} cannot apply to dispatch state {:?}",
+                row.node_id, self.state
+            ));
+        }
+
+        self.transport_row_count = row.row_count;
+        self.transport_failure_category = row.failure_category;
+        self.apply_degraded_skip(row.failure_category);
         Ok(())
     }
 
@@ -2873,6 +2894,22 @@ impl SpireRemoteProductionDispatch {
         Ok(())
     }
 
+    fn apply_candidate_receive_degraded_skip(
+        &mut self,
+        result: &SpireRemoteProductionCandidateReceiveResult,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::TransportReady {
+            return Err(format!(
+                "ec_spire production executor candidate receive outcome for node_id {} cannot apply to dispatch state {:?}",
+                result.node_id, self.state
+            ));
+        }
+
+        self.candidate_failure_category = result.failure_category;
+        self.apply_degraded_skip(result.failure_category);
+        Ok(())
+    }
+
     fn apply_candidate_receive_failure(&mut self, failure_category: &'static str) {
         self.candidate_count = 0;
         self.candidate_failure_category = failure_category;
@@ -2882,9 +2919,19 @@ impl SpireRemoteProductionDispatch {
         self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
     }
 
+    fn apply_degraded_skip(&mut self, failure_category: &'static str) {
+        self.candidate_count = 0;
+        self.degraded_skip_category = failure_category;
+        self.candidate_batch = None;
+        self.state = SpireRemoteProductionDispatchState::DegradedSkipped;
+        self.status = SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED;
+        self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
+    }
+
     fn apply_local_query_cancel(&mut self) {
         self.candidate_count = 0;
         self.candidate_failure_category = SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
+        self.degraded_skip_category = SPIRE_REMOTE_NONE;
         self.candidate_batch = None;
         self.state = SpireRemoteProductionDispatchState::Cancelled;
         self.status = SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED;
@@ -2922,6 +2969,16 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         rows: &[SpireRemoteProductionTransportProbeRow],
     ) -> Result<(), String> {
+        self.apply_transport_probe_rows_with_consistency_mode(rows, "strict")
+    }
+
+    fn apply_transport_probe_rows_with_consistency_mode(
+        &mut self,
+        rows: &[SpireRemoteProductionTransportProbeRow],
+        consistency_mode: &str,
+    ) -> Result<(), String> {
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_row) = rows
             .iter()
             .find(|row| row.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED)
@@ -2952,7 +3009,11 @@ impl SpireRemoteFanoutExecutor {
                         row.node_id
                     )
                 })?;
-            dispatch.apply_transport_probe_row(row)?;
+            if degraded && row.status != SPIRE_REMOTE_STATUS_READY {
+                dispatch.apply_transport_degraded_skip(row)?;
+            } else {
+                dispatch.apply_transport_probe_row(row)?;
+            }
         }
         Ok(())
     }
@@ -2961,6 +3022,16 @@ impl SpireRemoteFanoutExecutor {
         &mut self,
         results: &[SpireRemoteProductionCandidateReceiveResult],
     ) -> Result<(), String> {
+        self.apply_candidate_receive_results_with_consistency_mode(results, "strict")
+    }
+
+    fn apply_candidate_receive_results_with_consistency_mode(
+        &mut self,
+        results: &[SpireRemoteProductionCandidateReceiveResult],
+        consistency_mode: &str,
+    ) -> Result<(), String> {
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_result) = results.iter().find(|result| {
             result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
         }) {
@@ -2990,7 +3061,11 @@ impl SpireRemoteFanoutExecutor {
                         result.node_id
                     )
                 })?;
-            dispatch.apply_candidate_receive_result(result)?;
+            if degraded && result.status != SPIRE_REMOTE_STATUS_READY {
+                dispatch.apply_candidate_receive_degraded_skip(result)?;
+            } else {
+                dispatch.apply_candidate_receive_result(result)?;
+            }
         }
         Ok(())
     }
@@ -3007,6 +3082,8 @@ impl SpireRemoteFanoutExecutor {
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
+        let degraded =
+            parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
         let mut requests = Vec::new();
         let mut secret_lookup_count = self.conninfo_secret_lookup_count;
         for dispatch in &mut self.dispatches {
@@ -3031,9 +3108,8 @@ impl SpireRemoteFanoutExecutor {
                     top_k,
                     consistency_mode: consistency_mode.to_owned(),
                 }),
-                Err(_) => {
-                    dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET)
-                }
+                Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
+                Err(_) => dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
             }
         }
         self.conninfo_secret_lookup_count = secret_lookup_count;
@@ -3052,7 +3128,7 @@ impl SpireRemoteFanoutExecutor {
         }
         let results =
             SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)?;
-        self.apply_candidate_receive_results(&results)
+        self.apply_candidate_receive_results_with_consistency_mode(&results, consistency_mode)
     }
 
     fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
@@ -3079,6 +3155,7 @@ impl SpireRemoteFanoutExecutor {
                         dispatch.node_id, dispatch.state, dispatch.status
                     ));
                 }
+                SpireRemoteProductionDispatchState::DegradedSkipped => {}
             }
         }
         Ok(batches)
@@ -3113,6 +3190,8 @@ impl SpireRemoteFanoutExecutor {
         let mut candidate_receive_failed_dispatch_count = 0_u64;
         let mut candidate_row_count = 0_u64;
         let mut first_candidate_receive_failure_category = SPIRE_REMOTE_NONE;
+        let mut degraded_skipped_dispatch_count = 0_u64;
+        let mut first_degraded_skip_category = SPIRE_REMOTE_NONE;
         let mut cancelled_dispatch_count = 0_u64;
         let mut first_cancellation_category = SPIRE_REMOTE_NONE;
         let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
@@ -3329,6 +3408,29 @@ impl SpireRemoteFanoutExecutor {
                         "candidate-receive-failed dispatch",
                     )?;
                 }
+                SpireRemoteProductionDispatchState::DegradedSkipped => {
+                    if degraded_skipped_dispatch_count == 0 {
+                        first_degraded_skip_category = dispatch.degraded_skip_category;
+                    }
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut degraded_skipped_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "degraded-skipped dispatch",
+                    )?;
+                }
                 SpireRemoteProductionDispatchState::Cancelled => {
                     if cancelled_dispatch_count == 0 {
                         first_cancellation_category = dispatch.candidate_failure_category;
@@ -3382,6 +3484,19 @@ impl SpireRemoteFanoutExecutor {
                 SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE,
                 "wire production compact candidate receive before AM scan merge",
             )
+        } else if candidate_receive_ready_dispatch_count > 0 && degraded_skipped_dispatch_count > 0
+        {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+                SPIRE_REMOTE_STATUS_DEGRADED_READY,
+                "continue with ready remote batches and report degraded skipped dispatches",
+            )
+        } else if degraded_skipped_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+                SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+                "continue without skipped remote dispatches in degraded mode",
+            )
         } else if transport_ready_dispatch_count > 0 {
             (
                 SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
@@ -3417,6 +3532,8 @@ impl SpireRemoteFanoutExecutor {
             candidate_receive_failed_dispatch_count,
             candidate_row_count,
             first_candidate_receive_failure_category,
+            degraded_skipped_dispatch_count,
+            first_degraded_skip_category,
             cancelled_dispatch_count,
             first_cancellation_category,
             next_executor_step,
@@ -3439,9 +3556,24 @@ fn remote_search_production_executor_state_summary_from_transport_probe_rows(
     dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
     transport_rows: &[SpireRemoteProductionTransportProbeRow],
 ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    remote_search_production_executor_state_summary_from_transport_probe_rows_with_consistency_mode(
+        requested_epoch,
+        dispatch_rows,
+        transport_rows,
+        "strict",
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_executor_state_summary_from_transport_probe_rows_with_consistency_mode(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    consistency_mode: &str,
+) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
     let mut executor =
         SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
-    executor.apply_transport_probe_rows(transport_rows)?;
+    executor.apply_transport_probe_rows_with_consistency_mode(transport_rows, consistency_mode)?;
     executor.summary()
 }
 
@@ -3452,10 +3584,30 @@ fn remote_search_production_executor_state_summary_from_candidate_receive_result
     transport_rows: &[SpireRemoteProductionTransportProbeRow],
     candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
 ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    remote_search_production_executor_state_summary_from_candidate_receive_results_with_consistency_mode(
+        requested_epoch,
+        dispatch_rows,
+        transport_rows,
+        candidate_receive_results,
+        "strict",
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_executor_state_summary_from_candidate_receive_results_with_consistency_mode(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
+    consistency_mode: &str,
+) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
     let mut executor =
         SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
-    executor.apply_transport_probe_rows(transport_rows)?;
-    executor.apply_candidate_receive_results(candidate_receive_results)?;
+    executor.apply_transport_probe_rows_with_consistency_mode(transport_rows, consistency_mode)?;
+    executor.apply_candidate_receive_results_with_consistency_mode(
+        candidate_receive_results,
+        consistency_mode,
+    )?;
     executor.summary()
 }
 
@@ -3467,10 +3619,32 @@ fn remote_search_production_compact_merge_from_candidate_receive_results(
     candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
     limit: Option<usize>,
 ) -> Result<SpireRemoteSearchMergeResult, String> {
+    remote_search_production_compact_merge_from_candidate_receive_results_with_consistency_mode(
+        requested_epoch,
+        dispatch_rows,
+        transport_rows,
+        candidate_receive_results,
+        limit,
+        "strict",
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_compact_merge_from_candidate_receive_results_with_consistency_mode(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
+    limit: Option<usize>,
+    consistency_mode: &str,
+) -> Result<SpireRemoteSearchMergeResult, String> {
     let mut executor =
         SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
-    executor.apply_transport_probe_rows(transport_rows)?;
-    executor.apply_candidate_receive_results(candidate_receive_results)?;
+    executor.apply_transport_probe_rows_with_consistency_mode(transport_rows, consistency_mode)?;
+    executor.apply_candidate_receive_results_with_consistency_mode(
+        candidate_receive_results,
+        consistency_mode,
+    )?;
     executor.merge_ready_candidate_batches(limit)
 }
 
@@ -6978,6 +7152,31 @@ mod production_executor_state_tests {
     }
 
     #[test]
+    fn production_executor_degraded_transport_failure_skips_node() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![
+            failed_transport_row(2, SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED),
+            ready_transport_row(3, 1),
+        ];
+        let row =
+            remote_search_production_executor_state_summary_from_transport_probe_rows_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                "degraded",
+            )
+            .expect("degraded transport summary should succeed");
+
+        assert_eq!(row.transport_sent_dispatch_count, 1);
+        assert_eq!(row.transport_failed_dispatch_count, 0);
+        assert_eq!(row.degraded_skipped_dispatch_count, 1);
+        assert_eq!(row.first_degraded_skip_category, "connect_failed");
+        assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
+        assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "requires_compact_candidate_receive");
+    }
+
+    #[test]
     fn production_executor_state_rejects_unplanned_transport_result() {
         let dispatch_rows = vec![planned_dispatch(2, 1)];
         let transport_rows = vec![ready_transport_row(3, 1)];
@@ -7043,6 +7242,45 @@ mod production_executor_state_tests {
         assert_eq!(row.next_executor_step, "compact_candidate_receive");
         assert_eq!(row.status, "remote_candidate_receive_failed");
         assert_eq!(row.first_candidate_receive_failure_category, "candidate_decode_failed");
+    }
+
+    #[test]
+    fn production_executor_degraded_receive_failure_allows_ready_merge() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            failed_candidate_receive_result(2, SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH),
+            ready_candidate_receive_result(3, vec![30], 1),
+        ];
+        let row =
+            remote_search_production_executor_state_summary_from_candidate_receive_results_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+                "degraded",
+            )
+            .expect("degraded candidate receive summary should succeed");
+        let merged =
+            remote_search_production_compact_merge_from_candidate_receive_results_with_consistency_mode(
+                7,
+                &dispatch_rows,
+                &transport_rows,
+                &receive_results,
+                Some(10),
+                "degraded",
+            )
+            .expect("degraded candidate receive should merge ready batches");
+
+        assert_eq!(row.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(row.degraded_skipped_dispatch_count, 1);
+        assert_eq!(row.first_degraded_skip_category, "endpoint_identity_mismatch");
+        assert_eq!(row.next_executor_step, "remote_heap_resolution");
+        assert_eq!(row.status, "degraded_ready");
+        assert_eq!(merged.input_count, 1);
+        assert_eq!(merged.candidates.len(), 1);
+        assert_eq!(merged.candidates[0].node_id, 3);
     }
 
     #[test]
@@ -7376,6 +7614,43 @@ mod production_executor_state_tests {
         );
         assert_eq!(row.next_executor_step, "compact_candidate_receive");
         assert_eq!(row.status, "remote_candidate_receive_failed");
+    }
+
+    #[test]
+    fn production_executor_degraded_missing_secret_skips_receive_request() {
+        let secret_72 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/72").expect("key should build");
+        let secret_73 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/73").expect("key should build");
+        std::env::set_var(&secret_72, "host=/tmp dbname=postgres");
+        std::env::remove_var(&secret_73);
+
+        let dispatch_rows = vec![planned_dispatch(72, 1), planned_dispatch(73, 1)];
+        let transport_rows = vec![ready_transport_row(72, 1), ready_transport_row(73, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        let requests = executor
+            .compact_candidate_receive_requests(&[1.0, 0.0], 3, "degraded")
+            .expect("degraded request build should isolate missing secrets");
+
+        std::env::remove_var(&secret_72);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].node_id, 72);
+        assert_eq!(executor.conninfo_secret_lookup_count, 2);
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(row.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            row.first_degraded_skip_category,
+            "requires_conninfo_secret_resolution"
+        );
+        assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "requires_compact_candidate_receive");
     }
 
     #[test]
