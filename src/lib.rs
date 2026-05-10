@@ -9891,6 +9891,42 @@ fn ec_spire_remote_search_production_fault_matrix() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_stage_e_fault_matrix() -> TableIterator<
+    'static,
+    (
+        name!(fault_ordinal, i64),
+        name!(fault_case, &'static str),
+        name!(fixture_scope, &'static str),
+        name!(failure_category, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(strict_action, &'static str),
+        name!(strict_status, &'static str),
+        name!(degraded_action, &'static str),
+        name!(degraded_status, &'static str),
+        name!(counter_delta, &'static str),
+        name!(required_evidence, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_stage_e_fault_matrix_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.fault_ordinal).expect("fault ordinal should fit in i64"),
+            row.fault_case,
+            row.fixture_scope,
+            row.failure_category,
+            row.next_executor_step,
+            row.strict_action,
+            row.strict_status,
+            row.degraded_action,
+            row.degraded_status,
+            row.counter_delta,
+            row.required_evidence,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_production_executor_state_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -24448,6 +24484,7 @@ mod tests {
             "remote_executor_overload",
             "requires_conninfo_secret_resolution",
             "remote_statement_timeout",
+            "remote_query_failed",
             "local_statement_timeout",
             "remote_backend_terminated",
             "remote_query_cancelled",
@@ -24459,8 +24496,10 @@ mod tests {
             "stale_epoch",
             "served_epoch_mismatch",
             "consistency_mode_mismatch",
+            "remote_index_unavailable",
             "remote_heap_resolution_failed",
             "remote_heap_row_missing",
+            "requires_remote_row_materialization",
         ];
         for category in required_categories {
             let count = Spi::get_one::<i64>(&format!(
@@ -24502,12 +24541,83 @@ mod tests {
         )
         .expect("heap step query should succeed")
         .expect("heap step should exist");
+        let row_materialization_step = Spi::get_one::<String>(
+            "SELECT next_executor_step FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'requires_remote_row_materialization'",
+        )
+        .expect("row materialization step query should succeed")
+        .expect("row materialization step should exist");
+        let row_materialization_note = Spi::get_one::<String>(
+            "SELECT recommendation FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'requires_remote_row_materialization'",
+        )
+        .expect("row materialization recommendation query should succeed")
+        .expect("row materialization recommendation should exist");
 
         assert_eq!(local_timeout, "cancel_query");
         assert_eq!(remote_timeout, "skip_node");
         assert_eq!(executor_overload_step, "remote_executor_governance");
         assert_eq!(consistency_mismatch, "fail_closed");
         assert_eq!(heap_step, "remote_heap_resolution");
+        assert_eq!(row_materialization_step, "remote_row_materialization");
+        assert!(row_materialization_note
+            .contains("missing or stale coordinator materialization mappings"));
+    }
+
+    #[pg_test]
+    fn test_ec_spire_stage_e_fault_matrix_contract() {
+        let required_cases = [
+            "epoch_mismatch",
+            "version_skew",
+            "fingerprint_mismatch",
+            "connection_reset_mid_batch",
+            "remote_backend_termination",
+            "remote_statement_timeout",
+            "local_statement_timeout",
+            "local_cancel",
+            "simulated_network_partition",
+            "remote_oom",
+            "missing_or_reindexed_remote_index",
+        ];
+        for fault_case in required_cases {
+            let count = Spi::get_one::<i64>(&format!(
+                "SELECT count(*) FROM ec_spire_remote_search_stage_e_fault_matrix() \
+                 WHERE fault_case = '{fault_case}'"
+            ))
+            .expect("Stage E fault matrix case query should succeed")
+            .expect("Stage E fault matrix case count should exist");
+            assert_eq!(count, 1, "missing or duplicate Stage E case {fault_case}");
+        }
+
+        let local_cancel_action = Spi::get_one::<String>(
+            "SELECT strict_action FROM ec_spire_remote_search_stage_e_fault_matrix() \
+             WHERE fault_case = 'local_cancel'",
+        )
+        .expect("local cancel action query should succeed")
+        .expect("local cancel action should exist");
+        let remote_oom_category = Spi::get_one::<String>(
+            "SELECT failure_category FROM ec_spire_remote_search_stage_e_fault_matrix() \
+             WHERE fault_case = 'remote_oom'",
+        )
+        .expect("remote OOM category query should succeed")
+        .expect("remote OOM category should exist");
+        let missing_index_step = Spi::get_one::<String>(
+            "SELECT next_executor_step FROM ec_spire_remote_search_stage_e_fault_matrix() \
+             WHERE fault_case = 'missing_or_reindexed_remote_index'",
+        )
+        .expect("missing index step query should succeed")
+        .expect("missing index step should exist");
+        let local_timeout_counters = Spi::get_one::<String>(
+            "SELECT counter_delta FROM ec_spire_remote_search_stage_e_fault_matrix() \
+             WHERE fault_case = 'local_statement_timeout'",
+        )
+        .expect("local timeout counter query should succeed")
+        .expect("local timeout counter should exist");
+
+        assert_eq!(local_cancel_action, "cancel_query");
+        assert_eq!(remote_oom_category, "remote_query_failed");
+        assert_eq!(missing_index_step, "compact_candidate_receive");
+        assert!(local_timeout_counters.contains("retained_candidate_batch_count=0"));
     }
 
     #[pg_test]
@@ -29829,6 +29939,12 @@ mod tests {
         ))
         .expect("operator row materialization mapping entrypoint query should succeed")
         .expect("operator row materialization mapping entrypoint should exist");
+        let stage_e_fault_matrix_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_stage_e_fault_matrix'"
+        ))
+        .expect("operator Stage E fault matrix entrypoint query should succeed")
+        .expect("operator Stage E fault matrix entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -29956,8 +30072,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 21);
-        assert_eq!(operator_entrypoint_reachable_count, 21);
+        assert_eq!(operator_entrypoint_count, 22);
+        assert_eq!(operator_entrypoint_reachable_count, 22);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -29989,6 +30105,10 @@ mod tests {
         assert_eq!(
             row_materialization_mapping_entrypoint_action,
             "implement_epoch_scoped_materialized_row_mapping_provider_before_remote_am_delivery"
+        );
+        assert_eq!(
+            stage_e_fault_matrix_use,
+            "local_multi_instance_fault_fixture_contract"
         );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");

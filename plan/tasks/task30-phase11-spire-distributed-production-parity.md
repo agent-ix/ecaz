@@ -260,6 +260,14 @@ Acceptance artifact:
   termination, remote statement timeout, local statement timeout/cancel,
   simulated network partition, version skew, and remote OOM. Each case must
   state strict and degraded expected behavior.
+  - [x] Packet `30770` adds
+    `ec_spire_remote_search_stage_e_fault_matrix()`, a fixture-facing matrix
+    that names each Stage E local multi-instance fault case, maps it to the
+    existing production failure category, and states strict/degraded action,
+    status, next executor step, expected counter delta, and required evidence.
+    It also closes the packet `30765` row-materialization mapping matrix
+    follow-up by representing missing or stale coordinator mappings under the
+    existing `requires_remote_row_materialization` production blocker.
 - [ ] Add operator diagnostics that show remote node readiness, served epoch,
   remote fanout, candidate batches, heap resolution state, and merge status in
   one packet-friendly path.
@@ -756,9 +764,11 @@ Goal: prove distributed correctness locally before AWS.
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and
   missing/reindexed remote index.
-  - [ ] Every fault case must state expected strict outcome, expected degraded
+  - [x] Every fault case must state expected strict outcome, expected degraded
     outcome, required status string, next blocker, failure action, and counter
     delta before the fixture is implemented.
+    - [x] Packet `30770` lands the SQL-visible Stage E fault matrix and
+      operator entrypoint contract for the one-coordinator/two-remote fixture.
 - [ ] Verification: packet-local logs for every fault case, with explicit
   strict failure and degraded skip counts.
 

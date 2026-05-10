@@ -389,6 +389,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "contract_item,required_input,validation_rule,status",
             next_action: "implement_epoch_scoped_materialized_row_mapping_provider_before_remote_am_delivery",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 22,
+            entrypoint_name: "ec_spire_remote_search_stage_e_fault_matrix",
+            area: "search",
+            operator_use: "local_multi_instance_fault_fixture_contract",
+            status_source: "fault_case,failure_category,strict_action,degraded_action,counter_delta",
+            next_action: "implement_stage_e_fault_fixture_against_each_named_case",
+        },
     ]
 }
 
@@ -4917,6 +4925,28 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             "stale origin row locators must be rejected or explicitly skipped with diagnostics",
         ),
+        production_fault_matrix_row(
+            26,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "uncategorized remote query failures, including remote OOM, cannot enter merge as empty results",
+        ),
+        production_fault_matrix_row(
+            27,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            "remote_row_materialization",
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+            "fail_closed",
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            "skip_candidate",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "missing or stale coordinator materialization mappings fold under remote_row_materialization until the provider lands",
+        ),
     ]
 }
 
@@ -4941,6 +4971,182 @@ fn production_fault_matrix_row(
         degraded_action,
         degraded_status,
         recommendation,
+    }
+}
+
+pub(crate) fn remote_search_stage_e_fault_matrix_rows() -> Vec<SpireRemoteStageEFaultMatrixRow> {
+    vec![
+        stage_e_fault_matrix_row(
+            1,
+            "epoch_mismatch",
+            "remote_epoch_window",
+            SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "strict_failed_dispatch_count+1; degraded_skipped_dispatch_count+1",
+            "one coordinator plus two remotes; stale remote advertises served epoch outside requested retained window",
+        ),
+        stage_e_fault_matrix_row(
+            2,
+            "version_skew",
+            "remote_extension_version",
+            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "strict_failed_dispatch_count+1; degraded_skipped_dispatch_count+1",
+            "remote descriptor advertises incompatible extension version before dispatch opens sockets",
+        ),
+        stage_e_fault_matrix_row(
+            3,
+            "fingerprint_mismatch",
+            "endpoint_identity",
+            SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "identity_cache_invalidations+1; degraded_skipped_dispatch_count+1",
+            "live endpoint fingerprint differs from descriptor remote_index_identity",
+        ),
+        stage_e_fault_matrix_row(
+            4,
+            "connection_reset_mid_batch",
+            "transport",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "transport_failed_dispatch_count+1; degraded_skipped_dispatch_count+1",
+            "remote connection closes while an in-flight production request is receiving rows",
+        ),
+        stage_e_fault_matrix_row(
+            5,
+            "remote_backend_termination",
+            "transport",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "transport_failed_dispatch_count+1; degraded_skipped_dispatch_count+1",
+            "remote backend is terminated before it can return a validated batch",
+        ),
+        stage_e_fault_matrix_row(
+            6,
+            "remote_statement_timeout",
+            "transport",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote_statement_timeout_count+1; degraded_skipped_dispatch_count+1",
+            "remote statement_timeout fires on one remote while other ready remotes can still complete",
+        ),
+        stage_e_fault_matrix_row(
+            7,
+            "local_statement_timeout",
+            "local_cancellation",
+            SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
+            SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancelled_dispatch_count=fanout; retained_candidate_batch_count=0",
+            "coordinator statement_timeout cancels every in-flight remote and releases governance permits",
+        ),
+        stage_e_fault_matrix_row(
+            8,
+            "local_cancel",
+            "local_cancellation",
+            SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
+            SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancelled_dispatch_count=fanout; retained_candidate_batch_count=0",
+            "client query cancel interrupts every in-flight remote and releases governance permits",
+        ),
+        stage_e_fault_matrix_row(
+            9,
+            "simulated_network_partition",
+            "transport",
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "connect_failed_count+1; degraded_skipped_dispatch_count+1",
+            "one remote conninfo is unreachable while at least one other remote remains ready",
+        ),
+        stage_e_fault_matrix_row(
+            10,
+            "remote_oom",
+            "transport",
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote_query_failed_count+1; degraded_skipped_dispatch_count+1",
+            "remote returns a sanitized out-of-memory query failure without leaking raw remote error text",
+        ),
+        stage_e_fault_matrix_row(
+            11,
+            "missing_or_reindexed_remote_index",
+            "endpoint_identity",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE,
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote_index_unavailable_count+1; degraded_skipped_dispatch_count+1",
+            "remote index is dropped, renamed, or rebuilt after planning but before receive",
+        ),
+    ]
+}
+
+fn stage_e_fault_matrix_row(
+    fault_ordinal: u64,
+    fault_case: &'static str,
+    fixture_scope: &'static str,
+    failure_category: &'static str,
+    next_executor_step: &'static str,
+    strict_action: &'static str,
+    strict_status: &'static str,
+    degraded_action: &'static str,
+    degraded_status: &'static str,
+    counter_delta: &'static str,
+    required_evidence: &'static str,
+) -> SpireRemoteStageEFaultMatrixRow {
+    SpireRemoteStageEFaultMatrixRow {
+        fault_ordinal,
+        fault_case,
+        fixture_scope,
+        failure_category,
+        next_executor_step,
+        strict_action,
+        strict_status,
+        degraded_action,
+        degraded_status,
+        counter_delta,
+        required_evidence,
     }
 }
 
@@ -9149,6 +9355,7 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
             SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
             SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
             SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
             SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
             SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
@@ -9158,8 +9365,10 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_STATUS_STALE_EPOCH,
             SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH,
             SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
         ];
 
         assert_eq!(rows.len(), categories.len(), "matrix categories should be unique");
@@ -9178,12 +9387,85 @@ mod production_executor_state_tests {
             .iter()
             .find(|row| row.failure_category == SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH)
             .expect("consistency mismatch row should exist");
+        let row_materialization = rows
+            .iter()
+            .find(|row| {
+                row.failure_category == SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+            })
+            .expect("row materialization row should exist");
 
         assert_eq!(local_timeout.strict_action, "cancel_query");
         assert_eq!(local_timeout.degraded_action, "cancel_query");
         assert_eq!(remote_timeout.strict_action, "fail_closed");
         assert_eq!(remote_timeout.degraded_action, "skip_node");
         assert_eq!(consistency_mismatch.degraded_action, "fail_closed");
+        assert_eq!(
+            row_materialization.next_executor_step,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+        );
+        assert!(row_materialization
+            .recommendation
+            .contains("missing or stale coordinator materialization mappings"));
+    }
+
+    #[test]
+    fn stage_e_fault_matrix_covers_fixture_cases() {
+        let rows = remote_search_stage_e_fault_matrix_rows();
+        let cases = rows
+            .iter()
+            .map(|row| row.fault_case)
+            .collect::<std::collections::HashSet<_>>();
+        let required = [
+            "epoch_mismatch",
+            "version_skew",
+            "fingerprint_mismatch",
+            "connection_reset_mid_batch",
+            "remote_backend_termination",
+            "remote_statement_timeout",
+            "local_statement_timeout",
+            "local_cancel",
+            "simulated_network_partition",
+            "remote_oom",
+            "missing_or_reindexed_remote_index",
+        ];
+
+        assert_eq!(rows.len(), cases.len(), "Stage E fault cases should be unique");
+        for fault_case in required {
+            assert!(cases.contains(fault_case), "missing Stage E case {fault_case}");
+        }
+
+        let local_cancel = rows
+            .iter()
+            .find(|row| row.fault_case == "local_cancel")
+            .expect("local cancel case should exist");
+        assert_eq!(local_cancel.strict_action, "cancel_query");
+        assert_eq!(local_cancel.degraded_action, "cancel_query");
+        assert!(local_cancel
+            .counter_delta
+            .contains("retained_candidate_batch_count=0"));
+
+        let remote_oom = rows
+            .iter()
+            .find(|row| row.fault_case == "remote_oom")
+            .expect("remote OOM case should exist");
+        assert_eq!(
+            remote_oom.failure_category,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED
+        );
+        assert_eq!(remote_oom.degraded_action, "skip_node");
+
+        let missing_index = rows
+            .iter()
+            .find(|row| row.fault_case == "missing_or_reindexed_remote_index")
+            .expect("missing/reindexed index case should exist");
+        assert_eq!(
+            missing_index.failure_category,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE
+        );
+        assert_eq!(
+            missing_index.next_executor_step,
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE
+        );
     }
 
     #[test]
