@@ -263,12 +263,20 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             entrypoint_ordinal: 11,
             entrypoint_name: "ec_spire_remote_pipeline_steps",
             area: "search",
-            operator_use: "consolidated_remote_pipeline_steps",
+            operator_use: "consolidated_remote_pipeline_steps_dry",
             status_source: "step_name,status,item_count,next_blocker",
-            next_action: "inspect_first_non_ready_step_before_opening_narrow_surfaces",
+            next_action: "inspect_first_non_ready_step_before_live_probe_or_narrow_surfaces",
         },
         SpireRemoteOperatorEntrypointContractRow {
             entrypoint_ordinal: 12,
+            entrypoint_name: "ec_spire_remote_pipeline_steps_live",
+            area: "search",
+            operator_use: "consolidated_remote_pipeline_steps_live_probe",
+            status_source: "step_name,status,item_count,next_blocker",
+            next_action: "run_only_when_connection_and_remote_executor_probe_cost_is_expected",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 13,
             entrypoint_name: "ec_spire_remote_search_vector_identity_contract",
             area: "search",
             operator_use: "remote_dedupe_identity_contract",
@@ -276,7 +284,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "require_global_vec_ids_before_cross_node_replica_dedupe",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 13,
+            entrypoint_ordinal: 14,
             entrypoint_name: "ec_spire_remote_search_endpoint_contract",
             area: "search",
             operator_use: "remote_endpoint_contract_gate",
@@ -284,7 +292,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "resolve_non_ready_endpoint_contract_rows_before_production_remote_merge",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 14,
+            entrypoint_ordinal: 15,
             entrypoint_name: "ec_spire_remote_search_endpoint_identity",
             area: "search",
             operator_use: "remote_endpoint_identity_gate",
@@ -292,7 +300,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "require_ready_endpoint_identity_before_accepting_remote_candidate_scores",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 15,
+            entrypoint_ordinal: 16,
             entrypoint_name: "ec_spire_remote_search_libpq_executor_receive_attempts",
             area: "search",
             operator_use: "per_node_remote_receive_attempt_diagnostics",
@@ -300,7 +308,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "use_strict_fail_closed_or_degraded_skip_reason_before_merge",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 16,
+            entrypoint_ordinal: 17,
             entrypoint_name: "ec_spire_remote_search_libpq_executor_budget_summary",
             area: "search",
             operator_use: "remote_executor_resource_governance",

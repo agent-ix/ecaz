@@ -148,7 +148,9 @@ that Phase 9 establishes.
   rerank/candidate/adaptive session options, records routing-budget counters
   from `ec_spire_index_scan_routing_snapshot`, records local route/candidate/
   heap/remote-fanout counters from `ec_spire_index_scan_pipeline_snapshot`, and
-  can call `ec_spire_remote_pipeline_steps` for remote PID fanout counters.
+  can call dry `ec_spire_remote_pipeline_steps` for remote PID fanout counters
+  before opting into `ec_spire_remote_pipeline_steps_live` for socket-opening
+  libpq probes.
 - [x] Add a unified local scan pipeline snapshot that orders routing,
   placement, candidate, and heap-rerank steps, mirroring the remote
   `ec_spire_remote_pipeline_steps` operator shape. Added

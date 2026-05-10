@@ -10108,50 +10108,35 @@ fn remote_pipeline_manifest_apply_step(
     }
 }
 
-#[pg_extern(stable, strict)]
-#[allow(clippy::type_complexity)]
-fn ec_spire_remote_pipeline_steps(
+#[allow(clippy::too_many_arguments)]
+fn spire_remote_pipeline_step_rows(
+    function_name: &'static str,
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
     query: Vec<f32>,
     selected_pids: Vec<i64>,
     top_k: i32,
     consistency_mode: String,
-) -> TableIterator<
-    'static,
-    (
-        name!(step_ordinal, i64),
-        name!(step_name, &'static str),
-        name!(requested_epoch, i64),
-        name!(status, String),
-        name!(item_count, i64),
-        name!(ready_count, i64),
-        name!(blocked_count, i64),
-        name!(remote_pid_count, i64),
-        name!(next_blocker, String),
-        name!(recommendation, String),
-    ),
-> {
+    probe_remote_executor: bool,
+) -> Vec<SpireRemotePipelineStepRow> {
     if requested_epoch <= 0 {
-        pgrx::error!("ec_spire_remote_pipeline_steps requested_epoch must be greater than 0");
+        pgrx::error!("{function_name} requested_epoch must be greater than 0");
     }
     if top_k < 0 {
-        pgrx::error!("ec_spire_remote_pipeline_steps top_k must be non-negative");
+        pgrx::error!("{function_name} top_k must be non-negative");
     }
     let selected_pids = selected_pids
         .into_iter()
         .map(|pid| {
-            u64::try_from(pid).unwrap_or_else(|_| {
-                pgrx::error!("ec_spire_remote_pipeline_steps selected PID {pid} is negative")
-            })
+            u64::try_from(pid)
+                .unwrap_or_else(|_| pgrx::error!("{function_name} selected PID {pid} is negative"))
         })
         .collect::<Vec<_>>();
     let requested_epoch_u64 =
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
     let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
 
-    let index_relation =
-        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_pipeline_steps") };
+    let index_relation = unsafe { open_valid_ec_spire_index(index_oid, function_name) };
     let dispatch = unsafe {
         am::spire_remote_search_libpq_dispatch_summary_row(
             index_relation,
@@ -10193,7 +10178,7 @@ fn ec_spire_remote_pipeline_steps(
                 row.next_executor_step.to_owned(),
                 row.recommendation.to_owned(),
             )
-        } else {
+        } else if probe_remote_executor {
             match std::env::var(&row.provider_lookup_key) {
                 Ok(conninfo) if !conninfo.is_empty() => {
                     match am::spire_remote_search_libpq_connect_with_session_timeouts(
@@ -10230,6 +10215,29 @@ fn ec_spire_remote_pipeline_steps(
                         .to_owned(),
                 ),
             }
+        } else {
+            match std::env::var(&row.provider_lookup_key) {
+                Ok(conninfo) if !conninfo.is_empty() => (
+                    true,
+                    "requires_libpq_executor".to_owned(),
+                    "enter_libpq_pipeline_mode".to_owned(),
+                    "run ec_spire_remote_pipeline_steps_live to open libpq connections and execute remote pipeline diagnostics".to_owned(),
+                ),
+                Ok(_) => (
+                    false,
+                    "requires_conninfo_secret_resolution".to_owned(),
+                    "conninfo_secret_resolution".to_owned(),
+                    "configure a nonempty conninfo value in the external secret provider"
+                        .to_owned(),
+                ),
+                Err(_) => (
+                    false,
+                    "requires_conninfo_secret_resolution".to_owned(),
+                    "conninfo_secret_resolution".to_owned(),
+                    "configure the external secret provider entry for conninfo_secret_name"
+                        .to_owned(),
+                ),
+            }
         };
         if ready {
             connection_ready_count = connection_ready_count
@@ -10249,25 +10257,31 @@ fn ec_spire_remote_pipeline_steps(
     if connection_blocked_count == 0 && connection_ready_count > 0 {
         connection_status = "requires_libpq_executor".to_owned();
         connection_next_blocker = "enter_libpq_pipeline_mode".to_owned();
-        connection_recommendation =
-            "enter libpq pipeline mode and send remote search request".to_owned();
+        connection_recommendation = if probe_remote_executor {
+            "enter libpq pipeline mode and send remote search request".to_owned()
+        } else {
+            "run ec_spire_remote_pipeline_steps_live to open libpq connections and execute remote pipeline diagnostics".to_owned()
+        };
     }
 
-    let identity_cache_summary =
-        if connection_blocked_count == 0 && top_k > 0 && connection_ready_count > 0 {
-            Some(unsafe {
-                am::spire_remote_search_libpq_identity_cache_summary_row(
-                    index_relation,
-                    requested_epoch_u64,
-                    query.clone(),
-                    selected_pids.clone(),
-                    top_k,
-                    &consistency_mode,
-                )
-            })
-        } else {
-            None
-        };
+    let identity_cache_summary = if probe_remote_executor
+        && connection_blocked_count == 0
+        && top_k > 0
+        && connection_ready_count > 0
+    {
+        Some(unsafe {
+            am::spire_remote_search_libpq_identity_cache_summary_row(
+                index_relation,
+                requested_epoch_u64,
+                query.clone(),
+                selected_pids.clone(),
+                top_k,
+                &consistency_mode,
+            )
+        })
+    } else {
+        None
+    };
 
     let (candidate_count, candidate_status, candidate_recommendation) =
         if connection_blocked_count > 0 {
@@ -10280,6 +10294,13 @@ fn ec_spire_remote_pipeline_steps(
             (0_i64, "empty_top_k".to_owned(), "none".to_owned())
         } else if connection_ready_count == 0 {
             (0_i64, "ready".to_owned(), "none".to_owned())
+        } else if !probe_remote_executor {
+            (
+                0_i64,
+                "requires_libpq_executor".to_owned(),
+                "run ec_spire_remote_pipeline_steps_live to execute remote candidate diagnostics"
+                    .to_owned(),
+            )
         } else {
             let summary = identity_cache_summary
                 .as_ref()
@@ -10313,6 +10334,13 @@ fn ec_spire_remote_pipeline_steps(
         (0_i64, "empty_top_k".to_owned(), "none".to_owned())
     } else if connection_ready_count == 0 {
         (0_i64, "ready".to_owned(), "none".to_owned())
+    } else if !probe_remote_executor {
+        (
+            0_i64,
+            "requires_libpq_executor".to_owned(),
+            "run ec_spire_remote_pipeline_steps_live to execute remote heap-candidate diagnostics"
+                .to_owned(),
+        )
     } else {
         let summary = identity_cache_summary
             .as_ref()
@@ -10336,17 +10364,97 @@ fn ec_spire_remote_pipeline_steps(
         }
     };
 
-    let coordinator_result = unsafe {
-        am::spire_remote_search_coordinator_result_summary_row(
-            index_relation,
-            requested_epoch_u64,
-            query,
-            selected_pids,
-            top_k,
-            &consistency_mode,
-        )
+    let coordinator_result = if probe_remote_executor {
+        Some(unsafe {
+            am::spire_remote_search_coordinator_result_summary_row(
+                index_relation,
+                requested_epoch_u64,
+                query,
+                selected_pids,
+                top_k,
+                &consistency_mode,
+            )
+        })
+    } else {
+        None
     };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    let coordinator_step = if let Some(coordinator_result) = coordinator_result {
+        SpireRemotePipelineStepRow {
+            step_ordinal: 6,
+            step_name: "coordinator_result",
+            requested_epoch,
+            status: coordinator_result.status.to_owned(),
+            item_count: i64::try_from(coordinator_result.returned_candidate_count)
+                .expect("coordinator result count should fit in i64"),
+            ready_count: i64::try_from(coordinator_result.returned_candidate_count)
+                .expect("coordinator result count should fit in i64"),
+            blocked_count: if coordinator_result.next_blocker == "none" {
+                0
+            } else {
+                1
+            },
+            remote_pid_count: i64::try_from(coordinator_result.remote_pid_count)
+                .expect("coordinator remote pid count should fit in i64"),
+            next_blocker: coordinator_result.next_blocker.to_owned(),
+            recommendation: coordinator_result.recommendation.to_owned(),
+        }
+    } else if connection_blocked_count > 0 {
+        SpireRemotePipelineStepRow {
+            step_ordinal: 6,
+            step_name: "coordinator_result",
+            requested_epoch,
+            status: connection_status.clone(),
+            item_count: 0,
+            ready_count: 0,
+            blocked_count: 1,
+            remote_pid_count: connection_remote_pid_count,
+            next_blocker: connection_next_blocker.clone(),
+            recommendation: connection_recommendation.clone(),
+        }
+    } else if top_k == 0 {
+        SpireRemotePipelineStepRow {
+            step_ordinal: 6,
+            step_name: "coordinator_result",
+            requested_epoch,
+            status: "empty_top_k".to_owned(),
+            item_count: 0,
+            ready_count: 0,
+            blocked_count: 0,
+            remote_pid_count: connection_remote_pid_count,
+            next_blocker: "none".to_owned(),
+            recommendation: "none".to_owned(),
+        }
+    } else if connection_ready_count > 0 {
+        SpireRemotePipelineStepRow {
+            step_ordinal: 6,
+            step_name: "coordinator_result",
+            requested_epoch,
+            status: "requires_libpq_executor".to_owned(),
+            item_count: 0,
+            ready_count: 0,
+            blocked_count: 1,
+            remote_pid_count: connection_remote_pid_count,
+            next_blocker: "enter_libpq_pipeline_mode".to_owned(),
+            recommendation:
+                "run ec_spire_remote_pipeline_steps_live to execute remote coordinator diagnostics"
+                    .to_owned(),
+        }
+    } else {
+        SpireRemotePipelineStepRow {
+            step_ordinal: 6,
+            step_name: "coordinator_result",
+            requested_epoch,
+            status: "ready".to_owned(),
+            item_count: 0,
+            ready_count: 0,
+            blocked_count: 0,
+            remote_pid_count: 0,
+            next_blocker: "none".to_owned(),
+            recommendation: "none".to_owned(),
+        }
+    };
 
     let mut rows = Vec::with_capacity(6);
     rows.push(SpireRemotePipelineStepRow {
@@ -10430,26 +10538,29 @@ fn ec_spire_remote_pipeline_steps(
         index_oid,
         requested_epoch,
     ));
-    rows.push(SpireRemotePipelineStepRow {
-        step_ordinal: 6,
-        step_name: "coordinator_result",
-        requested_epoch,
-        status: coordinator_result.status.to_owned(),
-        item_count: i64::try_from(coordinator_result.returned_candidate_count)
-            .expect("coordinator result count should fit in i64"),
-        ready_count: i64::try_from(coordinator_result.returned_candidate_count)
-            .expect("coordinator result count should fit in i64"),
-        blocked_count: if coordinator_result.next_blocker == "none" {
-            0
-        } else {
-            1
-        },
-        remote_pid_count: i64::try_from(coordinator_result.remote_pid_count)
-            .expect("coordinator remote pid count should fit in i64"),
-        next_blocker: coordinator_result.next_blocker.to_owned(),
-        recommendation: coordinator_result.recommendation.to_owned(),
-    });
+    rows.push(coordinator_step);
 
+    rows
+}
+
+#[allow(clippy::type_complexity)]
+fn spire_remote_pipeline_step_table(
+    rows: Vec<SpireRemotePipelineStepRow>,
+) -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(requested_epoch, i64),
+        name!(status, String),
+        name!(item_count, i64),
+        name!(ready_count, i64),
+        name!(blocked_count, i64),
+        name!(remote_pid_count, i64),
+        name!(next_blocker, String),
+        name!(recommendation, String),
+    ),
+> {
     TableIterator::new(rows.into_iter().map(|row| {
         (
             row.step_ordinal,
@@ -10464,6 +10575,78 @@ fn ec_spire_remote_pipeline_steps(
             row.recommendation,
         )
     }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_pipeline_steps(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(requested_epoch, i64),
+        name!(status, String),
+        name!(item_count, i64),
+        name!(ready_count, i64),
+        name!(blocked_count, i64),
+        name!(remote_pid_count, i64),
+        name!(next_blocker, String),
+        name!(recommendation, String),
+    ),
+> {
+    spire_remote_pipeline_step_table(spire_remote_pipeline_step_rows(
+        "ec_spire_remote_pipeline_steps",
+        index_oid,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+        false,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_pipeline_steps_live(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(requested_epoch, i64),
+        name!(status, String),
+        name!(item_count, i64),
+        name!(ready_count, i64),
+        name!(blocked_count, i64),
+        name!(remote_pid_count, i64),
+        name!(next_blocker, String),
+        name!(recommendation, String),
+    ),
+> {
+    spire_remote_pipeline_step_table(spire_remote_pipeline_step_rows(
+        "ec_spire_remote_pipeline_steps_live",
+        index_oid,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+        true,
+    ))
 }
 
 #[pg_extern(stable, strict)]
@@ -23398,6 +23581,8 @@ mod tests {
         let mixed_result_summary_from =
             format!("FROM ec_spire_remote_search_coordinator_result_summary({mixed_args})");
         let pipeline_steps_from = format!("FROM ec_spire_remote_pipeline_steps({nonempty_args})");
+        let pipeline_steps_live_from =
+            format!("FROM ec_spire_remote_pipeline_steps_live({nonempty_args})");
         let identity_cache_summary_from =
             format!("FROM ec_spire_remote_search_libpq_identity_cache_summary({nonempty_args})");
         let manifest_result_from =
@@ -23527,6 +23712,11 @@ mod tests {
         ))
         .expect("pipeline step names query should succeed")
         .expect("pipeline step names should exist");
+        let pipeline_live_step_names = Spi::get_one::<Vec<String>>(&format!(
+            "SELECT array_agg(step_name ORDER BY step_ordinal) {pipeline_steps_live_from}"
+        ))
+        .expect("live pipeline step names query should succeed")
+        .expect("live pipeline step names should exist");
         let dispatch_summary_status = Spi::get_one::<String>(&format!(
             "SELECT status FROM ec_spire_remote_search_libpq_dispatch_summary({nonempty_args})"
         ))
@@ -23546,16 +23736,31 @@ mod tests {
         ))
         .expect("pipeline connection status query should succeed")
         .expect("pipeline connection status should exist");
+        let pipeline_live_connection_status = Spi::get_one::<String>(&format!(
+            "SELECT status {pipeline_steps_live_from} WHERE step_name = 'connection_check'"
+        ))
+        .expect("live pipeline connection status query should succeed")
+        .expect("live pipeline connection status should exist");
         let pipeline_candidate_count = Spi::get_one::<i64>(&format!(
             "SELECT item_count {pipeline_steps_from} WHERE step_name = 'candidates'"
         ))
         .expect("pipeline candidate count query should succeed")
         .expect("pipeline candidate count should exist");
+        let pipeline_live_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT item_count {pipeline_steps_live_from} WHERE step_name = 'candidates'"
+        ))
+        .expect("live pipeline candidate count query should succeed")
+        .expect("live pipeline candidate count should exist");
         let pipeline_heap_candidate_count = Spi::get_one::<i64>(&format!(
             "SELECT item_count {pipeline_steps_from} WHERE step_name = 'heap_candidates'"
         ))
         .expect("pipeline heap candidate count query should succeed")
         .expect("pipeline heap candidate count should exist");
+        let pipeline_live_heap_candidate_count = Spi::get_one::<i64>(&format!(
+            "SELECT item_count {pipeline_steps_live_from} WHERE step_name = 'heap_candidates'"
+        ))
+        .expect("live pipeline heap candidate count query should succeed")
+        .expect("live pipeline heap candidate count should exist");
         let manifest_result_status =
             Spi::get_one::<String>(&format!("SELECT status {manifest_result_from}"))
                 .expect("manifest result status query should succeed")
@@ -23570,11 +23775,21 @@ mod tests {
         ))
         .expect("pipeline coordinator status query should succeed")
         .expect("pipeline coordinator status should exist");
+        let pipeline_live_coordinator_status = Spi::get_one::<String>(&format!(
+            "SELECT status {pipeline_steps_live_from} WHERE step_name = 'coordinator_result'"
+        ))
+        .expect("live pipeline coordinator status query should succeed")
+        .expect("live pipeline coordinator status should exist");
         let pipeline_coordinator_count = Spi::get_one::<i64>(&format!(
             "SELECT item_count {pipeline_steps_from} WHERE step_name = 'coordinator_result'"
         ))
         .expect("pipeline coordinator count query should succeed")
         .expect("pipeline coordinator count should exist");
+        let pipeline_live_coordinator_count = Spi::get_one::<i64>(&format!(
+            "SELECT item_count {pipeline_steps_live_from} WHERE step_name = 'coordinator_result'"
+        ))
+        .expect("live pipeline coordinator count query should succeed")
+        .expect("live pipeline coordinator count should exist");
         let identity_cache_dispatch_count = Spi::get_one::<i64>(&format!(
             "SELECT dispatch_count {identity_cache_summary_from}"
         ))
@@ -23684,16 +23899,22 @@ mod tests {
                 "coordinator_result",
             ]
         );
+        assert_eq!(pipeline_live_step_names, pipeline_step_names);
         assert_eq!(pipeline_dispatch_status, dispatch_summary_status);
+        assert_eq!(pipeline_connection_status, "requires_libpq_executor");
         assert_eq!(
-            pipeline_connection_status,
+            pipeline_live_connection_status,
             nonempty_connection_terminal_status
         );
-        assert_eq!(pipeline_candidate_count, nonempty_candidate_count);
-        assert_eq!(pipeline_heap_candidate_count, heap_summary_count);
+        assert_eq!(pipeline_candidate_count, 0);
+        assert_eq!(pipeline_live_candidate_count, nonempty_candidate_count);
+        assert_eq!(pipeline_heap_candidate_count, 0);
+        assert_eq!(pipeline_live_heap_candidate_count, heap_summary_count);
         assert_eq!(pipeline_manifest_status, manifest_result_status);
-        assert_eq!(pipeline_coordinator_status, coordinator_status);
-        assert_eq!(pipeline_coordinator_count, coordinator_returned_count);
+        assert_eq!(pipeline_coordinator_status, "requires_libpq_executor");
+        assert_eq!(pipeline_coordinator_count, 0);
+        assert_eq!(pipeline_live_coordinator_status, coordinator_status);
+        assert_eq!(pipeline_live_coordinator_count, coordinator_returned_count);
         assert_eq!(identity_cache_dispatch_count, 1);
         assert_eq!(identity_cache_compact_count, nonempty_candidate_count);
         assert_eq!(identity_cache_heap_count, heap_summary_count);
@@ -26704,6 +26925,12 @@ mod tests {
         ))
         .expect("operator pipeline steps entrypoint query should succeed")
         .expect("operator pipeline steps entrypoint should exist");
+        let pipeline_steps_live_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_pipeline_steps_live'"
+        ))
+        .expect("operator live pipeline steps entrypoint query should succeed")
+        .expect("operator live pipeline steps entrypoint should exist");
         let receive_attempts_use = Spi::get_one::<String>(&format!(
             "SELECT operator_use {operator_entrypoint_from} \
              WHERE entrypoint_name = 'ec_spire_remote_search_libpq_executor_receive_attempts'"
@@ -26843,8 +27070,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 16);
-        assert_eq!(operator_entrypoint_reachable_count, 16);
+        assert_eq!(operator_entrypoint_count, 17);
+        assert_eq!(operator_entrypoint_reachable_count, 17);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -26857,7 +27084,11 @@ mod tests {
         assert_eq!(single_secret_use, "single_conninfo_secret_probe");
         assert_eq!(
             pipeline_steps_action,
-            "inspect_first_non_ready_step_before_opening_narrow_surfaces"
+            "inspect_first_non_ready_step_before_live_probe_or_narrow_surfaces"
+        );
+        assert_eq!(
+            pipeline_steps_live_use,
+            "consolidated_remote_pipeline_steps_live_probe"
         );
         assert_eq!(
             receive_attempts_use,

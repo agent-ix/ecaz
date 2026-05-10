@@ -41,6 +41,17 @@ for one remote node. `0` means unlimited for both settings. Saturated
 governance slots report `remote_executor_overload` with
 `remote_executor_governance`, before conninfo secret lookup or socket open.
 
+All five budget GUCs default to `0`, so the budget surface is opt-in and
+unbounded until an operator sets explicit caps. A conservative production
+starting point before capacity-target tuning is `remote_search_max_nodes = 8`,
+`remote_search_max_pids = 256`, and `remote_search_max_pids_per_node = 64`,
+with the two concurrent-dispatch caps sized from observed remote capacity.
+
+Gate precedence is deterministic: capability/readiness gates run first, budget
+admission runs second, and endpoint identity preflight runs only for admitted
+rows. This keeps cheap metadata blockers visible before budget pressure while
+preserving fail-closed identity checks for rows that can actually dispatch.
+
 ## Required Invariants
 
 - Over-budget rows must use `dispatch_action = blocked_before_dispatch`.
