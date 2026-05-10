@@ -21,6 +21,8 @@ than inventing an empty result.
 | Build-time scalar vs NEON A/B | real10K | `review/30208-task29-diskann-m5-build-neon-followup/` |
 | Cold-cache prefetch 100K A/B | real100K | `review/30209-task29-diskann-m5-cold-cache-100k/` |
 | Final post-M5 cross-engine refresh | real10K, isolated PG18 sweep | `review/30210-task32-m5-diskann-final-cross-engine-refresh/` |
+| Repeatable DiskANN prefilter profile | real10K, PG18/M5, matched rerank/search width | `review/30546-diskann-prefilter-benchmark-surface/` |
+| DiskANN quant/storage optimization research | real10K, PG18/M5, pgvectorscale comparison rollup | `review/30547-diskann-quant-storage-optimization-research/` |
 
 ## IVF
 
