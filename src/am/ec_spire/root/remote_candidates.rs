@@ -190,6 +190,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "protocol_version,opclass_identity,profile_fingerprint,status",
             next_action: "require_ready_endpoint_identity_before_accepting_remote_candidate_scores",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 15,
+            entrypoint_name: "ec_spire_remote_search_libpq_executor_receive_attempts",
+            area: "search",
+            operator_use: "per_node_remote_receive_attempt_diagnostics",
+            status_source: "node_id,status,next_blocker,failure_action,failure_reason",
+            next_action: "use_strict_fail_closed_or_degraded_skip_reason_before_merge",
+        },
     ]
 }
 
@@ -3072,6 +3080,147 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
     )?;
 
     Ok(candidates)
+}
+
+fn remote_search_receive_attempt_failure_status(error: &str) -> String {
+    let endpoint_status_prefix = "ec_spire remote search executor endpoint_status ";
+    let endpoint_status_suffix = " is not ready";
+    if let Some(status) = error
+        .strip_prefix(endpoint_status_prefix)
+        .and_then(|value| value.strip_suffix(endpoint_status_suffix))
+    {
+        return status.to_owned();
+    }
+
+    if error.contains("protocol_version") {
+        "protocol_version_mismatch".to_owned()
+    } else if error.contains("extension_version") {
+        "extension_version_mismatch".to_owned()
+    } else if error.contains("served epoch") {
+        "served_epoch_mismatch".to_owned()
+    } else if error.contains("opclass_identity")
+        || error.contains("storage_format")
+        || error.contains("assignment_payload_format")
+        || error.contains("quantizer_profile")
+        || error.contains("scoring_profile")
+        || error.contains("profile_fingerprint")
+    {
+        "endpoint_identity_mismatch".to_owned()
+    } else if error.contains("conninfo secret") {
+        SPIRE_REMOTE_STATUS_REQUIRES_SECRET.to_owned()
+    } else if error.contains("failed to open connection") {
+        "libpq_connection_failed".to_owned()
+    } else if error.contains("remote index") {
+        "remote_index_unavailable".to_owned()
+    } else {
+        "remote_candidate_batch_rejected".to_owned()
+    }
+}
+
+fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
+    if error.contains("endpoint_status")
+        || error.contains("protocol_version")
+        || error.contains("extension_version")
+        || error.contains("opclass_identity")
+        || error.contains("storage_format")
+        || error.contains("assignment_payload_format")
+        || error.contains("quantizer_profile")
+        || error.contains("scoring_profile")
+        || error.contains("profile_fingerprint")
+    {
+        "remote_endpoint_identity".to_owned()
+    } else if error.contains("served epoch") {
+        "served_epoch".to_owned()
+    } else if error.contains("conninfo secret") {
+        "conninfo_secret_resolution".to_owned()
+    } else if error.contains("failed to open connection") {
+        "open_libpq_connection".to_owned()
+    } else if error.contains("remote index") {
+        "remote_index_regclass".to_owned()
+    } else {
+        "remote_search_candidate_batch".to_owned()
+    }
+}
+
+pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {
+    let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
+        let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query.clone(),
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut rows = Vec::with_capacity(dispatch_rows.len());
+        for row in &dispatch_rows {
+            match remote_search_libpq_executor_candidates_for_dispatch(
+                row,
+                &query,
+                top_k,
+                consistency_mode,
+            ) {
+                Ok(candidates) => {
+                    rows.push(SpireRemoteSearchLibpqReceiveAttemptRow {
+                        requested_epoch: row.requested_epoch,
+                        node_id: row.node_id,
+                        selected_pids: row.selected_pids.clone(),
+                        pid_count: row.pid_count,
+                        candidate_count: u64::try_from(candidates.len()).map_err(|_| {
+                            "ec_spire remote receive attempt candidate count exceeds u64"
+                                .to_owned()
+                        })?,
+                        status: SPIRE_REMOTE_STATUS_READY.to_owned(),
+                        next_blocker: SPIRE_REMOTE_NONE.to_owned(),
+                        failure_action: SPIRE_REMOTE_NONE.to_owned(),
+                        failure_reason: SPIRE_REMOTE_NONE.to_owned(),
+                        recommendation: SPIRE_REMOTE_NONE.to_owned(),
+                    });
+                }
+                Err(error) => {
+                    let degraded =
+                        requested_consistency_mode == meta::SpireConsistencyMode::Degraded;
+                    let failure_action = if degraded {
+                        "skip_node"
+                    } else {
+                        "fail_closed"
+                    };
+                    let recommendation = if degraded {
+                        format!(
+                            "skip node_id {} in degraded mode before merge: {error}",
+                            row.node_id
+                        )
+                    } else {
+                        format!("strict mode fails closed before merge: {error}")
+                    };
+                    rows.push(SpireRemoteSearchLibpqReceiveAttemptRow {
+                        requested_epoch: row.requested_epoch,
+                        node_id: row.node_id,
+                        selected_pids: row.selected_pids.clone(),
+                        pid_count: row.pid_count,
+                        candidate_count: 0,
+                        status: remote_search_receive_attempt_failure_status(&error),
+                        next_blocker: remote_search_receive_attempt_next_blocker(&error),
+                        failure_action: failure_action.to_owned(),
+                        failure_reason: error,
+                        recommendation,
+                    });
+                }
+            }
+        }
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 fn remote_search_libpq_executor_heap_candidates_for_dispatch(

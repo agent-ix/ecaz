@@ -94,6 +94,7 @@ pub(crate) use self::ec_spire::{
     remote_search_libpq_executor_candidate_rows as spire_remote_search_libpq_executor_candidate_rows,
     remote_search_libpq_executor_heap_candidate_rows as spire_remote_search_libpq_executor_heap_candidate_rows,
     remote_search_libpq_executor_readiness_row as spire_remote_search_libpq_executor_readiness_row,
+    remote_search_libpq_executor_receive_attempt_rows as spire_remote_search_libpq_executor_receive_attempt_rows,
     remote_search_libpq_executor_step_contract_rows as spire_remote_search_libpq_executor_step_contract_rows,
     remote_search_libpq_parameter_contract_rows as spire_remote_search_libpq_parameter_contract_rows,
     remote_search_libpq_request_plan_rows as spire_remote_search_libpq_request_plan_rows,

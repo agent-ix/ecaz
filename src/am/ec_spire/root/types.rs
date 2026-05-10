@@ -607,6 +607,20 @@ pub(crate) struct SpireRemoteSearchLibpqExecutorReadinessRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqReceiveAttemptRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) node_id: u32,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) pid_count: u64,
+    pub(crate) candidate_count: u64,
+    pub(crate) status: String,
+    pub(crate) next_blocker: String,
+    pub(crate) failure_action: String,
+    pub(crate) failure_reason: String,
+    pub(crate) recommendation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqExecutorStepContractRow {
     pub(crate) step_ordinal: u64,
     pub(crate) step_name: &'static str,

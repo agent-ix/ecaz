@@ -319,6 +319,10 @@ endpoint.
     remote candidates can enter the merge path.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
   reasons in degraded mode.
+  - [x] Add per-node libpq receive-attempt diagnostics that preserve the
+    production strict `fail_closed` action while reporting the degraded
+    `skip_node` action and exact endpoint mismatch reason for non-ready
+    remotes.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
   behavior, stale epoch rejection, fingerprint mismatch, version skew, and
   malformed candidate rejection.
