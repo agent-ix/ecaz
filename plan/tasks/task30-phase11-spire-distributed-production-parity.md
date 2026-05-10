@@ -302,6 +302,9 @@ endpoint.
     quantizer profile, scoring profile, profile fingerprint, and endpoint
     status columns. The coordinator still needs a follow-up production gate
     before treating non-ready endpoint rows as mergeable.
+  - [x] Document the v1 profile fingerprint input order, NUL-separated FNV-1a
+    encoding, active-epoch semantics, and future training-stat extension rule
+    in `plan/design/spire-remote-node-model.md`.
 - [ ] Bind RaBitQ profile, code length, training-stat fingerprint, storage
   format, served epoch, extension version, and opclass identity before merge.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip

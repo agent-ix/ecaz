@@ -212,6 +212,15 @@ remote_candidate
   row_locator
   score
   assignment_flags
+  protocol_version
+  extension_version
+  opclass_identity
+  storage_format
+  assignment_payload_format
+  quantizer_profile
+  scoring_profile
+  profile_fingerprint
+  endpoint_status
 ```
 
 `vec_id` is the dedupe and boundary-replica merge key. Local Phase 1 `vec_id`
@@ -233,6 +242,48 @@ It may encode a remote heap TID plus relation identity, but the coordinator
 must not treat it as a local heap TID. ADR-059 assigns production remote heap
 resolution to the origin node and keeps remote final rows blocked until
 origin-node heap visibility checks and global vector IDs land.
+
+## Endpoint Serving Identity and Fingerprint
+
+Phase 11 remote serving uses `ec_spire_remote_search_v1` as the candidate row
+protocol. Every remote candidate row carries the endpoint serving identity used
+to score that batch: extension version, opclass identity, storage format,
+assignment payload format, quantizer profile, scoring profile, opaque profile
+fingerprint, and endpoint status. The coordinator may inspect non-ready rows for
+diagnostics, but production merge must reject any row whose endpoint identity is
+not ready.
+
+The v1 `profile_fingerprint` is a 16-hex-character FNV-1a digest over UTF-8
+field strings separated by one NUL byte. Numeric inputs are decimal ASCII. The
+input order is stable and part of the protocol:
+
+```text
+protocol_version
+extension_version
+opclass_identity
+storage_format
+assignment_payload_format
+quantizer_profile
+scoring_profile
+nlists
+recursive_fanout
+training_sample_rows
+seed
+pq_group_size
+active_epoch
+```
+
+`active_epoch` is included so a rebuilt or republished endpoint cannot reuse an
+old serving fingerprint accidentally. A retained historical epoch would expose
+the fingerprint for the epoch it actually serves, not the coordinator's current
+epoch.
+
+Future training-stat fingerprinting must not silently broaden the v1 digest
+input set after candidate rows are on the wire. If persisted training metadata
+changes the digest inputs or the meaning of `profile_fingerprint`, the endpoint
+must bump `protocol_version` (for example to `ec_spire_remote_search_v2`) and
+strict-mode coordinators must reject mixed versions unless an explicit
+compatibility rule exists.
 
 ## Publish Boundaries
 
