@@ -118,7 +118,7 @@ fn validate_leaf_v2_locator(locator: ItemPointer, label: &str) -> Result<(), Str
 
 fn encode_leaf_v2_local_vec_id(vec_id: &SpireVecId, out: &mut Vec<u8>) -> Result<(), String> {
     let Some(local_vec_seq) = vec_id.local_sequence() else {
-        return Err("ec_spire leaf V2 Phase 1 requires local vec_id rows".to_owned());
+        return Err("ec_spire leaf V2 local vec_id column requires local vec_id rows".to_owned());
     };
     out.push(SPIRE_LOCAL_VEC_ID_DISCRIMINATOR);
     out.extend_from_slice(&local_vec_seq.to_le_bytes());
@@ -127,6 +127,40 @@ fn encode_leaf_v2_local_vec_id(vec_id: &SpireVecId, out: &mut Vec<u8>) -> Result
         0,
     );
     Ok(())
+}
+
+fn encode_leaf_v2_vec_id(
+    vec_id: &SpireVecId,
+    vec_id_kind: SpireVecIdKind,
+    vec_id_stride: usize,
+    out: &mut Vec<u8>,
+) -> Result<(), String> {
+    match vec_id_kind {
+        SpireVecIdKind::LocalU64 => {
+            if vec_id_stride != LEAF_V2_LOCAL_VEC_ID_STRIDE {
+                return Err(format!(
+                    "ec_spire leaf V2 local vec_id stride mismatch: got {vec_id_stride}, expected {LEAF_V2_LOCAL_VEC_ID_STRIDE}"
+                ));
+            }
+            encode_leaf_v2_local_vec_id(vec_id, out)
+        }
+        SpireVecIdKind::GlobalBytes => {
+            if vec_id.discriminator() != SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR {
+                return Err(
+                    "ec_spire leaf V2 global vec_id column requires global vec_id rows"
+                        .to_owned(),
+                );
+            }
+            if vec_id.as_bytes().len() != vec_id_stride {
+                return Err(format!(
+                    "ec_spire leaf V2 global vec_id stride mismatch: got {}, expected {vec_id_stride}",
+                    vec_id.as_bytes().len()
+                ));
+            }
+            out.extend_from_slice(vec_id.as_bytes());
+            Ok(())
+        }
+    }
 }
 
 fn decode_leaf_v2_local_vec_id(input: &[u8]) -> Result<u64, String> {
@@ -156,9 +190,67 @@ fn decode_leaf_v2_local_vec_id(input: &[u8]) -> Result<u64, String> {
     Ok(local_vec_seq)
 }
 
-fn leaf_v2_payload_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<(u8, usize), String> {
+fn decode_leaf_v2_vec_id(
+    vec_id_kind: SpireVecIdKind,
+    input: &[u8],
+) -> Result<SpireVecId, String> {
+    match vec_id_kind {
+        SpireVecIdKind::LocalU64 => Ok(SpireVecId::local(decode_leaf_v2_local_vec_id(input)?)),
+        SpireVecIdKind::GlobalBytes => {
+            let vec_id = SpireVecId::from_bytes(input)?;
+            if vec_id.discriminator() != SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR {
+                return Err(
+                    "ec_spire leaf V2 global vec_id column requires global vec_id rows"
+                        .to_owned(),
+                );
+            }
+            Ok(vec_id)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireLeafV2ColumnLayout {
+    payload_format: u8,
+    payload_stride: usize,
+    vec_id_kind: SpireVecIdKind,
+    vec_id_stride: usize,
+}
+
+fn leaf_v2_assignment_vec_id_layout(
+    assignment: &SpireLeafAssignmentRow,
+) -> Result<(SpireVecIdKind, usize), String> {
+    match assignment.vec_id.discriminator() {
+        SPIRE_LOCAL_VEC_ID_DISCRIMINATOR => {
+            assignment
+                .vec_id
+                .local_sequence()
+                .ok_or_else(|| "ec_spire leaf V2 local vec_id is invalid".to_owned())?;
+            Ok((SpireVecIdKind::LocalU64, LEAF_V2_LOCAL_VEC_ID_STRIDE))
+        }
+        SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR => {
+            let stride = assignment.vec_id.as_bytes().len();
+            if stride < 2 || stride > SPIRE_VEC_ID_MAX_BYTES {
+                return Err(format!(
+                    "ec_spire leaf V2 global vec_id stride {stride} is outside 2..={SPIRE_VEC_ID_MAX_BYTES}"
+                ));
+            }
+            Ok((SpireVecIdKind::GlobalBytes, stride))
+        }
+        other => Err(format!(
+            "ec_spire leaf V2 unknown vec_id discriminator: {other:#x}"
+        )),
+    }
+}
+
+fn leaf_v2_column_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<SpireLeafV2ColumnLayout, String> {
     let Some(first) = assignments.first() else {
-        return Ok((SPIRE_PAYLOAD_FORMAT_NONE, 0));
+        return Ok(SpireLeafV2ColumnLayout {
+            payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
+            payload_stride: 0,
+            vec_id_kind: SpireVecIdKind::LocalU64,
+            vec_id_stride: LEAF_V2_LOCAL_VEC_ID_STRIDE,
+        });
     };
     validate_leaf_assignment(first)?;
     if first.payload_format == SPIRE_PAYLOAD_FORMAT_NONE {
@@ -166,6 +258,7 @@ fn leaf_v2_payload_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<(u8,
     }
     let payload_format = first.payload_format;
     let payload_stride = first.encoded_payload.len();
+    let (vec_id_kind, vec_id_stride) = leaf_v2_assignment_vec_id_layout(first)?;
     if payload_stride == 0 {
         return Err("ec_spire non-empty leaf V2 payload stride 0 is invalid".to_owned());
     }
@@ -183,14 +276,26 @@ fn leaf_v2_payload_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<(u8,
                 assignment.encoded_payload.len()
             ));
         }
-        if assignment.vec_id.local_sequence().is_none() {
-            return Err(
-                "ec_spire leaf V2 base objects require local vec_id rows; global writer IDs need a future variable-width Leaf V2 format or row-encoded delta path"
-                    .to_owned(),
-            );
+        let (assignment_vec_id_kind, assignment_vec_id_stride) =
+            leaf_v2_assignment_vec_id_layout(assignment)?;
+        if assignment_vec_id_kind != vec_id_kind {
+            return Err(format!(
+                "ec_spire leaf V2 requires one vec_id kind per object: got {:?}, expected {:?}",
+                assignment_vec_id_kind, vec_id_kind
+            ));
+        }
+        if assignment_vec_id_stride != vec_id_stride {
+            return Err(format!(
+                "ec_spire leaf V2 requires one vec_id stride per object: got {assignment_vec_id_stride}, expected {vec_id_stride}"
+            ));
         }
     }
-    Ok((payload_format, payload_stride))
+    Ok(SpireLeafV2ColumnLayout {
+        payload_format,
+        payload_stride,
+        vec_id_kind,
+        vec_id_stride,
+    })
 }
 
 fn leaf_v2_max_segment_rows(

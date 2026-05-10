@@ -3158,8 +3158,8 @@ pub(crate) fn remote_search_vector_identity_contract_rows(
         },
         SpireRemoteSearchVectorIdentityContractRow {
             contract_item: "writer_global_base_storage",
-            contract_value: "leaf_v2_base_objects_local_vec_id_only",
-            status: "blocked_until_variable_vec_id_format",
+            contract_value: "leaf_v2_global_bytes_fixed_width_per_object",
+            status: "phase11_2_landed",
         },
         SpireRemoteSearchVectorIdentityContractRow {
             contract_item: "writer_global_delta_storage",

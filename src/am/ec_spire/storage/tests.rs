@@ -56,6 +56,25 @@ mod tests {
         }
     }
 
+    fn leaf_v2_global_assignment(
+        global_payload: &[u8],
+        heap_block_number: u32,
+        heap_offset_number: u16,
+        payload_len: usize,
+    ) -> SpireLeafAssignmentRow {
+        SpireLeafAssignmentRow {
+            flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: SpireVecId::global(global_payload).unwrap(),
+            heap_tid: ItemPointer {
+                block_number: heap_block_number,
+                offset_number: heap_offset_number,
+            },
+            payload_format: SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
+            gamma: heap_offset_number as f32 / 10.0,
+            encoded_payload: vec![heap_offset_number as u8; payload_len],
+        }
+    }
+
 
     include!("tests/vec_and_routing.rs");
     include!("tests/top_graph.rs");

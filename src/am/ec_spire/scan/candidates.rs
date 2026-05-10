@@ -623,7 +623,7 @@ fn append_quantized_v2_column_candidates(
         }
 
         let row = columns.row(row_offset)?;
-        let vec_id = SpireVecId::local(row.local_vec_seq()?);
+        let vec_id = row.vec_id()?;
         if deleted_vec_ids.contains(&vec_id) {
             continue;
         }

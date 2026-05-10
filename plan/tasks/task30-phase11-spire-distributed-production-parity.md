@@ -91,9 +91,12 @@ Acceptance artifact:
 - [ ] Emit durable global `0x02` `SpireVecId` values from the writer/build path
   when a stable source identity is available.
 - [ ] Define the stable source-identity input contract for build/insert paths;
-  heap TID alone is not a cross-node stable identity.
-- [ ] Replace or extend Leaf V2 base-object storage so global `0x02` IDs are not
-  rejected by the local-only fixed-width vec-id column format.
+  heap TID alone is not a cross-node stable identity. The contract must produce
+  fixed-width global payloads when targeting Leaf V2 base objects.
+- [x] Replace or extend Leaf V2 base-object storage so global `0x02` IDs are not
+  rejected by the local-only fixed-width vec-id column format. Leaf V2 now
+  supports per-object `GlobalBytes` columns when every row has the same global
+  ID byte length; see `plan/design/spire-leaf-v2-vector-id-layout.md`.
 - [ ] Preserve compatibility with existing node-local `0x01` IDs, scoped by
   origin `node_id`, without silently mixing namespaces.
 - [ ] Ensure boundary replicas carry the same global original-vector identity

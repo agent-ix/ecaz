@@ -1965,8 +1965,9 @@ production-readiness gate is reviewed.
 - [ ] **Paper-parity gate.** Build a SPIRE paper parity checklist and define
   the local production-readiness gate that must pass before AWS is scheduled.
 - [ ] **Writer-side global vector IDs.** Emit durable global `0x02` IDs when a
-  stable source identity is available while preserving node-scoped local ID
-  compatibility.
+  stable fixed-width source identity is available while preserving node-scoped
+  local ID compatibility. Allocation hooks and Leaf V2 fixed-width global-ID
+  storage are landed; live writer source-identity plumbing remains.
 - [ ] **Remote search endpoint.** Promote or add a production remote search
   endpoint that returns compact candidates with served epoch, node identity,
   row locator, score, quantizer/index fingerprint, protocol/version metadata,

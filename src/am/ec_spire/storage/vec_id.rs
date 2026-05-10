@@ -63,6 +63,7 @@ impl SpireVecIdKind {
 pub(super) struct SpireLeafObjectColumnRowRef<'a> {
     pub(super) row_index: u32,
     pub(super) flags: u16,
+    pub(super) vec_id_kind: SpireVecIdKind,
     pub(super) vec_id_bytes: &'a [u8],
     pub(super) heap_tid: ItemPointer,
     pub(super) gamma: f32,
@@ -70,6 +71,10 @@ pub(super) struct SpireLeafObjectColumnRowRef<'a> {
 }
 
 impl SpireLeafObjectColumnRowRef<'_> {
+    pub(super) fn vec_id(&self) -> Result<SpireVecId, String> {
+        decode_leaf_v2_vec_id(self.vec_id_kind, self.vec_id_bytes)
+    }
+
     pub(super) fn local_vec_seq(&self) -> Result<u64, String> {
         decode_leaf_v2_local_vec_id(self.vec_id_bytes)
     }
@@ -124,6 +129,7 @@ impl<'a> SpireLeafObjectColumns<'a> {
         Ok(SpireLeafObjectColumnRowRef {
             row_index,
             flags: self.flags[row_offset],
+            vec_id_kind: self.vec_id_kind,
             vec_id_bytes: self
                 .vec_ids
                 .get(vec_id_start..vec_id_end)

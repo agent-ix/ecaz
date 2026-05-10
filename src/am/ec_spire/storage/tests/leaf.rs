@@ -134,7 +134,39 @@
     }
 
     #[test]
-    fn leaf_partition_object_v2_rejects_mixed_payload_or_global_vec_id() {
+    fn leaf_partition_object_v2_store_preserves_fixed_width_global_vec_ids() {
+        let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+        let assignments = vec![
+            leaf_v2_global_assignment(&[7, 0, 0, 1], 200, 1, 32),
+            leaf_v2_global_assignment(&[7, 0, 0, 2], 200, 2, 32),
+            leaf_v2_global_assignment(&[7, 0, 0, 3], 200, 3, 32),
+        ];
+
+        let placement = store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+            .unwrap();
+        let decoded = store.read_leaf_object_v2(&placement).unwrap();
+
+        assert_eq!(decoded.meta.vec_id_kind, SpireVecIdKind::GlobalBytes);
+        assert_eq!(
+            usize::from(decoded.meta.vec_id_stride),
+            assignments[0].vec_id.as_bytes().len()
+        );
+        assert_eq!(decoded.assignment_rows().unwrap(), assignments);
+
+        let column_segments = decoded
+            .column_segments()
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let first_row = column_segments[0].row(0).unwrap();
+        assert_eq!(first_row.vec_id().unwrap(), assignments[0].vec_id);
+        assert!(first_row.local_vec_seq().is_err());
+        assert_eq!(first_row.vec_id_bytes, assignments[0].vec_id.as_bytes());
+    }
+
+    #[test]
+    fn leaf_partition_object_v2_rejects_mixed_payload_or_vec_id_layout() {
         let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
         let mut mixed_stride = vec![leaf_v2_assignment(1, 8), leaf_v2_assignment(2, 16)];
         assert!(store
@@ -147,12 +179,27 @@
             .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &mixed_stride)
             .is_err());
 
-        let mut global_row = leaf_v2_assignment(1, 8);
-        global_row.vec_id = SpireVecId::global(&[9, 9, 9]).unwrap();
+        let mut mixed_vec_id_kind = leaf_v2_assignment(1, 8);
+        mixed_vec_id_kind.vec_id = SpireVecId::global(&[9, 9, 9]).unwrap();
         let err = store
-            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &[global_row])
+            .insert_leaf_object_v2_from_rows(
+                7,
+                17,
+                3,
+                5,
+                &[leaf_v2_assignment(1, 8), mixed_vec_id_kind],
+            )
             .unwrap_err();
-        assert!(err.contains("global writer IDs need a future variable-width Leaf V2 format"));
+        assert!(err.contains("requires one vec_id kind per object"));
+
+        let variable_global_lengths = vec![
+            leaf_v2_global_assignment(&[9, 9, 1], 200, 1, 8),
+            leaf_v2_global_assignment(&[9, 9, 9, 2], 200, 2, 8),
+        ];
+        let err = store
+            .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &variable_global_lengths)
+            .unwrap_err();
+        assert!(err.contains("requires one vec_id stride per object"));
     }
 
     #[test]

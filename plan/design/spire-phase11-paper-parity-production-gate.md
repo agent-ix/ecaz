@@ -26,7 +26,7 @@ AWS/RDS-class scale packet can start.
 | Top-level graph routing | Local top-graph chain storage and borrowed routing are landed. | Preserve as the coordinator entry path; add distributed route/fanout diagnostics without rebuilding graph ownership. | Phase 9 packets and Phase 11.6 | Local-only ready |
 | Balanced partition granularity | Local nlist/nprobe controls and pipeline counters exist; AWS scale evidence is deferred. | Define local capacity targets and only schedule AWS after Phase 11.1-11.8 pass or are explicitly deferred. | Phase 11.8 and 11.9 | Open |
 | Boundary replication | Local boundary-replica assignment and scan diagnostics exist. | Cross-node replicas must share global `0x02` vector IDs and dedupe once across nodes. | Phase 11.2 and 11.5 | Open |
-| Stable vector identity | ADR-055 defines local `0x01` and global `0x02` identities; merge scopes local IDs by node. | Writers must emit global IDs when a stable source identity exists; local-only indexes need explicit compatibility diagnostics. | Phase 11.2 | Open |
+| Stable vector identity | ADR-055 defines local `0x01` and global `0x02` identities; allocation hooks and fixed-width Leaf V2 global-ID storage are landed, while live writers still default to local IDs. | Writers must emit global IDs when a stable fixed-width source identity exists; local-only indexes need explicit compatibility diagnostics. | Phase 11.2 | Open |
 | Disaggregated index store | Local placement maps already model `(node_id, local_store_id)` and local multi-store object placement. | Multi-instance manifests must publish remote placement readiness and replica freshness without AWS. | Phase 11.6 and 11.7 | Open |
 | Stateless query execution engine | SQL-visible libpq surfaces and receive/merge contracts exist, but ADR-058 keeps the executor diagnostic-only. | Production AM remote fanout must be concurrent or pipelined, bounded, cancellable, timed out, and observable. | Phase 11.4 | Open |
 | Remote near-data scoring | Diagnostic remote search candidates exist. | Production endpoint must score at origin, return compact candidates, bind served epoch plus quantizer/index fingerprint, and reject incompatible remotes in strict mode. | Phase 11.3 | Open |
@@ -102,6 +102,6 @@ explicit accepted deferrals:
 Phase 11.2 writer-side global vector identity is the first code slice because
 remote endpoint promotion, production merge, boundary-replica correctness, and
 origin-node heap finalization all depend on stable cross-node identity. The
-slice must also make the current Leaf V2 local-ID storage constraint explicit
-so global-ID support does not silently pass through a local-only physical
-format.
+allocation hook and Leaf V2 fixed-width `GlobalBytes` storage layout are now
+available; the remaining Phase 11.2 gate is to define and plumb a stable
+fixed-width source identity into live build/insert writers.

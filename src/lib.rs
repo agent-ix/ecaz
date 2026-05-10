@@ -20557,10 +20557,7 @@ mod tests {
             writer_global_source_identity,
             "stable_source_identity_required_not_heap_tid"
         );
-        assert_eq!(
-            writer_global_base_storage_status,
-            "blocked_until_variable_vec_id_format"
-        );
+        assert_eq!(writer_global_base_storage_status, "phase11_2_landed");
         assert_eq!(interpretation, "opaque_bytes");
         assert_eq!(remote_resolution_status, "deferred_until_remote_heap_fetch");
         assert_eq!(heap_resolution_count, 2);

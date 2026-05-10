@@ -90,11 +90,11 @@ impl SpireRelationObjectStore {
         validate_leaf_assignments(assignments)?;
         let assignment_count = u32::try_from(assignments.len())
             .map_err(|_| "ec_spire leaf V2 assignment count exceeds u32".to_owned())?;
-        let (payload_format, payload_stride) = leaf_v2_payload_layout(assignments)?;
+        let layout = leaf_v2_column_layout(assignments)?;
         let max_segment_rows = leaf_v2_max_segment_rows(
             pg_sys::BLCKSZ as usize,
-            payload_stride,
-            LEAF_V2_LOCAL_VEC_ID_STRIDE,
+            layout.payload_stride,
+            layout.vec_id_stride,
         )?;
         let segment_count = if assignments.is_empty() {
             0
@@ -121,9 +121,12 @@ impl SpireRelationObjectStore {
             object_version,
             parent_pid,
             assignment_count,
-            payload_format,
-            u32::try_from(payload_stride)
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
                 .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V2 vec_id stride exceeds u16".to_owned())?,
             segment_count,
             provisional_first_segment,
             1,
@@ -178,9 +181,12 @@ impl SpireRelationObjectStore {
             object_version,
             parent_pid,
             assignment_count,
-            payload_format,
-            u32::try_from(payload_stride)
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
                 .map_err(|_| "ec_spire leaf V2 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V2 vec_id stride exceeds u16".to_owned())?,
             segment_count,
             first_segment_locator,
             object_bytes_total,
