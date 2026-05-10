@@ -131,6 +131,7 @@ pub struct StageEFaultPg18Args {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StageEFaultCase {
+    EpochMismatch,
     VersionSkew,
     SimulatedNetworkPartition,
 }
@@ -138,6 +139,7 @@ enum StageEFaultCase {
 impl StageEFaultCase {
     fn as_matrix_key(self) -> &'static str {
         match self {
+            StageEFaultCase::EpochMismatch => "epoch_mismatch",
             StageEFaultCase::VersionSkew => "version_skew",
             StageEFaultCase::SimulatedNetworkPartition => "simulated_network_partition",
         }
@@ -145,7 +147,7 @@ impl StageEFaultCase {
 
     fn script_name(self) -> &'static str {
         match self {
-            StageEFaultCase::VersionSkew => {
+            StageEFaultCase::EpochMismatch | StageEFaultCase::VersionSkew => {
                 "scripts/run_spire_multicluster_stage_e_predispatch_fault_pg18.sh"
             }
             StageEFaultCase::SimulatedNetworkPartition => {
@@ -157,12 +159,13 @@ impl StageEFaultCase {
 
 fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase, String> {
     match value {
+        "epoch_mismatch" | "epoch-mismatch" => Ok(StageEFaultCase::EpochMismatch),
         "version_skew" | "version-skew" => Ok(StageEFaultCase::VersionSkew),
         "simulated_network_partition" | "simulated-network-partition" => {
             Ok(StageEFaultCase::SimulatedNetworkPartition)
         }
         other => Err(format!(
-            "unsupported Stage E fault case {other:?}; supported: simulated_network_partition, version_skew"
+            "unsupported Stage E fault case {other:?}; supported: epoch_mismatch, simulated_network_partition, version_skew"
         )),
     }
 }

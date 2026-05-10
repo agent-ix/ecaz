@@ -19,6 +19,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_predispatch_fault_pg18.sh --case CASE [options]
 
 Cases:
+  epoch_mismatch
   version_skew
 
 Options:
@@ -92,7 +93,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$FAULT_CASE" != "version_skew" ]]; then
+if [[ "$FAULT_CASE" != "epoch_mismatch" && "$FAULT_CASE" != "version_skew" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
   usage >&2
   exit 2
@@ -171,7 +172,6 @@ SQL
 
 ready_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_ready_remote_idx'::regclass)")"
 extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHERE extname = 'ecaz'")"
-fault_extension_version="0.0.0-test-skew"
 matrix_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT fault_case, failure_category, strict_action, strict_status, degraded_action, degraded_status, counter_delta FROM ec_spire_remote_search_stage_e_fault_matrix() WHERE fault_case = '$FAULT_CASE'")"
 
 create_case_index() {
@@ -197,6 +197,9 @@ SQL
   local bad_pid
   local ready_pid
   local extra_pid
+  local fault_extension_version="$extversion"
+  local fault_last_served_epoch
+  local fault_min_retained_epoch
   coord_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('$index_name'::regclass)")"
   coord_pids="$("${coord_psql[@]}" -At -F ',' -c "SELECT string_agg(leaf_pid::text, ',' ORDER BY leaf_pid) FROM ec_spire_index_leaf_snapshot('$index_name'::regclass)")"
   IFS=, read -r bad_pid ready_pid extra_pid <<< "$coord_pids"
@@ -209,14 +212,23 @@ SQL
     "${coord_psql[@]}" -v index_name="$index_name" <<'SQL' >/dev/null
 SELECT tests.ec_spire_test_rewrite_consistency_mode(
     :'index_name'::regclass::oid,
-    'degraded'
+      'degraded'
 );
 SQL
+  fi
+  fault_last_served_epoch="$coord_epoch"
+  fault_min_retained_epoch="$coord_epoch"
+  if [[ "$FAULT_CASE" == "epoch_mismatch" ]]; then
+    fault_last_served_epoch=0
+  else
+    fault_extension_version="0.0.0-test-skew"
   fi
 
   "${coord_psql[@]}" -v index_name="$index_name" -v coord_epoch="$coord_epoch" \
     -v bad_pid="$bad_pid" -v ready_pid="$ready_pid" -v extversion="$extversion" \
     -v fault_extension_version="$fault_extension_version" \
+    -v fault_last_served_epoch="$fault_last_served_epoch" \
+    -v fault_min_retained_epoch="$fault_min_retained_epoch" \
     -v ready_identity_hex="$ready_identity_hex" <<'SQL' >/dev/null
 SELECT tests.ec_spire_test_rewrite_placement_nodes(
     :'index_name'::regclass::oid,
@@ -231,8 +243,8 @@ SELECT ec_spire_register_remote_node_descriptor(
     decode('02', 'hex'),
     'ec_spire_stage_e_ready_remote_idx',
     'active',
-    :coord_epoch::bigint,
-    :coord_epoch::bigint,
+    :fault_last_served_epoch::bigint,
+    :fault_min_retained_epoch::bigint,
     :'fault_extension_version',
     'none'
 );
@@ -251,7 +263,7 @@ SELECT ec_spire_register_remote_node_descriptor(
 );
 SQL
 
-  echo "$index_name,$coord_epoch,$bad_pid,$ready_pid"
+  echo "$index_name,$coord_epoch,$bad_pid,$ready_pid,$fault_extension_version,$fault_last_served_epoch,$fault_min_retained_epoch"
 }
 
 run_case() {
@@ -268,8 +280,11 @@ run_case() {
   local coord_epoch
   local bad_pid
   local ready_pid
+  local fault_extension_version
+  local fault_last_served_epoch
+  local fault_min_retained_epoch
   case_setup="$(create_case_index "$mode")"
-  IFS=, read -r index_name coord_epoch bad_pid ready_pid <<< "$case_setup"
+  IFS=, read -r index_name coord_epoch bad_pid ready_pid fault_extension_version fault_last_served_epoch fault_min_retained_epoch <<< "$case_setup"
 
   local summary
   summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, planned_dispatch_count, blocked_before_dispatch_count, transport_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM ec_spire_remote_search_production_executor_state_summary('$index_name'::regclass, $coord_epoch, ARRAY[1.0, 0.0]::real[], ARRAY[$bad_pid,$ready_pid]::bigint[], 1, '$mode')")"
@@ -277,6 +292,7 @@ run_case() {
   {
     echo "matrix_row=$matrix_row"
     echo "injection=fault_node_extension_version=$fault_extension_version"
+    echo "injection=fault_node_epoch_window=$fault_last_served_epoch/$fault_min_retained_epoch requested=$coord_epoch"
     echo "ready_remote_identity=$ready_identity_hex"
     echo "query_command=ec_spire_remote_search_production_executor_state_summary('$index_name', ..., '$mode')"
     echo "expected_status=$expected_status"
@@ -304,8 +320,13 @@ run_case() {
   fi
 }
 
-run_case "strict" "$STRICT_LOG" "incompatible_extension_version" "1" "0" "remote_extension_version" "none"
-run_case "degraded" "$DEGRADED_LOG" "requires_production_transport_adapter" "0" "1" "production_transport_adapter" "incompatible_extension_version"
+if [[ "$FAULT_CASE" == "epoch_mismatch" ]]; then
+  run_case "strict" "$STRICT_LOG" "stale_epoch" "1" "0" "remote_epoch_window" "none"
+  run_case "degraded" "$DEGRADED_LOG" "requires_production_transport_adapter" "0" "1" "production_transport_adapter" "stale_epoch"
+else
+  run_case "strict" "$STRICT_LOG" "incompatible_extension_version" "1" "0" "remote_extension_version" "none"
+  run_case "degraded" "$DEGRADED_LOG" "requires_production_transport_adapter" "0" "1" "production_transport_adapter" "incompatible_extension_version"
+fi
 
 echo "strict_log=$STRICT_LOG"
 echo "degraded_log=$DEGRADED_LOG"
