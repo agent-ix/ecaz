@@ -1311,6 +1311,8 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE: &str =
+    "SELECT * FROM ec_spire_remote_search_endpoint_identity($1::oid)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
 const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str =
@@ -2665,6 +2667,14 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             validator: "must_not_treat_direct_sql_rows_as_mergeable_without_libpq_receive_validation",
             recommendation: "use libpq executor readiness surfaces before production remote merge",
         },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 12,
+            contract_item: "remote_heap_candidate_endpoint_identity_preflight",
+            contract_value: "libpq_heap_candidate_executor_validates_ec_spire_remote_search_endpoint_identity_before_origin_node_heap_rows",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_validate_ready_endpoint_identity_before_remote_heap_candidate_merge",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
     ]
 }
 
@@ -2737,8 +2747,17 @@ fn remote_search_candidate_endpoint_text(
     })
 }
 
-fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Result<(), String> {
-    let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
+fn validate_remote_search_endpoint_identity_fields(
+    protocol_version: &str,
+    extension_version: &str,
+    opclass_identity: &str,
+    storage_format: &str,
+    assignment_payload_format: &str,
+    quantizer_profile: &str,
+    scoring_profile: &str,
+    profile_fingerprint: &str,
+    endpoint_status: &str,
+) -> Result<(), String> {
     if protocol_version != SPIRE_REMOTE_CANDIDATE_FORMAT_V1 {
         return Err(format!(
             "ec_spire remote search executor protocol_version {protocol_version} does not match {}",
@@ -2746,7 +2765,6 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
         ));
     }
 
-    let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
     if extension_version != env!("CARGO_PKG_VERSION") {
         return Err(format!(
             "ec_spire remote search executor extension_version {extension_version} does not match {}",
@@ -2754,15 +2772,14 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
         ));
     }
 
-    for column in [
-        "opclass_identity",
-        "storage_format",
-        "assignment_payload_format",
-        "quantizer_profile",
-        "scoring_profile",
-        "profile_fingerprint",
+    for (column, value) in [
+        ("opclass_identity", opclass_identity),
+        ("storage_format", storage_format),
+        ("assignment_payload_format", assignment_payload_format),
+        ("quantizer_profile", quantizer_profile),
+        ("scoring_profile", scoring_profile),
+        ("profile_fingerprint", profile_fingerprint),
     ] {
-        let value = remote_search_candidate_endpoint_text(row, column)?;
         if value.is_empty() {
             return Err(format!(
                 "ec_spire remote search executor {column} endpoint identity is empty"
@@ -2770,7 +2787,6 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
         }
     }
 
-    let endpoint_status = remote_search_candidate_endpoint_text(row, "endpoint_status")?;
     if endpoint_status != SPIRE_REMOTE_STATUS_READY {
         return Err(format!(
             "ec_spire remote search executor endpoint_status {endpoint_status} is not ready"
@@ -2778,6 +2794,56 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
     }
 
     Ok(())
+}
+
+fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Result<(), String> {
+    let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
+    let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
+    let opclass_identity = remote_search_candidate_endpoint_text(row, "opclass_identity")?;
+    let storage_format = remote_search_candidate_endpoint_text(row, "storage_format")?;
+    let assignment_payload_format =
+        remote_search_candidate_endpoint_text(row, "assignment_payload_format")?;
+    let quantizer_profile = remote_search_candidate_endpoint_text(row, "quantizer_profile")?;
+    let scoring_profile = remote_search_candidate_endpoint_text(row, "scoring_profile")?;
+    let profile_fingerprint = remote_search_candidate_endpoint_text(row, "profile_fingerprint")?;
+    let endpoint_status = remote_search_candidate_endpoint_text(row, "endpoint_status")?;
+
+    validate_remote_search_endpoint_identity_fields(
+        &protocol_version,
+        &extension_version,
+        &opclass_identity,
+        &storage_format,
+        &assignment_payload_format,
+        &quantizer_profile,
+        &scoring_profile,
+        &profile_fingerprint,
+        &endpoint_status,
+    )
+}
+
+fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<(), String> {
+    let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
+    let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
+    let opclass_identity = remote_search_candidate_endpoint_text(row, "opclass_identity")?;
+    let storage_format = remote_search_candidate_endpoint_text(row, "storage_format")?;
+    let assignment_payload_format =
+        remote_search_candidate_endpoint_text(row, "assignment_payload_format")?;
+    let quantizer_profile = remote_search_candidate_endpoint_text(row, "quantizer_profile")?;
+    let scoring_profile = remote_search_candidate_endpoint_text(row, "scoring_profile")?;
+    let profile_fingerprint = remote_search_candidate_endpoint_text(row, "profile_fingerprint")?;
+    let endpoint_status = remote_search_candidate_endpoint_text(row, "status")?;
+
+    validate_remote_search_endpoint_identity_fields(
+        &protocol_version,
+        &extension_version,
+        &opclass_identity,
+        &storage_format,
+        &assignment_payload_format,
+        &quantizer_profile,
+        &scoring_profile,
+        &profile_fingerprint,
+        &endpoint_status,
+    )
 }
 
 pub(crate) unsafe fn remote_search_endpoint_identity_row(
@@ -2844,6 +2910,24 @@ fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, St
         Ok(_) => Err("conninfo_secret_empty".to_owned()),
         Err(_) => Err("conninfo_secret_missing".to_owned()),
     }
+}
+
+fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
+    client: &mut postgres::Client,
+    remote_index_oid: u32,
+    node_id: u32,
+) -> Result<(), String> {
+    let endpoint_identity_row = client
+        .query_one(
+            SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+            &[&remote_index_oid],
+        )
+        .map_err(|_| {
+            format!(
+                "ec_spire remote search libpq executor endpoint identity query failed for node_id {node_id}"
+            )
+        })?;
+    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
 }
 
 fn decode_remote_search_candidate_pg_row(
@@ -3037,6 +3121,11 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
                 row.node_id
             )
         })?;
+    validate_remote_search_libpq_endpoint_identity_for_dispatch(
+        &mut client,
+        remote_index_oid,
+        row.node_id,
+    )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote search libpq executor requested_epoch exceeds i64")?;
     let selected_pids = row
@@ -3104,6 +3193,7 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("quantizer_profile")
         || error.contains("scoring_profile")
         || error.contains("profile_fingerprint")
+        || error.contains("endpoint identity")
     {
         "endpoint_identity_mismatch".to_owned()
     } else if error.contains("conninfo secret") {
@@ -3127,6 +3217,7 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
         || error.contains("quantizer_profile")
         || error.contains("scoring_profile")
         || error.contains("profile_fingerprint")
+        || error.contains("endpoint identity")
     {
         "remote_endpoint_identity".to_owned()
     } else if error.contains("served epoch") {
@@ -3272,6 +3363,11 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
                 row.node_id
             )
         })?;
+    validate_remote_search_libpq_endpoint_identity_for_dispatch(
+        &mut client,
+        remote_index_oid,
+        row.node_id,
+    )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote heap executor requested_epoch exceeds i64")?;
     let selected_pids = row

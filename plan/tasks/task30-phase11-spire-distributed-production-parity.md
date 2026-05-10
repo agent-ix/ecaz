@@ -317,12 +317,18 @@ endpoint.
     endpoint is rejected with
     `endpoint_status requires_rabitq_storage_format is not ready` before
     remote candidates can enter the merge path.
+  - [x] Libpq dispatch now preflights `ec_spire_remote_search_endpoint_identity`
+    before both compact candidate receive and origin-node remote heap
+    candidate receive, so empty batches and heap rows cannot bypass the ready
+    endpoint identity gate.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
   reasons in degraded mode.
   - [x] Add per-node libpq receive-attempt diagnostics that preserve the
     production strict `fail_closed` action while reporting the degraded
     `skip_node` action and exact endpoint mismatch reason for non-ready
     remotes.
+  - [x] PG18 coordinator-result coverage proves the remote heap path rejects a
+    non-RaBitQ endpoint before final row delivery.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
   behavior, stale epoch rejection, fingerprint mismatch, version skew, and
   malformed candidate rejection.

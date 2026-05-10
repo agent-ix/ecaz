@@ -20519,6 +20519,12 @@ mod tests {
         ))
         .expect("endpoint contract direct SQL policy query should succeed")
         .expect("endpoint contract direct SQL policy should exist");
+        let heap_preflight_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {endpoint_contract_from} \
+             WHERE contract_item = 'remote_heap_candidate_endpoint_identity_preflight'"
+        ))
+        .expect("endpoint contract heap preflight query should succeed")
+        .expect("endpoint contract heap preflight should exist");
         let non_ready_endpoint_rows = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {endpoint_contract_from} WHERE status <> 'ready'"
         ))
@@ -20544,13 +20550,17 @@ mod tests {
         assert_eq!(first_executor_step, "remote_node_descriptor");
         assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
-        assert_eq!(endpoint_count, 11);
+        assert_eq!(endpoint_count, 12);
         assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
         assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
         assert_eq!(fingerprint_status, "requires_fingerprint_binding");
         assert_eq!(
             direct_sql_policy_validator,
             "must_not_treat_direct_sql_rows_as_mergeable_without_libpq_receive_validation"
+        );
+        assert_eq!(
+            heap_preflight_validator,
+            "must_validate_ready_endpoint_identity_before_remote_heap_candidate_merge"
         );
         assert_eq!(non_ready_endpoint_rows, 3);
     }
@@ -22904,6 +22914,92 @@ mod tests {
                  ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
         ))
         .expect("non-ready remote endpoint should be rejected before merge");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire remote search executor endpoint_status requires_rabitq_storage_format is not ready"
+    )]
+    fn test_ec_spire_heap_endpoint_rejects_non_ready() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_HEAP_NON_READY",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_remote_heap_non_ready_remote_sql; \
+                 CREATE TABLE ec_spire_remote_heap_non_ready_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_remote_heap_non_ready_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_remote_heap_non_ready_remote_sql_idx \
+                     ON ec_spire_remote_heap_non_ready_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2)",
+            )
+            .expect("loopback heap non-ready remote fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_heap_non_ready_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_heap_non_ready_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_heap_non_ready_coord_sql_idx \
+             ON ec_spire_remote_heap_non_ready_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_heap_non_ready_coord_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_heap_non_ready_coord_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_heap_non_ready_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 11, 'spire/remote/heap-non-ready', decode('01', 'hex'), \
+                     'ec_spire_remote_heap_non_ready_remote_sql_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        Spi::run(&format!(
+            "SELECT status FROM ec_spire_remote_search_coordinator_result_summary(\
+                 'ec_spire_remote_heap_non_ready_coord_sql_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
+        ))
+        .expect("non-ready remote heap endpoint should be rejected before final rows");
     }
 
     #[pg_test]
