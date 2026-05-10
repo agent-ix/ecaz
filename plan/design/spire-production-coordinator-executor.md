@@ -81,6 +81,16 @@ version, executor budget, executor governance, conninfo secret, connection,
 remote endpoint identity, remote endpoint result, remote heap resolution, and
 coordinator merge.
 
+The C1 implementation lands each executor stage with the same summary shape:
+the previous ready state is the next stage's pending count, applying a stage
+result is a single monotonic transition, and summaries expose
+`pending` / `sent` / `ready` / `failed` counters plus a first failure category.
+`TransportReady` / `TransportFailed` and
+`CandidateReceiveReady` / `CandidateReceiveFailed` are the reference pattern
+for future cancellation, cache-reuse, strict/degraded, and heap-resolution
+states. New stages should add counters rather than overloading a status string
+when operators need to distinguish partial progress from terminal failure.
+
 ## Landing Sequence
 
 ### C0: State Contract
@@ -179,6 +189,22 @@ Wire production remote fanout into the coordinator scan path behind an explicit
 readiness gate. The scan path must merge local and remote compact candidates
 only after candidate batch validation and must defer final SQL row readiness
 until Stage D remote heap resolution is production-correct.
+
+C5 consumes only `CandidateReceiveReady` dispatches. Those dispatches are the
+handoff contract into Stage D: they contain already validated compact candidate
+batches, the selected PID set used for validation, the origin node, and the
+candidate row count that remote heap resolution must account for. C5 must not
+re-run compact receive, re-resolve conninfo, or reinterpret failed receive rows
+as empty ready batches. `CandidateReceiveFailed` dispatches remain strict
+fail-closed candidates until C4 degraded semantics explicitly mark them
+skippable.
+
+Until Stage D is implemented, C5 may prove ordered compact-candidate merge, but
+final SQL row delivery must surface `requires_remote_heap_resolution`. The
+remote heap stage is responsible for reading the ready compact candidates,
+fetching heap visibility from each origin node, preserving opaque row locators,
+and producing the final row stream only after every required remote candidate is
+resolved or explicitly skipped by degraded-mode policy.
 
 Verification:
 

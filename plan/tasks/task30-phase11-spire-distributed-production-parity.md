@@ -391,6 +391,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     candidates while failed remotes preserve per-row failure categories.
   - [x] Wire compact-candidate receive results into production executor state
     with explicit pending, ready, failed, and candidate-row counters.
+  - [x] Document the production stage-extension pattern and the
+    `CandidateReceiveReady` handoff contract into Stage D heap resolution.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.
