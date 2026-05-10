@@ -702,8 +702,11 @@ Goal: make the coordinator-visible result stream production-correct.
     while FDW/custom-executor tuple paths are future non-AM integrations.
   - [ ] Implement the remote row materialization mechanism required
     before remote-origin outputs can be returned by a PostgreSQL index scan.
-  - [ ] Cursor AM-deliverable outputs from scan opaque state in
-    `amrescan` / `amgettuple`.
+  - [x] Packet `30762` cursors AM-deliverable production-stream outputs through
+    scan opaque state: `amrescan` now feeds the production heap-resolution
+    result stream into an AM output cursor, and `amgettuple` only receives local
+    coordinator heap TIDs while remote-origin outputs keep blocking on
+    `remote_row_materialization`.
 - [ ] Verification: tests for dead/missing remote rows, stale locators,
   duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
   dedupe.

@@ -14,7 +14,8 @@ mod tests {
         ensure_local_heap_placement_directory_is_deliverable,
         group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
         load_delta_rows_for_routes, load_snapshot_routing_hierarchy, load_snapshot_top_graph_object,
-        prefetch_store_object_read_groups, rank_routed_leaf_rows_by_ip,
+        prefetch_store_object_read_groups, production_scan_result_stream_am_outputs,
+        rank_routed_leaf_rows_by_ip,
         rerank_scored_candidates_by_ip, rerank_scored_candidates_by_ip_with_prefetch,
         route_recursive_routing_objects_to_leaf_pids,
         route_recursive_routing_objects_to_leaf_routes_with_budget,
@@ -24,8 +25,17 @@ mod tests {
         route_top_graph_to_child_pids, SpireDeltaObjectRoute, SpireLeafObjectReadRoute,
         SpireLeafScanRow, SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute,
         SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredScanCandidate,
-        SpireStoreObjectReadGroup,
+        SpireScanOutputCursor, SpireScanPlacementDiagnosticsObserver, SpireScanQuery,
+        SpireScoredScanCandidate, SpireStoreObjectReadGroup,
+    };
+    use crate::am::ec_spire::{
+        SpireRemoteProductionScanAmDeliverySummaryRow,
+        SpireRemoteProductionScanHeapResolutionSummaryRow, SpireRemoteProductionScanOutputRow,
+        SpireRemoteProductionScanResultStream,
+        SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+        SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+        SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+        SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION, SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY,
     };
     use crate::am::ec_spire::assign::{
         SpireDeleteDeltaInput, SpireLeafAssignmentInput, SpireLocalVecIdAllocator,
@@ -74,6 +84,38 @@ mod tests {
         ItemPointer {
             block_number,
             offset_number,
+        }
+    }
+
+    fn production_scan_stream_for_am(
+        am_delivery: SpireRemoteProductionScanAmDeliverySummaryRow,
+        outputs: Vec<SpireRemoteProductionScanOutputRow>,
+    ) -> SpireRemoteProductionScanResultStream {
+        SpireRemoteProductionScanResultStream {
+            summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+                requested_epoch: am_delivery.requested_epoch,
+                consistency_mode_source: "test",
+                consistency_mode: "strict",
+                effective_nprobe: 1,
+                selected_pid_count: 1,
+                local_pid_count: am_delivery.local_heap_tid_output_count,
+                remote_pid_count: am_delivery.remote_origin_output_count,
+                skipped_pid_count: 0,
+                dispatch_count: am_delivery.remote_origin_output_count,
+                compact_candidate_count: am_delivery.output_count,
+                remote_heap_ready_dispatch_count: am_delivery.remote_origin_output_count,
+                remote_heap_failed_dispatch_count: 0,
+                remote_heap_candidate_count: am_delivery.remote_origin_output_count,
+                local_heap_candidate_count: am_delivery.local_heap_tid_output_count,
+                returned_candidate_count: am_delivery.output_count,
+                result_source: "test",
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+                next_blocker: am_delivery.next_blocker,
+                status: am_delivery.status,
+                recommendation: am_delivery.recommendation,
+            },
+            am_delivery,
+            outputs,
         }
     }
 

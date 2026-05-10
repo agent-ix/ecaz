@@ -368,6 +368,13 @@ belongs to the same coordinator heap relation being scanned; FDW or custom
 executor tuple delivery remains a separate future integration, not the v1 index
 AM path.
 
+Packet `30762` moves the AM cursor onto the production result stream for
+AM-deliverable outputs. `amrescan` now asks the production heap-resolution stream
+for the scan output set, converts only coordinator-local heap rows into
+`SpireScanOutput` entries, and leaves `amgettuple` as a simple cursor over those
+outputs. Any stream that still reports a blocker, including
+`remote_row_materialization`, fails before setting `xs_heaptid`.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

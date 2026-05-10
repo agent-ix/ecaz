@@ -5289,12 +5289,11 @@ fn production_scan_result_stream(
     })
 }
 
-pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream(
+unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
     index_relation: pg_sys::Relation,
     query: Vec<f32>,
-    top_k: usize,
-) -> SpireRemoteProductionScanResultStream {
-    let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
+    top_k_override: Option<usize>,
+) -> Result<SpireRemoteProductionScanResultStream, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
@@ -5345,6 +5344,12 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
         let top_graph_plan = relation_options.top_graph_plan()?;
         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+        let top_k = match top_k_override {
+            Some(top_k) => top_k,
+            None => scan_plan
+                .candidate_limit
+                .ok_or_else(|| "ec_spire production AM scan candidate limit is unavailable".to_owned())?,
+        };
         let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
             &snapshot,
             &object_store,
@@ -5535,7 +5540,30 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
             },
             production_scan_outputs_from_heap_candidates(&merged),
         )
-    })();
+}
+
+pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> SpireRemoteProductionScanResultStream {
+    let result = unsafe {
+        remote_search_production_scan_heap_resolution_result_stream_impl(
+            index_relation,
+            query,
+            Some(top_k),
+        )
+    };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_stream(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+) -> SpireRemoteProductionScanResultStream {
+    let result = unsafe {
+        remote_search_production_scan_heap_resolution_result_stream_impl(index_relation, query, None)
+    };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 

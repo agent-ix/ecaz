@@ -196,6 +196,107 @@
     }
 
     #[test]
+    fn scan_output_cursor_emits_am_outputs_once() {
+        let mut cursor = SpireScanOutputCursor::new(vec![
+            SpireScanOutput {
+                heap_tid: tid(41, 1),
+                orderby_score: -4.1,
+            },
+            SpireScanOutput {
+                heap_tid: tid(42, 2),
+                orderby_score: -4.2,
+            },
+        ]);
+
+        assert_eq!(cursor.remaining(), 2);
+        assert_eq!(
+            cursor.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(41, 1),
+                orderby_score: -4.1,
+            })
+        );
+        assert_eq!(cursor.remaining(), 1);
+        assert_eq!(
+            cursor.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(42, 2),
+                orderby_score: -4.2,
+            })
+        );
+        assert!(cursor.is_exhausted());
+        assert!(cursor.next_output().is_none());
+    }
+
+    #[test]
+    fn production_scan_result_stream_am_outputs_accepts_local_heap_tid_rows() {
+        let stream = production_scan_stream_for_am(
+            SpireRemoteProductionScanAmDeliverySummaryRow {
+                requested_epoch: 1,
+                output_count: 1,
+                local_heap_tid_output_count: 1,
+                remote_origin_output_count: 0,
+                am_deliverable_output_count: 1,
+                status: SPIRE_REMOTE_STATUS_READY,
+                next_blocker: SPIRE_REMOTE_NONE,
+                recommendation: SPIRE_REMOTE_NONE,
+            },
+            vec![SpireRemoteProductionScanOutputRow {
+                requested_epoch: 1,
+                served_epoch: 1,
+                node_id: super::super::meta::SPIRE_LOCAL_NODE_ID,
+                heap_block: 50,
+                heap_offset: 3,
+                score: -1.25,
+                heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+                vec_id: vec![1],
+                row_locator: vec![2],
+            }],
+        );
+
+        assert_eq!(
+            production_scan_result_stream_am_outputs(&stream).unwrap(),
+            vec![SpireScanOutput {
+                heap_tid: tid(50, 3),
+                orderby_score: -1.25,
+            }]
+        );
+    }
+
+    #[test]
+    fn production_scan_result_stream_am_outputs_blocks_remote_origin_rows() {
+        let stream = production_scan_stream_for_am(
+            SpireRemoteProductionScanAmDeliverySummaryRow {
+                requested_epoch: 1,
+                output_count: 1,
+                local_heap_tid_output_count: 0,
+                remote_origin_output_count: 1,
+                am_deliverable_output_count: 0,
+                status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+                next_blocker: SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+                recommendation: "materialize first",
+            },
+            vec![SpireRemoteProductionScanOutputRow {
+                requested_epoch: 1,
+                served_epoch: 1,
+                node_id: 9,
+                heap_block: 60,
+                heap_offset: 4,
+                score: -1.5,
+                heap_lookup_owner: "origin_node_heap",
+                vec_id: vec![1],
+                row_locator: vec![2],
+            }],
+        );
+
+        let error = production_scan_result_stream_am_outputs(&stream)
+            .expect_err("remote-origin rows should block AM delivery");
+
+        assert!(error.contains("remote_row_materialization"));
+        assert!(error.contains("blocked"));
+    }
+
+    #[test]
     fn scan_query_accepts_nonzero_finite_vectors() {
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 

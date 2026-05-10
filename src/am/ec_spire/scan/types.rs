@@ -489,7 +489,7 @@ struct SpireScanOpaque {
     rescan_called: bool,
     query: Option<SpireScanQuery>,
     scan_plan: Option<SpireSingleLevelScanPlan>,
-    cursor: SpireScanCandidateCursor,
+    cursor: SpireScanOutputCursor,
     // Cached for diagnostics and tests; every rescan replaces this with the
     // root/control page just read so scan-side cursor fields cannot go stale.
     root_control: Option<SpireRootControlState>,
@@ -501,7 +501,7 @@ impl Default for SpireScanOpaque {
             rescan_called: false,
             query: None,
             scan_plan: None,
-            cursor: SpireScanCandidateCursor::default(),
+            cursor: SpireScanOutputCursor::default(),
             root_control: None,
         }
     }
@@ -514,10 +514,20 @@ impl SpireScanOpaque {
         scan_plan: SpireSingleLevelScanPlan,
         candidates: Vec<SpireScoredScanCandidate>,
     ) {
+        let outputs = candidates.iter().map(SpireScanOutput::from).collect();
+        self.reset_for_outputs(query, Some(scan_plan), outputs);
+    }
+
+    fn reset_for_outputs(
+        &mut self,
+        query: SpireScanQuery,
+        scan_plan: Option<SpireSingleLevelScanPlan>,
+        outputs: Vec<SpireScanOutput>,
+    ) {
         self.rescan_called = true;
         self.query = Some(query);
-        self.scan_plan = Some(scan_plan);
-        self.cursor.reset(candidates);
+        self.scan_plan = scan_plan;
+        self.cursor.reset(outputs);
     }
 
     fn clear_scan_work(&mut self) {
@@ -545,6 +555,48 @@ impl SpireScanOpaque {
 
     fn next_output(&mut self) -> Option<SpireScanOutput> {
         self.cursor.next_output()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireScanOutputCursor {
+    outputs: Vec<SpireScanOutput>,
+    next_index: usize,
+}
+
+impl SpireScanOutputCursor {
+    pub(super) fn new(outputs: Vec<SpireScanOutput>) -> Self {
+        Self {
+            outputs,
+            next_index: 0,
+        }
+    }
+
+    pub(super) fn remaining(&self) -> usize {
+        self.outputs.len().saturating_sub(self.next_index)
+    }
+
+    pub(super) fn is_exhausted(&self) -> bool {
+        self.remaining() == 0
+    }
+
+    pub(super) fn next_output(&mut self) -> Option<SpireScanOutput> {
+        if self.next_index >= self.outputs.len() {
+            return None;
+        }
+        let output_index = self.next_index;
+        self.next_index += 1;
+        self.outputs.get(output_index).copied()
+    }
+
+    pub(super) fn reset(&mut self, outputs: Vec<SpireScanOutput>) {
+        *self = Self::new(outputs);
+    }
+}
+
+impl Default for SpireScanOutputCursor {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
 }
 
@@ -595,4 +647,57 @@ impl Default for SpireScanCandidateCursor {
     fn default() -> Self {
         Self::new(Vec::new())
     }
+}
+
+fn production_scan_output_is_am_deliverable(
+    output: &super::SpireRemoteProductionScanOutputRow,
+) -> bool {
+    output.node_id == super::meta::SPIRE_LOCAL_NODE_ID
+        && output.heap_lookup_owner == super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+}
+
+fn production_scan_output_to_am_output(
+    output: &super::SpireRemoteProductionScanOutputRow,
+) -> Result<SpireScanOutput, String> {
+    if !production_scan_output_is_am_deliverable(output) {
+        return Err(format!(
+            "ec_spire production scan output for node_id {} cannot be delivered as coordinator xs_heaptid; next step is {}",
+            output.node_id,
+            super::SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+        ));
+    }
+
+    Ok(SpireScanOutput {
+        heap_tid: ItemPointer {
+            block_number: output.heap_block,
+            offset_number: output.heap_offset,
+        },
+        orderby_score: output.score,
+    })
+}
+
+fn production_scan_result_stream_am_outputs(
+    stream: &super::SpireRemoteProductionScanResultStream,
+) -> Result<Vec<SpireScanOutput>, String> {
+    if stream.am_delivery.next_blocker != super::SPIRE_REMOTE_NONE {
+        return Err(format!(
+            "ec_spire production scan AM tuple delivery blocked: status {}, next_blocker {}, recommendation {}",
+            stream.am_delivery.status,
+            stream.am_delivery.next_blocker,
+            stream.am_delivery.recommendation
+        ));
+    }
+    if stream.am_delivery.remote_origin_output_count != 0 {
+        return Err(format!(
+            "ec_spire production scan AM tuple delivery requires {} for {} remote-origin output(s)",
+            super::SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+            stream.am_delivery.remote_origin_output_count
+        ));
+    }
+
+    stream
+        .outputs
+        .iter()
+        .map(production_scan_output_to_am_output)
+        .collect()
 }
