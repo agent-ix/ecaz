@@ -362,6 +362,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "status,next_executor_step,max_nodes,max_pids,max_pids_per_node",
             next_action: "tune_remote_executor_budgets_or_reduce_fanout_before_dispatch",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 19,
+            entrypoint_name: "ec_spire_remote_search_production_scan_handoff_summary",
+            area: "search",
+            operator_use: "production_am_scan_candidate_handoff",
+            status_source: "selected_pid_count,candidate_row_count,status,next_blocker",
+            next_action: "resolve remote heap rows before allowing remote SQL tuple return",
+        },
     ]
 }
 
@@ -886,8 +894,9 @@ pub(crate) unsafe fn remote_search_fanout_plan_rows(
             ));
         }
 
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         if epoch_manifest.consistency_mode != requested_consistency_mode {
             return Err(format!(
                 "ec_spire remote search fanout requested consistency_mode '{consistency_mode}' does not match active epoch consistency mode '{}'",
@@ -3233,6 +3242,17 @@ impl SpireRemoteFanoutExecutor {
         }
     }
 
+    fn mark_planned_dispatches_candidate_receive_ready(&mut self) {
+        for dispatch in &mut self.dispatches {
+            if dispatch.state == SpireRemoteProductionDispatchState::Planned {
+                dispatch.state = SpireRemoteProductionDispatchState::TransportReady;
+                dispatch.status = SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE;
+                dispatch.next_executor_step =
+                    SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
+            }
+        }
+    }
+
     fn compact_candidate_receive_requests(
         &mut self,
         query: &[f32],
@@ -4267,6 +4287,197 @@ pub(crate) unsafe fn remote_search_production_executor_session_summary_row(
         status: summary.status,
         recommendation: summary.recommendation,
     }
+}
+
+pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+) -> SpireRemoteProductionScanHandoffSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionScanHandoffSummaryRow, String> {
+        let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
+        let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(SpireRemoteProductionScanHandoffSummaryRow {
+                requested_epoch: 0,
+                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                consistency_mode,
+                effective_nprobe: 0,
+                selected_pid_count: 0,
+                local_pid_count: 0,
+                remote_pid_count: 0,
+                skipped_pid_count: 0,
+                dispatch_count: 0,
+                candidate_receive_ready_dispatch_count: 0,
+                candidate_receive_failed_dispatch_count: 0,
+                candidate_row_count: 0,
+                merged_candidate_count: 0,
+                duplicate_vec_id_count: 0,
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                next_blocker: SPIRE_REMOTE_NONE,
+                status: "empty_index",
+                recommendation: "publish an active SPIRE epoch before production scan handoff",
+            });
+        }
+
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
+        let snapshot = meta::SpirePublishedEpochSnapshot::new(
+            &epoch_manifest,
+            &object_manifest,
+            &placement_directory,
+        )?;
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let top_graph_plan = relation_options.top_graph_plan()?;
+        let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+        let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+        let selected_leaf_pids = scan::collect_scan_plan_selected_leaf_pids(
+            &snapshot,
+            &object_store,
+            &query_for_scan,
+            scan_plan,
+            top_graph_plan,
+        )?;
+        let selected_pid_count = u64::try_from(selected_leaf_pids.len())
+            .map_err(|_| "ec_spire production scan handoff selected PID count exceeds u64")?;
+
+        let execution_summary = unsafe {
+            remote_search_execution_summary_row(
+                index_relation,
+                root_control.active_epoch,
+                query.clone(),
+                selected_leaf_pids.clone(),
+                top_k,
+                consistency_mode,
+            )
+        };
+        if top_k == 0 {
+            return Ok(SpireRemoteProductionScanHandoffSummaryRow {
+                requested_epoch: root_control.active_epoch,
+                consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+                consistency_mode,
+                effective_nprobe: u64::from(scan_plan.nprobe),
+                selected_pid_count,
+                local_pid_count: execution_summary.local_pid_count,
+                remote_pid_count: execution_summary.remote_pid_count,
+                skipped_pid_count: execution_summary.skipped_pid_count,
+                dispatch_count: 0,
+                candidate_receive_ready_dispatch_count: 0,
+                candidate_receive_failed_dispatch_count: 0,
+                candidate_row_count: 0,
+                merged_candidate_count: 0,
+                duplicate_vec_id_count: 0,
+                final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES,
+                next_blocker: SPIRE_REMOTE_NONE,
+                status: SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
+                recommendation: SPIRE_REMOTE_NONE,
+            });
+        }
+
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                root_control.active_epoch,
+                query.clone(),
+                selected_leaf_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(root_control.active_epoch, &dispatch_rows);
+        executor.mark_planned_dispatches_candidate_receive_ready();
+        executor.run_compact_candidate_receive(&query, top_k, consistency_mode)?;
+        let summary = executor.summary(
+            "ec_spire.remote_search_consistency_mode",
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+        )?;
+        let should_merge = matches!(
+            summary.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+                | SPIRE_REMOTE_STATUS_DEGRADED_READY
+                | SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED
+                | SPIRE_REMOTE_STATUS_READY
+        );
+        let merge = if should_merge {
+            executor.merge_ready_candidate_batches(Some(top_k))?
+        } else {
+            SpireRemoteSearchMergeResult {
+                candidates: Vec::new(),
+                input_count: 0,
+                duplicate_vec_id_count: 0,
+            }
+        };
+        let merged_candidate_count = u64::try_from(merge.candidates.len())
+            .map_err(|_| "ec_spire production scan handoff merge count exceeds u64")?;
+        let final_heap_fetch_status = if matches!(
+            summary.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP | SPIRE_REMOTE_STATUS_DEGRADED_READY
+        ) {
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+        } else if summary.status == SPIRE_REMOTE_STATUS_READY && execution_summary.remote_pid_count == 0
+        {
+            SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY
+        } else if summary.status == SPIRE_REMOTE_STATUS_READY
+            || summary.status == SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED
+        {
+            SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES
+        } else {
+            SPIRE_REMOTE_FINAL_STATUS_BLOCKED
+        };
+        let next_blocker = if final_heap_fetch_status == SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP
+        {
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION
+        } else if matches!(
+            summary.status,
+            SPIRE_REMOTE_STATUS_READY | SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED
+        ) {
+            SPIRE_REMOTE_NONE
+        } else {
+            summary.next_executor_step
+        };
+        let (status, recommendation) =
+            if final_heap_fetch_status == SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP {
+                (
+                    SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
+                    "add origin-node row locator resolution before returning remote heap rows",
+                )
+            } else {
+                (summary.status, summary.recommendation)
+            };
+
+        Ok(SpireRemoteProductionScanHandoffSummaryRow {
+            requested_epoch: root_control.active_epoch,
+            consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+            consistency_mode,
+            effective_nprobe: u64::from(scan_plan.nprobe),
+            selected_pid_count,
+            local_pid_count: execution_summary.local_pid_count,
+            remote_pid_count: execution_summary.remote_pid_count,
+            skipped_pid_count: execution_summary.skipped_pid_count,
+            dispatch_count: summary.dispatch_count,
+            candidate_receive_ready_dispatch_count: summary.candidate_receive_ready_dispatch_count,
+            candidate_receive_failed_dispatch_count: summary
+                .candidate_receive_failed_dispatch_count,
+            candidate_row_count: summary.candidate_row_count,
+            merged_candidate_count,
+            duplicate_vec_id_count: merge.duplicate_vec_id_count,
+            final_heap_fetch_status,
+            next_blocker,
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(

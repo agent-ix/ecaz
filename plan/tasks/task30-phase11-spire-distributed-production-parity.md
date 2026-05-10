@@ -340,6 +340,11 @@ request before the next item depends on it.
    receive into the coordinator AM scan path behind the readiness gate. Until
    Stage D lands, the scan may prove ordered compact-candidate merge, but final
    SQL row readiness must still report `requires_remote_heap_resolution`.
+   Packet `30754` lands the first handoff surface:
+   `ec_spire_remote_search_production_scan_handoff_summary` derives selected
+   PIDs from the scan router, runs live production compact receive, merges
+   validated compact candidates, and keeps remote SQL row readiness blocked on
+   Stage D.
 5. **Stage D remote heap finalization.** Resolve remote heap visibility on the
    origin node, keep coordinator locators opaque, and produce one
    coordinator-visible ordered result stream only after local and remote
@@ -533,9 +538,13 @@ global and per-node permits on the tested production paths.
     into the executor, and preserve per-dispatch failure isolation.
   - [x] Add a routing-only AM scan precursor that extracts selected leaf PIDs
     from the scan plan without reading remote leaf payload objects locally.
-  - [ ] Wire compact candidate receive production state into the AM scan path;
-    diagnostic candidate receive still uses blocking `postgres::Client` until
-    that slice lands.
+  - [x] Wire compact candidate receive production state into an AM-scan
+    handoff summary: packet `30754` proves scan-derived selected PIDs can feed
+    live production compact receive and validated compact-candidate merge while
+    final row readiness remains `requires_remote_heap_resolution`.
+  - [ ] Move the handoff from the summary/proof surface into the final
+    `amrescan`/`amgettuple` execution path after Stage D can resolve remote
+    heap rows.
 - [ ] Add per-query fanout caps, global coordinator work limits, per-remote
   concurrency caps, connect/statement timeouts, cancellation propagation, and
   overload-shedding diagnostics.
@@ -572,8 +581,10 @@ global and per-node permits on the tested production paths.
       report cancellation counters without raw remote error text.
       - [x] Packet `30753` proves local cancellation releases the production
         adapter's global and per-node governance slots for both transport and
-        compact-candidate receive. C5 still must route the AM scan path through
-        this production adapter instead of the diagnostic executor.
+        compact-candidate receive.
+      - [x] Packet `30754` routes the AM scan handoff proof through this
+        production adapter instead of the diagnostic executor; final tuple
+        production still waits for Stage D remote heap resolution.
     - [x] Lock the pre-C5 batch ownership rule: local cancellation clears any
       retained `CandidateReceiveReady` compact batch and reports
       `remote_executor_cancelled` / `local_query_cancelled`, so cancelled

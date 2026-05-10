@@ -206,6 +206,15 @@ pub(super) fn collect_scan_plan_selected_leaf_pids(
     Ok(routes.into_iter().map(|route| route.leaf_pid).collect())
 }
 
+pub(super) fn count_scan_plan_routable_leaf_pids(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<u32, String> {
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
+    count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)
+}
+
 fn route_root_object_to_leaf_pids(
     root_object: &SpireRoutingPartitionObject,
     query_vector: &[f32],

@@ -318,6 +318,15 @@ fetching heap visibility from each origin node, preserving opaque row locators,
 and producing the final row stream only after every required remote candidate is
 resolved or explicitly skipped by degraded-mode policy.
 
+Packet `30754` adds the first production AM-scan handoff surface:
+`ec_spire_remote_search_production_scan_handoff_summary`. It derives selected
+leaf PIDs through the same scan router used by `amrescan`, uses a routing-only
+leaf count that does not read remote leaf payloads, runs live production compact
+candidate receive for remote dispatches, merges only validated ready compact
+batches, and then reports `requires_remote_heap_resolution` instead of returning
+remote SQL rows. This keeps the Stage D boundary explicit while proving that the
+coordinator scan plan can feed the production remote executor.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

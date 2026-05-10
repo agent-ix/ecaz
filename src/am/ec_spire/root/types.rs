@@ -710,6 +710,28 @@ pub(crate) struct SpireRemoteProductionExecutorSessionSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionScanHandoffSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) consistency_mode_source: &'static str,
+    pub(crate) consistency_mode: &'static str,
+    pub(crate) effective_nprobe: u64,
+    pub(crate) selected_pid_count: u64,
+    pub(crate) local_pid_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) skipped_pid_count: u64,
+    pub(crate) dispatch_count: u64,
+    pub(crate) candidate_receive_ready_dispatch_count: u64,
+    pub(crate) candidate_receive_failed_dispatch_count: u64,
+    pub(crate) candidate_row_count: u64,
+    pub(crate) merged_candidate_count: u64,
+    pub(crate) duplicate_vec_id_count: u64,
+    pub(crate) final_heap_fetch_status: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteProductionConsistencyPolicySummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) active_epoch: u64,
