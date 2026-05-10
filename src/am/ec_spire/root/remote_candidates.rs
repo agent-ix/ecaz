@@ -2561,6 +2561,9 @@ impl SpireRemoteProductionTransportAdapter {
 }
 
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {
+    // `tokio-postgres` reports a backend terminated during an already-open
+    // query as a closed connection, while pre-query connection failures are
+    // classified earlier as connect failures.
     if error.is_closed() {
         return SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED;
     }
@@ -2568,6 +2571,10 @@ fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'
         return SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED;
     };
     match db_error.code().code() {
+        // PostgreSQL uses SQLSTATE 57014 for query_canceled in general. The
+        // statement-timeout message text is the stable PostgreSQL convention
+        // that lets operators distinguish timeout remediation from cancellation
+        // provenance.
         "57014" if db_error.message().contains("statement timeout") => {
             SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT
         }
