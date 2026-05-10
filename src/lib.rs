@@ -13874,6 +13874,59 @@ mod tests {
         }
     }
 
+    struct ScopedPgQueryCancelFlags {
+        interrupt_pending_ptr: *mut std::ffi::c_int,
+        query_cancel_pending_ptr: *mut std::ffi::c_int,
+        previous_interrupt_pending: std::ffi::c_int,
+        previous_query_cancel_pending: std::ffi::c_int,
+    }
+
+    impl ScopedPgQueryCancelFlags {
+        unsafe fn set_pending() -> Option<Self> {
+            unsafe extern "C" {
+                fn dlsym(
+                    handle: *mut std::ffi::c_void,
+                    symbol: *const std::ffi::c_char,
+                ) -> *mut std::ffi::c_void;
+            }
+
+            let interrupt_pending_ptr =
+                unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                    .cast::<std::ffi::c_int>();
+            let query_cancel_pending_ptr = unsafe {
+                dlsym(
+                    std::ptr::null_mut(),
+                    b"QueryCancelPending\0".as_ptr().cast(),
+                )
+            }
+            .cast::<std::ffi::c_int>();
+            if interrupt_pending_ptr.is_null() || query_cancel_pending_ptr.is_null() {
+                return None;
+            }
+            let previous_interrupt_pending = unsafe { *interrupt_pending_ptr };
+            let previous_query_cancel_pending = unsafe { *query_cancel_pending_ptr };
+            unsafe {
+                *interrupt_pending_ptr = 1;
+                *query_cancel_pending_ptr = 1;
+            }
+            Some(Self {
+                interrupt_pending_ptr,
+                query_cancel_pending_ptr,
+                previous_interrupt_pending,
+                previous_query_cancel_pending,
+            })
+        }
+    }
+
+    impl Drop for ScopedPgQueryCancelFlags {
+        fn drop(&mut self) {
+            unsafe {
+                *self.interrupt_pending_ptr = self.previous_interrupt_pending;
+                *self.query_cancel_pending_ptr = self.previous_query_cancel_pending;
+            }
+        }
+    }
+
     fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -24099,6 +24152,26 @@ mod tests {
             25,
         );
         let failed = rows.first().expect("local cancel row should exist");
+
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_transport_pg_interrupt_bridge_cancel() {
+        let _interrupt_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
+            .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                sql: "SELECT pg_sleep(0.30)",
+            },
+        ]);
+        let failed = rows.first().expect("pg interrupt cancel row should exist");
 
         assert_eq!(failed.status, "remote_transport_failed");
         assert_eq!(failed.failure_category, "local_query_cancelled");

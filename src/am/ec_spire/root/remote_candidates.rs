@@ -2265,16 +2265,50 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveResult {
 
 struct SpireRemoteProductionTransportAdapter;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireRemoteLocalCancelSource {
+    None,
+    TestAfterMs(u64),
+    PostgresInterruptPoll { poll_interval_ms: u64 },
+}
+
+const SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
+
+impl SpireRemoteLocalCancelSource {
+    fn production() -> Self {
+        Self::PostgresInterruptPoll {
+            poll_interval_ms: SPIRE_REMOTE_POSTGRES_INTERRUPT_POLL_MS,
+        }
+    }
+
+    fn test_after_ms(delay_ms: u64) -> Self {
+        Self::TestAfterMs(delay_ms)
+    }
+}
+
 impl SpireRemoteProductionTransportAdapter {
     fn run_probe_requests(
         requests: Vec<SpireRemoteProductionTransportProbeRequest>,
     ) -> Result<Vec<SpireRemoteProductionTransportProbeRow>, String> {
-        Self::run_probe_requests_with_local_cancel(requests, None)
+        Self::run_probe_requests_with_local_cancel_source(
+            requests,
+            SpireRemoteLocalCancelSource::production(),
+        )
     }
 
     fn run_probe_requests_with_local_cancel(
         requests: Vec<SpireRemoteProductionTransportProbeRequest>,
         local_cancel_after_ms: Option<u64>,
+    ) -> Result<Vec<SpireRemoteProductionTransportProbeRow>, String> {
+        let cancel_source = local_cancel_after_ms
+            .map(SpireRemoteLocalCancelSource::test_after_ms)
+            .unwrap_or(SpireRemoteLocalCancelSource::None);
+        Self::run_probe_requests_with_local_cancel_source(requests, cancel_source)
+    }
+
+    fn run_probe_requests_with_local_cancel_source(
+        requests: Vec<SpireRemoteProductionTransportProbeRequest>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> Result<Vec<SpireRemoteProductionTransportProbeRow>, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -2287,7 +2321,7 @@ impl SpireRemoteProductionTransportAdapter {
         runtime.block_on(async move {
             let batch_start = std::time::Instant::now();
             let futures = requests.into_iter().map(|request| async move {
-                Self::run_one_probe_request(request, batch_start, local_cancel_after_ms).await
+                Self::run_one_probe_request(request, batch_start, local_cancel_source).await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -2296,12 +2330,25 @@ impl SpireRemoteProductionTransportAdapter {
     fn run_candidate_receive_requests(
         requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
-        Self::run_candidate_receive_requests_with_local_cancel(requests, None)
+        Self::run_candidate_receive_requests_with_local_cancel_source(
+            requests,
+            SpireRemoteLocalCancelSource::production(),
+        )
     }
 
     fn run_candidate_receive_requests_with_local_cancel(
         requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
         local_cancel_after_ms: Option<u64>,
+    ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
+        let cancel_source = local_cancel_after_ms
+            .map(SpireRemoteLocalCancelSource::test_after_ms)
+            .unwrap_or(SpireRemoteLocalCancelSource::None);
+        Self::run_candidate_receive_requests_with_local_cancel_source(requests, cancel_source)
+    }
+
+    fn run_candidate_receive_requests_with_local_cancel_source(
+        requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -2317,7 +2364,7 @@ impl SpireRemoteProductionTransportAdapter {
                 Self::run_one_candidate_receive_request(
                     request,
                     batch_start,
-                    local_cancel_after_ms,
+                    local_cancel_source,
                 )
                 .await
             });
@@ -2328,7 +2375,7 @@ impl SpireRemoteProductionTransportAdapter {
     async fn run_one_probe_request(
         request: SpireRemoteProductionTransportProbeRequest,
         batch_start: std::time::Instant,
-        local_cancel_after_ms: Option<u64>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> SpireRemoteProductionTransportProbeRow {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
@@ -2383,7 +2430,7 @@ impl SpireRemoteProductionTransportAdapter {
                     .await
                     .map_err(|error| production_remote_query_failure_category(&error))
             },
-            local_cancel_after_ms,
+            local_cancel_source,
         )
         .await;
 
@@ -2412,7 +2459,7 @@ impl SpireRemoteProductionTransportAdapter {
     async fn run_one_candidate_receive_request(
         request: SpireRemoteProductionCandidateReceiveRequest,
         batch_start: std::time::Instant,
-        local_cancel_after_ms: Option<u64>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> SpireRemoteProductionCandidateReceiveResult {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
@@ -2532,7 +2579,7 @@ impl SpireRemoteProductionTransportAdapter {
                     .await
                     .map_err(|error| production_remote_query_failure_category(&error))
             },
-            local_cancel_after_ms,
+            local_cancel_source,
         )
         .await;
 
@@ -2603,24 +2650,64 @@ impl SpireRemoteProductionTransportAdapter {
     async fn run_query_with_optional_local_cancel<T, F>(
         cancel_token: tokio_postgres::CancelToken,
         query_future: F,
-        local_cancel_after_ms: Option<u64>,
+        local_cancel_source: SpireRemoteLocalCancelSource,
     ) -> Result<T, &'static str>
     where
         F: std::future::Future<Output = Result<T, &'static str>>,
     {
-        let Some(local_cancel_after_ms) = local_cancel_after_ms else {
+        if local_cancel_source == SpireRemoteLocalCancelSource::None {
             return query_future.await;
-        };
-        let cancel_delay =
-            tokio::time::sleep(std::time::Duration::from_millis(local_cancel_after_ms));
-        match futures_util::future::select(Box::pin(query_future), Box::pin(cancel_delay)).await {
+        }
+        let cancel_signal = Self::local_cancel_signal(local_cancel_source);
+        match futures_util::future::select(Box::pin(query_future), Box::pin(cancel_signal)).await {
             futures_util::future::Either::Left((query_result, _)) => query_result,
-            futures_util::future::Either::Right((_, _query_future)) => {
+            futures_util::future::Either::Right((failure_category, _query_future)) => {
                 let _ = cancel_token.cancel_query(tokio_postgres::NoTls).await;
-                Err(SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED)
+                Err(failure_category)
             }
         }
     }
+
+    async fn local_cancel_signal(
+        local_cancel_source: SpireRemoteLocalCancelSource,
+    ) -> &'static str {
+        match local_cancel_source {
+            SpireRemoteLocalCancelSource::None => std::future::pending::<&'static str>().await,
+            SpireRemoteLocalCancelSource::TestAfterMs(delay_ms) => {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
+            }
+            SpireRemoteLocalCancelSource::PostgresInterruptPoll { poll_interval_ms } => {
+                let poll_interval_ms = poll_interval_ms.max(1);
+                loop {
+                    if postgres_query_cancel_pending() {
+                        return SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(poll_interval_ms)).await;
+                }
+            }
+        }
+    }
+}
+
+unsafe extern "C" {
+    fn dlsym(
+        handle: *mut std::ffi::c_void,
+        symbol: *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_void;
+}
+
+fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {
+    let ptr = unsafe { dlsym(std::ptr::null_mut(), symbol_name.as_ptr().cast()) };
+    if ptr.is_null() {
+        return 0;
+    }
+    unsafe { *(ptr.cast::<std::ffi::c_int>()) }
+}
+
+fn postgres_query_cancel_pending() -> bool {
+    postgres_sig_atomic_flag(b"InterruptPending\0") != 0
+        && postgres_sig_atomic_flag(b"QueryCancelPending\0") != 0
 }
 
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {

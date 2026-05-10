@@ -167,9 +167,10 @@ the `tokio-postgres` adapter keeps a cancel token for each in-flight remote
 query, a deterministic test trigger can request remote cancellation, and
 executor state maps `local_query_cancelled` outcomes to global
 `remote_executor_cancelled` dispatch cleanup. The production PostgreSQL
-interrupt bridge is still open; the AM path must still translate actual local
-query cancellation or local statement timeout into that adapter trigger before
-C2 can be marked complete.
+interrupt bridge now polls backend `InterruptPending` / `QueryCancelPending`
+while remote work is in flight and maps that signal to the same adapter cancel
+token. Local statement-timeout provenance is still open; C2 is not complete
+until local query cancel and local statement timeout have distinct categories.
 
 The C5 AM bridge must choose one cancellation source and test it under a real
 backend, not only under deterministic test triggers. Acceptable shapes are:

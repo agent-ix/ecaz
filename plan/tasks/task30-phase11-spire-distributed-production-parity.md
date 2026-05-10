@@ -174,6 +174,13 @@ Acceptance artifact:
   - [ ] Before C5 AM integration, pin and implement the PostgreSQL backend
     interrupt bridge from actual local query cancel / statement timeout into
     the adapter cancel token; test-only triggers are not production evidence.
+    - [x] First PostgreSQL interrupt bridge: production transport and compact
+      candidate receive now poll backend `InterruptPending` /
+      `QueryCancelPending` while remote work is in flight and map the signal to
+      the adapter cancel token as `local_query_cancelled`; timer-triggered
+      cancellation remains test-only.
+    - [ ] Distinguish local query cancel from local statement timeout before
+      claiming C2 complete.
 - [ ] Define fail-closed strict mode and explicit degraded mode behavior for
   partial remote failures.
   - [x] First production degraded-state slice: production executor state can
@@ -198,6 +205,8 @@ Acceptance artifact:
   - [ ] Add a strict/degraded fault matrix table covering connect, secret,
     statement timeout, backend termination, query cancellation, validation,
     identity, version, stale epoch, and heap-resolution failures.
+    - [ ] Include `consistency_mode_mismatch` alongside the transport and
+      receive categories when the matrix lands.
 - [ ] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.
 
