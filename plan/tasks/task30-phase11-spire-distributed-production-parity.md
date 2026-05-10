@@ -359,6 +359,19 @@ endpoint.
 
 Goal: execute remote fanout with bounded concurrent or pipelined work.
 
+Stage C status note, 2026-05-10: packets 30724 through 30736 have made the
+C0/C1 executor layer materially composable. Production state now covers dry
+admission, per-query budget/governance gates, overlapped transport probes,
+per-node transport and compact-receive isolation, remote-side regclass
+resolution, executor-owned receive request state, state-owned compact receive
+execution, cancel-clears-batch invariants, strict compact merge preconditions,
+and a routing-only selected-leaf PID handoff for the future AM scan integration.
+This is not a production-ready distributed scan claim. The remaining blockers
+are C2 cancellation propagation to in-flight remote work, C3/C4 production use
+and strict/degraded normalization at the AM boundary, C5 AM scan integration,
+Stage D remote heap resolution, and the local multi-instance fault/readiness
+bundle.
+
 - [x] Define the production coordinator executor state, landing sequence,
   cancellation contract, counter set, and validation gates in
   `plan/design/spire-production-coordinator-executor.md`.
@@ -405,6 +418,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   - [x] Wire the async adapter into compact candidate receive production state:
     build requests from `TransportReady` dispatches, apply adapter results back
     into the executor, and preserve per-dispatch failure isolation.
+  - [x] Add a routing-only AM scan precursor that extracts selected leaf PIDs
+    from the scan plan without reading remote leaf payload objects locally.
   - [ ] Wire compact candidate receive production state into the AM scan path;
     diagnostic candidate receive still uses blocking `postgres::Client` until
     that slice lands.

@@ -95,6 +95,14 @@ count on the dispatch, matching candidate-receive failure behavior, so a
 previously ready but cancelled dispatch cannot contribute to compact merge or
 Stage D heap resolution.
 
+As of 2026-05-10, C0/C1 is materially composable through packets 30724-30736:
+transport, per-node isolation, executor-owned compact receive, remote-side
+regclass resolution, strict merge preconditions, cancellation batch cleanup,
+and routing-only selected-leaf PID handoff have landed. The production gate
+remains open until C2 cancellation propagation, C4 strict/degraded AM-boundary
+semantics, C5 AM scan integration, Stage D remote heap resolution, and the
+local multi-instance readiness bundle are reviewed.
+
 ## Landing Sequence
 
 ### C0: State Contract
