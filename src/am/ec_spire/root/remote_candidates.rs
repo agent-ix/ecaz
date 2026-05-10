@@ -373,6 +373,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "selected_pid_count,candidate_row_count,status,next_blocker",
             next_action: "resolve remote heap rows before allowing remote SQL tuple return",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 20,
+            entrypoint_name: "ec_spire_remote_search_row_materialization_contract",
+            area: "search",
+            operator_use: "remote_origin_tuple_delivery_contract",
+            status_source: "contract_item,required_surface,blocked_status,validator",
+            next_action: "materialize_remote_origin_rows_into_coordinator_indexed_heap_before_am_delivery",
+        },
     ]
 }
 
@@ -8336,6 +8344,44 @@ pub(crate) fn remote_search_heap_resolution_contract_rows(
             row_locator_policy: SPIRE_REMOTE_ROW_LOCATOR_POLICY,
             status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
             recommendation: "resolve remote row locators on the origin storage node",
+        },
+    ]
+}
+
+pub(crate) fn remote_search_row_materialization_contract_rows(
+) -> Vec<SpireRemoteSearchRowMaterializationContractRow> {
+    vec![
+        SpireRemoteSearchRowMaterializationContractRow {
+            contract_item: "local_am_delivery",
+            required_surface: "coordinator_local_heap_tid",
+            allowed_when: "node_id_is_local_and_heap_lookup_owner_is_coordinator_local_heap",
+            blocked_status: SPIRE_REMOTE_NONE,
+            validator: "set_xs_heaptid_only_from_coordinator_heap_relation",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchRowMaterializationContractRow {
+            contract_item: "remote_origin_heap_coordinate",
+            required_surface: "origin_node_heap_tid_is_not_a_coordinator_heap_tid",
+            allowed_when: "never_for_xs_heaptid",
+            blocked_status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            validator: "must_not_assign_origin_heap_block_offset_to_xs_heaptid",
+            recommendation: "keep remote-origin outputs blocked until coordinator-visible heap rows exist",
+        },
+        SpireRemoteSearchRowMaterializationContractRow {
+            contract_item: "remote_origin_am_delivery",
+            required_surface: "same_indexed_heap_relation_shadow_row",
+            allowed_when: "materialized_tid_belongs_to_scan_heap_relation_and_preserves_global_vec_id",
+            blocked_status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            validator: "materialized_tid_must_belong_to_index_scan_heap_relation",
+            recommendation: "copy or project remote-origin rows into the coordinator indexed heap before index AM delivery",
+        },
+        SpireRemoteSearchRowMaterializationContractRow {
+            contract_item: "non_am_remote_delivery",
+            required_surface: "custom_executor_or_fdw_tuple_path",
+            allowed_when: "outside_postgresql_index_am_xs_heaptid_contract",
+            blocked_status: "not_selected_v1",
+            validator: "must_not_mix_non_am_tuple_path_with_index_am_xs_heaptid",
+            recommendation: "treat FDW/custom-scan delivery as a future executor integration, not the current SPIRE AM path",
         },
     ]
 }

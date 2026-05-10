@@ -633,6 +633,37 @@ mod tests {
     }
 
     #[test]
+    fn row_materialization_contract_blocks_origin_heap_tid_as_xs_heaptid() {
+        let rows = remote_search_row_materialization_contract_rows();
+
+        let remote_origin = rows
+            .iter()
+            .find(|row| row.contract_item == "remote_origin_heap_coordinate")
+            .expect("remote origin heap coordinate contract should exist");
+        assert_eq!(
+            remote_origin.blocked_status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+        assert_eq!(
+            remote_origin.validator,
+            "must_not_assign_origin_heap_block_offset_to_xs_heaptid"
+        );
+
+        let remote_delivery = rows
+            .iter()
+            .find(|row| row.contract_item == "remote_origin_am_delivery")
+            .expect("remote origin AM delivery contract should exist");
+        assert_eq!(
+            remote_delivery.required_surface,
+            "same_indexed_heap_relation_shadow_row"
+        );
+        assert_eq!(
+            remote_delivery.blocked_status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+    }
+
+    #[test]
     fn remote_candidate_batch_validation_accepts_expected_envelope() {
         let candidates = vec![
             remote_candidate(

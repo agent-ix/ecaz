@@ -123,6 +123,7 @@ pub(crate) use self::ec_spire::{
     remote_search_request_readiness_rows as spire_remote_search_request_readiness_rows,
     remote_search_request_summary_row as spire_remote_search_request_summary_row,
     remote_search_row_locator_contract_rows as spire_remote_search_row_locator_contract_rows,
+    remote_search_row_materialization_contract_rows as spire_remote_search_row_materialization_contract_rows,
     remote_search_target_plan_rows as spire_remote_search_target_plan_rows,
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,

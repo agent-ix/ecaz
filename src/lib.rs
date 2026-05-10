@@ -11607,6 +11607,32 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_row_materialization_contract() -> TableIterator<
+    'static,
+    (
+        name!(contract_item, &'static str),
+        name!(required_surface, &'static str),
+        name!(allowed_when, &'static str),
+        name!(blocked_status, &'static str),
+        name!(validator, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_row_materialization_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            row.contract_item,
+            row.required_surface,
+            row.allowed_when,
+            row.blocked_status,
+            row.validator,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_heap_resolution_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -22052,6 +22078,8 @@ mod tests {
         let locator_contract_from = "FROM ec_spire_remote_search_row_locator_contract()";
         let identity_contract_from = "FROM ec_spire_remote_search_vector_identity_contract()";
         let heap_contract_from = "FROM ec_spire_remote_search_heap_resolution_contract()";
+        let materialization_contract_from =
+            "FROM ec_spire_remote_search_row_materialization_contract()";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {locator_contract_from}"))
             .expect("row locator contract count query should succeed")
             .expect("row locator contract count should exist");
@@ -22114,6 +22142,28 @@ mod tests {
         ))
         .expect("remote heap resolution locator query should succeed")
         .expect("remote heap resolution locator should exist");
+        let materialization_contract_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {materialization_contract_from}"))
+                .expect("row materialization contract count query should succeed")
+                .expect("row materialization contract count should exist");
+        let remote_origin_blocker = Spi::get_one::<String>(&format!(
+            "SELECT blocked_status {materialization_contract_from} \
+             WHERE contract_item = 'remote_origin_heap_coordinate'"
+        ))
+        .expect("remote origin materialization blocker query should succeed")
+        .expect("remote origin materialization blocker should exist");
+        let remote_origin_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {materialization_contract_from} \
+             WHERE contract_item = 'remote_origin_heap_coordinate'"
+        ))
+        .expect("remote origin materialization validator query should succeed")
+        .expect("remote origin materialization validator should exist");
+        let shadow_required_surface = Spi::get_one::<String>(&format!(
+            "SELECT required_surface {materialization_contract_from} \
+             WHERE contract_item = 'remote_origin_am_delivery'"
+        ))
+        .expect("remote origin AM delivery surface query should succeed")
+        .expect("remote origin AM delivery surface should exist");
 
         assert_eq!(row_count, 4);
         assert_eq!(identity_count, 10);
@@ -22130,6 +22180,16 @@ mod tests {
         assert_eq!(local_heap_owner, "coordinator_local_heap");
         assert_eq!(remote_heap_status, "requires_remote_heap_resolution");
         assert_eq!(remote_locator_policy, "opaque_origin_node_bytes");
+        assert_eq!(materialization_contract_count, 4);
+        assert_eq!(remote_origin_blocker, "requires_remote_row_materialization");
+        assert_eq!(
+            remote_origin_validator,
+            "must_not_assign_origin_heap_block_offset_to_xs_heaptid"
+        );
+        assert_eq!(
+            shadow_required_surface,
+            "same_indexed_heap_relation_shadow_row"
+        );
     }
 
     #[pg_test]
@@ -29683,6 +29743,12 @@ mod tests {
         ))
         .expect("operator budget entrypoint query should succeed")
         .expect("operator budget entrypoint should exist");
+        let row_materialization_entrypoint_action = Spi::get_one::<String>(&format!(
+            "SELECT next_action {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_row_materialization_contract'"
+        ))
+        .expect("operator row materialization entrypoint query should succeed")
+        .expect("operator row materialization entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -29810,8 +29876,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 18);
-        assert_eq!(operator_entrypoint_reachable_count, 18);
+        assert_eq!(operator_entrypoint_count, 20);
+        assert_eq!(operator_entrypoint_reachable_count, 20);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -29836,6 +29902,10 @@ mod tests {
             "per_node_remote_receive_attempt_diagnostics"
         );
         assert_eq!(budget_entrypoint_use, "remote_executor_resource_governance");
+        assert_eq!(
+            row_materialization_entrypoint_action,
+            "materialize_remote_origin_rows_into_coordinator_indexed_heap_before_am_delivery"
+        );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");
         assert_eq!(

@@ -962,6 +962,16 @@ pub(crate) struct SpireRemoteSearchHeapResolutionContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchRowMaterializationContractRow {
+    pub(crate) contract_item: &'static str,
+    pub(crate) required_surface: &'static str,
+    pub(crate) allowed_when: &'static str,
+    pub(crate) blocked_status: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorLocalSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) local_pid_count: u64,

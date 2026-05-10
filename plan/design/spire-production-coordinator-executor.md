@@ -360,6 +360,14 @@ contains remote placements. This keeps the legacy local `xs_heaptid` cursor from
 accidentally failing later with a generic local-store validation error, and it
 makes the remote row materialization boundary visible at the AM entry path.
 
+Packet `30761` makes the remote row materialization contract SQL-visible through
+`ec_spire_remote_search_row_materialization_contract()`. The contract states
+that origin-node heap coordinates are never legal `xs_heaptid` values on the
+coordinator. Remote-origin AM delivery requires a shadow/proxy row whose TID
+belongs to the same coordinator heap relation being scanned; FDW or custom
+executor tuple delivery remains a separate future integration, not the v1 index
+AM path.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

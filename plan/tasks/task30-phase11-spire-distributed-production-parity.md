@@ -696,7 +696,11 @@ Goal: make the coordinator-visible result stream production-correct.
   - [x] Packet `30760` reuses the shared `remote_row_materialization` executor
     step constant in the AM remote-placement gate, closing the `30758` reviewer
     P2 before cursor wiring depends on the symbol.
-  - [ ] Define and implement the remote row materialization contract required
+  - [x] Packet `30761` defines the SQL-visible remote row materialization
+    contract: origin-node heap coordinates are never coordinator `xs_heaptid`s;
+    remote-origin AM delivery requires a same-indexed-heap shadow/proxy row,
+    while FDW/custom-executor tuple paths are future non-AM integrations.
+  - [ ] Implement the remote row materialization mechanism required
     before remote-origin outputs can be returned by a PostgreSQL index scan.
   - [ ] Cursor AM-deliverable outputs from scan opaque state in
     `amrescan` / `amgettuple`.
