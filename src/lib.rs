@@ -9880,6 +9880,83 @@ fn ec_spire_remote_search_production_executor_state_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_executor_session_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(consistency_mode_source, &'static str),
+        name!(consistency_mode, &'static str),
+        name!(dispatch_count, i64),
+        name!(degraded_skipped_dispatch_count, i64),
+        name!(first_degraded_skip_category, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_executor_session_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_executor_session_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_production_executor_session_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_production_executor_session_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_production_executor_session_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        row.consistency_mode_source,
+        row.consistency_mode,
+        i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+        i64::try_from(row.degraded_skipped_dispatch_count)
+            .expect("degraded skipped dispatch count should fit in i64"),
+        row.first_degraded_skip_category,
+        row.next_executor_step,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_readiness(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -23674,6 +23751,98 @@ mod tests {
         assert_eq!(first_cancellation_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");
         assert_eq!(status, "requires_production_transport_adapter");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_executor_session_policy_guc() {
+        Spi::run(
+            "CREATE TABLE ec_spire_prod_session_policy_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_prod_session_policy_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_prod_session_policy_idx \
+             ON ec_spire_prod_session_policy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_prod_session_policy_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_prod_session_policy_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_prod_session_policy_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        let session_summary_from = format!(
+            "FROM ec_spire_remote_search_production_executor_session_summary(\
+                 'ec_spire_prod_session_policy_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1)"
+        );
+        let default_mode =
+            Spi::get_one::<String>(&format!("SELECT consistency_mode {session_summary_from}"))
+                .expect("default mode query should succeed")
+                .expect("default mode should exist");
+        let default_source = Spi::get_one::<String>(&format!(
+            "SELECT consistency_mode_source {session_summary_from}"
+        ))
+        .expect("default mode source query should succeed")
+        .expect("default mode source should exist");
+
+        assert_eq!(default_source, "ec_spire.remote_search_consistency_mode");
+        assert_eq!(default_mode, "strict");
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 51, 'spire/remote/prod-session-policy', decode('aa', 'hex'), \
+                     'ec_spire_remote_prod_session_policy_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        Spi::run("SET LOCAL ec_spire.remote_search_consistency_mode = 'degraded'")
+            .expect("remote search consistency mode SET should succeed");
+        let degraded_mode =
+            Spi::get_one::<String>(&format!("SELECT consistency_mode {session_summary_from}"))
+                .expect("degraded mode query should succeed")
+                .expect("degraded mode should exist");
+        let degraded_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT dispatch_count {session_summary_from}"))
+                .expect("degraded dispatch count query should succeed")
+                .expect("degraded dispatch count should exist");
+        let degraded_status =
+            Spi::get_one::<String>(&format!("SELECT status {session_summary_from}"))
+                .expect("degraded status query should succeed")
+                .expect("degraded status should exist");
+
+        assert_eq!(degraded_mode, "degraded");
+        assert_eq!(degraded_dispatch_count, 1);
+        assert_eq!(degraded_status, "requires_production_transport_adapter");
     }
 
     #[pg_test]

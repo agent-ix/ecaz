@@ -3684,6 +3684,37 @@ pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn remote_search_production_executor_session_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+) -> SpireRemoteProductionExecutorSessionSummaryRow {
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    let summary = unsafe {
+        remote_search_production_executor_state_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    SpireRemoteProductionExecutorSessionSummaryRow {
+        requested_epoch: summary.requested_epoch,
+        consistency_mode_source: "ec_spire.remote_search_consistency_mode",
+        consistency_mode,
+        dispatch_count: summary.dispatch_count,
+        degraded_skipped_dispatch_count: summary.degraded_skipped_dispatch_count,
+        first_degraded_skip_category: summary.first_degraded_skip_category,
+        next_executor_step: summary.next_executor_step,
+        status: summary.status,
+        recommendation: summary.recommendation,
+    }
+}
+
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,

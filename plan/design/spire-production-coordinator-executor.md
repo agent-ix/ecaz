@@ -226,6 +226,15 @@ resolution. When degraded mode returns SQL-visible results, diagnostics must
 show that the result set is partial by naming skipped nodes, or at minimum
 reporting skipped-node count plus first skip category.
 
+As of 2026-05-10, the first AM-boundary policy source is pinned as the session
+GUC `ec_spire.remote_search_consistency_mode`, an enum with `strict` and
+`degraded` values and default `strict`. The first proof surface is
+`ec_spire_remote_search_production_executor_session_summary(...)`, which reads
+that GUC and forwards the resulting single consistency mode into production
+executor state without accepting a per-call free-form consistency string. C5
+must use the same source unless a later reviewed packet replaces it with an
+explicit query option.
+
 Verification:
 
 - Fault matrix for auth or certificate failure, connection reset, remote

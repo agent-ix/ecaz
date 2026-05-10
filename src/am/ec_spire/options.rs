@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
-use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting, PostgresGucEnum};
 
 use super::quantizer::SpireAssignmentPayloadFormat;
 use super::{
@@ -61,6 +61,28 @@ static EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
 static EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
+static EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC: GucSetting<
+    SpireRemoteSearchConsistencyModeGuc,
+> = GucSetting::<SpireRemoteSearchConsistencyModeGuc>::new(
+    SpireRemoteSearchConsistencyModeGuc::Strict,
+);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum SpireRemoteSearchConsistencyModeGuc {
+    #[name = c"strict"]
+    Strict,
+    #[name = c"degraded"]
+    Degraded,
+}
+
+impl SpireRemoteSearchConsistencyModeGuc {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "strict",
+            Self::Degraded => "degraded",
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -755,6 +777,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_spire.remote_search_consistency_mode",
+        c"Session consistency policy for production ec_spire remote search.",
+        c"Single per-query production remote-search consistency policy. Values: strict fails closed on required remote failures; degraded skips failed remotes and reports partial-result diagnostics.",
+        &EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -803,6 +833,10 @@ pub(super) fn current_session_remote_search_connect_timeout_ms() -> i32 {
 
 pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
     EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {
+    EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC.get().as_str()
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {

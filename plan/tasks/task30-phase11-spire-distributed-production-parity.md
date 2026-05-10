@@ -185,6 +185,9 @@ Acceptance artifact:
     source of strict/degraded mode, single per-query threading into executor
     state, and final diagnostics or warning that name skipped nodes or at
     least count plus first skip category.
+    - [x] First AM-boundary source-of-truth slice: session GUC
+      `ec_spire.remote_search_consistency_mode` feeds a production executor
+      session summary without a per-call free-form consistency string.
   - [ ] Add a strict/degraded fault matrix table covering connect, secret,
     statement timeout, backend termination, query cancellation, validation,
     identity, version, stale epoch, and heap-resolution failures.
