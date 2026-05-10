@@ -3238,6 +3238,48 @@ pub(crate) fn remote_search_production_transport_probe_for_test(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_transport_probe_summary_for_test(
+    requests: Vec<SpireRemoteProductionTransportProbeRequest>,
+    consistency_mode: &str,
+) -> SpireRemoteProductionExecutorStateSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        let consistency_mode_name =
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        let dispatch_rows = requests
+            .iter()
+            .map(|request| SpireRemoteSearchLibpqDispatchPlanRow {
+                requested_epoch: 1,
+                node_id: request.node_id,
+                selected_pids: vec![u64::from(request.node_id)],
+                pid_count: 1,
+                query_dimension: 2,
+                top_k: 1,
+                consistency_mode: consistency_mode_name,
+                sql_template: "SELECT 1",
+                parameter_count: 0,
+                result_column_count: 1,
+                conninfo_secret_name: format!("tests/node/{}", request.node_id),
+                remote_index_regclass: "tests.ec_spire_transport_probe_idx".to_owned(),
+                descriptor_generation: 1,
+                remote_index_identity: Vec::new(),
+                pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+                dispatch_action: SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+                receive_validator: "test_transport_probe",
+                status: SPIRE_REMOTE_STATUS_READY,
+            })
+            .collect::<Vec<_>>();
+        let transport_rows = SpireRemoteProductionTransportAdapter::run_probe_requests(requests)?;
+        remote_search_production_executor_state_summary_from_transport_probe_rows_with_consistency_mode(
+            1,
+            &dispatch_rows,
+            &transport_rows,
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn remote_search_production_transport_probe_with_local_cancel_for_test(
     requests: Vec<SpireRemoteProductionTransportProbeRequest>,
     local_cancel_after_ms: u64,

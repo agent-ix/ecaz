@@ -14726,6 +14726,52 @@ mod tests {
     }
 
     #[pg_extern]
+    fn ec_spire_test_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode: String) -> bool {
+        unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, &mode) };
+        true
+    }
+
+    fn ec_spire_test_transport_probe_requests(
+        function_name: &str,
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        slow_node_id: i32,
+    ) -> Vec<am::SpireRemoteProductionTransportProbeRequest> {
+        if node_ids.len() != conninfo_secret_names.len() {
+            pgrx::error!("{function_name} node_ids and conninfo_secret_names lengths must match");
+        }
+        let slow_node_id = u32::try_from(slow_node_id)
+            .unwrap_or_else(|_| pgrx::error!("{function_name} slow_node_id must be non-negative"));
+        node_ids
+            .into_iter()
+            .zip(conninfo_secret_names)
+            .map(|(node_id, conninfo_secret_name)| {
+                let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                    pgrx::error!("{function_name} node_id must be non-negative")
+                });
+                let provider_lookup_key =
+                    am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+                        .unwrap_or_else(|e| pgrx::error!("{function_name} {e}"));
+                let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
+                    pgrx::error!("{function_name} missing conninfo secret {conninfo_secret_name}")
+                });
+                if conninfo.is_empty() {
+                    pgrx::error!("{function_name} empty conninfo secret {conninfo_secret_name}");
+                }
+                am::SpireRemoteProductionTransportProbeRequest {
+                    node_id,
+                    conninfo,
+                    sql: if node_id == slow_node_id {
+                        "SELECT pg_sleep(0.30)"
+                    } else {
+                        "SELECT 1"
+                    },
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
+    #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn ec_spire_test_production_transport_probe(
         node_ids: Vec<i32>,
@@ -14743,51 +14789,12 @@ mod tests {
             name!(failure_category, &'static str),
         ),
     > {
-        if node_ids.len() != conninfo_secret_names.len() {
-            pgrx::error!(
-                "ec_spire_test_production_transport_probe node_ids and conninfo_secret_names lengths must match"
-            );
-        }
-        let slow_node_id = u32::try_from(slow_node_id).unwrap_or_else(|_| {
-            pgrx::error!(
-                "ec_spire_test_production_transport_probe slow_node_id must be non-negative"
-            )
-        });
-        let requests = node_ids
-            .into_iter()
-            .zip(conninfo_secret_names)
-            .map(|(node_id, conninfo_secret_name)| {
-                let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
-                    pgrx::error!(
-                        "ec_spire_test_production_transport_probe node_id must be non-negative"
-                    )
-                });
-                let provider_lookup_key =
-                    am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!("ec_spire_test_production_transport_probe {e}")
-                        });
-                let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
-                    pgrx::error!(
-                        "ec_spire_test_production_transport_probe missing conninfo secret {conninfo_secret_name}"
-                    )
-                });
-                if conninfo.is_empty() {
-                    pgrx::error!(
-                        "ec_spire_test_production_transport_probe empty conninfo secret {conninfo_secret_name}"
-                    );
-                }
-                am::SpireRemoteProductionTransportProbeRequest {
-                    node_id,
-                    conninfo,
-                    sql: if node_id == slow_node_id {
-                        "SELECT pg_sleep(0.30)"
-                    } else {
-                        "SELECT 1"
-                    },
-                }
-            })
-            .collect::<Vec<_>>();
+        let requests = ec_spire_test_transport_probe_requests(
+            "ec_spire_test_production_transport_probe",
+            node_ids,
+            conninfo_secret_names,
+            slow_node_id,
+        );
         let rows = am::spire_remote_search_production_transport_probe_for_test(requests);
 
         TableIterator::new(rows.into_iter().map(|row| {
@@ -14802,6 +14809,60 @@ mod tests {
                 row.failure_category,
             )
         }))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_transport_probe_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        slow_node_id: i32,
+        consistency_mode: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(transport_sent_dispatch_count, i64),
+            name!(transport_ready_dispatch_count, i64),
+            name!(transport_failed_dispatch_count, i64),
+            name!(first_transport_failure_category, &'static str),
+            name!(candidate_receive_pending_dispatch_count, i64),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let requests = ec_spire_test_transport_probe_requests(
+            "ec_spire_test_production_transport_probe_summary",
+            node_ids,
+            conninfo_secret_names,
+            slow_node_id,
+        );
+        let row = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests,
+            &consistency_mode,
+        );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.transport_sent_dispatch_count)
+                .expect("transport sent count should fit in i64"),
+            i64::try_from(row.transport_ready_dispatch_count)
+                .expect("transport ready count should fit in i64"),
+            i64::try_from(row.transport_failed_dispatch_count)
+                .expect("transport failed count should fit in i64"),
+            row.first_transport_failure_category,
+            i64::try_from(row.candidate_receive_pending_dispatch_count)
+                .expect("candidate receive pending count should fit in i64"),
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
     }
 
     fn current_pg_test_loopback_conninfo() -> String {
