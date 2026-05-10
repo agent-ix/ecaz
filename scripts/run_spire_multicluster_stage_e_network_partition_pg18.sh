@@ -184,15 +184,10 @@ fi
 
 "${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v missing_pid="$missing_pid" \
   -v ready_pid="$ready_pid" -v extversion="$extversion" -v ready_identity_hex="$ready_identity_hex" <<'SQL' >/dev/null
-SELECT tests.ec_spire_test_rewrite_placement_node(
+SELECT tests.ec_spire_test_rewrite_placement_nodes(
     'ec_spire_stage_e_coord_idx'::regclass::oid,
-    :missing_pid::bigint,
-    2
-);
-SELECT tests.ec_spire_test_rewrite_placement_node(
-    'ec_spire_stage_e_coord_idx'::regclass::oid,
-    :ready_pid::bigint,
-    3
+    ARRAY[:missing_pid::bigint, :ready_pid::bigint],
+    ARRAY[2, 3]
 );
 SELECT ec_spire_register_remote_node_descriptor(
     'ec_spire_stage_e_coord_idx'::regclass,

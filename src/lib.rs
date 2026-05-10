@@ -14726,6 +14726,32 @@ mod tests {
     }
 
     #[pg_extern]
+    fn ec_spire_test_rewrite_placement_nodes(
+        index_oid: pg_sys::Oid,
+        pids: Vec<i64>,
+        node_ids: Vec<i32>,
+    ) -> bool {
+        if pids.len() != node_ids.len() {
+            pgrx::error!("test placement rewrite pids and node_ids lengths must match");
+        }
+        let rewrites = pids
+            .into_iter()
+            .zip(node_ids)
+            .map(|(pid, node_id)| {
+                let pid = u64::try_from(pid).unwrap_or_else(|_| {
+                    pgrx::error!("test placement rewrite pid must be non-negative")
+                });
+                let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                    pgrx::error!("test placement rewrite node_id must be non-negative")
+                });
+                (pid, node_id)
+            })
+            .collect::<Vec<_>>();
+        unsafe { am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites) };
+        true
+    }
+
+    #[pg_extern]
     fn ec_spire_test_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode: String) -> bool {
         unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, &mode) };
         true
