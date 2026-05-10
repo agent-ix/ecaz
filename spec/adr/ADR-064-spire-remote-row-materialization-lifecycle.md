@@ -11,6 +11,14 @@ date: 2026-05-10
 
 Proposed.
 
+## Related
+
+- ADR-059 owns origin-node heap visibility resolution and keeps remote
+  `row_locator` bytes opaque at the coordinator. ADR-064 starts only after
+  that origin visibility result exists and defines the additional
+  same-relation coordinator heap materialization required by PostgreSQL's
+  index AM `xs_heaptid` contract.
+
 ## Context
 
 ADR-059 assigns remote heap visibility to the origin node and keeps remote row
@@ -68,6 +76,28 @@ AM contract.
   only with explicit degraded diagnostics.
 - Per-cursor cleanup is limited to scan opaque memory. It must not delete heap
   tuples that downstream PostgreSQL nodes may still fetch.
+
+## Cleanup Ownership
+
+The v1 cleanup owner is the same epoch maintenance surface that retires SPIRE
+publication state. Row-materialization cleanup is not owned by scan state,
+`amrescan`, or `amgettuple`.
+
+The cleanup sequence is:
+
+1. Publish or refresh coordinator-visible materialized rows before an epoch is
+   advertised as AM-deliverable.
+2. Keep materialized rows through the epoch retention window so concurrent
+   scans can continue to fetch ordinary heap tuples by `xs_heaptid`.
+3. On epoch retirement, mark obsolete materialized rows through the
+   coordinator heap relation's normal delete/update path or through an
+   operator-owned mirror lifecycle command.
+4. Let PostgreSQL MVCC and VACUUM reclaim those rows after no active snapshot
+   can see them.
+
+`ecaz` may provide an operator command for mirror refresh and cleanup, but that
+command is a maintenance entrypoint. It must not be called from the AM scan
+cursor path.
 
 ## Rationale
 

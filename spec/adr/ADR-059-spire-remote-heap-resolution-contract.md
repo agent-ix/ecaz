@@ -11,6 +11,13 @@ date: 2026-05-09
 
 Accepted.
 
+## Related
+
+- ADR-064 defines the separate AM-side materialization lifecycle required after
+  origin-node heap visibility succeeds. ADR-059 decides who resolves remote
+  heap visibility; ADR-064 decides when the coordinator may turn a visible
+  remote-origin row into a local `xs_heaptid`.
+
 ## Context
 
 Remote SPIRE search returns compact candidates with `node_id`, `vec_id`,

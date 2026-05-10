@@ -714,6 +714,10 @@ Goal: make the coordinator-visible result stream production-correct.
   - [x] ADR-064 proposes the shadow/proxy lifecycle required by the `30761`
     reviewer P2: v1 AM materialization must be a pre-existing coordinator heap
     row in the same scanned relation, not a per-query temp/scratch/proxy tuple.
+  - [x] Packet `30769` resolves the `30763` reviewer P3 design cleanup:
+    ADR-059 and ADR-064 now cross-reference their respective ownership
+    boundaries, and ADR-064 pins cleanup ownership to epoch maintenance /
+    operator mirror lifecycle outside `amrescan` / `amgettuple`.
   - [x] Add the materialized-row mapping contract required by ADR-064 before
     storage-provider implementation: the mapping key must preserve requested
     and served epoch, origin node, global vec-id, and opaque row locator; the
