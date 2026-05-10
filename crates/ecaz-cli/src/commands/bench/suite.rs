@@ -378,11 +378,21 @@ struct ComparePgvectorStep {
     #[serde(default)]
     ecaz_sweep: Option<i32>,
     #[serde(default)]
+    pgvector_am: Option<String>,
+    #[serde(default)]
     pgvector_ef_search: Option<i32>,
     #[serde(default)]
     pgvector_m: Option<i32>,
     #[serde(default)]
     pgvector_ef_construction: Option<i32>,
+    #[serde(default)]
+    pgvector_lists: Option<i32>,
+    #[serde(default)]
+    pgvector_probes: Option<i32>,
+    #[serde(default)]
+    pgvector_maintenance_work_mem: Option<String>,
+    #[serde(default)]
+    rerank_width: Option<i32>,
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
@@ -632,7 +642,9 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     }
 
     let rows = write_results_if_requested(&args, &config, &manifest).await?;
-    manifest.threshold_results = evaluate_thresholds(&config.thresholds, &rows);
+    let selected_steps = selected_step_names(&manifest);
+    manifest.threshold_results =
+        evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
     write_manifest_if_requested(&args, &config, &manifest).await?;
     let failures = manifest
         .threshold_results
@@ -1261,9 +1273,32 @@ fn format_metric_values(values: &BTreeMap<String, String>) -> String {
         .join(", ")
 }
 
+fn selected_step_names(manifest: &SuiteManifest) -> HashSet<&str> {
+    manifest
+        .steps
+        .iter()
+        .filter(|step| step.selected)
+        .map(|step| step.name.as_str())
+        .collect()
+}
+
+#[cfg(test)]
 fn evaluate_thresholds(thresholds: &[ThresholdConfig], rows: &[ResultRow]) -> Vec<ThresholdResult> {
+    let selected_steps: HashSet<&str> = thresholds
+        .iter()
+        .map(|threshold| threshold.step.as_str())
+        .collect();
+    evaluate_thresholds_for_steps(thresholds, rows, &selected_steps)
+}
+
+fn evaluate_thresholds_for_steps(
+    thresholds: &[ThresholdConfig],
+    rows: &[ResultRow],
+    selected_steps: &HashSet<&str>,
+) -> Vec<ThresholdResult> {
     thresholds
         .iter()
+        .filter(|threshold| selected_steps.contains(threshold.step.as_str()))
         .map(|threshold| evaluate_threshold(threshold, rows))
         .collect()
 }
@@ -1831,6 +1866,9 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
         &profile(defaults, step.profile.as_deref()),
     );
     push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    if let Some(pgvector_am) = step.pgvector_am.as_deref() {
+        push_arg(&mut args, "--pgvector-am", pgvector_am);
+    }
     if !step.sweep.is_empty() {
         push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     } else if let Some(ecaz_sweep) = step.ecaz_sweep {
@@ -1841,6 +1879,12 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
             &step.pgvector_ef_search.unwrap_or(ecaz_sweep).to_string(),
         );
     }
+    if let Some(pgvector_probes) = step.pgvector_probes {
+        push_arg(&mut args, "--pgvector-probes", &pgvector_probes.to_string());
+    }
+    if let Some(memory) = step.pgvector_maintenance_work_mem.as_deref() {
+        push_arg(&mut args, "--pgvector-maintenance-work-mem", memory);
+    }
     if let Some(pgvector_m) = step.pgvector_m {
         push_arg(&mut args, "--pgvector-m", &pgvector_m.to_string());
     }
@@ -1850,6 +1894,12 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
             "--pgvector-ef-construction",
             &pgvector_ef_construction.to_string(),
         );
+    }
+    if let Some(pgvector_lists) = step.pgvector_lists {
+        push_arg(&mut args, "--pgvector-lists", &pgvector_lists.to_string());
+    }
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
     }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
@@ -2444,6 +2494,43 @@ mod tests {
         let result = evaluate_threshold(&threshold, &rows);
         assert!(result.passed);
         assert_eq!(result.actual, Some(0.9980));
+    }
+
+    #[test]
+    fn skips_thresholds_for_unselected_steps() {
+        let rows = vec![ResultRow {
+            suite: "suite".into(),
+            step: "selected".into(),
+            kind: "recall".into(),
+            metric: "recall".into(),
+            artifact: "selected.log".into(),
+            values: BTreeMap::from([("recall@k".into(), "0.9980".into())]),
+        }];
+        let thresholds = vec![
+            ThresholdConfig {
+                name: "selected-floor".into(),
+                step: "selected".into(),
+                metric: "recall".into(),
+                filters: BTreeMap::new(),
+                field: "recall@k".into(),
+                op: ThresholdOp::Gte,
+                value: 0.995,
+            },
+            ThresholdConfig {
+                name: "unselected-floor".into(),
+                step: "unselected".into(),
+                metric: "recall".into(),
+                filters: BTreeMap::new(),
+                field: "recall@k".into(),
+                op: ThresholdOp::Gte,
+                value: 0.995,
+            },
+        ];
+        let selected_steps = HashSet::from(["selected"]);
+        let results = evaluate_thresholds_for_steps(&thresholds, &rows, &selected_steps);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "selected-floor");
+        assert!(results[0].passed);
     }
 
     #[test]

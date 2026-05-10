@@ -6,8 +6,8 @@
 //! 2. Materialize a `<prefix>_corpus_pgvector` sidecar `(id bigint, embedding
 //!    vector(dim))` sourced from the ecaz `<prefix>_corpus.source` column
 //!    (idempotent unless `--rebuild`).
-//! 3. Build a pgvector HNSW index on the sidecar with the requested `m` /
-//!    `ef_construction` (idempotent by index name unless `--rebuild`).
+//! 3. Build a pgvector HNSW or IVFFlat index on the sidecar with the requested
+//!    reloptions (idempotent by index name unless `--rebuild`).
 //! 4. Compute ground truth once with the brute-force matmul helper already
 //!    used by `bench recall`.
 //! 5. Run KNN against ecaz and pgvector at the configured tuning points,
@@ -20,7 +20,7 @@
 //! are pure functions with unit tests. The orchestration shell is a thin
 //! tokio-postgres driver on top.
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::ProgressStyle;
@@ -53,6 +53,9 @@ pub struct PgvectorArgs {
     /// Matched sweep values for ecaz and pgvector `hnsw.ef_search`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
+    /// pgvector access method to build on the sidecar.
+    #[arg(long = "pgvector-am", default_value_t = PgvectorIndexKind::Hnsw)]
+    pub pgvector_am: PgvectorIndexKind,
     /// pgvector-side `hnsw.ef_search` for the timed queries.
     #[arg(long, default_value_t = 100)]
     pub pgvector_ef_search: i32,
@@ -62,6 +65,20 @@ pub struct PgvectorArgs {
     /// pgvector HNSW build `ef_construction`.
     #[arg(long, default_value_t = 128)]
     pub pgvector_ef_construction: i32,
+    /// pgvector IVFFlat build `lists`.
+    #[arg(long, default_value_t = 128)]
+    pub pgvector_lists: i32,
+    /// pgvector IVFFlat query `ivfflat.probes` for a single-point comparison.
+    #[arg(long, default_value_t = 10)]
+    pub pgvector_probes: i32,
+    /// Session maintenance_work_mem used while building the pgvector sidecar
+    /// index, for example `256MB`.
+    #[arg(long)]
+    pub pgvector_maintenance_work_mem: Option<String>,
+    /// IVF-only: ecaz session override for heap-f32 rerank frontier width.
+    /// Use -1 for the index reloption, 0 for the full probed frontier.
+    #[arg(long)]
+    pub rerank_width: Option<i32>,
     /// Cap the query set (default: all rows).
     #[arg(long)]
     pub queries_limit: Option<usize>,
@@ -70,12 +87,58 @@ pub struct PgvectorArgs {
     pub rebuild: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum PgvectorIndexKind {
+    Hnsw,
+    Ivfflat,
+}
+
+impl PgvectorIndexKind {
+    fn axis_label(self) -> &'static str {
+        match self {
+            Self::Hnsw => "ef_search",
+            Self::Ivfflat => "probes",
+        }
+    }
+
+    fn query_guc(self) -> &'static str {
+        match self {
+            Self::Hnsw => "hnsw.ef_search",
+            Self::Ivfflat => "ivfflat.probes",
+        }
+    }
+
+    fn default_query_value(self, args: &PgvectorArgs) -> i32 {
+        match self {
+            Self::Hnsw => args.pgvector_ef_search,
+            Self::Ivfflat => args.pgvector_probes,
+        }
+    }
+
+    fn engine_label(self) -> &'static str {
+        match self {
+            Self::Hnsw => "pgvector",
+            Self::Ivfflat => "pgvector_ivfflat",
+        }
+    }
+}
+
+impl std::fmt::Display for PgvectorIndexKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hnsw => f.write_str("hnsw"),
+            Self::Ivfflat => f.write_str("ivfflat"),
+        }
+    }
+}
+
 pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 {
         return Err(eyre!("--k must be >= 1"));
     }
+    validate_pgvector_args(&args)?;
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
         eyre!(
             "unknown profile {:?}; try {}",
@@ -86,8 +149,14 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let ecaz_guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to set", profile.name))?;
-    let sweep_values = if args.sweep.is_empty() {
+    validate_rerank_width_arg(profile, args.rerank_width)?;
+    let ecaz_sweep_values = if args.sweep.is_empty() {
         vec![args.ecaz_sweep]
+    } else {
+        args.sweep.clone()
+    };
+    let pgvector_sweep_values = if args.sweep.is_empty() {
+        vec![args.pgvector_am.default_query_value(&args)]
     } else {
         args.sweep.clone()
     };
@@ -95,7 +164,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
     let sidecar_table = pgvector_sidecar_name(&args.prefix);
-    let sidecar_index = pgvector_index_name(&args.prefix);
+    let sidecar_index = pgvector_index_name(&args.prefix, args.pgvector_am);
 
     let client = psql::connect(conn).await?;
 
@@ -127,8 +196,13 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         &sidecar_table,
         &sidecar_index,
         dim,
-        args.pgvector_m,
-        args.pgvector_ef_construction,
+        PgvectorIndexConfig {
+            kind: args.pgvector_am,
+            hnsw_m: args.pgvector_m,
+            hnsw_ef_construction: args.pgvector_ef_construction,
+            ivfflat_lists: args.pgvector_lists,
+            maintenance_work_mem: args.pgvector_maintenance_work_mem.as_deref(),
+        },
         args.rebuild,
     )
     .await?;
@@ -161,13 +235,20 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
     let ecaz_sql = build_knn_sql(profile, &corpus_table);
     let pgv_sql = build_pgvector_knn_sql(&sidecar_table, dim);
-    let mut rows = Vec::with_capacity(sweep_values.len() * 2);
-    for value in sweep_values {
-        let ecaz_label = configured_engine_label(profile.name, profile.sweep_axis_label(), value);
+    let mut rows = Vec::with_capacity(ecaz_sweep_values.len() * 2);
+    for (ecaz_value, pgvector_value) in ecaz_sweep_values.into_iter().zip(pgvector_sweep_values) {
+        let ecaz_label =
+            configured_engine_label(profile.name, profile.sweep_axis_label(), ecaz_value);
         client
-            .batch_execute(&format!("SET {ecaz_guc} = {value}"))
+            .batch_execute(&format!("SET {ecaz_guc} = {ecaz_value}"))
             .await
             .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
+        if let Some(rerank_width) = args.rerank_width {
+            client
+                .batch_execute(&format!("SET ec_ivf.rerank_width = {rerank_width}"))
+                .await
+                .wrap_err_with(|| format!("SET ec_ivf.rerank_width = {rerank_width}"))?;
+        }
         let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
             &client,
             &ecaz_label,
@@ -182,17 +263,24 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         .await?;
         rows.push(ComparisonRow::with_sweep(
             &ecaz_label,
-            value,
+            ecaz_value,
             ecaz_recall,
             ecaz_ndcg,
             ecaz_stats,
         ));
 
         client
-            .batch_execute(&format!("SET hnsw.ef_search = {value}"))
+            .batch_execute(&format!(
+                "SET {} = {pgvector_value}",
+                args.pgvector_am.query_guc()
+            ))
             .await
-            .wrap_err("SET hnsw.ef_search")?;
-        let pgv_label = configured_engine_label("pgvector", "ef_search", value);
+            .wrap_err_with(|| format!("SET {}", args.pgvector_am.query_guc()))?;
+        let pgv_label = configured_engine_label(
+            args.pgvector_am.engine_label(),
+            args.pgvector_am.axis_label(),
+            pgvector_value,
+        );
         let (pgv_recall, pgv_ndcg, pgv_stats) = measure_engine(
             &client,
             &pgv_label,
@@ -207,7 +295,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         .await?;
         rows.push(ComparisonRow::with_sweep(
             &pgv_label,
-            value,
+            pgvector_value,
             pgv_recall,
             pgv_ndcg,
             pgv_stats,
@@ -223,9 +311,12 @@ pub fn pgvector_sidecar_name(prefix: &str) -> String {
     format!("{prefix}_corpus_pgvector")
 }
 
-/// Name of the pgvector HNSW index built on the sidecar.
-pub fn pgvector_index_name(prefix: &str) -> String {
-    format!("{prefix}_corpus_pgvector_hnsw_idx")
+/// Name of the pgvector index built on the sidecar.
+pub fn pgvector_index_name(prefix: &str, kind: PgvectorIndexKind) -> String {
+    match kind {
+        PgvectorIndexKind::Hnsw => format!("{prefix}_corpus_pgvector_hnsw_idx"),
+        PgvectorIndexKind::Ivfflat => format!("{prefix}_corpus_pgvector_ivfflat_idx"),
+    }
 }
 
 /// DDL to create the pgvector sidecar. Creation is idempotent; the caller
@@ -257,6 +348,17 @@ pub fn build_pgvector_create_index_sql(
     )
 }
 
+/// `CREATE INDEX ... USING ivfflat (embedding vector_ip_ops) WITH (lists=...)`
+pub fn build_pgvector_create_ivfflat_index_sql(
+    sidecar: &str,
+    index_name: &str,
+    lists: i32,
+) -> String {
+    format!(
+        "CREATE INDEX {index_name} ON {sidecar}\n         USING ivfflat (embedding vector_ip_ops)\n         WITH (lists = {lists})"
+    )
+}
+
 /// KNN template for the pgvector sidecar: binds are `($1::real[], $2::bigint)`
 /// = (query_source, k). Uses the inner-product operator to match ecaz's
 /// `encode_to_ecvector`-preserving IP semantics.
@@ -285,6 +387,15 @@ async fn read_dim(client: &Client, corpus_table: &str) -> Result<usize> {
     Ok(dim as usize)
 }
 
+#[derive(Clone, Copy)]
+struct PgvectorIndexConfig<'a> {
+    kind: PgvectorIndexKind,
+    hnsw_m: i32,
+    hnsw_ef_construction: i32,
+    ivfflat_lists: i32,
+    maintenance_work_mem: Option<&'a str>,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn ensure_pgvector_sidecar(
     client: &Client,
@@ -292,8 +403,7 @@ async fn ensure_pgvector_sidecar(
     sidecar: &str,
     index_name: &str,
     dim: usize,
-    m: i32,
-    ef_construction: i32,
+    index_config: PgvectorIndexConfig<'_>,
     rebuild: bool,
 ) -> Result<()> {
     if rebuild {
@@ -329,15 +439,33 @@ async fn ensure_pgvector_sidecar(
     }
 
     if !psql::relation_exists(client, index_name, 'i').await? {
-        crate::ecaz_eprintln!("[compare] building pgvector HNSW index {index_name}");
+        if let Some(memory) = index_config.maintenance_work_mem {
+            crate::ecaz_eprintln!("[compare] SET maintenance_work_mem = '{memory}'");
+            client
+                .batch_execute(&format!("SET maintenance_work_mem = '{memory}'"))
+                .await
+                .wrap_err_with(|| format!("SET maintenance_work_mem = {memory}"))?;
+        }
+        crate::ecaz_eprintln!(
+            "[compare] building pgvector {:?} index {index_name}",
+            index_config.kind
+        );
         let t0 = Instant::now();
-        client
-            .batch_execute(&build_pgvector_create_index_sql(
+        let create_index_sql = match index_config.kind {
+            PgvectorIndexKind::Hnsw => build_pgvector_create_index_sql(
                 sidecar,
                 index_name,
-                m,
-                ef_construction,
-            ))
+                index_config.hnsw_m,
+                index_config.hnsw_ef_construction,
+            ),
+            PgvectorIndexKind::Ivfflat => build_pgvector_create_ivfflat_index_sql(
+                sidecar,
+                index_name,
+                index_config.ivfflat_lists,
+            ),
+        };
+        client
+            .batch_execute(&create_index_sql)
             .await
             .wrap_err("creating pgvector index")?;
         crate::ecaz_eprintln!("[compare] built {index_name} in {:.2?}", t0.elapsed());
@@ -351,6 +479,65 @@ async fn ensure_pgvector_sidecar(
         .wrap_err("reading pgvector index size")?
         .get(0);
     crate::ecaz_eprintln!("[compare] {index_name} pg_relation_size={size} bytes");
+    Ok(())
+}
+
+fn validate_pgvector_args(args: &PgvectorArgs) -> Result<()> {
+    if args.pgvector_ef_search <= 0 {
+        return Err(eyre!("--pgvector-ef-search must be > 0"));
+    }
+    if args.pgvector_m <= 0 {
+        return Err(eyre!("--pgvector-m must be > 0"));
+    }
+    if args.pgvector_ef_construction <= 0 {
+        return Err(eyre!("--pgvector-ef-construction must be > 0"));
+    }
+    if args.pgvector_lists <= 0 {
+        return Err(eyre!("--pgvector-lists must be > 0"));
+    }
+    if args.pgvector_probes <= 0 {
+        return Err(eyre!("--pgvector-probes must be > 0"));
+    }
+    if let Some(value) = args.pgvector_maintenance_work_mem.as_deref() {
+        validate_postgres_memory_value(value)?;
+    }
+    Ok(())
+}
+
+fn validate_rerank_width_arg(
+    profile: &'static profiles::IndexProfile,
+    rerank_width: Option<i32>,
+) -> Result<()> {
+    let Some(value) = rerank_width else {
+        return Ok(());
+    };
+    if profile.name != "ec_ivf" {
+        return Err(eyre!(
+            "--rerank-width is only supported with --profile ec_ivf"
+        ));
+    }
+    if value < -1 {
+        return Err(eyre!("--rerank-width must be >= -1"));
+    }
+    Ok(())
+}
+
+fn validate_postgres_memory_value(value: &str) -> Result<()> {
+    if value.is_empty() {
+        return Err(eyre!("--pgvector-maintenance-work-mem cannot be empty"));
+    }
+    let digits = value.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 || digits == value.len() {
+        return Err(eyre!(
+            "--pgvector-maintenance-work-mem must look like 256MB, 1GB, or 65536kB"
+        ));
+    }
+    let unit = &value[digits..];
+    if !matches!(unit, "B" | "kB" | "MB" | "GB" | "TB") {
+        return Err(eyre!(
+            "--pgvector-maintenance-work-mem unit must be B, kB, MB, GB, or TB"
+        ));
+    }
     Ok(())
 }
 
@@ -447,7 +634,9 @@ fn print_comparison(rows: &[ComparisonRow]) {
         let mut cells = vec![Cell::new(&r.engine)];
         if include_sweep {
             cells.push(Cell::new(
-                r.sweep.map(|value| value.to_string()).unwrap_or_else(|| "-".into()),
+                r.sweep
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".into()),
             ));
         }
         cells.extend([
@@ -529,8 +718,12 @@ mod tests {
     #[test]
     fn pgvector_index_name_is_sidecar_scoped() {
         assert_eq!(
-            pgvector_index_name("dbpedia_10k"),
+            pgvector_index_name("dbpedia_10k", PgvectorIndexKind::Hnsw),
             "dbpedia_10k_corpus_pgvector_hnsw_idx"
+        );
+        assert_eq!(
+            pgvector_index_name("dbpedia_10k", PgvectorIndexKind::Ivfflat),
+            "dbpedia_10k_corpus_pgvector_ivfflat_idx"
         );
     }
 
@@ -562,6 +755,13 @@ mod tests {
     }
 
     #[test]
+    fn create_ivfflat_index_sql_pins_ip_ops_and_lists() {
+        let sql = build_pgvector_create_ivfflat_index_sql("t_corpus_pgvector", "t_pgv_idx", 128);
+        assert!(sql.contains("USING ivfflat (embedding vector_ip_ops)"));
+        assert!(sql.contains("lists = 128"));
+    }
+
+    #[test]
     fn configured_engine_label_is_self_describing() {
         assert_eq!(
             configured_engine_label("ec_diskann", "list_size", 200),
@@ -570,6 +770,10 @@ mod tests {
         assert_eq!(
             configured_engine_label("pgvector", "ef_search", 100),
             "pgvector[ef_search=100]"
+        );
+        assert_eq!(
+            configured_engine_label("pgvector_ivfflat", "probes", 64),
+            "pgvector_ivfflat[probes=64]"
         );
     }
 
@@ -615,6 +819,33 @@ mod tests {
             .unwrap();
         let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
         assert_eq!(args.sweep, vec![64, 128, 200]);
+    }
+
+    #[test]
+    fn pgvector_args_accept_ivfflat_options() {
+        let cmd = PgvectorArgs::augment_args(Command::new("pgvector"));
+        let matches = cmd
+            .try_get_matches_from([
+                "pgvector",
+                "--prefix",
+                "dbpedia_10k",
+                "--profile",
+                "ec_ivf",
+                "--pgvector-am",
+                "ivfflat",
+                "--pgvector-lists",
+                "128",
+                "--pgvector-probes",
+                "64",
+                "--rerank-width",
+                "500",
+            ])
+            .unwrap();
+        let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
+        assert_eq!(args.pgvector_am, PgvectorIndexKind::Ivfflat);
+        assert_eq!(args.pgvector_lists, 128);
+        assert_eq!(args.pgvector_probes, 64);
+        assert_eq!(args.rerank_width, Some(500));
     }
 
     #[test]
