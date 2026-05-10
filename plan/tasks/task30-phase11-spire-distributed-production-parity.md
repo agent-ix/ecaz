@@ -289,6 +289,11 @@ endpoint.
     reports the current request/response shape, RaBitQ-only v1 protocol, delta
     PID semantics, and the remaining non-ready scoring/fingerprint/opclass
     binding blockers without claiming production readiness.
+  - [x] Add `ec_spire_remote_search_endpoint_identity()` so a remote-serving
+    SPIRE index exposes protocol version, extension version, opclass identity,
+    storage/assignment payload format, RaBitQ profile, scoring profile, and a
+    deterministic profile fingerprint; non-RaBitQ endpoint identities are
+    blocked until rebuilt with `storage_format = 'rabitq'`.
 - [ ] Return compact candidate rows with served epoch, node identity, vector ID,
   row locator, score, assignment flags, quantizer/index fingerprint,
   protocol/extension/opclass version, and packet-friendly diagnostics.

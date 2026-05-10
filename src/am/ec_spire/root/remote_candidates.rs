@@ -36,6 +36,8 @@ const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerp
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING: &str =
     "requires_scoring_option_binding";
+const SPIRE_REMOTE_STATUS_REQUIRES_RABITQ_STORAGE_FORMAT: &str =
+    "requires_rabitq_storage_format";
 const SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT: &str = "local_direct";
 const SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE: &str = "libpq_pipeline";
 const SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION: &str = "open_pipeline_and_send_remote_search";
@@ -179,6 +181,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             operator_use: "remote_endpoint_contract_gate",
             status_source: "contract_item,contract_value,status,validator",
             next_action: "resolve_non_ready_endpoint_contract_rows_before_production_remote_merge",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 14,
+            entrypoint_name: "ec_spire_remote_search_endpoint_identity",
+            area: "search",
+            operator_use: "remote_endpoint_identity_gate",
+            status_source: "protocol_version,opclass_identity,profile_fingerprint,status",
+            next_action: "require_ready_endpoint_identity_before_accepting_remote_candidate_scores",
         },
     ]
 }
@@ -2568,6 +2578,123 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: "bind opclass identity before accepting remote scores from mixed binaries",
         },
     ]
+}
+
+fn remote_search_assignment_payload_format_name(
+    format: quantizer::SpireAssignmentPayloadFormat,
+) -> &'static str {
+    match format {
+        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "turboquant",
+        quantizer::SpireAssignmentPayloadFormat::PqFastScan => "pq_fastscan",
+        quantizer::SpireAssignmentPayloadFormat::RaBitQ => "rabitq",
+    }
+}
+
+fn remote_search_endpoint_quantizer_profile(
+    format: quantizer::SpireAssignmentPayloadFormat,
+) -> &'static str {
+    match format {
+        quantizer::SpireAssignmentPayloadFormat::RaBitQ => "rabitq_v1",
+        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "unsupported_turboquant",
+        quantizer::SpireAssignmentPayloadFormat::PqFastScan => "unsupported_pq_fastscan",
+    }
+}
+
+fn remote_search_endpoint_opclass_identity(index_relid: pg_sys::Oid) -> Result<String, String> {
+    let sql = format!(
+        "SELECT opc.opcname::text AS opclass_identity \
+           FROM pg_index idx \
+           JOIN pg_opclass opc ON opc.oid = idx.indclass[0] \
+          WHERE idx.indexrelid = '{}'::oid",
+        u32::from(index_relid)
+    );
+
+    Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire endpoint identity opclass read failed: {e}"))?
+            .map(|row| {
+                row["opclass_identity"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire endpoint identity opclass decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire endpoint identity opclass is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or_else(|| "unknown".to_owned()))
+    })
+}
+
+fn remote_search_stable_fingerprint(parts: &[String]) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for part in parts {
+        for byte in part.as_bytes().iter().copied().chain(std::iter::once(0)) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{hash:016x}")
+}
+
+pub(crate) unsafe fn remote_search_endpoint_identity_row(
+    index_relation: pg_sys::Relation,
+) -> SpireRemoteSearchEndpointIdentityRow {
+    let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
+        let relation_options = unsafe { options::relation_options(index_relation) };
+        let assignment_payload_format = relation_options.assignment_payload_format();
+        let assignment_payload_format_name =
+            remote_search_assignment_payload_format_name(assignment_payload_format);
+        let quantizer_profile =
+            remote_search_endpoint_quantizer_profile(assignment_payload_format);
+        let opclass_identity =
+            remote_search_endpoint_opclass_identity(unsafe { (*index_relation).rd_id })?;
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let scoring_profile = "inner_product_score_v1";
+        let storage_format = relation_options.storage_format.reloption_name();
+        let profile_fingerprint = remote_search_stable_fingerprint(&[
+            SPIRE_REMOTE_CANDIDATE_FORMAT_V1.to_owned(),
+            env!("CARGO_PKG_VERSION").to_owned(),
+            opclass_identity.clone(),
+            storage_format.to_owned(),
+            assignment_payload_format_name.to_owned(),
+            quantizer_profile.to_owned(),
+            scoring_profile.to_owned(),
+            relation_options.nlists.to_string(),
+            relation_options.recursive_fanout.to_string(),
+            relation_options.training_sample_rows.to_string(),
+            relation_options.seed.to_string(),
+            relation_options.pq_group_size.to_string(),
+            root_control.active_epoch.to_string(),
+        ]);
+
+        let (status, recommendation) =
+            if assignment_payload_format == quantizer::SpireAssignmentPayloadFormat::RaBitQ {
+                (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+            } else {
+                (
+                    SPIRE_REMOTE_STATUS_REQUIRES_RABITQ_STORAGE_FORMAT,
+                    "create or reindex the remote-serving SPIRE index with storage_format = 'rabitq'",
+                )
+            };
+
+        Ok(SpireRemoteSearchEndpointIdentityRow {
+            protocol_version: SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
+            extension_version: env!("CARGO_PKG_VERSION"),
+            opclass_identity,
+            storage_format,
+            assignment_payload_format: assignment_payload_format_name,
+            quantizer_profile,
+            scoring_profile,
+            profile_fingerprint,
+            status,
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, String> {

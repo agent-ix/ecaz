@@ -647,6 +647,20 @@ pub(crate) struct SpireRemoteSearchEndpointContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchEndpointIdentityRow {
+    pub(crate) protocol_version: &'static str,
+    pub(crate) extension_version: &'static str,
+    pub(crate) opclass_identity: String,
+    pub(crate) storage_format: &'static str,
+    pub(crate) assignment_payload_format: &'static str,
+    pub(crate) quantizer_profile: &'static str,
+    pub(crate) scoring_profile: &'static str,
+    pub(crate) profile_fingerprint: String,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchReceivePlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) node_id: u32,

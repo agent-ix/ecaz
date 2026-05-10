@@ -9658,6 +9658,44 @@ fn ec_spire_remote_search_endpoint_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_endpoint_identity(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(protocol_version, &'static str),
+        name!(extension_version, &'static str),
+        name!(opclass_identity, String),
+        name!(storage_format, &'static str),
+        name!(assignment_payload_format, &'static str),
+        name!(quantizer_profile, &'static str),
+        name!(scoring_profile, &'static str),
+        name!(profile_fingerprint, String),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_endpoint_identity") };
+    let row = unsafe { am::spire_remote_search_endpoint_identity_row(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        row.protocol_version,
+        row.extension_version,
+        row.opclass_identity,
+        row.storage_format,
+        row.assignment_payload_format,
+        row.quantizer_profile,
+        row.scoring_profile,
+        row.profile_fingerprint,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_result_contract() -> TableIterator<
     'static,
     (
@@ -20376,6 +20414,93 @@ mod tests {
         assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
         assert_eq!(fingerprint_status, "requires_fingerprint_binding");
         assert_eq!(non_ready_endpoint_rows, 3);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_endpoint_identity() {
+        Spi::run(
+            "CREATE TABLE ec_spire_endpoint_identity_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_endpoint_identity_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_endpoint_identity_default_idx \
+             ON ec_spire_endpoint_identity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("default ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_endpoint_identity_rabitq_idx \
+             ON ec_spire_endpoint_identity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 2, storage_format = 'rabitq')",
+        )
+        .expect("rabitq ec_spire index creation should succeed");
+
+        let default_from =
+            "FROM ec_spire_remote_search_endpoint_identity('ec_spire_endpoint_identity_default_idx'::regclass)";
+        let rabitq_from =
+            "FROM ec_spire_remote_search_endpoint_identity('ec_spire_endpoint_identity_rabitq_idx'::regclass)";
+        let default_status = Spi::get_one::<String>(&format!("SELECT status {default_from}"))
+            .expect("default identity status query should succeed")
+            .expect("default identity status should exist");
+        let default_assignment_payload =
+            Spi::get_one::<String>(&format!("SELECT assignment_payload_format {default_from}"))
+                .expect("default identity payload query should succeed")
+                .expect("default identity payload should exist");
+        let rabitq_status = Spi::get_one::<String>(&format!("SELECT status {rabitq_from}"))
+            .expect("rabitq identity status query should succeed")
+            .expect("rabitq identity status should exist");
+        let protocol_version =
+            Spi::get_one::<String>(&format!("SELECT protocol_version {rabitq_from}"))
+                .expect("rabitq identity protocol query should succeed")
+                .expect("rabitq identity protocol should exist");
+        let extension_version =
+            Spi::get_one::<String>(&format!("SELECT extension_version {rabitq_from}"))
+                .expect("rabitq identity extension query should succeed")
+                .expect("rabitq identity extension should exist");
+        let opclass_identity =
+            Spi::get_one::<String>(&format!("SELECT opclass_identity {rabitq_from}"))
+                .expect("rabitq identity opclass query should succeed")
+                .expect("rabitq identity opclass should exist");
+        let storage_format =
+            Spi::get_one::<String>(&format!("SELECT storage_format {rabitq_from}"))
+                .expect("rabitq identity storage query should succeed")
+                .expect("rabitq identity storage should exist");
+        let assignment_payload =
+            Spi::get_one::<String>(&format!("SELECT assignment_payload_format {rabitq_from}"))
+                .expect("rabitq identity payload query should succeed")
+                .expect("rabitq identity payload should exist");
+        let quantizer_profile =
+            Spi::get_one::<String>(&format!("SELECT quantizer_profile {rabitq_from}"))
+                .expect("rabitq identity profile query should succeed")
+                .expect("rabitq identity profile should exist");
+        let scoring_profile =
+            Spi::get_one::<String>(&format!("SELECT scoring_profile {rabitq_from}"))
+                .expect("rabitq identity scoring query should succeed")
+                .expect("rabitq identity scoring should exist");
+        let fingerprint_length =
+            Spi::get_one::<i32>(&format!("SELECT length(profile_fingerprint) {rabitq_from}"))
+                .expect("rabitq identity fingerprint query should succeed")
+                .expect("rabitq identity fingerprint should exist");
+
+        assert_eq!(default_status, "requires_rabitq_storage_format");
+        assert_eq!(default_assignment_payload, "turboquant");
+        assert_eq!(rabitq_status, "ready");
+        assert_eq!(protocol_version, "ec_spire_remote_search_v1");
+        assert_eq!(extension_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(opclass_identity, "ecvector_spire_ip_ops");
+        assert_eq!(storage_format, "rabitq");
+        assert_eq!(assignment_payload, "rabitq");
+        assert_eq!(quantizer_profile, "rabitq_v1");
+        assert_eq!(scoring_profile, "inner_product_score_v1");
+        assert_eq!(fingerprint_length, 16);
     }
 
     #[pg_test]
