@@ -35,6 +35,7 @@ const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
+const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS: i32 = 3_600_000;
 
@@ -51,6 +52,10 @@ static EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC: GucSetting<i32> =
 static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
 static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
+static EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
+static EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_PER_NODE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
 static EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
@@ -715,6 +720,26 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_max_concurrent_dispatches",
+        c"Session cap for concurrent ec_spire remote-search libpq dispatches.",
+        c"Maximum concurrent remote-search libpq dispatches admitted across PostgreSQL backends on the coordinator; 0 disables this cap.",
+        &EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_max_concurrent_dispatches_per_node",
+        c"Session cap for concurrent ec_spire remote-search libpq dispatches per remote node.",
+        c"Maximum concurrent remote-search libpq dispatches admitted for one remote node across PostgreSQL backends on the coordinator; 0 disables this cap.",
+        &EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_PER_NODE_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
         c"ec_spire.remote_search_connect_timeout_ms",
         c"Session connect-timeout budget for ec_spire remote-search libpq work.",
         c"Connect timeout in milliseconds for production remote-search libpq execution; 0 leaves the conninfo/provider default unchanged.",
@@ -766,6 +791,14 @@ pub(super) fn current_session_remote_search_max_pids() -> i32 {
 
 pub(super) fn current_session_remote_search_max_pids_per_node() -> i32 {
     EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_max_concurrent_dispatches() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_max_concurrent_dispatches_per_node() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_MAX_CONCURRENT_DISPATCHES_PER_NODE_GUC.get()
 }
 
 pub(super) fn current_session_remote_search_connect_timeout_ms() -> i32 {

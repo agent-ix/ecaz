@@ -158,6 +158,7 @@ pub(crate) use self::ec_spire::{
     debug_spire_rewrite_consistency_mode, debug_spire_rewrite_placement_node,
     debug_spire_rewrite_placement_state, debug_spire_root_control,
     debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
+    remote_search_libpq_global_governance_advisory_key_for_test,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

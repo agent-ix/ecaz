@@ -54,6 +54,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR: &str = "remote_node_descriptor";
 const SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW: &str = "remote_epoch_window";
 const SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION: &str = "remote_extension_version";
 const SPIRE_REMOTE_EXECUTOR_STEP_BUDGET: &str = "remote_executor_budget";
+const SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE: &str = "remote_executor_governance";
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
@@ -89,6 +90,8 @@ struct SpireRemoteSearchLibpqExecutorBudgetLimits {
     max_nodes: u64,
     max_pids: u64,
     max_pids_per_node: u64,
+    max_concurrent_dispatches: u64,
+    max_concurrent_dispatches_per_node: u64,
     connect_timeout_ms: u64,
     statement_timeout_ms: u64,
 }
@@ -100,6 +103,12 @@ impl SpireRemoteSearchLibpqExecutorBudgetLimits {
             max_pids: session_limit_to_u64(options::current_session_remote_search_max_pids()),
             max_pids_per_node: session_limit_to_u64(
                 options::current_session_remote_search_max_pids_per_node(),
+            ),
+            max_concurrent_dispatches: session_limit_to_u64(
+                options::current_session_remote_search_max_concurrent_dispatches(),
+            ),
+            max_concurrent_dispatches_per_node: session_limit_to_u64(
+                options::current_session_remote_search_max_concurrent_dispatches_per_node(),
             ),
             connect_timeout_ms: session_limit_to_u64(
                 options::current_session_remote_search_connect_timeout_ms(),
@@ -120,6 +129,14 @@ impl SpireRemoteSearchLibpqExecutorBudgetLimits {
 
     fn has_pid_per_node_cap(self) -> bool {
         self.max_pids_per_node > 0
+    }
+
+    fn has_concurrent_dispatch_cap(self) -> bool {
+        self.max_concurrent_dispatches > 0
+    }
+
+    fn has_concurrent_dispatch_per_node_cap(self) -> bool {
+        self.max_concurrent_dispatches_per_node > 0
     }
 }
 
@@ -2157,6 +2174,8 @@ fn remote_search_libpq_executor_budget_summary_from_dispatch_rows(
         max_nodes: limits.max_nodes,
         max_pids: limits.max_pids,
         max_pids_per_node: limits.max_pids_per_node,
+        max_concurrent_dispatches: limits.max_concurrent_dispatches,
+        max_concurrent_dispatches_per_node: limits.max_concurrent_dispatches_per_node,
         connect_timeout_ms: limits.connect_timeout_ms,
         statement_timeout_ms: limits.statement_timeout_ms,
         next_executor_step,
@@ -3350,6 +3369,138 @@ pub(crate) fn remote_search_libpq_connect_with_session_timeouts(
     Ok(client)
 }
 
+const SPIRE_REMOTE_SEARCH_LIBPQ_GLOBAL_LOCK_CLASS_BASE: i32 = 730_000_000;
+const SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE: i32 = 731_000_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireRemoteSearchLibpqGovernanceLockKey {
+    class_id: i32,
+    object_id: i32,
+}
+
+#[derive(Debug, Default)]
+struct SpireRemoteSearchLibpqGovernancePermit {
+    locks: Vec<SpireRemoteSearchLibpqGovernanceLockKey>,
+}
+
+impl Drop for SpireRemoteSearchLibpqGovernancePermit {
+    fn drop(&mut self) {
+        for key in self.locks.iter().rev() {
+            let _ = remote_search_libpq_advisory_unlock(*key);
+        }
+    }
+}
+
+fn remote_search_libpq_governance_lock_key(
+    class_base: i32,
+    object_id: i32,
+    slot: u64,
+) -> Result<SpireRemoteSearchLibpqGovernanceLockKey, String> {
+    let slot = i32::try_from(slot)
+        .map_err(|_| "ec_spire remote search executor governance slot exceeds i32".to_owned())?;
+    let class_id = class_base.checked_add(slot).ok_or_else(|| {
+        "ec_spire remote search executor governance advisory lock class overflow".to_owned()
+    })?;
+    Ok(SpireRemoteSearchLibpqGovernanceLockKey {
+        class_id,
+        object_id,
+    })
+}
+
+fn remote_search_libpq_advisory_lock_result(
+    function_name: &str,
+    key: SpireRemoteSearchLibpqGovernanceLockKey,
+) -> Result<bool, String> {
+    Spi::get_one::<bool>(&format!(
+        "SELECT {function_name}({}, {})",
+        key.class_id, key.object_id
+    ))
+    .map_err(|e| {
+        format!("ec_spire remote search executor governance advisory lock query failed: {e}")
+    })?
+    .ok_or_else(|| {
+        "ec_spire remote search executor governance advisory lock returned null".to_owned()
+    })
+}
+
+fn remote_search_libpq_try_advisory_lock(
+    key: SpireRemoteSearchLibpqGovernanceLockKey,
+) -> Result<bool, String> {
+    remote_search_libpq_advisory_lock_result("pg_try_advisory_lock", key)
+}
+
+fn remote_search_libpq_advisory_unlock(
+    key: SpireRemoteSearchLibpqGovernanceLockKey,
+) -> Result<bool, String> {
+    remote_search_libpq_advisory_lock_result("pg_advisory_unlock", key)
+}
+
+fn remote_search_libpq_try_governance_slot(
+    class_base: i32,
+    object_id: i32,
+    slot_count: u64,
+) -> Result<Option<SpireRemoteSearchLibpqGovernanceLockKey>, String> {
+    for slot in 0..slot_count {
+        let key = remote_search_libpq_governance_lock_key(class_base, object_id, slot)?;
+        if remote_search_libpq_try_advisory_lock(key)? {
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
+}
+
+fn remote_search_libpq_executor_governance_permit(
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+) -> Result<SpireRemoteSearchLibpqGovernancePermit, String> {
+    let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+    let mut permit = SpireRemoteSearchLibpqGovernancePermit::default();
+
+    if limits.has_concurrent_dispatch_cap() {
+        let key = remote_search_libpq_try_governance_slot(
+            SPIRE_REMOTE_SEARCH_LIBPQ_GLOBAL_LOCK_CLASS_BASE,
+            0,
+            limits.max_concurrent_dispatches,
+        )?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote search executor remote_executor_overload global concurrency cap {} is saturated",
+                limits.max_concurrent_dispatches
+            )
+        })?;
+        permit.locks.push(key);
+    }
+
+    if limits.has_concurrent_dispatch_per_node_cap() {
+        let key = remote_search_libpq_try_governance_slot(
+            SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE,
+            i32::from_ne_bytes(row.node_id.to_ne_bytes()),
+            limits.max_concurrent_dispatches_per_node,
+        )?
+        .ok_or_else(|| {
+            format!(
+                "ec_spire remote search executor remote_executor_overload per-node concurrency cap {} is saturated for node_id {}",
+                limits.max_concurrent_dispatches_per_node, row.node_id
+            )
+        })?;
+        permit.locks.push(key);
+    }
+
+    Ok(permit)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_libpq_global_governance_advisory_key_for_test(
+    slot: u64,
+) -> (i32, i32) {
+    let key = remote_search_libpq_governance_lock_key(
+        SPIRE_REMOTE_SEARCH_LIBPQ_GLOBAL_LOCK_CLASS_BASE,
+        0,
+        slot,
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    (key.class_id, key.object_id)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SpireRemoteEndpointIdentityCacheKey {
     coordinator_index_oid: u32,
@@ -3667,6 +3818,7 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
         ));
     }
 
+    let _governance_permit = remote_search_libpq_executor_governance_permit(row)?;
     let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
         format!(
             "ec_spire remote search libpq executor conninfo secret for node_id {} is not resolved: {status}",
@@ -3791,6 +3943,8 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("endpoint identity")
     {
         SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH.to_owned()
+    } else if error.contains(SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD) {
+        SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD.to_owned()
     } else if error.contains("conninfo secret") {
         SPIRE_REMOTE_STATUS_REQUIRES_SECRET.to_owned()
     } else if error.contains("failed to open connection") {
@@ -3822,6 +3976,8 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
         "remote_endpoint_identity".to_owned()
     } else if error.contains("served epoch") {
         "served_epoch".to_owned()
+    } else if error.contains(SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD) {
+        SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE.to_owned()
     } else if error.contains("conninfo secret") {
         "conninfo_secret_resolution".to_owned()
     } else if error.contains("failed to open connection") {
@@ -4144,6 +4300,7 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
         ));
     }
 
+    let _governance_permit = remote_search_libpq_executor_governance_permit(row)?;
     let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
         format!(
             "ec_spire remote heap executor conninfo secret for node_id {} is not resolved: {status}",

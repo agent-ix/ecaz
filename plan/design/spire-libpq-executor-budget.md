@@ -15,6 +15,8 @@ The first Stage C budget surface is session-scoped:
 - `ec_spire.remote_search_max_nodes`
 - `ec_spire.remote_search_max_pids`
 - `ec_spire.remote_search_max_pids_per_node`
+- `ec_spire.remote_search_max_concurrent_dispatches`
+- `ec_spire.remote_search_max_concurrent_dispatches_per_node`
 - `ec_spire.remote_search_connect_timeout_ms`
 - `ec_spire.remote_search_statement_timeout_ms`
 
@@ -31,6 +33,14 @@ route-budget choice for that node. Partial truncation would create a second,
 less visible route budget that could silently change recall. Operators should
 reduce upstream fanout or raise the explicit budget instead.
 
+The first cross-query governance surface uses nonblocking PostgreSQL advisory
+locks around actual libpq remote work. `remote_search_max_concurrent_dispatches`
+limits concurrent remote-search libpq dispatches across coordinator backends.
+`remote_search_max_concurrent_dispatches_per_node` limits concurrent dispatches
+for one remote node. `0` means unlimited for both settings. Saturated
+governance slots report `remote_executor_overload` with
+`remote_executor_governance`, before conninfo secret lookup or socket open.
+
 ## Required Invariants
 
 - Over-budget rows must use `dispatch_action = blocked_before_dispatch`.
@@ -39,6 +49,9 @@ reduce upstream fanout or raise the explicit budget instead.
   lookup key, open a socket, or query endpoint identity.
 - Budget diagnostics must report admitted and budget-blocked dispatch/PID
   counts plus the active caps.
+- Runtime governance must use nonblocking admission, must release any acquired
+  advisory locks when the dispatch returns or errors, and must not hold a global
+  slot if a per-node slot cannot be acquired.
 - Timeout settings must remain numeric diagnostics and must not expose raw
   conninfo.
 
@@ -50,15 +63,12 @@ after connection open with a bounded numeric `SET statement_timeout = ...`
 statement when nonzero.
 
 The current diagnostic executor still uses blocking `postgres::Client` calls.
-This budget contract does not claim production concurrency by itself; it
-removes the unbounded fanout and timeout gaps that would otherwise be baked
-into the next async/pipeline executor slice.
+This budget contract does not claim async execution by itself; it removes the
+unbounded fanout, cross-backend overload, and timeout gaps that would otherwise
+be baked into the next async/pipeline executor slice.
 
 ## Remaining Work
 
-- Add global cross-query coordinator work limits.
-- Add per-remote-node concurrency caps shared across active coordinator
-  queries.
 - Propagate PostgreSQL cancellation into in-flight remote work.
 - Replace serial diagnostic dispatch with production async or libpq pipeline
   execution.

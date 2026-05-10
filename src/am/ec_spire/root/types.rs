@@ -650,6 +650,8 @@ pub(crate) struct SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
     pub(crate) max_nodes: u64,
     pub(crate) max_pids: u64,
     pub(crate) max_pids_per_node: u64,
+    pub(crate) max_concurrent_dispatches: u64,
+    pub(crate) max_concurrent_dispatches_per_node: u64,
     pub(crate) connect_timeout_ms: u64,
     pub(crate) statement_timeout_ms: u64,
     pub(crate) next_executor_step: &'static str,

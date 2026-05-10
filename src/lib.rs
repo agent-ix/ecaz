@@ -9665,6 +9665,8 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
         name!(max_nodes, i64),
         name!(max_pids, i64),
         name!(max_pids_per_node, i64),
+        name!(max_concurrent_dispatches, i64),
+        name!(max_concurrent_dispatches_per_node, i64),
         name!(connect_timeout_ms, i64),
         name!(statement_timeout_ms, i64),
         name!(next_executor_step, &'static str),
@@ -9728,6 +9730,10 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
         i64::try_from(row.max_nodes).expect("max nodes should fit in i64"),
         i64::try_from(row.max_pids).expect("max pids should fit in i64"),
         i64::try_from(row.max_pids_per_node).expect("max pids per node should fit in i64"),
+        i64::try_from(row.max_concurrent_dispatches)
+            .expect("max concurrent dispatches should fit in i64"),
+        i64::try_from(row.max_concurrent_dispatches_per_node)
+            .expect("max concurrent dispatches per node should fit in i64"),
         i64::try_from(row.connect_timeout_ms).expect("connect timeout should fit in i64"),
         i64::try_from(row.statement_timeout_ms).expect("statement timeout should fit in i64"),
         row.next_executor_step,
@@ -23063,6 +23069,10 @@ mod tests {
     fn test_ec_spire_libpq_executor_budget_limits() {
         Spi::run("SET LOCAL ec_spire.remote_search_max_nodes = 1")
             .expect("max node budget SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 3")
+            .expect("max concurrent dispatch budget SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 2")
+            .expect("max concurrent dispatch per-node budget SET should succeed");
         Spi::run("SET LOCAL ec_spire.remote_search_connect_timeout_ms = 25")
             .expect("connect timeout SET should succeed");
         Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 75")
@@ -23140,6 +23150,15 @@ mod tests {
         let max_nodes = Spi::get_one::<i64>(&format!("SELECT max_nodes {budget_from}"))
             .expect("budget max node query should succeed")
             .expect("budget max node should exist");
+        let max_concurrent_dispatches =
+            Spi::get_one::<i64>(&format!("SELECT max_concurrent_dispatches {budget_from}"))
+                .expect("budget max concurrent dispatches query should succeed")
+                .expect("budget max concurrent dispatches should exist");
+        let max_concurrent_dispatches_per_node = Spi::get_one::<i64>(&format!(
+            "SELECT max_concurrent_dispatches_per_node {budget_from}"
+        ))
+        .expect("budget max concurrent dispatches per node query should succeed")
+        .expect("budget max concurrent dispatches per node should exist");
         let connect_timeout_ms =
             Spi::get_one::<i64>(&format!("SELECT connect_timeout_ms {budget_from}"))
                 .expect("connect timeout query should succeed")
@@ -23163,8 +23182,103 @@ mod tests {
         assert_eq!(admitted_dispatch_count, 0);
         assert_eq!(budget_blocked_dispatch_count, 0);
         assert_eq!(max_nodes, 1);
+        assert_eq!(max_concurrent_dispatches, 3);
+        assert_eq!(max_concurrent_dispatches_per_node, 2);
         assert_eq!(connect_timeout_ms, 25);
         assert_eq!(statement_timeout_ms, 75);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_libpq_executor_global_governance_overload() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("max concurrent dispatch budget SET should succeed");
+        let (class_id, object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut lock_holder = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback lock-holder connection should succeed");
+        lock_holder
+            .batch_execute(&format!("SELECT pg_advisory_lock({class_id}, {object_id})"))
+            .expect("global governance advisory lock should be held by separate backend");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_libpq_governance_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_libpq_governance_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_libpq_governance_idx \
+             ON ec_spire_libpq_governance_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_libpq_governance_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_libpq_governance_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_libpq_governance_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 31, 'spire/remote/governance-overload', decode('ff', 'hex'), \
+                     'ec_spire_remote_governance_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        let receive_attempts_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_receive_attempts(\
+                 'ec_spire_libpq_governance_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'degraded')"
+        );
+        let receive_attempt_status =
+            Spi::get_one::<String>(&format!("SELECT status {receive_attempts_from}"))
+                .expect("receive attempt status query should succeed")
+                .expect("receive attempt status should exist");
+        let receive_attempt_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {receive_attempts_from}"))
+                .expect("receive attempt blocker query should succeed")
+                .expect("receive attempt blocker should exist");
+        let receive_attempt_action =
+            Spi::get_one::<String>(&format!("SELECT failure_action {receive_attempts_from}"))
+                .expect("receive attempt action query should succeed")
+                .expect("receive attempt action should exist");
+        let receive_attempt_candidate_count =
+            Spi::get_one::<i64>(&format!("SELECT candidate_count {receive_attempts_from}"))
+                .expect("receive attempt candidate count query should succeed")
+                .expect("receive attempt candidate count should exist");
+
+        assert_eq!(receive_attempt_status, "remote_executor_overload");
+        assert_eq!(receive_attempt_blocker, "remote_executor_governance");
+        assert_eq!(receive_attempt_action, "skip_node");
+        assert_eq!(receive_attempt_candidate_count, 0);
     }
 
     #[pg_test]

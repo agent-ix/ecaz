@@ -379,6 +379,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     diagnostic executor connection helper while keeping raw conninfo hidden.
   - [ ] Add global cross-query coordinator work limits and per-remote-node
     concurrency caps.
+    - [x] First governance surface: session GUCs cap concurrent libpq
+      dispatches globally and per remote node using nonblocking PostgreSQL
+      advisory locks; saturated slots report `remote_executor_overload` with
+      `remote_executor_governance` before secret lookup or socket open.
   - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
