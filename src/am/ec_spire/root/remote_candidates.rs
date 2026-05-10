@@ -60,6 +60,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
 const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
 const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION: &str = "remote_heap_resolution";
+const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION: &str = "remote_row_materialization";
 const SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION: &str = "remote_executor_cancellation";
 const SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY: &str = "remote_consistency_policy";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
@@ -112,6 +113,8 @@ const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
 const SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY: &str = "remote_ready";
 const SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES: &str = "no_candidate_batches";
 const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP: &str = "requires_remote_heap_resolution";
+const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION: &str =
+    "requires_remote_row_materialization";
 const SPIRE_REMOTE_FINAL_STATUS_BLOCKED: &str = "blocked";
 const SPIRE_REMOTE_FINAL_STATUS_PLANNED: &str = "planned";
 const SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES: &str = "local_heap_candidates";
@@ -5201,6 +5204,83 @@ fn production_scan_outputs_from_heap_candidates(
         .collect()
 }
 
+fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOutputRow) -> bool {
+    output.node_id == meta::SPIRE_LOCAL_NODE_ID
+        && output.heap_lookup_owner == SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+}
+
+fn production_scan_am_delivery_summary(
+    summary: &SpireRemoteProductionScanHeapResolutionSummaryRow,
+    outputs: &[SpireRemoteProductionScanOutputRow],
+) -> Result<SpireRemoteProductionScanAmDeliverySummaryRow, String> {
+    let output_count = u64::try_from(outputs.len())
+        .map_err(|_| "ec_spire production scan output count exceeds u64")?;
+    let local_heap_tid_output_count = u64::try_from(
+        outputs
+            .iter()
+            .filter(|output| production_scan_output_is_local_heap_tid(output))
+            .count(),
+    )
+    .map_err(|_| "ec_spire production scan local output count exceeds u64")?;
+    let remote_origin_output_count = output_count
+        .checked_sub(local_heap_tid_output_count)
+        .ok_or_else(|| "ec_spire production scan output count underflow".to_owned())?;
+
+    let (am_deliverable_output_count, status, next_blocker, recommendation) =
+        if summary.next_blocker != SPIRE_REMOTE_NONE {
+            (
+                0,
+                summary.status,
+                summary.next_blocker,
+                summary.recommendation,
+            )
+        } else if remote_origin_output_count > 0 {
+            (
+                0,
+                SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+                "materialize remote-origin rows into coordinator-visible tuples before amgettuple delivery",
+            )
+        } else if local_heap_tid_output_count > 0 {
+            (
+                local_heap_tid_output_count,
+                SPIRE_REMOTE_STATUS_READY,
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+            )
+        } else {
+            (
+                0,
+                summary.status,
+                summary.next_blocker,
+                summary.recommendation,
+            )
+        };
+
+    Ok(SpireRemoteProductionScanAmDeliverySummaryRow {
+        requested_epoch: summary.requested_epoch,
+        output_count,
+        local_heap_tid_output_count,
+        remote_origin_output_count,
+        am_deliverable_output_count,
+        status,
+        next_blocker,
+        recommendation,
+    })
+}
+
+fn production_scan_result_stream(
+    summary: SpireRemoteProductionScanHeapResolutionSummaryRow,
+    outputs: Vec<SpireRemoteProductionScanOutputRow>,
+) -> Result<SpireRemoteProductionScanResultStream, String> {
+    let am_delivery = production_scan_am_delivery_summary(&summary, &outputs)?;
+    Ok(SpireRemoteProductionScanResultStream {
+        summary,
+        am_delivery,
+        outputs,
+    })
+}
+
 pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream(
     index_relation: pg_sys::Relation,
     query: Vec<f32>,
@@ -5211,8 +5291,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         if root_control.active_epoch == 0 {
-            return Ok(SpireRemoteProductionScanResultStream {
-                summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+            return production_scan_result_stream(
+                SpireRemoteProductionScanHeapResolutionSummaryRow {
                     requested_epoch: 0,
                     consistency_mode_source: "ec_spire.remote_search_consistency_mode",
                     consistency_mode,
@@ -5234,8 +5314,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
                     status: "empty_index",
                     recommendation: "publish an active SPIRE epoch before production scan heap resolution",
                 },
-                outputs: Vec::new(),
-            });
+                Vec::new(),
+            );
         }
 
         let (epoch_manifest, object_manifest, placement_directory) = unsafe {
@@ -5278,8 +5358,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
         };
 
         if top_k == 0 {
-            return Ok(SpireRemoteProductionScanResultStream {
-                summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+            return production_scan_result_stream(
+                SpireRemoteProductionScanHeapResolutionSummaryRow {
                     requested_epoch: root_control.active_epoch,
                     consistency_mode_source: "ec_spire.remote_search_consistency_mode",
                     consistency_mode,
@@ -5301,8 +5381,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
                     status: SPIRE_REMOTE_STATUS_EMPTY_TOP_K,
                     recommendation: SPIRE_REMOTE_NONE,
                 },
-                outputs: Vec::new(),
-            });
+                Vec::new(),
+            );
         }
 
         let local_heap_rows = if execution_summary.local_pid_count > 0 {
@@ -5422,8 +5502,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
             )
         };
 
-        Ok(SpireRemoteProductionScanResultStream {
-            summary: SpireRemoteProductionScanHeapResolutionSummaryRow {
+        production_scan_result_stream(
+            SpireRemoteProductionScanHeapResolutionSummaryRow {
                 requested_epoch: root_control.active_epoch,
                 consistency_mode_source: "ec_spire.remote_search_consistency_mode",
                 consistency_mode,
@@ -5445,8 +5525,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
                 status,
                 recommendation,
             },
-            outputs: production_scan_outputs_from_heap_candidates(&merged),
-        })
+            production_scan_outputs_from_heap_candidates(&merged),
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }

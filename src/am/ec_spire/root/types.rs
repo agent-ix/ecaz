@@ -768,9 +768,25 @@ pub(crate) struct SpireRemoteProductionScanOutputRow {
     pub(crate) row_locator: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionScanAmDeliverySummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) output_count: u64,
+    pub(crate) local_heap_tid_output_count: u64,
+    pub(crate) remote_origin_output_count: u64,
+    pub(crate) am_deliverable_output_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) next_blocker: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+/// Ordered production scan stream consumed by SQL summaries and AM scan state.
+/// Keep outputs as one merged stream; per-row delivery metadata decides whether
+/// an output can become a local heap TID or needs remote row materialization.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SpireRemoteProductionScanResultStream {
     pub(crate) summary: SpireRemoteProductionScanHeapResolutionSummaryRow,
+    pub(crate) am_delivery: SpireRemoteProductionScanAmDeliverySummaryRow,
     pub(crate) outputs: Vec<SpireRemoteProductionScanOutputRow>,
 }
 

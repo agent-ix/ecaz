@@ -345,6 +345,14 @@ the same summary plus ordered heap-resolved output rows with node, heap
 coordinate, score, vec-id, row-locator, and heap-lookup owner, so the next AM
 slice can cursor over Rust state directly.
 
+Packet `30757` adds the AM-delivery classification for that stream. Outputs
+whose `node_id` is the local coordinator node and whose heap owner is
+`coordinator_local_heap` may become `xs_heaptid` outputs. Any remote-origin
+output blocks AM tuple delivery with `requires_remote_row_materialization`.
+This prevents a PostgreSQL index scan from treating an origin-node heap
+coordinate as a local heap TID. The remaining Stage D work is the materialized
+remote row contract and the actual scan-opaque cursor integration.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

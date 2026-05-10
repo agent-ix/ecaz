@@ -685,6 +685,14 @@ Goal: make the coordinator-visible result stream production-correct.
   cursor slice.
 - [ ] Move the heap-resolved stream from the summary/proof surface into
   `amrescan` / `amgettuple` final tuple delivery.
+  - [x] Packet `30757` classifies stream outputs into local coordinator heap
+    TIDs that are safe for `xs_heaptid` and remote-origin outputs that must
+    block on `remote_row_materialization`; it explicitly prevents treating
+    remote origin heap coordinates as local heap TIDs.
+  - [ ] Define and implement the remote row materialization contract required
+    before remote-origin outputs can be returned by a PostgreSQL index scan.
+  - [ ] Cursor AM-deliverable outputs from scan opaque state in
+    `amrescan` / `amgettuple`.
 - [ ] Verification: tests for dead/missing remote rows, stale locators,
   duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
   dedupe.

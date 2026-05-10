@@ -108,6 +108,33 @@ mod tests {
         }
     }
 
+    fn ready_production_scan_heap_summary(
+        returned_candidate_count: u64,
+    ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
+        SpireRemoteProductionScanHeapResolutionSummaryRow {
+            requested_epoch: 7,
+            consistency_mode_source: "test",
+            consistency_mode: "strict",
+            effective_nprobe: 1,
+            selected_pid_count: 1,
+            local_pid_count: 1,
+            remote_pid_count: 0,
+            skipped_pid_count: 0,
+            dispatch_count: 0,
+            compact_candidate_count: 0,
+            remote_heap_ready_dispatch_count: 0,
+            remote_heap_failed_dispatch_count: 0,
+            remote_heap_candidate_count: 0,
+            local_heap_candidate_count: returned_candidate_count,
+            returned_candidate_count,
+            result_source: SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES,
+            final_heap_fetch_status: SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY,
+            next_blocker: SPIRE_REMOTE_NONE,
+            status: SPIRE_REMOTE_STATUS_READY,
+            recommendation: SPIRE_REMOTE_NONE,
+        }
+    }
+
     fn fanout_placement(
         pid: u64,
         node_id: u32,
@@ -509,6 +536,100 @@ mod tests {
         assert_eq!(outputs[1].heap_lookup_owner, SPIRE_REMOTE_HEAP_RESOLUTION);
         assert_eq!(outputs[1].vec_id, remote_vec);
         assert_eq!(outputs[1].row_locator, remote.row_locator);
+    }
+
+    #[test]
+    fn production_scan_am_delivery_allows_only_local_heap_tid_outputs() {
+        let local = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            remote_local_vec_id(7),
+            0.4,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[local]);
+        let summary = ready_production_scan_heap_summary(1);
+
+        let delivery = production_scan_am_delivery_summary(&summary, &outputs)
+            .expect("local heap outputs should classify");
+
+        assert_eq!(delivery.output_count, 1);
+        assert_eq!(delivery.local_heap_tid_output_count, 1);
+        assert_eq!(delivery.remote_origin_output_count, 0);
+        assert_eq!(delivery.am_deliverable_output_count, 1);
+        assert_eq!(delivery.status, SPIRE_REMOTE_STATUS_READY);
+        assert_eq!(delivery.next_blocker, SPIRE_REMOTE_NONE);
+    }
+
+    #[test]
+    fn production_scan_am_delivery_blocks_mixed_remote_origin_outputs() {
+        let local = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            remote_local_vec_id(7),
+            0.4,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let remote = remote_heap_candidate(
+            3,
+            20,
+            1,
+            remote_global_vec_id(b"remote-stream"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[remote, local]);
+        let summary = ready_production_scan_heap_summary(2);
+
+        let delivery = production_scan_am_delivery_summary(&summary, &outputs)
+            .expect("mixed outputs should classify");
+
+        assert_eq!(delivery.output_count, 2);
+        assert_eq!(delivery.local_heap_tid_output_count, 1);
+        assert_eq!(delivery.remote_origin_output_count, 1);
+        assert_eq!(delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            delivery.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+        assert_eq!(
+            delivery.next_blocker,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+        );
+    }
+
+    #[test]
+    fn production_scan_am_delivery_preserves_upstream_blocker() {
+        let local = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            remote_local_vec_id(7),
+            0.4,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[local]);
+        let mut summary = ready_production_scan_heap_summary(1);
+        summary.status = SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED;
+        summary.next_blocker = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
+        summary.recommendation = "inspect heap failure";
+
+        let delivery = production_scan_am_delivery_summary(&summary, &outputs)
+            .expect("blocked outputs should classify");
+
+        assert_eq!(delivery.local_heap_tid_output_count, 1);
+        assert_eq!(delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            delivery.status,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
+        );
+        assert_eq!(
+            delivery.next_blocker,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION
+        );
+        assert_eq!(delivery.recommendation, "inspect heap failure");
     }
 
     #[test]
