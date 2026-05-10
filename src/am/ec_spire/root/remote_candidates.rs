@@ -36,6 +36,7 @@ const SPIRE_REMOTE_STATUS_STALE_EPOCH: &str = "stale_epoch";
 const SPIRE_REMOTE_STATUS_RETENTION_GAP: &str = "retention_gap";
 const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
     "incompatible_extension_version";
+const SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH: &str = "consistency_mode_mismatch";
 const SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH: &str = "endpoint_identity_mismatch";
 const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
@@ -60,6 +61,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transp
 const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
 const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION: &str = "remote_heap_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION: &str = "remote_executor_cancellation";
+const SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY: &str = "remote_consistency_policy";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
@@ -83,6 +85,7 @@ const SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED: &str = "candidate_decode_
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
     "candidate_batch_validation_failed";
 const SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH: &str = "served_epoch_mismatch";
+const SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH: &str = "requested_epoch_mismatch";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_invalid_parameters";
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
@@ -3671,6 +3674,89 @@ fn remote_search_production_compact_merge_from_candidate_receive_results_with_co
         consistency_mode,
     )?;
     executor.merge_ready_candidate_batches(limit)
+}
+
+pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    consistency_mode_source: &'static str,
+    consistency_mode: &str,
+) -> SpireRemoteProductionConsistencyPolicySummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionConsistencyPolicySummaryRow, String> {
+        if requested_epoch == 0 {
+            return Err(
+                "ec_spire remote search production consistency policy requested_epoch must be greater than 0"
+                    .to_owned(),
+            );
+        }
+        let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let (epoch_manifest, _, _) =
+            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };
+        let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);
+
+        let (
+            status,
+            failure_category,
+            failure_action,
+            recommendation,
+        ) = if root_control.active_epoch != requested_epoch {
+            (
+                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                "fail_closed",
+                "request the active epoch before planning production remote fanout",
+            )
+        } else if active_consistency_mode != requested_consistency_mode {
+            (
+                SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+                SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+                "fail_closed",
+                "publish a degraded-capable epoch or run the query with the active epoch policy",
+            )
+        } else {
+            (
+                SPIRE_REMOTE_STATUS_READY,
+                SPIRE_REMOTE_NONE,
+                SPIRE_REMOTE_NONE,
+                "consistency policy is ready for production dispatch planning",
+            )
+        };
+
+        Ok(SpireRemoteProductionConsistencyPolicySummaryRow {
+            requested_epoch,
+            active_epoch: root_control.active_epoch,
+            consistency_mode_source,
+            requested_consistency_mode,
+            active_consistency_mode,
+            status,
+            failure_category,
+            failure_action,
+            next_executor_step: if status == SPIRE_REMOTE_STATUS_READY {
+                SPIRE_REMOTE_EXECUTOR_STEP_BUDGET
+            } else {
+                SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY
+            },
+            recommendation,
+        })
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_session_consistency_policy_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+) -> SpireRemoteProductionConsistencyPolicySummaryRow {
+    let consistency_mode = options::current_session_remote_search_consistency_mode_name();
+    unsafe {
+        remote_search_production_consistency_policy_summary_row(
+            index_relation,
+            requested_epoch,
+            "ec_spire.remote_search_consistency_mode",
+            consistency_mode,
+        )
+    }
 }
 
 pub(crate) unsafe fn remote_search_production_executor_state_summary_row(

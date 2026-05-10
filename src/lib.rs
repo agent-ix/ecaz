@@ -9744,6 +9744,121 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_policy_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(active_epoch, i64),
+        name!(consistency_mode_source, &'static str),
+        name!(requested_consistency_mode, &'static str),
+        name!(active_consistency_mode, &'static str),
+        name!(status, &'static str),
+        name!(failure_category, &'static str),
+        name!(failure_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_policy_summary requested_epoch must be greater than 0"
+        );
+    }
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_production_policy_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_production_consistency_policy_summary_row(
+            index_relation,
+            requested_epoch,
+            "function_argument",
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        row.consistency_mode_source,
+        row.requested_consistency_mode,
+        row.active_consistency_mode,
+        row.status,
+        row.failure_category,
+        row.failure_action,
+        row.next_executor_step,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_policy_session_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(active_epoch, i64),
+        name!(consistency_mode_source, &'static str),
+        name!(requested_consistency_mode, &'static str),
+        name!(active_consistency_mode, &'static str),
+        name!(status, &'static str),
+        name!(failure_category, &'static str),
+        name!(failure_action, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_policy_session_summary requested_epoch must be greater than 0"
+        );
+    }
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_production_policy_session_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_production_session_consistency_policy_summary_row(
+            index_relation,
+            requested_epoch,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        row.consistency_mode_source,
+        row.requested_consistency_mode,
+        row.active_consistency_mode,
+        row.status,
+        row.failure_category,
+        row.failure_action,
+        row.next_executor_step,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_production_executor_state_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -29076,6 +29191,73 @@ mod tests {
 
         assert_eq!(remaining_count, 0);
         assert!(event_trigger_enabled);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_consistency_policy_summary_mode_mismatch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_prod_consistency_policy_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_prod_consistency_policy_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_prod_consistency_policy_idx \
+             ON ec_spire_prod_consistency_policy_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_prod_consistency_policy_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+
+        Spi::run("SET LOCAL ec_spire.remote_search_consistency_mode = 'degraded'")
+            .expect("session consistency mode SET should succeed");
+        let summary_from = format!(
+            "FROM ec_spire_remote_search_production_policy_session_summary(\
+                 'ec_spire_prod_consistency_policy_idx'::regclass, {active_epoch})"
+        );
+        let status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
+            .expect("policy summary status query should succeed")
+            .expect("policy summary status should exist");
+        let failure_category =
+            Spi::get_one::<String>(&format!("SELECT failure_category {summary_from}"))
+                .expect("policy summary failure category query should succeed")
+                .expect("policy summary failure category should exist");
+        let failure_action =
+            Spi::get_one::<String>(&format!("SELECT failure_action {summary_from}"))
+                .expect("policy summary failure action query should succeed")
+                .expect("policy summary failure action should exist");
+        let consistency_mode_source =
+            Spi::get_one::<String>(&format!("SELECT consistency_mode_source {summary_from}"))
+                .expect("policy summary source query should succeed")
+                .expect("policy summary source should exist");
+        let requested_consistency_mode =
+            Spi::get_one::<String>(&format!("SELECT requested_consistency_mode {summary_from}"))
+                .expect("policy summary requested mode query should succeed")
+                .expect("policy summary requested mode should exist");
+        let active_consistency_mode =
+            Spi::get_one::<String>(&format!("SELECT active_consistency_mode {summary_from}"))
+                .expect("policy summary active mode query should succeed")
+                .expect("policy summary active mode should exist");
+
+        assert_eq!(status, "consistency_mode_mismatch");
+        assert_eq!(failure_category, "consistency_mode_mismatch");
+        assert_eq!(failure_action, "fail_closed");
+        assert_eq!(
+            consistency_mode_source,
+            "ec_spire.remote_search_consistency_mode"
+        );
+        assert_eq!(requested_consistency_mode, "degraded");
+        assert_eq!(active_consistency_mode, "strict");
     }
 
     #[pg_test]

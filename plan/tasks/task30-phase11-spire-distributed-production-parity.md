@@ -192,6 +192,9 @@ Acceptance artifact:
       and `consistency_mode`; the SQL full-state surface remains at its pgrx
       row-width limit, so SQL mode attribution is still exposed through the
       compact session summary.
+    - [x] Active-epoch consistency-policy mismatch is visible as a named
+      `consistency_mode_mismatch` diagnostic category before C5 depends on the
+      dispatch-planning surface.
   - [ ] Add a strict/degraded fault matrix table covering connect, secret,
     statement timeout, backend termination, query cancellation, validation,
     identity, version, stale epoch, and heap-resolution failures.
@@ -282,6 +285,45 @@ This section is the broad quality plan for finishing Phase 11. Each stage must
 land as narrow reviewed packets with packet-local evidence. A later stage cannot
 claim production readiness by relying on a diagnostic-only surface from an
 earlier stage.
+
+### Production Readiness Ladder After Packet 30747
+
+The remaining work should land in this order. The plan is intentionally broad,
+but each item still needs a narrow code checkpoint and a packet-local review
+request before the next item depends on it.
+
+1. **C4/C5 AM-boundary preflight.** Finish the pre-AM consistency and
+   cancellation gate: expose active-epoch consistency-policy mismatch as a
+   named row-returning category, document that the session GUC is the stable
+   contract, and keep future query-level options as statement-local overrides
+   of that GUC rather than replacements.
+2. **C2 backend interrupt bridge.** Connect actual PostgreSQL local cancel and
+   local statement timeout to the production adapter cancel token. Evidence
+   must prove cancelled work releases global and per-node governance slots and
+   that local cancel, local statement timeout, remote statement timeout, remote
+   query cancellation, and remote backend termination stay separate categories.
+3. **C3 production identity-cache handoff.** Move the executor-local endpoint
+   identity cache from diagnostic proof into the production handoff used by
+   compact receive and Stage D remote heap resolution. Evidence must show one
+   validated identity decision can be reused without caching raw conninfo or
+   silently accepting a live fingerprint mismatch.
+4. **C5 candidate-only AM integration.** Wire production compact candidate
+   receive into the coordinator AM scan path behind the readiness gate. Until
+   Stage D lands, the scan may prove ordered compact-candidate merge, but final
+   SQL row readiness must still report `requires_remote_heap_resolution`.
+5. **Stage D remote heap finalization.** Resolve remote heap visibility on the
+   origin node, keep coordinator locators opaque, and produce one
+   coordinator-visible ordered result stream only after local and remote
+   candidates are visibility-correct.
+6. **Stage E local multi-instance matrix.** Build the one-coordinator /
+   two-remote local fixture and run the strict/degraded matrix for epoch,
+   version, fingerprint, connection, backend termination, timeout, cancel,
+   network partition, OOM, and remote index lifecycle faults.
+7. **Stage F/G local readiness bundle.** Add the repeatable multi-store and
+   distributed harness commands, publish numeric local capacity targets, and
+   capture recall, latency, fanout, heap, route, candidate, byte, timeout,
+   cancel, strict-failure, and degraded-skip counters. AWS/RDS-class scale
+   remains blocked until this bundle is reviewed.
 
 ### Stage A: Writer Identity Provider
 

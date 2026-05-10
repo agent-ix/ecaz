@@ -232,14 +232,23 @@ GUC `ec_spire.remote_search_consistency_mode`, an enum with `strict` and
 `ec_spire_remote_search_production_executor_session_summary(...)`, which reads
 that GUC and forwards the resulting single consistency mode into production
 executor state without accepting a per-call free-form consistency string. C5
-must use the same source unless a later reviewed packet replaces it with an
-explicit query option.
+must use the same source. A future query-level option may override the GUC for
+one statement, but it must not replace the GUC contract or create a second
+parallel source inside the executor state.
 
 The production executor state row also carries `consistency_mode_source` and
 `consistency_mode` for C5 Rust-side consumers. The existing SQL full-state
 surface is already at the pgrx row-width ceiling, so SQL mode attribution stays
 on the compact session summary unless a later packet splits the full-state
 surface into smaller views.
+
+Before C5 dispatch planning, callers can ask
+`ec_spire_remote_search_production_policy_summary(...)` or the session-GUC
+variant `ec_spire_remote_search_production_policy_session_summary(...)` whether
+the requested consistency mode matches the active published epoch. A mismatch
+is a publisher-side guarantee violation and remains fail-closed even when the
+session requested degraded mode; the diagnostic category is
+`consistency_mode_mismatch`, not a generic planning error.
 
 Verification:
 

@@ -710,6 +710,20 @@ pub(crate) struct SpireRemoteProductionExecutorSessionSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionConsistencyPolicySummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) active_epoch: u64,
+    pub(crate) consistency_mode_source: &'static str,
+    pub(crate) requested_consistency_mode: &'static str,
+    pub(crate) active_consistency_mode: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) failure_category: &'static str,
+    pub(crate) failure_action: &'static str,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteProductionTransportProbeRow {
     pub(crate) node_id: u32,
     pub(crate) started_after_ms: u64,
