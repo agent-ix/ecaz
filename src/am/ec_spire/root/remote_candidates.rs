@@ -56,11 +56,16 @@ const SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION: &str = "remote_extension_ver
 const SPIRE_REMOTE_EXECUTOR_STEP_BUDGET: &str = "remote_executor_budget";
 const SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE: &str = "remote_executor_governance";
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
+const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
 const SPIRE_REMOTE_CONNINFO_READY: &str = "secret_reference_ready";
 const SPIRE_REMOTE_CONNINFO_RESOLVED: &str = "resolved_conninfo";
+const SPIRE_REMOTE_PRODUCTION_STATE_MODEL: &str = "spire_remote_fanout_executor_v1";
+const SPIRE_REMOTE_PRODUCTION_TRANSPORT_PENDING: &str = "async_or_pipeline_transport_pending";
+const SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT: &str =
+    "requires_production_transport_adapter";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -261,6 +266,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
         },
         SpireRemoteOperatorEntrypointContractRow {
             entrypoint_ordinal: 11,
+            entrypoint_name: "ec_spire_remote_search_production_executor_state_summary",
+            area: "search",
+            operator_use: "production_executor_dry_state",
+            status_source: "state_model,dispatch_count,next_executor_step,status",
+            next_action: "use_dry_state_for_planning_before_async_pipeline_transport_lands",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 12,
             entrypoint_name: "ec_spire_remote_pipeline_steps",
             area: "search",
             operator_use: "consolidated_remote_pipeline_steps_dry",
@@ -268,7 +281,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "inspect_first_non_ready_step_before_live_probe_or_narrow_surfaces",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 12,
+            entrypoint_ordinal: 13,
             entrypoint_name: "ec_spire_remote_pipeline_steps_live",
             area: "search",
             operator_use: "consolidated_remote_pipeline_steps_live_probe",
@@ -276,7 +289,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "run_only_when_connection_and_remote_executor_probe_cost_is_expected",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 13,
+            entrypoint_ordinal: 14,
             entrypoint_name: "ec_spire_remote_search_vector_identity_contract",
             area: "search",
             operator_use: "remote_dedupe_identity_contract",
@@ -284,7 +297,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "require_global_vec_ids_before_cross_node_replica_dedupe",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 14,
+            entrypoint_ordinal: 15,
             entrypoint_name: "ec_spire_remote_search_endpoint_contract",
             area: "search",
             operator_use: "remote_endpoint_contract_gate",
@@ -292,7 +305,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "resolve_non_ready_endpoint_contract_rows_before_production_remote_merge",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 15,
+            entrypoint_ordinal: 16,
             entrypoint_name: "ec_spire_remote_search_endpoint_identity",
             area: "search",
             operator_use: "remote_endpoint_identity_gate",
@@ -300,7 +313,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "require_ready_endpoint_identity_before_accepting_remote_candidate_scores",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 16,
+            entrypoint_ordinal: 17,
             entrypoint_name: "ec_spire_remote_search_libpq_executor_receive_attempts",
             area: "search",
             operator_use: "per_node_remote_receive_attempt_diagnostics",
@@ -308,7 +321,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "use_strict_fail_closed_or_degraded_skip_reason_before_merge",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 17,
+            entrypoint_ordinal: 18,
             entrypoint_name: "ec_spire_remote_search_libpq_executor_budget_summary",
             area: "search",
             operator_use: "remote_executor_resource_governance",
@@ -2190,6 +2203,194 @@ fn remote_search_libpq_executor_budget_summary_from_dispatch_rows(
         status,
         recommendation,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireRemoteProductionDispatchState {
+    Planned,
+    BlockedBeforeDispatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteProductionDispatch {
+    node_id: u32,
+    pid_count: u64,
+    state: SpireRemoteProductionDispatchState,
+    status: &'static str,
+    next_executor_step: &'static str,
+}
+
+impl SpireRemoteProductionDispatch {
+    fn from_libpq_dispatch(row: &SpireRemoteSearchLibpqDispatchPlanRow) -> Self {
+        if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            Self {
+                node_id: row.node_id,
+                pid_count: row.pid_count,
+                state: SpireRemoteProductionDispatchState::Planned,
+                status: SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
+                next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            }
+        } else {
+            Self {
+                node_id: row.node_id,
+                pid_count: row.pid_count,
+                state: SpireRemoteProductionDispatchState::BlockedBeforeDispatch,
+                status: row.status,
+                next_executor_step: remote_search_pre_dispatch_blocker_step(row.status),
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteFanoutExecutor {
+    requested_epoch: u64,
+    dispatches: Vec<SpireRemoteProductionDispatch>,
+    conninfo_secret_lookup_count: u64,
+    socket_open_count: u64,
+    endpoint_identity_query_count: u64,
+}
+
+impl SpireRemoteFanoutExecutor {
+    fn from_libpq_dispatch_rows(
+        requested_epoch: u64,
+        rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    ) -> Self {
+        Self {
+            requested_epoch,
+            dispatches: rows
+                .iter()
+                .map(SpireRemoteProductionDispatch::from_libpq_dispatch)
+                .collect(),
+            conninfo_secret_lookup_count: 0,
+            socket_open_count: 0,
+            endpoint_identity_query_count: 0,
+        }
+    }
+
+    fn summary(&self) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        let mut planned_dispatch_count = 0_u64;
+        let mut blocked_before_dispatch_count = 0_u64;
+        let mut remote_pid_count = 0_u64;
+        let mut planned_pid_count = 0_u64;
+        let mut blocked_pid_count = 0_u64;
+        let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
+        let mut first_blocked_step = SPIRE_REMOTE_NONE;
+
+        for dispatch in &self.dispatches {
+            add_remote_count(
+                &mut remote_pid_count,
+                dispatch.pid_count,
+                "remote production executor state summary",
+                "remote PID",
+            )?;
+            match dispatch.state {
+                SpireRemoteProductionDispatchState::Planned => {
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                }
+                SpireRemoteProductionDispatchState::BlockedBeforeDispatch => {
+                    if blocked_before_dispatch_count == 0 {
+                        first_blocked_status = dispatch.status;
+                        first_blocked_step = dispatch.next_executor_step;
+                    }
+                    add_remote_count(
+                        &mut blocked_before_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "blocked dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut blocked_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "blocked PID",
+                    )?;
+                }
+            }
+        }
+
+        let dispatch_count = u64::try_from(self.dispatches.len()).map_err(|_| {
+            "ec_spire remote production executor dispatch count exceeds u64".to_owned()
+        })?;
+        let (next_executor_step, status, recommendation) = if blocked_before_dispatch_count > 0 {
+            (
+                first_blocked_step,
+                first_blocked_status,
+                remote_search_pre_dispatch_blocker_recommendation(first_blocked_status),
+            )
+        } else if planned_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+                SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
+                "implement production async or libpq pipeline transport before remote fanout execution",
+            )
+        } else {
+            (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+        };
+
+        Ok(SpireRemoteProductionExecutorStateSummaryRow {
+            requested_epoch: self.requested_epoch,
+            state_model: SPIRE_REMOTE_PRODUCTION_STATE_MODEL,
+            transport_mode: SPIRE_REMOTE_PRODUCTION_TRANSPORT_PENDING,
+            dispatch_count,
+            planned_dispatch_count,
+            blocked_before_dispatch_count,
+            remote_pid_count,
+            planned_pid_count,
+            blocked_pid_count,
+            conninfo_secret_lookup_count: self.conninfo_secret_lookup_count,
+            socket_open_count: self.socket_open_count,
+            endpoint_identity_query_count: self.endpoint_identity_query_count,
+            next_executor_step,
+            status,
+            recommendation,
+        })
+    }
+}
+
+fn remote_search_production_executor_state_summary_from_dispatch_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows).summary()
+}
+
+pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteProductionExecutorStateSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        remote_search_production_executor_state_summary_from_dispatch_rows(
+            requested_epoch,
+            &dispatch_rows,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(

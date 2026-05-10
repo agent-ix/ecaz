@@ -9744,6 +9744,100 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_executor_state_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(state_model, &'static str),
+        name!(transport_mode, &'static str),
+        name!(dispatch_count, i64),
+        name!(planned_dispatch_count, i64),
+        name!(blocked_before_dispatch_count, i64),
+        name!(remote_pid_count, i64),
+        name!(planned_pid_count, i64),
+        name!(blocked_pid_count, i64),
+        name!(conninfo_secret_lookup_count, i64),
+        name!(socket_open_count, i64),
+        name!(endpoint_identity_query_count, i64),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_executor_state_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_production_executor_state_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_production_executor_state_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_production_executor_state_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_production_executor_state_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        row.state_model,
+        row.transport_mode,
+        i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+        i64::try_from(row.planned_dispatch_count)
+            .expect("planned dispatch count should fit in i64"),
+        i64::try_from(row.blocked_before_dispatch_count)
+            .expect("blocked-before-dispatch count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.planned_pid_count).expect("planned pid count should fit in i64"),
+        i64::try_from(row.blocked_pid_count).expect("blocked pid count should fit in i64"),
+        i64::try_from(row.conninfo_secret_lookup_count)
+            .expect("secret lookup count should fit in i64"),
+        i64::try_from(row.socket_open_count).expect("socket open count should fit in i64"),
+        i64::try_from(row.endpoint_identity_query_count)
+            .expect("endpoint identity query count should fit in i64"),
+        row.next_executor_step,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_readiness(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -23372,6 +23466,108 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_production_executor_state_summary_is_dry() {
+        Spi::run(
+            "CREATE TABLE ec_spire_prod_state_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_prod_state_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_prod_state_idx \
+             ON ec_spire_prod_state_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_prod_state_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_prod_state_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_prod_state_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 51, 'spire/remote/prod-state', decode('aa', 'hex'), \
+                     'ec_spire_remote_prod_state_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        let prod_state_from = format!(
+            "FROM ec_spire_remote_search_production_executor_state_summary(\
+                 'ec_spire_prod_state_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
+        );
+        let state_model = Spi::get_one::<String>(&format!("SELECT state_model {prod_state_from}"))
+            .expect("production state model query should succeed")
+            .expect("production state model should exist");
+        let planned_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT planned_dispatch_count {prod_state_from}"))
+                .expect("planned dispatch query should succeed")
+                .expect("planned dispatch count should exist");
+        let blocked_before_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT blocked_before_dispatch_count {prod_state_from}"
+        ))
+        .expect("blocked dispatch query should succeed")
+        .expect("blocked dispatch count should exist");
+        let conninfo_secret_lookup_count = Spi::get_one::<i64>(&format!(
+            "SELECT conninfo_secret_lookup_count {prod_state_from}"
+        ))
+        .expect("secret lookup count query should succeed")
+        .expect("secret lookup count should exist");
+        let socket_open_count =
+            Spi::get_one::<i64>(&format!("SELECT socket_open_count {prod_state_from}"))
+                .expect("socket open count query should succeed")
+                .expect("socket open count should exist");
+        let endpoint_identity_query_count = Spi::get_one::<i64>(&format!(
+            "SELECT endpoint_identity_query_count {prod_state_from}"
+        ))
+        .expect("endpoint identity count query should succeed")
+        .expect("endpoint identity count should exist");
+        let next_executor_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {prod_state_from}"))
+                .expect("next executor step query should succeed")
+                .expect("next executor step should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {prod_state_from}"))
+            .expect("status query should succeed")
+            .expect("status should exist");
+
+        assert_eq!(state_model, "spire_remote_fanout_executor_v1");
+        assert_eq!(planned_dispatch_count, 1);
+        assert_eq!(blocked_before_dispatch_count, 0);
+        assert_eq!(conninfo_secret_lookup_count, 0);
+        assert_eq!(socket_open_count, 0);
+        assert_eq!(endpoint_identity_query_count, 0);
+        assert_eq!(next_executor_step, "production_transport_adapter");
+        assert_eq!(status, "requires_production_transport_adapter");
+    }
+
+    #[pg_test]
     fn test_ec_spire_libpq_executor_global_governance_overload() {
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("max concurrent dispatch budget SET should succeed");
@@ -27027,6 +27223,12 @@ mod tests {
         ))
         .expect("operator single secret entrypoint query should succeed")
         .expect("operator single secret entrypoint should exist");
+        let production_state_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_production_executor_state_summary'"
+        ))
+        .expect("operator production state entrypoint query should succeed")
+        .expect("operator production state entrypoint should exist");
         let pipeline_steps_action = Spi::get_one::<String>(&format!(
             "SELECT next_action {operator_entrypoint_from} \
              WHERE entrypoint_name = 'ec_spire_remote_pipeline_steps'"
@@ -27178,8 +27380,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 17);
-        assert_eq!(operator_entrypoint_reachable_count, 17);
+        assert_eq!(operator_entrypoint_count, 18);
+        assert_eq!(operator_entrypoint_reachable_count, 18);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -27190,6 +27392,7 @@ mod tests {
             "resolve_missing_conninfo_secrets_before_opening_libpq_connections"
         );
         assert_eq!(single_secret_use, "single_conninfo_secret_probe");
+        assert_eq!(production_state_use, "production_executor_dry_state");
         assert_eq!(
             pipeline_steps_action,
             "inspect_first_non_ready_step_before_live_probe_or_narrow_surfaces"

@@ -364,11 +364,14 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   `plan/design/spire-production-coordinator-executor.md`.
 - [ ] Implement production executor state separate from diagnostic SQL
   functions; keep raw conninfo hidden behind `conninfo_secret_name`.
-  - [ ] Add `SpireRemoteFanoutExecutor` / `SpireRemoteDispatch` state structs
+  - [x] Add `SpireRemoteFanoutExecutor` / `SpireRemoteDispatch` state structs
     that can be built from the existing request, target, descriptor, budget,
     and governance planning data without opening sockets.
-  - [ ] Expose production-state summaries without invoking live diagnostic
+  - [x] Expose production-state summaries without invoking live diagnostic
     SQL helpers or opening extra sockets.
+  - [x] Add dry-state verification for admitted and pre-dispatch-blocked
+    production dispatches; PG18 coverage proves the SQL summary does not
+    resolve conninfo secrets, open sockets, or query endpoint identity.
 - [ ] Use libpq async or pipeline mode for overlapping remote work.
   - [ ] Add a narrow transport adapter boundary so the AM scan path no longer
     calls blocking `postgres::Client` directly for production fanout.

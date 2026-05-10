@@ -660,6 +660,25 @@ pub(crate) struct SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionExecutorStateSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) state_model: &'static str,
+    pub(crate) transport_mode: &'static str,
+    pub(crate) dispatch_count: u64,
+    pub(crate) planned_dispatch_count: u64,
+    pub(crate) blocked_before_dispatch_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) planned_pid_count: u64,
+    pub(crate) blocked_pid_count: u64,
+    pub(crate) conninfo_secret_lookup_count: u64,
+    pub(crate) socket_open_count: u64,
+    pub(crate) endpoint_identity_query_count: u64,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqExecutorStepContractRow {
     pub(crate) step_ordinal: u64,
     pub(crate) step_name: &'static str,

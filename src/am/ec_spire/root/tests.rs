@@ -126,6 +126,41 @@ mod tests {
         }
     }
 
+    fn production_dispatch_row(
+        node_id: u32,
+        selected_pids: Vec<u64>,
+        dispatch_action: &'static str,
+        status: &'static str,
+    ) -> SpireRemoteSearchLibpqDispatchPlanRow {
+        SpireRemoteSearchLibpqDispatchPlanRow {
+            requested_epoch: 7,
+            node_id,
+            pid_count: selected_pids
+                .len()
+                .try_into()
+                .expect("test PID count should fit in u64"),
+            selected_pids,
+            query_dimension: 2,
+            top_k: 1,
+            consistency_mode: "strict",
+            sql_template: "ec_spire_remote_search",
+            parameter_count: 6,
+            result_column_count: 17,
+            conninfo_secret_name: format!("spire/remote/{node_id}"),
+            remote_index_regclass: "remote_spire_idx".to_owned(),
+            descriptor_generation: u64::from(node_id),
+            remote_index_identity: vec![node_id as u8],
+            pipeline_mode: if dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+                SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE
+            } else {
+                SPIRE_REMOTE_NONE
+            },
+            dispatch_action,
+            receive_validator: "validate_remote_search_candidate_batch",
+            status,
+        }
+    }
+
     #[test]
     fn scan_sanity_status_reports_empty_approximate_and_full_scan() {
         assert_eq!(
@@ -160,6 +195,71 @@ mod tests {
                 "use this configuration only when max_candidate_rows covers the expected frontier"
             )
         );
+    }
+
+    #[test]
+    fn production_executor_state_keeps_admitted_dispatches_dry() {
+        let rows = vec![
+            production_dispatch_row(
+                2,
+                vec![10, 11],
+                SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
+            ),
+            production_dispatch_row(
+                3,
+                vec![20],
+                SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+                SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
+            ),
+        ];
+
+        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(7, &rows)
+            .expect("production executor state summary should build");
+
+        assert_eq!(summary.state_model, SPIRE_REMOTE_PRODUCTION_STATE_MODEL);
+        assert_eq!(summary.dispatch_count, 2);
+        assert_eq!(summary.planned_dispatch_count, 2);
+        assert_eq!(summary.blocked_before_dispatch_count, 0);
+        assert_eq!(summary.remote_pid_count, 3);
+        assert_eq!(summary.planned_pid_count, 3);
+        assert_eq!(summary.blocked_pid_count, 0);
+        assert_eq!(summary.conninfo_secret_lookup_count, 0);
+        assert_eq!(summary.socket_open_count, 0);
+        assert_eq!(summary.endpoint_identity_query_count, 0);
+        assert_eq!(
+            summary.next_executor_step,
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT
+        );
+        assert_eq!(
+            summary.status,
+            SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT
+        );
+    }
+
+    #[test]
+    fn production_executor_state_preserves_pre_dispatch_blocker() {
+        let rows = vec![production_dispatch_row(
+            2,
+            vec![10, 11],
+            SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION,
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+        )];
+
+        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(7, &rows)
+            .expect("production executor state summary should build");
+
+        assert_eq!(summary.dispatch_count, 1);
+        assert_eq!(summary.planned_dispatch_count, 0);
+        assert_eq!(summary.blocked_before_dispatch_count, 1);
+        assert_eq!(summary.remote_pid_count, 2);
+        assert_eq!(summary.planned_pid_count, 0);
+        assert_eq!(summary.blocked_pid_count, 2);
+        assert_eq!(summary.conninfo_secret_lookup_count, 0);
+        assert_eq!(summary.socket_open_count, 0);
+        assert_eq!(summary.endpoint_identity_query_count, 0);
+        assert_eq!(summary.next_executor_step, SPIRE_REMOTE_EXECUTOR_STEP_BUDGET);
+        assert_eq!(summary.status, SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD);
     }
 
     #[test]

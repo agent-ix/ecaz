@@ -110,6 +110,7 @@ pub(crate) use self::ec_spire::{
     remote_search_local_heap_resolution_plan_rows as spire_remote_search_local_heap_resolution_plan_rows,
     remote_search_merge_input_summary_row as spire_remote_search_merge_input_summary_row,
     remote_search_merge_order_contract_rows as spire_remote_search_merge_order_contract_rows,
+    remote_search_production_executor_state_summary_row as spire_remote_search_production_executor_state_summary_row,
     remote_search_readiness_summary_row as spire_remote_search_readiness_summary_row,
     remote_search_receive_plan_rows as spire_remote_search_receive_plan_rows,
     remote_search_request_plan_rows as spire_remote_search_request_plan_rows,
