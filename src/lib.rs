@@ -9859,6 +9859,38 @@ fn ec_spire_remote_search_production_policy_session_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_fault_matrix() -> TableIterator<
+    'static,
+    (
+        name!(fault_ordinal, i64),
+        name!(failure_category, &'static str),
+        name!(fault_scope, &'static str),
+        name!(next_executor_step, &'static str),
+        name!(strict_action, &'static str),
+        name!(strict_status, &'static str),
+        name!(degraded_action, &'static str),
+        name!(degraded_status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_production_fault_matrix_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.fault_ordinal).expect("fault ordinal should fit in i64"),
+            row.failure_category,
+            row.fault_scope,
+            row.next_executor_step,
+            row.strict_action,
+            row.strict_status,
+            row.degraded_action,
+            row.degraded_status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_production_executor_state_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -24021,6 +24053,67 @@ mod tests {
         assert_eq!(first_cancellation_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");
         assert_eq!(status, "requires_production_transport_adapter");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_production_fault_matrix_contract() {
+        let required_categories = [
+            "connect_failed",
+            "requires_conninfo_secret_resolution",
+            "remote_statement_timeout",
+            "local_statement_timeout",
+            "remote_backend_terminated",
+            "remote_query_cancelled",
+            "local_query_cancelled",
+            "candidate_batch_validation_failed",
+            "endpoint_identity_mismatch",
+            "incompatible_extension_version",
+            "extension_version_mismatch",
+            "stale_epoch",
+            "served_epoch_mismatch",
+            "consistency_mode_mismatch",
+            "remote_heap_resolution_failed",
+            "remote_heap_row_missing",
+        ];
+        for category in required_categories {
+            let count = Spi::get_one::<i64>(&format!(
+                "SELECT count(*) FROM ec_spire_remote_search_production_fault_matrix() \
+                 WHERE failure_category = '{category}'"
+            ))
+            .expect("fault matrix category query should succeed")
+            .expect("fault matrix category count should exist");
+            assert_eq!(count, 1, "missing or duplicate category {category}");
+        }
+
+        let local_timeout = Spi::get_one::<String>(
+            "SELECT strict_action FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'local_statement_timeout'",
+        )
+        .expect("local timeout action query should succeed")
+        .expect("local timeout action should exist");
+        let remote_timeout = Spi::get_one::<String>(
+            "SELECT degraded_action FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'remote_statement_timeout'",
+        )
+        .expect("remote timeout action query should succeed")
+        .expect("remote timeout action should exist");
+        let consistency_mismatch = Spi::get_one::<String>(
+            "SELECT degraded_action FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'consistency_mode_mismatch'",
+        )
+        .expect("consistency mismatch action query should succeed")
+        .expect("consistency mismatch action should exist");
+        let heap_step = Spi::get_one::<String>(
+            "SELECT next_executor_step FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'remote_heap_resolution_failed'",
+        )
+        .expect("heap step query should succeed")
+        .expect("heap step should exist");
+
+        assert_eq!(local_timeout, "cancel_query");
+        assert_eq!(remote_timeout, "skip_node");
+        assert_eq!(consistency_mismatch, "fail_closed");
+        assert_eq!(heap_step, "remote_heap_resolution");
     }
 
     #[pg_test]

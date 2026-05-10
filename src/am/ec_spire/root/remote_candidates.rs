@@ -87,6 +87,13 @@ const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
 const SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH: &str = "served_epoch_mismatch";
 const SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH: &str = "requested_epoch_mismatch";
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_invalid_parameters";
+const SPIRE_REMOTE_PRODUCTION_PROTOCOL_VERSION_MISMATCH: &str = "protocol_version_mismatch";
+const SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH: &str = "extension_version_mismatch";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED: &str =
+    "remote_heap_resolution_failed";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING: &str = "remote_heap_row_missing";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD: &str = "remote_heap_row_dead";
+const SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE: &str = "remote_heap_row_stale";
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
 const SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED: &str = "remote_candidate_receive_failed";
@@ -3869,6 +3876,300 @@ pub(crate) unsafe fn remote_search_production_session_consistency_policy_summary
     }
 }
 
+pub(crate) fn remote_search_production_fault_matrix_rows(
+) -> Vec<SpireRemoteProductionFaultMatrixRow> {
+    vec![
+        production_fault_matrix_row(
+            1,
+            SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+            "consistency_policy",
+            SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+            "do not dispatch when the requested consistency mode differs from the published active epoch policy",
+        ),
+        production_fault_matrix_row(
+            2,
+            SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+            "conninfo_secret",
+            SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "resolve the conninfo secret before strict search; degraded mode may skip only that node",
+        ),
+        production_fault_matrix_row(
+            3,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "fix sanitized conninfo syntax or skip the affected remote under degraded mode",
+        ),
+        production_fault_matrix_row(
+            4,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "treat connect, authentication, certificate, and connect-timeout failures as sanitized transport failures",
+        ),
+        production_fault_matrix_row(
+            5,
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "do not run an uncapped remote query when remote statement_timeout setup fails",
+        ),
+        production_fault_matrix_row(
+            6,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote-owned statement timeout is a remote-node failure, not a local cancellation",
+        ),
+        production_fault_matrix_row(
+            7,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "backend termination or connection reset must not be merged as an empty successful result",
+        ),
+        production_fault_matrix_row(
+            8,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
+            "transport",
+            SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote query cancellation is remote-owned unless the local adapter reports a local cancellation category",
+        ),
+        production_fault_matrix_row(
+            9,
+            SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
+            "local_cancellation",
+            SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "local query cancellation is query-wide and clears all retained candidate batches in every consistency mode",
+        ),
+        production_fault_matrix_row(
+            10,
+            SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
+            "local_cancellation",
+            SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "cancel_query",
+            SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+            "local statement timeout is query-wide and distinct from remote_statement_timeout",
+        ),
+        production_fault_matrix_row(
+            11,
+            SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED,
+            "candidate_receive",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "malformed compact candidate rows cannot enter merge in strict mode",
+        ),
+        production_fault_matrix_row(
+            12,
+            SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
+            "candidate_receive",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "candidate batch validation failures preserve the exact category before merge",
+        ),
+        production_fault_matrix_row(
+            13,
+            SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            "endpoint_identity",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "descriptor, index, quantizer, opclass, storage, and fingerprint mismatches are identity failures",
+        ),
+        production_fault_matrix_row(
+            14,
+            SPIRE_REMOTE_PRODUCTION_PROTOCOL_VERSION_MISMATCH,
+            "endpoint_identity",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "protocol version skew must be rejected before candidate merge",
+        ),
+        production_fault_matrix_row(
+            15,
+            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            "descriptor_version",
+            SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "descriptor-advertised extension skew blocks strict dispatch planning",
+        ),
+        production_fault_matrix_row(
+            16,
+            SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH,
+            "endpoint_identity",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "live endpoint extension skew invalidates cached endpoint identity",
+        ),
+        production_fault_matrix_row(
+            17,
+            SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            "epoch_window",
+            SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "stale descriptor epoch cannot satisfy strict fanout and is a named degraded skip",
+        ),
+        production_fault_matrix_row(
+            18,
+            SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH,
+            "candidate_receive",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "served epoch mismatches are rejected after receive instead of folded into generic validation",
+        ),
+        production_fault_matrix_row(
+            19,
+            SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+            "consistency_policy",
+            SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+            "requested epoch mismatch is a coordinator request error, not a degraded remote skip",
+        ),
+        production_fault_matrix_row(
+            20,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE,
+            "endpoint_identity",
+            SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "missing remote index or regclass resolution failure cannot be treated as an empty batch",
+        ),
+        production_fault_matrix_row(
+            21,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+            "remote_heap_resolution",
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "remote heap query failure blocks final SQL rows unless degraded mode skips that origin node",
+        ),
+        production_fault_matrix_row(
+            22,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
+            "remote_heap_resolution",
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
+            "skip_candidate",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "missing origin heap rows must be counted and either fail strict or be explicitly skipped",
+        ),
+        production_fault_matrix_row(
+            23,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD,
+            "remote_heap_resolution",
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD,
+            "skip_candidate",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "dead origin heap rows must be counted and must not be returned as visible SQL rows",
+        ),
+        production_fault_matrix_row(
+            24,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE,
+            "remote_heap_resolution",
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
+            "fail_closed",
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE,
+            "skip_candidate",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "stale origin row locators must be rejected or explicitly skipped with diagnostics",
+        ),
+    ]
+}
+
+fn production_fault_matrix_row(
+    fault_ordinal: u64,
+    failure_category: &'static str,
+    fault_scope: &'static str,
+    next_executor_step: &'static str,
+    strict_action: &'static str,
+    strict_status: &'static str,
+    degraded_action: &'static str,
+    degraded_status: &'static str,
+    recommendation: &'static str,
+) -> SpireRemoteProductionFaultMatrixRow {
+    SpireRemoteProductionFaultMatrixRow {
+        fault_ordinal,
+        failure_category,
+        fault_scope,
+        next_executor_step,
+        strict_action,
+        strict_status,
+        degraded_action,
+        degraded_status,
+        recommendation,
+    }
+}
+
 pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -7359,6 +7660,56 @@ mod production_executor_state_tests {
             failure_category,
             batch: None,
         }
+    }
+
+    #[test]
+    fn production_fault_matrix_covers_required_categories() {
+        let rows = remote_search_production_fault_matrix_rows();
+        let categories = rows
+            .iter()
+            .map(|row| row.failure_category)
+            .collect::<std::collections::HashSet<_>>();
+        let required = [
+            SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+            SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
+            SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
+            SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
+            SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
+            SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH,
+            SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH,
+            SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
+        ];
+
+        assert_eq!(rows.len(), categories.len(), "matrix categories should be unique");
+        for category in required {
+            assert!(categories.contains(category), "missing category {category}");
+        }
+        let local_timeout = rows
+            .iter()
+            .find(|row| row.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT)
+            .expect("local timeout row should exist");
+        let remote_timeout = rows
+            .iter()
+            .find(|row| row.failure_category == SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT)
+            .expect("remote timeout row should exist");
+        let consistency_mismatch = rows
+            .iter()
+            .find(|row| row.failure_category == SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH)
+            .expect("consistency mismatch row should exist");
+
+        assert_eq!(local_timeout.strict_action, "cancel_query");
+        assert_eq!(local_timeout.degraded_action, "cancel_query");
+        assert_eq!(remote_timeout.strict_action, "fail_closed");
+        assert_eq!(remote_timeout.degraded_action, "skip_node");
+        assert_eq!(consistency_mismatch.degraded_action, "fail_closed");
     }
 
     #[test]

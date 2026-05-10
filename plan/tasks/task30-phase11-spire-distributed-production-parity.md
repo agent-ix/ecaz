@@ -204,10 +204,15 @@ Acceptance artifact:
     - [x] Active-epoch consistency-policy mismatch is visible as a named
       `consistency_mode_mismatch` diagnostic category before C5 depends on the
       dispatch-planning surface.
-  - [ ] Add a strict/degraded fault matrix table covering connect, secret,
+  - [x] Add a strict/degraded fault matrix table covering connect, secret,
     statement timeout, backend termination, query cancellation, validation,
     identity, version, stale epoch, and heap-resolution failures.
-    - [ ] Include `consistency_mode_mismatch` alongside the transport and
+    - [x] `ec_spire_remote_search_production_fault_matrix()` now exposes the
+      dry production policy rows, including `connect_failed`,
+      `requires_conninfo_secret_resolution`, remote/local statement timeout,
+      remote/local query cancellation, validation, identity, version,
+      stale/served epoch, and reserved Stage D heap-resolution categories.
+    - [x] Include `consistency_mode_mismatch` alongside the transport and
       receive categories when the matrix lands.
 - [ ] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.

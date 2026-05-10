@@ -261,6 +261,17 @@ Verification:
   endpoint version skew, stale epoch, fingerprint mismatch, and missing remote
   index.
 
+As of 2026-05-10, the dry SQL-visible
+`ec_spire_remote_search_production_fault_matrix()` surface pins the C4 policy
+matrix before C5 consumes it. It includes transport, secret, remote/local
+statement timeout, backend termination, remote/local query cancellation,
+candidate validation, endpoint identity, protocol/extension version,
+stale/served epoch, `consistency_mode_mismatch`, and reserved Stage D remote
+heap-resolution categories. Most remote-node failures fail closed in strict
+mode and become node skips in degraded mode; local cancellation and local
+statement timeout remain query-wide cancellations in both modes; consistency
+mode and requested-epoch mismatches fail closed in both modes.
+
 ### C5: AM Scan Integration
 
 Wire production remote fanout into the coordinator scan path behind an explicit

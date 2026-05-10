@@ -724,6 +724,19 @@ pub(crate) struct SpireRemoteProductionConsistencyPolicySummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionFaultMatrixRow {
+    pub(crate) fault_ordinal: u64,
+    pub(crate) failure_category: &'static str,
+    pub(crate) fault_scope: &'static str,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) strict_action: &'static str,
+    pub(crate) strict_status: &'static str,
+    pub(crate) degraded_action: &'static str,
+    pub(crate) degraded_status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteProductionTransportProbeRow {
     pub(crate) node_id: u32,
     pub(crate) started_after_ms: u64,
