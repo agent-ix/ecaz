@@ -398,6 +398,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   - [x] Resolve remote index regclass on the remote connection in the
     production candidate-receive adapter instead of requiring coordinator-local
     remote OIDs.
+  - [x] Make production executor dispatch state retain the selected PIDs,
+    `conninfo_secret_name`, and remote index regclass needed to build compact
+    candidate receive requests from `TransportReady` state without re-reading
+    diagnostic rows or maintaining parallel AM scan bookkeeping.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.

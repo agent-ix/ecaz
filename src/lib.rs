@@ -23776,7 +23776,7 @@ mod tests {
                 query: vec![1.0, 0.0],
                 selected_pids: vec![selected_pid],
                 top_k: 1,
-                consistency_mode: "strict",
+                consistency_mode: "strict".to_owned(),
             },
         ]);
         let receive = rows.first().expect("receive row should exist");
@@ -23895,7 +23895,7 @@ mod tests {
                        requested_epoch: u64,
                        query: Vec<f32>,
                        selected_pids: Vec<u64>,
-                       consistency_mode: &'static str| {
+                       consistency_mode: &str| {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id,
                 conninfo,
@@ -23904,7 +23904,7 @@ mod tests {
                 query,
                 selected_pids,
                 top_k: 1,
-                consistency_mode,
+                consistency_mode: consistency_mode.to_owned(),
             }
         };
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![

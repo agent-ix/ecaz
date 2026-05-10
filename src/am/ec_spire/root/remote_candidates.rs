@@ -2240,7 +2240,7 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) query: Vec<f32>,
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
-    pub(crate) consistency_mode: &'static str,
+    pub(crate) consistency_mode: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2619,7 +2619,10 @@ enum SpireRemoteProductionDispatchState {
 #[derive(Debug, Clone, PartialEq)]
 struct SpireRemoteProductionDispatch {
     node_id: u32,
+    selected_pids: Vec<u64>,
     pid_count: u64,
+    conninfo_secret_name: String,
+    remote_index_regclass: String,
     state: SpireRemoteProductionDispatchState,
     status: &'static str,
     next_executor_step: &'static str,
@@ -2635,7 +2638,10 @@ impl SpireRemoteProductionDispatch {
         if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
             Self {
                 node_id: row.node_id,
+                selected_pids: row.selected_pids.clone(),
                 pid_count: row.pid_count,
+                conninfo_secret_name: row.conninfo_secret_name.clone(),
+                remote_index_regclass: row.remote_index_regclass.clone(),
                 state: SpireRemoteProductionDispatchState::Planned,
                 status: SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
                 next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -2648,7 +2654,10 @@ impl SpireRemoteProductionDispatch {
         } else {
             Self {
                 node_id: row.node_id,
+                selected_pids: row.selected_pids.clone(),
                 pid_count: row.pid_count,
+                conninfo_secret_name: row.conninfo_secret_name.clone(),
+                remote_index_regclass: row.remote_index_regclass.clone(),
                 state: SpireRemoteProductionDispatchState::BlockedBeforeDispatch,
                 status: row.status,
                 next_executor_step: remote_search_pre_dispatch_blocker_step(row.status),
@@ -2728,6 +2737,15 @@ impl SpireRemoteProductionDispatch {
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
         }
         Ok(())
+    }
+
+    fn apply_candidate_receive_failure(&mut self, failure_category: &'static str) {
+        self.candidate_count = 0;
+        self.candidate_failure_category = failure_category;
+        self.candidate_batch = None;
+        self.state = SpireRemoteProductionDispatchState::CandidateReceiveFailed;
+        self.status = SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED;
+        self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
     }
 
     fn apply_local_query_cancel(&mut self) {
@@ -2816,6 +2834,44 @@ impl SpireRemoteFanoutExecutor {
         for dispatch in &mut self.dispatches {
             dispatch.apply_local_query_cancel();
         }
+    }
+
+    fn compact_candidate_receive_requests(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+    ) -> Result<Vec<SpireRemoteProductionCandidateReceiveRequest>, String> {
+        let mut requests = Vec::new();
+        let mut secret_lookup_count = self.conninfo_secret_lookup_count;
+        for dispatch in &mut self.dispatches {
+            if dispatch.state != SpireRemoteProductionDispatchState::TransportReady {
+                continue;
+            }
+            add_remote_count(
+                &mut secret_lookup_count,
+                1,
+                "remote production executor compact receive request build",
+                "conninfo secret lookup",
+            )?;
+            match remote_conninfo_secret_value(&dispatch.conninfo_secret_name) {
+                Ok(conninfo) => requests.push(SpireRemoteProductionCandidateReceiveRequest {
+                    node_id: dispatch.node_id,
+                    conninfo,
+                    remote_index_regclass: dispatch.remote_index_regclass.clone(),
+                    requested_epoch: self.requested_epoch,
+                    query: query.to_vec(),
+                    selected_pids: dispatch.selected_pids.clone(),
+                    top_k,
+                    consistency_mode: consistency_mode.to_owned(),
+                }),
+                Err(_) => {
+                    dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET)
+                }
+            }
+        }
+        self.conninfo_secret_lookup_count = secret_lookup_count;
+        Ok(requests)
     }
 
     fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
@@ -6988,5 +7044,82 @@ mod production_executor_state_tests {
             .merge_ready_candidate_batches(None)
             .expect_err("cancelled dispatch should not merge")
             .contains("remote_executor_cancelled"));
+    }
+
+    #[test]
+    fn production_executor_compact_receive_requests_use_dispatch_state() {
+        let secret_42 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/42").expect("key should build");
+        let secret_43 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/43").expect("key should build");
+        std::env::set_var(&secret_42, "host=/tmp dbname=postgres");
+        std::env::set_var(&secret_43, "host=/tmp dbname=postgres");
+
+        let dispatch_rows = vec![planned_dispatch(42, 2), planned_dispatch(43, 1)];
+        let transport_rows = vec![ready_transport_row(42, 1), ready_transport_row(43, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        let requests = executor
+            .compact_candidate_receive_requests(&[1.0, 0.0], 4, "strict")
+            .expect("request build should succeed");
+
+        std::env::remove_var(&secret_42);
+        std::env::remove_var(&secret_43);
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(executor.conninfo_secret_lookup_count, 2);
+        assert!(executor
+            .dispatches
+            .iter()
+            .all(|dispatch| dispatch.state == SpireRemoteProductionDispatchState::TransportReady));
+        let node_42 = requests
+            .iter()
+            .find(|request| request.node_id == 42)
+            .expect("node 42 request should exist");
+        assert_eq!(node_42.remote_index_regclass, "ec_spire_remote_42_idx");
+        assert_eq!(node_42.selected_pids, vec![0, 1]);
+        assert_eq!(node_42.requested_epoch, 7);
+        assert_eq!(node_42.query, vec![1.0, 0.0]);
+        assert_eq!(node_42.top_k, 4);
+        assert_eq!(node_42.consistency_mode, "strict");
+    }
+
+    #[test]
+    fn production_executor_compact_receive_request_build_isolates_missing_secret() {
+        let secret_52 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/52").expect("key should build");
+        let secret_53 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/53").expect("key should build");
+        std::env::set_var(&secret_52, "host=/tmp dbname=postgres");
+        std::env::remove_var(&secret_53);
+
+        let dispatch_rows = vec![planned_dispatch(52, 1), planned_dispatch(53, 1)];
+        let transport_rows = vec![ready_transport_row(52, 1), ready_transport_row(53, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        let requests = executor
+            .compact_candidate_receive_requests(&[1.0, 0.0], 3, "strict")
+            .expect("request build should isolate missing secrets");
+
+        std::env::remove_var(&secret_52);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].node_id, 52);
+        assert_eq!(executor.conninfo_secret_lookup_count, 2);
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(
+            row.first_candidate_receive_failure_category,
+            "requires_conninfo_secret_resolution"
+        );
+        assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "remote_candidate_receive_failed");
     }
 }
