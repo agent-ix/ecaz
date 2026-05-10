@@ -831,6 +831,13 @@ Goal: prove distributed correctness locally before AWS.
     fail-closed transport summary, degraded skip-node transport summary, and
     packet-local strict/degraded logs. Remaining Stage E fault and lifecycle
     rows still need fixture logs.
+  - [x] Packet `30779` adds the version-skew pre-dispatch runtime row:
+    strict mode blocks the incompatible remote descriptor at
+    `remote_extension_version`, degraded mode records one
+    `incompatible_extension_version` skip while the ready remote remains
+    pending for production transport, and strict/degraded logs are
+    packet-local. Remaining Stage E fault and lifecycle rows still need
+    fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
