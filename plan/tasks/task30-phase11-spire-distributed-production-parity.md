@@ -707,6 +707,10 @@ Goal: make the coordinator-visible result stream production-correct.
     result stream into an AM output cursor, and `amgettuple` only receives local
     coordinator heap TIDs while remote-origin outputs keep blocking on
     `remote_row_materialization`.
+  - [x] Packet `30768` adds focused scan-opaque cursor coverage for the
+    reviewer `30762` P3: default state returns no rows, an exhausted output
+    cursor stays exhausted, and a later rescan replaces the exhausted cursor
+    with the new query/output stream instead of reusing stale results.
   - [x] ADR-064 proposes the shadow/proxy lifecycle required by the `30761`
     reviewer P2: v1 AM materialization must be a pre-existing coordinator heap
     row in the same scanned relation, not a per-query temp/scratch/proxy tuple.

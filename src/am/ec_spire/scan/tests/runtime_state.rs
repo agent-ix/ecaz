@@ -353,6 +353,70 @@
     }
 
     #[test]
+    fn scan_opaque_rescan_replaces_exhausted_output_cursor() {
+        let mut opaque = SpireScanOpaque::default();
+        assert!(!opaque.rescan_called);
+        assert!(opaque.next_output().is_none());
+
+        opaque.reset_for_outputs(
+            SpireScanQuery::new(vec![1.0, 0.0]).unwrap(),
+            None,
+            vec![
+                SpireScanOutput {
+                    heap_tid: tid(10, 1),
+                    orderby_score: -1.0,
+                },
+                SpireScanOutput {
+                    heap_tid: tid(10, 2),
+                    orderby_score: -2.0,
+                },
+            ],
+        );
+
+        assert!(opaque.rescan_called);
+        assert_eq!(opaque.query.as_ref().unwrap().values(), &[1.0, 0.0]);
+        assert_eq!(opaque.cursor.remaining(), 2);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(10, 1),
+                orderby_score: -1.0,
+            })
+        );
+        assert_eq!(opaque.cursor.remaining(), 1);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(10, 2),
+                orderby_score: -2.0,
+            })
+        );
+        assert!(opaque.cursor.is_exhausted());
+        assert!(opaque.next_output().is_none());
+
+        opaque.reset_for_outputs(
+            SpireScanQuery::new(vec![0.0, 1.0]).unwrap(),
+            None,
+            vec![SpireScanOutput {
+                heap_tid: tid(20, 3),
+                orderby_score: -3.0,
+            }],
+        );
+
+        assert!(opaque.rescan_called);
+        assert_eq!(opaque.query.as_ref().unwrap().values(), &[0.0, 1.0]);
+        assert_eq!(opaque.cursor.remaining(), 1);
+        assert_eq!(
+            opaque.next_output(),
+            Some(SpireScanOutput {
+                heap_tid: tid(20, 3),
+                orderby_score: -3.0,
+            })
+        );
+        assert!(opaque.next_output().is_none());
+    }
+
+    #[test]
     fn scan_opaque_clear_scan_work_drops_rescan_state() {
         let mut opaque = SpireScanOpaque::default();
         let scan_plan = SpireSingleLevelScanPlan {
