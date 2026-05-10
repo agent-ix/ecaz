@@ -2649,6 +2649,14 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             validator: "candidate_batch_must_bind_opclass_score_semantics",
             recommendation: "bind opclass identity before accepting remote scores from mixed binaries",
         },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 11,
+            contract_item: "direct_sql_endpoint_status_policy",
+            contract_value: "ec_spire_remote_search_exposes_non_ready_endpoint_rows_for_diagnostics_libpq_receive_accepts_ready_only",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_not_treat_direct_sql_rows_as_mergeable_without_libpq_receive_validation",
+            recommendation: "use libpq executor readiness surfaces before production remote merge",
+        },
     ]
 }
 

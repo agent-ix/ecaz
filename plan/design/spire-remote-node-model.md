@@ -254,8 +254,11 @@ diagnostics, but production merge must reject any row whose endpoint identity is
 not ready.
 
 The v1 `profile_fingerprint` is a 16-hex-character FNV-1a digest over UTF-8
-field strings separated by one NUL byte. Numeric inputs are decimal ASCII. The
-input order is stable and part of the protocol:
+field strings separated by one NUL byte. It is not a cryptographic identity;
+future operator-supplied byte inputs must not rely on this digest for
+adversarial collision resistance. Numeric inputs are non-negative integers
+encoded as canonical decimal ASCII with no leading zeroes except the value
+`0`. The input order is stable and part of the protocol:
 
 ```text
 protocol_version

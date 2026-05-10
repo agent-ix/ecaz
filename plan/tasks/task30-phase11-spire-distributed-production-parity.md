@@ -289,6 +289,9 @@ endpoint.
     reports the current request/response shape, RaBitQ-only v1 protocol, delta
     PID semantics, and the remaining non-ready scoring/fingerprint/opclass
     binding blockers without claiming production readiness.
+  - [x] Document the direct-call diagnostic posture in the endpoint contract:
+    `ec_spire_remote_search` may expose non-ready rows for operators, while
+    production libpq receive accepts `endpoint_status = ready` only.
   - [x] Add `ec_spire_remote_search_endpoint_identity()` so a remote-serving
     SPIRE index exposes protocol version, extension version, opclass identity,
     storage/assignment payload format, RaBitQ profile, scoring profile, and a

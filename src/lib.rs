@@ -20428,6 +20428,12 @@ mod tests {
         ))
         .expect("endpoint contract fingerprint query should succeed")
         .expect("endpoint contract fingerprint status should exist");
+        let direct_sql_policy_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {endpoint_contract_from} \
+             WHERE contract_item = 'direct_sql_endpoint_status_policy'"
+        ))
+        .expect("endpoint contract direct SQL policy query should succeed")
+        .expect("endpoint contract direct SQL policy should exist");
         let non_ready_endpoint_rows = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {endpoint_contract_from} WHERE status <> 'ready'"
         ))
@@ -20453,10 +20459,14 @@ mod tests {
         assert_eq!(first_executor_step, "remote_node_descriptor");
         assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
-        assert_eq!(endpoint_count, 10);
+        assert_eq!(endpoint_count, 11);
         assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
         assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
         assert_eq!(fingerprint_status, "requires_fingerprint_binding");
+        assert_eq!(
+            direct_sql_policy_validator,
+            "must_not_treat_direct_sql_rows_as_mergeable_without_libpq_receive_validation"
+        );
         assert_eq!(non_ready_endpoint_rows, 3);
     }
 
