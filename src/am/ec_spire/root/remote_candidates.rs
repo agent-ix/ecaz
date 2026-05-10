@@ -36,6 +36,7 @@ const SPIRE_REMOTE_STATUS_STALE_EPOCH: &str = "stale_epoch";
 const SPIRE_REMOTE_STATUS_RETENTION_GAP: &str = "retention_gap";
 const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
     "incompatible_extension_version";
+const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING: &str =
@@ -51,6 +52,7 @@ const SPIRE_REMOTE_EXECUTOR_REQUIRED: &str = "requires_libpq_executor";
 const SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR: &str = "remote_node_descriptor";
 const SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW: &str = "remote_epoch_window";
 const SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION: &str = "remote_extension_version";
+const SPIRE_REMOTE_EXECUTOR_STEP_BUDGET: &str = "remote_executor_budget";
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
@@ -81,6 +83,49 @@ const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 const SPIRE_REMOTE_CONNINFO_ENV_PREFIX: &str = "EC_SPIRE_REMOTE_CONNINFO_";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireRemoteSearchLibpqExecutorBudgetLimits {
+    max_nodes: u64,
+    max_pids: u64,
+    max_pids_per_node: u64,
+    connect_timeout_ms: u64,
+    statement_timeout_ms: u64,
+}
+
+impl SpireRemoteSearchLibpqExecutorBudgetLimits {
+    fn from_session() -> Self {
+        Self {
+            max_nodes: session_limit_to_u64(options::current_session_remote_search_max_nodes()),
+            max_pids: session_limit_to_u64(options::current_session_remote_search_max_pids()),
+            max_pids_per_node: session_limit_to_u64(
+                options::current_session_remote_search_max_pids_per_node(),
+            ),
+            connect_timeout_ms: session_limit_to_u64(
+                options::current_session_remote_search_connect_timeout_ms(),
+            ),
+            statement_timeout_ms: session_limit_to_u64(
+                options::current_session_remote_search_statement_timeout_ms(),
+            ),
+        }
+    }
+
+    fn has_node_cap(self) -> bool {
+        self.max_nodes > 0
+    }
+
+    fn has_pid_cap(self) -> bool {
+        self.max_pids > 0
+    }
+
+    fn has_pid_per_node_cap(self) -> bool {
+        self.max_pids_per_node > 0
+    }
+}
+
+fn session_limit_to_u64(value: i32) -> u64 {
+    u64::try_from(value.max(0)).expect("non-negative session limit should fit in u64")
+}
+
 fn remote_search_pre_dispatch_blocker_step(status: &str) -> &'static str {
     match status {
         SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
@@ -90,6 +135,7 @@ fn remote_search_pre_dispatch_blocker_step(status: &str) -> &'static str {
         SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
             SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION
         }
+        SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => SPIRE_REMOTE_EXECUTOR_STEP_BUDGET,
         _ => SPIRE_REMOTE_NONE,
     }
 }
@@ -104,6 +150,9 @@ fn remote_search_pre_dispatch_blocker_recommendation(status: &str) -> &'static s
         }
         SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
             "upgrade remote node extension before libpq fanout execution"
+        }
+        SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => {
+            "raise ec_spire remote-search executor budgets or reduce remote fanout before libpq dispatch"
         }
         _ => SPIRE_REMOTE_NONE,
     }
@@ -232,6 +281,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "node_id,status,next_blocker,failure_action,failure_reason",
             next_action: "use_strict_fail_closed_or_degraded_skip_reason_before_merge",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 16,
+            entrypoint_name: "ec_spire_remote_search_libpq_executor_budget_summary",
+            area: "search",
+            operator_use: "remote_executor_resource_governance",
+            status_source: "status,next_executor_step,max_nodes,max_pids,max_pids_per_node",
+            next_action: "tune_remote_executor_budgets_or_reduce_fanout_before_dispatch",
+        },
     ]
 }
 
@@ -245,9 +302,9 @@ pub(crate) fn remote_libpq_connection_lifecycle_contract_rows(
             secret_resolution_policy: "conninfo_secret_name_resolved_by_executor",
             conninfo_exposure_policy: "never_expose_raw_conninfo_in_sql",
             failure_policy: "fail_closed_no_implicit_retry",
-            resource_limit_policy: "one_connection_per_ready_remote_node_per_query",
+            resource_limit_policy: "bounded_by_ec_spire_remote_search_session_caps",
             validator: "must_close_connection_before_coordinator_returns",
-            recommendation: "implement executor-owned secret provider before opening libpq sockets",
+            recommendation: "enforce remote executor budgets before secret lookup or socket open",
         },
         SpireRemoteLibpqConnectionLifecycleContractRow {
             surface: "ec_spire_remote_epoch_manifest_publication_libpq_executor",
@@ -428,7 +485,7 @@ struct SpireRemoteCountRollup {
     blocked_pid_count: u64,
     missing_descriptor_pid_count: u64,
     transport_pid_count: u64,
-    first_capability_blocked_status: Option<&'static str>,
+    first_remote_blocked_status: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -518,17 +575,21 @@ impl SpireRemoteCountRollup {
             }
             SPIRE_REMOTE_STATUS_STALE_EPOCH
             | SPIRE_REMOTE_STATUS_RETENTION_GAP
-            | SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
+            | SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION
+            | SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => {
                 add_remote_count(&mut self.blocked_count, 1, context, "blocked")?;
                 add_remote_count(&mut self.blocked_pid_count, pid_count, context, "blocked PID")?;
-                if self.first_capability_blocked_status.is_none() {
-                    self.first_capability_blocked_status = Some(match status {
+                if self.first_remote_blocked_status.is_none() {
+                    self.first_remote_blocked_status = Some(match status {
                         SPIRE_REMOTE_STATUS_STALE_EPOCH => SPIRE_REMOTE_STATUS_STALE_EPOCH,
                         SPIRE_REMOTE_STATUS_RETENTION_GAP => SPIRE_REMOTE_STATUS_RETENTION_GAP,
                         SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
                             SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION
                         }
-                        _ => unreachable!("capability status match already narrowed"),
+                        SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD => {
+                            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD
+                        }
+                        _ => unreachable!("remote blocker status match already narrowed"),
                     });
                 }
             }
@@ -563,7 +624,7 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::Readiness => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-                } else if let Some(status) = self.first_capability_blocked_status {
+                } else if let Some(status) = self.first_remote_blocked_status {
                     status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
@@ -576,7 +637,7 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::Execution => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-                } else if let Some(status) = self.first_capability_blocked_status {
+                } else if let Some(status) = self.first_remote_blocked_status {
                     status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
@@ -589,7 +650,7 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::LibpqRequest => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
-                } else if let Some(status) = self.first_capability_blocked_status {
+                } else if let Some(status) = self.first_remote_blocked_status {
                     status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
@@ -1824,13 +1885,38 @@ pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
 fn remote_search_libpq_dispatch_plan_rows_from_connections(
     connection_rows: &[SpireRemoteSearchLibpqConnectionPlanRow],
 ) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
+    let budget_limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+    let mut admitted_node_count = 0_u64;
+    let mut admitted_pid_count = 0_u64;
+
     connection_rows
         .iter()
         .map(|row| {
-            let dispatch_action = if row.pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
+            let budget_blocked = remote_search_libpq_dispatch_budget_blocked(
+                row,
+                budget_limits,
+                admitted_node_count,
+                admitted_pid_count,
+            );
+            if row.pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE && !budget_blocked {
+                admitted_node_count = admitted_node_count.saturating_add(1);
+                admitted_pid_count = admitted_pid_count.saturating_add(row.pid_count);
+            }
+
+            let pipeline_mode = if budget_blocked {
+                SPIRE_REMOTE_NONE
+            } else {
+                row.pipeline_mode
+            };
+            let dispatch_action = if pipeline_mode == SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
                 SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION
             } else {
                 SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION
+            };
+            let status = if budget_blocked {
+                SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD
+            } else {
+                row.status
             };
 
             SpireRemoteSearchLibpqDispatchPlanRow {
@@ -1848,13 +1934,34 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
                 remote_index_regclass: row.remote_index_regclass.clone(),
                 descriptor_generation: row.descriptor_generation,
                 remote_index_identity: row.remote_index_identity.clone(),
-                pipeline_mode: row.pipeline_mode,
+                pipeline_mode,
                 dispatch_action,
                 receive_validator: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
-                status: row.status,
+                status,
             }
         })
         .collect()
+}
+
+fn remote_search_libpq_dispatch_budget_blocked(
+    row: &SpireRemoteSearchLibpqConnectionPlanRow,
+    limits: SpireRemoteSearchLibpqExecutorBudgetLimits,
+    admitted_node_count: u64,
+    admitted_pid_count: u64,
+) -> bool {
+    if row.pipeline_mode != SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE {
+        return false;
+    }
+    if limits.has_pid_per_node_cap() && row.pid_count > limits.max_pids_per_node {
+        return true;
+    }
+    if limits.has_node_cap() && admitted_node_count >= limits.max_nodes {
+        return true;
+    }
+    if limits.has_pid_cap() && admitted_pid_count.saturating_add(row.pid_count) > limits.max_pids {
+        return true;
+    }
+    false
 }
 
 pub(crate) unsafe fn remote_search_libpq_dispatch_summary_row(
@@ -1951,6 +2058,110 @@ fn remote_search_libpq_dispatch_summary_from_plan_rows(
             consistency_mode: parsed_consistency_mode,
             status,
         })
+}
+
+pub(crate) unsafe fn remote_search_libpq_executor_budget_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {
+        let rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        remote_search_libpq_executor_budget_summary_from_dispatch_rows(requested_epoch, &rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_executor_budget_summary_from_dispatch_rows(
+    requested_epoch: u64,
+    rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+) -> Result<SpireRemoteSearchLibpqExecutorBudgetSummaryRow, String> {
+    let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+    let mut admitted_dispatch_count = 0_u64;
+    let mut budget_blocked_dispatch_count = 0_u64;
+    let mut remote_pid_count = 0_u64;
+    let mut admitted_pid_count = 0_u64;
+    let mut budget_blocked_pid_count = 0_u64;
+
+    for row in rows {
+        add_remote_count(
+            &mut remote_pid_count,
+            row.pid_count,
+            "remote search libpq executor budget summary",
+            "remote PID",
+        )?;
+        if row.status == SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD {
+            add_remote_count(
+                &mut budget_blocked_dispatch_count,
+                1,
+                "remote search libpq executor budget summary",
+                "budget-blocked dispatch",
+            )?;
+            add_remote_count(
+                &mut budget_blocked_pid_count,
+                row.pid_count,
+                "remote search libpq executor budget summary",
+                "budget-blocked PID",
+            )?;
+        } else if row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+            add_remote_count(
+                &mut admitted_dispatch_count,
+                1,
+                "remote search libpq executor budget summary",
+                "admitted dispatch",
+            )?;
+            add_remote_count(
+                &mut admitted_pid_count,
+                row.pid_count,
+                "remote search libpq executor budget summary",
+                "admitted PID",
+            )?;
+        }
+    }
+
+    let dispatch_count = u64::try_from(rows.len())
+        .map_err(|_| "remote search libpq executor budget dispatch count exceeds u64")?;
+    let (next_executor_step, status, recommendation) = if budget_blocked_dispatch_count > 0 {
+        (
+            SPIRE_REMOTE_EXECUTOR_STEP_BUDGET,
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            remote_search_pre_dispatch_blocker_recommendation(
+                SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            ),
+        )
+    } else {
+        (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
+    };
+
+    Ok(SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
+        requested_epoch,
+        dispatch_count,
+        admitted_dispatch_count,
+        budget_blocked_dispatch_count,
+        remote_pid_count,
+        admitted_pid_count,
+        budget_blocked_pid_count,
+        max_nodes: limits.max_nodes,
+        max_pids: limits.max_pids,
+        max_pids_per_node: limits.max_pids_per_node,
+        connect_timeout_ms: limits.connect_timeout_ms,
+        statement_timeout_ms: limits.statement_timeout_ms,
+        next_executor_step,
+        status,
+        recommendation,
+    })
 }
 
 pub(crate) unsafe fn remote_search_libpq_secret_plan_rows(
@@ -2059,10 +2270,11 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
 ) -> Result<SpireRemoteSearchLibpqSecretSummaryRow, String> {
     let mut resolved_secret_count = 0_u64;
     let mut blocked_secret_count = 0_u64;
-    let mut descriptor_blocked_count = 0_u64;
+    let mut pre_secret_blocked_count = 0_u64;
     let mut remote_pid_count = 0_u64;
     let mut blocked_pid_count = 0_u64;
-    let mut first_descriptor_status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
+    let mut first_pre_secret_blocked_status = SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR;
+    let mut first_pre_secret_blocked_step = SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR;
 
     for row in rows {
         add_remote_count(
@@ -2093,14 +2305,15 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
                     "blocked secret",
                 )?;
             } else {
-                if descriptor_blocked_count == 0 {
-                    first_descriptor_status = row.status;
+                if pre_secret_blocked_count == 0 {
+                    first_pre_secret_blocked_status = row.status;
+                    first_pre_secret_blocked_step = row.next_executor_step;
                 }
                 add_remote_count(
-                    &mut descriptor_blocked_count,
+                    &mut pre_secret_blocked_count,
                     1,
                     "remote search libpq secret summary",
-                    "descriptor-blocked row",
+                    "pre-secret-blocked row",
                 )?;
             }
         }
@@ -2110,8 +2323,8 @@ fn remote_search_libpq_secret_summary_from_plan_rows(
         .map_err(|_| "remote search libpq secret count exceeds u64")?;
     let (next_executor_step, status) = if secret_count == 0 {
         (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY)
-    } else if descriptor_blocked_count > 0 {
-        (SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR, first_descriptor_status)
+    } else if pre_secret_blocked_count > 0 {
+        (first_pre_secret_blocked_step, first_pre_secret_blocked_status)
     } else if blocked_secret_count > 0 {
         (
             SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
@@ -2347,7 +2560,21 @@ fn remote_search_libpq_executor_readiness_from_summaries(
         next_executor_step,
         status,
         recommendation,
-    ) = if dispatch_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
+    ) = if dispatch_summary.status == SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD {
+        (
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_NONE,
+            SPIRE_REMOTE_EXECUTOR_STEP_BUDGET,
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            remote_search_pre_dispatch_blocker_recommendation(
+                SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            ),
+        )
+    } else if dispatch_summary.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
         (
             SPIRE_REMOTE_NONE,
             SPIRE_REMOTE_NONE,
@@ -2451,6 +2678,15 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
             step_ordinal: 4,
+            step_name: SPIRE_REMOTE_EXECUTOR_STEP_BUDGET,
+            executor_action: "enforce_remote_executor_budget",
+            input_contract: "ready_remote_dispatch_rows_and_session_budget_gucs",
+            output_contract: "budget_admitted_remote_dispatch_rows",
+            blocking_status: SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            validator: "must_block_over_budget_rows_before_secret_lookup_or_socket_open",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 5,
             step_name: SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
             executor_action: "resolve_conninfo_secret_reference",
             input_contract: "conninfo_secret_name",
@@ -2459,7 +2695,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_resolve_secret_without_exposing_raw_conninfo",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 5,
+            step_ordinal: 6,
             step_name: "open_libpq_connection",
             executor_action: "open_libpq_connection",
             input_contract: SPIRE_REMOTE_CONNINFO_READY,
@@ -2468,7 +2704,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_target_registered_remote_index",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 6,
+            step_ordinal: 7,
             step_name: "enter_libpq_pipeline_mode",
             executor_action: "enter_libpq_pipeline_mode",
             input_contract: "libpq_connection",
@@ -2477,7 +2713,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_enter_pipeline_before_sending_remote_search",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 7,
+            step_ordinal: 8,
             step_name: "send_remote_search_request",
             executor_action: "send_remote_search_request",
             input_contract: "ec_spire_remote_search_libpq_request_plan",
@@ -2486,7 +2722,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_bind_libpq_parameter_contract",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 8,
+            step_ordinal: 9,
             step_name: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
             executor_action: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
             input_contract: "remote_search_result_batch",
@@ -2495,7 +2731,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_match_libpq_result_contract",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 9,
+            step_ordinal: 10,
             step_name: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
             executor_action: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
             input_contract: "validated_remote_candidate_batches",
@@ -3089,6 +3325,30 @@ fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, St
     }
 }
 
+pub(crate) fn remote_search_libpq_connect_with_session_timeouts(
+    conninfo: &str,
+    node_id: u32,
+    context: &str,
+) -> Result<postgres::Client, String> {
+    let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+    let mut config = conninfo
+        .parse::<postgres::Config>()
+        .map_err(|_| format!("ec_spire {context} conninfo parse failed for node_id {node_id}"))?;
+    if limits.connect_timeout_ms > 0 {
+        config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
+    }
+    let mut client = config
+        .connect(postgres::NoTls)
+        .map_err(|_| format!("ec_spire {context} failed to open connection for node_id {node_id}"))?;
+    if limits.statement_timeout_ms > 0 {
+        let sql = format!("SET statement_timeout = {}", limits.statement_timeout_ms);
+        client.batch_execute(&sql).map_err(|_| {
+            format!("ec_spire {context} failed to configure statement_timeout for node_id {node_id}")
+        })?;
+    }
+    Ok(client)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SpireRemoteEndpointIdentityCacheKey {
     coordinator_index_oid: u32,
@@ -3412,12 +3672,11 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
             row.node_id
         )
     })?;
-    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
-        format!(
-            "ec_spire remote search libpq executor failed to open connection for node_id {}",
-            row.node_id
-        )
-    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        row.node_id,
+        "remote search libpq executor",
+    )?;
     let remote_index_oid = client
         .query_one(
             "SELECT to_regclass($1)::oid",
@@ -3607,12 +3866,11 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
                 row.node_id
             )
         })?;
-        let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
-            format!(
-                "ec_spire remote search libpq identity cache contract probe failed to open connection for node_id {}",
-                row.node_id
-            )
-        })?;
+        let mut client = remote_search_libpq_connect_with_session_timeouts(
+            &conninfo,
+            row.node_id,
+            "remote search libpq identity cache contract probe",
+        )?;
         let remote_index_oid = client
             .query_one(
                 "SELECT to_regclass($1)::oid",
@@ -3708,6 +3966,81 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
         ))
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+#[allow(clippy::type_complexity)]
+pub(crate) fn remote_search_libpq_executor_budget_contract_probe_counts(
+) -> (u64, u64, u64, u64, u64, u64, &'static str, &'static str) {
+    let connection_rows = vec![
+        SpireRemoteSearchLibpqConnectionPlanRow {
+            requested_epoch: 7,
+            node_id: 2,
+            selected_pids: vec![10],
+            pid_count: 1,
+            query_dimension: 2,
+            top_k: 1,
+            consistency_mode: "strict",
+            execution_transport: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            conninfo_secret_name: "spire/remote/budget/2".to_owned(),
+            remote_index_regclass: "remote_spire_idx".to_owned(),
+            descriptor_generation: 21,
+            remote_index_identity: vec![10],
+            remote_index_identity_bytes: 1,
+            conninfo_resolution: SPIRE_REMOTE_CONNINFO_READY,
+            pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            status: SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
+        },
+        SpireRemoteSearchLibpqConnectionPlanRow {
+            requested_epoch: 7,
+            node_id: 3,
+            selected_pids: vec![20],
+            pid_count: 1,
+            query_dimension: 2,
+            top_k: 1,
+            consistency_mode: "strict",
+            execution_transport: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            conninfo_secret_name: "spire/remote/budget/3".to_owned(),
+            remote_index_regclass: "remote_spire_idx".to_owned(),
+            descriptor_generation: 22,
+            remote_index_identity: vec![11],
+            remote_index_identity_bytes: 1,
+            conninfo_resolution: SPIRE_REMOTE_CONNINFO_READY,
+            pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            status: SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ,
+        },
+    ];
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
+    let budget_summary =
+        remote_search_libpq_executor_budget_summary_from_dispatch_rows(7, &dispatch_rows)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let secret_rows = remote_search_libpq_secret_plan_rows_from_dispatch(&dispatch_rows);
+    let secret_summary = remote_search_libpq_secret_summary_from_plan_rows(7, &secret_rows)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let dispatch_count = u64::try_from(dispatch_rows.len())
+        .unwrap_or_else(|_| pgrx::error!("budget probe dispatch count overflow"));
+    let secret_budget_blocked_count = u64::try_from(
+        secret_rows
+            .iter()
+            .filter(|row| {
+                row.status == SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD
+                    && row.provider_lookup_key == SPIRE_REMOTE_NONE
+                    && row.next_executor_step == SPIRE_REMOTE_EXECUTOR_STEP_BUDGET
+            })
+            .count(),
+    )
+    .unwrap_or_else(|_| pgrx::error!("budget probe secret blocked count overflow"));
+
+    (
+        dispatch_count,
+        budget_summary.admitted_dispatch_count,
+        budget_summary.budget_blocked_dispatch_count,
+        budget_summary.admitted_pid_count,
+        budget_summary.budget_blocked_pid_count,
+        secret_budget_blocked_count,
+        budget_summary.status,
+        secret_summary.next_executor_step,
+    )
 }
 
 pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
@@ -3816,12 +4149,11 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
             row.node_id
         )
     })?;
-    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
-        format!(
-            "ec_spire remote heap executor failed to open connection for node_id {}",
-            row.node_id
-        )
-    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        row.node_id,
+        "remote heap executor",
+    )?;
     let remote_index_oid = client
         .query_one(
             "SELECT to_regclass($1)::oid",

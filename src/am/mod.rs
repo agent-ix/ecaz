@@ -85,12 +85,14 @@ pub(crate) use self::ec_spire::{
     remote_search_finalization_summary_row as spire_remote_search_finalization_summary_row,
     remote_search_heap_resolution_contract_rows as spire_remote_search_heap_resolution_contract_rows,
     remote_search_heap_resolution_summary_row as spire_remote_search_heap_resolution_summary_row,
+    remote_search_libpq_connect_with_session_timeouts as spire_remote_search_libpq_connect_with_session_timeouts,
     remote_search_libpq_connection_open_plan_rows as spire_remote_search_libpq_connection_open_plan_rows,
     remote_search_libpq_connection_open_summary_row as spire_remote_search_libpq_connection_open_summary_row,
     remote_search_libpq_connection_plan_rows as spire_remote_search_libpq_connection_plan_rows,
     remote_search_libpq_connection_summary_row as spire_remote_search_libpq_connection_summary_row,
     remote_search_libpq_dispatch_plan_rows as spire_remote_search_libpq_dispatch_plan_rows,
     remote_search_libpq_dispatch_summary_row as spire_remote_search_libpq_dispatch_summary_row,
+    remote_search_libpq_executor_budget_summary_row as spire_remote_search_libpq_executor_budget_summary_row,
     remote_search_libpq_executor_candidate_rows as spire_remote_search_libpq_executor_candidate_rows,
     remote_search_libpq_executor_heap_candidate_rows as spire_remote_search_libpq_executor_heap_candidate_rows,
     remote_search_libpq_executor_readiness_row as spire_remote_search_libpq_executor_readiness_row,
@@ -119,6 +121,8 @@ pub(crate) use self::ec_spire::{
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
 };
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::remote_search_libpq_executor_budget_contract_probe_counts as spire_remote_search_libpq_executor_budget_contract_probe_counts;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::remote_search_libpq_identity_cache_contract_probe_counts as spire_remote_search_libpq_identity_cache_contract_probe_counts;
 

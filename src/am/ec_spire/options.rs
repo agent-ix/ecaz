@@ -33,6 +33,10 @@ const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
+const EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET: i32 = 0;
+const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
+const EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS: i32 = 0;
+const EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS: i32 = 3_600_000;
 
 static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
 static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
@@ -42,6 +46,16 @@ static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
+static EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
+static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
+static EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_LIMIT_UNSET);
+static EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
+static EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -670,6 +684,56 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_max_nodes",
+        c"Session cap for ec_spire remote-search libpq node fanout.",
+        c"Maximum ready remote nodes admitted to a single libpq remote-search dispatch; 0 disables this cap.",
+        &EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_max_pids",
+        c"Session cap for ec_spire remote-search libpq PID fanout.",
+        c"Maximum remote leaf PIDs admitted to a single libpq remote-search dispatch; 0 disables this cap.",
+        &EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_max_pids_per_node",
+        c"Session cap for ec_spire remote-search libpq PIDs per node.",
+        c"Maximum remote leaf PIDs admitted for one ready remote node in a single libpq remote-search dispatch; 0 disables this cap.",
+        &EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_connect_timeout_ms",
+        c"Session connect-timeout budget for ec_spire remote-search libpq work.",
+        c"Connect timeout in milliseconds for production remote-search libpq execution; 0 leaves the conninfo/provider default unchanged.",
+        &EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_statement_timeout_ms",
+        c"Session statement-timeout budget for ec_spire remote-search libpq work.",
+        c"Remote statement timeout in milliseconds for production remote-search libpq execution; 0 leaves the remote session default unchanged.",
+        &EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -690,6 +754,26 @@ pub(super) fn current_session_adaptive_nprobe() -> bool {
 
 pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
     EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_max_nodes() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_MAX_NODES_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_max_pids() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_max_pids_per_node() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_MAX_PIDS_PER_NODE_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_connect_timeout_ms() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC.get()
+}
+
+pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {

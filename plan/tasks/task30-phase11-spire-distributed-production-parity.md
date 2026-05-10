@@ -142,10 +142,14 @@ Acceptance artifact:
 - [ ] Use libpq pipeline mode or async send/receive for batched remote calls.
 - [ ] Bound remote fanout per query and expose truncation/degradation
   diagnostics when the bound applies.
+  - [x] First per-query bound: session caps gate ready libpq dispatch rows and
+    report `remote_executor_overload` before secret lookup.
 - [ ] Cache validated remote index identity and avoid per-query repeated
   `to_regclass` lookups where safe.
 - [ ] Add connection reuse or a clear bounded connection lifecycle with connect
   and statement timeouts.
+  - [x] First timeout surface: session connect/statement timeout GUCs are
+    applied by the diagnostic executor connection helper when nonzero.
 - [ ] Define the narrow Phase 11 libpq security contract: preserve `sslmode`
   through `conninfo_secret_name` resolution, do not expose raw conninfo, reject
   libpq authentication or certificate-verification failures in strict mode with
@@ -361,6 +365,21 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
 - [ ] Add per-query fanout caps, global coordinator work limits, per-remote
   concurrency caps, connect/statement timeouts, cancellation propagation, and
   overload-shedding diagnostics.
+  - [x] Define the first Stage C budget contract in
+    `plan/design/spire-libpq-executor-budget.md`: session caps use `0` as
+    unlimited, dispatch rows are the admission unit, over-budget rows report
+    `remote_executor_overload`, and overload blocks before secret lookup or
+    socket open.
+  - [x] Add session GUCs for per-query remote node, total PID, per-node PID,
+    connect-timeout, and statement-timeout limits.
+  - [x] Enforce per-query dispatch admission before secret lookup and expose
+    `ec_spire_remote_search_libpq_executor_budget_summary(...)` with admitted
+    and budget-blocked dispatch/PID counts plus the active limits.
+  - [x] Apply nonzero connect/statement timeout session settings in the
+    diagnostic executor connection helper while keeping raw conninfo hidden.
+  - [ ] Add global cross-query coordinator work limits and per-remote-node
+    concurrency caps.
+  - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
   - [x] Define the cache contract in

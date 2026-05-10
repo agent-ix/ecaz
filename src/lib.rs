@@ -8846,7 +8846,11 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
         } else {
             match std::env::var(&row.provider_lookup_key) {
                 Ok(conninfo) if !conninfo.is_empty() => {
-                    match postgres::Client::connect(&conninfo, postgres::NoTls) {
+                    match am::spire_remote_search_libpq_connect_with_session_timeouts(
+                        &conninfo,
+                        row.node_id,
+                        "remote search libpq executor connection check",
+                    ) {
                         Ok(_) => (
                             true,
                             "libpq_connection_opened",
@@ -9641,6 +9645,99 @@ fn ec_spire_remote_search_libpq_dispatch_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_executor_budget_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(dispatch_count, i64),
+        name!(admitted_dispatch_count, i64),
+        name!(budget_blocked_dispatch_count, i64),
+        name!(remote_pid_count, i64),
+        name!(admitted_pid_count, i64),
+        name!(budget_blocked_pid_count, i64),
+        name!(max_nodes, i64),
+        name!(max_pids, i64),
+        name!(max_pids_per_node, i64),
+        name!(connect_timeout_ms, i64),
+        name!(statement_timeout_ms, i64),
+        name!(next_executor_step, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_budget_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_executor_budget_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_executor_budget_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_executor_budget_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_executor_budget_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+        i64::try_from(row.admitted_dispatch_count)
+            .expect("admitted dispatch count should fit in i64"),
+        i64::try_from(row.budget_blocked_dispatch_count)
+            .expect("budget-blocked dispatch count should fit in i64"),
+        i64::try_from(row.remote_pid_count).expect("remote pid count should fit in i64"),
+        i64::try_from(row.admitted_pid_count).expect("admitted pid count should fit in i64"),
+        i64::try_from(row.budget_blocked_pid_count)
+            .expect("budget-blocked pid count should fit in i64"),
+        i64::try_from(row.max_nodes).expect("max nodes should fit in i64"),
+        i64::try_from(row.max_pids).expect("max pids should fit in i64"),
+        i64::try_from(row.max_pids_per_node).expect("max pids per node should fit in i64"),
+        i64::try_from(row.connect_timeout_ms).expect("connect timeout should fit in i64"),
+        i64::try_from(row.statement_timeout_ms).expect("statement timeout should fit in i64"),
+        row.next_executor_step,
+        row.status,
+        row.recommendation,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_readiness(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -10093,7 +10190,11 @@ fn ec_spire_remote_pipeline_steps(
         } else {
             match std::env::var(&row.provider_lookup_key) {
                 Ok(conninfo) if !conninfo.is_empty() => {
-                    match postgres::Client::connect(&conninfo, postgres::NoTls) {
+                    match am::spire_remote_search_libpq_connect_with_session_timeouts(
+                        &conninfo,
+                        row.node_id,
+                        "remote pipeline connection check",
+                    ) {
                         Ok(_) => (
                             true,
                             "requires_libpq_executor".to_owned(),
@@ -20605,6 +20706,12 @@ mod tests {
         ))
         .expect("executor contract secret step query should succeed")
         .expect("executor contract secret step action should exist");
+        let budget_step_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {executor_contract_from} \
+             WHERE step_name = 'remote_executor_budget'"
+        ))
+        .expect("executor contract budget step query should succeed")
+        .expect("executor contract budget step validator should exist");
         let merge_step_validator = Spi::get_one::<String>(&format!(
             "SELECT validator {executor_contract_from} \
              WHERE step_name = 'merge_validated_remote_search_candidate_batches'"
@@ -20666,9 +20773,13 @@ mod tests {
         );
         assert_eq!(score_validator, "must_be_finite");
         assert_eq!(nullable_count, 0);
-        assert_eq!(executor_step_count, 9);
+        assert_eq!(executor_step_count, 10);
         assert_eq!(first_executor_step, "remote_node_descriptor");
         assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
+        assert_eq!(
+            budget_step_validator,
+            "must_block_over_budget_rows_before_secret_lookup_or_socket_open"
+        );
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
         assert_eq!(endpoint_count, 12);
         assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
@@ -22946,6 +23057,114 @@ mod tests {
             "degraded",
             "skip_node",
         );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_libpq_executor_budget_limits() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_nodes = 1")
+            .expect("max node budget SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_connect_timeout_ms = 25")
+            .expect("connect timeout SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_statement_timeout_ms = 75")
+            .expect("statement timeout SET should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_libpq_budget_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_libpq_budget_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_libpq_budget_idx \
+             ON ec_spire_libpq_budget_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_libpq_budget_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_libpq_budget_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let args = format!(
+            "'ec_spire_libpq_budget_idx'::regclass, {active_epoch}, \
+             ARRAY[1.0, 0.0]::real[], ARRAY[{}, {}]::bigint[], 1, 'strict'",
+            selected_pids[0], selected_pids[1],
+        );
+        let budget_from =
+            format!("FROM ec_spire_remote_search_libpq_executor_budget_summary({args})");
+
+        let (
+            probe_dispatch_count,
+            probe_admitted_dispatch_count,
+            probe_budget_blocked_dispatch_count,
+            probe_admitted_pid_count,
+            probe_budget_blocked_pid_count,
+            probe_secret_budget_blocked_count,
+            probe_budget_status,
+            probe_secret_next_step,
+        ) = am::spire_remote_search_libpq_executor_budget_contract_probe_counts();
+        let sql_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT dispatch_count {budget_from}"))
+                .expect("budget dispatch query should succeed")
+                .expect("budget dispatch count should exist");
+        let budget_status = Spi::get_one::<String>(&format!("SELECT status {budget_from}"))
+            .expect("budget status query should succeed")
+            .expect("budget status should exist");
+        let budget_step =
+            Spi::get_one::<String>(&format!("SELECT next_executor_step {budget_from}"))
+                .expect("budget next-step query should succeed")
+                .expect("budget next-step should exist");
+        let admitted_dispatch_count =
+            Spi::get_one::<i64>(&format!("SELECT admitted_dispatch_count {budget_from}"))
+                .expect("budget admitted dispatch query should succeed")
+                .expect("budget admitted dispatch count should exist");
+        let budget_blocked_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT budget_blocked_dispatch_count {budget_from}"
+        ))
+        .expect("budget blocked dispatch query should succeed")
+        .expect("budget blocked dispatch count should exist");
+        let max_nodes = Spi::get_one::<i64>(&format!("SELECT max_nodes {budget_from}"))
+            .expect("budget max node query should succeed")
+            .expect("budget max node should exist");
+        let connect_timeout_ms =
+            Spi::get_one::<i64>(&format!("SELECT connect_timeout_ms {budget_from}"))
+                .expect("connect timeout query should succeed")
+                .expect("connect timeout should exist");
+        let statement_timeout_ms =
+            Spi::get_one::<i64>(&format!("SELECT statement_timeout_ms {budget_from}"))
+                .expect("statement timeout query should succeed")
+                .expect("statement timeout should exist");
+
+        assert_eq!(probe_dispatch_count, 2);
+        assert_eq!(probe_admitted_dispatch_count, 1);
+        assert_eq!(probe_budget_blocked_dispatch_count, 1);
+        assert_eq!(probe_admitted_pid_count, 1);
+        assert_eq!(probe_budget_blocked_pid_count, 1);
+        assert_eq!(probe_secret_budget_blocked_count, 1);
+        assert_eq!(probe_budget_status, "remote_executor_overload");
+        assert_eq!(probe_secret_next_step, "remote_executor_budget");
+        assert_eq!(sql_dispatch_count, 0);
+        assert_eq!(budget_status, "ready");
+        assert_eq!(budget_step, "none");
+        assert_eq!(admitted_dispatch_count, 0);
+        assert_eq!(budget_blocked_dispatch_count, 0);
+        assert_eq!(max_nodes, 1);
+        assert_eq!(connect_timeout_ms, 25);
+        assert_eq!(statement_timeout_ms, 75);
     }
 
     #[pg_test]
@@ -26210,6 +26429,12 @@ mod tests {
         ))
         .expect("operator receive attempts entrypoint query should succeed")
         .expect("operator receive attempts entrypoint should exist");
+        let budget_entrypoint_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_search_libpq_executor_budget_summary'"
+        ))
+        .expect("operator budget entrypoint query should succeed")
+        .expect("operator budget entrypoint should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -26337,8 +26562,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 15);
-        assert_eq!(operator_entrypoint_reachable_count, 15);
+        assert_eq!(operator_entrypoint_count, 16);
+        assert_eq!(operator_entrypoint_reachable_count, 16);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -26357,6 +26582,7 @@ mod tests {
             receive_attempts_use,
             "per_node_remote_receive_attempt_diagnostics"
         );
+        assert_eq!(budget_entrypoint_use, "remote_executor_resource_governance");
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");
         assert_eq!(

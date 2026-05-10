@@ -639,6 +639,25 @@ pub(crate) struct SpireRemoteSearchLibpqIdentityCacheSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqExecutorBudgetSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) dispatch_count: u64,
+    pub(crate) admitted_dispatch_count: u64,
+    pub(crate) budget_blocked_dispatch_count: u64,
+    pub(crate) remote_pid_count: u64,
+    pub(crate) admitted_pid_count: u64,
+    pub(crate) budget_blocked_pid_count: u64,
+    pub(crate) max_nodes: u64,
+    pub(crate) max_pids: u64,
+    pub(crate) max_pids_per_node: u64,
+    pub(crate) connect_timeout_ms: u64,
+    pub(crate) statement_timeout_ms: u64,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqExecutorStepContractRow {
     pub(crate) step_ordinal: u64,
     pub(crate) step_name: &'static str,

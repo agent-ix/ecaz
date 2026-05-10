@@ -46,6 +46,9 @@ timeouts, cancellation propagation, cached remote index identity validation,
 fail-closed partial-failure behavior, and final row delivery semantics.
 The Stage C identity-cache constraints for that production work are captured in
 `plan/design/spire-libpq-identity-cache.md`.
+The Stage C resource-governance constraints for per-query admission, overload
+blocking, and timeout configuration are captured in
+`plan/design/spire-libpq-executor-budget.md`.
 
 ## Required Invariants
 
