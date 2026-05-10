@@ -23746,6 +23746,23 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_transport_backend_terminated() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                sql: "SELECT pg_terminate_backend(pg_backend_pid())",
+            },
+        ]);
+        let failed = rows.first().expect("termination row should exist");
+
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "remote_backend_terminated");
+        assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_production_candidate_receive_loopback() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)

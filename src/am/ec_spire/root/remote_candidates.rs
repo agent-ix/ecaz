@@ -2561,6 +2561,9 @@ impl SpireRemoteProductionTransportAdapter {
 }
 
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {
+    if error.is_closed() {
+        return SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED;
+    }
     let Some(db_error) = error.as_db_error() else {
         return SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED;
     };

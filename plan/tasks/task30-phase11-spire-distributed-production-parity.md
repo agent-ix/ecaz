@@ -462,6 +462,8 @@ bundle.
       compact-candidate receive classify remote statement timeout separately
       from generic remote query failure, with reserved categories for remote
       query cancellation and remote backend termination.
+    - [x] Classify closed in-flight async remote query connections as
+      `remote_backend_terminated` on the production transport path.
     - [ ] Keep local cancel, local statement timeout, remote statement timeout,
       connect timeout, and remote backend termination as distinct diagnostic
       categories.
