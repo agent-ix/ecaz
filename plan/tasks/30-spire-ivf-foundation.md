@@ -1973,8 +1973,8 @@ production-readiness gate is reviewed.
   and diagnostics.
 - [ ] **Production libpq coordinator.** Add concurrent or pipelined libpq
   fanout with bounded connections, timeouts, cancellation, cached remote index
-  validation, transport security, credential lifecycle, global backpressure,
-  and explicit strict/degraded failure behavior.
+  validation, libpq `sslmode` preservation, raw-conninfo non-exposure, global
+  backpressure, and explicit strict/degraded failure behavior.
 - [ ] **Remote heap resolution.** Resolve remote heap visibility on the origin
   node and return one coordinator-visible ordered result stream.
 - [ ] **Multi-instance readiness.** Add local coordinator plus at least two
@@ -1985,7 +1985,7 @@ production-readiness gate is reviewed.
   scheduling unit and add repeatable local multi-store evidence before AWS.
 - [ ] **Production harness and runbooks.** Extend `ecaz` and docs so local
   multi-instance recall/latency/counter packets can be produced repeatably,
-  including transport-security setup and local capacity targets.
+  including the Phase 11 libpq security boundary and local capacity targets.
 - [ ] **AWS entry gate.** Defer AWS/RDS-class scale until the Phase 11 local
   production-readiness bundle is reviewed.
 

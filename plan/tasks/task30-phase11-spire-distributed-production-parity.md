@@ -46,6 +46,10 @@ local multi-instance fixtures first.
   origin-node heap resolution first; cross-node insert routing and
   read-after-write semantics remain a later distributed-write phase unless a
   slice explicitly narrows and lands the contract.
+- Credential rotation, audit-log schema, and a full TLS runbook. Phase 11 keeps
+  the narrower libpq contract: preserve `sslmode` through
+  `conninfo_secret_name`, keep raw conninfo hidden, and define sanitized
+  strict/degraded auth or certificate-verification failure behavior.
 
 ## Entry Rules
 
@@ -133,10 +137,10 @@ Acceptance artifact:
   `to_regclass` lookups where safe.
 - [ ] Add connection reuse or a clear bounded connection lifecycle with connect
   and statement timeouts.
-- [ ] Define transport security and credential lifecycle: required TLS modes
-  (`require`, `verify-ca`, or `verify-full`), certificate-validation behavior,
-  secret sourcing through `conninfo_secret_name`, rotation expectations,
-  strict/degraded auth-failure behavior, and sanitized audit logging.
+- [ ] Define the narrow Phase 11 libpq security contract: preserve `sslmode`
+  through `conninfo_secret_name` resolution, do not expose raw conninfo, reject
+  libpq authentication or certificate-verification failures in strict mode with
+  sanitized errors, and report skipped remotes in degraded mode.
 - [ ] Add resource governance across queries, not only per query: coordinator
   global connection/work limits, per-remote-node concurrency caps, overload
   shedding behavior, and diagnostics for backpressure decisions.
@@ -204,8 +208,10 @@ Acceptance artifact:
   degraded/strict failure counts in packet-local artifacts.
 - [ ] Add a production-readiness runbook that states exactly when AWS scale
   can be scheduled.
-- [ ] Include transport-security setup, credential rotation, auth-failure
-  handling, and sanitized audit-log expectations in the runbook.
+- [ ] Include the Phase 11 libpq security boundary in the runbook: `sslmode`
+  preservation, raw-conninfo non-exposure, sanitized strict/degraded
+  auth/certificate failure behavior, and explicit deferral of credential
+  rotation plus audit-log schema.
 - [ ] Publish local capacity targets for the pre-AWS gate: maximum remotes,
   maximum concurrent coordinator queries, maximum concurrent work per remote,
   maximum PIDs per node, and expected overload/degraded-mode behavior. These
@@ -244,8 +250,9 @@ Acceptance artifact:
   extension/protocol version, and opclass-binary combinations before merge.
 - Remote fanout is concurrent or pipelined, bounded, timed out, cancellable,
   and observable.
-- Remote fanout has a documented TLS/credential/audit contract and a bounded
-  resource-governance story across concurrent queries.
+- Remote fanout preserves libpq `sslmode`, keeps raw conninfo hidden, reports
+  sanitized auth/cert failures under strict/degraded semantics, and has a
+  bounded resource-governance story across concurrent queries.
 - Local multi-instance harness can reproduce recall/latency/counter evidence
   without AWS.
 - AWS scale packet is ready to run, but not yet claimed as complete.

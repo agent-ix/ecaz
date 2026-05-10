@@ -34,7 +34,7 @@ AWS/RDS-class scale packet can start.
 | Quantized scoring | RaBitQ is the supported first SPIRE quantized path. | Keep RaBitQ in scope and bind its profile/fingerprint into remote candidate compatibility. | Phase 11.3 and 11.8 | Open |
 | PQ/PQFastScan | Reserved/unsupported for SPIRE today. | Explicitly exclude from Phase 11 parity claims unless a later task lands support. | Phase 11.1 and future task | Deferred |
 | Parallel index construction | Local build/update publication is relation-backed and epoch-based. | Remote manifest publication, online lifecycle behavior, and version skew must be defined before production distribution. | Phase 11.6 | Open |
-| Deployment and robust operation | Local diagnostics are broad; remote security, resource governance, and fault injection need production gates. | Add TLS/credential/audit contract, global/per-remote backpressure, and strict/degraded fault matrix. | Phase 11.4, 11.6, 11.8 | Open |
+| Deployment and robust operation | Local diagnostics are broad; remote connection security, resource governance, and fault injection need production gates. | Preserve libpq `sslmode` through secret resolution, keep raw conninfo hidden, define sanitized strict/degraded auth/cert failure behavior, add global/per-remote backpressure, and add strict/degraded fault matrix. | Phase 11.4, 11.6, 11.8 | Open |
 | Performance/scalability evidence | Local 10k and pipeline counter evidence exists; product scale is not claimed. | Local multi-instance recall/latency/counter bundle must pass before AWS is scheduled. | Phase 11.8 and 11.9 | Open |
 | Extreme-scale simulation | Not implemented as a product claim. | Keep out of Phase 11 exit unless implemented as a non-product planning model with clear labels. | Future scale packet | Deferred |
 
@@ -72,9 +72,11 @@ explicit accepted deferrals:
    PostgreSQL nodes, including epoch mismatch, version skew, stale remote,
    dropped/reindexed remote index, slow remote, cancellation, timeout,
    connection reset, backend termination, simulated partition, and remote OOM.
-7. Security and lifecycle runbook covers TLS mode, certificate validation,
-   `conninfo_secret_name` sourcing, secret rotation, auth failure, sanitized
-   audit logging, and raw-conninfo non-exposure.
+7. Remote connection security preserves libpq `sslmode` from the
+   `conninfo_secret_name` provider without stripping or downgrading it; strict
+   mode rejects libpq authentication or certificate-verification failures with a
+   sanitized error, degraded mode reports the remote as skipped, and raw
+   conninfo remains unexposed from SQL.
 8. Resource governance runbook states local targets for maximum remotes,
    concurrent coordinator queries, concurrent work per remote, PIDs per node,
    and overload/degraded behavior.
@@ -92,6 +94,8 @@ explicit accepted deferrals:
 - Distributed writes and cross-node read-after-write semantics.
 - Coordinator HA, coordinator election, and multi-coordinator consensus.
 - A custom network protocol beyond libpq/pipeline mode.
+- Credential rotation, audit-log schema, and a full TLS runbook beyond the
+  Phase 11 libpq `sslmode` preservation and sanitized failure contract.
 
 ## First Implementation Slice
 
