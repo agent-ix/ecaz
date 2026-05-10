@@ -789,6 +789,12 @@ Goal: prove distributed correctness locally before AWS.
     pgrx install discovery, packet-local artifact/log arguments, explicit port
     overrides, and setup/teardown delegated to the reviewed fixture script.
     The full epoch/lifecycle/fault fixture remains open.
+  - [x] Packet `30777` runs the transport-overlap fixture through the new
+    `ecaz` entrypoint with packet-local logs. The fixture started one
+    coordinator plus two remotes and captured ready rows for both remotes, with
+    the fast remote completing before the deliberately slow remote. This is CLI
+    runtime evidence for the existing transport-overlap case, not coverage of
+    the full Stage E strict/degraded matrix.
 - [ ] Publish remote placement readiness and replica manifest freshness
   diagnostics.
   - [x] Packet `30771` adds the packet-friendly operator diagnostic rollup for
