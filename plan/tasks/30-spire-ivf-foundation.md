@@ -1957,7 +1957,10 @@ Detailed task file:
 Phase 11 owns the production-readiness work that should happen before the
 deferred AWS/RDS-class scale packet: production remote execution, writer-side
 global vector IDs, origin-node heap resolution, local multi-instance fixtures,
-strict/degraded epoch behavior, and distributed benchmark harnesses.
+strict/degraded epoch behavior, security/version/fault contracts, and
+distributed benchmark harnesses. Coordinator HA, distributed writes, and
+AWS/RDS-class product-scale claims remain deferred until this local
+production-readiness gate is reviewed.
 
 - [ ] **Paper-parity gate.** Build a SPIRE paper parity checklist and define
   the local production-readiness gate that must pass before AWS is scheduled.
@@ -1966,19 +1969,23 @@ strict/degraded epoch behavior, and distributed benchmark harnesses.
   compatibility.
 - [ ] **Remote search endpoint.** Promote or add a production remote search
   endpoint that returns compact candidates with served epoch, node identity,
-  row locator, score, and diagnostics.
+  row locator, score, quantizer/index fingerprint, protocol/version metadata,
+  and diagnostics.
 - [ ] **Production libpq coordinator.** Add concurrent or pipelined libpq
   fanout with bounded connections, timeouts, cancellation, cached remote index
-  validation, and explicit strict/degraded failure behavior.
+  validation, transport security, credential lifecycle, global backpressure,
+  and explicit strict/degraded failure behavior.
 - [ ] **Remote heap resolution.** Resolve remote heap visibility on the origin
   node and return one coordinator-visible ordered result stream.
 - [ ] **Multi-instance readiness.** Add local coordinator plus at least two
   remote PostgreSQL node fixtures that verify epoch consistency, degraded
-  behavior, merge ordering, and fanout diagnostics.
+  behavior, merge ordering, online lifecycle behavior, fault injection, and
+  fanout diagnostics.
 - [ ] **Local multi-NVMe hardening.** Keep `(node_id, local_store_id)` as the
   scheduling unit and add repeatable local multi-store evidence before AWS.
 - [ ] **Production harness and runbooks.** Extend `ecaz` and docs so local
-  multi-instance recall/latency/counter packets can be produced repeatably.
+  multi-instance recall/latency/counter packets can be produced repeatably,
+  including transport-security setup and local capacity targets.
 - [ ] **AWS entry gate.** Defer AWS/RDS-class scale until the Phase 11 local
   production-readiness bundle is reviewed.
 

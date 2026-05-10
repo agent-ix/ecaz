@@ -39,6 +39,13 @@ local multi-instance fixtures first.
 - PQ/PQFastScan implementation.
 - A generic distributed SQL engine. Phase 11 is SPIRE-specific and should reuse
   PostgreSQL/libpq only where it serves the SPIRE coordinator path.
+- Coordinator high availability and multi-coordinator consensus. Phase 11 may
+  allow a coordinator to also serve local SPIRE partitions, but failover and
+  coordinator election are deferred.
+- Distributed writes across remote nodes. Phase 11 defines read fanout and
+  origin-node heap resolution first; cross-node insert routing and
+  read-after-write semantics remain a later distributed-write phase unless a
+  slice explicitly narrows and lands the contract.
 
 ## Entry Rules
 
@@ -54,6 +61,10 @@ local multi-instance fixtures first.
 
 - [ ] Create a packet-local SPIRE paper parity checklist mapping each paper
   mechanism to current implementation status, evidence, and required follow-up.
+- [ ] Use a stable traceability artifact format:
+  `paper section/mechanism -> implementation status -> evidence packet ->
+  blocker/deferral -> owner phase`, so reviewers can audit parity without
+  reconstructing the history from chat or task prose.
 - [ ] Split "diagnostic-only" surfaces from production surfaces in docs and
   code comments so operators cannot mistake diagnostic libpq helpers for the
   production distributed AM path.
@@ -85,10 +96,18 @@ local multi-instance fixtures first.
 - [ ] Remote nodes must score near their partition objects and return compact
   candidate rows with served epoch, node identity, vector identity, row locator,
   score, flags, and diagnostics.
+- [ ] Bind remote candidate rows to the served quantizer/index identity:
+  RaBitQ profile, code length, training-stat fingerprint, index build format,
+  and served epoch must be compatible before coordinator merge accepts scores.
+- [ ] Add protocol, extension-version, and opclass-binary version negotiation.
+  Strict mode must reject incompatible remotes; degraded mode must report the
+  skipped node and the exact mismatch.
 - [ ] Remote nodes must reject stale/unavailable epochs explicitly in strict
   mode and surface degraded behavior explicitly when allowed.
 - [ ] Add PG18 tests for nonempty remote candidates, stale epoch rejection, and
   empty/top-k-zero behavior.
+- [ ] Add local version-skew tests with two remotes at different advertised
+  contract versions.
 
 ## Phase 11.4: Production Libpq Coordinator Executor
 
@@ -101,6 +120,13 @@ local multi-instance fixtures first.
   `to_regclass` lookups where safe.
 - [ ] Add connection reuse or a clear bounded connection lifecycle with connect
   and statement timeouts.
+- [ ] Define transport security and credential lifecycle: required TLS modes
+  (`require`, `verify-ca`, or `verify-full`), certificate-validation behavior,
+  secret sourcing through `conninfo_secret_name`, rotation expectations,
+  strict/degraded auth-failure behavior, and sanitized audit logging.
+- [ ] Add resource governance across queries, not only per query: coordinator
+  global connection/work limits, per-remote-node concurrency caps, overload
+  shedding behavior, and diagnostics for backpressure decisions.
 - [ ] Propagate local query cancellation to outstanding remote work.
 - [ ] Define fail-closed strict mode and explicit degraded mode behavior for
   partial remote failures.
@@ -128,6 +154,15 @@ local multi-instance fixtures first.
   nodes and local store IDs.
 - [ ] Verify strict mode does not mix incompatible epochs across nodes.
 - [ ] Verify degraded mode reports every skipped or stale remote node.
+- [ ] Define and test online lifecycle behavior when a remote index is dropped,
+  reindexed, or created concurrently while fanout is planned or in flight.
+- [ ] Add replica manifest freshness diagnostics: identify which remote node is
+  serving each boundary replica, whether its manifest is current, and how
+  degraded mode reports stale or missing replica placement.
+- [ ] Add a fault matrix for connection reset mid-batch, remote backend
+  termination, remote statement timeout, local statement timeout/cancel,
+  simulated network partition, version skew, and remote OOM. Each case must
+  state strict and degraded expected behavior.
 - [ ] Add operator diagnostics that show remote node readiness, served epoch,
   remote fanout, candidate batches, heap resolution state, and merge status in
   one packet-friendly path.
@@ -156,6 +191,12 @@ local multi-instance fixtures first.
   degraded/strict failure counts in packet-local artifacts.
 - [ ] Add a production-readiness runbook that states exactly when AWS scale
   can be scheduled.
+- [ ] Include transport-security setup, credential rotation, auth-failure
+  handling, and sanitized audit-log expectations in the runbook.
+- [ ] Publish local capacity targets for the pre-AWS gate: maximum remotes,
+  maximum concurrent coordinator queries, maximum concurrent work per remote,
+  maximum PIDs per node, and expected overload/degraded-mode behavior. These
+  numbers are local production-readiness targets, not AWS product claims.
 - [ ] Add docs that distinguish local functionality, local production-readiness
   smoke, and AWS/RDS product-scale evidence.
 
@@ -186,8 +227,12 @@ local multi-instance fixtures first.
   compact candidates into one ordered stream.
 - Remote heap resolution is production-defined and tested.
 - Strict and degraded modes have explicit, tested behavior.
+- Strict mode rejects incompatible epoch, quantizer/index fingerprint,
+  extension/protocol version, and opclass-binary combinations before merge.
 - Remote fanout is concurrent or pipelined, bounded, timed out, cancellable,
   and observable.
+- Remote fanout has a documented TLS/credential/audit contract and a bounded
+  resource-governance story across concurrent queries.
 - Local multi-instance harness can reproduce recall/latency/counter evidence
   without AWS.
 - AWS scale packet is ready to run, but not yet claimed as complete.
