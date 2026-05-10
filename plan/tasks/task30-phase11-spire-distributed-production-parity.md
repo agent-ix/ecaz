@@ -214,8 +214,18 @@ Acceptance artifact:
       stale/served epoch, and reserved Stage D heap-resolution categories.
     - [x] Include `consistency_mode_mismatch` alongside the transport and
       receive categories when the matrix lands.
-- [ ] Add local multi-instance tests proving tail latency is not serialized
+    - [x] Reviewer P3 follow-up: C5 must consume this matrix, or a Rust-side
+      equivalent generated from the same category list, as the AM-boundary
+      source of truth. Reserved Stage D heap-resolution rows are category names
+      only until the heap executor emits them.
+- [x] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.
+  - [x] First multi-instance timing proof: packet `30752` adds a PG18 harness
+    with one coordinator plus two separate remote PostgreSQL clusters, resolves
+    conninfo through secret names, and proves the fast ready remote completes
+    before the deliberately slow remote under the production async transport
+    adapter. This is transport-overlap evidence only; the broader Stage E
+    epoch/lifecycle/fault matrix remains open.
 
 ## Phase 11.5: Remote Heap Resolution and Final Row Delivery
 
@@ -605,8 +615,11 @@ bundle.
   local cancel.
   - [ ] Add packet-local evidence for governance-slot release after local
     cancel.
-  - [ ] Add packet-local timing evidence for first ready remote result arriving
+  - [x] Add packet-local timing evidence for first ready remote result arriving
     before a deliberately slow remote completes.
+    - [x] Packet `30752` records `fast_completed_after_ms=3` and
+      `slow_completed_after_ms=304` from separate local PG18 remote clusters
+      through the production transport adapter.
 
 ### Stage D: Remote Heap Resolution and Final Rows
 
@@ -627,6 +640,10 @@ Goal: make the coordinator-visible result stream production-correct.
 Goal: prove distributed correctness locally before AWS.
 
 - [ ] Add local one-coordinator/two-remote setup and teardown through `ecaz`.
+  - [x] First shell harness exists for the transport-overlap slice:
+    `scripts/run_spire_multicluster_transport_overlap_pg18.sh` starts one
+    coordinator and two remote PG18 clusters. The `ecaz` operator command and
+    the full epoch/lifecycle/fault fixture remain open.
 - [ ] Publish remote placement readiness and replica manifest freshness
   diagnostics.
 - [ ] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX

@@ -104,6 +104,15 @@ reuse, C4 strict/degraded AM-boundary semantics, C5 AM scan integration, Stage
 D remote heap resolution, and the local multi-instance readiness bundle are
 reviewed.
 
+Packet 30752 adds the first true local multi-instance timing proof for C1:
+`scripts/run_spire_multicluster_transport_overlap_pg18.sh` starts one
+coordinator plus two separate remote PG18 clusters, resolves conninfo through
+test-only secret names, and calls the production async transport adapter. The
+packet artifact records the fast remote completing at 3 ms while the
+deliberately slow remote completes at 304 ms. This closes only the
+transport-overlap evidence gap; endpoint, epoch, lifecycle, degraded-mode, and
+remote heap fixtures remain Stage D/E work.
+
 ## Landing Sequence
 
 ### C0: State Contract
@@ -271,6 +280,12 @@ heap-resolution categories. Most remote-node failures fail closed in strict
 mode and become node skips in degraded mode; local cancellation and local
 statement timeout remain query-wide cancellations in both modes; consistency
 mode and requested-epoch mismatches fail closed in both modes.
+
+C5 must consume this matrix, or a Rust-side equivalent generated from the same
+category list, as the AM-boundary source of truth instead of re-encoding
+strict/degraded behavior in the scan path. The Stage D heap-resolution rows in
+the matrix are reserved category names only until the heap executor emits them;
+they are not evidence that remote heap resolution is implemented.
 
 ### C5: AM Scan Integration
 

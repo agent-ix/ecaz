@@ -14083,6 +14083,85 @@ mod tests {
         true
     }
 
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_transport_probe(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        slow_node_id: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(node_id, i64),
+            name!(started_after_ms, i64),
+            name!(completed_after_ms, i64),
+            name!(elapsed_ms, i64),
+            name!(row_count, i64),
+            name!(status, &'static str),
+            name!(failure_category, &'static str),
+        ),
+    > {
+        if node_ids.len() != conninfo_secret_names.len() {
+            pgrx::error!(
+                "ec_spire_test_production_transport_probe node_ids and conninfo_secret_names lengths must match"
+            );
+        }
+        let slow_node_id = u32::try_from(slow_node_id).unwrap_or_else(|_| {
+            pgrx::error!(
+                "ec_spire_test_production_transport_probe slow_node_id must be non-negative"
+            )
+        });
+        let requests = node_ids
+            .into_iter()
+            .zip(conninfo_secret_names)
+            .map(|(node_id, conninfo_secret_name)| {
+                let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                    pgrx::error!(
+                        "ec_spire_test_production_transport_probe node_id must be non-negative"
+                    )
+                });
+                let provider_lookup_key =
+                    am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!("ec_spire_test_production_transport_probe {e}")
+                        });
+                let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
+                    pgrx::error!(
+                        "ec_spire_test_production_transport_probe missing conninfo secret {conninfo_secret_name}"
+                    )
+                });
+                if conninfo.is_empty() {
+                    pgrx::error!(
+                        "ec_spire_test_production_transport_probe empty conninfo secret {conninfo_secret_name}"
+                    );
+                }
+                am::SpireRemoteProductionTransportProbeRequest {
+                    node_id,
+                    conninfo,
+                    sql: if node_id == slow_node_id {
+                        "SELECT pg_sleep(0.30)"
+                    } else {
+                        "SELECT 1"
+                    },
+                }
+            })
+            .collect::<Vec<_>>();
+        let rows = am::spire_remote_search_production_transport_probe_for_test(requests);
+
+        TableIterator::new(rows.into_iter().map(|row| {
+            (
+                i64::from(row.node_id),
+                i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+                i64::try_from(row.completed_after_ms)
+                    .expect("completed_after_ms should fit in i64"),
+                i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+                i64::try_from(row.row_count).expect("row count should fit in i64"),
+                row.status,
+                row.failure_category,
+            )
+        }))
+    }
+
     fn current_pg_test_loopback_conninfo() -> String {
         let socket_dirs = Spi::get_one::<String>("SHOW unix_socket_directories")
             .expect("socket directory query should succeed")
