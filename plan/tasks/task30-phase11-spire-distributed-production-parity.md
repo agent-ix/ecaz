@@ -310,6 +310,10 @@ endpoint.
   - [x] Libpq candidate decode now validates endpoint protocol/version and
     rejects non-ready endpoint identity rows before candidates can enter the
     merge path; loopback executor coverage uses a RaBitQ remote-serving index.
+  - [x] Strict fail-closed PG18 loopback coverage proves a non-RaBitQ remote
+    endpoint is rejected with
+    `endpoint_status requires_rabitq_storage_format is not ready` before
+    remote candidates can enter the merge path.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
   reasons in degraded mode.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero

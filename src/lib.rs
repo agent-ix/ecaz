@@ -22696,6 +22696,92 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
+        expected = "ec_spire remote search executor endpoint_status requires_rabitq_storage_format is not ready"
+    )]
+    fn test_ec_spire_libpq_executor_rejects_non_ready_endpoint() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_NON_READY",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_remote_executor_non_ready_remote_sql; \
+                 CREATE TABLE ec_spire_remote_executor_non_ready_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_remote_executor_non_ready_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_remote_executor_non_ready_remote_sql_idx \
+                     ON ec_spire_remote_executor_non_ready_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2)",
+            )
+            .expect("loopback non-ready remote fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_executor_non_ready_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_executor_non_ready_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_executor_non_ready_coord_sql_idx \
+             ON ec_spire_remote_executor_non_ready_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_executor_non_ready_coord_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_executor_non_ready_coord_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_executor_non_ready_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 9, 'spire/remote/non-ready', decode('01', 'hex'), \
+                     'ec_spire_remote_executor_non_ready_remote_sql_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        Spi::run(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search_libpq_executor_candidates(\
+                 'ec_spire_remote_executor_non_ready_coord_sql_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
+        ))
+        .expect("non-ready remote endpoint should be rejected before merge");
+    }
+
+    #[pg_test]
+    #[should_panic(
         expected = "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
     )]
     fn test_ec_spire_remote_node_descriptor_stale_generation_rejected() {
