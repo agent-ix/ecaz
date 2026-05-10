@@ -3776,6 +3776,14 @@ impl SpireRemoteFanoutExecutor {
         }
     }
 
+    fn apply_blocked_before_dispatch_degraded_skips(&mut self) {
+        for dispatch in &mut self.dispatches {
+            if dispatch.state == SpireRemoteProductionDispatchState::BlockedBeforeDispatch {
+                dispatch.apply_degraded_skip(dispatch.status);
+            }
+        }
+    }
+
     fn mark_planned_dispatches_candidate_receive_ready(&mut self) {
         for dispatch in &mut self.dispatches {
             if dispatch.state == SpireRemoteProductionDispatchState::Planned {
@@ -4521,9 +4529,13 @@ fn remote_search_production_executor_state_summary_from_dispatch_rows(
     consistency_mode_source: &'static str,
     consistency_mode: &str,
 ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
-    let consistency_mode = consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
-    SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows)
-        .summary(consistency_mode_source, consistency_mode)
+    let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    let consistency_mode = consistency_mode_name(parsed_consistency_mode);
+    let mut executor = SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows);
+    if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+        executor.apply_blocked_before_dispatch_degraded_skips();
+    }
+    executor.summary(consistency_mode_source, consistency_mode)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -9521,6 +9533,18 @@ mod production_executor_state_tests {
         }
     }
 
+    fn blocked_dispatch(
+        node_id: u32,
+        pid_count: u64,
+        status: &'static str,
+    ) -> SpireRemoteSearchLibpqDispatchPlanRow {
+        let mut row = planned_dispatch(node_id, pid_count);
+        row.pipeline_mode = SPIRE_REMOTE_NONE;
+        row.dispatch_action = SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION;
+        row.status = status;
+        row
+    }
+
     fn ready_transport_row(
         node_id: u32,
         row_count: u64,
@@ -9811,6 +9835,32 @@ mod production_executor_state_tests {
         assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
         assert_eq!(row.next_executor_step, "compact_candidate_receive");
         assert_eq!(row.status, "requires_compact_candidate_receive");
+    }
+
+    #[test]
+    fn production_executor_degraded_pre_dispatch_block_skips_node() {
+        let dispatch_rows = vec![
+            blocked_dispatch(2, 1, SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION),
+            planned_dispatch(3, 1),
+        ];
+        let row = remote_search_production_executor_state_summary_from_dispatch_rows(
+            7,
+            &dispatch_rows,
+            "function_argument",
+            "degraded",
+        )
+        .expect("degraded pre-dispatch summary should succeed");
+
+        assert_eq!(row.dispatch_count, 2);
+        assert_eq!(row.blocked_before_dispatch_count, 0);
+        assert_eq!(row.degraded_skipped_dispatch_count, 1);
+        assert_eq!(
+            row.first_degraded_skip_category,
+            "incompatible_extension_version"
+        );
+        assert_eq!(row.transport_pending_dispatch_count, 1);
+        assert_eq!(row.next_executor_step, "production_transport_adapter");
+        assert_eq!(row.status, "requires_production_transport_adapter");
     }
 
     #[test]

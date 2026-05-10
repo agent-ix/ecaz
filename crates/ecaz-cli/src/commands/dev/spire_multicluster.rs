@@ -131,24 +131,38 @@ pub struct StageEFaultPg18Args {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StageEFaultCase {
+    VersionSkew,
     SimulatedNetworkPartition,
 }
 
 impl StageEFaultCase {
     fn as_matrix_key(self) -> &'static str {
         match self {
+            StageEFaultCase::VersionSkew => "version_skew",
             StageEFaultCase::SimulatedNetworkPartition => "simulated_network_partition",
+        }
+    }
+
+    fn script_name(self) -> &'static str {
+        match self {
+            StageEFaultCase::VersionSkew => {
+                "scripts/run_spire_multicluster_stage_e_predispatch_fault_pg18.sh"
+            }
+            StageEFaultCase::SimulatedNetworkPartition => {
+                "scripts/run_spire_multicluster_stage_e_network_partition_pg18.sh"
+            }
         }
     }
 }
 
 fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase, String> {
     match value {
+        "version_skew" | "version-skew" => Ok(StageEFaultCase::VersionSkew),
         "simulated_network_partition" | "simulated-network-partition" => {
             Ok(StageEFaultCase::SimulatedNetworkPartition)
         }
         other => Err(format!(
-            "unsupported Stage E fault case {other:?}; supported: simulated_network_partition"
+            "unsupported Stage E fault case {other:?}; supported: simulated_network_partition, version_skew"
         )),
     }
 }
@@ -223,10 +237,10 @@ async fn run_stage_e_fault_pg18(args: StageEFaultPg18Args) -> Result<()> {
             find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
         }
     };
-    let script = repo_root.join("scripts/run_spire_multicluster_stage_e_network_partition_pg18.sh");
+    let script = repo_root.join(args.case.script_name());
     if !script.is_file() {
         bail!(
-            "SPIRE Stage E network-partition fixture script is missing: {}",
+            "SPIRE Stage E fault fixture script is missing: {}",
             script.display()
         );
     }
@@ -247,6 +261,8 @@ async fn run_stage_e_fault_pg18(args: StageEFaultPg18Args) -> Result<()> {
     let mut command = Command::new("bash");
     command
         .arg(&script)
+        .arg("--case")
+        .arg(args.case.as_matrix_key())
         .arg("--pgbin")
         .arg(&pgbin)
         .current_dir(&repo_root)
