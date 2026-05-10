@@ -107,6 +107,13 @@ Acceptance artifact:
   origin `node_id`, without silently mixing namespaces.
 - [ ] Ensure boundary replicas carry the same global original-vector identity
   across leaves, stores, and remote nodes.
+  - [x] Packet `30775` adds
+    `ec_spire_index_boundary_replica_identity_snapshot()`, an index-level
+    diagnostic that groups primary and boundary-replica assignments by
+    `vec_id`, reports global vs node-local scope, leaf/store/node span, and
+    readiness. The PG18 fixture covers global source IDs across boundary
+    replica leaves and a multi-store placement directory. Remote-node
+    multi-instance proof remains open under Stage E.
 - [x] Add migration/rewrite or compatibility diagnostics for indexes that still
   contain only node-local IDs.
 - [x] Add tests proving unrelated node-local IDs do not dedupe, while replicated

@@ -124,6 +124,185 @@ fn assignment_payload_scannability(
     }
 }
 
+#[derive(Debug, Default)]
+struct BoundaryReplicaIdentityAccumulator {
+    assignment_count: u64,
+    primary_assignment_count: u64,
+    boundary_replica_assignment_count: u64,
+    delta_insert_assignment_count: u64,
+    leaf_pids: BTreeSet<u64>,
+    node_ids: BTreeSet<u32>,
+    local_store_ids: BTreeSet<u32>,
+}
+
+fn read_leaf_assignment_rows(
+    object_store: &impl storage::SpireObjectReader,
+    placement: &meta::SpirePlacementEntry,
+) -> Result<Vec<storage::SpireLeafAssignmentRow>, String> {
+    match object_store.read_leaf_object_v2(placement) {
+        Ok(object) => object.assignment_rows(),
+        Err(v2_error) => object_store
+            .read_leaf_object(placement)
+            .map_err(|v1_error| {
+                format!(
+                    "ec_spire boundary identity could not read leaf pid {} as V2 or V1: V2 error: {v2_error}; V1 error: {v1_error}",
+                    placement.pid
+                )
+            })
+            .map(|object| object.assignments),
+    }
+}
+
+fn boundary_replica_identity_scope(vec_id: &[u8]) -> &'static str {
+    match vec_id.first().copied() {
+        Some(storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR) => "global",
+        Some(storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR) => "node_local",
+        _ => "invalid",
+    }
+}
+
+fn boundary_replica_identity_status(
+    vec_id_scope: &'static str,
+    primary_assignment_count: u64,
+    boundary_replica_assignment_count: u64,
+    node_count: u64,
+) -> (&'static str, &'static str) {
+    if primary_assignment_count == 0 {
+        (
+            "missing_primary_assignment",
+            "boundary replica identity requires one primary assignment for each replicated vec_id",
+        )
+    } else if primary_assignment_count > 1 {
+        (
+            "duplicate_primary_assignment",
+            "inspect boundary routing because one replicated vec_id has multiple primary assignments",
+        )
+    } else if boundary_replica_assignment_count == 0 {
+        (
+            "missing_boundary_replica",
+            "no boundary replica assignment is present for this vec_id",
+        )
+    } else if vec_id_scope == "global" {
+        (
+            "ready",
+            "global vec_id is shared by the primary and boundary replica assignments",
+        )
+    } else if vec_id_scope == "node_local" && node_count <= 1 {
+        (
+            "local_scope_only",
+            "node-local vec_id can dedupe local boundary replicas but is not safe for cross-node replica dedupe",
+        )
+    } else {
+        (
+            "requires_global_vec_id",
+            "enable source_identity = 'include' before using cross-node boundary replica dedupe",
+        )
+    }
+}
+
+pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
+    index_relation: pg_sys::Relation,
+) -> Vec<SpireBoundaryReplicaIdentitySnapshotRow> {
+    let result = (|| -> Result<Vec<SpireBoundaryReplicaIdentitySnapshotRow>, String> {
+        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        if root_control.active_epoch == 0 {
+            return Ok(Vec::new());
+        }
+        let (_epoch_manifest, _object_manifest, placement_directory) =
+            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };
+        let object_store = unsafe {
+            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                index_relation,
+                &placement_directory,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )?
+        };
+        let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaIdentityAccumulator>::new();
+
+        for placement in &placement_directory.entries {
+            if placement.state != meta::SpirePlacementState::Available {
+                continue;
+            }
+            let header = object_store.read_object_header(placement)?;
+            let assignments = match header.kind {
+                storage::SpirePartitionObjectKind::Leaf => {
+                    read_leaf_assignment_rows(&object_store, placement)?
+                }
+                storage::SpirePartitionObjectKind::Delta => {
+                    object_store.read_delta_object(placement)?.assignments
+                }
+                _ => continue,
+            };
+
+            for assignment in assignments {
+                let group = groups
+                    .entry(assignment.vec_id.as_bytes().to_vec())
+                    .or_default();
+                group.assignment_count = group
+                    .assignment_count
+                    .checked_add(1)
+                    .ok_or_else(|| "ec_spire boundary identity assignment count overflow".to_owned())?;
+                if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
+                    group.primary_assignment_count =
+                        group.primary_assignment_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire boundary identity primary count overflow".to_owned()
+                        })?;
+                }
+                if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
+                    group.boundary_replica_assignment_count =
+                        group.boundary_replica_assignment_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire boundary identity replica count overflow".to_owned()
+                        })?;
+                }
+                if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
+                    group.delta_insert_assignment_count =
+                        group.delta_insert_assignment_count.checked_add(1).ok_or_else(|| {
+                            "ec_spire boundary identity delta count overflow".to_owned()
+                        })?;
+                }
+                group.leaf_pids.insert(placement.pid);
+                group.node_ids.insert(placement.node_id);
+                group.local_store_ids.insert(placement.local_store_id);
+            }
+        }
+
+        groups
+            .into_iter()
+            .filter(|(_, group)| group.boundary_replica_assignment_count > 0)
+            .map(|(vec_id, group)| {
+                let vec_id_scope = boundary_replica_identity_scope(&vec_id);
+                let node_count = u64::try_from(group.node_ids.len())
+                    .map_err(|_| "ec_spire boundary identity node count overflow")?;
+                let (status, recommendation) = boundary_replica_identity_status(
+                    vec_id_scope,
+                    group.primary_assignment_count,
+                    group.boundary_replica_assignment_count,
+                    node_count,
+                );
+                Ok(SpireBoundaryReplicaIdentitySnapshotRow {
+                    active_epoch: root_control.active_epoch,
+                    vec_id,
+                    vec_id_scope,
+                    assignment_count: group.assignment_count,
+                    primary_assignment_count: group.primary_assignment_count,
+                    boundary_replica_assignment_count: group.boundary_replica_assignment_count,
+                    delta_insert_assignment_count: group.delta_insert_assignment_count,
+                    leaf_pid_count: u64::try_from(group.leaf_pids.len())
+                        .map_err(|_| "ec_spire boundary identity leaf count overflow")?,
+                    node_count,
+                    local_store_count: u64::try_from(group.local_store_ids.len())
+                        .map_err(|_| "ec_spire boundary identity store count overflow")?,
+                    min_node_id: group.node_ids.first().copied().unwrap_or(0),
+                    max_node_id: group.node_ids.last().copied().unwrap_or(0),
+                    status,
+                    recommendation,
+                })
+            })
+            .collect()
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 fn count_snapshot_options_leaf_pids(
     snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
     object_store: &impl storage::SpireObjectReader,

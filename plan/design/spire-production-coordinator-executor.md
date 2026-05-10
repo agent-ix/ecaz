@@ -336,6 +336,14 @@ plan matches the persisted manifest entry, or to show the required
 claiming fixture readiness. Boundary-replica-specific evidence still belongs in
 the later multi-instance fixture.
 
+The Stage E rollups are composite assertion surfaces over existing snapshot
+readers, not new authoritative state. `ec_spire_remote_search_operator_diagnostics(...)`
+rolls up readiness, routing, transport, heap-resolution, and AM-delivery
+surfaces; `ec_spire_remote_epoch_manifest_freshness(...)` rolls up the current
+manifest plan, persisted manifest entry, catalog summary, and publication plan.
+Freshness status is deterministic per call: stale means the persisted entry
+does not match the current plan, not that a wall-clock grace window expired.
+
 The default local simulated-network-partition mechanism is not `iptables` or a
 root-owned route mutation. The fixture should point one remote descriptor's
 executor-owned `conninfo_secret_name` at an unreachable local endpoint and set

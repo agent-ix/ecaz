@@ -1,6 +1,6 @@
 //! ec_spire access-method scaffold.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod assign;
 mod build;
@@ -18,6 +18,8 @@ mod update;
 mod vacuum;
 
 use pgrx::{pg_sys, Spi};
+
+use self::storage::SpireObjectReader;
 
 pub(crate) use self::cost::index_cost_snapshot;
 #[cfg(any(test, feature = "pg_test"))]

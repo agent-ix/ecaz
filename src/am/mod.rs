@@ -26,6 +26,7 @@ pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
     index_allocator_snapshot as spire_index_allocator_snapshot,
+    index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,
     index_delta_snapshot as spire_index_delta_snapshot,
     index_epoch_cleanup_run as spire_index_epoch_cleanup_run,
