@@ -227,10 +227,6 @@ run_case() {
   local expected_degraded_skipped="$5"
   local expected_next_step="$6"
 
-  if [[ "$mode" == "degraded" ]]; then
-    "${coord_psql[@]}" -c "SELECT tests.ec_spire_test_rewrite_consistency_mode('ec_spire_stage_e_coord_idx'::regclass::oid, 'degraded')" >/dev/null
-  fi
-
   local summary
   summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/missing','spire/remote/stage_e/ready']::text[], 0, '$mode')")"
 
