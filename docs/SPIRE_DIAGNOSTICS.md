@@ -21,8 +21,8 @@ Start with:
 - `ec_spire_index_epoch_cleanup_run(index_oid)` when the cleanup summary reports
   eligible old-epoch tuple debt.
 - `ec_spire_remote_search_production_executor_state_summary(...)` when you need
-  the dry production fanout state without conninfo secret lookup or socket
-  opens.
+  the dry production fanout state and C0/C1 counters without conninfo secret
+  lookup or socket opens.
 - `ec_spire_remote_pipeline_steps(...)` when remote search spans multiple
   libpq/manifest/result diagnostic surfaces and you need one cheap step list.
 
@@ -52,7 +52,7 @@ Start with:
 | `ec_spire_index_maintenance_scheduler_plan(index_oid)` | operator | You need to decide whether an operator-controlled periodic job should call maintenance. |
 | `ec_spire_index_maintenance_scheduler_run(index_oid)` | operator | You need a periodic-job entrypoint that reuses the normal maintenance publish path. |
 | `ec_spire_index_allocator_snapshot(index_oid, warn_within)` | operator | You need PID and local vec_id cursor distance-to-exhaustion warnings. |
-| `ec_spire_remote_search_production_executor_state_summary(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need the planned production fanout state and C0 counters without resolving conninfo secrets or opening remote libpq sockets. |
+| `ec_spire_remote_search_production_executor_state_summary(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need the planned production fanout state plus dry C0/C1 counters without resolving conninfo secrets or opening remote libpq sockets. |
 | `ec_spire_remote_pipeline_steps(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You need one consolidated remote-search pipeline row per dispatch, connection, candidate, heap, manifest, and result step without opening remote libpq connections. |
 | `ec_spire_remote_pipeline_steps_live(index_oid, requested_epoch, query, selected_pids, top_k, consistency_mode)` | operator | You have already inspected the dry pipeline row and explicitly want live libpq connection, candidate, heap, and coordinator-result probes. |
 

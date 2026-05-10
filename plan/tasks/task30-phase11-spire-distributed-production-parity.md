@@ -382,6 +382,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     an instrumented slow-remote fixture.
   - [x] Normalize transport probe parse/connect/query failures into per-node
     result rows so one failed remote cannot abort the whole fanout batch.
+  - [x] Wire transport result rows into the production executor state machine
+    with explicit pending, ready, and failed transport counters.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.

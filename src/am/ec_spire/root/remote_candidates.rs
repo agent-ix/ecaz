@@ -57,6 +57,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_BUDGET: &str = "remote_executor_budget";
 const SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE: &str = "remote_executor_governance";
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
+const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
@@ -72,6 +73,8 @@ const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED: &str = "connect_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED: &str =
     "statement_timeout_setup_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED: &str = "remote_query_failed";
+const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
+    "requires_compact_candidate_receive";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -2353,6 +2356,8 @@ pub(crate) fn remote_search_production_transport_probe_for_test(
 enum SpireRemoteProductionDispatchState {
     Planned,
     BlockedBeforeDispatch,
+    TransportReady,
+    TransportFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2362,6 +2367,8 @@ struct SpireRemoteProductionDispatch {
     state: SpireRemoteProductionDispatchState,
     status: &'static str,
     next_executor_step: &'static str,
+    transport_row_count: u64,
+    transport_failure_category: &'static str,
 }
 
 impl SpireRemoteProductionDispatch {
@@ -2373,6 +2380,8 @@ impl SpireRemoteProductionDispatch {
                 state: SpireRemoteProductionDispatchState::Planned,
                 status: SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
                 next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+                transport_row_count: 0,
+                transport_failure_category: SPIRE_REMOTE_NONE,
             }
         } else {
             Self {
@@ -2381,8 +2390,35 @@ impl SpireRemoteProductionDispatch {
                 state: SpireRemoteProductionDispatchState::BlockedBeforeDispatch,
                 status: row.status,
                 next_executor_step: remote_search_pre_dispatch_blocker_step(row.status),
+                transport_row_count: 0,
+                transport_failure_category: SPIRE_REMOTE_NONE,
             }
         }
+    }
+
+    fn apply_transport_probe_row(
+        &mut self,
+        row: &SpireRemoteProductionTransportProbeRow,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::Planned {
+            return Err(format!(
+                "ec_spire production executor transport outcome for node_id {} cannot apply to dispatch state {:?}",
+                row.node_id, self.state
+            ));
+        }
+
+        self.transport_row_count = row.row_count;
+        self.transport_failure_category = row.failure_category;
+        if row.status == SPIRE_REMOTE_STATUS_READY {
+            self.state = SpireRemoteProductionDispatchState::TransportReady;
+            self.status = SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE;
+            self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
+        } else {
+            self.state = SpireRemoteProductionDispatchState::TransportFailed;
+            self.status = row.status;
+            self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT;
+        }
+        Ok(())
     }
 }
 
@@ -2412,12 +2448,41 @@ impl SpireRemoteFanoutExecutor {
         }
     }
 
+    fn apply_transport_probe_rows(
+        &mut self,
+        rows: &[SpireRemoteProductionTransportProbeRow],
+    ) -> Result<(), String> {
+        for row in rows {
+            let dispatch = self
+                .dispatches
+                .iter_mut()
+                .find(|dispatch| {
+                    dispatch.node_id == row.node_id
+                        && dispatch.state == SpireRemoteProductionDispatchState::Planned
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire production executor transport outcome for node_id {} does not match a planned dispatch",
+                        row.node_id
+                    )
+                })?;
+            dispatch.apply_transport_probe_row(row)?;
+        }
+        Ok(())
+    }
+
     fn summary(&self) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
         let mut planned_dispatch_count = 0_u64;
         let mut blocked_before_dispatch_count = 0_u64;
         let mut remote_pid_count = 0_u64;
         let mut planned_pid_count = 0_u64;
         let mut blocked_pid_count = 0_u64;
+        let mut transport_pending_dispatch_count = 0_u64;
+        let mut transport_sent_dispatch_count = 0_u64;
+        let mut transport_ready_dispatch_count = 0_u64;
+        let mut transport_failed_dispatch_count = 0_u64;
+        let mut transport_row_count = 0_u64;
+        let mut first_transport_failure_category = SPIRE_REMOTE_NONE;
         let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
         let mut first_blocked_step = SPIRE_REMOTE_NONE;
 
@@ -2442,6 +2507,12 @@ impl SpireRemoteFanoutExecutor {
                         "remote production executor state summary",
                         "planned PID",
                     )?;
+                    add_remote_count(
+                        &mut transport_pending_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-pending dispatch",
+                    )?;
                 }
                 SpireRemoteProductionDispatchState::BlockedBeforeDispatch => {
                     if blocked_before_dispatch_count == 0 {
@@ -2461,6 +2532,67 @@ impl SpireRemoteFanoutExecutor {
                         "blocked PID",
                     )?;
                 }
+                SpireRemoteProductionDispatchState::TransportReady => {
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_row_count,
+                        dispatch.transport_row_count,
+                        "remote production executor state summary",
+                        "transport row",
+                    )?;
+                }
+                SpireRemoteProductionDispatchState::TransportFailed => {
+                    if transport_failed_dispatch_count == 0 {
+                        first_transport_failure_category = dispatch.transport_failure_category;
+                    }
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_failed_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-failed dispatch",
+                    )?;
+                }
             }
         }
 
@@ -2473,11 +2605,23 @@ impl SpireRemoteFanoutExecutor {
                 first_blocked_status,
                 remote_search_pre_dispatch_blocker_recommendation(first_blocked_status),
             )
-        } else if planned_dispatch_count > 0 {
+        } else if transport_failed_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
+                SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+                "inspect production transport failure category before compact candidate receive",
+            )
+        } else if transport_pending_dispatch_count > 0 {
             (
                 SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
                 SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
                 "implement production async or libpq pipeline transport before remote fanout execution",
+            )
+        } else if transport_ready_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+                SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE,
+                "wire production compact candidate receive before AM scan merge",
             )
         } else {
             (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
@@ -2496,6 +2640,12 @@ impl SpireRemoteFanoutExecutor {
             conninfo_secret_lookup_count: self.conninfo_secret_lookup_count,
             socket_open_count: self.socket_open_count,
             endpoint_identity_query_count: self.endpoint_identity_query_count,
+            transport_pending_dispatch_count,
+            transport_sent_dispatch_count,
+            transport_ready_dispatch_count,
+            transport_failed_dispatch_count,
+            transport_row_count,
+            first_transport_failure_category,
             next_executor_step,
             status,
             recommendation,
@@ -2508,6 +2658,18 @@ fn remote_search_production_executor_state_summary_from_dispatch_rows(
     rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
 ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
     SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows).summary()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_executor_state_summary_from_transport_probe_rows(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    let mut executor =
+        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
+    executor.apply_transport_probe_rows(transport_rows)?;
+    executor.summary()
 }
 
 pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
@@ -5825,4 +5987,123 @@ pub(crate) fn merge_validated_remote_search_candidate_batches(
         batches.into_iter().flat_map(|batch| batch.candidates),
         limit,
     )
+}
+
+#[cfg(test)]
+mod production_executor_state_tests {
+    use super::*;
+
+    fn planned_dispatch(node_id: u32, pid_count: u64) -> SpireRemoteSearchLibpqDispatchPlanRow {
+        SpireRemoteSearchLibpqDispatchPlanRow {
+            requested_epoch: 7,
+            node_id,
+            selected_pids: (0..pid_count).collect(),
+            pid_count,
+            query_dimension: 2,
+            top_k: 10,
+            consistency_mode: "strict",
+            sql_template: SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+            parameter_count: SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT,
+            result_column_count: remote_search_result_column_count(),
+            conninfo_secret_name: format!("spire/remote/{node_id}"),
+            remote_index_regclass: format!("ec_spire_remote_{node_id}_idx"),
+            descriptor_generation: 1,
+            remote_index_identity: vec![u8::try_from(node_id).expect("node id should fit u8")],
+            pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+            dispatch_action: SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+            receive_validator: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
+            status: SPIRE_REMOTE_STATUS_READY,
+        }
+    }
+
+    fn ready_transport_row(
+        node_id: u32,
+        row_count: u64,
+    ) -> SpireRemoteProductionTransportProbeRow {
+        SpireRemoteProductionTransportProbeRow {
+            node_id,
+            started_after_ms: 1,
+            completed_after_ms: 2,
+            elapsed_ms: 1,
+            row_count,
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+        }
+    }
+
+    fn failed_transport_row(
+        node_id: u32,
+        failure_category: &'static str,
+    ) -> SpireRemoteProductionTransportProbeRow {
+        SpireRemoteProductionTransportProbeRow {
+            node_id,
+            started_after_ms: 1,
+            completed_after_ms: 2,
+            elapsed_ms: 1,
+            row_count: 0,
+            status: SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+            failure_category,
+        }
+    }
+
+    #[test]
+    fn production_executor_state_moves_ready_transport_to_candidate_receive() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 2)];
+        let transport_rows = vec![ready_transport_row(2, 4), ready_transport_row(3, 5)];
+        let row = remote_search_production_executor_state_summary_from_transport_probe_rows(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+        )
+        .expect("transport summary should succeed");
+
+        assert_eq!(row.planned_dispatch_count, 2);
+        assert_eq!(row.transport_pending_dispatch_count, 0);
+        assert_eq!(row.transport_sent_dispatch_count, 2);
+        assert_eq!(row.transport_ready_dispatch_count, 2);
+        assert_eq!(row.transport_failed_dispatch_count, 0);
+        assert_eq!(row.transport_row_count, 9);
+        assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "requires_compact_candidate_receive");
+        assert_eq!(row.first_transport_failure_category, "none");
+    }
+
+    #[test]
+    fn production_executor_state_preserves_transport_failure_category() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![
+            failed_transport_row(2, SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED),
+            ready_transport_row(3, 1),
+        ];
+        let row = remote_search_production_executor_state_summary_from_transport_probe_rows(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+        )
+        .expect("transport summary should succeed");
+
+        assert_eq!(row.transport_sent_dispatch_count, 2);
+        assert_eq!(row.transport_ready_dispatch_count, 1);
+        assert_eq!(row.transport_failed_dispatch_count, 1);
+        assert_eq!(row.next_executor_step, "production_transport_adapter");
+        assert_eq!(row.status, "remote_transport_failed");
+        assert_eq!(row.first_transport_failure_category, "connect_failed");
+    }
+
+    #[test]
+    fn production_executor_state_rejects_unplanned_transport_result() {
+        let dispatch_rows = vec![planned_dispatch(2, 1)];
+        let transport_rows = vec![ready_transport_row(3, 1)];
+        let error = remote_search_production_executor_state_summary_from_transport_probe_rows(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+        )
+        .expect_err("unplanned transport row should fail");
+
+        assert!(
+            error.contains("does not match a planned dispatch"),
+            "unexpected error: {error}"
+        );
+    }
 }

@@ -9766,6 +9766,12 @@ fn ec_spire_remote_search_production_executor_state_summary(
         name!(conninfo_secret_lookup_count, i64),
         name!(socket_open_count, i64),
         name!(endpoint_identity_query_count, i64),
+        name!(transport_pending_dispatch_count, i64),
+        name!(transport_sent_dispatch_count, i64),
+        name!(transport_ready_dispatch_count, i64),
+        name!(transport_failed_dispatch_count, i64),
+        name!(transport_row_count, i64),
+        name!(first_transport_failure_category, &'static str),
         name!(next_executor_step, &'static str),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -9830,6 +9836,16 @@ fn ec_spire_remote_search_production_executor_state_summary(
         i64::try_from(row.socket_open_count).expect("socket open count should fit in i64"),
         i64::try_from(row.endpoint_identity_query_count)
             .expect("endpoint identity query count should fit in i64"),
+        i64::try_from(row.transport_pending_dispatch_count)
+            .expect("transport pending dispatch count should fit in i64"),
+        i64::try_from(row.transport_sent_dispatch_count)
+            .expect("transport sent dispatch count should fit in i64"),
+        i64::try_from(row.transport_ready_dispatch_count)
+            .expect("transport ready dispatch count should fit in i64"),
+        i64::try_from(row.transport_failed_dispatch_count)
+            .expect("transport failed dispatch count should fit in i64"),
+        i64::try_from(row.transport_row_count).expect("transport row count should fit in i64"),
+        row.first_transport_failure_category,
         row.next_executor_step,
         row.status,
         row.recommendation,
@@ -23549,6 +23565,21 @@ mod tests {
         ))
         .expect("endpoint identity count query should succeed")
         .expect("endpoint identity count should exist");
+        let transport_pending_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT transport_pending_dispatch_count {prod_state_from}"
+        ))
+        .expect("transport pending dispatch count query should succeed")
+        .expect("transport pending dispatch count should exist");
+        let transport_sent_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT transport_sent_dispatch_count {prod_state_from}"
+        ))
+        .expect("transport sent dispatch count query should succeed")
+        .expect("transport sent dispatch count should exist");
+        let first_transport_failure_category = Spi::get_one::<String>(&format!(
+            "SELECT first_transport_failure_category {prod_state_from}"
+        ))
+        .expect("transport failure category query should succeed")
+        .expect("transport failure category should exist");
         let next_executor_step =
             Spi::get_one::<String>(&format!("SELECT next_executor_step {prod_state_from}"))
                 .expect("next executor step query should succeed")
@@ -23563,6 +23594,9 @@ mod tests {
         assert_eq!(conninfo_secret_lookup_count, 0);
         assert_eq!(socket_open_count, 0);
         assert_eq!(endpoint_identity_query_count, 0);
+        assert_eq!(transport_pending_dispatch_count, 1);
+        assert_eq!(transport_sent_dispatch_count, 0);
+        assert_eq!(first_transport_failure_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");
         assert_eq!(status, "requires_production_transport_adapter");
     }

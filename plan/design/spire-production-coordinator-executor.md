@@ -109,6 +109,13 @@ and avoids introducing pool invalidation rules before strict/degraded failure
 semantics are in place. Bounded connection reuse or a pool may land only as a
 later measured optimization with explicit invalidation triggers.
 
+The C0-C6 executor contract is transport-neutral. `tokio-postgres` is the C1
+adapter implementation because the current `pgrx::pg_sys` surface does not
+expose the needed libpq async/pipeline entry points; it is not a permanent
+protocol commitment. The adapter creates a fresh current-thread runtime per
+query, keeps the feature footprint to `rt`, `time`, and `net`, and should add
+Tokio features only when a later C2/C5 requirement proves they are needed.
+
 Verification:
 
 - Local two-remote fixture where one remote is instrumented slow and the other
