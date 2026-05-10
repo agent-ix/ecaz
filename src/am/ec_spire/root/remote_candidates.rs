@@ -32,6 +32,10 @@ const SPIRE_REMOTE_STATUS_REQUIRES_SECRET: &str = "requires_conninfo_secret_reso
 const SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ: &str = "requires_libpq_transport";
 const SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR: &str = "missing_descriptor";
 const SPIRE_REMOTE_STATUS_OPTIONAL_DESCRIPTOR_MISSING: &str = "optional_descriptor_missing";
+const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
+const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
+const SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING: &str =
+    "requires_scoring_option_binding";
 const SPIRE_REMOTE_TRANSPORT_LOCAL_DIRECT: &str = "local_direct";
 const SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE: &str = "libpq_pipeline";
 const SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION: &str = "open_pipeline_and_send_remote_search";
@@ -167,6 +171,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             operator_use: "remote_dedupe_identity_contract",
             status_source: "contract_item,contract_value,status",
             next_action: "require_global_vec_ids_before_cross_node_replica_dedupe",
+        },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 13,
+            entrypoint_name: "ec_spire_remote_search_endpoint_contract",
+            area: "search",
+            operator_use: "remote_endpoint_contract_gate",
+            status_source: "contract_item,contract_value,status,validator",
+            next_action: "resolve_non_ready_endpoint_contract_rows_before_production_remote_merge",
         },
     ]
 }
@@ -2419,7 +2431,7 @@ pub(crate) fn remote_search_libpq_result_contract_rows(
             pg_type: "bigint",
             semantic_role: "partition_object",
             nullable: false,
-            validator: "must_be_selected_pid",
+            validator: "must_be_selected_leaf_pid_or_leaf_derived_delta_pid",
         },
         SpireRemoteSearchLibpqResultContractRow {
             column_ordinal: 4,
@@ -2468,6 +2480,92 @@ pub(crate) fn remote_search_libpq_result_contract_rows(
             semantic_role: "candidate_score",
             nullable: false,
             validator: "must_be_finite",
+        },
+    ]
+}
+
+pub(crate) fn remote_search_endpoint_contract_rows(
+) -> Vec<SpireRemoteSearchEndpointContractRow> {
+    vec![
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 1,
+            contract_item: "endpoint_function",
+            contract_value: SPIRE_REMOTE_ENDPOINT_SEARCH,
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_be_registered_strict_pg_extern_endpoint",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 2,
+            contract_item: "protocol_version",
+            contract_value: SPIRE_REMOTE_CANDIDATE_FORMAT_V1,
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_match_libpq_candidate_format_v1",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 3,
+            contract_item: "request_contract",
+            contract_value: "remote_index_oid,requested_epoch,query,selected_pids,top_k,consistency_mode",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_match_remote_search_libpq_parameter_contract",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 4,
+            contract_item: "response_contract",
+            contract_value: "served_epoch,node_id,pid,object_version,row_index,assignment_flags,vec_id,row_locator,score",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_match_remote_search_libpq_result_contract",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 5,
+            contract_item: "selected_pid_semantics",
+            contract_value: "selected_leaf_pid_set_with_leaf_derived_delta_rows",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "candidate_pid_must_be_selected_leaf_or_leaf_derived_delta_pid",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 6,
+            contract_item: "quantizer_family",
+            contract_value: "rabitq_only_pq_and_pqfastscan_reserved",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_reject_unsupported_quantizer_families_until_implemented",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 7,
+            contract_item: "extension_version_binding",
+            contract_value: env!("CARGO_PKG_VERSION"),
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "remote_node_capability_plan_must_match_required_extension_version",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 8,
+            contract_item: "scoring_option_binding",
+            contract_value: "fixed_index_profile_explicit_request_options_pending",
+            status: SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING,
+            validator: "request_must_bind_scoring_and_rerank_options_before_production_merge",
+            recommendation: "add explicit scoring/rerank option fields or a stable served scoring profile binding",
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 9,
+            contract_item: "quantizer_index_fingerprint_binding",
+            contract_value: "rabitq_profile,code_length,training_stat_fingerprint,storage_format",
+            status: SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING,
+            validator: "candidate_batch_must_bind_served_quantizer_index_fingerprint",
+            recommendation: "bind fingerprint fields before accepting cross-node remote scores",
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 10,
+            contract_item: "opclass_binary_binding",
+            contract_value: "opclass_identity_and_binary_score_semantics",
+            status: SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING,
+            validator: "candidate_batch_must_bind_opclass_score_semantics",
+            recommendation: "bind opclass identity before accepting remote scores from mixed binaries",
         },
     ]
 }

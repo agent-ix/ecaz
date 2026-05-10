@@ -284,6 +284,11 @@ endpoint.
 - [ ] Define the endpoint request/response contract for selected PIDs, requested
   epoch, query vector, candidate budget, strict/degraded mode, scoring profile,
   and rerank settings.
+  - [x] First contract slice: add
+    `ec_spire_remote_search_endpoint_contract()` so the SQL-visible endpoint
+    reports the current request/response shape, RaBitQ-only v1 protocol, delta
+    PID semantics, and the remaining non-ready scoring/fingerprint/opclass
+    binding blockers without claiming production readiness.
 - [ ] Return compact candidate rows with served epoch, node identity, vector ID,
   row locator, score, assignment flags, quantizer/index fingerprint,
   protocol/extension/opclass version, and packet-friendly diagnostics.

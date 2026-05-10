@@ -9632,6 +9632,32 @@ fn ec_spire_remote_search_libpq_result_contract() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_endpoint_contract() -> TableIterator<
+    'static,
+    (
+        name!(contract_ordinal, i64),
+        name!(contract_item, &'static str),
+        name!(contract_value, &'static str),
+        name!(status, &'static str),
+        name!(validator, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_search_endpoint_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.contract_ordinal).expect("contract ordinal should fit in i64"),
+            row.contract_item,
+            row.contract_value,
+            row.status,
+            row.validator,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_coordinator_result_contract() -> TableIterator<
     'static,
     (
@@ -20234,6 +20260,7 @@ mod tests {
         let parameter_contract_from = "FROM ec_spire_remote_search_libpq_parameter_contract()";
         let executor_contract_from = "FROM ec_spire_remote_search_libpq_executor_step_contract()";
         let result_contract_from = "FROM ec_spire_remote_search_libpq_result_contract()";
+        let endpoint_contract_from = "FROM ec_spire_remote_search_endpoint_contract()";
         let parameter_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {parameter_contract_from}"))
                 .expect("parameter contract count query should succeed")
@@ -20266,6 +20293,11 @@ mod tests {
         ))
         .expect("result contract score validator query should succeed")
         .expect("result contract score validator should exist");
+        let pid_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {result_contract_from} WHERE column_name = 'pid'"
+        ))
+        .expect("result contract pid validator query should succeed")
+        .expect("result contract pid validator should exist");
         let nullable_count = Spi::get_one::<i64>(&format!(
             "SELECT count(*) {result_contract_from} WHERE nullable"
         ))
@@ -20292,22 +20324,58 @@ mod tests {
         ))
         .expect("executor contract merge step query should succeed")
         .expect("executor contract merge step validator should exist");
+        let endpoint_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {endpoint_contract_from}"))
+                .expect("endpoint contract count query should succeed")
+                .expect("endpoint contract count should exist");
+        let endpoint_protocol = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {endpoint_contract_from} \
+             WHERE contract_item = 'protocol_version'"
+        ))
+        .expect("endpoint contract protocol query should succeed")
+        .expect("endpoint contract protocol should exist");
+        let endpoint_quantizer = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {endpoint_contract_from} \
+             WHERE contract_item = 'quantizer_family'"
+        ))
+        .expect("endpoint contract quantizer query should succeed")
+        .expect("endpoint contract quantizer should exist");
+        let fingerprint_status = Spi::get_one::<String>(&format!(
+            "SELECT status {endpoint_contract_from} \
+             WHERE contract_item = 'quantizer_index_fingerprint_binding'"
+        ))
+        .expect("endpoint contract fingerprint query should succeed")
+        .expect("endpoint contract fingerprint status should exist");
+        let non_ready_endpoint_rows = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {endpoint_contract_from} WHERE status <> 'ready'"
+        ))
+        .expect("endpoint contract non-ready query should succeed")
+        .expect("endpoint contract non-ready count should exist");
 
         assert_eq!(parameter_count, 6);
         assert_eq!(first_parameter, "remote_index_oid");
         assert_eq!(
             selected_pids_validator,
-            "must_be_nonempty_positive_unique_remote_leaf_pids"
+            "must_be_nonempty_positive_unique_remote_leaf_pids_delta_rows_are_leaf_derived"
         );
         assert_eq!(consistency_mode_role, "strict_or_degraded_policy");
         assert_eq!(column_count, 9);
         assert_eq!(first_column, "served_epoch");
+        assert_eq!(
+            pid_validator,
+            "must_be_selected_leaf_pid_or_leaf_derived_delta_pid"
+        );
         assert_eq!(score_validator, "must_be_finite");
         assert_eq!(nullable_count, 0);
         assert_eq!(executor_step_count, 7);
         assert_eq!(first_executor_step, "remote_node_descriptor");
         assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
+        assert_eq!(endpoint_count, 10);
+        assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
+        assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
+        assert_eq!(fingerprint_status, "requires_fingerprint_binding");
+        assert_eq!(non_ready_endpoint_rows, 3);
     }
 
     #[pg_test]

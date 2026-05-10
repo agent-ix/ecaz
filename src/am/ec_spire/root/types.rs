@@ -637,6 +637,16 @@ pub(crate) struct SpireRemoteSearchLibpqResultContractRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchEndpointContractRow {
+    pub(crate) contract_ordinal: u64,
+    pub(crate) contract_item: &'static str,
+    pub(crate) contract_value: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) validator: &'static str,
+    pub(crate) recommendation: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchReceivePlanRow {
     pub(crate) requested_epoch: u64,
     pub(crate) node_id: u32,
