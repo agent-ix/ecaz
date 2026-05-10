@@ -11,6 +11,7 @@ mod tests {
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_top_graph_routed_probe_leaf_rows,
         collect_snapshot_visible_primary_rows, collect_top_graph_scan_plan_reranked_candidates,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
+        ensure_local_heap_placement_directory_is_deliverable,
         group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
         load_delta_rows_for_routes, load_snapshot_routing_hierarchy, load_snapshot_top_graph_object,
         prefetch_store_object_read_groups, rank_routed_leaf_rows_by_ip,

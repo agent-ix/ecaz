@@ -63,8 +63,32 @@ pub(super) unsafe fn load_relation_epoch_manifests(
         ));
     }
     SpireValidatedEpochSnapshot::new(&epoch_manifest, &object_manifest, &placement_directory)?;
+    ensure_local_heap_placement_directory_is_deliverable(&placement_directory)?;
     local_store_config.validate_placement_directory(&placement_directory)?;
     Ok((epoch_manifest, object_manifest, placement_directory))
+}
+
+fn ensure_local_heap_placement_directory_is_deliverable(
+    placement_directory: &SpirePlacementDirectory,
+) -> Result<(), String> {
+    let remote_placement_count = placement_directory
+        .entries
+        .iter()
+        .filter(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
+        .count();
+    if remote_placement_count == 0 {
+        return Ok(());
+    }
+
+    let first_remote = placement_directory
+        .entries
+        .iter()
+        .find(|placement| placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID)
+        .expect("remote placement count should have a first remote placement");
+    Err(format!(
+        "ec_spire local heap tuple delivery requires remote_row_materialization before consuming {remote_placement_count} remote placement(s); first remote pid {} is on node_id {}",
+        first_remote.pid, first_remote.node_id
+    ))
 }
 
 pub(super) unsafe fn load_relation_local_store_config(

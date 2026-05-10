@@ -305,6 +305,43 @@
     }
 
     #[test]
+    fn local_heap_delivery_gate_accepts_local_placements() {
+        let placement = SpirePlacementEntry::local_single_store_available(
+            1,
+            SPIRE_FIRST_PID,
+            42,
+            1,
+            tid(10, 1),
+            128,
+        );
+        let directory = SpirePlacementDirectory::from_entries(1, vec![placement]).unwrap();
+
+        ensure_local_heap_placement_directory_is_deliverable(&directory)
+            .expect("local placements should be deliverable through xs_heaptid");
+    }
+
+    #[test]
+    fn local_heap_delivery_gate_blocks_remote_placements() {
+        let mut placement = SpirePlacementEntry::local_single_store_available(
+            1,
+            SPIRE_FIRST_PID + 3,
+            42,
+            1,
+            tid(10, 2),
+            128,
+        );
+        placement.node_id = 9;
+        let directory = SpirePlacementDirectory::from_entries(1, vec![placement]).unwrap();
+
+        let error = ensure_local_heap_placement_directory_is_deliverable(&directory)
+            .expect_err("remote placements should require materialization");
+
+        assert!(error.contains("remote_row_materialization"));
+        assert!(error.contains("1 remote placement"));
+        assert!(error.contains("node_id 9"));
+    }
+
+    #[test]
     fn collect_snapshot_routed_probe_leaf_rows_rejects_invalid_nprobe_and_query() {
         let mut pid_allocator = SpirePidAllocator::default();
         let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();

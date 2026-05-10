@@ -353,6 +353,13 @@ This prevents a PostgreSQL index scan from treating an origin-node heap
 coordinate as a local heap TID. The remaining Stage D work is the materialized
 remote row contract and the actual scan-opaque cursor integration.
 
+Packet `30758` adds the corresponding local-heap consumer gate. The local
+manifest loader used by `amrescan` and other coordinator-local heap consumers
+now fails with `remote_row_materialization` when an active placement directory
+contains remote placements. This keeps the legacy local `xs_heaptid` cursor from
+accidentally failing later with a generic local-store validation error, and it
+makes the remote row materialization boundary visible at the AM entry path.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

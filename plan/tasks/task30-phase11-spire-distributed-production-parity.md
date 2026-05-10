@@ -689,6 +689,10 @@ Goal: make the coordinator-visible result stream production-correct.
     TIDs that are safe for `xs_heaptid` and remote-origin outputs that must
     block on `remote_row_materialization`; it explicitly prevents treating
     remote origin heap coordinates as local heap TIDs.
+  - [x] Packet `30758` gates the local manifest loader used by `amrescan` and
+    other coordinator-local heap consumers so active remote placements report
+    `remote_row_materialization` before any legacy local `xs_heaptid` path can
+    consume them.
   - [ ] Define and implement the remote row materialization contract required
     before remote-origin outputs can be returned by a PostgreSQL index scan.
   - [ ] Cursor AM-deliverable outputs from scan opaque state in
