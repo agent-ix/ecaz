@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use sha2::{Digest, Sha256};
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
@@ -16,6 +17,8 @@ pub enum InstallCommand {
     EcazPgTest(InstallEcazPgTestArgs),
     /// Install pgvector into the selected pg_config tree for side-by-side comparison lanes.
     Pgvector(InstallPgvectorArgs),
+    /// Install pgvectorscale into the selected pg_config tree for DiskANN comparison lanes.
+    Vectorscale(InstallVectorscaleArgs),
 }
 
 impl InstallCommand {
@@ -23,6 +26,7 @@ impl InstallCommand {
         match self {
             InstallCommand::EcazPgTest(args) => run_ecaz_pg_test(args).await,
             InstallCommand::Pgvector(args) => run_pgvector(args).await,
+            InstallCommand::Vectorscale(args) => run_vectorscale(args).await,
         }
     }
 }
@@ -45,12 +49,39 @@ pub struct InstallEcazPgTestArgs {
 #[derive(Args, Debug)]
 pub struct InstallPgvectorArgs {
     /// pgvector repository checkout.
+    #[arg(long, env = "PGVECTOR_REPO", default_value_os_t = default_pgvector_repo())]
+    repo: PathBuf,
+
+    /// PostgreSQL major version to install against.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit pg_config path. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pg_config: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct InstallVectorscaleArgs {
+    /// pgvectorscale extension crate checkout.
     #[arg(
         long,
-        env = "PGVECTOR_REPO",
-        default_value = "/home/peter/dev_bak/pgvector"
+        env = "PGVECTORSCALE_REPO",
+        default_value_os_t = default_vectorscale_repo()
     )]
     repo: PathBuf,
+
+    /// cargo-pgrx binary to use for the install.
+    #[arg(
+        long,
+        env = "CARGO_PGRX_BIN",
+        default_value_os_t = default_cargo_pgrx_bin()
+    )]
+    cargo_pgrx: PathBuf,
 
     /// PostgreSQL major version to install against.
     #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
@@ -120,6 +151,36 @@ async fn run_pgvector(args: InstallPgvectorArgs) -> Result<()> {
         .arg("install");
     run_status(command).await?;
     crate::ecaz_println!("[install] finished installing pgvector");
+    Ok(())
+}
+
+async fn run_vectorscale(args: InstallVectorscaleArgs) -> Result<()> {
+    if !args.repo.is_dir() {
+        bail!("pgvectorscale repo not found: {}", args.repo.display());
+    }
+    if !args.cargo_pgrx.is_file() {
+        bail!(
+            "cargo-pgrx binary not found: {}",
+            args.cargo_pgrx.display()
+        );
+    }
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let install = resolve_install(args.pg, args.pg_config, &pgrx_home)?;
+    crate::ecaz_println!("[install] pgvectorscale_repo={}", args.repo.display());
+    crate::ecaz_println!("[install] cargo_pgrx={}", args.cargo_pgrx.display());
+    crate::ecaz_println!("[install] pgrx_home={}", pgrx_home.display());
+    crate::ecaz_println!("[install] pg_config={}", install.pg_config.display());
+
+    let mut command = Command::new(&args.cargo_pgrx);
+    command
+        .arg("pgrx")
+        .arg("install")
+        .arg("--release")
+        .arg("--pg-config")
+        .arg(&install.pg_config)
+        .current_dir(&args.repo);
+    run_status(command).await?;
+    crate::ecaz_println!("[install] finished installing pgvectorscale");
     Ok(())
 }
 
@@ -214,4 +275,22 @@ fn pg_config_value(pg_config: &PathBuf, flag: &str) -> Result<PathBuf> {
     let value = String::from_utf8(output.stdout)
         .wrap_err_with(|| format!("decoding {} {flag} output", pg_config.display()))?;
     Ok(PathBuf::from(value.trim()))
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+fn default_pgvector_repo() -> PathBuf {
+    home_dir().join("dev_bak/pgvector")
+}
+
+fn default_vectorscale_repo() -> PathBuf {
+    home_dir().join("dev_bak/pgvectorscale/pgvectorscale")
+}
+
+fn default_cargo_pgrx_bin() -> PathBuf {
+    home_dir().join(".cargo/bin/cargo-pgrx")
 }

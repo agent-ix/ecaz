@@ -1,0 +1,22 @@
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv
+[loader] inspecting /Users/peter/dev/tqvector/fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ed6012f8b12281edd80f72dfe1146a9cd09cb3192a5a0012aebb1c398290926f  queries: 200 rows, sha256=77d406729dabfe907824d74df69f64b5706a76579ec1deaf54e5619091c9f7ac
+[loader] no sibling manifest at /Users/peter/dev/tqvector/fixtures/m5_diskann_real10k/m5_diskann_real10k_manifest.json; continuing without verification
+[loader] copied corpus table m5_diskann_real10k_scalar_build_corpus in 2.34s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m5_diskann_real10k_scalar_build_corpus in 775.35ms
+[loader] copied queries table m5_diskann_real10k_scalar_build_queries in 32.87ms
+[loader] building m5_diskann_real10k_scalar_build_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2]) ...
+[loader] built m5_diskann_real10k_scalar_build_idx in 32.61s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m5_diskann_real10k_scalar_build_corpus (10000 rows)                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m5_diskann_real10k_scalar_build_queries (200 rows)                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m5_diskann_real10k_scalar_build_idx [graph_degree=32, build_list_size=100, alpha=1.2] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix m5_diskann_real10k_scalar_build in 36.35s

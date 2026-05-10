@@ -123,6 +123,13 @@ The PQ-FastScan and RaBitQ rows are per-vector code payloads from the current
 implementation. Full index footprint also includes access-method tuple/list or
 graph overhead, codebooks, and any rerank sidecar data.
 
+Apple-Silicon follow-up work found two narrow warm-cache DiskANN wins on M5:
+an exact-rerank NEON kernel and heap-TID-ordered rerank fetch. Those packeted
+results improve the rerank-heavy lane without changing recall, but they do not
+yet replace the full Task 29d cross-engine baseline table above. See
+[Benchmarks](docs/benchmarks.md) for the M5 benchmark inventory and packet
+sources.
+
 Index footprint depends on both access method and storage format. On the local
 IVF 10K/25K matched-width lane (`nlists=64`, `nprobe=48`,
 `rerank='heap_f32'`, `rerank_width=750`), the storage-format tradeoff was:
@@ -201,6 +208,7 @@ make pg-test-pg17
 | [Build From Source](docs/build-from-source.md) | Full repeatable local build and setup path |
 | [Usage Guide](docs/usage.md) | Encoding parameters, index tuning, query patterns |
 | [Benchmarks](docs/benchmarks.md) | Measured performance results and methodology |
+| [Benchmark Index](docs/benchmark-index.md) | Packet directory for benchmark lanes and source artifacts |
 | [Operator CLI](crates/ecaz-cli/README.md) | `ecaz` corpus, benchmark, compare, stress, and dev command surface |
 | [Architecture](docs/architecture.md) | Compression pipeline, index layout, page format |
 | [PG18 Features](docs/pg18.md) | ReadStream, EXPLAIN hooks, AM callbacks |

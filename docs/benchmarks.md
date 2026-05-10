@@ -105,6 +105,46 @@ beats it from tuning value 200 upward on this local surface.
 
 Source packet: `review/11109-task29d-final-readiness/`.
 
+### Apple-Silicon M5 Inventory
+
+This section is a benchmark inventory, not a benchmark narrative.
+Every populated row below is backed by a packet-local measurement.
+`--` means the benchmark slot belongs in the M5 roadmap but no checked-in,
+packet-local number exists yet.
+
+#### IVF M5
+
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_ivf` | balanced quality point | 100K, `pq_fastscan`, `pq_group_size=8`, `nlists=128`, `nprobe=96`, `rerank_width=500` | recall@100 `0.9676`, p50 `10.7 ms`, p95 `11.6 ms`, p99 `12.1 ms` | `review/30203-task31-current-m5-candidate-decision/` |
+| `ec_ivf` | quality point | 100K, `pq_fastscan`, `pq_group_size=8`, `nlists=128`, `nprobe=96`, `rerank_width=1000` | recall@100 `0.9920`, mean q-time `12.38 ms`, p50 `12.1 ms`, p95 `13.0 ms`, p99 `13.7 ms` | `review/30203-task31-current-m5-candidate-decision/` |
+| `ec_ivf` | 10K baseline | -- | -- | -- |
+| `ec_ivf` | 25K baseline | -- | -- | -- |
+| `ec_ivf` | 50K baseline | -- | -- | -- |
+| `ec_ivf` | 990K directional point | -- | -- | -- |
+
+#### DiskANN M5
+
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_diskann` | build A/B, scalar vs NEON | real10K, `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | scalar `32.61 s`; NEON mean `6.81 s`; recall@10 identical at `0.9965 / 0.9970 / 0.9975` for `L=64/200/800` | `review/30208-task29-diskann-m5-build-neon-followup/` |
+| `ec_diskann` | default rerank NEON A/B | real10K, default `rerank_budget=64`, `L=64/200/800`, warm cache | p50 scalar/neon `1.98/1.93 ms`, `2.20/2.15 ms`, `2.76/2.70 ms`; recall@10 identical at `0.9965 / 0.9970 / 0.9975` | `review/30204-task29-diskann-m5-neon-rerank/` |
+| `ec_diskann` | kernel-stress rerank NEON A/B | real10K_w800, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 scalar/neon `16.3/15.2 ms`; p95 `17.15/15.85 ms`; p99 `18.9/16.7 ms`; recall@10 `1.0000` | `review/30204-task29-diskann-m5-neon-rerank/` |
+| `ec_diskann` | heap-TID rerank fetch A/B | real10K_w800, post-NEON, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/post `15.5/14.8 ms`; p95 `16.15/15.45 ms`; p99 `17.9/16.8 ms`; recall@10 `1.0000` | `review/30205-task29-diskann-m5-rerank-heap-order/` |
+| `ec_diskann` | heap-block prefetch A/B | real10K_w800, post-heap-order, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/trial `14.8/15.0 ms`; p95 `15.45/15.6 ms`; p99 `16.8/16.85 ms`; recall@10 `1.0000` | `review/30206-task29-diskann-m5-rerank-prefetch/` |
+| `ec_diskann` | cold-cache prefetch A/B | real100K, `rerank_budget=800`, `L=800`, heap `12.6x shared_buffers`, first-pass cold start | p50 pre/prefetch `506.2/406.8 ms`; p95 `633.2/426.8 ms`; p99 `676.9/434.3 ms`; recall@10 `0.9978` | `review/30209-task29-diskann-m5-cold-cache-100k/` |
+| `ec_diskann` | full post-M5 cross-engine sweep | final M5 code state, Task 29d search-list sweep `64/128/200/400/800` | -- | -- |
+| `ec_diskann` | async-overlap prefetch trial | cold-cache rerank lane | -- | -- |
+| `ec_diskann` | same-page-run grouping trial | cold-cache rerank lane | -- | -- |
+
+#### HNSW M5
+
+| Family | Benchmark lane | Fixture / configuration | Result | Source |
+| --- | --- | --- | --- | --- |
+| `ec_hnsw` | 50K reference refresh | current default `ConcurrentDsm`, worker sweep | -- | -- |
+| `ec_hnsw` | larger-corpus reference refresh | current default `ConcurrentDsm`, worker sweep | -- | -- |
+| `ec_hnsw` | build worker curve | `1/2/4/8` requested workers with PG18 headroom recorded | -- | -- |
+
 ## Storage
 
 | Metric | Value |

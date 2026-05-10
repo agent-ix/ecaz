@@ -79,6 +79,16 @@ new repeated operation, add a narrow `ecaz` subcommand or option instead of
 working around the sandbox with ad hoc commands. This keeps packet-local logs,
 libpq options, and approval scope in one place.
 
+External comparison extensions can use the same setup surface:
+
+```sh
+/Users/peter/.cargo/bin/ecaz dev install pgvector --pg 18
+/Users/peter/.cargo/bin/ecaz dev install vectorscale \
+  --pg 18 \
+  --repo "$HOME/dev_bak/pgvectorscale/pgvectorscale" \
+  --cargo-pgrx /tmp/pgvectorscale-cargo-pgrx-0.16.1/bin/cargo-pgrx
+```
+
 ## Command tree
 
 ```
@@ -108,7 +118,8 @@ ecaz
 ├── dev
 │   ├── install
 │   │   ├── ecaz-pg-test # install the ecaz pg_test build into a pgrx tree
-│   │   └── pgvector     # install pgvector into the selected pg_config tree
+│   │   ├── pgvector     # install pgvector into the selected pg_config tree
+│   │   └── vectorscale  # install pgvectorscale into the selected pg_config tree
 │   ├── scratch
 │   │   ├── restart               # restart pgrx with runtime env knobs
 │   │   ├── sql                   # run psql against a pgrx scratch cluster
@@ -229,6 +240,26 @@ suite runner is intended for AM onboarding, tuning sweeps, repeatability
 checks, and future RDS/Graviton runs where manual command sequences are too
 easy to lose or mis-record.
 
+Committed reusable suites live under [crates/ecaz-cli/suites](/Users/peter/dev/tqvector/crates/ecaz-cli/suites). The intended tiering is:
+
+- `profile-cross-engine-real10k.json`: repeatable DiskANN/HNSW + pgvector/pgvectorscale comparison lane.
+- `profile-ivf-25k.json`: smaller-box IVF lane.
+- `profile-ivf-50k.json`: mid-scale IVF lane.
+- `profile-ivf-100k.json`: standard 64 GiB box IVF lane.
+
+For a single repeatable entrypoint, use [scripts/run_benchmark_profile.sh](/Users/peter/dev/tqvector/scripts/run_benchmark_profile.sh):
+
+```sh
+scripts/run_benchmark_profile.sh standard --dry-run \
+  --database postgres --host /Users/peter/.pgrx --port 28818
+```
+
+Tier guidance:
+
+- `small`: weaker laptops that should avoid the 100k IVF lane.
+- `standard`: 64 GiB development machines; includes real10k cross-engine plus IVF 100k.
+- `full`: standard plus additional 25k and 50k IVF scale checkpoints.
+
 The first-supported config schema is JSON `schema_version: 1`:
 
 ```json
@@ -278,7 +309,8 @@ The first-supported config schema is JSON `schema_version: 1`:
 Supported step kinds are:
 
 - `load`: expands to `ecaz corpus load`, including profile, corpus/query TSVs,
-  optional manifest, reloptions, and `--log-file`.
+  optional manifest, native HNSW `m` / `ef_construction`, reloptions, and
+  `--log-file`.
 - `recall`: expands to `ecaz bench recall`, including `k`, sweep values,
   truth cache, query limit, rerank width, and `--log-output`.
 - `latency`: expands to `ecaz bench latency`, including sweep values,
@@ -286,6 +318,11 @@ Supported step kinds are:
 - `storage`: expands to `ecaz bench storage` with an optional `--log-file`.
 - `explain`: generates the configured SQL file and runs it through
   `ecaz dev sql --raw --file ... --log-output ...`.
+- `compare-pgvector`: expands to `ecaz compare pgvector`, including matched
+  sweeps, pgvector HNSW build knobs, optional rebuild, and `--log-file`.
+- `compare-vectorscale`: expands to `ecaz compare vectorscale`, including
+  matched sweeps, pgvectorscale DiskANN build knobs, optional rebuild, and
+  `--log-file`.
 - `raw`: runs an explicit `args` array for a command not yet modeled by a
   first-class step kind. Use `expected_artifacts` if status/report should audit
   output files.

@@ -151,7 +151,14 @@ where
     Re: Fn(ItemPointer) -> f32,
 {
     let mut scratch = VisitedState::new();
-    vamana_scan_with(reader, &mut scratch, params, prefilter, rerank)
+    vamana_scan_with(
+        reader,
+        &mut scratch,
+        params,
+        prefilter,
+        |_: &[ItemPointer]| {},
+        rerank,
+    )
 }
 
 /// Scratch-reusing variant of [`vamana_scan`]. Phase 6B's pgrx
@@ -159,15 +166,26 @@ where
 /// calls this across `amgettuple` re-entries (if we move to a
 /// streaming shape) or across successive cursors on the same
 /// relation.
-pub fn vamana_scan_with<Pre, Re>(
+///
+/// `prefetch(&[ItemPointer])` is called exactly once with the
+/// rerank-budget-sized, heap-TID-sorted slice of `primary_heaptid`
+/// values that will subsequently be passed to `rerank`. Callers wire
+/// a real PG read_stream / PrefetchBuffer hook here so the OS / PG
+/// shared-buffer manager can start fetching rerank pages while the
+/// rerank loop is still warming up. Callers that do not need
+/// prefetching (e.g. unit tests, the build / insert insert path with
+/// SnapshotSelf) pass a no-op closure.
+pub fn vamana_scan_with<Pre, Pf, Re>(
     reader: &PersistedGraphReader<'_>,
     scratch: &mut VisitedState,
     params: ScanParams,
     prefilter: Pre,
+    prefetch: Pf,
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
     Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
     if params.entry_point == ItemPointer::INVALID {
@@ -211,10 +229,35 @@ where
     // under MVCC, the second carries `primary_heaptid == INVALID`
     // which is not a legal `xs_heaptid` return. Traversal still walks
     // their neighbors for connectivity. (Packets 11023/11027/11028.)
-    let mut reranked: Vec<ScanResult> = frontier
+    //
+    // Visit candidates in heap-TID order so adjacent rerank rows share
+    // pinned shared buffers, matching the locality fix the IVF lane
+    // landed in `79c1a11c`. Final ordering still comes from the
+    // exact-distance sort below, so this only affects fetch order.
+    let mut to_rerank: Vec<ScanCandidate> = frontier
         .into_iter()
         .filter(|c| c.emittable)
         .take(params.rerank_budget)
+        .collect();
+    to_rerank.sort_by(|a, b| {
+        a.primary_heaptid
+            .block_number
+            .cmp(&b.primary_heaptid.block_number)
+            .then_with(|| {
+                a.primary_heaptid
+                    .offset_number
+                    .cmp(&b.primary_heaptid.offset_number)
+            })
+    });
+    // Hand the heap-TID-sorted batch to the caller's prefetch hook so
+    // PG can start populating shared buffers concurrently with the
+    // first few rerank rows. Same shape as the IVF prefetch in
+    // `3ef44426`.
+    let prefetch_tids: Vec<ItemPointer> =
+        to_rerank.iter().map(|c| c.primary_heaptid).collect();
+    prefetch(&prefetch_tids);
+    let mut reranked: Vec<ScanResult> = to_rerank
+        .into_iter()
         .map(|c| {
             let exact = rerank(c.primary_heaptid);
             ScanResult {
@@ -552,6 +595,109 @@ mod tests {
         );
     }
 
+    // SC-003b: rerank visits candidates in full
+    // `(block_number, offset_number)` heap-TID order, not in
+    // prefilter-score order. Exercises the offset_number tie-breaker
+    // explicitly with multiple candidates on the same block, so a
+    // regression that only sorted by block_number would actually
+    // fail this test (reviewer feedback `30207-01`).
+    #[test]
+    fn sc_003b_rerank_visits_in_full_heap_tid_order() {
+        use std::cell::RefCell;
+        use std::collections::{HashMap, HashSet};
+        // Fixture: three blocks, two candidates per block, with the
+        // offsets chosen so the heap-TID-sorted order is NOT the
+        // insertion order on any block.
+        let payload_heap_tids = [
+            ItemPointer {
+                block_number: 1002,
+                offset_number: 7,
+            },
+            ItemPointer {
+                block_number: 1000,
+                offset_number: 5,
+            },
+            ItemPointer {
+                block_number: 1001,
+                offset_number: 1,
+            },
+            ItemPointer {
+                block_number: 1000,
+                offset_number: 2,
+            },
+            ItemPointer {
+                block_number: 1002,
+                offset_number: 3,
+            },
+            ItemPointer {
+                block_number: 1001,
+                offset_number: 9,
+            },
+        ];
+        let n = payload_heap_tids.len();
+        let g = chain_graph(n, 4);
+        let payloads: Vec<NodePayload> = payload_heap_tids
+            .iter()
+            .map(|tid| NodePayload {
+                primary_heaptid: *tid,
+                binary_words: Vec::new(),
+                search_code: Vec::new(),
+            })
+            .collect();
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
+
+        // Prefilter scores chosen so the natural score-ordered
+        // traversal is the *reverse* of the heap-TID-sorted order.
+        // The heap-TID sort must overwrite this entirely.
+        let mut prefilter_scores: HashMap<ItemPointer, f32> = HashMap::new();
+        prefilter_scores.insert(payload_heap_tids[0], 0.0); // (1002, 7) — best score
+        prefilter_scores.insert(payload_heap_tids[4], 1.0); // (1002, 3)
+        prefilter_scores.insert(payload_heap_tids[5], 2.0); // (1001, 9)
+        prefilter_scores.insert(payload_heap_tids[2], 3.0); // (1001, 1)
+        prefilter_scores.insert(payload_heap_tids[1], 4.0); // (1000, 5)
+        prefilter_scores.insert(payload_heap_tids[3], 5.0); // (1000, 2)
+
+        let prefilter = |t: &VamanaNodeTuple| prefilter_scores[&t.primary_heaptid];
+        let visit_order = RefCell::new(Vec::<ItemPointer>::new());
+        let rerank = |hip: ItemPointer| {
+            visit_order.borrow_mut().push(hip);
+            0.0
+        };
+
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: n,
+            rerank_budget: n,
+            top_k: 1,
+        };
+        vamana_scan(&reader, params, prefilter, rerank).expect("scan");
+
+        let observed = visit_order.borrow().clone();
+        let mut expected = observed.clone();
+        expected.sort_by(|a, b| {
+            a.block_number
+                .cmp(&b.block_number)
+                .then_with(|| a.offset_number.cmp(&b.offset_number))
+        });
+        assert_eq!(
+            observed, expected,
+            "rerank must visit candidates in ascending (block_number, offset_number) order"
+        );
+
+        // Fixture-shape sanity: there really are multiple candidates
+        // per block, so a block_number-only sort would not be enough
+        // to satisfy the assertion above.
+        let unique_blocks: HashSet<u32> =
+            observed.iter().map(|tid| tid.block_number).collect();
+        assert!(
+            unique_blocks.len() < observed.len(),
+            "fixture must include multiple candidates per block to exercise \
+             the offset_number tie-breaker"
+        );
+    }
+
     // SC-004: top_k truncates the reranked result.
     #[test]
     fn sc_004_top_k_truncates() {
@@ -861,10 +1007,24 @@ mod tests {
 
         use crate::am::ec_diskann::reader::VisitedState;
         let mut scratch = VisitedState::new();
-        let reused_a = vamana_scan_with(&reader, &mut scratch, params_a, prefilter_a, rerank_a)
-            .expect("reused a");
-        let reused_b = vamana_scan_with(&reader, &mut scratch, params_b, prefilter_b, rerank_b)
-            .expect("reused b");
+        let reused_a = vamana_scan_with(
+            &reader,
+            &mut scratch,
+            params_a,
+            prefilter_a,
+            |_: &[ItemPointer]| {},
+            rerank_a,
+        )
+        .expect("reused a");
+        let reused_b = vamana_scan_with(
+            &reader,
+            &mut scratch,
+            params_b,
+            prefilter_b,
+            |_: &[ItemPointer]| {},
+            rerank_b,
+        )
+        .expect("reused b");
 
         assert_eq!(fresh_a, reused_a, "first reuse must match fresh");
         assert_eq!(
