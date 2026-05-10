@@ -11297,6 +11297,15 @@ fn ec_spire_remote_search(
         name!(vec_id, Vec<u8>),
         name!(row_locator, Vec<u8>),
         name!(score, f32),
+        name!(protocol_version, &'static str),
+        name!(extension_version, &'static str),
+        name!(opclass_identity, String),
+        name!(storage_format, &'static str),
+        name!(assignment_payload_format, &'static str),
+        name!(quantizer_profile, &'static str),
+        name!(scoring_profile, &'static str),
+        name!(profile_fingerprint, String),
+        name!(endpoint_status, &'static str),
     ),
 > {
     if requested_epoch <= 0 {
@@ -11328,9 +11337,11 @@ fn ec_spire_remote_search(
             &consistency_mode,
         )
     };
+    let endpoint_identity =
+        unsafe { am::spire_remote_search_endpoint_identity_row(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
-    TableIterator::new(rows.into_iter().map(|row| {
+    TableIterator::new(rows.into_iter().map(move |row| {
         (
             i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
             i64::from(row.node_id),
@@ -11341,6 +11352,15 @@ fn ec_spire_remote_search(
             row.vec_id,
             row.row_locator,
             row.score,
+            endpoint_identity.protocol_version,
+            endpoint_identity.extension_version,
+            endpoint_identity.opclass_identity.clone(),
+            endpoint_identity.storage_format,
+            endpoint_identity.assignment_payload_format,
+            endpoint_identity.quantizer_profile,
+            endpoint_identity.scoring_profile,
+            endpoint_identity.profile_fingerprint.clone(),
+            endpoint_identity.status,
         )
     }))
 }
@@ -18315,6 +18335,26 @@ mod tests {
         ))
         .expect("remote search locator query should succeed")
         .expect("row locator aggregate should exist");
+        let protocol_matches = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(protocol_version = 'ec_spire_remote_search_v1') {remote_search_from}"
+        ))
+        .expect("remote search protocol query should succeed")
+        .expect("protocol aggregate should exist");
+        let extension_matches = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(extension_version = '{}') {remote_search_from}",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote search extension query should succeed")
+        .expect("extension aggregate should exist");
+        let endpoint_status =
+            Spi::get_one::<String>(&format!("SELECT min(endpoint_status) {remote_search_from}"))
+                .expect("remote search endpoint status query should succeed")
+                .expect("endpoint status should exist");
+        let fingerprint_len = Spi::get_one::<bool>(&format!(
+            "SELECT bool_and(length(profile_fingerprint) = 16) {remote_search_from}"
+        ))
+        .expect("remote search fingerprint query should succeed")
+        .expect("fingerprint aggregate should exist");
 
         assert_eq!(row_count, 1);
         assert!(served_epoch_matches);
@@ -18322,6 +18362,10 @@ mod tests {
         assert!(selected_pid);
         assert!(has_vec_id);
         assert!(row_locator_len);
+        assert!(protocol_matches);
+        assert!(extension_matches);
+        assert_eq!(endpoint_status, "requires_rabitq_storage_format");
+        assert!(fingerprint_len);
     }
 
     #[pg_test]
@@ -20118,7 +20162,7 @@ mod tests {
         assert_eq!(request_count, 1);
         assert!(sql_template.contains("ec_spire_remote_search"));
         assert_eq!(parameter_count, 6);
-        assert_eq!(result_column_count, 9);
+        assert_eq!(result_column_count, 18);
         assert_eq!(status, "requires_remote_node_descriptor");
         assert_eq!(summary_status, "requires_remote_node_descriptor");
         assert_eq!(blocked_request_count, 1);
@@ -20397,7 +20441,7 @@ mod tests {
             "must_be_nonempty_positive_unique_remote_leaf_pids_delta_rows_are_leaf_derived"
         );
         assert_eq!(consistency_mode_role, "strict_or_degraded_policy");
-        assert_eq!(column_count, 9);
+        assert_eq!(column_count, 18);
         assert_eq!(first_column, "served_epoch");
         assert_eq!(
             pid_validator,

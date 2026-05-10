@@ -2491,6 +2491,78 @@ pub(crate) fn remote_search_libpq_result_contract_rows(
             nullable: false,
             validator: "must_be_finite",
         },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 10,
+            column_name: "protocol_version",
+            pg_type: "text",
+            semantic_role: "remote_endpoint_protocol",
+            nullable: false,
+            validator: "must_equal_ec_spire_remote_search_v1",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 11,
+            column_name: "extension_version",
+            pg_type: "text",
+            semantic_role: "remote_extension_version",
+            nullable: false,
+            validator: "must_match_required_extension_version",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 12,
+            column_name: "opclass_identity",
+            pg_type: "text",
+            semantic_role: "remote_opclass_identity",
+            nullable: false,
+            validator: "must_be_nonempty",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 13,
+            column_name: "storage_format",
+            pg_type: "text",
+            semantic_role: "remote_storage_format",
+            nullable: false,
+            validator: "must_match_served_endpoint_identity",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 14,
+            column_name: "assignment_payload_format",
+            pg_type: "text",
+            semantic_role: "remote_assignment_payload_format",
+            nullable: false,
+            validator: "must_match_served_endpoint_identity",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 15,
+            column_name: "quantizer_profile",
+            pg_type: "text",
+            semantic_role: "remote_quantizer_profile",
+            nullable: false,
+            validator: "must_match_served_endpoint_identity",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 16,
+            column_name: "scoring_profile",
+            pg_type: "text",
+            semantic_role: "remote_scoring_profile",
+            nullable: false,
+            validator: "must_match_served_endpoint_identity",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 17,
+            column_name: "profile_fingerprint",
+            pg_type: "text",
+            semantic_role: "remote_quantizer_index_fingerprint",
+            nullable: false,
+            validator: "must_be_nonempty_and_match_served_endpoint_identity",
+        },
+        SpireRemoteSearchLibpqResultContractRow {
+            column_ordinal: 18,
+            column_name: "endpoint_status",
+            pg_type: "text",
+            semantic_role: "remote_endpoint_identity_status",
+            nullable: false,
+            validator: "must_be_ready_before_production_merge",
+        },
     ]
 }
 
@@ -2524,7 +2596,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
         SpireRemoteSearchEndpointContractRow {
             contract_ordinal: 4,
             contract_item: "response_contract",
-            contract_value: "served_epoch,node_id,pid,object_version,row_index,assignment_flags,vec_id,row_locator,score",
+            contract_value: "served_epoch,node_id,pid,object_version,row_index,assignment_flags,vec_id,row_locator,score,protocol_version,extension_version,opclass_identity,storage_format,assignment_payload_format,quantizer_profile,scoring_profile,profile_fingerprint,endpoint_status",
             status: SPIRE_REMOTE_STATUS_READY,
             validator: "must_match_remote_search_libpq_result_contract",
             recommendation: SPIRE_REMOTE_NONE,
@@ -2640,6 +2712,52 @@ fn remote_search_stable_fingerprint(parts: &[String]) -> String {
     format!("{hash:016x}")
 }
 
+fn remote_search_candidate_endpoint_text(
+    row: &postgres::Row,
+    column: &str,
+) -> Result<String, String> {
+    row.try_get::<_, String>(column).map_err(|_| {
+        format!("ec_spire remote search executor {column} endpoint identity decode failed")
+    })
+}
+
+fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Result<(), String> {
+    let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
+    if protocol_version != SPIRE_REMOTE_CANDIDATE_FORMAT_V1 {
+        return Err(format!(
+            "ec_spire remote search executor protocol_version {protocol_version} does not match {}",
+            SPIRE_REMOTE_CANDIDATE_FORMAT_V1
+        ));
+    }
+
+    let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
+    if extension_version != env!("CARGO_PKG_VERSION") {
+        return Err(format!(
+            "ec_spire remote search executor extension_version {extension_version} does not match {}",
+            env!("CARGO_PKG_VERSION")
+        ));
+    }
+
+    for column in [
+        "opclass_identity",
+        "storage_format",
+        "assignment_payload_format",
+        "quantizer_profile",
+        "scoring_profile",
+        "profile_fingerprint",
+        "endpoint_status",
+    ] {
+        let value = remote_search_candidate_endpoint_text(row, column)?;
+        if value.is_empty() {
+            return Err(format!(
+                "ec_spire remote search executor {column} endpoint identity is empty"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) unsafe fn remote_search_endpoint_identity_row(
     index_relation: pg_sys::Relation,
 ) -> SpireRemoteSearchEndpointIdentityRow {
@@ -2709,6 +2827,7 @@ fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, St
 fn decode_remote_search_candidate_pg_row(
     row: &postgres::Row,
     expected_node_id: u32,
+    validate_endpoint_identity: bool,
 ) -> Result<SpireRemoteSearchCandidateRow, String> {
     let served_epoch = row
         .try_get::<_, i64>("served_epoch")
@@ -2768,6 +2887,9 @@ fn decode_remote_search_candidate_pg_row(
     let score = row
         .try_get::<_, f32>("score")
         .map_err(|_| "ec_spire remote search executor score decode failed".to_owned())?;
+    if validate_endpoint_identity {
+        validate_remote_search_candidate_endpoint_identity(row)?;
+    }
 
     Ok(SpireRemoteSearchCandidateRow {
         served_epoch,
@@ -2802,7 +2924,7 @@ fn decode_remote_search_heap_candidate_pg_row(
             "ec_spire remote heap executor requested_epoch {requested_epoch} does not match expected epoch {expected_requested_epoch}"
         ));
     }
-    let candidate = decode_remote_search_candidate_pg_row(row, expected_node_id)?;
+    let candidate = decode_remote_search_candidate_pg_row(row, expected_node_id, false)?;
     let heap_block = row
         .try_get::<_, i64>("heap_block")
         .map_err(|_| "ec_spire remote heap executor heap_block decode failed".to_owned())
@@ -2926,7 +3048,7 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
         })?;
     let candidates = result_rows
         .iter()
-        .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, row.node_id))
+        .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, row.node_id, true))
         .collect::<Result<Vec<_>, _>>()?;
     validate_remote_search_candidate_batch(
         row.requested_epoch,

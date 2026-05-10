@@ -297,6 +297,11 @@ endpoint.
 - [ ] Return compact candidate rows with served epoch, node identity, vector ID,
   row locator, score, assignment flags, quantizer/index fingerprint,
   protocol/extension/opclass version, and packet-friendly diagnostics.
+  - [x] Extend the `ec_spire_remote_search` row envelope with protocol version,
+    extension version, opclass identity, storage/assignment payload format,
+    quantizer profile, scoring profile, profile fingerprint, and endpoint
+    status columns. The coordinator still needs a follow-up production gate
+    before treating non-ready endpoint rows as mergeable.
 - [ ] Bind RaBitQ profile, code length, training-stat fingerprint, storage
   format, served epoch, extension version, and opclass identity before merge.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
