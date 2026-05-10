@@ -381,6 +381,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "contract_item,required_surface,blocked_status,validator",
             next_action: "materialize_remote_origin_rows_into_coordinator_indexed_heap_before_am_delivery",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 21,
+            entrypoint_name: "ec_spire_remote_search_row_materialization_mapping_contract",
+            area: "search",
+            operator_use: "remote_origin_materialized_tid_mapping_contract",
+            status_source: "contract_item,required_input,validation_rule,status",
+            next_action: "implement_epoch_scoped_materialized_row_mapping_provider_before_remote_am_delivery",
+        },
     ]
 }
 
@@ -8410,6 +8418,52 @@ pub(crate) fn remote_search_row_materialization_contract_rows(
             blocked_status: "not_selected_v1",
             validator: "must_not_mix_non_am_tuple_path_with_index_am_xs_heaptid",
             recommendation: "treat FDW/custom-scan delivery as a future executor integration, not the current SPIRE AM path",
+        },
+    ]
+}
+
+pub(crate) fn remote_search_row_materialization_mapping_contract_rows(
+) -> Vec<SpireRemoteSearchRowMaterializationMappingContractRow> {
+    vec![
+        SpireRemoteSearchRowMaterializationMappingContractRow {
+            contract_item: "mapping_identity_key",
+            required_input: "requested_epoch,served_epoch,origin_node_id,global_vec_id,row_locator",
+            validation_rule: "must_match_heap_resolved_remote_output_exactly",
+            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            status: "required_before_remote_origin_am_delivery",
+            recommendation: "lookup materialized coordinator row by stable remote identity before building AM output cursor",
+        },
+        SpireRemoteSearchRowMaterializationMappingContractRow {
+            contract_item: "same_relation_materialized_tid",
+            required_input: "scan_heap_relation_oid,materialized_heap_tid",
+            validation_rule: "materialized_tid_must_belong_to_index_scan_heap_relation",
+            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            status: "required_before_remote_origin_am_delivery",
+            recommendation: "reject temp, scratch, tuplestore, or foreign relation tuple identities for index AM delivery",
+        },
+        SpireRemoteSearchRowMaterializationMappingContractRow {
+            contract_item: "scan_snapshot_visibility",
+            required_input: "materialized_heap_tid,scan_snapshot",
+            validation_rule: "materialized_tuple_must_be_visible_to_the_current_index_scan_snapshot",
+            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            status: "required_before_remote_origin_am_delivery",
+            recommendation: "keep stale or vacuumed materialized rows out of xs_heaptid output",
+        },
+        SpireRemoteSearchRowMaterializationMappingContractRow {
+            contract_item: "no_scan_time_heap_writes",
+            required_input: "amrescan,amgettuple",
+            validation_rule: "scan_path_must_validate_existing_materialization_only",
+            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            status: "enforced_contract",
+            recommendation: "perform mirror creation, refresh, and cleanup outside the index scan cursor path",
+        },
+        SpireRemoteSearchRowMaterializationMappingContractRow {
+            contract_item: "strict_degraded_behavior",
+            required_input: "consistency_mode,missing_or_stale_mapping",
+            validation_rule: "strict_fails_closed_degraded_may_skip_with_named_diagnostic",
+            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
+            status: "required_before_remote_origin_am_delivery",
+            recommendation: "report remote_row_materialization as the blocker instead of returning origin heap coordinates",
         },
     ]
 }

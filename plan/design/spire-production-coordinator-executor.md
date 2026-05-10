@@ -384,6 +384,15 @@ PostgreSQL MVCC cleanup. The scan path validates that mapping and blocks with
 `remote_row_materialization` when no visible same-relation materialized TID
 exists.
 
+The materialized-row mapping contract is now SQL-visible through
+`ec_spire_remote_search_row_materialization_mapping_contract()`. The contract
+requires exact identity matching on requested epoch, served epoch, origin node,
+global vec-id, and opaque row locator; validates that the materialized TID
+belongs to the same heap relation being scanned and is visible to the scan
+snapshot; and keeps scan-time heap writes out of `amrescan` / `amgettuple`.
+This is the provider boundary for the next storage slice, not a claim that
+remote-origin AM rows are deliverable yet.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered

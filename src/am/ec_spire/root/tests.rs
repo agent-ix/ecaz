@@ -664,6 +664,43 @@ mod tests {
     }
 
     #[test]
+    fn row_materialization_mapping_contract_requires_same_relation_visible_tid() {
+        let rows = remote_search_row_materialization_mapping_contract_rows();
+
+        let mapping_key = rows
+            .iter()
+            .find(|row| row.contract_item == "mapping_identity_key")
+            .expect("mapping identity contract should exist");
+        assert_eq!(
+            mapping_key.required_input,
+            "requested_epoch,served_epoch,origin_node_id,global_vec_id,row_locator"
+        );
+        assert_eq!(
+            mapping_key.missing_or_invalid_behavior,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+
+        let same_relation = rows
+            .iter()
+            .find(|row| row.contract_item == "same_relation_materialized_tid")
+            .expect("same-relation materialized TID contract should exist");
+        assert_eq!(
+            same_relation.validation_rule,
+            "materialized_tid_must_belong_to_index_scan_heap_relation"
+        );
+        assert_eq!(
+            same_relation.status,
+            "required_before_remote_origin_am_delivery"
+        );
+
+        let scan_writes = rows
+            .iter()
+            .find(|row| row.contract_item == "no_scan_time_heap_writes")
+            .expect("scan-time write contract should exist");
+        assert_eq!(scan_writes.status, "enforced_contract");
+    }
+
+    #[test]
     fn remote_candidate_batch_validation_accepts_expected_envelope() {
         let candidates = vec![
             remote_candidate(
