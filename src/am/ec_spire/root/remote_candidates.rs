@@ -36,6 +36,7 @@ const SPIRE_REMOTE_STATUS_STALE_EPOCH: &str = "stale_epoch";
 const SPIRE_REMOTE_STATUS_RETENTION_GAP: &str = "retention_gap";
 const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
     "incompatible_extension_version";
+const SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH: &str = "endpoint_identity_mismatch";
 const SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD: &str = "remote_executor_overload";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
@@ -3789,7 +3790,7 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("remote_index_identity")
         || error.contains("endpoint identity")
     {
-        "endpoint_identity_mismatch".to_owned()
+        SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH.to_owned()
     } else if error.contains("conninfo secret") {
         SPIRE_REMOTE_STATUS_REQUIRES_SECRET.to_owned()
     } else if error.contains("failed to open connection") {
@@ -4458,35 +4459,43 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
         } else if let Some(status) = first_blocked_status {
             (0_u64, 0_u64, status)
         } else {
-            let compact_candidates =
-                remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
-                    index_relid,
-                    &dispatch_rows,
-                    &query,
-                    top_k,
-                    consistency_mode,
-                    &mut executor_state,
-                )?;
-            let heap_candidates =
-                remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
-                    index_relid,
-                    &dispatch_rows,
-                    &query,
-                    top_k,
-                    consistency_mode,
-                    &mut executor_state,
-                )?;
-            (
-                u64::try_from(compact_candidates.len()).map_err(|_| {
-                    "ec_spire remote search libpq identity cache compact candidate count exceeds u64"
-                        .to_owned()
-                })?,
-                u64::try_from(heap_candidates.len()).map_err(|_| {
-                    "ec_spire remote search libpq identity cache heap candidate count exceeds u64"
-                        .to_owned()
-                })?,
-                SPIRE_REMOTE_STATUS_READY,
-            )
+            match remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
+                index_relid,
+                &dispatch_rows,
+                &query,
+                top_k,
+                consistency_mode,
+                &mut executor_state,
+            ) {
+                Ok(compact_candidates) => {
+                    let heap_candidates =
+                        remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
+                            index_relid,
+                            &dispatch_rows,
+                            &query,
+                            top_k,
+                            consistency_mode,
+                            &mut executor_state,
+                        )?;
+                    (
+                        u64::try_from(compact_candidates.len()).map_err(|_| {
+                            "ec_spire remote search libpq identity cache compact candidate count exceeds u64"
+                                .to_owned()
+                        })?,
+                        u64::try_from(heap_candidates.len()).map_err(|_| {
+                            "ec_spire remote search libpq identity cache heap candidate count exceeds u64"
+                                .to_owned()
+                        })?,
+                        SPIRE_REMOTE_STATUS_READY,
+                    )
+                }
+                Err(error) if remote_search_receive_attempt_failure_status(&error)
+                    == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH =>
+                {
+                    (0_u64, 0_u64, SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
+                }
+                Err(error) => return Err(error),
+            }
         };
 
         Ok(SpireRemoteSearchLibpqIdentityCacheSummaryRow {

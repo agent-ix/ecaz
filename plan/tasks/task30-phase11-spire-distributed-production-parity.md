@@ -406,6 +406,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     proves descriptor-generation, descriptor-identity, and served-epoch changes
     miss; capability blockers prove stale epoch, retention gap, and
     extension-version skew do not touch the cache in strict or degraded mode.
+  - [x] Add degraded live-fingerprint mismatch coverage: a descriptor/endpoint
+    identity mismatch under degraded consistency reports `skip_node` with
+    `remote_endpoint_identity`, leaves compact/heap candidates empty, and keeps
+    the executor-local identity cache unpopulated.
 - [ ] Verification: local multi-instance slow-remote fixture proves ready
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and
