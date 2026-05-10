@@ -173,7 +173,7 @@ SQL
 
 coord_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_stage_e_coord_idx'::regclass)")"
 coord_pids="$("${coord_psql[@]}" -At -F ',' -c "SELECT string_agg(leaf_pid::text, ',' ORDER BY leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_stage_e_coord_idx'::regclass)")"
-ready_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT encode(profile_fingerprint, 'hex') FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_ready_remote_idx'::regclass)")"
+ready_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_ready_remote_idx'::regclass)")"
 extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHERE extname = 'ecaz'")"
 
 IFS=, read -r missing_pid ready_pid extra_pid <<< "$coord_pids"
