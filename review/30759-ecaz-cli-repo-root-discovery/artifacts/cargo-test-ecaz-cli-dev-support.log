@@ -1,0 +1,20 @@
+Script started on 2026-05-10 12:40:30-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.53s
+     Running unittests src/main.rs (target/debug/deps/ecaz-4806f6c9e5de178c)
+
+running 4 tests
+test commands::dev::support::tests::reads_pg_config_from_pgrx_config ... [32mok[m
+test commands::dev::support::tests::ignores_other_pgrx_config_entries ... [32mok[m
+test commands::dev::support::tests::does_not_treat_crate_directory_as_repo_root ... [32mok[m
+test commands::dev::support::tests::finds_repo_root_from_nested_checkout_path ... [32mok[m
+
+test result: [32mok[m. 4 passed; 0 failed; 0 ignored; 0 measured; 290 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-10 12:40:52-07:00 [COMMAND_EXIT_CODE="0"]
