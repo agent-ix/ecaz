@@ -51,6 +51,18 @@ typedef struct ErrorData {
 
 extern void ecaz_test_pg_backend_panic(const char *message);
 
+/*
+ * Standalone cargo-test loader stubs have a strict contract:
+ *
+ * - inert helper symbols may return minimal defaults when they only let
+ *   pure-Rust tests load pgrx-linked code;
+ * - backend execution symbols must panic through tqvector_backend_only() so a
+ *   direct cargo test cannot fake SPI, heap, catalog, or executor behavior.
+ *
+ * If a new unresolved PostgreSQL symbol appears, classify it deliberately in
+ * one of those two groups. Anything that would read or write backend state
+ * belongs in the pgrx/pg_test lane, not in a fake standalone implementation.
+ */
 static const uintptr_t TQVECTOR_TEST_ALLOCATED_MEMORY_CONTEXT = 0xecaa0001U;
 
 static MemoryContextData tqvector_top_memory_context_storage = {0};
