@@ -14199,6 +14199,29 @@ mod tests {
             .expect("remote endpoint identity should decode")
     }
 
+    fn assert_governance_lock_released(conninfo: &str, class_id: i32, object_id: i32, label: &str) {
+        let mut lock_probe = postgres::Client::connect(conninfo, postgres::NoTls)
+            .expect("governance lock probe connection should succeed");
+        let acquired = lock_probe
+            .query_one(
+                "SELECT pg_try_advisory_lock($1::integer, $2::integer)",
+                &[&class_id, &object_id],
+            )
+            .expect("governance lock probe should succeed")
+            .try_get::<_, bool>(0)
+            .expect("governance lock probe should decode");
+        assert!(acquired, "{label} governance lock should be released");
+        let unlocked = lock_probe
+            .query_one(
+                "SELECT pg_advisory_unlock($1::integer, $2::integer)",
+                &[&class_id, &object_id],
+            )
+            .expect("governance lock unlock should succeed")
+            .try_get::<_, bool>(0)
+            .expect("governance lock unlock should decode");
+        assert!(unlocked, "{label} governance lock should unlock");
+    }
+
     fn loopback_remote_index_identity_hex(
         client: &mut postgres::Client,
         remote_index_regclass: &str,
@@ -24138,6 +24161,7 @@ mod tests {
     fn test_ec_spire_production_fault_matrix_contract() {
         let required_categories = [
             "connect_failed",
+            "remote_executor_overload",
             "requires_conninfo_secret_resolution",
             "remote_statement_timeout",
             "local_statement_timeout",
@@ -24176,6 +24200,12 @@ mod tests {
         )
         .expect("remote timeout action query should succeed")
         .expect("remote timeout action should exist");
+        let executor_overload_step = Spi::get_one::<String>(
+            "SELECT next_executor_step FROM ec_spire_remote_search_production_fault_matrix() \
+             WHERE failure_category = 'remote_executor_overload'",
+        )
+        .expect("executor overload step query should succeed")
+        .expect("executor overload step should exist");
         let consistency_mismatch = Spi::get_one::<String>(
             "SELECT degraded_action FROM ec_spire_remote_search_production_fault_matrix() \
              WHERE failure_category = 'consistency_mode_mismatch'",
@@ -24191,6 +24221,7 @@ mod tests {
 
         assert_eq!(local_timeout, "cancel_query");
         assert_eq!(remote_timeout, "skip_node");
+        assert_eq!(executor_overload_step, "remote_executor_governance");
         assert_eq!(consistency_mismatch, "fail_closed");
         assert_eq!(heap_step, "remote_heap_resolution");
     }
@@ -24415,8 +24446,43 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_spire_prod_transport_local_cancel_remote_cancel() {
+    fn test_ec_spire_prod_transport_governance_overload() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
         let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (class_id, object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let mut lock_holder = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback lock-holder connection should succeed");
+        lock_holder
+            .batch_execute(&format!("SELECT pg_advisory_lock({class_id}, {object_id})"))
+            .expect("global governance advisory lock should be held by separate backend");
+
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: "invalid_conninfo_before_transport_open".to_owned(),
+                sql: "SELECT 1",
+            },
+        ]);
+        let failed = rows.first().expect("governance overload row should exist");
+
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "remote_executor_overload");
+        assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_transport_local_cancel_remote_cancel() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
+            .expect("per-node governance cap SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (global_class_id, global_object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let (node_class_id, node_object_id) =
+            am::remote_search_libpq_node_governance_advisory_key_for_test(2, 0);
         let rows = am::spire_remote_search_production_transport_probe_with_local_cancel_for_test(
             vec![am::SpireRemoteProductionTransportProbeRequest {
                 node_id: 2,
@@ -24430,6 +24496,19 @@ mod tests {
         assert_eq!(failed.status, "remote_transport_failed");
         assert_eq!(failed.failure_category, "local_query_cancelled");
         assert_eq!(failed.row_count, 0);
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            global_class_id,
+            global_object_id,
+            "global transport local-cancel",
+        );
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            node_class_id,
+            node_object_id,
+            "per-node transport local-cancel",
+        );
     }
 
     #[pg_test]
@@ -24791,7 +24870,15 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_prod_receive_local_cancel_remote_cancel() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
+            .expect("per-node governance cap SET should succeed");
         let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (global_class_id, global_object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let (node_class_id, node_object_id) =
+            am::remote_search_libpq_node_governance_advisory_key_for_test(2, 0);
         let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
             .expect("loopback client connection should succeed");
         loopback_client
@@ -24870,6 +24957,52 @@ mod tests {
 
         assert_eq!(failed.status, "remote_candidate_receive_failed");
         assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            global_class_id,
+            global_object_id,
+            "global receive local-cancel",
+        );
+        assert_governance_lock_released(
+            &loopback_conninfo,
+            node_class_id,
+            node_object_id,
+            "per-node receive local-cancel",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_governance_overload() {
+        Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
+            .expect("global governance cap SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let (class_id, object_id) =
+            am::remote_search_libpq_global_governance_advisory_key_for_test(0);
+        let mut lock_holder = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback lock-holder connection should succeed");
+        lock_holder
+            .batch_execute(&format!("SELECT pg_advisory_lock({class_id}, {object_id})"))
+            .expect("global governance advisory lock should be held by separate backend");
+
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: "invalid_conninfo_before_candidate_receive_open".to_owned(),
+                remote_index_regclass: "ec_spire_missing_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: 1,
+                query: vec![1.0, 0.0],
+                selected_pids: vec![1],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("governance overload row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "remote_executor_overload");
         assert_eq!(failed.candidate_count, 0);
         assert!(failed.batch.is_none());
     }

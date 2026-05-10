@@ -167,6 +167,9 @@ Acceptance artifact:
 - [ ] Add resource governance across queries, not only per query: coordinator
   global connection/work limits, per-remote-node concurrency caps, overload
   shedding behavior, and diagnostics for backpressure decisions.
+  - [x] Production async transport and compact-candidate receive acquire the
+    global/per-node advisory governance permit before conninfo parsing or
+    socket open and report `remote_executor_overload` on saturation.
 - [ ] Propagate local query cancellation to outstanding remote work.
   - [x] First adapter primitive: production receive and transport use a
     `tokio-postgres` cancel token and map local cancellation to global
@@ -475,6 +478,13 @@ and strict/degraded normalization at the AM boundary, C5 AM scan integration,
 Stage D remote heap resolution, and the local multi-instance fault/readiness
 bundle.
 
+Stage C update, packet 30753: the production async transport and compact
+candidate receive adapters now enter the same global/per-node advisory
+governance surface as the blocking diagnostic executor. Saturated governance
+slots produce the first-class `remote_executor_overload` production category
+before conninfo parsing or socket open, and local cancellation releases both
+global and per-node permits on the tested production paths.
+
 - [x] Define the production coordinator executor state, landing sequence,
   cancellation contract, counter set, and validation gates in
   `plan/design/spire-production-coordinator-executor.md`.
@@ -541,7 +551,7 @@ bundle.
     and budget-blocked dispatch/PID counts plus the active limits.
   - [x] Apply nonzero connect/statement timeout session settings in the
     diagnostic executor connection helper while keeping raw conninfo hidden.
-  - [ ] Add global cross-query coordinator work limits and per-remote-node
+  - [x] Add global cross-query coordinator work limits and per-remote-node
     concurrency caps.
     - [x] First governance surface: session GUCs cap concurrent libpq
       dispatches globally and per remote node using nonblocking PostgreSQL
@@ -553,10 +563,17 @@ bundle.
       class ranges.
     - [x] Add PG18 coverage that saturating one per-node governance slot does
       not block a second node with its own per-node slot.
+    - [x] Packet `30753` extends the governance surface into production async
+      transport and compact-candidate receive, with PG18 wrapper evidence that
+      saturated global slots fail before remote connection parsing.
   - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
-    - [ ] On local cancel, stop accepting new remote work, cancel or close all
+    - [x] On local cancel, stop accepting new remote work, cancel or close all
       in-flight remote libpq work, release advisory governance slots, and
       report cancellation counters without raw remote error text.
+      - [x] Packet `30753` proves local cancellation releases the production
+        adapter's global and per-node governance slots for both transport and
+        compact-candidate receive. C5 still must route the AM scan path through
+        this production adapter instead of the diagnostic executor.
     - [x] Lock the pre-C5 batch ownership rule: local cancellation clears any
       retained `CandidateReceiveReady` compact batch and reports
       `remote_executor_cancelled` / `local_query_cancelled`, so cancelled
@@ -613,8 +630,13 @@ bundle.
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and
   local cancel.
-  - [ ] Add packet-local evidence for governance-slot release after local
+  - [x] Add packet-local evidence for governance-slot release after local
     cancel.
+    - [x] Packet `30753` runs PG18 test wrappers for
+      `test_ec_spire_prod_transport_local_cancel_remote_cancel` and
+      `test_ec_spire_prod_receive_local_cancel_remote_cancel`; both acquire
+      global/per-node governance slots, trigger local cancellation, and then
+      prove a separate backend can acquire and unlock the same advisory keys.
   - [x] Add packet-local timing evidence for first ready remote result arriving
     before a deliberately slow remote completes.
     - [x] Packet `30752` records `fast_completed_after_ms=3` and

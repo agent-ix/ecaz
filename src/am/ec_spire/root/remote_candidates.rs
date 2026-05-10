@@ -2387,6 +2387,18 @@ impl SpireRemoteProductionTransportAdapter {
     ) -> SpireRemoteProductionTransportProbeRow {
         let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
+        let _governance_permit =
+            match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
+                Ok(permit) => permit,
+                Err(error) => {
+                    return failed_production_transport_probe_row(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        production_governance_failure_category(&error),
+                    );
+                }
+            };
         let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
             Ok(config) => config,
             Err(_) => {
@@ -2509,6 +2521,18 @@ impl SpireRemoteProductionTransportAdapter {
                 );
             }
         };
+        let _governance_permit =
+            match remote_search_libpq_executor_governance_permit_for_node(request.node_id) {
+                Ok(permit) => permit,
+                Err(error) => {
+                    return failed_production_candidate_receive_result(
+                        request.node_id,
+                        batch_start,
+                        request_start,
+                        production_governance_failure_category(&error),
+                    );
+                }
+            };
         let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
             Ok(config) => config,
             Err(_) => {
@@ -2762,6 +2786,10 @@ fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'
         "57P01" | "57P02" | "57P03" => SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
         _ => SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
     }
+}
+
+fn production_governance_failure_category(_error: &str) -> &'static str {
+    SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD
 }
 
 fn production_candidate_decode_failure_category(error: &str) -> &'static str {
@@ -3892,6 +3920,17 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
         ),
         production_fault_matrix_row(
             2,
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            "executor_governance",
+            SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE,
+            "fail_closed",
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
+            "skip_node",
+            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
+            "release saturated global or per-node governance slots before strict search; degraded mode may skip only that node",
+        ),
+        production_fault_matrix_row(
+            3,
             SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
             "conninfo_secret",
             SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
@@ -3902,7 +3941,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "resolve the conninfo secret before strict search; degraded mode may skip only that node",
         ),
         production_fault_matrix_row(
-            3,
+            4,
             SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3913,7 +3952,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "fix sanitized conninfo syntax or skip the affected remote under degraded mode",
         ),
         production_fault_matrix_row(
-            4,
+            5,
             SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3924,7 +3963,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "treat connect, authentication, certificate, and connect-timeout failures as sanitized transport failures",
         ),
         production_fault_matrix_row(
-            5,
+            6,
             SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3935,7 +3974,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "do not run an uncapped remote query when remote statement_timeout setup fails",
         ),
         production_fault_matrix_row(
-            6,
+            7,
             SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3946,7 +3985,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "remote-owned statement timeout is a remote-node failure, not a local cancellation",
         ),
         production_fault_matrix_row(
-            7,
+            8,
             SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3957,7 +3996,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "backend termination or connection reset must not be merged as an empty successful result",
         ),
         production_fault_matrix_row(
-            8,
+            9,
             SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
             "transport",
             SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -3968,7 +4007,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "remote query cancellation is remote-owned unless the local adapter reports a local cancellation category",
         ),
         production_fault_matrix_row(
-            9,
+            10,
             SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED,
             "local_cancellation",
             SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
@@ -3979,7 +4018,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "local query cancellation is query-wide and clears all retained candidate batches in every consistency mode",
         ),
         production_fault_matrix_row(
-            10,
+            11,
             SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
             "local_cancellation",
             SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
@@ -3990,7 +4029,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "local statement timeout is query-wide and distinct from remote_statement_timeout",
         ),
         production_fault_matrix_row(
-            11,
+            12,
             SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED,
             "candidate_receive",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4001,7 +4040,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "malformed compact candidate rows cannot enter merge in strict mode",
         ),
         production_fault_matrix_row(
-            12,
+            13,
             SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
             "candidate_receive",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4012,7 +4051,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "candidate batch validation failures preserve the exact category before merge",
         ),
         production_fault_matrix_row(
-            13,
+            14,
             SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
             "endpoint_identity",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4023,7 +4062,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "descriptor, index, quantizer, opclass, storage, and fingerprint mismatches are identity failures",
         ),
         production_fault_matrix_row(
-            14,
+            15,
             SPIRE_REMOTE_PRODUCTION_PROTOCOL_VERSION_MISMATCH,
             "endpoint_identity",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4034,7 +4073,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "protocol version skew must be rejected before candidate merge",
         ),
         production_fault_matrix_row(
-            15,
+            16,
             SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
             "descriptor_version",
             SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION,
@@ -4045,7 +4084,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "descriptor-advertised extension skew blocks strict dispatch planning",
         ),
         production_fault_matrix_row(
-            16,
+            17,
             SPIRE_REMOTE_PRODUCTION_EXTENSION_VERSION_MISMATCH,
             "endpoint_identity",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4056,7 +4095,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "live endpoint extension skew invalidates cached endpoint identity",
         ),
         production_fault_matrix_row(
-            17,
+            18,
             SPIRE_REMOTE_STATUS_STALE_EPOCH,
             "epoch_window",
             SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW,
@@ -4067,7 +4106,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "stale descriptor epoch cannot satisfy strict fanout and is a named degraded skip",
         ),
         production_fault_matrix_row(
-            18,
+            19,
             SPIRE_REMOTE_PRODUCTION_SERVED_EPOCH_MISMATCH,
             "candidate_receive",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4078,7 +4117,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "served epoch mismatches are rejected after receive instead of folded into generic validation",
         ),
         production_fault_matrix_row(
-            19,
+            20,
             SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
             "consistency_policy",
             SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY,
@@ -4089,7 +4128,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "requested epoch mismatch is a coordinator request error, not a degraded remote skip",
         ),
         production_fault_matrix_row(
-            20,
+            21,
             SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE,
             "endpoint_identity",
             SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
@@ -4100,7 +4139,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "missing remote index or regclass resolution failure cannot be treated as an empty batch",
         ),
         production_fault_matrix_row(
-            21,
+            22,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
             "remote_heap_resolution",
             SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
@@ -4111,7 +4150,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "remote heap query failure blocks final SQL rows unless degraded mode skips that origin node",
         ),
         production_fault_matrix_row(
-            22,
+            23,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
             "remote_heap_resolution",
             SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
@@ -4122,7 +4161,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "missing origin heap rows must be counted and either fail strict or be explicitly skipped",
         ),
         production_fault_matrix_row(
-            23,
+            24,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_DEAD,
             "remote_heap_resolution",
             SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
@@ -4133,7 +4172,7 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             "dead origin heap rows must be counted and must not be returned as visible SQL rows",
         ),
         production_fault_matrix_row(
-            24,
+            25,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_STALE,
             "remote_heap_resolution",
             SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
@@ -5501,6 +5540,12 @@ fn remote_search_libpq_try_governance_slot(
 fn remote_search_libpq_executor_governance_permit(
     row: &SpireRemoteSearchLibpqDispatchPlanRow,
 ) -> Result<SpireRemoteSearchLibpqGovernancePermit, String> {
+    remote_search_libpq_executor_governance_permit_for_node(row.node_id)
+}
+
+fn remote_search_libpq_executor_governance_permit_for_node(
+    node_id: u32,
+) -> Result<SpireRemoteSearchLibpqGovernancePermit, String> {
     let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
     let mut permit = SpireRemoteSearchLibpqGovernancePermit::default();
 
@@ -5522,13 +5567,13 @@ fn remote_search_libpq_executor_governance_permit(
     if limits.has_concurrent_dispatch_per_node_cap() {
         let key = remote_search_libpq_try_governance_slot(
             SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE,
-            i32::from_ne_bytes(row.node_id.to_ne_bytes()),
+            i32::from_ne_bytes(node_id.to_ne_bytes()),
             limits.max_concurrent_dispatches_per_node,
         )?
         .ok_or_else(|| {
             format!(
                 "ec_spire remote search executor remote_executor_overload per-node concurrency cap {} is saturated for node_id {}",
-                limits.max_concurrent_dispatches_per_node, row.node_id
+                limits.max_concurrent_dispatches_per_node, node_id
             )
         })?;
         permit.locks.push(key);
@@ -7671,6 +7716,7 @@ mod production_executor_state_tests {
             .collect::<std::collections::HashSet<_>>();
         let required = [
             SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+            SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
             SPIRE_REMOTE_STATUS_REQUIRES_SECRET,
             SPIRE_REMOTE_PRODUCTION_REMOTE_STATEMENT_TIMEOUT,
             SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,

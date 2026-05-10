@@ -182,7 +182,12 @@ token. Statement-timeout provenance is now split from user/query cancellation
 by polling `get_timeout_indicator(STATEMENT_TIMEOUT, false)` without resetting
 PostgreSQL's indicator; timeout-triggered local cancellation reports
 `local_statement_timeout`, while other local query-cancel flags report
-`local_query_cancelled`.
+`local_query_cancelled`. Packet 30753 extends the cancellation cleanup proof to
+the production async transport and compact-candidate receive adapters: both
+paths acquire global/per-node advisory governance permits before remote
+connection work, release those permits when local cancellation closes the
+attempt, and expose saturated slots as `remote_executor_overload` instead of
+leaking raw advisory-lock errors.
 
 The C5 AM bridge must choose one cancellation source and test it under a real
 backend, not only under deterministic test triggers. Acceptable shapes are:
@@ -197,6 +202,8 @@ Verification:
 
 - PG18/local fixture proving a local cancel releases global and per-node
   governance slots.
+- PG18/local fixture proving saturated production governance slots fail before
+  conninfo parsing or socket open.
 - Fixture proving remote statement timeout skips or fails the node according to
   strict/degraded mode without masking the timeout as identity or connection
   failure.
@@ -272,14 +279,15 @@ Verification:
 
 As of 2026-05-10, the dry SQL-visible
 `ec_spire_remote_search_production_fault_matrix()` surface pins the C4 policy
-matrix before C5 consumes it. It includes transport, secret, remote/local
-statement timeout, backend termination, remote/local query cancellation,
-candidate validation, endpoint identity, protocol/extension version,
-stale/served epoch, `consistency_mode_mismatch`, and reserved Stage D remote
-heap-resolution categories. Most remote-node failures fail closed in strict
-mode and become node skips in degraded mode; local cancellation and local
-statement timeout remain query-wide cancellations in both modes; consistency
-mode and requested-epoch mismatches fail closed in both modes.
+matrix before C5 consumes it. It includes executor governance overload,
+transport, secret, remote/local statement timeout, backend termination,
+remote/local query cancellation, candidate validation, endpoint identity,
+protocol/extension version, stale/served epoch, `consistency_mode_mismatch`,
+and reserved Stage D remote heap-resolution categories. Most remote-node
+failures fail closed in strict mode and become node skips in degraded mode;
+local cancellation and local statement timeout remain query-wide cancellations
+in both modes; consistency mode and requested-epoch mismatches fail closed in
+both modes.
 
 C5 must consume this matrix, or a Rust-side equivalent generated from the same
 category list, as the AM-boundary source of truth instead of re-encoding
