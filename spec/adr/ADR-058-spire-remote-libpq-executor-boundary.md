@@ -49,6 +49,9 @@ The Stage C identity-cache constraints for that production work are captured in
 The Stage C resource-governance constraints for per-query admission, overload
 blocking, and timeout configuration are captured in
 `plan/design/spire-libpq-executor-budget.md`.
+The production executor state machine, landing sequence, cancellation contract,
+and required counters are captured in
+`plan/design/spire-production-coordinator-executor.md`.
 That contract also owns the PostgreSQL advisory-lock namespace reserved for
 first-stage cross-backend dispatch governance:
 

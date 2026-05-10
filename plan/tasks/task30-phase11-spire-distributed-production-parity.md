@@ -359,9 +359,21 @@ endpoint.
 
 Goal: execute remote fanout with bounded concurrent or pipelined work.
 
+- [x] Define the production coordinator executor state, landing sequence,
+  cancellation contract, counter set, and validation gates in
+  `plan/design/spire-production-coordinator-executor.md`.
 - [ ] Implement production executor state separate from diagnostic SQL
   functions; keep raw conninfo hidden behind `conninfo_secret_name`.
+  - [ ] Add `SpireRemoteFanoutExecutor` / `SpireRemoteDispatch` state structs
+    that can be built from the existing request, target, descriptor, budget,
+    and governance planning data without opening sockets.
+  - [ ] Expose production-state summaries without invoking live diagnostic
+    SQL helpers or opening extra sockets.
 - [ ] Use libpq async or pipeline mode for overlapping remote work.
+  - [ ] Add a narrow transport adapter boundary so the AM scan path no longer
+    calls blocking `postgres::Client` directly for production fanout.
+  - [ ] Prove at least two ready remotes can make progress independently under
+    an instrumented slow-remote fixture.
 - [ ] Add per-query fanout caps, global coordinator work limits, per-remote
   concurrency caps, connect/statement timeouts, cancellation propagation, and
   overload-shedding diagnostics.
@@ -390,6 +402,12 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     - [x] Add PG18 coverage that saturating one per-node governance slot does
       not block a second node with its own per-node slot.
   - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
+    - [ ] On local cancel, stop accepting new remote work, cancel or close all
+      in-flight remote libpq work, release advisory governance slots, and
+      report cancellation counters without raw remote error text.
+    - [ ] Keep local cancel, local statement timeout, remote statement timeout,
+      connect timeout, and remote backend termination as distinct diagnostic
+      categories.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
   - [x] Define the cache contract in
@@ -424,6 +442,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and
   local cancel.
+  - [ ] Add packet-local evidence for governance-slot release after local
+    cancel.
+  - [ ] Add packet-local timing evidence for first ready remote result arriving
+    before a deliberately slow remote completes.
 
 ### Stage D: Remote Heap Resolution and Final Rows
 
@@ -452,6 +474,9 @@ Goal: prove distributed correctness locally before AWS.
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and
   missing/reindexed remote index.
+  - [ ] Every fault case must state expected strict outcome, expected degraded
+    outcome, required status string, next blocker, failure action, and counter
+    delta before the fixture is implemented.
 - [ ] Verification: packet-local logs for every fault case, with explicit
   strict failure and degraded skip counts.
 
@@ -487,6 +512,13 @@ Goal: make the final local readiness bundle reproducible.
 - Use local multi-instance fixtures before external scale work.
 - Use packet-local raw logs for every benchmark, latency, recall, or fanout
   claim.
+- For each Phase 11 production slice, record the verification contract before
+  or in the same patch as the code, then land the narrowest PG18/local fixture
+  that can falsify the claim.
+- Do not mark a Stage C/D/E item production-ready using only
+  `ec_spire_remote_search_libpq_*` diagnostic SQL output; diagnostic output may
+  support a claim only when it reflects production executor state or a live
+  diagnostic probe explicitly labeled as such.
 - Use `git diff --check` for planning-only packets.
 - Keep AWS/RDS-class results out of Phase 11 until the explicit entry gate is
   satisfied.

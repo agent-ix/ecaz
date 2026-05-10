@@ -73,6 +73,16 @@ extension features, operator scripts, and external runbooks must not use these
 class ranges. Operators can inspect current utilization with
 `pg_locks WHERE locktype = 'advisory' AND classid::bigint BETWEEN 730000000 AND 731004095`.
 
+Current slot allocation log:
+
+- slots `0..4095` in the global range are reserved for remote-search dispatch
+  governance;
+- slots `0..4095` in the per-node range are reserved for remote-search
+  dispatch governance scoped by `node_id`.
+
+Future Stage C features that need advisory-lock slots must add their class
+range or slot range here before implementation.
+
 ## Required Invariants
 
 - Over-budget rows must use `dispatch_action = blocked_before_dispatch`.
@@ -103,4 +113,5 @@ be baked into the next async/pipeline executor slice.
 
 - Propagate PostgreSQL cancellation into in-flight remote work.
 - Replace serial diagnostic dispatch with production async or libpq pipeline
-  execution.
+  execution, following
+  `plan/design/spire-production-coordinator-executor.md`.
