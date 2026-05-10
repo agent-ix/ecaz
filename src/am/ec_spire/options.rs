@@ -169,7 +169,7 @@ pub(super) struct EcSpireOptions {
     pub(super) top_graph_build_list_size: i32,
     pub(super) top_graph_alpha: f32,
     pub(super) top_graph_search_list_size: i32,
-    pub(super) nprobe_per_level: Option<String>,
+    pub(super) nprobe_per_level: Option<Vec<u32>>,
     pub(super) storage_format: SpireStorageFormat,
     pub(super) source_identity: SpireSourceIdentityProvider,
     pub(super) local_store_tablespaces: Option<String>,
@@ -258,12 +258,8 @@ impl EcSpireOptions {
         })
     }
 
-    pub(super) fn nprobe_per_level_values(&self) -> Result<Vec<u32>, String> {
-        self.nprobe_per_level
-            .as_deref()
-            .map(parse_nprobe_per_level_reloption)
-            .transpose()
-            .map(Option::unwrap_or_default)
+    pub(super) fn nprobe_per_level_values(&self) -> Vec<u32> {
+        self.nprobe_per_level.clone().unwrap_or_default()
     }
 }
 
@@ -893,7 +889,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     let nprobe = resolve_scan_nprobe_values(leaf_count, relation_nprobe, session_nprobe_value);
     let recursive_nprobe_policy = SpireRecursiveNprobePolicy::from_level_values_with_adaptive(
         nprobe.effective_nprobe,
-        options.nprobe_per_level_values()?,
+        options.nprobe_per_level_values(),
         adaptive_nprobe,
         adaptive_score_gap_micros,
     )?;
@@ -1363,10 +1359,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpi
             "nprobe_per_level",
         )
     }
-    .map(|value| {
-        parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"));
-        value
-    });
+    .map(|value| parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")));
 
     EcSpireOptions {
         nlists: reloptions.nlists,
@@ -1680,7 +1673,7 @@ mod tests {
     fn single_level_scan_plan_carries_recursive_per_level_nprobe_policy() {
         let options = EcSpireOptions {
             nprobe: 2,
-            nprobe_per_level: Some("3,4".to_owned()),
+            nprobe_per_level: Some(vec![3, 4]),
             ..EcSpireOptions::DEFAULT
         };
 

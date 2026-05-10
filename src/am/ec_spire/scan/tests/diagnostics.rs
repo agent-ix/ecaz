@@ -525,7 +525,7 @@
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
         let options = EcSpireOptions {
             nprobe: 2,
-            nprobe_per_level: Some("3".to_owned()),
+            nprobe_per_level: Some(vec![3]),
             ..EcSpireOptions::DEFAULT
         };
         let routing_objects_by_pid = HashMap::from([
@@ -728,7 +728,7 @@
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
         let options = EcSpireOptions {
             nprobe: 6,
-            nprobe_per_level: Some("2,2".to_owned()),
+            nprobe_per_level: Some(vec![2, 2]),
             ..EcSpireOptions::DEFAULT
         };
         let routing_objects_by_pid = HashMap::from([

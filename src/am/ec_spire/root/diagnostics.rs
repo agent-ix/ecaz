@@ -176,7 +176,7 @@ fn level_nprobe_resolution(
     }
     let nprobe_policy = options::SpireRecursiveNprobePolicy::from_level_values(
         options::resolve_scan_nprobe(leaf_count, relation_nprobe).effective_nprobe,
-        relation_options.nprobe_per_level_values()?,
+        relation_options.nprobe_per_level_values(),
     )?;
     if let Some(configured_nprobe) = nprobe_policy.configured_nprobe_for_level(level) {
         let observed_child_count = u32::try_from(observed_child_count)

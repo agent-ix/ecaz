@@ -1177,7 +1177,9 @@ explicitly so the boundary between Phase 3 and Phase 4 stays durable:
   through diagnostics reconstructed from active routing objects and reloptions.
 - [ ] Explicit user-facing per-level fanout configuration. Phase 3 exposes
   effective target fanout diagnostics, while relation configuration remains the
-  single `recursive_fanout` reloption.
+  single `recursive_fanout` reloption. This is intentionally separate from
+  `nprobe_per_level`: fanout controls build-time children per parent, while
+  nprobe controls scan-time children visited per parent.
 - [x] Three-routing-level recursive descent coverage.
 - [x] Degraded-placement recursive descent coverage.
 - [x] `effective_nprobe_per_level` and `nprobe_policy_per_level` on
