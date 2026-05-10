@@ -826,7 +826,7 @@ Goal: prove distributed correctness locally before AWS.
       network partitions.
 - [ ] Verification: packet-local logs for every fault case, with explicit
   strict failure and degraded skip counts.
-  - [ ] Packet `30778` starts the runtime matrix with the simulated network
+  - [x] Packet `30778` starts the runtime matrix with the simulated network
     partition case: one ready remote plus one unreachable conninfo, strict
     fail-closed transport summary, degraded skip-node transport summary, and
     packet-local strict/degraded logs. Remaining Stage E fault and lifecycle
