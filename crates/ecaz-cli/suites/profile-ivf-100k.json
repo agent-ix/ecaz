@@ -118,6 +118,35 @@
       "log_file": "artifacts/benchmark-profiles/profile-ivf-100k/storage-real100k-n128.log"
     },
     {
+      "kind": "compare-pgvector",
+      "name": "compare-pgvector-ivfflat-real100k-k10",
+      "tags": ["compare", "pgvector", "ivfflat", "ivf", "real100k", "n128", "k10"],
+      "prefix": "profile_real100k_pqg8_n128",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [40, 48, 56, 64, 80, 96],
+      "rerank_width": 500,
+      "pgvector_am": "ivfflat",
+      "pgvector_lists": 128,
+      "pgvector_maintenance_work_mem": "256MB",
+      "rebuild": true,
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k10.log"
+    },
+    {
+      "kind": "compare-pgvector",
+      "name": "compare-pgvector-ivfflat-real100k-k100",
+      "tags": ["compare", "pgvector", "ivfflat", "ivf", "real100k", "n128", "k100", "w1000"],
+      "prefix": "profile_real100k_pqg8_n128",
+      "profile": "ec_ivf",
+      "k": 100,
+      "sweep": [80, 96],
+      "rerank_width": 1000,
+      "pgvector_am": "ivfflat",
+      "pgvector_lists": 128,
+      "pgvector_maintenance_work_mem": "256MB",
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-100k/compare-pgvector-ivfflat-real100k-k100.log"
+    },
+    {
       "kind": "explain",
       "name": "explain-quality-candidate",
       "tags": ["explain", "ivf", "real100k", "n128", "w1000"],

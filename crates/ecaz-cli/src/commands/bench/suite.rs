@@ -189,6 +189,8 @@ struct SuiteDefaults {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum SuiteStep {
+    CorpusFetch(CorpusFetchStep),
+    CorpusPrepare(CorpusPrepareStep),
     Load(LoadStep),
     Recall(RecallStep),
     Latency(LatencyStep),
@@ -200,17 +202,54 @@ enum SuiteStep {
 }
 
 #[derive(Debug, Deserialize)]
+struct CorpusFetchStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    dataset: String,
+    output_dir: PathBuf,
+    #[serde(default)]
+    revision: Option<String>,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct CorpusPrepareStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    profile: String,
+    parquet: PathBuf,
+    output_dir: PathBuf,
+    #[serde(default)]
+    id_column: Option<String>,
+    #[serde(default)]
+    vector_column: Option<String>,
+    #[serde(default)]
+    dim: Option<usize>,
+    #[serde(default)]
+    source_dataset: Option<String>,
+    #[serde(default)]
+    chunk_rows: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
 struct LoadStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
     prefix: String,
-    corpus_file: PathBuf,
-    queries_file: PathBuf,
+    #[serde(default)]
+    corpus_file: Option<PathBuf>,
+    #[serde(default)]
+    queries_file: Option<PathBuf>,
     #[serde(default)]
     manifest_file: Option<PathBuf>,
     #[serde(default)]
     allow_manifest_mismatch: bool,
+    #[serde(default)]
+    chunked: bool,
     #[serde(default)]
     dim: Option<usize>,
     #[serde(default)]
@@ -339,11 +378,21 @@ struct ComparePgvectorStep {
     #[serde(default)]
     ecaz_sweep: Option<i32>,
     #[serde(default)]
+    pgvector_am: Option<String>,
+    #[serde(default)]
     pgvector_ef_search: Option<i32>,
     #[serde(default)]
     pgvector_m: Option<i32>,
     #[serde(default)]
     pgvector_ef_construction: Option<i32>,
+    #[serde(default)]
+    pgvector_lists: Option<i32>,
+    #[serde(default)]
+    pgvector_probes: Option<i32>,
+    #[serde(default)]
+    pgvector_maintenance_work_mem: Option<String>,
+    #[serde(default)]
+    rerank_width: Option<i32>,
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
@@ -593,7 +642,9 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     }
 
     let rows = write_results_if_requested(&args, &config, &manifest).await?;
-    manifest.threshold_results = evaluate_thresholds(&config.thresholds, &rows);
+    let selected_steps = selected_step_names(&manifest);
+    manifest.threshold_results =
+        evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
     write_manifest_if_requested(&args, &config, &manifest).await?;
     let failures = manifest
         .threshold_results
@@ -609,11 +660,15 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
 async fn audit_suite(config_path: &Path) -> Result<()> {
     let (_raw, config) = load_config(config_path).await?;
     let mut findings = Vec::new();
+    let mut produced = HashSet::new();
     if let Err(err) = validate_config(&config) {
         findings.push(err.to_string());
     }
     for step in &config.steps {
         for input in step.input_paths() {
+            if produced.contains(&input) {
+                continue;
+            }
             if tokio::fs::metadata(&input).await.is_err() {
                 findings.push(format!(
                     "step {:?} references missing input {}",
@@ -622,6 +677,7 @@ async fn audit_suite(config_path: &Path) -> Result<()> {
                 ));
             }
         }
+        produced.extend(step.produced_paths());
         if step.expected_artifacts().is_empty() {
             findings.push(format!(
                 "step {:?} does not declare an artifact path",
@@ -1217,9 +1273,32 @@ fn format_metric_values(values: &BTreeMap<String, String>) -> String {
         .join(", ")
 }
 
+fn selected_step_names(manifest: &SuiteManifest) -> HashSet<&str> {
+    manifest
+        .steps
+        .iter()
+        .filter(|step| step.selected)
+        .map(|step| step.name.as_str())
+        .collect()
+}
+
+#[cfg(test)]
 fn evaluate_thresholds(thresholds: &[ThresholdConfig], rows: &[ResultRow]) -> Vec<ThresholdResult> {
+    let selected_steps: HashSet<&str> = thresholds
+        .iter()
+        .map(|threshold| threshold.step.as_str())
+        .collect();
+    evaluate_thresholds_for_steps(thresholds, rows, &selected_steps)
+}
+
+fn evaluate_thresholds_for_steps(
+    thresholds: &[ThresholdConfig],
+    rows: &[ResultRow],
+    selected_steps: &HashSet<&str>,
+) -> Vec<ThresholdResult> {
     thresholds
         .iter()
+        .filter(|threshold| selected_steps.contains(threshold.step.as_str()))
         .map(|threshold| evaluate_threshold(threshold, rows))
         .collect()
 }
@@ -1306,6 +1385,8 @@ fn validate_config(config: &SuiteConfig) -> Result<()> {
 impl SuiteStep {
     fn name(&self) -> &str {
         match self {
+            SuiteStep::CorpusFetch(step) => &step.name,
+            SuiteStep::CorpusPrepare(step) => &step.name,
             SuiteStep::Load(step) => &step.name,
             SuiteStep::Recall(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
@@ -1319,6 +1400,8 @@ impl SuiteStep {
 
     fn kind(&self) -> &'static str {
         match self {
+            SuiteStep::CorpusFetch(_) => "corpus-fetch",
+            SuiteStep::CorpusPrepare(_) => "corpus-prepare",
             SuiteStep::Load(_) => "load",
             SuiteStep::Recall(_) => "recall",
             SuiteStep::Latency(_) => "latency",
@@ -1332,6 +1415,8 @@ impl SuiteStep {
 
     fn tags(&self) -> &[String] {
         match self {
+            SuiteStep::CorpusFetch(step) => &step.tags,
+            SuiteStep::CorpusPrepare(step) => &step.tags,
             SuiteStep::Load(step) => &step.tags,
             SuiteStep::Recall(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
@@ -1345,6 +1430,51 @@ impl SuiteStep {
 
     fn validate(&self) -> Result<()> {
         match self {
+            SuiteStep::CorpusPrepare(step) if step.dim == Some(0) => {
+                bail!("corpus-prepare step {:?} must set dim >= 1", step.name)
+            }
+            SuiteStep::CorpusPrepare(step) if step.chunk_rows == Some(0) => {
+                bail!(
+                    "corpus-prepare step {:?} must set chunk_rows >= 1",
+                    step.name
+                )
+            }
+            SuiteStep::Load(step)
+                if step.corpus_file.is_none()
+                    && step.queries_file.is_none()
+                    && step.manifest_file.is_none() =>
+            {
+                bail!(
+                    "load step {:?} must include corpus/queries files or a manifest_file",
+                    step.name
+                )
+            }
+            SuiteStep::Load(step)
+                if step.chunked
+                    && (step.corpus_file.is_some() || step.queries_file.is_some()) =>
+            {
+                bail!(
+                    "load step {:?} cannot mix chunked manifest loading with corpus/queries files",
+                    step.name
+                )
+            }
+            SuiteStep::Load(step)
+                if step.chunked && step.manifest_file.is_none() =>
+            {
+                bail!(
+                    "load step {:?} requires manifest_file when chunked=true",
+                    step.name
+                )
+            }
+            SuiteStep::Load(step)
+                if !step.chunked
+                    && (step.corpus_file.is_none() || step.queries_file.is_none()) =>
+            {
+                bail!(
+                    "load step {:?} requires corpus_file and queries_file unless chunked=true",
+                    step.name
+                )
+            }
             SuiteStep::Recall(step) if step.sweep.is_empty() => {
                 bail!(
                     "recall step {:?} must include at least one sweep value",
@@ -1390,6 +1520,8 @@ impl SuiteStep {
 
     fn expand(&self, defaults: &SuiteDefaults, conn: &ConnectionOptions) -> Result<Vec<String>> {
         match self {
+            SuiteStep::CorpusFetch(step) => Ok(expand_corpus_fetch(step)),
+            SuiteStep::CorpusPrepare(step) => Ok(expand_corpus_prepare(step)),
             SuiteStep::Load(step) => Ok(expand_load(step, defaults)),
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
@@ -1403,6 +1535,21 @@ impl SuiteStep {
 
     fn expected_artifacts(&self) -> Vec<PathBuf> {
         match self {
+            SuiteStep::CorpusFetch(step) => vec![step.output_dir.join("ecaz_fetch_manifest.json")],
+            SuiteStep::CorpusPrepare(step) => {
+                let manifest = step
+                    .output_dir
+                    .join(format!("{}_manifest.json", step.profile));
+                if step.chunk_rows.is_some() {
+                    vec![manifest]
+                } else {
+                    vec![
+                        step.output_dir.join(format!("{}_corpus.tsv", step.profile)),
+                        step.output_dir.join(format!("{}_queries.tsv", step.profile)),
+                        manifest,
+                    ]
+                }
+            }
             SuiteStep::Load(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Recall(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
@@ -1416,13 +1563,47 @@ impl SuiteStep {
 
     fn input_paths(&self) -> Vec<PathBuf> {
         match self {
+            SuiteStep::CorpusPrepare(step) => vec![step.parquet.clone()],
             SuiteStep::Load(step) => {
-                let mut paths = vec![step.corpus_file.clone(), step.queries_file.clone()];
+                let mut paths = Vec::new();
+                if let Some(path) = &step.corpus_file {
+                    paths.push(path.clone());
+                }
+                if let Some(path) = &step.queries_file {
+                    paths.push(path.clone());
+                }
                 if let Some(path) = &step.manifest_file {
                     paths.push(path.clone());
                 }
                 paths
             }
+            _ => Vec::new(),
+        }
+    }
+
+    fn produced_paths(&self) -> Vec<PathBuf> {
+        match self {
+            SuiteStep::CorpusFetch(step) => vec![
+                step.output_dir.clone(),
+                step.output_dir.join("data"),
+                step.output_dir.join("ecaz_fetch_manifest.json"),
+            ],
+            SuiteStep::CorpusPrepare(step) => {
+                let mut paths = vec![
+                    step.output_dir.clone(),
+                    step.output_dir
+                        .join(format!("{}_manifest.json", step.profile)),
+                ];
+                if step.chunk_rows.is_some() {
+                    paths.push(step.output_dir.join(format!("{}_corpus", step.profile)));
+                    paths.push(step.output_dir.join(format!("{}_queries", step.profile)));
+                } else {
+                    paths.push(step.output_dir.join(format!("{}_corpus.tsv", step.profile)));
+                    paths.push(step.output_dir.join(format!("{}_queries.tsv", step.profile)));
+                }
+                paths
+            }
+            SuiteStep::Explain(step) => vec![step.sql_file.clone()],
             _ => Vec::new(),
         }
     }
@@ -1480,11 +1661,14 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
         "--profile",
         &profile(defaults, step.profile.as_deref()),
     );
-    push_arg_path(&mut args, "--corpus-file", &step.corpus_file);
-    push_arg_path(&mut args, "--queries-file", &step.queries_file);
+    push_opt_path(&mut args, "--corpus-file", step.corpus_file.as_deref());
+    push_opt_path(&mut args, "--queries-file", step.queries_file.as_deref());
     push_opt_path(&mut args, "--manifest-file", step.manifest_file.as_deref());
     if step.allow_manifest_mismatch {
         args.push("--allow-manifest-mismatch".into());
+    }
+    if step.chunked {
+        args.push("--chunked".into());
     }
     if let Some(dim) = step.dim {
         push_arg(&mut args, "--dim", &dim.to_string());
@@ -1503,6 +1687,42 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
+    }
+    args
+}
+
+fn expand_corpus_fetch(step: &CorpusFetchStep) -> Vec<String> {
+    let mut args = vec!["corpus".into(), "fetch".into()];
+    push_arg(&mut args, "--dataset", &step.dataset);
+    push_arg_path(&mut args, "--output-dir", &step.output_dir);
+    if let Some(revision) = step.revision.as_deref() {
+        push_arg(&mut args, "--revision", revision);
+    }
+    if step.force {
+        args.push("--force".into());
+    }
+    args
+}
+
+fn expand_corpus_prepare(step: &CorpusPrepareStep) -> Vec<String> {
+    let mut args = vec!["corpus".into(), "prepare".into()];
+    push_arg(&mut args, "--profile", &step.profile);
+    push_arg_path(&mut args, "--parquet", &step.parquet);
+    push_arg_path(&mut args, "--output-dir", &step.output_dir);
+    if let Some(id_column) = step.id_column.as_deref() {
+        push_arg(&mut args, "--id-column", id_column);
+    }
+    if let Some(vector_column) = step.vector_column.as_deref() {
+        push_arg(&mut args, "--vector-column", vector_column);
+    }
+    if let Some(dim) = step.dim {
+        push_arg(&mut args, "--dim", &dim.to_string());
+    }
+    if let Some(source_dataset) = step.source_dataset.as_deref() {
+        push_arg(&mut args, "--source-dataset", source_dataset);
+    }
+    if let Some(chunk_rows) = step.chunk_rows {
+        push_arg(&mut args, "--chunk-rows", &chunk_rows.to_string());
     }
     args
 }
@@ -1646,6 +1866,9 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
         &profile(defaults, step.profile.as_deref()),
     );
     push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    if let Some(pgvector_am) = step.pgvector_am.as_deref() {
+        push_arg(&mut args, "--pgvector-am", pgvector_am);
+    }
     if !step.sweep.is_empty() {
         push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     } else if let Some(ecaz_sweep) = step.ecaz_sweep {
@@ -1656,6 +1879,12 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
             &step.pgvector_ef_search.unwrap_or(ecaz_sweep).to_string(),
         );
     }
+    if let Some(pgvector_probes) = step.pgvector_probes {
+        push_arg(&mut args, "--pgvector-probes", &pgvector_probes.to_string());
+    }
+    if let Some(memory) = step.pgvector_maintenance_work_mem.as_deref() {
+        push_arg(&mut args, "--pgvector-maintenance-work-mem", memory);
+    }
     if let Some(pgvector_m) = step.pgvector_m {
         push_arg(&mut args, "--pgvector-m", &pgvector_m.to_string());
     }
@@ -1665,6 +1894,12 @@ fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults)
             "--pgvector-ef-construction",
             &pgvector_ef_construction.to_string(),
         );
+    }
+    if let Some(pgvector_lists) = step.pgvector_lists {
+        push_arg(&mut args, "--pgvector-lists", &pgvector_lists.to_string());
+    }
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
     }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
@@ -2057,6 +2292,77 @@ mod tests {
     }
 
     #[test]
+    fn expands_chunked_load_without_corpus_query_paths() {
+        let defaults = SuiteDefaults {
+            profile: Some("ec_ivf".into()),
+            bits: Some(4),
+            seed: Some(42),
+            ..SuiteDefaults::default()
+        };
+        let step = LoadStep {
+            name: "load".into(),
+            tags: vec!["load".into()],
+            prefix: "surface".into(),
+            corpus_file: None,
+            queries_file: None,
+            manifest_file: Some("stage/anchor_manifest.json".into()),
+            allow_manifest_mismatch: false,
+            chunked: true,
+            dim: None,
+            profile: Some("ec_ivf".into()),
+            bits: None,
+            seed: None,
+            m: Vec::new(),
+            ef_construction: None,
+            reloptions: vec!["nlists=1024".into()],
+            log_file: Some("load.log".into()),
+        };
+        let args = expand_load(&step, &defaults);
+        assert!(args.contains(&"--chunked".into()));
+        assert!(args.windows(2).any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
+        assert!(!args.iter().any(|arg| arg == "--corpus-file"));
+        assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn parses_fetch_prepare_suite_config() {
+        let cfg: SuiteConfig = serde_json::from_str(
+            r#"{
+              "name": "scale",
+              "schema_version": 1,
+              "steps": [
+                {
+                  "kind": "corpus-fetch",
+                  "name": "fetch",
+                  "dataset": "dbpedia-openai3-large-1536-1m",
+                  "output_dir": "data/fetch"
+                },
+                {
+                  "kind": "corpus-prepare",
+                  "name": "prepare",
+                  "profile": "ec_hnsw_real_ann_benchmarks_anchor",
+                  "parquet": "data/fetch/data",
+                  "output_dir": "data/staged",
+                  "chunk_rows": 25000
+                },
+                {
+                  "kind": "load",
+                  "name": "load",
+                  "prefix": "profile_real1m",
+                  "manifest_file": "data/staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+                  "chunked": true
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+        validate_config(&cfg).unwrap();
+        assert_eq!(cfg.steps[0].kind(), "corpus-fetch");
+        assert_eq!(cfg.steps[1].kind(), "corpus-prepare");
+        assert_eq!(cfg.steps[2].kind(), "load");
+    }
+
+    #[test]
     fn step_selection_requires_name_and_tag_matches() {
         let step = SuiteStep::Recall(RecallStep {
             name: "recall".into(),
@@ -2188,6 +2494,43 @@ mod tests {
         let result = evaluate_threshold(&threshold, &rows);
         assert!(result.passed);
         assert_eq!(result.actual, Some(0.9980));
+    }
+
+    #[test]
+    fn skips_thresholds_for_unselected_steps() {
+        let rows = vec![ResultRow {
+            suite: "suite".into(),
+            step: "selected".into(),
+            kind: "recall".into(),
+            metric: "recall".into(),
+            artifact: "selected.log".into(),
+            values: BTreeMap::from([("recall@k".into(), "0.9980".into())]),
+        }];
+        let thresholds = vec![
+            ThresholdConfig {
+                name: "selected-floor".into(),
+                step: "selected".into(),
+                metric: "recall".into(),
+                filters: BTreeMap::new(),
+                field: "recall@k".into(),
+                op: ThresholdOp::Gte,
+                value: 0.995,
+            },
+            ThresholdConfig {
+                name: "unselected-floor".into(),
+                step: "unselected".into(),
+                metric: "recall".into(),
+                filters: BTreeMap::new(),
+                field: "recall@k".into(),
+                op: ThresholdOp::Gte,
+                value: 0.995,
+            },
+        ];
+        let selected_steps = HashSet::from(["selected"]);
+        let results = evaluate_thresholds_for_steps(&thresholds, &rows, &selected_steps);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "selected-floor");
+        assert!(results[0].passed);
     }
 
     #[test]
