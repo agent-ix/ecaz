@@ -1,6 +1,6 @@
 # Artifact Manifest
 
-Head SHA: `ba02b9c6`
+Head SHA: `ba02b9c6` for the original profile-surface checkpoint; `743647ddb76b4a27880c2ba4a128d361fa68ba49` for the IVFFlat compare update.
 Packet: `30545-benchmark-profile-surface`
 Machine: Apple M5 / 64 GiB RAM / PG18 on `/Users/peter/.pgrx:28818`
 Surface shape: isolated one-index-per-table benchmark prefixes
@@ -75,6 +75,34 @@ Surface shape: isolated one-index-per-table benchmark prefixes
   - `nprobe=96`, `rerank_width=500`: `recall@10=0.9980`, `p50=10.1 ms`
   - `nprobe=96`, `rerank_width=1000`: `recall@100=0.9920`, `p50=11.9 ms`
   - IVF index size `19.4 MiB`, total footprint `1.6 GiB`
+
+### profile-ivf-100k IVFFlat comparison addendum
+
+- Head SHA: `743647ddb76b4a27880c2ba4a128d361fa68ba49`
+- Timestamp: `May 9 2026 22:56:56 PDT`
+- Command:
+  - measured run: `./target/debug/ecaz --database postgres --host /Users/peter/.pgrx --port 28818 bench suite run --config crates/ecaz-cli/suites/profile-ivf-100k.json --only compare-pgvector-ivfflat-real100k-k10 --only compare-pgvector-ivfflat-real100k-k100`
+  - threshold-only resume after selected-step threshold fix: `./target/debug/ecaz --database postgres --host /Users/peter/.pgrx --port 28818 bench suite run --config crates/ecaz-cli/suites/profile-ivf-100k.json --resume-from artifacts/benchmark-profiles/profile-ivf-100k/suite-manifest.json --only compare-pgvector-ivfflat-real100k-k10 --only compare-pgvector-ivfflat-real100k-k100`
+- Lane: `ec_ivf` vs pgvector IVFFlat on `real100k`
+- Fixture: staged DBPedia real100k corpus and queries
+- Profiles: `ec_ivf`, pgvector `ivfflat`
+- Storage format / rerank mode: `ec_ivf` uses `pq_fastscan`, `pq_group_size=8`, `nlists=128`, `rerank=heap_f32`; pgvector sidecar uses exact `vector(1536)` with `USING ivfflat (embedding vector_ip_ops) WITH (lists=128)`
+- Rerank / rescore:
+  - `k=10`: `ec_ivf.rerank_width=500`
+  - `k=100`: `ec_ivf.rerank_width=1000`
+  - pgvector IVFFlat exact-scores vectors from probed lists
+- Surface shape: isolated one-index-per-table ecaz prefix plus pgvector exact-vector sidecar table
+- Files:
+  - `profile-ivf-100k/suite-manifest-ivfflat-compare.json`
+  - `profile-ivf-100k/results-ivfflat-compare.jsonl`
+  - `profile-ivf-100k/compare-pgvector-ivfflat-real100k-k10.log`
+  - `profile-ivf-100k/compare-pgvector-ivfflat-real100k-k100.log`
+- Cited results:
+  - pgvector IVFFlat sidecar build `4.42 s`, size `820,256,768 B`
+  - `k=10`, `nprobe/probes=48`: `ec_ivf p50=6.49 ms recall@10=0.9820`; `pgvector_ivfflat p50=46.6 ms recall@10=0.9790`
+  - `k=10`, `nprobe/probes=96`: `ec_ivf p50=10.6 ms recall@10=0.9980`; `pgvector_ivfflat p50=95.4 ms recall@10=1.0000`
+  - `k=100`, `nprobe/probes=80`: `ec_ivf p50=16.5 ms recall@100=0.9880`; `pgvector_ivfflat p50=77.2 ms recall@100=0.9923`
+  - `k=100`, `nprobe/probes=96`: `ec_ivf p50=13.1 ms recall@100=0.9920`; `pgvector_ivfflat p50=94.5 ms recall@100=0.9976`
 
 ## profile-ivf-1m
 
