@@ -59,19 +59,22 @@ local multi-instance fixtures first.
 
 ## Phase 11.1: Paper-Parity Checklist and Production Gate
 
-- [ ] Create a packet-local SPIRE paper parity checklist mapping each paper
+- [x] Create a packet-local SPIRE paper parity checklist mapping each paper
   mechanism to current implementation status, evidence, and required follow-up.
-- [ ] Use a stable traceability artifact format:
+- [x] Use a stable traceability artifact format:
   `paper section/mechanism -> implementation status -> evidence packet ->
   blocker/deferral -> owner phase`, so reviewers can audit parity without
   reconstructing the history from chat or task prose.
-- [ ] Split "diagnostic-only" surfaces from production surfaces in docs and
+- [x] Split "diagnostic-only" surfaces from production surfaces in docs and
   code comments so operators cannot mistake diagnostic libpq helpers for the
   production distributed AM path.
-- [ ] Define the Phase 11 production-readiness gate that must pass before AWS
+- [x] Define the Phase 11 production-readiness gate that must pass before AWS
   scale is scheduled.
-- [ ] Record explicit deferrals for paper features we intentionally skip in v1,
+- [x] Record explicit deferrals for paper features we intentionally skip in v1,
   including PQ/PQFastScan and any non-RaBitQ scoring path.
+
+Acceptance artifact:
+`plan/design/spire-phase11-paper-parity-production-gate.md`.
 
 ## Phase 11.2: Writer-Side Global Vector Identity
 
