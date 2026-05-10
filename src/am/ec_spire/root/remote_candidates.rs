@@ -1511,6 +1511,7 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireRemoteLibpqConnectionDescriptorRow {
+    descriptor_generation: u64,
     conninfo_secret_name: String,
     remote_index_regclass: String,
     remote_index_identity: Vec<u8>,
@@ -1532,6 +1533,7 @@ fn load_remote_libpq_connection_descriptors(
         .join(",");
     let sql = format!(
         "SELECT node_id::int4, \
+                descriptor_generation::bigint, \
                 conninfo_secret_name, \
                 remote_index_identity, \
                 remote_index_regclass \
@@ -1557,6 +1559,22 @@ fn load_remote_libpq_connection_descriptors(
                     .and_then(|value| {
                         u32::try_from(value)
                             .map_err(|_| "ec_spire libpq connection node_id is negative".to_owned())
+                    })?;
+                let descriptor_generation = row["descriptor_generation"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire libpq connection descriptor generation decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection descriptor generation is null".to_owned()
+                    })
+                    .and_then(|value| {
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire libpq connection descriptor generation is negative"
+                                .to_owned()
+                        })
                     })?;
                 let conninfo_secret_name = row["conninfo_secret_name"]
                     .value::<String>()
@@ -1590,6 +1608,7 @@ fn load_remote_libpq_connection_descriptors(
                 Ok((
                     node_id,
                     SpireRemoteLibpqConnectionDescriptorRow {
+                        descriptor_generation,
                         conninfo_secret_name,
                         remote_index_regclass,
                         remote_index_identity,
@@ -1659,6 +1678,9 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
                 remote_index_regclass: descriptor
                     .map(|row| row.remote_index_regclass.clone())
                     .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                descriptor_generation: descriptor
+                    .map(|row| row.descriptor_generation)
+                    .unwrap_or(0),
                 remote_index_identity: descriptor
                     .map(|row| row.remote_index_identity.clone())
                     .unwrap_or_default(),
@@ -1824,6 +1846,7 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
                 result_column_count: remote_search_result_column_count(),
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                descriptor_generation: row.descriptor_generation,
                 remote_index_identity: row.remote_index_identity.clone(),
                 pipeline_mode: row.pipeline_mode,
                 dispatch_action,
@@ -2947,7 +2970,22 @@ fn remote_search_endpoint_profile_fingerprint_bytes(
         .collect()
 }
 
-fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<Vec<u8>, String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteValidatedEndpointIdentity {
+    protocol_version: String,
+    extension_version: String,
+    opclass_identity: String,
+    storage_format: String,
+    assignment_payload_format: String,
+    quantizer_profile: String,
+    scoring_profile: String,
+    profile_fingerprint: String,
+    profile_fingerprint_bytes: Vec<u8>,
+}
+
+fn validate_remote_search_endpoint_identity_row(
+    row: &postgres::Row,
+) -> Result<SpireRemoteValidatedEndpointIdentity, String> {
     let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
     let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
     let opclass_identity = remote_search_candidate_endpoint_text(row, "opclass_identity")?;
@@ -2970,7 +3008,19 @@ fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<V
         &profile_fingerprint,
         &endpoint_status,
     )?;
-    remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)
+    let profile_fingerprint_bytes =
+        remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
+    Ok(SpireRemoteValidatedEndpointIdentity {
+        protocol_version,
+        extension_version,
+        opclass_identity,
+        storage_format,
+        assignment_payload_format,
+        quantizer_profile,
+        scoring_profile,
+        profile_fingerprint,
+        profile_fingerprint_bytes,
+    })
 }
 
 pub(crate) unsafe fn remote_search_endpoint_identity_row(
@@ -3039,12 +3089,144 @@ fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, St
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SpireRemoteEndpointIdentityCacheKey {
+    coordinator_index_oid: u32,
+    node_id: u32,
+    remote_index_regclass: String,
+    remote_index_oid: u32,
+    descriptor_generation: u64,
+    remote_index_identity: Vec<u8>,
+    served_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireRemoteEndpointIdentityCacheEntry {
+    protocol_version: String,
+    extension_version: String,
+    opclass_identity: String,
+    storage_format: String,
+    assignment_payload_format: String,
+    quantizer_profile: String,
+    scoring_profile: String,
+    profile_fingerprint: String,
+}
+
+impl From<SpireRemoteValidatedEndpointIdentity> for SpireRemoteEndpointIdentityCacheEntry {
+    fn from(identity: SpireRemoteValidatedEndpointIdentity) -> Self {
+        Self {
+            protocol_version: identity.protocol_version,
+            extension_version: identity.extension_version,
+            opclass_identity: identity.opclass_identity,
+            storage_format: identity.storage_format,
+            assignment_payload_format: identity.assignment_payload_format,
+            quantizer_profile: identity.quantizer_profile,
+            scoring_profile: identity.scoring_profile,
+            profile_fingerprint: identity.profile_fingerprint,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SpireRemoteSearchLibpqExecutorState {
+    endpoint_identity_cache:
+        HashMap<SpireRemoteEndpointIdentityCacheKey, SpireRemoteEndpointIdentityCacheEntry>,
+    endpoint_identity_query_count: u64,
+    endpoint_identity_cache_hit_count: u64,
+    endpoint_identity_cache_miss_count: u64,
+}
+
+impl SpireRemoteSearchLibpqExecutorState {
+    fn increment_counter(counter: &mut u64, counter_name: &str) -> Result<(), String> {
+        *counter = counter.checked_add(1).ok_or_else(|| {
+            format!("ec_spire remote search libpq executor {counter_name} overflow")
+        })?;
+        Ok(())
+    }
+
+    fn endpoint_identity_cache_entry_count(&self) -> Result<u64, String> {
+        u64::try_from(self.endpoint_identity_cache.len()).map_err(|_| {
+            "ec_spire remote search libpq executor endpoint identity cache size exceeds u64"
+                .to_owned()
+        })
+    }
+
+    fn endpoint_identity_query_count(&self) -> u64 {
+        self.endpoint_identity_query_count
+    }
+
+    fn endpoint_identity_cache_hit_count(&self) -> u64 {
+        self.endpoint_identity_cache_hit_count
+    }
+
+    fn endpoint_identity_cache_miss_count(&self) -> u64 {
+        self.endpoint_identity_cache_miss_count
+    }
+
+    fn lookup_endpoint_identity(
+        &mut self,
+        key: &SpireRemoteEndpointIdentityCacheKey,
+    ) -> Result<bool, String> {
+        if self.endpoint_identity_cache.contains_key(key) {
+            Self::increment_counter(
+                &mut self.endpoint_identity_cache_hit_count,
+                "endpoint identity cache hit count",
+            )?;
+            Ok(true)
+        } else {
+            Self::increment_counter(
+                &mut self.endpoint_identity_cache_miss_count,
+                "endpoint identity cache miss count",
+            )?;
+            Ok(false)
+        }
+    }
+
+    fn record_endpoint_identity_query(&mut self) -> Result<(), String> {
+        Self::increment_counter(
+            &mut self.endpoint_identity_query_count,
+            "endpoint identity query count",
+        )
+    }
+
+    fn insert_endpoint_identity(
+        &mut self,
+        key: SpireRemoteEndpointIdentityCacheKey,
+        identity: SpireRemoteValidatedEndpointIdentity,
+    ) {
+        self.endpoint_identity_cache.insert(key, identity.into());
+    }
+}
+
+fn remote_search_endpoint_identity_cache_key(
+    coordinator_index_oid: pg_sys::Oid,
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    remote_index_oid: u32,
+) -> SpireRemoteEndpointIdentityCacheKey {
+    SpireRemoteEndpointIdentityCacheKey {
+        coordinator_index_oid: u32::from(coordinator_index_oid),
+        node_id: row.node_id,
+        remote_index_regclass: row.remote_index_regclass.clone(),
+        remote_index_oid,
+        descriptor_generation: row.descriptor_generation,
+        remote_index_identity: row.remote_index_identity.clone(),
+        served_epoch: row.requested_epoch,
+    }
+}
+
 fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
     client: &mut postgres::Client,
+    coordinator_index_oid: pg_sys::Oid,
     remote_index_oid: u32,
-    node_id: u32,
-    expected_remote_index_identity: &[u8],
+    row: &SpireRemoteSearchLibpqDispatchPlanRow,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<(), String> {
+    let cache_key = remote_search_endpoint_identity_cache_key(coordinator_index_oid, row, remote_index_oid);
+    if executor_state.lookup_endpoint_identity(&cache_key)? {
+        return Ok(());
+    }
+
+    executor_state.record_endpoint_identity_query()?;
     let endpoint_identity_row = client
         .query_one(
             SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
@@ -3052,16 +3234,18 @@ fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
         )
         .map_err(|_| {
             format!(
-                "ec_spire remote search libpq executor endpoint identity query failed for node_id {node_id}"
+                "ec_spire remote search libpq executor endpoint identity query failed for node_id {}",
+                row.node_id
             )
         })?;
-    let profile_fingerprint_bytes =
-        validate_remote_search_endpoint_identity_row(&endpoint_identity_row)?;
-    if profile_fingerprint_bytes != expected_remote_index_identity {
+    let endpoint_identity = validate_remote_search_endpoint_identity_row(&endpoint_identity_row)?;
+    if endpoint_identity.profile_fingerprint_bytes.as_slice() != row.remote_index_identity.as_slice() {
         return Err(format!(
-            "ec_spire remote search executor remote_index_identity does not match endpoint profile_fingerprint for node_id {node_id}"
+            "ec_spire remote search executor remote_index_identity does not match endpoint profile_fingerprint for node_id {}",
+            row.node_id
         ));
     }
+    executor_state.insert_endpoint_identity(cache_key, endpoint_identity);
     Ok(())
 }
 
@@ -3208,10 +3392,12 @@ fn decode_remote_search_heap_candidate_pg_row(
 }
 
 fn remote_search_libpq_executor_candidates_for_dispatch(
+    index_relid: pg_sys::Oid,
     row: &SpireRemoteSearchLibpqDispatchPlanRow,
     query: &[f32],
     top_k: usize,
     consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
     if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
         return Err(format!(
@@ -3258,9 +3444,10 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
         })?;
     validate_remote_search_libpq_endpoint_identity_for_dispatch(
         &mut client,
+        index_relid,
         remote_index_oid,
-        row.node_id,
-        &row.remote_index_identity,
+        row,
+        executor_state,
     )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote search libpq executor requested_epoch exceeds i64")?;
@@ -3396,6 +3583,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
 ) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        let index_relid = unsafe { (*index_relation).rd_id };
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -3406,13 +3594,16 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
                 consistency_mode,
             )
         };
+        let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         let mut rows = Vec::with_capacity(dispatch_rows.len());
         for row in &dispatch_rows {
             match remote_search_libpq_executor_candidates_for_dispatch(
+                index_relid,
                 row,
                 &query,
                 top_k,
                 consistency_mode,
+                &mut executor_state,
             ) {
                 Ok(candidates) => {
                     rows.push(SpireRemoteSearchLibpqReceiveAttemptRow {
@@ -3468,10 +3659,12 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
 }
 
 fn remote_search_libpq_executor_heap_candidates_for_dispatch(
+    index_relid: pg_sys::Oid,
     row: &SpireRemoteSearchLibpqDispatchPlanRow,
     query: &[f32],
     top_k: usize,
     consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
     if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
         return Err(format!(
@@ -3518,9 +3711,10 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
         })?;
     validate_remote_search_libpq_endpoint_identity_for_dispatch(
         &mut client,
+        index_relid,
         remote_index_oid,
-        row.node_id,
-        &row.remote_index_identity,
+        row,
+        executor_state,
     )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote heap executor requested_epoch exceeds i64")?;
@@ -3587,6 +3781,57 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
     Ok(candidates)
 }
 
+fn remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
+    index_relid: pg_sys::Oid,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    let mut candidates = Vec::new();
+    for row in dispatch_rows {
+        candidates.extend(remote_search_libpq_executor_candidates_for_dispatch(
+            index_relid,
+            row,
+            query,
+            top_k,
+            consistency_mode,
+            executor_state,
+        )?);
+    }
+    Ok(candidates)
+}
+
+fn remote_search_libpq_executor_candidate_rows_with_state(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
+    let dispatch_rows = unsafe {
+        remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
+        unsafe { (*index_relation).rd_id },
+        &dispatch_rows,
+        &query,
+        top_k,
+        consistency_mode,
+        executor_state,
+    )
+}
+
 pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -3596,28 +3841,96 @@ pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
-        let dispatch_rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
-        let mut candidates = Vec::new();
-        for row in &dispatch_rows {
-            candidates.extend(remote_search_libpq_executor_candidates_for_dispatch(
-                row,
-                &query,
-                top_k,
-                consistency_mode,
-            )?);
-        }
-        Ok(candidates)
+        let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+        remote_search_libpq_executor_candidate_rows_with_state(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+            &mut executor_state,
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
+    index_relid: pg_sys::Oid,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    query: &[f32],
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    let mut candidates = Vec::new();
+    for row in dispatch_rows {
+        candidates.extend(remote_search_libpq_executor_heap_candidates_for_dispatch(
+            index_relid,
+            row,
+            query,
+            top_k,
+            consistency_mode,
+            executor_state,
+        )?);
+    }
+    candidates.sort_by(|left, right| {
+        remote_search_candidate_cmp(
+            &SpireRemoteSearchCandidateRow {
+                served_epoch: left.served_epoch,
+                node_id: left.node_id,
+                pid: left.pid,
+                object_version: left.object_version,
+                row_index: left.row_index,
+                assignment_flags: left.assignment_flags,
+                vec_id: left.vec_id.clone(),
+                row_locator: left.row_locator.clone(),
+                score: left.score,
+            },
+            &SpireRemoteSearchCandidateRow {
+                served_epoch: right.served_epoch,
+                node_id: right.node_id,
+                pid: right.pid,
+                object_version: right.object_version,
+                row_index: right.row_index,
+                assignment_flags: right.assignment_flags,
+                vec_id: right.vec_id.clone(),
+                row_locator: right.row_locator.clone(),
+                score: right.score,
+            },
+        )
+    });
+    candidates.truncate(top_k);
+    Ok(candidates)
+}
+
+fn remote_search_libpq_executor_heap_candidate_rows_with_state(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+    executor_state: &mut SpireRemoteSearchLibpqExecutorState,
+) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+    let dispatch_rows = unsafe {
+        remote_search_libpq_dispatch_plan_rows(
+            index_relation,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+    };
+    remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
+        unsafe { (*index_relation).rd_id },
+        &dispatch_rows,
+        &query,
+        top_k,
+        consistency_mode,
+        executor_state,
+    )
 }
 
 pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
@@ -3629,6 +3942,30 @@ pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+        let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+        remote_search_libpq_executor_heap_candidate_rows_with_state(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+            &mut executor_state,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {
+    let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {
+        let index_relid = unsafe { (*index_relation).rd_id };
         let dispatch_rows = unsafe {
             remote_search_libpq_dispatch_plan_rows(
                 index_relation,
@@ -3639,43 +3976,63 @@ pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
                 consistency_mode,
             )
         };
-        let mut candidates = Vec::new();
-        for row in &dispatch_rows {
-            candidates.extend(remote_search_libpq_executor_heap_candidates_for_dispatch(
-                row,
-                &query,
-                top_k,
-                consistency_mode,
-            )?);
-        }
-        candidates.sort_by(|left, right| {
-            remote_search_candidate_cmp(
-                &SpireRemoteSearchCandidateRow {
-                    served_epoch: left.served_epoch,
-                    node_id: left.node_id,
-                    pid: left.pid,
-                    object_version: left.object_version,
-                    row_index: left.row_index,
-                    assignment_flags: left.assignment_flags,
-                    vec_id: left.vec_id.clone(),
-                    row_locator: left.row_locator.clone(),
-                    score: left.score,
-                },
-                &SpireRemoteSearchCandidateRow {
-                    served_epoch: right.served_epoch,
-                    node_id: right.node_id,
-                    pid: right.pid,
-                    object_version: right.object_version,
-                    row_index: right.row_index,
-                    assignment_flags: right.assignment_flags,
-                    vec_id: right.vec_id.clone(),
-                    row_locator: right.row_locator.clone(),
-                    score: right.score,
-                },
+        let dispatch_count = u64::try_from(dispatch_rows.len()).map_err(|_| {
+            "ec_spire remote search libpq identity cache dispatch count exceeds u64".to_owned()
+        })?;
+        let first_blocked_status = dispatch_rows
+            .iter()
+            .find(|row| row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION)
+            .map(|row| row.status);
+        let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+        let (compact_candidate_count, heap_candidate_count, status) = if top_k == 0 {
+            (0_u64, 0_u64, SPIRE_REMOTE_STATUS_EMPTY_TOP_K)
+        } else if let Some(status) = first_blocked_status {
+            (0_u64, 0_u64, status)
+        } else {
+            let compact_candidates =
+                remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
+                    index_relid,
+                    &dispatch_rows,
+                    &query,
+                    top_k,
+                    consistency_mode,
+                    &mut executor_state,
+                )?;
+            let heap_candidates =
+                remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
+                    index_relid,
+                    &dispatch_rows,
+                    &query,
+                    top_k,
+                    consistency_mode,
+                    &mut executor_state,
+                )?;
+            (
+                u64::try_from(compact_candidates.len()).map_err(|_| {
+                    "ec_spire remote search libpq identity cache compact candidate count exceeds u64"
+                        .to_owned()
+                })?,
+                u64::try_from(heap_candidates.len()).map_err(|_| {
+                    "ec_spire remote search libpq identity cache heap candidate count exceeds u64"
+                        .to_owned()
+                })?,
+                SPIRE_REMOTE_STATUS_READY,
             )
-        });
-        candidates.truncate(top_k);
-        Ok(candidates)
+        };
+
+        Ok(SpireRemoteSearchLibpqIdentityCacheSummaryRow {
+            requested_epoch,
+            dispatch_count,
+            compact_candidate_count,
+            heap_candidate_count,
+            endpoint_identity_cache_entry_count: executor_state
+                .endpoint_identity_cache_entry_count()?,
+            endpoint_identity_query_count: executor_state.endpoint_identity_query_count(),
+            endpoint_identity_cache_hit_count: executor_state.endpoint_identity_cache_hit_count(),
+            endpoint_identity_cache_miss_count: executor_state.endpoint_identity_cache_miss_count(),
+            raw_conninfo_cached: false,
+            status,
+        })
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }

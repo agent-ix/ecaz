@@ -416,6 +416,7 @@ pub(crate) struct SpireRemoteSearchLibpqConnectionPlanRow {
     pub(crate) execution_transport: &'static str,
     pub(crate) conninfo_secret_name: String,
     pub(crate) remote_index_regclass: String,
+    pub(crate) descriptor_generation: u64,
     pub(crate) remote_index_identity: Vec<u8>,
     pub(crate) remote_index_identity_bytes: u64,
     pub(crate) conninfo_resolution: &'static str,
@@ -513,6 +514,7 @@ pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
     pub(crate) result_column_count: u64,
     pub(crate) conninfo_secret_name: String,
     pub(crate) remote_index_regclass: String,
+    pub(crate) descriptor_generation: u64,
     pub(crate) remote_index_identity: Vec<u8>,
     pub(crate) pipeline_mode: &'static str,
     pub(crate) dispatch_action: &'static str,
@@ -620,6 +622,20 @@ pub(crate) struct SpireRemoteSearchLibpqReceiveAttemptRow {
     pub(crate) failure_action: String,
     pub(crate) failure_reason: String,
     pub(crate) recommendation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteSearchLibpqIdentityCacheSummaryRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) dispatch_count: u64,
+    pub(crate) compact_candidate_count: u64,
+    pub(crate) heap_candidate_count: u64,
+    pub(crate) endpoint_identity_cache_entry_count: u64,
+    pub(crate) endpoint_identity_query_count: u64,
+    pub(crate) endpoint_identity_cache_hit_count: u64,
+    pub(crate) endpoint_identity_cache_miss_count: u64,
+    pub(crate) raw_conninfo_cached: bool,
+    pub(crate) status: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

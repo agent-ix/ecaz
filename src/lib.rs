@@ -9247,6 +9247,91 @@ fn ec_spire_remote_search_libpq_executor_heap_candidate_summary(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_libpq_identity_cache_summary(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(dispatch_count, i64),
+        name!(compact_candidate_count, i64),
+        name!(heap_candidate_count, i64),
+        name!(endpoint_identity_cache_entry_count, i64),
+        name!(endpoint_identity_query_count, i64),
+        name!(endpoint_identity_cache_hit_count, i64),
+        name!(endpoint_identity_cache_miss_count, i64),
+        name!(raw_conninfo_cached, bool),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_identity_cache_summary requested_epoch must be greater than 0"
+        );
+    }
+    if top_k < 0 {
+        pgrx::error!(
+            "ec_spire_remote_search_libpq_identity_cache_summary top_k must be non-negative"
+        );
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_remote_search_libpq_identity_cache_summary selected PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_remote_search_libpq_identity_cache_summary",
+        )
+    };
+    let row = unsafe {
+        am::spire_remote_search_libpq_identity_cache_summary_row(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+        i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+        i64::try_from(row.compact_candidate_count)
+            .expect("compact candidate count should fit in i64"),
+        i64::try_from(row.heap_candidate_count).expect("heap candidate count should fit in i64"),
+        i64::try_from(row.endpoint_identity_cache_entry_count)
+            .expect("endpoint identity cache entry count should fit in i64"),
+        i64::try_from(row.endpoint_identity_query_count)
+            .expect("endpoint identity query count should fit in i64"),
+        i64::try_from(row.endpoint_identity_cache_hit_count)
+            .expect("endpoint identity cache hit count should fit in i64"),
+        i64::try_from(row.endpoint_identity_cache_miss_count)
+            .expect("endpoint identity cache miss count should fit in i64"),
+        row.raw_conninfo_cached,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_libpq_executor_work_plan(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -10061,6 +10146,22 @@ fn ec_spire_remote_pipeline_steps(
             "enter libpq pipeline mode and send remote search request".to_owned();
     }
 
+    let identity_cache_summary =
+        if connection_blocked_count == 0 && top_k > 0 && connection_ready_count > 0 {
+            Some(unsafe {
+                am::spire_remote_search_libpq_identity_cache_summary_row(
+                    index_relation,
+                    requested_epoch_u64,
+                    query.clone(),
+                    selected_pids.clone(),
+                    top_k,
+                    &consistency_mode,
+                )
+            })
+        } else {
+            None
+        };
+
     let (candidate_count, candidate_status, candidate_recommendation) =
         if connection_blocked_count > 0 {
             (
@@ -10073,19 +10174,19 @@ fn ec_spire_remote_pipeline_steps(
         } else if connection_ready_count == 0 {
             (0_i64, "ready".to_owned(), "none".to_owned())
         } else {
-            let candidates = unsafe {
-                am::spire_remote_search_libpq_executor_candidate_rows(
-                    index_relation,
-                    requested_epoch_u64,
-                    query.clone(),
-                    selected_pids.clone(),
-                    top_k,
-                    &consistency_mode,
-                )
-            };
-            let count = i64::try_from(candidates.len()).expect("candidate count should fit in i64");
+            let summary = identity_cache_summary
+                .as_ref()
+                .expect("identity cache summary should exist when libpq executor is required");
+            let count = i64::try_from(summary.compact_candidate_count)
+                .expect("candidate count should fit in i64");
             if count > 0 {
                 (count, "ready".to_owned(), "none".to_owned())
+            } else if summary.status != "ready" {
+                (
+                    0_i64,
+                    summary.status.to_owned(),
+                    "inspect remote libpq identity cache readiness".to_owned(),
+                )
             } else {
                 (
                     0_i64,
@@ -10106,20 +10207,19 @@ fn ec_spire_remote_pipeline_steps(
     } else if connection_ready_count == 0 {
         (0_i64, "ready".to_owned(), "none".to_owned())
     } else {
-        let heap_candidates = unsafe {
-            am::spire_remote_search_libpq_executor_heap_candidate_rows(
-                index_relation,
-                requested_epoch_u64,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                &consistency_mode,
-            )
-        };
-        let count =
-            i64::try_from(heap_candidates.len()).expect("heap candidate count should fit in i64");
+        let summary = identity_cache_summary
+            .as_ref()
+            .expect("identity cache summary should exist when libpq executor is required");
+        let count = i64::try_from(summary.heap_candidate_count)
+            .expect("heap candidate count should fit in i64");
         if count > 0 {
             (count, "ready".to_owned(), "none".to_owned())
+        } else if summary.status != "ready" {
+            (
+                0_i64,
+                summary.status.to_owned(),
+                "inspect remote libpq identity cache readiness".to_owned(),
+            )
         } else {
             (
                 0_i64,
@@ -22891,6 +22991,8 @@ mod tests {
         let mixed_result_summary_from =
             format!("FROM ec_spire_remote_search_coordinator_result_summary({mixed_args})");
         let pipeline_steps_from = format!("FROM ec_spire_remote_pipeline_steps({nonempty_args})");
+        let identity_cache_summary_from =
+            format!("FROM ec_spire_remote_search_libpq_identity_cache_summary({nonempty_args})");
         let manifest_result_from =
             "FROM ec_spire_remote_epoch_manifest_publication_result_summary(\
              'ec_spire_remote_executor_loopback_coord_sql_idx'::regclass)";
@@ -23066,6 +23168,50 @@ mod tests {
         ))
         .expect("pipeline coordinator count query should succeed")
         .expect("pipeline coordinator count should exist");
+        let identity_cache_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT dispatch_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache dispatch count query should succeed")
+        .expect("identity cache dispatch count should exist");
+        let identity_cache_compact_count = Spi::get_one::<i64>(&format!(
+            "SELECT compact_candidate_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache compact count query should succeed")
+        .expect("identity cache compact count should exist");
+        let identity_cache_heap_count = Spi::get_one::<i64>(&format!(
+            "SELECT heap_candidate_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache heap count query should succeed")
+        .expect("identity cache heap count should exist");
+        let identity_cache_entries = Spi::get_one::<i64>(&format!(
+            "SELECT endpoint_identity_cache_entry_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache entry count query should succeed")
+        .expect("identity cache entry count should exist");
+        let identity_cache_queries = Spi::get_one::<i64>(&format!(
+            "SELECT endpoint_identity_query_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache query count query should succeed")
+        .expect("identity cache query count should exist");
+        let identity_cache_hits = Spi::get_one::<i64>(&format!(
+            "SELECT endpoint_identity_cache_hit_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache hit count query should succeed")
+        .expect("identity cache hit count should exist");
+        let identity_cache_misses = Spi::get_one::<i64>(&format!(
+            "SELECT endpoint_identity_cache_miss_count {identity_cache_summary_from}"
+        ))
+        .expect("identity cache miss count query should succeed")
+        .expect("identity cache miss count should exist");
+        let identity_cache_raw_conninfo_cached = Spi::get_one::<bool>(&format!(
+            "SELECT raw_conninfo_cached {identity_cache_summary_from}"
+        ))
+        .expect("identity cache raw conninfo query should succeed")
+        .expect("identity cache raw conninfo flag should exist");
+        let identity_cache_status =
+            Spi::get_one::<String>(&format!("SELECT status {identity_cache_summary_from}"))
+                .expect("identity cache status query should succeed")
+                .expect("identity cache status should exist");
 
         assert!(register_result);
         assert!(connection_attempted);
@@ -23118,6 +23264,15 @@ mod tests {
         assert_eq!(pipeline_manifest_status, manifest_result_status);
         assert_eq!(pipeline_coordinator_status, coordinator_status);
         assert_eq!(pipeline_coordinator_count, coordinator_returned_count);
+        assert_eq!(identity_cache_dispatch_count, 1);
+        assert_eq!(identity_cache_compact_count, nonempty_candidate_count);
+        assert_eq!(identity_cache_heap_count, heap_summary_count);
+        assert_eq!(identity_cache_entries, 1);
+        assert_eq!(identity_cache_queries, 1);
+        assert_eq!(identity_cache_hits, 1);
+        assert_eq!(identity_cache_misses, 1);
+        assert!(!identity_cache_raw_conninfo_cached);
+        assert_eq!(identity_cache_status, "ready");
     }
 
     #[pg_test]

@@ -376,6 +376,12 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   - [x] Pin mismatch behavior before implementation: a live fingerprint change
     invalidates the entry and reports `endpoint_identity_mismatch` rather than
     silently reseating descriptor identity from the remote endpoint.
+  - [x] Implement the first bounded executor-local identity cache: descriptor
+    generation is part of the libpq dispatch key, the cache stores validated
+    endpoint identity fields but no raw conninfo, and
+    `ec_spire_remote_search_libpq_identity_cache_summary(...)` proves compact
+    candidate receive and remote-heap receive reuse one validation in a single
+    executor state.
 - [ ] Verification: local multi-instance slow-remote fixture proves ready
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and
