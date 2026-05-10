@@ -382,6 +382,11 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     `ec_spire_remote_search_libpq_identity_cache_summary(...)` proves compact
     candidate receive and remote-heap receive reuse one validation in a single
     executor state.
+  - [x] Expand PG18 cache-matrix coverage before further reuse work: ready
+    loopback proves one miss/one hit and compact/heap parity; the contract probe
+    proves descriptor-generation, descriptor-identity, and served-epoch changes
+    miss; capability blockers prove stale epoch, retention gap, and
+    extension-version skew do not touch the cache in strict or degraded mode.
 - [ ] Verification: local multi-instance slow-remote fixture proves ready
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and

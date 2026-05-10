@@ -119,6 +119,9 @@ pub(crate) use self::ec_spire::{
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
 };
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::remote_search_libpq_identity_cache_contract_probe_counts as spire_remote_search_libpq_identity_cache_contract_probe_counts;
+
 pub(crate) fn register_gucs() {
     ec_diskann::register_gucs();
     ec_hnsw::register_gucs();

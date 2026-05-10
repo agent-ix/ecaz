@@ -44,6 +44,8 @@ and implementation that covers concurrent dispatch across ready remote nodes,
 libpq pipeline or asynchronous receive, bounded fanout, connect and statement
 timeouts, cancellation propagation, cached remote index identity validation,
 fail-closed partial-failure behavior, and final row delivery semantics.
+The Stage C identity-cache constraints for that production work are captured in
+`plan/design/spire-libpq-identity-cache.md`.
 
 ## Required Invariants
 

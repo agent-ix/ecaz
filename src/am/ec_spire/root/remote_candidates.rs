@@ -3573,6 +3573,143 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
+    index_relation: pg_sys::Relation,
+    requested_epoch: u64,
+    query: Vec<f32>,
+    selected_pids: Vec<u64>,
+    top_k: usize,
+    consistency_mode: &str,
+) -> (u64, u64, u64, u64, String) {
+    let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
+        let index_relid = unsafe { (*index_relation).rd_id };
+        let dispatch_rows = unsafe {
+            remote_search_libpq_dispatch_plan_rows(
+                index_relation,
+                requested_epoch,
+                query,
+                selected_pids,
+                top_k,
+                consistency_mode,
+            )
+        };
+        let row = dispatch_rows
+            .iter()
+            .find(|row| row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION)
+            .ok_or_else(|| {
+                "ec_spire remote search libpq identity cache contract probe found no ready dispatch"
+                    .to_owned()
+            })?;
+        let conninfo = remote_conninfo_secret_value(&row.conninfo_secret_name).map_err(|status| {
+            format!(
+                "ec_spire remote search libpq identity cache contract probe conninfo secret for node_id {} is not resolved: {status}",
+                row.node_id
+            )
+        })?;
+        let mut client = postgres::Client::connect(&conninfo, postgres::NoTls).map_err(|_| {
+            format!(
+                "ec_spire remote search libpq identity cache contract probe failed to open connection for node_id {}",
+                row.node_id
+            )
+        })?;
+        let remote_index_oid = client
+            .query_one(
+                "SELECT to_regclass($1)::oid",
+                &[&row.remote_index_regclass.as_str()],
+            )
+            .map_err(|_| {
+                format!(
+                    "ec_spire remote search libpq identity cache contract probe failed to resolve remote index for node_id {}",
+                    row.node_id
+                )
+            })?
+            .try_get::<_, Option<u32>>(0)
+            .map_err(|_| {
+                format!(
+                    "ec_spire remote search libpq identity cache contract probe remote index oid decode failed for node_id {}",
+                    row.node_id
+                )
+            })?
+            .ok_or_else(|| {
+                format!(
+                    "ec_spire remote search libpq identity cache contract probe remote index is missing for node_id {}",
+                    row.node_id
+                )
+            })?;
+
+        let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
+        validate_remote_search_libpq_endpoint_identity_for_dispatch(
+            &mut client,
+            index_relid,
+            remote_index_oid,
+            row,
+            &mut executor_state,
+        )?;
+        validate_remote_search_libpq_endpoint_identity_for_dispatch(
+            &mut client,
+            index_relid,
+            remote_index_oid,
+            row,
+            &mut executor_state,
+        )?;
+
+        let mut generation_row = row.clone();
+        generation_row.descriptor_generation =
+            generation_row.descriptor_generation.checked_add(1).ok_or_else(|| {
+                "ec_spire remote search libpq identity cache contract probe descriptor generation overflow"
+                    .to_owned()
+            })?;
+        validate_remote_search_libpq_endpoint_identity_for_dispatch(
+            &mut client,
+            index_relid,
+            remote_index_oid,
+            &generation_row,
+            &mut executor_state,
+        )?;
+
+        let mut served_epoch_row = row.clone();
+        served_epoch_row.requested_epoch =
+            served_epoch_row.requested_epoch.checked_add(1).ok_or_else(|| {
+                "ec_spire remote search libpq identity cache contract probe served epoch overflow"
+                    .to_owned()
+            })?;
+        validate_remote_search_libpq_endpoint_identity_for_dispatch(
+            &mut client,
+            index_relid,
+            remote_index_oid,
+            &served_epoch_row,
+            &mut executor_state,
+        )?;
+
+        let mut identity_row = row.clone();
+        identity_row.remote_index_identity = if identity_row.remote_index_identity.as_slice() == &[0xff] {
+            vec![0x00]
+        } else {
+            vec![0xff]
+        };
+        let mismatch_status = match validate_remote_search_libpq_endpoint_identity_for_dispatch(
+            &mut client,
+            index_relid,
+            remote_index_oid,
+            &identity_row,
+            &mut executor_state,
+        ) {
+            Ok(()) => SPIRE_REMOTE_STATUS_READY.to_owned(),
+            Err(error) => remote_search_receive_attempt_failure_status(&error),
+        };
+
+        Ok((
+            executor_state.endpoint_identity_cache_entry_count()?,
+            executor_state.endpoint_identity_query_count(),
+            executor_state.endpoint_identity_cache_hit_count(),
+            executor_state.endpoint_identity_cache_miss_count(),
+            mismatch_status,
+        ))
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,

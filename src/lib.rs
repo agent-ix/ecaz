@@ -22632,6 +22632,13 @@ mod tests {
             } else {
                 active_epoch
             };
+            let min_retained_epoch = if expected_status == "retention_gap" {
+                active_epoch
+                    .checked_add(1)
+                    .expect("test active epoch should allow retention gap")
+            } else {
+                active_epoch
+            };
             assert!(last_served_epoch <= active_epoch);
 
             if consistency_mode == "degraded" {
@@ -22648,7 +22655,7 @@ mod tests {
                 "SELECT ec_spire_register_remote_node_descriptor(\
                          '{}'::oid, {node_id}, {generation}, 'spire/remote/{prefix}', \
                          decode('0a', 'hex'), 'remote_spire_idx', 'active', \
-                         {last_served_epoch}, {active_epoch}, '{extension_version}', 'none')",
+                         {last_served_epoch}, {min_retained_epoch}, '{extension_version}', 'none')",
                 u32::from(index_oid)
             ))
             .expect("remote descriptor registration should succeed")
@@ -22688,6 +22695,8 @@ mod tests {
             let gate_from = format!("FROM ec_spire_remote_search_coordinator_gate_summary({args})");
             let heap_resolution_from =
                 format!("FROM ec_spire_remote_search_heap_resolution_summary({args})");
+            let identity_cache_from =
+                format!("FROM ec_spire_remote_search_libpq_identity_cache_summary({args})");
 
             let capability_status =
                 Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
@@ -22794,6 +22803,40 @@ mod tests {
             ))
             .expect("heap resolution status query should succeed")
             .expect("heap resolution status should exist");
+            let identity_cache_status =
+                Spi::get_one::<String>(&format!("SELECT status {identity_cache_from}"))
+                    .expect("identity cache status query should succeed")
+                    .expect("identity cache status should exist");
+            let identity_cache_compact_count = Spi::get_one::<i64>(&format!(
+                "SELECT compact_candidate_count {identity_cache_from}"
+            ))
+            .expect("identity cache compact count query should succeed")
+            .expect("identity cache compact count should exist");
+            let identity_cache_heap_count = Spi::get_one::<i64>(&format!(
+                "SELECT heap_candidate_count {identity_cache_from}"
+            ))
+            .expect("identity cache heap count query should succeed")
+            .expect("identity cache heap count should exist");
+            let identity_cache_entries = Spi::get_one::<i64>(&format!(
+                "SELECT endpoint_identity_cache_entry_count {identity_cache_from}"
+            ))
+            .expect("identity cache entry count query should succeed")
+            .expect("identity cache entry count should exist");
+            let identity_cache_queries = Spi::get_one::<i64>(&format!(
+                "SELECT endpoint_identity_query_count {identity_cache_from}"
+            ))
+            .expect("identity cache query count query should succeed")
+            .expect("identity cache query count should exist");
+            let identity_cache_hits = Spi::get_one::<i64>(&format!(
+                "SELECT endpoint_identity_cache_hit_count {identity_cache_from}"
+            ))
+            .expect("identity cache hit count query should succeed")
+            .expect("identity cache hit count should exist");
+            let identity_cache_misses = Spi::get_one::<i64>(&format!(
+                "SELECT endpoint_identity_cache_miss_count {identity_cache_from}"
+            ))
+            .expect("identity cache miss count query should succeed")
+            .expect("identity cache miss count should exist");
 
             assert_eq!(capability_status, expected_status);
             assert_eq!(epoch_status, expected_epoch_status);
@@ -22822,6 +22865,13 @@ mod tests {
             assert_eq!(gate_next_blocker, expected_blocker);
             assert_eq!(gate_executor_next_step, expected_blocker);
             assert_eq!(heap_remote_status, expected_status);
+            assert_eq!(identity_cache_status, expected_status);
+            assert_eq!(identity_cache_compact_count, 0);
+            assert_eq!(identity_cache_heap_count, 0);
+            assert_eq!(identity_cache_entries, 0);
+            assert_eq!(identity_cache_queries, 0);
+            assert_eq!(identity_cache_hits, 0);
+            assert_eq!(identity_cache_misses, 0);
         }
 
         assert_capability_block(
@@ -22849,11 +22899,35 @@ mod tests {
             "fail_closed",
         );
         assert_capability_block(
+            "retention_strict",
+            4,
+            34,
+            "retention_gap",
+            "retention_gap",
+            "ready",
+            "remote_epoch_window",
+            env!("CARGO_PKG_VERSION"),
+            "strict",
+            "fail_closed",
+        );
+        assert_capability_block(
             "stale_degraded",
             2,
             32,
             "stale_epoch",
             "stale_epoch",
+            "ready",
+            "remote_epoch_window",
+            env!("CARGO_PKG_VERSION"),
+            "degraded",
+            "skip_node",
+        );
+        assert_capability_block(
+            "retention_degraded",
+            4,
+            35,
+            "retention_gap",
+            "retention_gap",
             "ready",
             "remote_epoch_window",
             env!("CARGO_PKG_VERSION"),
@@ -23212,6 +23286,29 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT status {identity_cache_summary_from}"))
                 .expect("identity cache status query should succeed")
                 .expect("identity cache status should exist");
+        let index_relation = unsafe {
+            open_valid_ec_spire_index(
+                index_oid,
+                "test_ec_spire_libpq_identity_cache_contract_probe",
+            )
+        };
+        let (
+            identity_cache_probe_entries,
+            identity_cache_probe_queries,
+            identity_cache_probe_hits,
+            identity_cache_probe_misses,
+            identity_cache_probe_mismatch_status,
+        ) = unsafe {
+            am::spire_remote_search_libpq_identity_cache_contract_probe_counts(
+                index_relation,
+                u64::try_from(active_epoch).expect("active epoch should fit u64"),
+                vec![1.0, 0.0],
+                vec![u64::try_from(selected_pid).expect("selected PID should fit u64")],
+                1,
+                "strict",
+            )
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
         assert!(register_result);
         assert!(connection_attempted);
@@ -23273,6 +23370,14 @@ mod tests {
         assert_eq!(identity_cache_misses, 1);
         assert!(!identity_cache_raw_conninfo_cached);
         assert_eq!(identity_cache_status, "ready");
+        assert_eq!(identity_cache_probe_entries, 3);
+        assert_eq!(identity_cache_probe_queries, 4);
+        assert_eq!(identity_cache_probe_hits, 1);
+        assert_eq!(identity_cache_probe_misses, 4);
+        assert_eq!(
+            identity_cache_probe_mismatch_status,
+            "endpoint_identity_mismatch"
+        );
     }
 
     #[pg_test]
