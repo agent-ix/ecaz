@@ -867,6 +867,22 @@ pub(crate) struct SpireRemoteStageEFaultMatrixRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteStageELifecycleMatrixRow {
+    pub(crate) lifecycle_ordinal: u64,
+    pub(crate) lifecycle_case: &'static str,
+    pub(crate) ddl_event: &'static str,
+    pub(crate) fanout_timing: &'static str,
+    pub(crate) affected_surface: &'static str,
+    pub(crate) strict_action: &'static str,
+    pub(crate) strict_status: &'static str,
+    pub(crate) degraded_action: &'static str,
+    pub(crate) degraded_status: &'static str,
+    pub(crate) required_detection: &'static str,
+    pub(crate) next_executor_step: &'static str,
+    pub(crate) required_evidence: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteProductionTransportProbeRow {
     pub(crate) node_id: u32,
     pub(crate) started_after_ms: u64,

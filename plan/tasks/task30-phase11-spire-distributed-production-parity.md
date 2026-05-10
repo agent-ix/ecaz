@@ -253,6 +253,11 @@ Acceptance artifact:
 - [ ] Verify degraded mode reports every skipped or stale remote node.
 - [ ] Define and test online lifecycle behavior when a remote index is dropped,
   reindexed, or created concurrently while fanout is planned or in flight.
+  - [x] Packet `30772` adds
+    `ec_spire_remote_search_stage_e_lifecycle_matrix()`, covering DROP INDEX,
+    REINDEX INDEX CONCURRENTLY, and CREATE INDEX CONCURRENTLY before fanout,
+    during in-flight receive, and before descriptor registration. Packet-local
+    DDL fixture evidence remains open.
 - [ ] Add replica manifest freshness diagnostics: identify which remote node is
   serving each boundary replica, whether its manifest is current, and how
   degraded mode reports stale or missing replica placement.
@@ -767,8 +772,12 @@ Goal: prove distributed correctness locally before AWS.
     readiness, served epoch range, fanout, candidate batches, heap resolution,
     merge, and AM delivery status. Explicit replica manifest freshness fixture
     evidence remains open with the broader Stage E lifecycle work.
-- [ ] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX
+- [x] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX
   CONCURRENTLY while fanout is planned or in flight.
+  - [x] Packet `30772` adds the SQL-visible Stage E lifecycle matrix for
+    remote index DROP, REINDEX CONCURRENTLY, and CREATE INDEX CONCURRENTLY
+    strict/degraded behavior. The later fixture still needs packet-local logs
+    proving each lifecycle case.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and
