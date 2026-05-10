@@ -13199,6 +13199,26 @@ mod tests {
 
         format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
     }
+
+    fn loopback_remote_index_identity_hex(
+        client: &mut postgres::Client,
+        remote_index_regclass: &str,
+    ) -> String {
+        let identity = client
+            .query_one(
+                "SELECT decode(profile_fingerprint, 'hex') \
+                   FROM ec_spire_remote_search_endpoint_identity(to_regclass($1)::oid)",
+                &[&remote_index_regclass],
+            )
+            .expect("remote endpoint identity query should succeed")
+            .try_get::<_, Vec<u8>>(0)
+            .expect("remote endpoint identity should decode");
+        identity
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    }
+
     use rand::Rng;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -22481,6 +22501,10 @@ mod tests {
                      WITH (nlists = 2, storage_format = 'rabitq')",
             )
             .expect("loopback remote fixture should be created");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut loopback_client,
+            "ec_spire_remote_executor_loopback_remote_sql_idx",
+        );
 
         Spi::run(
             "CREATE TABLE ec_spire_remote_executor_loopback_coord_sql \
@@ -22528,7 +22552,7 @@ mod tests {
         unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
-                     '{}'::oid, 2, 8, 'spire/remote/loopback', decode('01', 'hex'), \
+                     '{}'::oid, 2, 8, 'spire/remote/loopback', decode('{remote_identity_hex}', 'hex'), \
                      'ec_spire_remote_executor_loopback_remote_sql_idx', 'active', {active_epoch}, \
                      {active_epoch}, '{}', 'none')",
             u32::from(index_oid),
@@ -22797,6 +22821,115 @@ mod tests {
         assert_eq!(pipeline_manifest_status, manifest_result_status);
         assert_eq!(pipeline_coordinator_status, coordinator_status);
         assert_eq!(pipeline_coordinator_count, coordinator_returned_count);
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "ec_spire remote search executor remote_index_identity does not match endpoint profile_fingerprint"
+    )]
+    fn test_ec_spire_libpq_rejects_identity_mismatch() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_IDENTITY_MISMATCH",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_remote_identity_mismatch_remote_sql; \
+                 CREATE TABLE ec_spire_remote_identity_mismatch_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_remote_identity_mismatch_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_remote_identity_mismatch_remote_sql_idx \
+                     ON ec_spire_remote_identity_mismatch_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback identity mismatch remote fixture should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_identity_mismatch_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_remote_identity_mismatch_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_identity_mismatch_coord_sql_idx \
+             ON ec_spire_remote_identity_mismatch_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_remote_identity_mismatch_coord_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_remote_identity_mismatch_coord_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT min(leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_remote_identity_mismatch_coord_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 12, 'spire/remote/identity-mismatch', decode('ff', 'hex'), \
+                     'ec_spire_remote_identity_mismatch_remote_sql_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        let receive_attempts_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_receive_attempts(\
+                 'ec_spire_remote_identity_mismatch_coord_sql_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
+        );
+        let receive_attempt_status =
+            Spi::get_one::<String>(&format!("SELECT status {receive_attempts_from}"))
+                .expect("receive attempt status query should succeed")
+                .expect("receive attempt status should exist");
+        let receive_attempt_blocker =
+            Spi::get_one::<String>(&format!("SELECT next_blocker {receive_attempts_from}"))
+                .expect("receive attempt blocker query should succeed")
+                .expect("receive attempt blocker should exist");
+        let receive_attempt_action =
+            Spi::get_one::<String>(&format!("SELECT failure_action {receive_attempts_from}"))
+                .expect("receive attempt action query should succeed")
+                .expect("receive attempt action should exist");
+
+        assert_eq!(receive_attempt_status, "endpoint_identity_mismatch");
+        assert_eq!(receive_attempt_blocker, "remote_endpoint_identity");
+        assert_eq!(receive_attempt_action, "fail_closed");
+
+        Spi::run(&format!(
+            "SELECT count(*) FROM ec_spire_remote_search_libpq_executor_candidates(\
+                 'ec_spire_remote_identity_mismatch_coord_sql_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, 'strict')"
+        ))
+        .expect("remote identity mismatch should be rejected before merge");
     }
 
     #[pg_test]

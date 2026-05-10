@@ -1440,6 +1440,7 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
 struct SpireRemoteLibpqConnectionDescriptorRow {
     conninfo_secret_name: String,
     remote_index_regclass: String,
+    remote_index_identity: Vec<u8>,
     remote_index_identity_bytes: u64,
 }
 
@@ -1518,6 +1519,7 @@ fn load_remote_libpq_connection_descriptors(
                     SpireRemoteLibpqConnectionDescriptorRow {
                         conninfo_secret_name,
                         remote_index_regclass,
+                        remote_index_identity,
                         remote_index_identity_bytes,
                     },
                 ))
@@ -1582,6 +1584,9 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
                 remote_index_regclass: descriptor
                     .map(|row| row.remote_index_regclass.clone())
                     .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
+                remote_index_identity: descriptor
+                    .map(|row| row.remote_index_identity.clone())
+                    .unwrap_or_default(),
                 remote_index_identity_bytes: descriptor
                     .map(|row| row.remote_index_identity_bytes)
                     .unwrap_or(0),
@@ -1744,6 +1749,7 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
                 result_column_count: remote_search_result_column_count(),
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                remote_index_identity: row.remote_index_identity.clone(),
                 pipeline_mode: row.pipeline_mode,
                 dispatch_action,
                 receive_validator: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
@@ -2821,7 +2827,28 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
     )
 }
 
-fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<(), String> {
+fn remote_search_endpoint_profile_fingerprint_bytes(
+    profile_fingerprint: &str,
+) -> Result<Vec<u8>, String> {
+    if profile_fingerprint.len() % 2 != 0 {
+        return Err(
+            "ec_spire remote search executor profile_fingerprint endpoint identity has invalid hex length"
+                .to_owned(),
+        );
+    }
+
+    (0..profile_fingerprint.len())
+        .step_by(2)
+        .map(|offset| {
+            u8::from_str_radix(&profile_fingerprint[offset..offset + 2], 16).map_err(|_| {
+                "ec_spire remote search executor profile_fingerprint endpoint identity is not hex"
+                    .to_owned()
+            })
+        })
+        .collect()
+}
+
+fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<Vec<u8>, String> {
     let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
     let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
     let opclass_identity = remote_search_candidate_endpoint_text(row, "opclass_identity")?;
@@ -2843,7 +2870,8 @@ fn validate_remote_search_endpoint_identity_row(row: &postgres::Row) -> Result<(
         &scoring_profile,
         &profile_fingerprint,
         &endpoint_status,
-    )
+    )?;
+    remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)
 }
 
 pub(crate) unsafe fn remote_search_endpoint_identity_row(
@@ -2916,6 +2944,7 @@ fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
     client: &mut postgres::Client,
     remote_index_oid: u32,
     node_id: u32,
+    expected_remote_index_identity: &[u8],
 ) -> Result<(), String> {
     let endpoint_identity_row = client
         .query_one(
@@ -2927,7 +2956,14 @@ fn validate_remote_search_libpq_endpoint_identity_for_dispatch(
                 "ec_spire remote search libpq executor endpoint identity query failed for node_id {node_id}"
             )
         })?;
-    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
+    let profile_fingerprint_bytes =
+        validate_remote_search_endpoint_identity_row(&endpoint_identity_row)?;
+    if profile_fingerprint_bytes != expected_remote_index_identity {
+        return Err(format!(
+            "ec_spire remote search executor remote_index_identity does not match endpoint profile_fingerprint for node_id {node_id}"
+        ));
+    }
+    Ok(())
 }
 
 fn decode_remote_search_candidate_pg_row(
@@ -3125,6 +3161,7 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
         &mut client,
         remote_index_oid,
         row.node_id,
+        &row.remote_index_identity,
     )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote search libpq executor requested_epoch exceeds i64")?;
@@ -3193,6 +3230,7 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
         || error.contains("quantizer_profile")
         || error.contains("scoring_profile")
         || error.contains("profile_fingerprint")
+        || error.contains("remote_index_identity")
         || error.contains("endpoint identity")
     {
         "endpoint_identity_mismatch".to_owned()
@@ -3217,6 +3255,7 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
         || error.contains("quantizer_profile")
         || error.contains("scoring_profile")
         || error.contains("profile_fingerprint")
+        || error.contains("remote_index_identity")
         || error.contains("endpoint identity")
     {
         "remote_endpoint_identity".to_owned()
@@ -3367,6 +3406,7 @@ fn remote_search_libpq_executor_heap_candidates_for_dispatch(
         &mut client,
         remote_index_oid,
         row.node_id,
+        &row.remote_index_identity,
     )?;
     let requested_epoch = i64::try_from(row.requested_epoch)
         .map_err(|_| "ec_spire remote heap executor requested_epoch exceeds i64")?;

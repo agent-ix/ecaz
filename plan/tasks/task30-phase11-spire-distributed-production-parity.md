@@ -321,6 +321,9 @@ endpoint.
     before both compact candidate receive and origin-node remote heap
     candidate receive, so empty batches and heap rows cannot bypass the ready
     endpoint identity gate.
+  - [x] Libpq dispatch now compares the descriptor `remote_index_identity`
+    against the live endpoint `profile_fingerprint` bytes before receive, so a
+    ready remote index with the wrong advertised identity cannot enter merge.
 - [ ] Reject stale or incompatible remotes in strict mode; report exact skip
   reasons in degraded mode.
   - [x] Add per-node libpq receive-attempt diagnostics that preserve the
@@ -329,6 +332,9 @@ endpoint.
     remotes.
   - [x] PG18 coordinator-result coverage proves the remote heap path rejects a
     non-RaBitQ endpoint before final row delivery.
+  - [x] PG18 strict-mode coverage proves descriptor/endpoint fingerprint
+    mismatch reports `endpoint_identity_mismatch` and fails closed before
+    compact candidate merge.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
   behavior, stale epoch rejection, fingerprint mismatch, version skew, and
   malformed candidate rejection.
