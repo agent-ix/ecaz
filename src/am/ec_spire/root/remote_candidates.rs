@@ -2874,6 +2874,21 @@ impl SpireRemoteFanoutExecutor {
         Ok(requests)
     }
 
+    fn run_compact_candidate_receive(
+        &mut self,
+        query: &[f32],
+        top_k: usize,
+        consistency_mode: &str,
+    ) -> Result<(), String> {
+        let requests = self.compact_candidate_receive_requests(query, top_k, consistency_mode)?;
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let results =
+            SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)?;
+        self.apply_candidate_receive_results(&results)
+    }
+
     fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
         let mut batches = Vec::new();
         for dispatch in &self.dispatches {
@@ -7120,6 +7135,37 @@ mod production_executor_state_tests {
             "requires_conninfo_secret_resolution"
         );
         assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "remote_candidate_receive_failed");
+    }
+
+    #[test]
+    fn production_executor_compact_receive_run_applies_adapter_failure() {
+        let secret_62 =
+            remote_conninfo_secret_provider_lookup_key("spire/remote/62").expect("key should build");
+        std::env::set_var(&secret_62, "port=not-a-number dbname=postgres");
+
+        let dispatch_rows = vec![planned_dispatch(62, 1)];
+        let transport_rows = vec![ready_transport_row(62, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport row should apply");
+        executor
+            .run_compact_candidate_receive(&[1.0, 0.0], 3, "strict")
+            .expect("adapter failure should stay isolated in executor state");
+
+        std::env::remove_var(&secret_62);
+
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(executor.conninfo_secret_lookup_count, 1);
+        assert_eq!(row.candidate_receive_pending_dispatch_count, 0);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(row.candidate_row_count, 0);
+        assert_eq!(
+            row.first_candidate_receive_failure_category,
+            "conninfo_parse_failed"
+        );
         assert_eq!(row.status, "remote_candidate_receive_failed");
     }
 }

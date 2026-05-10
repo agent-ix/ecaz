@@ -402,9 +402,12 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     `conninfo_secret_name`, and remote index regclass needed to build compact
     candidate receive requests from `TransportReady` state without re-reading
     diagnostic rows or maintaining parallel AM scan bookkeeping.
-  - [ ] Wire the adapter into compact candidate receive and AM scan production
-    state; diagnostic candidate receive still uses blocking `postgres::Client`
-    until that slice lands.
+  - [x] Wire the async adapter into compact candidate receive production state:
+    build requests from `TransportReady` dispatches, apply adapter results back
+    into the executor, and preserve per-dispatch failure isolation.
+  - [ ] Wire compact candidate receive production state into the AM scan path;
+    diagnostic candidate receive still uses blocking `postgres::Client` until
+    that slice lands.
 - [ ] Add per-query fanout caps, global coordinator work limits, per-remote
   concurrency caps, connect/statement timeouts, cancellation propagation, and
   overload-shedding diagnostics.
