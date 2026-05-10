@@ -2,6 +2,7 @@
 
 Status: active Phase 11.2 writer contract
 Task: Task 30 Phase 11
+Provider ADR: `spec/adr/ADR-063-spire-source-identity-provider.md`
 
 ## Decision
 
@@ -28,10 +29,11 @@ vector datum and heap TID, and `resolve_indexed_vector_kind` still rejects
 multi-column, expression, and partial indexes. Therefore the current live writer
 cannot derive a production global source identity by itself.
 
-A production provider must enter through one of these future surfaces:
+A production provider must enter through one of these surfaces:
 
-- A supported source-identity column or expression that the AM reads during
-  build and insert and canonicalizes into the 16-byte payload.
+- A supported source-identity column that the AM reads during build and insert
+  and canonicalizes into the 16-byte payload. ADR-063 selects one included UUID
+  or exact-16-byte `bytea` column as the v1 provider.
 - A higher-level distributed ingest path that already owns a stable source key
   and passes the 16-byte payload into the assignment builders.
 
@@ -47,7 +49,6 @@ new storage version.
 
 ## Open Follow-Up
 
-The next Phase 11.2 code slice should choose and implement the first production
-provider. The safest initial provider is likely an explicit identity column or
-expression contract because it is visible in DDL, testable in PG18, and does
-not depend on heap physical location.
+The next Phase 11.2 code slice should implement ADR-063: enable the INCLUDE
+provider shape, validate DDL, canonicalize UUID/bytea16 values, and thread the
+payload into live build/insert writers.

@@ -1968,7 +1968,8 @@ production-readiness gate is reviewed.
   stable fixed-width source identity is available while preserving node-scoped
   local ID compatibility. Allocation hooks and Leaf V2 fixed-width global-ID
   storage are landed, and the stable source contract is fixed at 16 payload
-  bytes; the live identity provider and writer plumbing remain.
+  bytes. ADR-063 selects the v1 provider as one included UUID or exact-16-byte
+  `bytea` identity column; live writer plumbing remains.
 - [ ] **Remote search endpoint.** Promote or add a production remote search
   endpoint that returns compact candidates with served epoch, node identity,
   row locator, score, quantizer/index fingerprint, protocol/version metadata,

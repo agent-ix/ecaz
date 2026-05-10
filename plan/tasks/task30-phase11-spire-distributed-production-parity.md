@@ -96,7 +96,9 @@ Acceptance artifact:
   `plan/design/spire-stable-source-identity-contract.md`.
 - [ ] Choose and implement the first live source-identity provider, such as an
   explicit identity column or expression contract, then plumb it into build and
-  insert assignment inputs.
+  insert assignment inputs. ADR-063 selects the v1 provider as
+  `source_identity = 'include'` with one included UUID or exact-16-byte `bytea`
+  column.
 - [x] Replace or extend Leaf V2 base-object storage so global `0x02` IDs are not
   rejected by the local-only fixed-width vec-id column format. Leaf V2 now
   supports per-object `GlobalBytes` columns when every row has the same global
@@ -234,6 +236,126 @@ Acceptance artifact:
   setup through multi-instance query, failure/degradation checks, and harness
   artifact capture.
 - [ ] Prepare the AWS packet manifest only after the local bundle is reviewed.
+
+## Production Landing Sequence
+
+This section is the broad quality plan for finishing Phase 11. Each stage must
+land as narrow reviewed packets with packet-local evidence. A later stage cannot
+claim production readiness by relying on a diagnostic-only surface from an
+earlier stage.
+
+### Stage A: Writer Identity Provider
+
+Goal: make real build/insert writers capable of emitting stable global IDs.
+
+- [ ] Accept ADR-063 or revise it based on reviewer feedback before wide AM
+  callback changes.
+- [ ] Enable the `source_identity = 'include'` reloption and the AM INCLUDE
+  capability behind strict validation:
+  one vector key column, zero or one included identity column, no partial index,
+  no expression identity in v1.
+- [ ] Canonicalize included `uuid` and exact-16-byte `bytea` values to
+  `StableFixedGlobalPayload([u8; 16])`; reject NULL, unsupported types, and
+  malformed bytea values.
+- [ ] Thread source identity through populated build, empty-index insert
+  bootstrap, live insert deltas, boundary replicas, and scheduled replacement
+  paths without advancing local ID sequence for global rows.
+- [ ] Add diagnostics for three index classes: local-only, global-capable but
+  not yet remote-published, and global-writer active.
+- [ ] Verification: PG18 DDL tests for accepted/rejected index shapes; build
+  and insert tests proving global IDs land in Leaf V2/delta rows; tests proving
+  replicas share one global ID and local-only indexes remain node-scoped.
+
+### Stage B: Production Remote Endpoint
+
+Goal: turn remote scoring from diagnostic proof into a production candidate
+endpoint.
+
+- [ ] Define the endpoint request/response contract for selected PIDs, requested
+  epoch, query vector, candidate budget, strict/degraded mode, scoring profile,
+  and rerank settings.
+- [ ] Return compact candidate rows with served epoch, node identity, vector ID,
+  row locator, score, assignment flags, quantizer/index fingerprint,
+  protocol/extension/opclass version, and packet-friendly diagnostics.
+- [ ] Bind RaBitQ profile, code length, training-stat fingerprint, storage
+  format, served epoch, extension version, and opclass identity before merge.
+- [ ] Reject stale or incompatible remotes in strict mode; report exact skip
+  reasons in degraded mode.
+- [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
+  behavior, stale epoch rejection, fingerprint mismatch, version skew, and
+  malformed candidate rejection.
+
+### Stage C: Production Libpq Coordinator
+
+Goal: execute remote fanout with bounded concurrent or pipelined work.
+
+- [ ] Implement production executor state separate from diagnostic SQL
+  functions; keep raw conninfo hidden behind `conninfo_secret_name`.
+- [ ] Use libpq async or pipeline mode for overlapping remote work.
+- [ ] Add per-query fanout caps, global coordinator work limits, per-remote
+  concurrency caps, connect/statement timeouts, cancellation propagation, and
+  overload-shedding diagnostics.
+- [ ] Cache validated remote index identity where safe and invalidate on epoch,
+  descriptor, or version changes.
+- [ ] Verification: local multi-instance slow-remote fixture proves ready
+  remotes are not serialized behind slow remotes; strict/degraded tests cover
+  auth/cert failure, connection reset, remote timeout, backend termination, and
+  local cancel.
+
+### Stage D: Remote Heap Resolution and Final Rows
+
+Goal: make the coordinator-visible result stream production-correct.
+
+- [ ] Keep remote row locators opaque at the coordinator.
+- [ ] Resolve remote heap visibility on the origin node before claiming final
+  SQL row readiness.
+- [ ] Merge local and remote candidates into one ordered stream with deterministic
+  tie-breaks across score, role, epoch, node, PID, object version, row index,
+  and locator.
+- [ ] Verification: tests for dead/missing remote rows, stale locators,
+  duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
+  dedupe.
+
+### Stage E: Multi-Instance Epoch, Lifecycle, and Fault Matrix
+
+Goal: prove distributed correctness locally before AWS.
+
+- [ ] Add local one-coordinator/two-remote setup and teardown through `ecaz`.
+- [ ] Publish remote placement readiness and replica manifest freshness
+  diagnostics.
+- [ ] Define online lifecycle behavior for DROP, REINDEX, and CREATE INDEX
+  CONCURRENTLY while fanout is planned or in flight.
+- [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
+  fingerprint mismatch, connection reset, backend termination, remote and local
+  statement timeout, local cancel, simulated network partition, remote OOM, and
+  missing/reindexed remote index.
+- [ ] Verification: packet-local logs for every fault case, with explicit
+  strict failure and degraded skip counts.
+
+### Stage F: Multi-Store / Multi-NVMe Hardening
+
+Goal: keep local store scheduling production-observable before external scale.
+
+- [ ] Preserve `(node_id, local_store_id)` as the scheduling and diagnostic
+  unit.
+- [ ] Prove local store lookup and read scheduling are bounded for configured
+  maximum store count.
+- [ ] Add repeatable local multi-store counters: route counts, candidate counts,
+  object bytes, read batches, delta decode reuse, and scheduling limits.
+- [ ] Verification: local harness evidence, not AWS hardware claims.
+
+### Stage G: Production Harness and AWS Gate
+
+Goal: make the final local readiness bundle reproducible.
+
+- [ ] Extend `ecaz` with setup/load/query/teardown and distributed benchmark
+  commands for the local multi-instance fixture.
+- [ ] Publish a runbook with numeric local targets for max remotes, concurrent
+  coordinator queries, per-remote work, PIDs per node, and overload behavior.
+- [ ] Capture recall, latency p50/p95/p99, fanout, heap rows, timeout/cancel,
+  strict failure, degraded skip, route, candidate, and byte counters.
+- [ ] Open the AWS packet only after Stage A-F are reviewed or explicitly
+  deferred.
 
 ## Validation
 
