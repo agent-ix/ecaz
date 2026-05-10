@@ -707,7 +707,10 @@ Goal: make the coordinator-visible result stream production-correct.
     result stream into an AM output cursor, and `amgettuple` only receives local
     coordinator heap TIDs while remote-origin outputs keep blocking on
     `remote_row_materialization`.
-- [ ] Verification: tests for dead/missing remote rows, stale locators,
+  - [x] ADR-064 proposes the shadow/proxy lifecycle required by the `30761`
+    reviewer P2: v1 AM materialization must be a pre-existing coordinator heap
+    row in the same scanned relation, not a per-query temp/scratch/proxy tuple.
+  - [ ] Verification: tests for dead/missing remote rows, stale locators,
   duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
   dedupe.
   - [x] Packet `30755` covers visible remote heap rows and missing remote heap

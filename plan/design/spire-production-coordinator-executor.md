@@ -375,6 +375,15 @@ for the scan output set, converts only coordinator-local heap rows into
 outputs. Any stream that still reports a blocker, including
 `remote_row_materialization`, fails before setting `xs_heaptid`.
 
+ADR-064 pins the remote row materialization lifecycle before the implementation
+slice. The v1 index AM does not create per-query proxy heap rows, temp-table
+rows, scratch-relation rows, or tuplestore-backed rows. Remote-origin AM delivery
+requires a pre-existing coordinator-visible heap row in the same scanned
+relation, with lifecycle tied to epoch publication/retention and normal
+PostgreSQL MVCC cleanup. The scan path validates that mapping and blocks with
+`remote_row_materialization` when no visible same-relation materialized TID
+exists.
+
 Verification:
 
 - One coordinator plus two remote PostgreSQL nodes can return one ordered
