@@ -73,6 +73,10 @@ const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED: &str = "connect_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED: &str =
     "statement_timeout_setup_failed";
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED: &str = "remote_query_failed";
+const SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED: &str = "candidate_decode_failed";
+const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
+    "candidate_batch_validation_failed";
+const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_invalid_parameters";
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
@@ -2221,6 +2225,30 @@ pub(crate) struct SpireRemoteProductionTransportProbeRequest {
     pub(crate) sql: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
+    pub(crate) node_id: u32,
+    pub(crate) conninfo: String,
+    pub(crate) remote_index_oid: u32,
+    pub(crate) requested_epoch: u64,
+    pub(crate) query: Vec<f32>,
+    pub(crate) selected_pids: Vec<u64>,
+    pub(crate) top_k: usize,
+    pub(crate) consistency_mode: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireRemoteProductionCandidateReceiveResult {
+    pub(crate) node_id: u32,
+    pub(crate) started_after_ms: u64,
+    pub(crate) completed_after_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) candidate_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) failure_category: &'static str,
+    pub(crate) batch: Option<SpireRemoteSearchCandidateBatch>,
+}
+
 struct SpireRemoteProductionTransportAdapter;
 
 impl SpireRemoteProductionTransportAdapter {
@@ -2239,6 +2267,26 @@ impl SpireRemoteProductionTransportAdapter {
             let batch_start = std::time::Instant::now();
             let futures = requests.into_iter().map(|request| async move {
                 Self::run_one_probe_request(request, batch_start).await
+            });
+            Ok(futures_util::future::join_all(futures).await)
+        })
+    }
+
+    fn run_candidate_receive_requests(
+        requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+    ) -> Result<Vec<SpireRemoteProductionCandidateReceiveResult>, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .map_err(|_| {
+                "ec_spire production transport adapter failed to build runtime".to_owned()
+            })?;
+
+        runtime.block_on(async move {
+            let batch_start = std::time::Instant::now();
+            let futures = requests.into_iter().map(|request| async move {
+                Self::run_one_candidate_receive_request(request, batch_start).await
             });
             Ok(futures_util::future::join_all(futures).await)
         })
@@ -2321,6 +2369,169 @@ impl SpireRemoteProductionTransportAdapter {
             ),
         }
     }
+
+    async fn run_one_candidate_receive_request(
+        request: SpireRemoteProductionCandidateReceiveRequest,
+        batch_start: std::time::Instant,
+    ) -> SpireRemoteProductionCandidateReceiveResult {
+        let started_after_ms = elapsed_millis_u64(batch_start);
+        let request_start = std::time::Instant::now();
+        let selected_pids = match request
+            .selected_pids
+            .iter()
+            .map(|pid| i64::try_from(*pid))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(selected_pids) => selected_pids,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let requested_epoch = match i64::try_from(request.requested_epoch) {
+            Ok(requested_epoch) => requested_epoch,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let top_k = match i32::try_from(request.top_k) {
+            Ok(top_k) => top_k,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS,
+                );
+            }
+        };
+        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
+            Ok(config) => config,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
+                );
+            }
+        };
+        let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
+        if limits.connect_timeout_ms > 0 {
+            config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
+        }
+
+        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+            Ok(connection) => connection,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                );
+            }
+        };
+        let connection_task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+
+        let result_rows = async {
+            if limits.statement_timeout_ms > 0 {
+                client
+                    .batch_execute(&format!(
+                        "SET statement_timeout = {}",
+                        limits.statement_timeout_ms
+                    ))
+                    .await
+                    .map_err(|_| {
+                        SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                    })?;
+            }
+            client
+                .query(
+                    SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                    &[
+                        &request.remote_index_oid,
+                        &requested_epoch,
+                        &request.query,
+                        &selected_pids,
+                        &top_k,
+                        &request.consistency_mode,
+                    ],
+                )
+                .await
+                .map_err(|_| SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED)
+        }
+        .await;
+
+        connection_task.abort();
+        let result_rows = match result_rows {
+            Ok(result_rows) => result_rows,
+            Err(failure_category) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    failure_category,
+                );
+            }
+        };
+        let candidates = match result_rows
+            .iter()
+            .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, request.node_id, true))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(candidates) => candidates,
+            Err(_) => {
+                return failed_production_candidate_receive_result(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED,
+                );
+            }
+        };
+        if validate_remote_search_candidate_batch(
+            request.requested_epoch,
+            request.node_id,
+            &request.selected_pids,
+            &candidates,
+        )
+        .is_err()
+        {
+            return failed_production_candidate_receive_result(
+                request.node_id,
+                batch_start,
+                request_start,
+                SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED,
+            );
+        }
+        let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
+        SpireRemoteProductionCandidateReceiveResult {
+            node_id: request.node_id,
+            started_after_ms,
+            completed_after_ms: elapsed_millis_u64(batch_start),
+            elapsed_ms: elapsed_millis_u64(request_start),
+            candidate_count,
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+            batch: Some(SpireRemoteSearchCandidateBatch {
+                node_id: request.node_id,
+                selected_pids: request.selected_pids,
+                candidates,
+            }),
+        }
+    }
 }
 
 fn failed_production_transport_probe_row(
@@ -2344,11 +2555,37 @@ fn elapsed_millis_u64(start: std::time::Instant) -> u64 {
     u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
+fn failed_production_candidate_receive_result(
+    node_id: u32,
+    batch_start: std::time::Instant,
+    request_start: std::time::Instant,
+    failure_category: &'static str,
+) -> SpireRemoteProductionCandidateReceiveResult {
+    SpireRemoteProductionCandidateReceiveResult {
+        node_id,
+        started_after_ms: elapsed_millis_u64(batch_start),
+        completed_after_ms: elapsed_millis_u64(batch_start),
+        elapsed_ms: elapsed_millis_u64(request_start),
+        candidate_count: 0,
+        status: SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+        failure_category,
+        batch: None,
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn remote_search_production_transport_probe_for_test(
     requests: Vec<SpireRemoteProductionTransportProbeRequest>,
 ) -> Vec<SpireRemoteProductionTransportProbeRow> {
     SpireRemoteProductionTransportAdapter::run_probe_requests(requests)
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_candidate_receive_for_test(
+    requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+) -> Vec<SpireRemoteProductionCandidateReceiveResult> {
+    SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)
         .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 

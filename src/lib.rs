@@ -23676,6 +23676,87 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_production_candidate_receive_loopback() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_production_candidate_receive_remote_sql; \
+                 CREATE TABLE ec_spire_production_candidate_receive_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_production_candidate_receive_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_production_candidate_receive_remote_idx \
+                     ON ec_spire_production_candidate_receive_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback candidate receive fixture should be created");
+        let remote_index_oid = loopback_client
+            .query_one(
+                "SELECT 'ec_spire_production_candidate_receive_remote_idx'::regclass::oid",
+                &[],
+            )
+            .expect("remote index oid query should succeed")
+            .try_get::<_, u32>(0)
+            .expect("remote index oid should decode");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_production_candidate_receive_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_production_candidate_receive_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let selected_pid = u64::try_from(selected_pid).expect("leaf pid should fit u64");
+        let requested_epoch = u64::try_from(active_epoch).expect("active epoch should fit u64");
+
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                remote_index_oid,
+                requested_epoch,
+                query: vec![1.0, 0.0],
+                selected_pids: vec![selected_pid],
+                top_k: 1,
+                consistency_mode: "strict",
+            },
+        ]);
+        let receive = rows.first().expect("receive row should exist");
+        let batch = receive
+            .batch
+            .as_ref()
+            .expect("candidate batch should exist");
+        let candidate = batch
+            .candidates
+            .first()
+            .expect("candidate row should exist");
+
+        assert_eq!(receive.status, "ready");
+        assert_eq!(receive.failure_category, "none");
+        assert_eq!(receive.candidate_count, 1);
+        assert_eq!(batch.node_id, 2);
+        assert_eq!(batch.selected_pids, vec![selected_pid]);
+        assert_eq!(candidate.node_id, 2);
+        assert_eq!(candidate.served_epoch, requested_epoch);
+        assert_eq!(candidate.pid, selected_pid);
+        assert!(!candidate.row_locator.is_empty());
+    }
+
+    #[pg_test]
     fn test_ec_spire_libpq_executor_global_governance_overload() {
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("max concurrent dispatch budget SET should succeed");

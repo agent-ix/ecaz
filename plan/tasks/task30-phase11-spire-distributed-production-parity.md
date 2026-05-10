@@ -384,6 +384,9 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     result rows so one failed remote cannot abort the whole fanout batch.
   - [x] Wire transport result rows into the production executor state machine
     with explicit pending, ready, and failed transport counters.
+  - [x] Add a test-facing async compact-candidate receive adapter that uses
+    `tokio-postgres`, decodes existing `ec_spire_remote_search(...)` rows, and
+    validates the candidate batch contract.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.
