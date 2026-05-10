@@ -169,8 +169,11 @@ executor state maps `local_query_cancelled` outcomes to global
 `remote_executor_cancelled` dispatch cleanup. The production PostgreSQL
 interrupt bridge now polls backend `InterruptPending` / `QueryCancelPending`
 while remote work is in flight and maps that signal to the same adapter cancel
-token. Local statement-timeout provenance is still open; C2 is not complete
-until local query cancel and local statement timeout have distinct categories.
+token. Statement-timeout provenance is now split from user/query cancellation
+by polling `get_timeout_indicator(STATEMENT_TIMEOUT, false)` without resetting
+PostgreSQL's indicator; timeout-triggered local cancellation reports
+`local_statement_timeout`, while other local query-cancel flags report
+`local_query_cancelled`.
 
 The C5 AM bridge must choose one cancellation source and test it under a real
 backend, not only under deterministic test triggers. Acceptable shapes are:

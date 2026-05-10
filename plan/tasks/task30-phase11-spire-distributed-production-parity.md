@@ -171,7 +171,7 @@ Acceptance artifact:
   - [x] First adapter primitive: production receive and transport use a
     `tokio-postgres` cancel token and map local cancellation to global
     dispatch cleanup.
-  - [ ] Before C5 AM integration, pin and implement the PostgreSQL backend
+  - [x] Before C5 AM integration, pin and implement the PostgreSQL backend
     interrupt bridge from actual local query cancel / statement timeout into
     the adapter cancel token; test-only triggers are not production evidence.
     - [x] First PostgreSQL interrupt bridge: production transport and compact
@@ -179,8 +179,10 @@ Acceptance artifact:
       `QueryCancelPending` while remote work is in flight and map the signal to
       the adapter cancel token as `local_query_cancelled`; timer-triggered
       cancellation remains test-only.
-    - [ ] Distinguish local query cancel from local statement timeout before
-      claiming C2 complete.
+    - [x] Local statement-timeout provenance: when PostgreSQL has query cancel
+      pending and `get_timeout_indicator(STATEMENT_TIMEOUT, false)` is set, the
+      adapter cancels remote work and reports `local_statement_timeout` without
+      resetting PostgreSQL's timeout indicator.
 - [ ] Define fail-closed strict mode and explicit degraded mode behavior for
   partial remote failures.
   - [x] First production degraded-state slice: production executor state can

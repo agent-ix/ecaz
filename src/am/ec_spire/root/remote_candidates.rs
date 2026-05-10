@@ -92,6 +92,7 @@ const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
 const SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED: &str = "remote_candidate_receive_failed";
 const SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED: &str = "remote_executor_cancelled";
 const SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED: &str = "local_query_cancelled";
+const SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT: &str = "local_statement_timeout";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -2681,7 +2682,7 @@ impl SpireRemoteProductionTransportAdapter {
                 let poll_interval_ms = poll_interval_ms.max(1);
                 loop {
                     if postgres_query_cancel_pending() {
-                        return SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
+                        return postgres_local_cancel_failure_category();
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(poll_interval_ms)).await;
                 }
@@ -2708,6 +2709,28 @@ fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {
 fn postgres_query_cancel_pending() -> bool {
     postgres_sig_atomic_flag(b"InterruptPending\0") != 0
         && postgres_sig_atomic_flag(b"QueryCancelPending\0") != 0
+}
+
+const POSTGRES_STATEMENT_TIMEOUT_ID: std::ffi::c_int = 3;
+
+type PostgresGetTimeoutIndicator =
+    unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
+
+fn postgres_statement_timeout_pending() -> bool {
+    let ptr = unsafe { dlsym(std::ptr::null_mut(), b"get_timeout_indicator\0".as_ptr().cast()) };
+    if ptr.is_null() {
+        return false;
+    }
+    let get_timeout_indicator: PostgresGetTimeoutIndicator = unsafe { std::mem::transmute(ptr) };
+    unsafe { get_timeout_indicator(POSTGRES_STATEMENT_TIMEOUT_ID, false) }
+}
+
+fn postgres_local_cancel_failure_category() -> &'static str {
+    if postgres_statement_timeout_pending() {
+        SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT
+    } else {
+        SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
+    }
 }
 
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {

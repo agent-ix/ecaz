@@ -13927,6 +13927,108 @@ mod tests {
         }
     }
 
+    type PgTestEnableTimeoutAfter = unsafe extern "C" fn(std::ffi::c_int, std::ffi::c_int);
+    type PgTestDisableTimeout = unsafe extern "C" fn(std::ffi::c_int, bool);
+    type PgTestGetTimeoutIndicator = unsafe extern "C" fn(std::ffi::c_int, bool) -> bool;
+
+    const PG_TEST_STATEMENT_TIMEOUT_ID: std::ffi::c_int = 3;
+
+    struct ScopedPgStatementTimeoutSignal {
+        interrupt_pending_ptr: *mut std::ffi::c_int,
+        query_cancel_pending_ptr: *mut std::ffi::c_int,
+        previous_interrupt_pending: std::ffi::c_int,
+        previous_query_cancel_pending: std::ffi::c_int,
+        disable_timeout: PgTestDisableTimeout,
+        get_timeout_indicator: PgTestGetTimeoutIndicator,
+    }
+
+    impl ScopedPgStatementTimeoutSignal {
+        unsafe fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
+            unsafe extern "C" {
+                fn dlsym(
+                    handle: *mut std::ffi::c_void,
+                    symbol: *const std::ffi::c_char,
+                ) -> *mut std::ffi::c_void;
+            }
+
+            let interrupt_pending_ptr =
+                unsafe { dlsym(std::ptr::null_mut(), b"InterruptPending\0".as_ptr().cast()) }
+                    .cast::<std::ffi::c_int>();
+            let query_cancel_pending_ptr = unsafe {
+                dlsym(
+                    std::ptr::null_mut(),
+                    b"QueryCancelPending\0".as_ptr().cast(),
+                )
+            }
+            .cast::<std::ffi::c_int>();
+            let enable_timeout_after_ptr = unsafe {
+                dlsym(
+                    std::ptr::null_mut(),
+                    b"enable_timeout_after\0".as_ptr().cast(),
+                )
+            };
+            let disable_timeout_ptr =
+                unsafe { dlsym(std::ptr::null_mut(), b"disable_timeout\0".as_ptr().cast()) };
+            let get_timeout_indicator_ptr = unsafe {
+                dlsym(
+                    std::ptr::null_mut(),
+                    b"get_timeout_indicator\0".as_ptr().cast(),
+                )
+            };
+            if interrupt_pending_ptr.is_null()
+                || query_cancel_pending_ptr.is_null()
+                || enable_timeout_after_ptr.is_null()
+                || disable_timeout_ptr.is_null()
+                || get_timeout_indicator_ptr.is_null()
+            {
+                return None;
+            }
+            let enable_timeout_after: PgTestEnableTimeoutAfter =
+                unsafe { std::mem::transmute(enable_timeout_after_ptr) };
+            let disable_timeout: PgTestDisableTimeout =
+                unsafe { std::mem::transmute(disable_timeout_ptr) };
+            let get_timeout_indicator: PgTestGetTimeoutIndicator =
+                unsafe { std::mem::transmute(get_timeout_indicator_ptr) };
+            let previous_interrupt_pending = unsafe { *interrupt_pending_ptr };
+            let previous_query_cancel_pending = unsafe { *query_cancel_pending_ptr };
+            let guard = Self {
+                interrupt_pending_ptr,
+                query_cancel_pending_ptr,
+                previous_interrupt_pending,
+                previous_query_cancel_pending,
+                disable_timeout,
+                get_timeout_indicator,
+            };
+
+            unsafe {
+                (guard.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, true);
+                enable_timeout_after(PG_TEST_STATEMENT_TIMEOUT_ID, delay_ms.max(1));
+            }
+            for _ in 0..50 {
+                if guard.statement_timeout_pending() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            Some(guard)
+        }
+
+        fn statement_timeout_pending(&self) -> bool {
+            unsafe { (self.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, false) }
+        }
+    }
+
+    impl Drop for ScopedPgStatementTimeoutSignal {
+        fn drop(&mut self) {
+            unsafe {
+                (self.disable_timeout)(PG_TEST_STATEMENT_TIMEOUT_ID, false);
+                (self.get_timeout_indicator)(PG_TEST_STATEMENT_TIMEOUT_ID, true);
+                *self.interrupt_pending_ptr = self.previous_interrupt_pending;
+                *self.query_cancel_pending_ptr = self.previous_query_cancel_pending;
+            }
+        }
+    }
+
     fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -24175,6 +24277,30 @@ mod tests {
 
         assert_eq!(failed.status, "remote_transport_failed");
         assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.row_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_transport_pg_statement_timeout_bridge_cancel() {
+        let _interrupt_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let timeout_signal = unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(1) }
+            .expect("PostgreSQL timeout symbols should resolve inside pg_test backend");
+        assert!(timeout_signal.statement_timeout_pending());
+
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo,
+                sql: "SELECT pg_sleep(0.30)",
+            },
+        ]);
+        let failed = rows
+            .first()
+            .expect("pg statement-timeout cancel row should exist");
+
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "local_statement_timeout");
         assert_eq!(failed.row_count, 0);
     }
 
