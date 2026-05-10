@@ -4,6 +4,7 @@ mod tests {
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
         collect_delta_delete_vec_ids_for_loaded_routes,
         collect_reranked_quantized_routed_probe_candidates, collect_scan_routing_diagnostics,
+        collect_scan_plan_selected_leaf_pids,
         collect_single_level_scan_plan_placement_diagnostics,
         collect_single_level_scan_plan_reranked_candidates, collect_snapshot_delta_rows,
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,

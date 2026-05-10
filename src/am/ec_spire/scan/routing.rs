@@ -56,6 +56,57 @@ fn load_snapshot_routing_hierarchy(
     })
 }
 
+fn load_snapshot_coordinator_routing_hierarchy(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<SpireLoadedRoutingHierarchy, String> {
+    let mut root = None;
+    let mut internal_objects_by_pid = HashMap::new();
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "scan coordinator routing load")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+        if placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::Root {
+            if header.kind == SpirePartitionObjectKind::Internal {
+                let object = object_store.read_routing_object(placement)?;
+                if internal_objects_by_pid
+                    .insert(manifest_entry.pid, object)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "ec_spire scan snapshot contains duplicate internal routing pid {}",
+                        manifest_entry.pid
+                    ));
+                }
+            }
+            continue;
+        }
+        if root.is_some() {
+            return Err("ec_spire scan snapshot contains multiple root routing objects".to_owned());
+        }
+        root = Some((
+            manifest_entry.pid,
+            object_store.read_routing_object(placement)?,
+        ));
+    }
+
+    let (root_pid, root_object) = root
+        .ok_or_else(|| "ec_spire scan snapshot has no available root routing object".to_owned())?;
+    Ok(SpireLoadedRoutingHierarchy {
+        root_pid,
+        root_object,
+        internal_objects_by_pid,
+    })
+}
+
 fn load_snapshot_top_graph_object(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -81,6 +132,78 @@ fn load_snapshot_top_graph_object(
         ));
     }
     Ok(top_graph)
+}
+
+fn load_snapshot_coordinator_top_graph_object(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+) -> Result<Option<(u64, SpireTopGraphPartitionObject)>, String> {
+    let mut top_graph = None;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup =
+            snapshot.require_lookup(manifest_entry.pid, "scan coordinator top graph load")?;
+        let placement = lookup.placement;
+        if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+            continue;
+        }
+        if placement.node_id != super::meta::SPIRE_LOCAL_NODE_ID {
+            continue;
+        }
+
+        let header = object_store.read_object_header(placement)?;
+        if header.kind != SpirePartitionObjectKind::TopGraph {
+            continue;
+        }
+        if top_graph.is_some() {
+            return Err("ec_spire scan snapshot contains multiple top graph objects".to_owned());
+        }
+        top_graph = Some((
+            manifest_entry.pid,
+            object_store.read_top_graph_object(placement)?,
+        ));
+    }
+    Ok(top_graph)
+}
+
+pub(super) fn collect_scan_plan_selected_leaf_pids(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+) -> Result<Vec<u64>, String> {
+    if scan_plan.nprobe == 0 {
+        return Ok(Vec::new());
+    }
+
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_coordinator_routing_hierarchy(&snapshot, object_store)?;
+    let routes = if top_graph_plan.enabled {
+        let (_top_graph_pid, top_graph) =
+            load_snapshot_coordinator_top_graph_object(&snapshot, object_store)?.ok_or_else(
+                || "ec_spire scan snapshot has no available top graph object".to_owned(),
+            )?;
+        route_top_graph_object_to_leaf_routes(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            &top_graph,
+            query.values(),
+            top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+            scan_plan.nprobe,
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+        )?
+    } else {
+        route_recursive_routing_objects_to_leaf_routes_with_budget(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            query.values(),
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+        )?
+    };
+
+    Ok(routes.into_iter().map(|route| route.leaf_pid).collect())
 }
 
 fn route_root_object_to_leaf_pids(

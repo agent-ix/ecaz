@@ -69,6 +69,64 @@
     }
 
     #[test]
+    fn collect_scan_plan_selected_leaf_pids_does_not_read_remote_leaf_payloads() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            partitioned_build_input(
+                vec![assignment_input(10, 1), assignment_input(10, 2)],
+                vec![0, 1],
+            ),
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let remote_leaf_pid = draft.centroid_pids[0];
+        let mut placements = draft.placement_directory.entries.clone();
+        let remote_placement = placements
+            .iter_mut()
+            .find(|placement| placement.pid == remote_leaf_pid)
+            .expect("remote leaf placement should exist");
+        remote_placement.node_id = 2;
+        remote_placement.store_relid = 999;
+        remote_placement.object_tid = tid(99, 9);
+        remote_placement.object_bytes = 1;
+        let placement_directory = SpirePlacementDirectory::from_entries(7, placements).unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &placement_directory,
+        )
+        .unwrap();
+        let options = EcSpireOptions {
+            nprobe: 2,
+            ..EcSpireOptions::DEFAULT
+        };
+        let scan_plan = resolve_single_level_scan_plan_values(2, options.clone(), -1, -1).unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+
+        let selected = collect_scan_plan_selected_leaf_pids(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+            options.top_graph_plan().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(selected, draft.centroid_pids);
+        assert!(collect_snapshot_routed_probe_leaf_rows(
+            &snapshot,
+            &object_store,
+            &[1.0, 0.0],
+            2,
+        )
+        .is_err());
+    }
+
+    #[test]
     fn collect_snapshot_routed_probe_leaf_rows_accepts_recursive_leaf_parent() {
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
         let root_pid = SPIRE_FIRST_PID;
