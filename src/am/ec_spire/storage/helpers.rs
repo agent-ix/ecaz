@@ -184,7 +184,10 @@ fn leaf_v2_payload_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<(u8,
             ));
         }
         if assignment.vec_id.local_sequence().is_none() {
-            return Err("ec_spire leaf V2 Phase 1 requires local vec_id rows".to_owned());
+            return Err(
+                "ec_spire leaf V2 base objects require local vec_id rows; global writer IDs need a future variable-width Leaf V2 format or row-encoded delta path"
+                    .to_owned(),
+            );
         }
     }
     Ok((payload_format, payload_stride))

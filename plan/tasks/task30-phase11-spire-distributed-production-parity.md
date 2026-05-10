@@ -78,8 +78,15 @@ Acceptance artifact:
 
 ## Phase 11.2: Writer-Side Global Vector Identity
 
+- [x] Add an explicit assignment-builder identity source hook so writer code can
+  allocate either default local `0x01` IDs or caller-provided global `0x02`
+  payload IDs without advancing the local sequence for global rows.
 - [ ] Emit durable global `0x02` `SpireVecId` values from the writer/build path
   when a stable source identity is available.
+- [ ] Define the stable source-identity input contract for build/insert paths;
+  heap TID alone is not a cross-node stable identity.
+- [ ] Replace or extend Leaf V2 base-object storage so global `0x02` IDs are not
+  rejected by the local-only fixed-width vec-id column format.
 - [ ] Preserve compatibility with existing node-local `0x01` IDs, scoped by
   origin `node_id`, without silently mixing namespaces.
 - [ ] Ensure boundary replicas carry the same global original-vector identity

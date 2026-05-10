@@ -124,6 +124,16 @@ impl SpireLocalVecIdAllocator {
         Ok(SpireVecId::local(local_vec_seq))
     }
 
+    pub(super) fn allocate_for_source_identity(
+        &mut self,
+        source_identity: &SpireVecIdSourceIdentity,
+    ) -> Result<SpireVecId, String> {
+        match source_identity {
+            SpireVecIdSourceIdentity::AllocateLocal => self.allocate(),
+            SpireVecIdSourceIdentity::StableGlobalPayload(payload) => SpireVecId::global(payload),
+        }
+    }
+
     pub(super) fn observe(&mut self, vec_id: &SpireVecId) -> Result<(), String> {
         let Some(local_vec_seq) = vec_id.local_sequence() else {
             return Ok(());
@@ -141,12 +151,39 @@ impl SpireLocalVecIdAllocator {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum SpireVecIdSourceIdentity {
+    AllocateLocal,
+    StableGlobalPayload(Vec<u8>),
+}
+
+impl Default for SpireVecIdSourceIdentity {
+    fn default() -> Self {
+        Self::AllocateLocal
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafAssignmentInput {
     pub(super) heap_tid: ItemPointer,
     pub(super) payload_format: u8,
     pub(super) gamma: f32,
     pub(super) encoded_payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafAssignmentIdentityInput {
+    pub(super) assignment: SpireLeafAssignmentInput,
+    pub(super) vec_id_source_identity: SpireVecIdSourceIdentity,
+}
+
+impl SpireLeafAssignmentIdentityInput {
+    fn allocate_local(assignment: SpireLeafAssignmentInput) -> Self {
+        Self {
+            assignment,
+            vec_id_source_identity: SpireVecIdSourceIdentity::AllocateLocal,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +200,23 @@ pub(super) struct SpireBoundaryLeafAssignmentInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireBoundaryLeafAssignmentIdentityInput {
+    pub(super) primary_pid: u64,
+    pub(super) replica_pids: Vec<u64>,
+    pub(super) assignment: SpireLeafAssignmentIdentityInput,
+}
+
+impl SpireBoundaryLeafAssignmentIdentityInput {
+    fn allocate_local(input: SpireBoundaryLeafAssignmentInput) -> Self {
+        Self {
+            primary_pid: input.primary_pid,
+            replica_pids: input.replica_pids,
+            assignment: SpireLeafAssignmentIdentityInput::allocate_local(input.assignment),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafAssignmentPlacement {
     pub(super) pid: u64,
     pub(super) row: SpireLeafAssignmentRow,
@@ -172,12 +226,38 @@ pub(super) fn build_primary_leaf_assignments(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireLeafAssignmentInput>,
 ) -> Result<Vec<SpireLeafAssignmentRow>, String> {
+    build_primary_leaf_assignments_with_identity(
+        allocator,
+        inputs
+            .into_iter()
+            .map(SpireLeafAssignmentIdentityInput::allocate_local)
+            .collect(),
+    )
+}
+
+pub(super) fn build_primary_leaf_assignments_with_identity(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireLeafAssignmentIdentityInput>,
+) -> Result<Vec<SpireLeafAssignmentRow>, String> {
     build_allocated_assignment_rows(allocator, inputs, SPIRE_ASSIGNMENT_FLAG_PRIMARY)
 }
 
 pub(super) fn build_insert_delta_assignments(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireLeafAssignmentInput>,
+) -> Result<Vec<SpireLeafAssignmentRow>, String> {
+    build_insert_delta_assignments_with_identity(
+        allocator,
+        inputs
+            .into_iter()
+            .map(SpireLeafAssignmentIdentityInput::allocate_local)
+            .collect(),
+    )
+}
+
+pub(super) fn build_insert_delta_assignments_with_identity(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireLeafAssignmentIdentityInput>,
 ) -> Result<Vec<SpireLeafAssignmentRow>, String> {
     build_allocated_assignment_rows(
         allocator,
@@ -189,6 +269,19 @@ pub(super) fn build_insert_delta_assignments(
 pub(super) fn build_boundary_leaf_assignment_placements(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireBoundaryLeafAssignmentInput>,
+) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
+    build_boundary_leaf_assignment_placements_with_identity(
+        allocator,
+        inputs
+            .into_iter()
+            .map(SpireBoundaryLeafAssignmentIdentityInput::allocate_local)
+            .collect(),
+    )
+}
+
+pub(super) fn build_boundary_leaf_assignment_placements_with_identity(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireBoundaryLeafAssignmentIdentityInput>,
 ) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
     build_boundary_assignment_placements(
         allocator,
@@ -202,6 +295,19 @@ pub(super) fn build_boundary_insert_delta_assignment_placements(
     allocator: &mut SpireLocalVecIdAllocator,
     inputs: Vec<SpireBoundaryLeafAssignmentInput>,
 ) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
+    build_boundary_insert_delta_assignment_placements_with_identity(
+        allocator,
+        inputs
+            .into_iter()
+            .map(SpireBoundaryLeafAssignmentIdentityInput::allocate_local)
+            .collect(),
+    )
+}
+
+pub(super) fn build_boundary_insert_delta_assignment_placements_with_identity(
+    allocator: &mut SpireLocalVecIdAllocator,
+    inputs: Vec<SpireBoundaryLeafAssignmentIdentityInput>,
+) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
     build_boundary_assignment_placements(
         allocator,
         inputs,
@@ -212,7 +318,7 @@ pub(super) fn build_boundary_insert_delta_assignment_placements(
 
 fn build_boundary_assignment_placements(
     allocator: &mut SpireLocalVecIdAllocator,
-    inputs: Vec<SpireBoundaryLeafAssignmentInput>,
+    inputs: Vec<SpireBoundaryLeafAssignmentIdentityInput>,
     primary_flags: u16,
     replica_flags: u16,
 ) -> Result<Vec<SpireLeafAssignmentPlacement>, String> {
@@ -235,17 +341,26 @@ fn build_boundary_assignment_placements(
                 return Err("ec_spire boundary assignment replica pids must be unique".to_owned());
             }
         }
-        validate_assignment_input(&input.assignment)?;
+        validate_assignment_input(&input.assignment.assignment)?;
 
-        let vec_id = allocator.allocate()?;
+        let vec_id =
+            allocator.allocate_for_source_identity(&input.assignment.vec_id_source_identity)?;
         rows.push(SpireLeafAssignmentPlacement {
             pid: input.primary_pid,
-            row: build_assignment_row(input.assignment.clone(), vec_id.clone(), primary_flags)?,
+            row: build_assignment_row(
+                input.assignment.assignment.clone(),
+                vec_id.clone(),
+                primary_flags,
+            )?,
         });
         for replica_pid in input.replica_pids {
             rows.push(SpireLeafAssignmentPlacement {
                 pid: replica_pid,
-                row: build_assignment_row(input.assignment.clone(), vec_id.clone(), replica_flags)?,
+                row: build_assignment_row(
+                    input.assignment.assignment.clone(),
+                    vec_id.clone(),
+                    replica_flags,
+                )?,
             });
         }
     }
@@ -277,14 +392,14 @@ pub(super) fn build_delete_delta_assignments(
 
 fn build_allocated_assignment_rows(
     allocator: &mut SpireLocalVecIdAllocator,
-    inputs: Vec<SpireLeafAssignmentInput>,
+    inputs: Vec<SpireLeafAssignmentIdentityInput>,
     flags: u16,
 ) -> Result<Vec<SpireLeafAssignmentRow>, String> {
     let mut rows = Vec::with_capacity(inputs.len());
     for input in inputs {
-        validate_assignment_input(&input)?;
-        let vec_id = allocator.allocate()?;
-        rows.push(build_assignment_row(input, vec_id, flags)?);
+        validate_assignment_input(&input.assignment)?;
+        let vec_id = allocator.allocate_for_source_identity(&input.vec_id_source_identity)?;
+        rows.push(build_assignment_row(input.assignment, vec_id, flags)?);
     }
     Ok(rows)
 }
@@ -334,10 +449,14 @@ pub(super) fn observe_assignment_vec_ids(
 mod tests {
     use super::{
         build_boundary_insert_delta_assignment_placements,
-        build_boundary_leaf_assignment_placements, build_delete_delta_assignments,
-        build_insert_delta_assignments, build_primary_leaf_assignments, observe_assignment_vec_ids,
-        SpireBoundaryLeafAssignmentInput, SpireDeleteDeltaInput, SpireLeafAssignmentInput,
-        SpireLocalVecIdAllocator, SpirePidAllocator, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
+        build_boundary_leaf_assignment_placements,
+        build_boundary_leaf_assignment_placements_with_identity, build_delete_delta_assignments,
+        build_insert_delta_assignments, build_insert_delta_assignments_with_identity,
+        build_primary_leaf_assignments, build_primary_leaf_assignments_with_identity,
+        observe_assignment_vec_ids, SpireBoundaryLeafAssignmentIdentityInput,
+        SpireBoundaryLeafAssignmentInput, SpireDeleteDeltaInput, SpireLeafAssignmentIdentityInput,
+        SpireLeafAssignmentInput, SpireLocalVecIdAllocator, SpirePidAllocator,
+        SpireVecIdSourceIdentity, SPIRE_FIRST_LOCAL_VEC_SEQ, SPIRE_FIRST_PID,
     };
     use crate::am::ec_spire::storage::{
         SpireDeltaPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
@@ -458,6 +577,30 @@ mod tests {
     }
 
     #[test]
+    fn allocator_uses_global_source_identity_without_advancing_local_sequence() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+
+        let vec_id = allocator
+            .allocate_for_source_identity(&SpireVecIdSourceIdentity::StableGlobalPayload(vec![
+                1, 2, 3,
+            ]))
+            .unwrap();
+
+        assert_eq!(vec_id, SpireVecId::global(&[1, 2, 3]).unwrap());
+        assert_eq!(allocator.next_local_vec_seq(), 10);
+    }
+
+    #[test]
+    fn allocator_rejects_invalid_global_source_identity_without_advancing() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+
+        assert!(allocator
+            .allocate_for_source_identity(&SpireVecIdSourceIdentity::StableGlobalPayload(vec![]))
+            .is_err());
+        assert_eq!(allocator.next_local_vec_seq(), 10);
+    }
+
+    #[test]
     fn allocator_reports_sequence_exhaustion_without_advancing() {
         let mut allocator = SpireLocalVecIdAllocator::new(u64::MAX).unwrap();
 
@@ -509,6 +652,43 @@ mod tests {
         assert_eq!(rows[0].heap_tid, tid(10, 1));
         assert_eq!(rows[1].encoded_payload, vec![3, 4]);
         assert_eq!(allocator.next_local_vec_seq(), 3);
+    }
+
+    #[test]
+    fn build_primary_leaf_assignments_with_identity_accepts_global_ids() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+
+        let rows = build_primary_leaf_assignments_with_identity(
+            &mut allocator,
+            vec![
+                SpireLeafAssignmentIdentityInput {
+                    assignment: SpireLeafAssignmentInput {
+                        heap_tid: tid(10, 1),
+                        payload_format: 1,
+                        gamma: 0.5,
+                        encoded_payload: vec![1, 2],
+                    },
+                    vec_id_source_identity: SpireVecIdSourceIdentity::StableGlobalPayload(vec![
+                        9, 8, 7,
+                    ]),
+                },
+                SpireLeafAssignmentIdentityInput {
+                    assignment: SpireLeafAssignmentInput {
+                        heap_tid: tid(10, 2),
+                        payload_format: 1,
+                        gamma: 0.75,
+                        encoded_payload: vec![3, 4],
+                    },
+                    vec_id_source_identity: SpireVecIdSourceIdentity::AllocateLocal,
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].vec_id, SpireVecId::global(&[9, 8, 7]).unwrap());
+        assert_eq!(rows[1].vec_id.local_sequence(), Some(10));
+        assert_eq!(allocator.next_local_vec_seq(), 11);
     }
 
     #[test]
@@ -579,6 +759,33 @@ mod tests {
     }
 
     #[test]
+    fn build_insert_delta_assignments_with_identity_can_store_global_vec_ids() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+
+        let rows = build_insert_delta_assignments_with_identity(
+            &mut allocator,
+            vec![SpireLeafAssignmentIdentityInput {
+                assignment: SpireLeafAssignmentInput {
+                    heap_tid: tid(20, 1),
+                    payload_format: 2,
+                    gamma: 0.25,
+                    encoded_payload: vec![9, 8],
+                },
+                vec_id_source_identity: SpireVecIdSourceIdentity::StableGlobalPayload(vec![4, 5]),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(
+            rows[0].flags,
+            SPIRE_ASSIGNMENT_FLAG_PRIMARY | SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT
+        );
+        assert_eq!(rows[0].vec_id, SpireVecId::global(&[4, 5]).unwrap());
+        assert_eq!(allocator.next_local_vec_seq(), 10);
+        SpireDeltaPartitionObject::new(30, 4, 17, rows).unwrap();
+    }
+
+    #[test]
     fn build_boundary_leaf_assignment_placements_reuses_vec_id_for_replicas() {
         let mut allocator = SpireLocalVecIdAllocator::default();
 
@@ -610,6 +817,37 @@ mod tests {
             allocator.next_local_vec_seq(),
             SPIRE_FIRST_LOCAL_VEC_SEQ + 1
         );
+    }
+
+    #[test]
+    fn build_boundary_leaf_assignment_placements_with_identity_reuses_global_id_for_replicas() {
+        let mut allocator = SpireLocalVecIdAllocator::new(10).unwrap();
+
+        let rows = build_boundary_leaf_assignment_placements_with_identity(
+            &mut allocator,
+            vec![SpireBoundaryLeafAssignmentIdentityInput {
+                primary_pid: 11,
+                replica_pids: vec![12, 13],
+                assignment: SpireLeafAssignmentIdentityInput {
+                    assignment: SpireLeafAssignmentInput {
+                        heap_tid: tid(10, 1),
+                        payload_format: 1,
+                        gamma: 0.5,
+                        encoded_payload: vec![1, 2, 3],
+                    },
+                    vec_id_source_identity: SpireVecIdSourceIdentity::StableGlobalPayload(vec![
+                        7, 7, 7,
+                    ]),
+                },
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].row.vec_id, SpireVecId::global(&[7, 7, 7]).unwrap());
+        assert_eq!(rows[0].row.vec_id, rows[1].row.vec_id);
+        assert_eq!(rows[0].row.vec_id, rows[2].row.vec_id);
+        assert_eq!(allocator.next_local_vec_seq(), 10);
     }
 
     #[test]

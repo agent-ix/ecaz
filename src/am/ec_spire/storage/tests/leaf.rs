@@ -149,9 +149,10 @@
 
         let mut global_row = leaf_v2_assignment(1, 8);
         global_row.vec_id = SpireVecId::global(&[9, 9, 9]).unwrap();
-        assert!(store
+        let err = store
             .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &[global_row])
-            .is_err());
+            .unwrap_err();
+        assert!(err.contains("global writer IDs need a future variable-width Leaf V2 format"));
     }
 
     #[test]
