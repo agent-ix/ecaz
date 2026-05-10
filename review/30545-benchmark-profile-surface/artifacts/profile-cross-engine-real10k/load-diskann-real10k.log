@@ -1,0 +1,22 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "profile_real10k_diskann")
+[loader] copied corpus table profile_real10k_diskann_corpus in 5.49s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table profile_real10k_diskann_corpus in 287.14ms
+[loader] copied queries table profile_real10k_diskann_queries in 115.69ms
+[loader] building profile_real10k_diskann_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2]) ...
+[loader] built profile_real10k_diskann_idx in 6.84s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ profile_real10k_diskann_corpus (10000 rows)                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ profile_real10k_diskann_queries (200 rows)                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ profile_real10k_diskann_idx [graph_degree=32, build_list_size=100, alpha=1.2] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix profile_real10k_diskann in 22.54s
