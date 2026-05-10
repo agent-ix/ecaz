@@ -103,7 +103,7 @@ Acceptance artifact:
   rejected by the local-only fixed-width vec-id column format. Leaf V2 now
   supports per-object `GlobalBytes` columns when every row has the same global
   ID byte length; see `plan/design/spire-leaf-v2-vector-id-layout.md`.
-- [ ] Preserve compatibility with existing node-local `0x01` IDs, scoped by
+- [x] Preserve compatibility with existing node-local `0x01` IDs, scoped by
   origin `node_id`, without silently mixing namespaces.
 - [ ] Ensure boundary replicas carry the same global original-vector identity
   across leaves, stores, and remote nodes.
