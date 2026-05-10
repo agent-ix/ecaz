@@ -58,6 +58,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_GOVERNANCE: &str = "remote_executor_governance"
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
 const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
+const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION: &str = "remote_heap_resolution";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
@@ -2600,7 +2601,7 @@ enum SpireRemoteProductionDispatchState {
     CandidateReceiveFailed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct SpireRemoteProductionDispatch {
     node_id: u32,
     pid_count: u64,
@@ -2611,6 +2612,7 @@ struct SpireRemoteProductionDispatch {
     transport_failure_category: &'static str,
     candidate_count: u64,
     candidate_failure_category: &'static str,
+    candidate_batch: Option<SpireRemoteSearchCandidateBatch>,
 }
 
 impl SpireRemoteProductionDispatch {
@@ -2626,6 +2628,7 @@ impl SpireRemoteProductionDispatch {
                 transport_failure_category: SPIRE_REMOTE_NONE,
                 candidate_count: 0,
                 candidate_failure_category: SPIRE_REMOTE_NONE,
+                candidate_batch: None,
             }
         } else {
             Self {
@@ -2638,6 +2641,7 @@ impl SpireRemoteProductionDispatch {
                 transport_failure_category: SPIRE_REMOTE_NONE,
                 candidate_count: 0,
                 candidate_failure_category: SPIRE_REMOTE_NONE,
+                candidate_batch: None,
             }
         }
     }
@@ -2697,11 +2701,13 @@ impl SpireRemoteProductionDispatch {
                 ));
             }
             self.candidate_count = result.candidate_count;
+            self.candidate_batch = Some(batch.clone());
             self.state = SpireRemoteProductionDispatchState::CandidateReceiveReady;
             self.status = SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP;
-            self.next_executor_step = "remote_heap_resolution";
+            self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
         } else {
             self.candidate_count = 0;
+            self.candidate_batch = None;
             self.state = SpireRemoteProductionDispatchState::CandidateReceiveFailed;
             self.status = SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED;
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
@@ -2710,7 +2716,7 @@ impl SpireRemoteProductionDispatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct SpireRemoteFanoutExecutor {
     requested_epoch: u64,
     dispatches: Vec<SpireRemoteProductionDispatch>,
@@ -2780,6 +2786,45 @@ impl SpireRemoteFanoutExecutor {
             dispatch.apply_candidate_receive_result(result)?;
         }
         Ok(())
+    }
+
+    fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
+        let mut batches = Vec::new();
+        for dispatch in &self.dispatches {
+            match dispatch.state {
+                SpireRemoteProductionDispatchState::CandidateReceiveReady => {
+                    let batch = dispatch.candidate_batch.clone().ok_or_else(|| {
+                        format!(
+                            "ec_spire production executor candidate receive ready dispatch for node_id {} is missing its candidate batch",
+                            dispatch.node_id
+                        )
+                    })?;
+                    batches.push(batch);
+                }
+                SpireRemoteProductionDispatchState::BlockedBeforeDispatch
+                | SpireRemoteProductionDispatchState::Planned
+                | SpireRemoteProductionDispatchState::TransportReady
+                | SpireRemoteProductionDispatchState::TransportFailed
+                | SpireRemoteProductionDispatchState::CandidateReceiveFailed => {
+                    return Err(format!(
+                        "ec_spire production executor cannot merge compact candidates while node_id {} is in state {:?} with status {}",
+                        dispatch.node_id, dispatch.state, dispatch.status
+                    ));
+                }
+            }
+        }
+        Ok(batches)
+    }
+
+    fn merge_ready_candidate_batches(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<SpireRemoteSearchMergeResult, String> {
+        merge_validated_remote_search_candidate_batches(
+            self.requested_epoch,
+            self.ready_candidate_batches()?,
+            limit,
+        )
     }
 
     fn summary(&self) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
@@ -3052,7 +3097,7 @@ impl SpireRemoteFanoutExecutor {
             )
         } else if transport_ready_dispatch_count > 0 {
             (
-                "remote_heap_resolution",
+                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION,
                 SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
                 "wire origin-node remote heap resolution before returning SQL rows",
             )
@@ -3123,6 +3168,21 @@ fn remote_search_production_executor_state_summary_from_candidate_receive_result
     executor.apply_transport_probe_rows(transport_rows)?;
     executor.apply_candidate_receive_results(candidate_receive_results)?;
     executor.summary()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_compact_merge_from_candidate_receive_results(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
+    limit: Option<usize>,
+) -> Result<SpireRemoteSearchMergeResult, String> {
+    let mut executor =
+        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
+    executor.apply_transport_probe_rows(transport_rows)?;
+    executor.apply_candidate_receive_results(candidate_receive_results)?;
+    executor.merge_ready_candidate_batches(limit)
 }
 
 pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
@@ -6511,7 +6571,11 @@ mod production_executor_state_tests {
             object_version: 1,
             row_index,
             assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
-            vec_id: vec![u8::try_from(node_id).expect("node id should fit u8"), row_index as u8],
+            vec_id: storage::SpireVecId::local(
+                (u64::from(node_id) << 32) | (u64::from(row_index) + 1),
+            )
+            .as_bytes()
+            .to_vec(),
             row_locator: vec![row_index as u8 + 1],
             score: row_index as f32,
         }
@@ -6690,5 +6754,76 @@ mod production_executor_state_tests {
             error.contains("does not match a transport-ready dispatch"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn production_executor_compact_merge_uses_ready_candidate_batches() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let mut node_two = ready_candidate_receive_result(2, vec![10], 1);
+        let mut node_three = ready_candidate_receive_result(3, vec![20], 1);
+        let shared = storage::SpireVecId::global(b"shared")
+            .expect("test global vec_id should build")
+            .as_bytes()
+            .to_vec();
+        node_two
+            .batch
+            .as_mut()
+            .expect("node two batch should exist")
+            .candidates[0]
+            .vec_id = shared.clone();
+        node_two
+            .batch
+            .as_mut()
+            .expect("node two batch should exist")
+            .candidates[0]
+            .score = 0.4;
+        node_three
+            .batch
+            .as_mut()
+            .expect("node three batch should exist")
+            .candidates[0]
+            .vec_id = shared;
+        node_three
+            .batch
+            .as_mut()
+            .expect("node three batch should exist")
+            .candidates[0]
+            .score = 0.2;
+
+        let merged = remote_search_production_compact_merge_from_candidate_receive_results(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+            &[node_two, node_three],
+            Some(1),
+        )
+        .expect("ready candidate batches should merge");
+
+        assert_eq!(merged.input_count, 2);
+        assert_eq!(merged.duplicate_vec_id_count, 1);
+        assert_eq!(merged.candidates.len(), 1);
+        assert_eq!(merged.candidates[0].node_id, 3);
+        assert_eq!(merged.candidates[0].score, 0.2);
+    }
+
+    #[test]
+    fn production_executor_compact_merge_rejects_failed_receive() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            failed_candidate_receive_result(2, SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED),
+            ready_candidate_receive_result(3, vec![20], 1),
+        ];
+        let error = remote_search_production_compact_merge_from_candidate_receive_results(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+            &receive_results,
+            Some(1),
+        )
+        .expect_err("failed receive should block compact merge");
+
+        assert!(error.contains("remote_candidate_receive_failed"));
     }
 }
