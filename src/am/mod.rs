@@ -162,6 +162,8 @@ pub(crate) use self::ec_spire::{
     debug_spire_vacuum_remove_heap_tids,
     remote_search_libpq_global_governance_advisory_key_for_test,
     remote_search_libpq_node_governance_advisory_key_for_test,
+    remote_search_production_transport_probe_for_test as spire_remote_search_production_transport_probe_for_test,
+    SpireRemoteProductionTransportProbeRequest,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

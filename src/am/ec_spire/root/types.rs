@@ -679,6 +679,17 @@ pub(crate) struct SpireRemoteProductionExecutorStateSummaryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionTransportProbeRow {
+    pub(crate) node_id: u32,
+    pub(crate) started_after_ms: u64,
+    pub(crate) completed_after_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) row_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) failure_category: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqExecutorStepContractRow {
     pub(crate) step_ordinal: u64,
     pub(crate) step_name: &'static str,

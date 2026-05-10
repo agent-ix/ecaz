@@ -103,6 +103,12 @@ through a small adapter boundary rather than direct blocking `postgres::Client`
 calls. If a temporary threaded adapter is used for local validation, it must be
 documented as a bridge and blocked from production-readiness claims.
 
+C1 uses per-query connect / per-dispatch close. This matches the current
+diagnostic executor lifetime, gives C2 a simple cancellation and cleanup target,
+and avoids introducing pool invalidation rules before strict/degraded failure
+semantics are in place. Bounded connection reuse or a pool may land only as a
+later measured optimization with explicit invalidation triggers.
+
 Verification:
 
 - Local two-remote fixture where one remote is instrumented slow and the other
@@ -181,6 +187,15 @@ Expose production-state summaries for operators and packet capture without
 opening extra remote sockets. The dry pipeline entrypoint should stay dry; live
 diagnostic probes should remain opt-in.
 
+Surfaces this runbook reads:
+
+- `ec_spire_remote_search_libpq_executor_budget_summary(...)`;
+- `ec_spire_remote_search_libpq_identity_cache_summary(...)`;
+- `ec_spire_remote_search_production_executor_state_summary(...)`;
+- `ec_spire_remote_search_libpq_receive_attempts(...)`;
+- `ec_spire_remote_pipeline_steps(...)` and
+  `ec_spire_remote_pipeline_steps_live(...)`.
+
 Verification:
 
 - `ecaz` local multi-instance command captures recall, latency p50/p95/p99,
@@ -222,8 +237,8 @@ The production executor must count at least:
   crate wrapper, or a temporary local validation bridge. The production gate
   should only accept direct overlapped libpq semantics or an explicitly accepted
   equivalent.
-- Connection reuse policy after C1: per-query connect/close is acceptable for
-  correctness, but performance readiness needs either bounded reuse or measured
-  evidence that connect cost is outside the query hot path.
+- Connection reuse policy after C1: C1 is pinned to per-query connect /
+  per-dispatch close; performance readiness needs either bounded reuse or
+  measured evidence that connect cost is outside the query hot path.
 - Shared identity cache: deferred until a memory cap, lock-order contract, and
   descriptor-write invalidation path are accepted.

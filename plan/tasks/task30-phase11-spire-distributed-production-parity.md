@@ -373,10 +373,16 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     production dispatches; PG18 coverage proves the SQL summary does not
     resolve conninfo secrets, open sockets, or query endpoint identity.
 - [ ] Use libpq async or pipeline mode for overlapping remote work.
-  - [ ] Add a narrow transport adapter boundary so the AM scan path no longer
-    calls blocking `postgres::Client` directly for production fanout.
-  - [ ] Prove at least two ready remotes can make progress independently under
+  - [x] Pin the C1 connection lifetime contract to per-query connect /
+    per-dispatch close, with pooling deferred to a measured optimization after
+    cancellation and strict/degraded failure semantics are stable.
+  - [x] Add a narrow Tokio/tokio-postgres transport adapter boundary for
+    production fanout probes, separate from blocking `postgres::Client`.
+  - [x] Prove at least two ready remotes can make progress independently under
     an instrumented slow-remote fixture.
+  - [ ] Wire the adapter into compact candidate receive and AM scan production
+    state; diagnostic candidate receive still uses blocking `postgres::Client`
+    until that slice lands.
 - [ ] Add per-query fanout caps, global coordinator work limits, per-remote
   concurrency caps, connect/statement timeouts, cancellation propagation, and
   overload-shedding diagnostics.

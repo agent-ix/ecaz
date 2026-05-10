@@ -23568,6 +23568,46 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_production_transport_probe_overlaps_ready_remotes() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: loopback_conninfo.clone(),
+                sql: "SELECT pg_sleep(0.30)",
+            },
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 3,
+                conninfo: loopback_conninfo,
+                sql: "SELECT 1",
+            },
+        ]);
+        let slow = rows
+            .iter()
+            .find(|row| row.node_id == 2)
+            .expect("slow row should exist");
+        let fast = rows
+            .iter()
+            .find(|row| row.node_id == 3)
+            .expect("fast row should exist");
+
+        assert_eq!(slow.status, "ready");
+        assert_eq!(fast.status, "ready");
+        assert!(
+            fast.completed_after_ms < slow.completed_after_ms,
+            "fast remote should complete before slow remote when transport overlaps work: \
+             fast={}ms slow={}ms",
+            fast.completed_after_ms,
+            slow.completed_after_ms
+        );
+        assert!(
+            slow.elapsed_ms >= 250,
+            "slow probe should actually exercise delayed remote work: {}ms",
+            slow.elapsed_ms
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_libpq_executor_global_governance_overload() {
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("max concurrent dispatch budget SET should succeed");
