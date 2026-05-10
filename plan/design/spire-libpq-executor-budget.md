@@ -52,6 +52,27 @@ admission runs second, and endpoint identity preflight runs only for admitted
 rows. This keeps cheap metadata blockers visible before budget pressure while
 preserving fail-closed identity checks for rows that can actually dispatch.
 
+## Advisory Lock Namespace
+
+The cross-query governance implementation uses two-argument PostgreSQL advisory
+locks through `pg_try_advisory_lock(class_id, object_id)`.
+
+Reserved SPIRE remote-search governance ranges:
+
+- Global dispatch slots use `class_id` values
+  `730000000..=730004095` and `object_id = 0`. Slot `n` maps to
+  `(730000000 + n, 0)`.
+- Per-node dispatch slots use `class_id` values
+  `731000000..=731004095`. Slot `n` for `node_id` maps to
+  `(731000000 + n, bit_preserving_i32(node_id))`; the `object_id` is the
+  signed two's-complement interpretation of the `u32` node identifier.
+
+The range size matches the current
+`ec_spire.remote_search_max_concurrent_dispatches*` hard cap of `4096`. Other
+extension features, operator scripts, and external runbooks must not use these
+class ranges. Operators can inspect current utilization with
+`pg_locks WHERE locktype = 'advisory' AND classid::bigint BETWEEN 730000000 AND 731004095`.
+
 ## Required Invariants
 
 - Over-budget rows must use `dispatch_action = blocked_before_dispatch`.

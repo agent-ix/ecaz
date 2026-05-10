@@ -49,6 +49,15 @@ The Stage C identity-cache constraints for that production work are captured in
 The Stage C resource-governance constraints for per-query admission, overload
 blocking, and timeout configuration are captured in
 `plan/design/spire-libpq-executor-budget.md`.
+That contract also owns the PostgreSQL advisory-lock namespace reserved for
+first-stage cross-backend dispatch governance:
+
+- global slots reserve class IDs `730000000..=730004095` with object ID `0`;
+- per-node slots reserve class IDs `731000000..=731004095` with object ID set
+  to the bit-preserving signed representation of `node_id`.
+
+These ranges are part of the production contract until a future async/pipeline
+executor replaces advisory-lock governance with an accepted alternative.
 
 ## Required Invariants
 
@@ -59,6 +68,8 @@ blocking, and timeout configuration are captured in
 - Any status or review packet must distinguish diagnostic blocking libpq calls
   from production pipeline/concurrent execution.
 - Production AM remote scan work must not reuse the diagnostic executor as-is.
+- Operator scripts and other extension features must not use the SPIRE
+  remote-search governance advisory-lock class ranges.
 
 ## Rationale
 
@@ -79,3 +90,5 @@ cancellation, timeout, and merge ownership model.
   diagnostic executor, not proof that the future production executor is done.
 - Future remote performance packets must cite a production executor checkpoint,
   not the SQL-visible diagnostic functions alone.
+- Operators can inspect first-stage governance utilization through `pg_locks`
+  advisory rows using the reserved class ranges.

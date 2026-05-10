@@ -383,6 +383,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
       dispatches globally and per remote node using nonblocking PostgreSQL
       advisory locks; saturated slots report `remote_executor_overload` with
       `remote_executor_governance` before secret lookup or socket open.
+    - [x] Document the advisory-lock namespace in
+      `plan/design/spire-libpq-executor-budget.md` and ADR-058 so operator
+      scripts and future extension features avoid the reserved governance
+      class ranges.
   - [ ] Propagate PostgreSQL cancellation into in-flight remote work.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
