@@ -23608,6 +23608,40 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_production_transport_probe_isolates_node_failure() {
+        Spi::run("SET LOCAL ec_spire.remote_search_connect_timeout_ms = 25")
+            .expect("connect timeout SET should succeed");
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 2,
+                conninfo: "host=/tmp/ecaz_missing_pg_socket_30725 dbname=postgres user=postgres"
+                    .to_owned(),
+                sql: "SELECT 1",
+            },
+            am::SpireRemoteProductionTransportProbeRequest {
+                node_id: 3,
+                conninfo: loopback_conninfo,
+                sql: "SELECT 1",
+            },
+        ]);
+        let failed = rows
+            .iter()
+            .find(|row| row.node_id == 2)
+            .expect("failed row should exist");
+        let ready = rows
+            .iter()
+            .find(|row| row.node_id == 3)
+            .expect("ready row should exist");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(failed.status, "remote_transport_failed");
+        assert_eq!(failed.failure_category, "connect_failed");
+        assert_eq!(ready.status, "ready");
+        assert_eq!(ready.failure_category, "none");
+    }
+
+    #[pg_test]
     fn test_ec_spire_libpq_executor_global_governance_overload() {
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("max concurrent dispatch budget SET should succeed");

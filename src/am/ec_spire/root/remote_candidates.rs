@@ -66,6 +66,12 @@ const SPIRE_REMOTE_PRODUCTION_STATE_MODEL: &str = "spire_remote_fanout_executor_
 const SPIRE_REMOTE_PRODUCTION_TRANSPORT_PENDING: &str = "async_or_pipeline_transport_pending";
 const SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT: &str =
     "requires_production_transport_adapter";
+const SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED: &str = "remote_transport_failed";
+const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED: &str = "conninfo_parse_failed";
+const SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED: &str = "connect_failed";
+const SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED: &str =
+    "statement_timeout_setup_failed";
+const SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED: &str = "remote_query_failed";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -2231,39 +2237,43 @@ impl SpireRemoteProductionTransportAdapter {
             let futures = requests.into_iter().map(|request| async move {
                 Self::run_one_probe_request(request, batch_start).await
             });
-            futures_util::future::join_all(futures)
-                .await
-                .into_iter()
-                .collect()
+            Ok(futures_util::future::join_all(futures).await)
         })
     }
 
     async fn run_one_probe_request(
         request: SpireRemoteProductionTransportProbeRequest,
         batch_start: std::time::Instant,
-    ) -> Result<SpireRemoteProductionTransportProbeRow, String> {
-        let started_after_ms = elapsed_millis_u64(batch_start)?;
+    ) -> SpireRemoteProductionTransportProbeRow {
+        let started_after_ms = elapsed_millis_u64(batch_start);
         let request_start = std::time::Instant::now();
-        let mut config = request.conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-            format!(
-                "ec_spire production transport adapter conninfo parse failed for node_id {}",
-                request.node_id
-            )
-        })?;
+        let mut config = match request.conninfo.parse::<tokio_postgres::Config>() {
+            Ok(config) => config,
+            Err(_) => {
+                return failed_production_transport_probe_row(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNINFO_PARSE_FAILED,
+                );
+            }
+        };
         let limits = SpireRemoteSearchLibpqExecutorBudgetLimits::from_session();
         if limits.connect_timeout_ms > 0 {
             config.connect_timeout(std::time::Duration::from_millis(limits.connect_timeout_ms));
         }
 
-        let (client, connection) = config
-            .connect(tokio_postgres::NoTls)
-            .await
-            .map_err(|_| {
-                format!(
-                    "ec_spire production transport adapter connect failed for node_id {}",
-                    request.node_id
-                )
-            })?;
+        let (client, connection) = match config.connect(tokio_postgres::NoTls).await {
+            Ok(connection) => connection,
+            Err(_) => {
+                return failed_production_transport_probe_row(
+                    request.node_id,
+                    batch_start,
+                    request_start,
+                    SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+                );
+            }
+        };
         let connection_task = tokio::spawn(async move {
             let _ = connection.await;
         });
@@ -2276,46 +2286,59 @@ impl SpireRemoteProductionTransportAdapter {
                         limits.statement_timeout_ms
                     ))
                     .await
-                    .map_err(|_| "statement_timeout_setup_failed")?;
+                    .map_err(|_| {
+                        SPIRE_REMOTE_PRODUCTION_TRANSPORT_STATEMENT_TIMEOUT_SETUP_FAILED
+                    })?;
             }
             client
                 .simple_query(request.sql)
                 .await
-                .map_err(|_| "remote_query_failed")
+                .map_err(|_| SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED)
         }
         .await;
 
         connection_task.abort();
-        let completed_after_ms = elapsed_millis_u64(batch_start)?;
-        let elapsed_ms = elapsed_millis_u64(request_start)?;
+        let completed_after_ms = elapsed_millis_u64(batch_start);
+        let elapsed_ms = elapsed_millis_u64(request_start);
         match query_result {
-            Ok(messages) => Ok(SpireRemoteProductionTransportProbeRow {
+            Ok(messages) => SpireRemoteProductionTransportProbeRow {
                 node_id: request.node_id,
                 started_after_ms,
                 completed_after_ms,
                 elapsed_ms,
-                row_count: u64::try_from(messages.len()).map_err(|_| {
-                    "ec_spire production transport adapter row count exceeds u64".to_owned()
-                })?,
+                row_count: u64::try_from(messages.len()).unwrap_or(u64::MAX),
                 status: SPIRE_REMOTE_STATUS_READY,
                 failure_category: SPIRE_REMOTE_NONE,
-            }),
-            Err(failure_category) => Ok(SpireRemoteProductionTransportProbeRow {
-                node_id: request.node_id,
-                started_after_ms,
-                completed_after_ms,
-                elapsed_ms,
-                row_count: 0,
-                status: "remote_transport_failed",
+            },
+            Err(failure_category) => failed_production_transport_probe_row(
+                request.node_id,
+                batch_start,
+                request_start,
                 failure_category,
-            }),
+            ),
         }
     }
 }
 
-fn elapsed_millis_u64(start: std::time::Instant) -> Result<u64, String> {
-    u64::try_from(start.elapsed().as_millis())
-        .map_err(|_| "ec_spire production transport elapsed time exceeds u64".to_owned())
+fn failed_production_transport_probe_row(
+    node_id: u32,
+    batch_start: std::time::Instant,
+    request_start: std::time::Instant,
+    failure_category: &'static str,
+) -> SpireRemoteProductionTransportProbeRow {
+    SpireRemoteProductionTransportProbeRow {
+        node_id,
+        started_after_ms: elapsed_millis_u64(batch_start),
+        completed_after_ms: elapsed_millis_u64(batch_start),
+        elapsed_ms: elapsed_millis_u64(request_start),
+        row_count: 0,
+        status: SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+        failure_category,
+    }
+}
+
+fn elapsed_millis_u64(start: std::time::Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 #[cfg(any(test, feature = "pg_test"))]

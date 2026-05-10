@@ -380,6 +380,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     production fanout probes, separate from blocking `postgres::Client`.
   - [x] Prove at least two ready remotes can make progress independently under
     an instrumented slow-remote fixture.
+  - [x] Normalize transport probe parse/connect/query failures into per-node
+    result rows so one failed remote cannot abort the whole fanout batch.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
     state; diagnostic candidate receive still uses blocking `postgres::Client`
     until that slice lands.
