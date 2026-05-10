@@ -1,0 +1,11 @@
+Script started on 2026-05-10 11:59:41-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-320dfae4bc07716b)
+/home/peter/dev/ecaz/target/debug/deps/ecaz-320dfae4bc07716b: symbol lookup error: /home/peter/dev/ecaz/target/debug/deps/ecaz-320dfae4bc07716b: undefined symbol: SPI_finish
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/deps/ecaz-320dfae4bc07716b production_scan_result_outputs_preserve_heap_resolution_origin` (exit status: 127)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.
+
+Script done on 2026-05-10 11:59:42-07:00 [COMMAND_EXIT_CODE="127"]
