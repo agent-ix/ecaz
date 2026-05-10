@@ -14430,6 +14430,13 @@ mod tests {
         assert!(unlocked, "{label} governance lock should unlock");
     }
 
+    fn set_remote_governance_test_namespace(namespace: i32) {
+        Spi::run(&format!(
+            "SET LOCAL ec_spire.remote_search_governance_test_namespace = {namespace}"
+        ))
+        .expect("governance test namespace SET should succeed");
+    }
+
     fn loopback_remote_index_identity_hex(
         client: &mut postgres::Client,
         remote_index_regclass: &str,
@@ -25074,6 +25081,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_prod_transport_governance_overload() {
+        set_remote_governance_test_namespace(6601);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("global governance cap SET should succeed");
         let loopback_conninfo = current_pg_test_loopback_conninfo();
@@ -25101,6 +25109,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_prod_transport_local_cancel_remote_cancel() {
+        set_remote_governance_test_namespace(6602);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("global governance cap SET should succeed");
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
@@ -25497,6 +25506,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_prod_receive_local_cancel_remote_cancel() {
+        set_remote_governance_test_namespace(6603);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("global governance cap SET should succeed");
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
@@ -25602,6 +25612,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_prod_receive_governance_overload() {
+        set_remote_governance_test_namespace(6604);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("global governance cap SET should succeed");
         let loopback_conninfo = current_pg_test_loopback_conninfo();
@@ -26120,6 +26131,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_libpq_executor_global_governance_overload() {
+        set_remote_governance_test_namespace(6605);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches = 1")
             .expect("max concurrent dispatch budget SET should succeed");
         let (class_id, object_id) =
@@ -26213,6 +26225,7 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_libpq_executor_per_node_governance_isolated() {
+        set_remote_governance_test_namespace(6606);
         Spi::run("SET LOCAL ec_spire.remote_search_max_concurrent_dispatches_per_node = 1")
             .expect("max concurrent per-node dispatch budget SET should succeed");
         let (class_id, object_id) =

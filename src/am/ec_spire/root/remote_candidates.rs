@@ -6776,6 +6776,8 @@ pub(crate) fn remote_search_libpq_connect_with_session_timeouts(
 
 const SPIRE_REMOTE_SEARCH_LIBPQ_GLOBAL_LOCK_CLASS_BASE: i32 = 730_000_000;
 const SPIRE_REMOTE_SEARCH_LIBPQ_NODE_LOCK_CLASS_BASE: i32 = 731_000_000;
+#[cfg(any(test, feature = "pg_test"))]
+const SPIRE_REMOTE_SEARCH_LIBPQ_GOVERNANCE_TEST_NAMESPACE_STRIDE: i32 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireRemoteSearchLibpqGovernanceLockKey {
@@ -6803,6 +6805,7 @@ fn remote_search_libpq_governance_lock_key(
 ) -> Result<SpireRemoteSearchLibpqGovernanceLockKey, String> {
     let slot = i32::try_from(slot)
         .map_err(|_| "ec_spire remote search executor governance slot exceeds i32".to_owned())?;
+    let class_base = remote_search_libpq_governance_class_base(class_base)?;
     let class_id = class_base.checked_add(slot).ok_or_else(|| {
         "ec_spire remote search executor governance advisory lock class overflow".to_owned()
     })?;
@@ -6810,6 +6813,30 @@ fn remote_search_libpq_governance_lock_key(
         class_id,
         object_id,
     })
+}
+
+fn remote_search_libpq_governance_class_base(class_base: i32) -> Result<i32, String> {
+    let namespace = options::current_session_remote_search_governance_test_namespace();
+    if namespace == 0 {
+        return Ok(class_base);
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        let offset = namespace
+            .checked_mul(SPIRE_REMOTE_SEARCH_LIBPQ_GOVERNANCE_TEST_NAMESPACE_STRIDE)
+            .ok_or_else(|| {
+                "ec_spire remote search executor governance test namespace overflow".to_owned()
+            })?;
+        return class_base.checked_add(offset).ok_or_else(|| {
+            "ec_spire remote search executor governance test class overflow".to_owned()
+        });
+    }
+
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        Err("ec_spire remote search executor governance test namespace is unavailable".to_owned())
+    }
 }
 
 fn remote_search_libpq_advisory_lock_result(

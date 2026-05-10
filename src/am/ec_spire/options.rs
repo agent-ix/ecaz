@@ -38,6 +38,8 @@ const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS: i32 = 3_600_000;
+#[cfg(any(test, feature = "pg_test"))]
+const EC_SPIRE_MAX_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE: i32 = 10_000;
 
 static EC_SPIRE_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_SPIRE_SESSION_NPROBE_UNSET);
 static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
@@ -66,6 +68,9 @@ static EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC: GucSetting<
 > = GucSetting::<SpireRemoteSearchConsistencyModeGuc>::new(
     SpireRemoteSearchConsistencyModeGuc::Strict,
 );
+#[cfg(any(test, feature = "pg_test"))]
+static EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum SpireRemoteSearchConsistencyModeGuc {
@@ -785,6 +790,17 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(any(test, feature = "pg_test"))]
+    GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_governance_test_namespace",
+        c"Test-only namespace for ec_spire remote-search governance advisory locks.",
+        c"Only available in pg_test builds; isolates parallel governance tests from cluster-wide advisory-lock keys.",
+        &EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -837,6 +853,16 @@ pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
 
 pub(super) fn current_session_remote_search_consistency_mode_name() -> &'static str {
     EC_SPIRE_REMOTE_SEARCH_CONSISTENCY_MODE_GUC.get().as_str()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(super) fn current_session_remote_search_governance_test_namespace() -> i32 {
+    EC_SPIRE_REMOTE_SEARCH_GOVERNANCE_TEST_NAMESPACE_GUC.get()
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+pub(super) fn current_session_remote_search_governance_test_namespace() -> i32 {
+    0
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> SpireNprobeResolution {

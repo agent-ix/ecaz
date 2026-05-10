@@ -724,8 +724,12 @@ Goal: make the coordinator-visible result stream production-correct.
     rows in a focused PG18 loopback fixture.
   - [ ] Add stale locator, duplicate cross-node replica, local-only
     node-scoped ID, and global-ID dedupe coverage on the final AM tuple path.
-  - [ ] Run a broader PG18 pgrx pass across coordinator fanout call sites once
+  - [x] Run a broader PG18 pgrx pass across coordinator fanout call sites once
     the packet `30753` sandbox loader issue is resolved.
+    - [x] Packet `30766` fixes pg_test-only advisory-governance test
+      namespacing so production governance/cancel tests do not interfere under
+      the default parallel pgrx runner, then validates
+      `cargo pgrx test pg18 test_ec_spire_prod_` with 20 passed tests.
 
 ### Stage E: Multi-Instance Epoch, Lifecycle, and Fault Matrix
 
