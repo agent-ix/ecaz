@@ -363,6 +363,19 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   overload-shedding diagnostics.
 - [ ] Cache validated remote index identity where safe and invalidate on epoch,
   descriptor, or version changes.
+  - [x] Define the cache contract in
+    `plan/design/spire-libpq-identity-cache.md`: key by coordinator index,
+    node, remote index, descriptor identity, and served epoch; bind descriptor
+    generation plus endpoint protocol/version/opclass/storage/profile
+    fingerprint; never store raw conninfo.
+  - [x] Pin invalidation triggers before implementation: descriptor
+    register/update/delete, descriptor generation or identity change,
+    served/retained epoch-window change, live fingerprint mismatch, extension
+    version change, opclass identity change, storage/assignment/profile change,
+    remote regclass change, and local extension upgrade.
+  - [x] Pin mismatch behavior before implementation: a live fingerprint change
+    invalidates the entry and reports `endpoint_identity_mismatch` rather than
+    silently reseating descriptor identity from the remote endpoint.
 - [ ] Verification: local multi-instance slow-remote fixture proves ready
   remotes are not serialized behind slow remotes; strict/degraded tests cover
   auth/cert failure, connection reset, remote timeout, backend termination, and
