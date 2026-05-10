@@ -81,6 +81,9 @@ Acceptance artifact:
 - [x] Add an explicit assignment-builder identity source hook so writer code can
   allocate either default local `0x01` IDs or caller-provided global `0x02`
   payload IDs without advancing the local sequence for global rows.
+- [x] Extend the SQL-visible vector identity contract with writer allocation,
+  stable source identity, Leaf V2 base-storage blocker, and row-encoded delta
+  storage status rows.
 - [ ] Emit durable global `0x02` `SpireVecId` values from the writer/build path
   when a stable source identity is available.
 - [ ] Define the stable source-identity input contract for build/insert paths;

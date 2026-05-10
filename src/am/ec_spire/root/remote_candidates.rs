@@ -3146,6 +3146,26 @@ pub(crate) fn remote_search_vector_identity_contract_rows(
             contract_value: "requires_global_vec_id_format",
             status: "global_id_required",
         },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "writer_identity_allocation_hook",
+            contract_value: "SpireVecIdSourceIdentity",
+            status: "phase11_2_landed",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "writer_global_source_identity",
+            contract_value: "stable_source_identity_required_not_heap_tid",
+            status: "phase11_2_required",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "writer_global_base_storage",
+            contract_value: "leaf_v2_base_objects_local_vec_id_only",
+            status: "blocked_until_variable_vec_id_format",
+        },
+        SpireRemoteSearchVectorIdentityContractRow {
+            contract_item: "writer_global_delta_storage",
+            contract_value: "row_encoded_delta_assignments_accept_global_vec_id",
+            status: "phase11_2_landed",
+        },
     ]
 }
 

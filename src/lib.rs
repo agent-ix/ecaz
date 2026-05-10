@@ -20505,6 +20505,18 @@ mod tests {
         ))
         .expect("vector identity local scope query should succeed")
         .expect("vector identity local scope should exist");
+        let writer_global_source_identity = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {identity_contract_from} \
+             WHERE contract_item = 'writer_global_source_identity'"
+        ))
+        .expect("vector identity writer source query should succeed")
+        .expect("vector identity writer source should exist");
+        let writer_global_base_storage_status = Spi::get_one::<String>(&format!(
+            "SELECT status {identity_contract_from} \
+             WHERE contract_item = 'writer_global_base_storage'"
+        ))
+        .expect("vector identity writer storage query should succeed")
+        .expect("vector identity writer storage should exist");
         let interpretation = Spi::get_one::<String>(&format!(
             "SELECT contract_value {locator_contract_from} \
              WHERE contract_item = 'coordinator_interpretation'"
@@ -20538,9 +20550,17 @@ mod tests {
         .expect("remote heap resolution locator should exist");
 
         assert_eq!(row_count, 4);
-        assert_eq!(identity_count, 6);
+        assert_eq!(identity_count, 10);
         assert_eq!(dedupe_key, "global_vec_id_or_node_scoped_local_vec_id");
         assert_eq!(local_scope, "node_id || local_vec_id_bytes");
+        assert_eq!(
+            writer_global_source_identity,
+            "stable_source_identity_required_not_heap_tid"
+        );
+        assert_eq!(
+            writer_global_base_storage_status,
+            "blocked_until_variable_vec_id_format"
+        );
         assert_eq!(interpretation, "opaque_bytes");
         assert_eq!(remote_resolution_status, "deferred_until_remote_heap_fetch");
         assert_eq!(heap_resolution_count, 2);
