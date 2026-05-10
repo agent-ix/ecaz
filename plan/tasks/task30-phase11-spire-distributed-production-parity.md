@@ -838,6 +838,12 @@ Goal: prove distributed correctness locally before AWS.
     pending for production transport, and strict/degraded logs are
     packet-local. Remaining Stage E fault and lifecycle rows still need
     fixture logs.
+  - [x] Packet `30780` adds the epoch-mismatch pre-dispatch runtime row:
+    strict mode blocks a stale remote served-epoch window at
+    `remote_epoch_window`, degraded mode records one `stale_epoch` skip while
+    the ready remote remains pending for production transport, and
+    strict/degraded logs are packet-local. Remaining Stage E fault and
+    lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
