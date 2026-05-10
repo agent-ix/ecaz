@@ -844,6 +844,13 @@ Goal: prove distributed correctness locally before AWS.
     the ready remote remains pending for production transport, and
     strict/degraded logs are packet-local. Remaining Stage E fault and
     lifecycle rows still need fixture logs.
+  - [x] Packet `30781` adds the missing/reindexed remote-index candidate
+    receive runtime row: strict mode records one
+    `remote_index_unavailable` candidate-receive failure while a ready
+    loopback candidate batch still decodes, degraded mode records one
+    `remote_index_unavailable` skip and advances the ready batch to
+    `remote_heap_resolution`, and strict/degraded logs are packet-local.
+    Remaining Stage E fault and lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 

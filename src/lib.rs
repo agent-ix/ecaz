@@ -10403,6 +10403,8 @@ fn ec_spire_remote_search_production_scan_handoff_summary(
         name!(dispatch_count, i64),
         name!(candidate_receive_ready_dispatch_count, i64),
         name!(candidate_receive_failed_dispatch_count, i64),
+        name!(degraded_skipped_dispatch_count, i64),
+        name!(first_degraded_skip_category, &'static str),
         name!(candidate_row_count, i64),
         name!(merged_candidate_count, i64),
         name!(duplicate_vec_id_count, i64),
@@ -10444,6 +10446,9 @@ fn ec_spire_remote_search_production_scan_handoff_summary(
             .expect("candidate receive ready dispatch count should fit in i64"),
         i64::try_from(row.candidate_receive_failed_dispatch_count)
             .expect("candidate receive failed dispatch count should fit in i64"),
+        i64::try_from(row.degraded_skipped_dispatch_count)
+            .expect("degraded skipped dispatch count should fit in i64"),
+        row.first_degraded_skip_category,
         i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
         i64::try_from(row.merged_candidate_count)
             .expect("merged candidate count should fit in i64"),
@@ -14883,6 +14888,195 @@ mod tests {
             row.first_transport_failure_category,
             i64::try_from(row.candidate_receive_pending_dispatch_count)
                 .expect("candidate receive pending count should fit in i64"),
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
+    }
+
+    fn ec_spire_test_candidate_receive_requests(
+        function_name: &str,
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+    ) -> Vec<am::SpireRemoteProductionCandidateReceiveRequest> {
+        if node_ids.len() != conninfo_secret_names.len()
+            || node_ids.len() != remote_index_regclasses.len()
+            || node_ids.len() != remote_index_identity_hexes.len()
+        {
+            pgrx::error!("{function_name} request arrays must have matching lengths");
+        }
+        let requested_epoch = u64::try_from(requested_epoch).unwrap_or_else(|_| {
+            pgrx::error!("{function_name} requested_epoch must be non-negative")
+        });
+        let top_k = usize::try_from(top_k)
+            .unwrap_or_else(|_| pgrx::error!("{function_name} top_k must be non-negative"));
+        let selected_pids = selected_pids
+            .into_iter()
+            .map(|selected_pid| {
+                u64::try_from(selected_pid).unwrap_or_else(|_| {
+                    pgrx::error!("{function_name} selected_pid must be non-negative")
+                })
+            })
+            .collect::<Vec<_>>();
+        node_ids
+            .into_iter()
+            .zip(conninfo_secret_names)
+            .zip(remote_index_regclasses)
+            .zip(remote_index_identity_hexes)
+            .map(
+                |(((node_id, conninfo_secret_name), remote_index_regclass), identity_hex)| {
+                    let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                        pgrx::error!("{function_name} node_id must be non-negative")
+                    });
+                    let provider_lookup_key =
+                        am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+                            .unwrap_or_else(|e| pgrx::error!("{function_name} {e}"));
+                    let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
+                        pgrx::error!(
+                            "{function_name} missing conninfo secret {conninfo_secret_name}"
+                        )
+                    });
+                    if conninfo.is_empty() {
+                        pgrx::error!(
+                            "{function_name} empty conninfo secret {conninfo_secret_name}"
+                        );
+                    }
+                    let remote_index_identity = hex::decode(&identity_hex).unwrap_or_else(|e| {
+                        pgrx::error!("{function_name} remote_index_identity hex decode failed: {e}")
+                    });
+                    am::SpireRemoteProductionCandidateReceiveRequest {
+                        node_id,
+                        conninfo,
+                        remote_index_regclass,
+                        remote_index_identity,
+                        requested_epoch,
+                        query: query.clone(),
+                        selected_pids: selected_pids.clone(),
+                        top_k,
+                        consistency_mode: consistency_mode.clone(),
+                    }
+                },
+            )
+            .collect::<Vec<_>>()
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_candidate_receive(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(node_id, i64),
+            name!(started_after_ms, i64),
+            name!(completed_after_ms, i64),
+            name!(elapsed_ms, i64),
+            name!(candidate_count, i64),
+            name!(status, &'static str),
+            name!(failure_category, &'static str),
+        ),
+    > {
+        let requests = ec_spire_test_candidate_receive_requests(
+            "ec_spire_test_production_candidate_receive",
+            node_ids,
+            conninfo_secret_names,
+            remote_index_regclasses,
+            remote_index_identity_hexes,
+            selected_pids,
+            requested_epoch,
+            query,
+            top_k,
+            consistency_mode,
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(requests);
+
+        TableIterator::new(rows.into_iter().map(|row| {
+            (
+                i64::from(row.node_id),
+                i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+                i64::try_from(row.completed_after_ms)
+                    .expect("completed_after_ms should fit in i64"),
+                i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+                i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
+                row.status,
+                row.failure_category,
+            )
+        }))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_candidate_receive_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(candidate_receive_sent_dispatch_count, i64),
+            name!(candidate_receive_ready_dispatch_count, i64),
+            name!(candidate_receive_failed_dispatch_count, i64),
+            name!(first_candidate_receive_failure_category, &'static str),
+            name!(candidate_row_count, i64),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let requests = ec_spire_test_candidate_receive_requests(
+            "ec_spire_test_production_candidate_receive_summary",
+            node_ids,
+            conninfo_secret_names,
+            remote_index_regclasses,
+            remote_index_identity_hexes,
+            selected_pids,
+            requested_epoch,
+            query,
+            top_k,
+            consistency_mode.clone(),
+        );
+        let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
+            requests,
+            &consistency_mode,
+        );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.candidate_receive_sent_dispatch_count)
+                .expect("candidate receive sent count should fit in i64"),
+            i64::try_from(row.candidate_receive_ready_dispatch_count)
+                .expect("candidate receive ready count should fit in i64"),
+            i64::try_from(row.candidate_receive_failed_dispatch_count)
+                .expect("candidate receive failed count should fit in i64"),
+            row.first_candidate_receive_failure_category,
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
             i64::try_from(row.degraded_skipped_dispatch_count)
                 .expect("degraded skipped count should fit in i64"),
             row.first_degraded_skip_category,

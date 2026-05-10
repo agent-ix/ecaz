@@ -740,6 +740,8 @@ pub(crate) struct SpireRemoteProductionScanHandoffSummaryRow {
     pub(crate) dispatch_count: u64,
     pub(crate) candidate_receive_ready_dispatch_count: u64,
     pub(crate) candidate_receive_failed_dispatch_count: u64,
+    pub(crate) degraded_skipped_dispatch_count: u64,
+    pub(crate) first_degraded_skip_category: &'static str,
     pub(crate) candidate_row_count: u64,
     pub(crate) merged_candidate_count: u64,
     pub(crate) duplicate_vec_id_count: u64,

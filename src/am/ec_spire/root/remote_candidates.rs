@@ -3300,6 +3300,66 @@ pub(crate) fn remote_search_production_candidate_receive_for_test(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_candidate_receive_summary_for_test(
+    requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
+    consistency_mode: &str,
+) -> SpireRemoteProductionExecutorStateSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        let consistency_mode_name =
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        let requested_epoch = requests
+            .first()
+            .map(|request| request.requested_epoch)
+            .unwrap_or(1);
+        let dispatch_rows = requests
+            .iter()
+            .map(|request| SpireRemoteSearchLibpqDispatchPlanRow {
+                requested_epoch,
+                node_id: request.node_id,
+                selected_pids: request.selected_pids.clone(),
+                pid_count: u64::try_from(request.selected_pids.len()).unwrap_or(u64::MAX),
+                query_dimension: u64::try_from(request.query.len()).unwrap_or(u64::MAX),
+                top_k: u64::try_from(request.top_k).unwrap_or(u64::MAX),
+                consistency_mode: consistency_mode_name,
+                sql_template: SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
+                parameter_count: 6,
+                result_column_count: 11,
+                conninfo_secret_name: format!("tests/node/{}", request.node_id),
+                remote_index_regclass: request.remote_index_regclass.clone(),
+                descriptor_generation: 1,
+                remote_index_identity: request.remote_index_identity.clone(),
+                pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+                dispatch_action: SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+                receive_validator: "test_candidate_receive",
+                status: SPIRE_REMOTE_STATUS_READY,
+            })
+            .collect::<Vec<_>>();
+        let transport_rows = requests
+            .iter()
+            .map(|request| SpireRemoteProductionTransportProbeRow {
+                node_id: request.node_id,
+                started_after_ms: 0,
+                completed_after_ms: 0,
+                elapsed_ms: 0,
+                row_count: 1,
+                status: SPIRE_REMOTE_STATUS_READY,
+                failure_category: SPIRE_REMOTE_NONE,
+            })
+            .collect::<Vec<_>>();
+        let receive_results =
+            SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(requests)?;
+        remote_search_production_executor_state_summary_from_candidate_receive_results_with_consistency_mode(
+            requested_epoch,
+            &dispatch_rows,
+            &transport_rows,
+            &receive_results,
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn remote_search_production_candidate_receive_with_local_cancel_for_test(
     requests: Vec<SpireRemoteProductionCandidateReceiveRequest>,
     local_cancel_after_ms: u64,
@@ -5430,6 +5490,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
                 dispatch_count: 0,
                 candidate_receive_ready_dispatch_count: 0,
                 candidate_receive_failed_dispatch_count: 0,
+                degraded_skipped_dispatch_count: 0,
+                first_degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_row_count: 0,
                 merged_candidate_count: 0,
                 duplicate_vec_id_count: 0,
@@ -5492,6 +5554,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
                 dispatch_count: 0,
                 candidate_receive_ready_dispatch_count: 0,
                 candidate_receive_failed_dispatch_count: 0,
+                degraded_skipped_dispatch_count: 0,
+                first_degraded_skip_category: SPIRE_REMOTE_NONE,
                 candidate_row_count: 0,
                 merged_candidate_count: 0,
                 duplicate_vec_id_count: 0,
@@ -5587,6 +5651,8 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
             candidate_receive_ready_dispatch_count: summary.candidate_receive_ready_dispatch_count,
             candidate_receive_failed_dispatch_count: summary
                 .candidate_receive_failed_dispatch_count,
+            degraded_skipped_dispatch_count: summary.degraded_skipped_dispatch_count,
+            first_degraded_skip_category: summary.first_degraded_skip_category,
             candidate_row_count: summary.candidate_row_count,
             merged_candidate_count,
             duplicate_vec_id_count: merge.duplicate_vec_id_count,
