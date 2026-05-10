@@ -748,6 +748,9 @@ Goal: make the final local readiness bundle reproducible.
 
 - [ ] Extend `ecaz` with setup/load/query/teardown and distributed benchmark
   commands for the local multi-instance fixture.
+  - [x] Packet `30759` fixes installed `ecaz dev install ecaz-pg-test --pg 18`
+    repo-root discovery, so packet and reviewer workflows can use the operator
+    install surface instead of falling back to direct `cargo pgrx install`.
 - [ ] Publish a runbook with numeric local targets for max remotes, concurrent
   coordinator queries, per-remote work, PIDs per node, and overload behavior.
 - [ ] Capture recall, latency p50/p95/p99, fanout, heap rows, timeout/cancel,

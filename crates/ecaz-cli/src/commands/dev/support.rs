@@ -17,10 +17,36 @@ pub(crate) struct PgrxInstall {
 }
 
 pub(crate) fn repo_root() -> Result<PathBuf> {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .wrap_err("resolving repo root from crates/ecaz-cli")
+    let mut anchors = Vec::new();
+    anchors.push(env::current_dir().wrap_err("resolving current working directory")?);
+    anchors.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    if let Ok(current_exe) = env::current_exe() {
+        anchors.push(current_exe);
+    }
+
+    for anchor in anchors {
+        if let Some(root) = find_repo_root_from(&anchor) {
+            return Ok(root);
+        }
+    }
+
+    bail!("could not locate ecaz repo root; run from the repository checkout")
+}
+
+fn find_repo_root_from(anchor: &Path) -> Option<PathBuf> {
+    let start = if anchor.is_file() {
+        anchor.parent()?
+    } else {
+        anchor
+    };
+    for candidate in start.ancestors() {
+        if candidate.join("Cargo.toml").is_file()
+            && candidate.join("crates/ecaz-cli/Cargo.toml").is_file()
+        {
+            return candidate.canonicalize().ok();
+        }
+    }
+    None
 }
 
 pub(crate) fn default_pgrx_home() -> PathBuf {
@@ -212,5 +238,29 @@ mod tests {
             pg17 = "/opt/homebrew/opt/postgresql@17/bin/pg_config"
         "#;
         assert!(read_pgrx_config_pg_config(config, "pg18").is_none());
+    }
+
+    #[test]
+    fn finds_repo_root_from_nested_checkout_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("ecaz");
+        fs::create_dir_all(root.join("crates/ecaz-cli/src/commands")).unwrap();
+        fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+        fs::write(root.join("crates/ecaz-cli/Cargo.toml"), "[package]\n").unwrap();
+
+        assert_eq!(
+            find_repo_root_from(&root.join("crates/ecaz-cli/src/commands")).unwrap(),
+            root.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn does_not_treat_crate_directory_as_repo_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let crate_dir = temp.path().join("crates/ecaz-cli");
+        fs::create_dir_all(&crate_dir).unwrap();
+        fs::write(crate_dir.join("Cargo.toml"), "[package]\n").unwrap();
+
+        assert!(find_repo_root_from(&crate_dir).is_none());
     }
 }
