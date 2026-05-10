@@ -859,6 +859,13 @@ Goal: prove distributed correctness locally before AWS.
     `remote_heap_resolution`, and strict/degraded logs are packet-local.
     Remaining Stage E transport, timeout/cancel, OOM, and lifecycle rows still
     need fixture logs.
+  - [x] Packet `30783` adds the remote statement-timeout transport runtime
+    row: strict mode records one `remote_statement_timeout` transport failure
+    while a ready remote still completes, degraded mode records one
+    `remote_statement_timeout` skip and advances the ready remote to
+    `compact_candidate_receive`, and strict/degraded logs are packet-local.
+    Remaining Stage E backend termination, connection reset, local
+    timeout/cancel, OOM, and lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 

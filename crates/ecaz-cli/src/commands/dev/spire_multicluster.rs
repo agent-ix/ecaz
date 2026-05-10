@@ -134,6 +134,7 @@ enum StageEFaultCase {
     EpochMismatch,
     FingerprintMismatch,
     MissingOrReindexedRemoteIndex,
+    RemoteStatementTimeout,
     VersionSkew,
     SimulatedNetworkPartition,
 }
@@ -144,6 +145,7 @@ impl StageEFaultCase {
             StageEFaultCase::EpochMismatch => "epoch_mismatch",
             StageEFaultCase::FingerprintMismatch => "fingerprint_mismatch",
             StageEFaultCase::MissingOrReindexedRemoteIndex => "missing_or_reindexed_remote_index",
+            StageEFaultCase::RemoteStatementTimeout => "remote_statement_timeout",
             StageEFaultCase::VersionSkew => "version_skew",
             StageEFaultCase::SimulatedNetworkPartition => "simulated_network_partition",
         }
@@ -157,6 +159,9 @@ impl StageEFaultCase {
             StageEFaultCase::FingerprintMismatch
             | StageEFaultCase::MissingOrReindexedRemoteIndex => {
                 "scripts/run_spire_multicluster_stage_e_candidate_receive_fault_pg18.sh"
+            }
+            StageEFaultCase::RemoteStatementTimeout => {
+                "scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh"
             }
             StageEFaultCase::SimulatedNetworkPartition => {
                 "scripts/run_spire_multicluster_stage_e_network_partition_pg18.sh"
@@ -175,11 +180,14 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
         "missing_or_reindexed_remote_index" | "missing-or-reindexed-remote-index" => {
             Ok(StageEFaultCase::MissingOrReindexedRemoteIndex)
         }
+        "remote_statement_timeout" | "remote-statement-timeout" => {
+            Ok(StageEFaultCase::RemoteStatementTimeout)
+        }
         "simulated_network_partition" | "simulated-network-partition" => {
             Ok(StageEFaultCase::SimulatedNetworkPartition)
         }
         other => Err(format!(
-            "unsupported Stage E fault case {other:?}; supported: epoch_mismatch, fingerprint_mismatch, missing_or_reindexed_remote_index, simulated_network_partition, version_skew"
+            "unsupported Stage E fault case {other:?}; supported: epoch_mismatch, fingerprint_mismatch, missing_or_reindexed_remote_index, remote_statement_timeout, simulated_network_partition, version_skew"
         )),
     }
 }
