@@ -1,0 +1,74 @@
+{
+  "name": "profile-hnsw-100k",
+  "schema_version": 1,
+  "artifact_dir": "artifacts/benchmark-profiles/profile-hnsw-100k",
+  "defaults": {
+    "profile": "ec_hnsw",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-hnsw-real100k-m16",
+      "tags": ["load", "hnsw", "real100k", "m16"],
+      "prefix": "profile_real100k_hnsw_m16",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "profile": "ec_hnsw",
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "artifacts/benchmark-profiles/profile-hnsw-100k/load-hnsw-real100k-m16.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real100k-ef-sweep",
+      "tags": ["recall", "hnsw", "real100k", "m16"],
+      "prefix": "profile_real100k_hnsw_m16",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-hnsw-100k/truth-real100k-k10.json",
+      "log_output": "artifacts/benchmark-profiles/profile-hnsw-100k/recall-hnsw-real100k-ef-sweep.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real100k-ef-sweep",
+      "tags": ["latency", "hnsw", "real100k", "m16"],
+      "prefix": "profile_real100k_hnsw_m16",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "log_output": "artifacts/benchmark-profiles/profile-hnsw-100k/latency-hnsw-real100k-ef-sweep.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-hnsw-real100k-m16",
+      "tags": ["storage", "hnsw", "real100k", "m16"],
+      "prefix": "profile_real100k_hnsw_m16",
+      "log_file": "artifacts/benchmark-profiles/profile-hnsw-100k/storage-hnsw-real100k-m16.log"
+    },
+    {
+      "kind": "compare-pgvector",
+      "name": "compare-pgvector-real100k-hnsw",
+      "tags": ["compare", "pgvector", "hnsw", "real100k", "m16"],
+      "prefix": "profile_real100k_hnsw_m16",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64, 128, 200, 400],
+      "pgvector_m": 16,
+      "pgvector_ef_construction": 128,
+      "rebuild": true,
+      "log_file": "artifacts/benchmark-profiles/profile-hnsw-100k/compare-pgvector-real100k-hnsw.log"
+    }
+  ]
+}

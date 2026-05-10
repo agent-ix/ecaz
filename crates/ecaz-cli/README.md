@@ -243,9 +243,11 @@ easy to lose or mis-record.
 Committed reusable suites live under [crates/ecaz-cli/suites](/Users/peter/dev/tqvector/crates/ecaz-cli/suites). The intended tiering is:
 
 - `profile-cross-engine-real10k.json`: repeatable DiskANN/HNSW + pgvector/pgvectorscale comparison lane.
+- `profile-hnsw-100k.json`: standard-machine HNSW lane with matched pgvector comparison.
 - `profile-ivf-25k.json`: smaller-box IVF lane.
 - `profile-ivf-50k.json`: mid-scale IVF lane.
 - `profile-ivf-100k.json`: standard 64 GiB box IVF lane.
+- `profile-ivf-1m.json`: opt-in scale IVF lane with suite-driven fetch + prepare + chunked load.
 
 For a single repeatable entrypoint, use [scripts/run_benchmark_profile.sh](/Users/peter/dev/tqvector/scripts/run_benchmark_profile.sh):
 
@@ -257,8 +259,9 @@ scripts/run_benchmark_profile.sh standard --dry-run \
 Tier guidance:
 
 - `small`: weaker laptops that should avoid the 100k IVF lane.
-- `standard`: 64 GiB development machines; includes real10k cross-engine plus IVF 100k.
-- `full`: standard plus additional 25k and 50k IVF scale checkpoints.
+- `standard`: 64 GiB development machines; includes real10k cross-engine, HNSW 100k, and IVF 100k.
+- `full`: standard plus additional 25k and 50k IVF checkpoints.
+- `scale`: full plus the suite-driven `1M` IVF lane. This is where the M5/64 GiB box should stretch, while weaker laptops should stay below it.
 
 The first-supported config schema is JSON `schema_version: 1`:
 
@@ -308,9 +311,11 @@ The first-supported config schema is JSON `schema_version: 1`:
 
 Supported step kinds are:
 
+- `corpus-fetch`: expands to `ecaz corpus fetch` so larger reusable suites can fetch their own parquet input tree.
+- `corpus-prepare`: expands to `ecaz corpus prepare`, including optional `chunk_rows` for chunked large-corpus staging.
 - `load`: expands to `ecaz corpus load`, including profile, corpus/query TSVs,
-  optional manifest, native HNSW `m` / `ef_construction`, reloptions, and
-  `--log-file`.
+  optional manifest, chunked-manifest loading, native HNSW `m` /
+  `ef_construction`, reloptions, and `--log-file`.
 - `recall`: expands to `ecaz bench recall`, including `k`, sweep values,
   truth cache, query limit, rerank width, and `--log-output`.
 - `latency`: expands to `ecaz bench latency`, including sweep values,

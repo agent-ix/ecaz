@@ -1,0 +1,103 @@
+{
+  "name": "profile-ivf-1m",
+  "schema_version": 1,
+  "artifact_dir": "artifacts/benchmark-profiles/profile-ivf-1m",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 50,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "tags": ["setup", "fetch", "ivf", "real1m"],
+      "dataset": "dbpedia-openai3-large-1536-1m",
+      "output_dir": "data/benchmark-profile-inputs/dbpedia-openai3-1m-fetch"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ann-benchmarks-anchor",
+      "tags": ["setup", "prepare", "ivf", "real1m"],
+      "profile": "ec_hnsw_real_ann_benchmarks_anchor",
+      "parquet": "data/benchmark-profile-inputs/dbpedia-openai3-1m-fetch/data",
+      "output_dir": "data/benchmark-profile-inputs/dbpedia-openai3-1m-staged",
+      "chunk_rows": 25000
+    },
+    {
+      "kind": "load",
+      "name": "load-real1m-n1024-w1000",
+      "tags": ["load", "ivf", "real1m", "n1024", "w1000"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "manifest_file": "data/benchmark-profile-inputs/dbpedia-openai3-1m-staged/ec_hnsw_real_ann_benchmarks_anchor_manifest.json",
+      "chunked": true,
+      "profile": "ec_ivf",
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=1024",
+        "nprobe=64",
+        "rerank=heap_f32",
+        "rerank_width=1000"
+      ],
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-1m/load-real1m-n1024-w1000.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall10-real1m-nprobe-sweep",
+      "tags": ["recall", "ivf", "real1m", "n1024", "w1000"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 1000,
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-ivf-1m/truth-real1m-k10.json",
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-1m/recall10-real1m-nprobe-sweep.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real1m-nprobe-sweep",
+      "tags": ["latency", "ivf", "real1m", "n1024", "w1000"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 1000,
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-1m/latency-real1m-nprobe-sweep.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall100-real1m-candidates",
+      "tags": ["recall", "ivf", "real1m", "n1024", "w1000", "k100"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "k": 100,
+      "sweep": [96, 128],
+      "rerank_width": 1000,
+      "truth_cache_file": "artifacts/benchmark-profiles/profile-ivf-1m/truth-real1m-k100.json",
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-1m/recall100-real1m-candidates.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real1m-n1024",
+      "tags": ["storage", "ivf", "real1m", "n1024"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "log_file": "artifacts/benchmark-profiles/profile-ivf-1m/storage-real1m-n1024.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-real1m-quality-candidate",
+      "tags": ["explain", "ivf", "real1m", "n1024", "w1000"],
+      "prefix": "ec_hnsw_real_ann_benchmarks_anchor",
+      "index_name": "ec_hnsw_real_ann_benchmarks_anchor_idx",
+      "nprobe": 128,
+      "rerank_width": 1000,
+      "sql_file": "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.sql",
+      "log_output": "artifacts/benchmark-profiles/profile-ivf-1m/explain-real1m-quality-candidate.log"
+    }
+  ]
+}
