@@ -222,6 +222,20 @@ mod tests {
         }
     }
 
+    fn global_vec_id(fill: u8) -> SpireVecId {
+        SpireVecId::global(&[fill; 16]).unwrap()
+    }
+
+    fn global_primary_row(
+        fill: u8,
+        block_number: u32,
+        offset_number: u16,
+    ) -> SpireLeafAssignmentRow {
+        let mut row = primary_row(u64::from(fill), block_number, offset_number);
+        row.vec_id = global_vec_id(fill);
+        row
+    }
+
     fn delta_insert_row(
         vec_seq: u64,
         block_number: u32,

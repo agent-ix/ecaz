@@ -109,7 +109,7 @@ Acceptance artifact:
   across leaves, stores, and remote nodes.
 - [x] Add migration/rewrite or compatibility diagnostics for indexes that still
   contain only node-local IDs.
-- [ ] Add tests proving unrelated node-local IDs do not dedupe, while replicated
+- [x] Add tests proving unrelated node-local IDs do not dedupe, while replicated
   global IDs do dedupe.
 
 ## Phase 11.3: Remote Search Endpoint Contract
@@ -257,24 +257,24 @@ Goal: make real build/insert writers capable of emitting stable global IDs.
 - [x] Canonicalize included `uuid` and exact-16-byte `bytea` values to
   `StableFixedGlobalPayload([u8; 16])`; reject NULL, unsupported types, and
   malformed bytea values.
-- [ ] Thread source identity through populated build, empty-index insert
+- [x] Thread source identity through populated build, empty-index insert
   bootstrap, live insert deltas, boundary replicas, and scheduled replacement
   paths without advancing local ID sequence for global rows.
-- [x] Populated build, empty-index insert bootstrap, live insert deltas, and
-  boundary assignment paths are threaded; scheduled replacement paths remain
-  open before this item can close.
 - [x] Add diagnostics for three index classes: local-only, global-capable but
   not yet remote-published, and global-writer active.
-- [ ] Verification: PG18 DDL tests for accepted/rejected index shapes; build
+- [x] Verification: PG18 DDL tests for accepted/rejected index shapes; build
   and insert tests proving global IDs land in Leaf V2/delta rows; tests proving
   replicas share one global ID and local-only indexes remain node-scoped.
 - [x] Verification landed for accepted/rejected index shapes plus populated
-  build, empty-index bootstrap, and live insert delta global IDs:
+  build, empty-index bootstrap, live insert delta global IDs, scheduled
+  replacement preservation, boundary-row global ID reuse, and node-local
+  namespace scoping:
   `cargo test source_identity --lib`,
   `cargo test remote_candidate_batch_validation --lib`,
+  `cargo test global_vec_ids --lib`,
+  `cargo test local_vec_ids_by_node --lib`,
   `cargo pgrx test pg18 test_ec_spire_srcid`, and
   `cargo pgrx test pg18 test_ec_spire_include_requires_srcid_reloption`.
-  Replica-specific proof and local-only namespace proof remain open.
 
 ### Stage B: Production Remote Endpoint
 

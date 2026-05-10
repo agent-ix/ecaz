@@ -42,6 +42,48 @@
     }
 
     #[test]
+    fn merge_replacement_leaf_input_preserves_global_vec_ids() {
+        let decision = SpireLeafReplacementScheduleDecision {
+            mode: SpireLeafReplacementScheduleMode::Merge,
+            active_epoch: 7,
+            replaced_parent_pid: 1,
+            affected_leaf_pids: vec![11, 12],
+            replacement_leaf_count: 1,
+            reason: "test_merge",
+        };
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30],
+            reuses_existing_pid: false,
+            next_pid: 31,
+        };
+
+        let input = build_merge_replacement_leaf_object_input(
+            &decision,
+            &pid_plan,
+            vec![
+                SpireReplacementLeafRows {
+                    base_pid: 11,
+                    rows: vec![global_primary_row(0x11, 20, 1)],
+                },
+                SpireReplacementLeafRows {
+                    base_pid: 12,
+                    rows: vec![global_primary_row(0x22, 20, 2)],
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            input
+                .rows
+                .iter()
+                .map(|row| row.vec_id.clone())
+                .collect::<Vec<_>>(),
+            vec![global_vec_id(0x11), global_vec_id(0x22)]
+        );
+    }
+
+    #[test]
     fn merge_replacement_leaf_input_rejects_wrong_mode_or_row_set() {
         let split_decision = SpireLeafReplacementScheduleDecision {
             mode: SpireLeafReplacementScheduleMode::Split,
@@ -481,6 +523,43 @@
             materialized.leaf_inputs[0].rows[1].vec_id,
             materialized.leaf_inputs[1].rows[1].vec_id
         );
+    }
+
+    #[test]
+    fn split_replacement_materialization_reuses_global_vec_ids_for_boundary_rows() {
+        let decision = scheduled_split_decision(7);
+        let pid_plan = SpireLeafReplacementPidPlan {
+            replacement_pids: vec![30, 31],
+            reuses_existing_pid: false,
+            next_pid: 32,
+        };
+
+        let materialized = build_split_replacement_leaf_materialization(
+            &decision,
+            &pid_plan,
+            vec![
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: global_primary_row(0x11, 20, 1),
+                    source_vector: vec![1.0, 0.0],
+                },
+                SpireSplitReplacementSourceRow {
+                    base_pid: 12,
+                    assignment: global_primary_row(0x22, 20, 2),
+                    source_vector: vec![-1.0, 0.0],
+                },
+            ],
+            1,
+            2,
+            42,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(materialized.leaf_inputs[0].rows[0].vec_id, global_vec_id(0x11));
+        assert_eq!(materialized.leaf_inputs[1].rows[0].vec_id, global_vec_id(0x11));
+        assert_eq!(materialized.leaf_inputs[0].rows[1].vec_id, global_vec_id(0x22));
+        assert_eq!(materialized.leaf_inputs[1].rows[1].vec_id, global_vec_id(0x22));
     }
 
     #[test]
