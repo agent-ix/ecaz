@@ -2568,7 +2568,7 @@ fn failed_production_candidate_receive_result(
         completed_after_ms: elapsed_millis_u64(batch_start),
         elapsed_ms: elapsed_millis_u64(request_start),
         candidate_count: 0,
-        status: SPIRE_REMOTE_STATUS_PRODUCTION_TRANSPORT_FAILED,
+        status: SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
         failure_category,
         batch: None,
     }

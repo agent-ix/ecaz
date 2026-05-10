@@ -387,6 +387,8 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
   - [x] Add a test-facing async compact-candidate receive adapter that uses
     `tokio-postgres`, decodes existing `ec_spire_remote_search(...)` rows, and
     validates the candidate batch contract.
+  - [x] Add multi-node receive isolation coverage so a ready remote can return
+    candidates while failed remotes preserve per-row failure categories.
   - [x] Wire compact-candidate receive results into production executor state
     with explicit pending, ready, failed, and candidate-row counters.
   - [ ] Wire the adapter into compact candidate receive and AM scan production
