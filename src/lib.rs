@@ -9772,6 +9772,12 @@ fn ec_spire_remote_search_production_executor_state_summary(
         name!(transport_failed_dispatch_count, i64),
         name!(transport_row_count, i64),
         name!(first_transport_failure_category, &'static str),
+        name!(candidate_receive_pending_dispatch_count, i64),
+        name!(candidate_receive_sent_dispatch_count, i64),
+        name!(candidate_receive_ready_dispatch_count, i64),
+        name!(candidate_receive_failed_dispatch_count, i64),
+        name!(candidate_row_count, i64),
+        name!(first_candidate_receive_failure_category, &'static str),
         name!(next_executor_step, &'static str),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -9846,6 +9852,16 @@ fn ec_spire_remote_search_production_executor_state_summary(
             .expect("transport failed dispatch count should fit in i64"),
         i64::try_from(row.transport_row_count).expect("transport row count should fit in i64"),
         row.first_transport_failure_category,
+        i64::try_from(row.candidate_receive_pending_dispatch_count)
+            .expect("candidate receive pending dispatch count should fit in i64"),
+        i64::try_from(row.candidate_receive_sent_dispatch_count)
+            .expect("candidate receive sent dispatch count should fit in i64"),
+        i64::try_from(row.candidate_receive_ready_dispatch_count)
+            .expect("candidate receive ready dispatch count should fit in i64"),
+        i64::try_from(row.candidate_receive_failed_dispatch_count)
+            .expect("candidate receive failed dispatch count should fit in i64"),
+        i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+        row.first_candidate_receive_failure_category,
         row.next_executor_step,
         row.status,
         row.recommendation,
@@ -23580,6 +23596,21 @@ mod tests {
         ))
         .expect("transport failure category query should succeed")
         .expect("transport failure category should exist");
+        let candidate_receive_pending_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT candidate_receive_pending_dispatch_count {prod_state_from}"
+        ))
+        .expect("candidate receive pending dispatch count query should succeed")
+        .expect("candidate receive pending dispatch count should exist");
+        let candidate_receive_sent_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT candidate_receive_sent_dispatch_count {prod_state_from}"
+        ))
+        .expect("candidate receive sent dispatch count query should succeed")
+        .expect("candidate receive sent dispatch count should exist");
+        let first_candidate_receive_failure_category = Spi::get_one::<String>(&format!(
+            "SELECT first_candidate_receive_failure_category {prod_state_from}"
+        ))
+        .expect("candidate receive failure category query should succeed")
+        .expect("candidate receive failure category should exist");
         let next_executor_step =
             Spi::get_one::<String>(&format!("SELECT next_executor_step {prod_state_from}"))
                 .expect("next executor step query should succeed")
@@ -23597,6 +23628,9 @@ mod tests {
         assert_eq!(transport_pending_dispatch_count, 1);
         assert_eq!(transport_sent_dispatch_count, 0);
         assert_eq!(first_transport_failure_category, "none");
+        assert_eq!(candidate_receive_pending_dispatch_count, 0);
+        assert_eq!(candidate_receive_sent_dispatch_count, 0);
+        assert_eq!(first_candidate_receive_failure_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");
         assert_eq!(status, "requires_production_transport_adapter");
     }

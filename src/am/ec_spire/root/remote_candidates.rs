@@ -79,6 +79,7 @@ const SPIRE_REMOTE_PRODUCTION_CANDIDATE_VALIDATION_FAILED: &str =
 const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_invalid_parameters";
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
+const SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED: &str = "remote_candidate_receive_failed";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -2595,6 +2596,8 @@ enum SpireRemoteProductionDispatchState {
     BlockedBeforeDispatch,
     TransportReady,
     TransportFailed,
+    CandidateReceiveReady,
+    CandidateReceiveFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2606,6 +2609,8 @@ struct SpireRemoteProductionDispatch {
     next_executor_step: &'static str,
     transport_row_count: u64,
     transport_failure_category: &'static str,
+    candidate_count: u64,
+    candidate_failure_category: &'static str,
 }
 
 impl SpireRemoteProductionDispatch {
@@ -2619,6 +2624,8 @@ impl SpireRemoteProductionDispatch {
                 next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
                 transport_row_count: 0,
                 transport_failure_category: SPIRE_REMOTE_NONE,
+                candidate_count: 0,
+                candidate_failure_category: SPIRE_REMOTE_NONE,
             }
         } else {
             Self {
@@ -2629,6 +2636,8 @@ impl SpireRemoteProductionDispatch {
                 next_executor_step: remote_search_pre_dispatch_blocker_step(row.status),
                 transport_row_count: 0,
                 transport_failure_category: SPIRE_REMOTE_NONE,
+                candidate_count: 0,
+                candidate_failure_category: SPIRE_REMOTE_NONE,
             }
         }
     }
@@ -2654,6 +2663,48 @@ impl SpireRemoteProductionDispatch {
             self.state = SpireRemoteProductionDispatchState::TransportFailed;
             self.status = row.status;
             self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT;
+        }
+        Ok(())
+    }
+
+    fn apply_candidate_receive_result(
+        &mut self,
+        result: &SpireRemoteProductionCandidateReceiveResult,
+    ) -> Result<(), String> {
+        if self.state != SpireRemoteProductionDispatchState::TransportReady {
+            return Err(format!(
+                "ec_spire production executor candidate receive outcome for node_id {} cannot apply to dispatch state {:?}",
+                result.node_id, self.state
+            ));
+        }
+
+        self.candidate_failure_category = result.failure_category;
+        if result.status == SPIRE_REMOTE_STATUS_READY {
+            let Some(batch) = result.batch.as_ref() else {
+                return Err(format!(
+                    "ec_spire production executor candidate receive outcome for node_id {} is ready without a candidate batch",
+                    result.node_id
+                ));
+            };
+            let batch_candidate_count = u64::try_from(batch.candidates.len()).map_err(|_| {
+                "ec_spire production executor candidate receive batch count exceeds u64"
+                    .to_owned()
+            })?;
+            if result.candidate_count != batch_candidate_count {
+                return Err(format!(
+                    "ec_spire production executor candidate receive outcome for node_id {} reports {} candidates but batch contains {}",
+                    result.node_id, result.candidate_count, batch_candidate_count
+                ));
+            }
+            self.candidate_count = result.candidate_count;
+            self.state = SpireRemoteProductionDispatchState::CandidateReceiveReady;
+            self.status = SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP;
+            self.next_executor_step = "remote_heap_resolution";
+        } else {
+            self.candidate_count = 0;
+            self.state = SpireRemoteProductionDispatchState::CandidateReceiveFailed;
+            self.status = SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED;
+            self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE;
         }
         Ok(())
     }
@@ -2708,6 +2759,29 @@ impl SpireRemoteFanoutExecutor {
         Ok(())
     }
 
+    fn apply_candidate_receive_results(
+        &mut self,
+        results: &[SpireRemoteProductionCandidateReceiveResult],
+    ) -> Result<(), String> {
+        for result in results {
+            let dispatch = self
+                .dispatches
+                .iter_mut()
+                .find(|dispatch| {
+                    dispatch.node_id == result.node_id
+                        && dispatch.state == SpireRemoteProductionDispatchState::TransportReady
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "ec_spire production executor candidate receive outcome for node_id {} does not match a transport-ready dispatch",
+                        result.node_id
+                    )
+                })?;
+            dispatch.apply_candidate_receive_result(result)?;
+        }
+        Ok(())
+    }
+
     fn summary(&self) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
         let mut planned_dispatch_count = 0_u64;
         let mut blocked_before_dispatch_count = 0_u64;
@@ -2720,6 +2794,12 @@ impl SpireRemoteFanoutExecutor {
         let mut transport_failed_dispatch_count = 0_u64;
         let mut transport_row_count = 0_u64;
         let mut first_transport_failure_category = SPIRE_REMOTE_NONE;
+        let mut candidate_receive_pending_dispatch_count = 0_u64;
+        let mut candidate_receive_sent_dispatch_count = 0_u64;
+        let mut candidate_receive_ready_dispatch_count = 0_u64;
+        let mut candidate_receive_failed_dispatch_count = 0_u64;
+        let mut candidate_row_count = 0_u64;
+        let mut first_candidate_receive_failure_category = SPIRE_REMOTE_NONE;
         let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
         let mut first_blocked_step = SPIRE_REMOTE_NONE;
 
@@ -2800,6 +2880,12 @@ impl SpireRemoteFanoutExecutor {
                         "remote production executor state summary",
                         "transport row",
                     )?;
+                    add_remote_count(
+                        &mut candidate_receive_pending_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-pending dispatch",
+                    )?;
                 }
                 SpireRemoteProductionDispatchState::TransportFailed => {
                     if transport_failed_dispatch_count == 0 {
@@ -2830,6 +2916,104 @@ impl SpireRemoteFanoutExecutor {
                         "transport-failed dispatch",
                     )?;
                 }
+                SpireRemoteProductionDispatchState::CandidateReceiveReady => {
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_row_count,
+                        dispatch.transport_row_count,
+                        "remote production executor state summary",
+                        "transport row",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_row_count,
+                        dispatch.candidate_count,
+                        "remote production executor state summary",
+                        "candidate row",
+                    )?;
+                }
+                SpireRemoteProductionDispatchState::CandidateReceiveFailed => {
+                    if candidate_receive_failed_dispatch_count == 0 {
+                        first_candidate_receive_failure_category =
+                            dispatch.candidate_failure_category;
+                    }
+                    add_remote_count(
+                        &mut planned_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "planned dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut planned_pid_count,
+                        dispatch.pid_count,
+                        "remote production executor state summary",
+                        "planned PID",
+                    )?;
+                    add_remote_count(
+                        &mut transport_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_ready_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "transport-ready dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut transport_row_count,
+                        dispatch.transport_row_count,
+                        "remote production executor state summary",
+                        "transport row",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_sent_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-sent dispatch",
+                    )?;
+                    add_remote_count(
+                        &mut candidate_receive_failed_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "candidate-receive-failed dispatch",
+                    )?;
+                }
             }
         }
 
@@ -2854,11 +3038,23 @@ impl SpireRemoteFanoutExecutor {
                 SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
                 "implement production async or libpq pipeline transport before remote fanout execution",
             )
-        } else if transport_ready_dispatch_count > 0 {
+        } else if candidate_receive_failed_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
+                SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+                "inspect production candidate receive failure category before merge",
+            )
+        } else if candidate_receive_pending_dispatch_count > 0 {
             (
                 SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE,
                 SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE,
                 "wire production compact candidate receive before AM scan merge",
+            )
+        } else if transport_ready_dispatch_count > 0 {
+            (
+                "remote_heap_resolution",
+                SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP,
+                "wire origin-node remote heap resolution before returning SQL rows",
             )
         } else {
             (SPIRE_REMOTE_NONE, SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
@@ -2883,6 +3079,12 @@ impl SpireRemoteFanoutExecutor {
             transport_failed_dispatch_count,
             transport_row_count,
             first_transport_failure_category,
+            candidate_receive_pending_dispatch_count,
+            candidate_receive_sent_dispatch_count,
+            candidate_receive_ready_dispatch_count,
+            candidate_receive_failed_dispatch_count,
+            candidate_row_count,
+            first_candidate_receive_failure_category,
             next_executor_step,
             status,
             recommendation,
@@ -2906,6 +3108,20 @@ fn remote_search_production_executor_state_summary_from_transport_probe_rows(
     let mut executor =
         SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
     executor.apply_transport_probe_rows(transport_rows)?;
+    executor.summary()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn remote_search_production_executor_state_summary_from_candidate_receive_results(
+    requested_epoch: u64,
+    dispatch_rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    transport_rows: &[SpireRemoteProductionTransportProbeRow],
+    candidate_receive_results: &[SpireRemoteProductionCandidateReceiveResult],
+) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    let mut executor =
+        SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
+    executor.apply_transport_probe_rows(transport_rows)?;
+    executor.apply_candidate_receive_results(candidate_receive_results)?;
     executor.summary()
 }
 
@@ -6283,6 +6499,68 @@ mod production_executor_state_tests {
         }
     }
 
+    fn candidate_for_state_test(
+        node_id: u32,
+        pid: u64,
+        row_index: u32,
+    ) -> SpireRemoteSearchCandidateRow {
+        SpireRemoteSearchCandidateRow {
+            served_epoch: 7,
+            node_id,
+            pid,
+            object_version: 1,
+            row_index,
+            assignment_flags: storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+            vec_id: vec![u8::try_from(node_id).expect("node id should fit u8"), row_index as u8],
+            row_locator: vec![row_index as u8 + 1],
+            score: row_index as f32,
+        }
+    }
+
+    fn ready_candidate_receive_result(
+        node_id: u32,
+        selected_pids: Vec<u64>,
+        candidate_count: u32,
+    ) -> SpireRemoteProductionCandidateReceiveResult {
+        let pid = selected_pids
+            .first()
+            .copied()
+            .expect("selected pid should exist");
+        let candidates = (0..candidate_count)
+            .map(|row_index| candidate_for_state_test(node_id, pid, row_index))
+            .collect::<Vec<_>>();
+        SpireRemoteProductionCandidateReceiveResult {
+            node_id,
+            started_after_ms: 2,
+            completed_after_ms: 3,
+            elapsed_ms: 1,
+            candidate_count: u64::from(candidate_count),
+            status: SPIRE_REMOTE_STATUS_READY,
+            failure_category: SPIRE_REMOTE_NONE,
+            batch: Some(SpireRemoteSearchCandidateBatch {
+                node_id,
+                selected_pids,
+                candidates,
+            }),
+        }
+    }
+
+    fn failed_candidate_receive_result(
+        node_id: u32,
+        failure_category: &'static str,
+    ) -> SpireRemoteProductionCandidateReceiveResult {
+        SpireRemoteProductionCandidateReceiveResult {
+            node_id,
+            started_after_ms: 2,
+            completed_after_ms: 3,
+            elapsed_ms: 1,
+            candidate_count: 0,
+            status: SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
+            failure_category,
+            batch: None,
+        }
+    }
+
     #[test]
     fn production_executor_state_moves_ready_transport_to_candidate_receive() {
         let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 2)];
@@ -6340,6 +6618,76 @@ mod production_executor_state_tests {
 
         assert!(
             error.contains("does not match a planned dispatch"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn production_executor_state_moves_ready_receive_to_remote_heap_resolution() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            ready_candidate_receive_result(2, vec![0], 2),
+            ready_candidate_receive_result(3, vec![0], 1),
+        ];
+        let row = remote_search_production_executor_state_summary_from_candidate_receive_results(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+            &receive_results,
+        )
+        .expect("candidate receive summary should succeed");
+
+        assert_eq!(row.candidate_receive_pending_dispatch_count, 0);
+        assert_eq!(row.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(row.candidate_receive_ready_dispatch_count, 2);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
+        assert_eq!(row.candidate_row_count, 3);
+        assert_eq!(row.next_executor_step, "remote_heap_resolution");
+        assert_eq!(row.status, "requires_remote_heap_resolution");
+        assert_eq!(row.first_candidate_receive_failure_category, "none");
+    }
+
+    #[test]
+    fn production_executor_state_preserves_candidate_receive_failure_category() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            failed_candidate_receive_result(2, SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED),
+            ready_candidate_receive_result(3, vec![0], 1),
+        ];
+        let row = remote_search_production_executor_state_summary_from_candidate_receive_results(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+            &receive_results,
+        )
+        .expect("candidate receive summary should succeed");
+
+        assert_eq!(row.candidate_receive_sent_dispatch_count, 2);
+        assert_eq!(row.candidate_receive_ready_dispatch_count, 1);
+        assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
+        assert_eq!(row.candidate_row_count, 1);
+        assert_eq!(row.next_executor_step, "compact_candidate_receive");
+        assert_eq!(row.status, "remote_candidate_receive_failed");
+        assert_eq!(row.first_candidate_receive_failure_category, "candidate_decode_failed");
+    }
+
+    #[test]
+    fn production_executor_state_rejects_receive_without_ready_transport() {
+        let dispatch_rows = vec![planned_dispatch(2, 1)];
+        let transport_rows = Vec::new();
+        let receive_results = vec![ready_candidate_receive_result(2, vec![0], 1)];
+        let error = remote_search_production_executor_state_summary_from_candidate_receive_results(
+            7,
+            &dispatch_rows,
+            &transport_rows,
+            &receive_results,
+        )
+        .expect_err("receive before transport should fail");
+
+        assert!(
+            error.contains("does not match a transport-ready dispatch"),
             "unexpected error: {error}"
         );
     }
