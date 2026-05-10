@@ -90,6 +90,10 @@ result is a single monotonic transition, and summaries expose
 for future cancellation, cache-reuse, strict/degraded, and heap-resolution
 states. New stages should add counters rather than overloading a status string
 when operators need to distinguish partial progress from terminal failure.
+Local-cancel transitions must clear any retained candidate batch and candidate
+count on the dispatch, matching candidate-receive failure behavior, so a
+previously ready but cancelled dispatch cannot contribute to compact merge or
+Stage D heap resolution.
 
 ## Landing Sequence
 
@@ -141,6 +145,10 @@ cancel or local statement timeout, the executor must stop accepting new remote
 work, request cancellation for in-flight remote queries when libpq provides a
 cancel handle, drain or close remote connections safely, release governance
 locks, and report sanitized cancellation counters.
+If cancellation reaches a dispatch after compact-candidate receive has already
+validated and retained a batch, the transition clears that batch and reports
+`remote_executor_cancelled` / `local_query_cancelled`; only a later non-cancelled
+`CandidateReceiveReady` dispatch may enter compact merge.
 
 Remote statement timeout remains remote-owned and should surface as a remote
 timeout category, distinct from local cancel and local statement timeout.

@@ -52,6 +52,9 @@ blocking, and timeout configuration are captured in
 The production executor state machine, landing sequence, cancellation contract,
 and required counters are captured in
 `plan/design/spire-production-coordinator-executor.md`.
+That design doc is also the durable reference for the monotonic
+pending/sent/ready/failed stage-extension pattern used by future cancellation,
+cache-reuse, strict/degraded, and heap-resolution stages.
 That contract also owns the PostgreSQL advisory-lock namespace reserved for
 first-stage cross-backend dispatch governance:
 

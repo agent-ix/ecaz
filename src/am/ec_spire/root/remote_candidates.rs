@@ -59,6 +59,7 @@ const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
 const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
 const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION: &str = "remote_heap_resolution";
+const SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION: &str = "remote_executor_cancellation";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
 const SPIRE_REMOTE_DESCRIPTOR_SOURCE: &str = "remote_node_descriptor";
@@ -82,6 +83,8 @@ const SPIRE_REMOTE_PRODUCTION_CANDIDATE_INVALID_PARAMETERS: &str = "candidate_in
 const SPIRE_REMOTE_STATUS_REQUIRES_COMPACT_CANDIDATE_RECEIVE: &str =
     "requires_compact_candidate_receive";
 const SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED: &str = "remote_candidate_receive_failed";
+const SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED: &str = "remote_executor_cancelled";
+const SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED: &str = "local_query_cancelled";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
@@ -2610,6 +2613,7 @@ enum SpireRemoteProductionDispatchState {
     TransportFailed,
     CandidateReceiveReady,
     CandidateReceiveFailed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2725,6 +2729,15 @@ impl SpireRemoteProductionDispatch {
         }
         Ok(())
     }
+
+    fn apply_local_query_cancel(&mut self) {
+        self.candidate_count = 0;
+        self.candidate_failure_category = SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
+        self.candidate_batch = None;
+        self.state = SpireRemoteProductionDispatchState::Cancelled;
+        self.status = SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED;
+        self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2799,6 +2812,12 @@ impl SpireRemoteFanoutExecutor {
         Ok(())
     }
 
+    fn apply_local_query_cancel(&mut self) {
+        for dispatch in &mut self.dispatches {
+            dispatch.apply_local_query_cancel();
+        }
+    }
+
     fn ready_candidate_batches(&self) -> Result<Vec<SpireRemoteSearchCandidateBatch>, String> {
         let mut batches = Vec::new();
         for dispatch in &self.dispatches {
@@ -2816,7 +2835,8 @@ impl SpireRemoteFanoutExecutor {
                 | SpireRemoteProductionDispatchState::Planned
                 | SpireRemoteProductionDispatchState::TransportReady
                 | SpireRemoteProductionDispatchState::TransportFailed
-                | SpireRemoteProductionDispatchState::CandidateReceiveFailed => {
+                | SpireRemoteProductionDispatchState::CandidateReceiveFailed
+                | SpireRemoteProductionDispatchState::Cancelled => {
                     return Err(format!(
                         "ec_spire production executor cannot merge compact candidates while node_id {} is in state {:?} with status {}",
                         dispatch.node_id, dispatch.state, dispatch.status
@@ -2856,6 +2876,8 @@ impl SpireRemoteFanoutExecutor {
         let mut candidate_receive_failed_dispatch_count = 0_u64;
         let mut candidate_row_count = 0_u64;
         let mut first_candidate_receive_failure_category = SPIRE_REMOTE_NONE;
+        let mut cancelled_dispatch_count = 0_u64;
+        let mut first_cancellation_category = SPIRE_REMOTE_NONE;
         let mut first_blocked_status = SPIRE_REMOTE_STATUS_READY;
         let mut first_blocked_step = SPIRE_REMOTE_NONE;
 
@@ -3070,13 +3092,30 @@ impl SpireRemoteFanoutExecutor {
                         "candidate-receive-failed dispatch",
                     )?;
                 }
+                SpireRemoteProductionDispatchState::Cancelled => {
+                    if cancelled_dispatch_count == 0 {
+                        first_cancellation_category = dispatch.candidate_failure_category;
+                    }
+                    add_remote_count(
+                        &mut cancelled_dispatch_count,
+                        1,
+                        "remote production executor state summary",
+                        "cancelled dispatch",
+                    )?;
+                }
             }
         }
 
         let dispatch_count = u64::try_from(self.dispatches.len()).map_err(|_| {
             "ec_spire remote production executor dispatch count exceeds u64".to_owned()
         })?;
-        let (next_executor_step, status, recommendation) = if blocked_before_dispatch_count > 0 {
+        let (next_executor_step, status, recommendation) = if cancelled_dispatch_count > 0 {
+            (
+                SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION,
+                SPIRE_REMOTE_STATUS_EXECUTOR_CANCELLED,
+                "release governance and discard retained remote batches after local cancellation",
+            )
+        } else if blocked_before_dispatch_count > 0 {
             (
                 first_blocked_step,
                 first_blocked_status,
@@ -3141,6 +3180,8 @@ impl SpireRemoteFanoutExecutor {
             candidate_receive_failed_dispatch_count,
             candidate_row_count,
             first_candidate_receive_failure_category,
+            cancelled_dispatch_count,
+            first_cancellation_category,
             next_executor_step,
             status,
             recommendation,
@@ -6836,5 +6877,116 @@ mod production_executor_state_tests {
         .expect_err("failed receive should block compact merge");
 
         assert!(error.contains("remote_candidate_receive_failed"));
+    }
+
+    #[test]
+    fn production_executor_local_cancel_clears_ready_candidate_batches() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let transport_rows = vec![ready_transport_row(2, 1), ready_transport_row(3, 1)];
+        let receive_results = vec![
+            ready_candidate_receive_result(2, vec![10], 1),
+            ready_candidate_receive_result(3, vec![20], 1),
+        ];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        executor
+            .apply_candidate_receive_results(&receive_results)
+            .expect("receive rows should apply");
+        assert_eq!(
+            executor
+                .ready_candidate_batches()
+                .expect("ready batches should exist before cancel")
+                .len(),
+            2
+        );
+
+        executor.apply_local_query_cancel();
+        let row = executor.summary().expect("summary should succeed");
+        assert_eq!(row.cancelled_dispatch_count, 2);
+        assert_eq!(row.first_cancellation_category, "local_query_cancelled");
+        assert_eq!(row.candidate_receive_ready_dispatch_count, 0);
+        assert_eq!(row.candidate_row_count, 0);
+        assert_eq!(row.next_executor_step, "remote_executor_cancellation");
+        assert_eq!(row.status, "remote_executor_cancelled");
+        assert!(executor
+            .dispatches
+            .iter()
+            .all(|dispatch| dispatch.candidate_batch.is_none()));
+
+        let error = executor
+            .merge_ready_candidate_batches(Some(1))
+            .expect_err("cancelled batches should not merge");
+        assert!(error.contains("remote_executor_cancelled"));
+    }
+
+    #[test]
+    fn production_executor_compact_merge_rejects_every_non_ready_state() {
+        let mut blocked_row = planned_dispatch(2, 1);
+        blocked_row.dispatch_action = SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION;
+        blocked_row.status = SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD;
+        let blocked_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[blocked_row]);
+        assert!(blocked_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("blocked dispatch should not merge")
+            .contains("remote_executor_overload"));
+
+        let planned_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
+        assert!(planned_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("planned dispatch should not merge")
+            .contains("requires_production_transport_adapter"));
+
+        let mut transport_ready_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
+        transport_ready_executor
+            .apply_transport_probe_rows(&[ready_transport_row(2, 1)])
+            .expect("transport row should apply");
+        assert!(transport_ready_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("transport-ready dispatch should not merge")
+            .contains("requires_compact_candidate_receive"));
+
+        let mut transport_failed_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
+        transport_failed_executor
+            .apply_transport_probe_rows(&[failed_transport_row(
+                2,
+                SPIRE_REMOTE_PRODUCTION_TRANSPORT_CONNECT_FAILED,
+            )])
+            .expect("failed transport row should apply");
+        assert!(transport_failed_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("transport-failed dispatch should not merge")
+            .contains("remote_transport_failed"));
+
+        let mut receive_failed_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
+        receive_failed_executor
+            .apply_transport_probe_rows(&[ready_transport_row(2, 1)])
+            .expect("transport row should apply");
+        receive_failed_executor
+            .apply_candidate_receive_results(&[failed_candidate_receive_result(
+                2,
+                SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED,
+            )])
+            .expect("failed receive row should apply");
+        assert!(receive_failed_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("receive-failed dispatch should not merge")
+            .contains("remote_candidate_receive_failed"));
+
+        let mut cancelled_executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
+        cancelled_executor
+            .apply_local_query_cancel();
+        assert!(cancelled_executor
+            .merge_ready_candidate_batches(None)
+            .expect_err("cancelled dispatch should not merge")
+            .contains("remote_executor_cancelled"));
     }
 }

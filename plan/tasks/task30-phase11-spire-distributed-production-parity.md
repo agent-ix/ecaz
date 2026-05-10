@@ -432,6 +432,10 @@ Goal: execute remote fanout with bounded concurrent or pipelined work.
     - [ ] On local cancel, stop accepting new remote work, cancel or close all
       in-flight remote libpq work, release advisory governance slots, and
       report cancellation counters without raw remote error text.
+    - [x] Lock the pre-C5 batch ownership rule: local cancellation clears any
+      retained `CandidateReceiveReady` compact batch and reports
+      `remote_executor_cancelled` / `local_query_cancelled`, so cancelled
+      dispatches cannot enter compact merge or Stage D heap resolution.
     - [ ] Keep local cancel, local statement timeout, remote statement timeout,
       connect timeout, and remote backend termination as distinct diagnostic
       categories.

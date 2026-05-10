@@ -9778,6 +9778,8 @@ fn ec_spire_remote_search_production_executor_state_summary(
         name!(candidate_receive_failed_dispatch_count, i64),
         name!(candidate_row_count, i64),
         name!(first_candidate_receive_failure_category, &'static str),
+        name!(cancelled_dispatch_count, i64),
+        name!(first_cancellation_category, &'static str),
         name!(next_executor_step, &'static str),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -9862,6 +9864,9 @@ fn ec_spire_remote_search_production_executor_state_summary(
             .expect("candidate receive failed dispatch count should fit in i64"),
         i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
         row.first_candidate_receive_failure_category,
+        i64::try_from(row.cancelled_dispatch_count)
+            .expect("cancelled dispatch count should fit in i64"),
+        row.first_cancellation_category,
         row.next_executor_step,
         row.status,
         row.recommendation,
@@ -23611,6 +23616,16 @@ mod tests {
         ))
         .expect("candidate receive failure category query should succeed")
         .expect("candidate receive failure category should exist");
+        let cancelled_dispatch_count = Spi::get_one::<i64>(&format!(
+            "SELECT cancelled_dispatch_count {prod_state_from}"
+        ))
+        .expect("cancelled dispatch count query should succeed")
+        .expect("cancelled dispatch count should exist");
+        let first_cancellation_category = Spi::get_one::<String>(&format!(
+            "SELECT first_cancellation_category {prod_state_from}"
+        ))
+        .expect("cancellation category query should succeed")
+        .expect("cancellation category should exist");
         let next_executor_step =
             Spi::get_one::<String>(&format!("SELECT next_executor_step {prod_state_from}"))
                 .expect("next executor step query should succeed")
@@ -23631,6 +23646,8 @@ mod tests {
         assert_eq!(candidate_receive_pending_dispatch_count, 0);
         assert_eq!(candidate_receive_sent_dispatch_count, 0);
         assert_eq!(first_candidate_receive_failure_category, "none");
+        assert_eq!(cancelled_dispatch_count, 0);
+        assert_eq!(first_cancellation_category, "none");
         assert_eq!(next_executor_step, "production_transport_adapter");
         assert_eq!(status, "requires_production_transport_adapter");
     }
