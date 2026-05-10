@@ -20566,7 +20566,7 @@ mod tests {
         );
         assert_eq!(score_validator, "must_be_finite");
         assert_eq!(nullable_count, 0);
-        assert_eq!(executor_step_count, 7);
+        assert_eq!(executor_step_count, 9);
         assert_eq!(first_executor_step, "remote_node_descriptor");
         assert_eq!(secret_step_action, "resolve_conninfo_secret_reference");
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
@@ -22475,6 +22475,303 @@ mod tests {
             "validate_remote_search_candidate_batch"
         );
         assert_eq!(executor_contract_mismatch_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_libpq_capability_blocks() {
+        fn assert_capability_block(
+            prefix: &str,
+            node_id: i32,
+            generation: i64,
+            expected_status: &str,
+            expected_epoch_status: &str,
+            expected_extension_status: &str,
+            expected_blocker: &str,
+            extension_version: &str,
+            consistency_mode: &str,
+            expected_failure_action: &str,
+        ) {
+            let table_name = format!("ec_spire_cap_{prefix}_sql");
+            let index_name = format!("ec_spire_cap_{prefix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table_name} \
+                 (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table_name} (id, embedding) VALUES \
+                 (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                 (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))"
+            ))
+            .expect("insert should succeed");
+            Spi::run(&format!(
+                "CREATE INDEX {index_name} \
+                 ON {table_name} USING ec_spire \
+                 (embedding ecvector_spire_ip_ops) WITH (nlists = 2)"
+            ))
+            .expect("ec_spire index creation should succeed");
+
+            let index_oid =
+                Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                    .expect("index oid query should succeed")
+                    .expect("index oid should exist");
+            let active_epoch = Spi::get_one::<i64>(&format!(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('{index_name}'::regclass)"
+            ))
+            .expect("hierarchy snapshot query should succeed")
+            .expect("active epoch should exist");
+            let selected_pid = Spi::get_one::<i64>(&format!(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('{index_name}'::regclass)"
+            ))
+            .expect("leaf snapshot query should succeed")
+            .expect("leaf pid should exist");
+            let last_served_epoch = if expected_status == "stale_epoch" {
+                active_epoch.saturating_sub(1)
+            } else {
+                active_epoch
+            };
+            assert!(last_served_epoch <= active_epoch);
+
+            if consistency_mode == "degraded" {
+                unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, "degraded") };
+            }
+            unsafe {
+                am::debug_spire_rewrite_placement_node(
+                    index_oid,
+                    selected_pid as u64,
+                    node_id as u32,
+                )
+            };
+            let register_result = Spi::get_one::<bool>(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                         '{}'::oid, {node_id}, {generation}, 'spire/remote/{prefix}', \
+                         decode('0a', 'hex'), 'remote_spire_idx', 'active', \
+                         {last_served_epoch}, {active_epoch}, '{extension_version}', 'none')",
+                u32::from(index_oid)
+            ))
+            .expect("remote descriptor registration should succeed")
+            .expect("remote descriptor registration result should exist");
+            assert!(register_result);
+
+            let capability_from = format!(
+                "FROM ec_spire_remote_node_capability_plan('{index_name}'::regclass) \
+                 WHERE node_id = {node_id}"
+            );
+            let target_from = format!(
+                "FROM ec_spire_remote_search_target_readiness(\
+                 '{index_name}'::regclass, {active_epoch}, \
+                 ARRAY[{selected_pid}]::bigint[], '{consistency_mode}') \
+                 WHERE node_id = {node_id}"
+            );
+            let args = format!(
+                "'{index_name}'::regclass, {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{selected_pid}]::bigint[], 1, '{consistency_mode}'"
+            );
+            let execution_from = format!("FROM ec_spire_remote_search_execution_plan({args})");
+            let libpq_from = format!("FROM ec_spire_remote_search_libpq_request_plan({args})");
+            let connection_from =
+                format!("FROM ec_spire_remote_search_libpq_connection_plan({args})");
+            let dispatch_from = format!("FROM ec_spire_remote_search_libpq_dispatch_plan({args})");
+            let dispatch_summary_from =
+                format!("FROM ec_spire_remote_search_libpq_dispatch_summary({args})");
+            let bind_summary_from =
+                format!("FROM ec_spire_remote_search_libpq_bind_summary({args})");
+            let secret_from = format!("FROM ec_spire_remote_search_libpq_secret_plan({args})");
+            let work_summary_from =
+                format!("FROM ec_spire_remote_search_libpq_executor_work_summary({args})");
+            let executor_from =
+                format!("FROM ec_spire_remote_search_libpq_executor_readiness({args})");
+            let receive_attempts_from =
+                format!("FROM ec_spire_remote_search_libpq_executor_receive_attempts({args})");
+            let gate_from = format!("FROM ec_spire_remote_search_coordinator_gate_summary({args})");
+            let heap_resolution_from =
+                format!("FROM ec_spire_remote_search_heap_resolution_summary({args})");
+
+            let capability_status =
+                Spi::get_one::<String>(&format!("SELECT status {capability_from}"))
+                    .expect("capability status query should succeed")
+                    .expect("capability status should exist");
+            let epoch_status =
+                Spi::get_one::<String>(&format!("SELECT epoch_window_status {capability_from}"))
+                    .expect("capability epoch query should succeed")
+                    .expect("capability epoch status should exist");
+            let extension_status = Spi::get_one::<String>(&format!(
+                "SELECT extension_version_status {capability_from}"
+            ))
+            .expect("capability extension query should succeed")
+            .expect("capability extension status should exist");
+            let target_status = Spi::get_one::<String>(&format!("SELECT status {target_from}"))
+                .expect("target status query should succeed")
+                .expect("target status should exist");
+            let execution_status =
+                Spi::get_one::<String>(&format!("SELECT status {execution_from}"))
+                    .expect("execution status query should succeed")
+                    .expect("execution status should exist");
+            let libpq_status = Spi::get_one::<String>(&format!("SELECT status {libpq_from}"))
+                .expect("libpq request status query should succeed")
+                .expect("libpq request status should exist");
+            let pipeline_mode =
+                Spi::get_one::<String>(&format!("SELECT pipeline_mode {connection_from}"))
+                    .expect("connection pipeline query should succeed")
+                    .expect("connection pipeline should exist");
+            let conninfo_resolution =
+                Spi::get_one::<String>(&format!("SELECT conninfo_resolution {connection_from}"))
+                    .expect("connection resolution query should succeed")
+                    .expect("connection resolution should exist");
+            let dispatch_action =
+                Spi::get_one::<String>(&format!("SELECT dispatch_action {dispatch_from}"))
+                    .expect("dispatch action query should succeed")
+                    .expect("dispatch action should exist");
+            let dispatch_summary_status =
+                Spi::get_one::<String>(&format!("SELECT status {dispatch_summary_from}"))
+                    .expect("dispatch summary status query should succeed")
+                    .expect("dispatch summary status should exist");
+            let pipeline_dispatch_count = Spi::get_one::<i64>(&format!(
+                "SELECT pipeline_dispatch_count {dispatch_summary_from}"
+            ))
+            .expect("dispatch summary pipeline query should succeed")
+            .expect("dispatch summary pipeline count should exist");
+            let bind_summary_status =
+                Spi::get_one::<String>(&format!("SELECT status {bind_summary_from}"))
+                    .expect("bind summary status query should succeed")
+                    .expect("bind summary status should exist");
+            let bind_blocked_count =
+                Spi::get_one::<i64>(&format!("SELECT blocked_bind_count {bind_summary_from}"))
+                    .expect("bind blocked query should succeed")
+                    .expect("bind blocked count should exist");
+            let secret_status = Spi::get_one::<String>(&format!("SELECT status {secret_from}"))
+                .expect("secret status query should succeed")
+                .expect("secret status should exist");
+            let secret_next_step =
+                Spi::get_one::<String>(&format!("SELECT next_executor_step {secret_from}"))
+                    .expect("secret next step query should succeed")
+                    .expect("secret next step should exist");
+            let secret_provider =
+                Spi::get_one::<String>(&format!("SELECT provider_lookup_key {secret_from}"))
+                    .expect("secret provider query should succeed")
+                    .expect("secret provider should exist");
+            let work_status = Spi::get_one::<String>(&format!("SELECT status {work_summary_from}"))
+                .expect("work status query should succeed")
+                .expect("work status should exist");
+            let work_next_step =
+                Spi::get_one::<String>(&format!("SELECT next_executor_step {work_summary_from}"))
+                    .expect("work next step query should succeed")
+                    .expect("work next step should exist");
+            let executor_status = Spi::get_one::<String>(&format!("SELECT status {executor_from}"))
+                .expect("executor status query should succeed")
+                .expect("executor status should exist");
+            let executor_next_step =
+                Spi::get_one::<String>(&format!("SELECT next_executor_step {executor_from}"))
+                    .expect("executor next step query should succeed")
+                    .expect("executor next step should exist");
+            let receive_status =
+                Spi::get_one::<String>(&format!("SELECT status {receive_attempts_from}"))
+                    .expect("receive status query should succeed")
+                    .expect("receive status should exist");
+            let receive_next_blocker =
+                Spi::get_one::<String>(&format!("SELECT next_blocker {receive_attempts_from}"))
+                    .expect("receive next blocker query should succeed")
+                    .expect("receive next blocker should exist");
+            let receive_failure_action =
+                Spi::get_one::<String>(&format!("SELECT failure_action {receive_attempts_from}"))
+                    .expect("receive failure action query should succeed")
+                    .expect("receive failure action should exist");
+            let gate_status = Spi::get_one::<String>(&format!("SELECT status {gate_from}"))
+                .expect("gate status query should succeed")
+                .expect("gate status should exist");
+            let gate_next_blocker =
+                Spi::get_one::<String>(&format!("SELECT next_blocker {gate_from}"))
+                    .expect("gate next blocker query should succeed")
+                    .expect("gate next blocker should exist");
+            let gate_executor_next_step =
+                Spi::get_one::<String>(&format!("SELECT libpq_executor_next_step {gate_from}"))
+                    .expect("gate executor step query should succeed")
+                    .expect("gate executor step should exist");
+            let heap_remote_status = Spi::get_one::<String>(&format!(
+                "SELECT remote_heap_resolution_status {heap_resolution_from}"
+            ))
+            .expect("heap resolution status query should succeed")
+            .expect("heap resolution status should exist");
+
+            assert_eq!(capability_status, expected_status);
+            assert_eq!(epoch_status, expected_epoch_status);
+            assert_eq!(extension_status, expected_extension_status);
+            assert_eq!(target_status, expected_status);
+            assert_eq!(execution_status, expected_status);
+            assert_eq!(libpq_status, expected_status);
+            assert_eq!(pipeline_mode, "none");
+            assert_eq!(conninfo_resolution, "secret_reference_ready");
+            assert_eq!(dispatch_action, "blocked_before_dispatch");
+            assert_eq!(dispatch_summary_status, expected_status);
+            assert_eq!(pipeline_dispatch_count, 0);
+            assert_eq!(bind_summary_status, expected_status);
+            assert_eq!(bind_blocked_count, 6);
+            assert_eq!(secret_status, expected_status);
+            assert_eq!(secret_next_step, expected_blocker);
+            assert_eq!(secret_provider, "none");
+            assert_eq!(work_status, expected_status);
+            assert_eq!(work_next_step, expected_blocker);
+            assert_eq!(executor_status, expected_status);
+            assert_eq!(executor_next_step, expected_blocker);
+            assert_eq!(receive_status, expected_status);
+            assert_eq!(receive_next_blocker, expected_blocker);
+            assert_eq!(receive_failure_action, expected_failure_action);
+            assert_eq!(gate_status, expected_status);
+            assert_eq!(gate_next_blocker, expected_blocker);
+            assert_eq!(gate_executor_next_step, expected_blocker);
+            assert_eq!(heap_remote_status, expected_status);
+        }
+
+        assert_capability_block(
+            "stale_strict",
+            2,
+            30,
+            "stale_epoch",
+            "stale_epoch",
+            "ready",
+            "remote_epoch_window",
+            env!("CARGO_PKG_VERSION"),
+            "strict",
+            "fail_closed",
+        );
+        assert_capability_block(
+            "version_strict",
+            3,
+            31,
+            "incompatible_extension_version",
+            "ready",
+            "incompatible_extension_version",
+            "remote_extension_version",
+            "0.0.0-test-skew",
+            "strict",
+            "fail_closed",
+        );
+        assert_capability_block(
+            "stale_degraded",
+            2,
+            32,
+            "stale_epoch",
+            "stale_epoch",
+            "ready",
+            "remote_epoch_window",
+            env!("CARGO_PKG_VERSION"),
+            "degraded",
+            "skip_node",
+        );
+        assert_capability_block(
+            "version_degraded",
+            3,
+            33,
+            "incompatible_extension_version",
+            "ready",
+            "incompatible_extension_version",
+            "remote_extension_version",
+            "0.0.0-test-skew",
+            "degraded",
+            "skip_node",
+        );
     }
 
     #[pg_test]

@@ -335,9 +335,21 @@ endpoint.
   - [x] PG18 strict-mode coverage proves descriptor/endpoint fingerprint
     mismatch reports `endpoint_identity_mismatch` and fails closed before
     compact candidate merge.
+  - [x] Search readiness and libpq dispatch now import
+    `ec_spire_remote_node_capability_plan` status, so stale epoch,
+    retention-gap, and extension-version blockers stop dispatch before
+    pipeline mode, conninfo secret lookup, receive validation, or merge.
+  - [x] PG18 strict/degraded coverage proves stale epoch and extension-version
+    skew report exact `remote_epoch_window` / `remote_extension_version`
+    blockers with strict `fail_closed` and degraded `skip_node` receive-attempt
+    actions.
 - [ ] Verification: PG18 loopback tests for nonempty candidates, empty/top-k-zero
   behavior, stale epoch rejection, fingerprint mismatch, version skew, and
   malformed candidate rejection.
+  - [x] Stale epoch and extension-version skew are covered on the libpq search
+    path before dispatch, including target readiness, execution, bind, secret,
+    work, executor readiness, receive attempts, coordinator gate, and heap
+    resolution summaries.
 
 ### Stage C: Production Libpq Coordinator
 

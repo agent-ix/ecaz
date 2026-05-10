@@ -32,6 +32,10 @@ const SPIRE_REMOTE_STATUS_REQUIRES_SECRET: &str = "requires_conninfo_secret_reso
 const SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ: &str = "requires_libpq_transport";
 const SPIRE_REMOTE_STATUS_MISSING_DESCRIPTOR: &str = "missing_descriptor";
 const SPIRE_REMOTE_STATUS_OPTIONAL_DESCRIPTOR_MISSING: &str = "optional_descriptor_missing";
+const SPIRE_REMOTE_STATUS_STALE_EPOCH: &str = "stale_epoch";
+const SPIRE_REMOTE_STATUS_RETENTION_GAP: &str = "retention_gap";
+const SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION: &str =
+    "incompatible_extension_version";
 const SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING: &str = "requires_fingerprint_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING: &str = "requires_opclass_binding";
 const SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING: &str =
@@ -45,6 +49,8 @@ const SPIRE_REMOTE_DISPATCH_BLOCKED_ACTION: &str = "blocked_before_dispatch";
 const SPIRE_REMOTE_NONE: &str = "none";
 const SPIRE_REMOTE_EXECUTOR_REQUIRED: &str = "requires_libpq_executor";
 const SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR: &str = "remote_node_descriptor";
+const SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW: &str = "remote_epoch_window";
+const SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION: &str = "remote_extension_version";
 const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
 const SPIRE_REMOTE_INDEX_SOURCE_LOCAL_OID: &str = "local_index_oid";
@@ -74,6 +80,34 @@ const SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED: &str = "disabled";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 const SPIRE_REMOTE_CONNINFO_ENV_PREFIX: &str = "EC_SPIRE_REMOTE_CONNINFO_";
+
+fn remote_search_pre_dispatch_blocker_step(status: &str) -> &'static str {
+    match status {
+        SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+        SPIRE_REMOTE_STATUS_STALE_EPOCH | SPIRE_REMOTE_STATUS_RETENTION_GAP => {
+            SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW
+        }
+        SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
+            SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION
+        }
+        _ => SPIRE_REMOTE_NONE,
+    }
+}
+
+fn remote_search_pre_dispatch_blocker_recommendation(status: &str) -> &'static str {
+    match status {
+        SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR => {
+            "register active or draining remote node descriptors before libpq executor startup"
+        }
+        SPIRE_REMOTE_STATUS_STALE_EPOCH | SPIRE_REMOTE_STATUS_RETENTION_GAP => {
+            "refresh remote node served epoch window before libpq fanout execution"
+        }
+        SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
+            "upgrade remote node extension before libpq fanout execution"
+        }
+        _ => SPIRE_REMOTE_NONE,
+    }
+}
 
 pub(crate) fn remote_operator_entrypoint_contract_rows(
 ) -> Vec<SpireRemoteOperatorEntrypointContractRow> {
@@ -394,6 +428,7 @@ struct SpireRemoteCountRollup {
     blocked_pid_count: u64,
     missing_descriptor_pid_count: u64,
     transport_pid_count: u64,
+    first_capability_blocked_status: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -481,6 +516,22 @@ impl SpireRemoteCountRollup {
                 add_remote_count(&mut self.blocked_pid_count, pid_count, context, "blocked PID")?;
                 add_remote_count(&mut self.transport_pid_count, pid_count, context, "transport PID")?;
             }
+            SPIRE_REMOTE_STATUS_STALE_EPOCH
+            | SPIRE_REMOTE_STATUS_RETENTION_GAP
+            | SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
+                add_remote_count(&mut self.blocked_count, 1, context, "blocked")?;
+                add_remote_count(&mut self.blocked_pid_count, pid_count, context, "blocked PID")?;
+                if self.first_capability_blocked_status.is_none() {
+                    self.first_capability_blocked_status = Some(match status {
+                        SPIRE_REMOTE_STATUS_STALE_EPOCH => SPIRE_REMOTE_STATUS_STALE_EPOCH,
+                        SPIRE_REMOTE_STATUS_RETENTION_GAP => SPIRE_REMOTE_STATUS_RETENTION_GAP,
+                        SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION => {
+                            SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION
+                        }
+                        _ => unreachable!("capability status match already narrowed"),
+                    });
+                }
+            }
             status => {
                 return Err(format!("ec_spire {context} found unknown status '{status}'"));
             }
@@ -512,6 +563,8 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::Readiness => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if let Some(status) = self.first_capability_blocked_status {
+                    status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
                 } else if self.skipped_count > 0 {
@@ -523,6 +576,8 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::Execution => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if let Some(status) = self.first_capability_blocked_status {
+                    status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
                 } else if self.degraded_skipped_count > 0 {
@@ -534,6 +589,8 @@ impl SpireRemoteCountRollup {
             SpireRemoteSummaryStatusMode::LibpqRequest => {
                 if self.missing_descriptor_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
+                } else if let Some(status) = self.first_capability_blocked_status {
+                    status
                 } else if self.transport_count > 0 {
                     SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
                 } else {
@@ -875,6 +932,12 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
             .into_iter()
             .map(|row| (row.node_id, row))
             .collect::<BTreeMap<_, _>>();
+        let capability_rows = node_rows
+            .values()
+            .cloned()
+            .map(remote_node_capability_plan_row)
+            .map(|row| (row.node_id, row))
+            .collect::<BTreeMap<_, _>>();
 
         target_rows
             .into_iter()
@@ -882,6 +945,12 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                 let node = node_rows.get(&target.node_id).ok_or_else(|| {
                     format!(
                         "ec_spire remote search target readiness missing node snapshot for node_id {}",
+                        target.node_id
+                    )
+                })?;
+                let capability = capability_rows.get(&target.node_id).ok_or_else(|| {
+                    format!(
+                        "ec_spire remote search target readiness missing capability plan for node_id {}",
                         target.node_id
                     )
                 })?;
@@ -894,6 +963,10 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
                 } else if node.status != SPIRE_REMOTE_STATUS_READY {
                     node.status
+                } else if target.target_kind == SPIRE_REMOTE_TARGET_REMOTE
+                    && capability.status != SPIRE_REMOTE_STATUS_READY
+                {
+                    capability.status
                 } else {
                     target.status
                 };
@@ -1569,6 +1642,8 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
         .iter()
         .map(|row| {
             let descriptor = descriptors.get(&row.node_id);
+            let pipeline_ready =
+                descriptor.is_some() && row.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ;
             Ok(SpireRemoteSearchLibpqConnectionPlanRow {
                 requested_epoch: row.requested_epoch,
                 node_id: row.node_id,
@@ -1595,7 +1670,7 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
                 } else {
                     SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
                 },
-                pipeline_mode: if descriptor.is_some() {
+                pipeline_mode: if pipeline_ready {
                     SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE
                 } else {
                     SPIRE_REMOTE_NONE
@@ -1884,6 +1959,9 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
         .iter()
         .map(|row| {
             if row.dispatch_action != SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION {
+                let next_executor_step = remote_search_pre_dispatch_blocker_step(row.status);
+                let recommendation =
+                    remote_search_pre_dispatch_blocker_recommendation(row.status);
                 return SpireRemoteSearchLibpqSecretPlanRow {
                     requested_epoch: row.requested_epoch,
                     node_id: row.node_id,
@@ -1894,9 +1972,9 @@ fn remote_search_libpq_secret_plan_rows_from_dispatch(
                     resolved_conninfo_bytes: 0,
                     raw_conninfo_exposed: false,
                     secret_resolution_action: SPIRE_REMOTE_NONE,
-                    next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+                    next_executor_step,
                     status: row.status,
-                    recommendation: "resolve descriptor gate before conninfo secret lookup",
+                    recommendation,
                 };
             }
 
@@ -2285,6 +2363,9 @@ fn remote_search_libpq_executor_readiness_from_summaries(
             "implement conninfo secret resolution and libpq pipeline execution before remote dispatch",
         )
     } else {
+        let next_executor_step = remote_search_pre_dispatch_blocker_step(dispatch_summary.status);
+        let recommendation =
+            remote_search_pre_dispatch_blocker_recommendation(dispatch_summary.status);
         (
             SPIRE_REMOTE_NONE,
             SPIRE_REMOTE_NONE,
@@ -2292,9 +2373,9 @@ fn remote_search_libpq_executor_readiness_from_summaries(
             SPIRE_REMOTE_NONE,
             SPIRE_REMOTE_NONE,
             SPIRE_REMOTE_NONE,
-            SPIRE_REMOTE_NONE,
+            next_executor_step,
             dispatch_summary.status,
-            SPIRE_REMOTE_NONE,
+            recommendation,
         )
     };
 
@@ -2329,6 +2410,24 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
             step_ordinal: 2,
+            step_name: SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW,
+            executor_action: "verify_remote_served_epoch_window",
+            input_contract: "remote_node_descriptor.last_served_epoch,min_retained_epoch",
+            output_contract: "descriptor_epoch_window_covers_requested_epoch",
+            blocking_status: SPIRE_REMOTE_STATUS_STALE_EPOCH,
+            validator: "descriptor_epoch_window_must_cover_requested_epoch",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 3,
+            step_name: SPIRE_REMOTE_EXECUTOR_STEP_EXTENSION_VERSION,
+            executor_action: "verify_remote_extension_version",
+            input_contract: "remote_node_descriptor.extension_version",
+            output_contract: "extension_version_matches_coordinator",
+            blocking_status: SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION,
+            validator: "descriptor_extension_version_must_match_coordinator",
+        },
+        SpireRemoteSearchLibpqExecutorStepContractRow {
+            step_ordinal: 4,
             step_name: SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
             executor_action: "resolve_conninfo_secret_reference",
             input_contract: "conninfo_secret_name",
@@ -2337,7 +2436,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_resolve_secret_without_exposing_raw_conninfo",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 3,
+            step_ordinal: 5,
             step_name: "open_libpq_connection",
             executor_action: "open_libpq_connection",
             input_contract: SPIRE_REMOTE_CONNINFO_READY,
@@ -2346,7 +2445,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_target_registered_remote_index",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 4,
+            step_ordinal: 6,
             step_name: "enter_libpq_pipeline_mode",
             executor_action: "enter_libpq_pipeline_mode",
             input_contract: "libpq_connection",
@@ -2355,7 +2454,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_enter_pipeline_before_sending_remote_search",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 5,
+            step_ordinal: 7,
             step_name: "send_remote_search_request",
             executor_action: "send_remote_search_request",
             input_contract: "ec_spire_remote_search_libpq_request_plan",
@@ -2364,7 +2463,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_bind_libpq_parameter_contract",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 6,
+            step_ordinal: 8,
             step_name: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
             executor_action: SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR,
             input_contract: "remote_search_result_batch",
@@ -2373,7 +2472,7 @@ pub(crate) fn remote_search_libpq_executor_step_contract_rows(
             validator: "must_match_libpq_result_contract",
         },
         SpireRemoteSearchLibpqExecutorStepContractRow {
-            step_ordinal: 7,
+            step_ordinal: 9,
             step_name: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
             executor_action: SPIRE_REMOTE_SEARCH_MERGE_FUNCTION,
             input_contract: "validated_remote_candidate_batches",
@@ -3208,7 +3307,18 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
     Ok(candidates)
 }
 
+fn remote_search_dispatch_blocked_status(error: &str) -> Option<&str> {
+    error
+        .strip_prefix("ec_spire remote search libpq executor dispatch for node_id ")
+        .and_then(|value| value.rsplit_once(" is blocked with status "))
+        .map(|(_, status)| status)
+}
+
 fn remote_search_receive_attempt_failure_status(error: &str) -> String {
+    if let Some(status) = remote_search_dispatch_blocked_status(error) {
+        return status.to_owned();
+    }
+
     let endpoint_status_prefix = "ec_spire remote search executor endpoint_status ";
     let endpoint_status_suffix = " is not ready";
     if let Some(status) = error
@@ -3246,6 +3356,10 @@ fn remote_search_receive_attempt_failure_status(error: &str) -> String {
 }
 
 fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
+    if let Some(status) = remote_search_dispatch_blocked_status(error) {
+        return remote_search_pre_dispatch_blocker_step(status).to_owned();
+    }
+
     if error.contains("endpoint_status")
         || error.contains("protocol_version")
         || error.contains("extension_version")
@@ -4020,6 +4134,17 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
                 SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
                 "register remote node descriptors before coordinator execution",
             )
+        } else if matches!(
+            execution_summary.status,
+            SPIRE_REMOTE_STATUS_STALE_EPOCH
+                | SPIRE_REMOTE_STATUS_RETENTION_GAP
+                | SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION
+        ) {
+            (
+                remote_search_pre_dispatch_blocker_step(execution_summary.status),
+                execution_summary.status,
+                remote_search_pre_dispatch_blocker_recommendation(execution_summary.status),
+            )
         } else if executor_readiness.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
             (
                 executor_readiness.next_executor_step,
@@ -4125,6 +4250,9 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
         SPIRE_REMOTE_NONE
     } else if gate.status == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR
         || gate.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
+        || gate.status == SPIRE_REMOTE_STATUS_STALE_EPOCH
+        || gate.status == SPIRE_REMOTE_STATUS_RETENTION_GAP
+        || gate.status == SPIRE_REMOTE_STATUS_INCOMPATIBLE_EXTENSION_VERSION
     {
         gate.status
     } else {
