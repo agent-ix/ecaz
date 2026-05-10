@@ -1949,6 +1949,39 @@ not change the graph semantics established in Phase 9.
   pipeline snapshot, local-vs-AWS evidence split, and the
   `ecaz bench spire-pipeline` route-budget / remote-fanout counter command.
 
+## Phase 11 — SPIRE Distributed Production Parity
+
+Detailed task file:
+`plan/tasks/task30-phase11-spire-distributed-production-parity.md`.
+
+Phase 11 owns the production-readiness work that should happen before the
+deferred AWS/RDS-class scale packet: production remote execution, writer-side
+global vector IDs, origin-node heap resolution, local multi-instance fixtures,
+strict/degraded epoch behavior, and distributed benchmark harnesses.
+
+- [ ] **Paper-parity gate.** Build a SPIRE paper parity checklist and define
+  the local production-readiness gate that must pass before AWS is scheduled.
+- [ ] **Writer-side global vector IDs.** Emit durable global `0x02` IDs when a
+  stable source identity is available while preserving node-scoped local ID
+  compatibility.
+- [ ] **Remote search endpoint.** Promote or add a production remote search
+  endpoint that returns compact candidates with served epoch, node identity,
+  row locator, score, and diagnostics.
+- [ ] **Production libpq coordinator.** Add concurrent or pipelined libpq
+  fanout with bounded connections, timeouts, cancellation, cached remote index
+  validation, and explicit strict/degraded failure behavior.
+- [ ] **Remote heap resolution.** Resolve remote heap visibility on the origin
+  node and return one coordinator-visible ordered result stream.
+- [ ] **Multi-instance readiness.** Add local coordinator plus at least two
+  remote PostgreSQL node fixtures that verify epoch consistency, degraded
+  behavior, merge ordering, and fanout diagnostics.
+- [ ] **Local multi-NVMe hardening.** Keep `(node_id, local_store_id)` as the
+  scheduling unit and add repeatable local multi-store evidence before AWS.
+- [ ] **Production harness and runbooks.** Extend `ecaz` and docs so local
+  multi-instance recall/latency/counter packets can be produced repeatably.
+- [ ] **AWS entry gate.** Defer AWS/RDS-class scale until the Phase 11 local
+  production-readiness bundle is reviewed.
+
 ## Dependencies
 
 - ADR-049 — accepted staging and partition-object storage decision.
@@ -1984,6 +2017,7 @@ not change the graph semantics established in Phase 9.
 - Boundary replication with deduped scans and recall/storage evidence.
 - Top-level graph routing over top centroids.
 - Multi-machine coordinator and remote partition-store prototype.
+- Production-ready distributed SPIRE coordinator path after Phase 11.
 - `ecaz` operator support and review-packet benchmark artifacts.
 
 ## Primary Validation
