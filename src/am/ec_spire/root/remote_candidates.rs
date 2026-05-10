@@ -2239,6 +2239,7 @@ pub(crate) struct SpireRemoteProductionCandidateReceiveRequest {
     pub(crate) node_id: u32,
     pub(crate) conninfo: String,
     pub(crate) remote_index_regclass: String,
+    pub(crate) remote_index_identity: Vec<u8>,
     pub(crate) requested_epoch: u64,
     pub(crate) query: Vec<f32>,
     pub(crate) selected_pids: Vec<u64>,
@@ -2545,16 +2546,23 @@ impl SpireRemoteProductionTransportAdapter {
         };
         let candidates = match result_rows
             .iter()
-            .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, request.node_id, true))
+            .map(|candidate_row| {
+                decode_remote_search_candidate_pg_row(
+                    candidate_row,
+                    request.node_id,
+                    true,
+                    Some(&request.remote_index_identity),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(candidates) => candidates,
-            Err(_) => {
+            Err(error) => {
                 return failed_production_candidate_receive_result(
                     request.node_id,
                     batch_start,
                     request_start,
-                    SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED,
+                    production_candidate_decode_failure_category(&error),
                 );
             }
         };
@@ -2634,6 +2642,18 @@ fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'
         "57014" => SPIRE_REMOTE_PRODUCTION_REMOTE_QUERY_CANCELLED,
         "57P01" | "57P02" | "57P03" => SPIRE_REMOTE_PRODUCTION_REMOTE_BACKEND_TERMINATED,
         _ => SPIRE_REMOTE_PRODUCTION_TRANSPORT_REMOTE_QUERY_FAILED,
+    }
+}
+
+fn production_candidate_decode_failure_category(error: &str) -> &'static str {
+    let status = remote_search_receive_attempt_failure_status(error);
+    if status == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
+        || status == "protocol_version_mismatch"
+        || status == "extension_version_mismatch"
+    {
+        SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH
+    } else {
+        SPIRE_REMOTE_PRODUCTION_CANDIDATE_DECODE_FAILED
     }
 }
 
@@ -2734,6 +2754,7 @@ struct SpireRemoteProductionDispatch {
     pid_count: u64,
     conninfo_secret_name: String,
     remote_index_regclass: String,
+    remote_index_identity: Vec<u8>,
     state: SpireRemoteProductionDispatchState,
     status: &'static str,
     next_executor_step: &'static str,
@@ -2753,6 +2774,7 @@ impl SpireRemoteProductionDispatch {
                 pid_count: row.pid_count,
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                remote_index_identity: row.remote_index_identity.clone(),
                 state: SpireRemoteProductionDispatchState::Planned,
                 status: SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
                 next_executor_step: SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT,
@@ -2769,6 +2791,7 @@ impl SpireRemoteProductionDispatch {
                 pid_count: row.pid_count,
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                remote_index_identity: row.remote_index_identity.clone(),
                 state: SpireRemoteProductionDispatchState::BlockedBeforeDispatch,
                 status: row.status,
                 next_executor_step: remote_search_pre_dispatch_blocker_step(row.status),
@@ -3001,6 +3024,7 @@ impl SpireRemoteFanoutExecutor {
                     node_id: dispatch.node_id,
                     conninfo,
                     remote_index_regclass: dispatch.remote_index_regclass.clone(),
+                    remote_index_identity: dispatch.remote_index_identity.clone(),
                     requested_epoch: self.requested_epoch,
                     query: query.to_vec(),
                     selected_pids: dispatch.selected_pids.clone(),
@@ -4473,7 +4497,9 @@ fn validate_remote_search_endpoint_identity_fields(
     Ok(())
 }
 
-fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Result<(), String> {
+fn validate_remote_search_candidate_endpoint_identity(
+    row: &postgres::Row,
+) -> Result<Vec<u8>, String> {
     let protocol_version = remote_search_candidate_endpoint_text(row, "protocol_version")?;
     let extension_version = remote_search_candidate_endpoint_text(row, "extension_version")?;
     let opclass_identity = remote_search_candidate_endpoint_text(row, "opclass_identity")?;
@@ -4495,7 +4521,8 @@ fn validate_remote_search_candidate_endpoint_identity(row: &postgres::Row) -> Re
         &scoring_profile,
         &profile_fingerprint,
         &endpoint_status,
-    )
+    )?;
+    remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)
 }
 
 fn remote_search_endpoint_profile_fingerprint_bytes(
@@ -4972,6 +4999,7 @@ fn decode_remote_search_candidate_pg_row(
     row: &postgres::Row,
     expected_node_id: u32,
     validate_endpoint_identity: bool,
+    expected_remote_index_identity: Option<&[u8]>,
 ) -> Result<SpireRemoteSearchCandidateRow, String> {
     let served_epoch = row
         .try_get::<_, i64>("served_epoch")
@@ -5032,7 +5060,15 @@ fn decode_remote_search_candidate_pg_row(
         .try_get::<_, f32>("score")
         .map_err(|_| "ec_spire remote search executor score decode failed".to_owned())?;
     if validate_endpoint_identity {
-        validate_remote_search_candidate_endpoint_identity(row)?;
+        let profile_fingerprint_bytes = validate_remote_search_candidate_endpoint_identity(row)?;
+        if let Some(expected_remote_index_identity) = expected_remote_index_identity {
+            if profile_fingerprint_bytes.as_slice() != expected_remote_index_identity {
+                return Err(
+                    "ec_spire remote search executor remote_index_identity does not match candidate profile_fingerprint"
+                        .to_owned(),
+                );
+            }
+        }
     }
 
     Ok(SpireRemoteSearchCandidateRow {
@@ -5068,7 +5104,7 @@ fn decode_remote_search_heap_candidate_pg_row(
             "ec_spire remote heap executor requested_epoch {requested_epoch} does not match expected epoch {expected_requested_epoch}"
         ));
     }
-    let candidate = decode_remote_search_candidate_pg_row(row, expected_node_id, false)?;
+    let candidate = decode_remote_search_candidate_pg_row(row, expected_node_id, false, None)?;
     let heap_block = row
         .try_get::<_, i64>("heap_block")
         .map_err(|_| "ec_spire remote heap executor heap_block decode failed".to_owned())
@@ -5201,7 +5237,14 @@ fn remote_search_libpq_executor_candidates_for_dispatch(
         })?;
     let candidates = result_rows
         .iter()
-        .map(|candidate_row| decode_remote_search_candidate_pg_row(candidate_row, row.node_id, true))
+        .map(|candidate_row| {
+            decode_remote_search_candidate_pg_row(
+                candidate_row,
+                row.node_id,
+                true,
+                Some(&row.remote_index_identity),
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     validate_remote_search_candidate_batch(
         row.requested_epoch,
@@ -7291,6 +7334,7 @@ mod production_executor_state_tests {
             .find(|request| request.node_id == 42)
             .expect("node 42 request should exist");
         assert_eq!(node_42.remote_index_regclass, "ec_spire_remote_42_idx");
+        assert_eq!(node_42.remote_index_identity, vec![42]);
         assert_eq!(node_42.selected_pids, vec![0, 1]);
         assert_eq!(node_42.requested_epoch, 7);
         assert_eq!(node_42.query, vec![1.0, 0.0]);

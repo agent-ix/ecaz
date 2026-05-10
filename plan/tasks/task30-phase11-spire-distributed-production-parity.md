@@ -125,6 +125,10 @@ Acceptance artifact:
 - [ ] Bind remote candidate rows to the served quantizer/index identity:
   RaBitQ profile, code length, training-stat fingerprint, index build format,
   and served epoch must be compatible before coordinator merge accepts scores.
+  - [x] First production receive guard: compact-candidate receive requests
+    carry expected `remote_index_identity`, and returned candidate-row
+    `profile_fingerprint` bytes must match before the batch can enter
+    production merge state.
 - [ ] Add protocol, extension-version, and opclass-binary version negotiation.
   Strict mode must reject incompatible remotes; degraded mode must report the
   skipped node and the exact mismatch.

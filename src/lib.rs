@@ -13721,11 +13721,11 @@ mod tests {
         format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
     }
 
-    fn loopback_remote_index_identity_hex(
+    fn loopback_remote_index_identity_bytes(
         client: &mut postgres::Client,
         remote_index_regclass: &str,
-    ) -> String {
-        let identity = client
+    ) -> Vec<u8> {
+        client
             .query_one(
                 "SELECT decode(profile_fingerprint, 'hex') \
                    FROM ec_spire_remote_search_endpoint_identity(to_regclass($1)::oid)",
@@ -13733,7 +13733,14 @@ mod tests {
             )
             .expect("remote endpoint identity query should succeed")
             .try_get::<_, Vec<u8>>(0)
-            .expect("remote endpoint identity should decode");
+            .expect("remote endpoint identity should decode")
+    }
+
+    fn loopback_remote_index_identity_hex(
+        client: &mut postgres::Client,
+        remote_index_regclass: &str,
+    ) -> String {
+        let identity = loopback_remote_index_identity_bytes(client, remote_index_regclass);
         identity
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -23836,6 +23843,10 @@ mod tests {
             .expect("leaf pid should decode");
         let selected_pid = u64::try_from(selected_pid).expect("leaf pid should fit u64");
         let requested_epoch = u64::try_from(active_epoch).expect("active epoch should fit u64");
+        let remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_production_candidate_receive_remote_idx",
+        );
 
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
@@ -23843,6 +23854,7 @@ mod tests {
                 conninfo: loopback_conninfo,
                 remote_index_regclass: "ec_spire_production_candidate_receive_remote_idx"
                     .to_owned(),
+                remote_index_identity,
                 requested_epoch,
                 query: vec![1.0, 0.0],
                 selected_pids: vec![selected_pid],
@@ -23940,6 +23952,7 @@ mod tests {
                 node_id: 2,
                 conninfo: timeout_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_timeout_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -24022,6 +24035,7 @@ mod tests {
                 node_id: 2,
                 conninfo: cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_cancel_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -24105,6 +24119,7 @@ mod tests {
                 conninfo: local_cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_local_cancel_remote_idx"
                     .to_owned(),
+                remote_index_identity: vec![0xaa],
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -24117,6 +24132,88 @@ mod tests {
 
         assert_eq!(failed.status, "remote_candidate_receive_failed");
         assert_eq!(failed.failure_category, "local_query_cancelled");
+        assert_eq!(failed.candidate_count, 0);
+        assert!(failed.batch.is_none());
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prod_receive_identity_mismatch() {
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS ec_spire_candidate_receive_identity_remote_sql; \
+                 DROP SCHEMA IF EXISTS ec_spire_candidate_receive_identity CASCADE; \
+                 CREATE TABLE ec_spire_candidate_receive_identity_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_candidate_receive_identity_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_candidate_receive_identity_remote_idx \
+                     ON ec_spire_candidate_receive_identity_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, storage_format = 'rabitq'); \
+                 CREATE SCHEMA ec_spire_candidate_receive_identity; \
+                 CREATE FUNCTION ec_spire_candidate_receive_identity.ec_spire_remote_search(\
+                     oid, bigint, real[], bigint[], integer, text) \
+                 RETURNS TABLE (\
+                     served_epoch bigint, node_id bigint, pid bigint, \
+                     object_version bigint, row_index bigint, assignment_flags smallint, \
+                     vec_id bytea, row_locator bytea, score real, \
+                     protocol_version text, extension_version text, opclass_identity text, \
+                     storage_format text, assignment_payload_format text, \
+                     quantizer_profile text, scoring_profile text, \
+                     profile_fingerprint text, endpoint_status text) \
+                 LANGUAGE sql AS $function$ \
+                     SELECT $2, 2::bigint, $4[1], \
+                            1::bigint, 0::bigint, 1::smallint, \
+                            decode('01', 'hex'), decode('02', 'hex'), 1.0::real, \
+                            'ec_spire_remote_search_v1', '{extension_version}', 'test-opclass', \
+                            'rabitq', 'rabitq_v1', 'rabitq_quantizer_v1', \
+                            'inner_product_score_v1', 'bb', 'ready' \
+                 $function$",
+                extension_version = env!("CARGO_PKG_VERSION")
+            ))
+            .expect("loopback identity mismatch fixture should be created");
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_candidate_receive_identity_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let selected_pid = loopback_client
+            .query_one(
+                "SELECT min(leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_candidate_receive_identity_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("leaf pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("leaf pid should decode");
+        let identity_conninfo = format!(
+            "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_identity,public'"
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
+            am::SpireRemoteProductionCandidateReceiveRequest {
+                node_id: 2,
+                conninfo: identity_conninfo,
+                remote_index_regclass: "ec_spire_candidate_receive_identity_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
+                requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
+                query: vec![1.0, 0.0],
+                selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
+                top_k: 1,
+                consistency_mode: "strict".to_owned(),
+            },
+        ]);
+        let failed = rows.first().expect("identity mismatch row should exist");
+
+        assert_eq!(failed.status, "remote_candidate_receive_failed");
+        assert_eq!(failed.failure_category, "endpoint_identity_mismatch");
         assert_eq!(failed.candidate_count, 0);
         assert!(failed.batch.is_none());
     }
@@ -24188,6 +24285,7 @@ mod tests {
                 node_id: 2,
                 conninfo: terminate_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_terminate_remote_idx".to_owned(),
+                remote_index_identity: vec![0xaa],
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
                 selected_pids: vec![u64::try_from(selected_pid).expect("pid should fit u64")],
@@ -24285,6 +24383,10 @@ mod tests {
             .expect("ready leaf pid should decode");
         let selected_pid = u64::try_from(selected_pid).expect("ready leaf pid should fit u64");
         let requested_epoch = u64::try_from(active_epoch).expect("ready epoch should fit u64");
+        let ready_remote_index_identity = loopback_remote_index_identity_bytes(
+            &mut loopback_client,
+            "ec_spire_production_candidate_receive_ready_idx",
+        );
         let decode_fail_conninfo = format!(
             "{loopback_conninfo} options='-c search_path=ec_spire_candidate_receive_decode_fail,public'"
         );
@@ -24295,6 +24397,7 @@ mod tests {
         let request = |node_id: u32,
                        conninfo: String,
                        remote_index_regclass: &str,
+                       remote_index_identity: Vec<u8>,
                        requested_epoch: u64,
                        query: Vec<f32>,
                        selected_pids: Vec<u64>,
@@ -24303,6 +24406,7 @@ mod tests {
                 node_id,
                 conninfo,
                 remote_index_regclass: remote_index_regclass.to_owned(),
+                remote_index_identity,
                 requested_epoch,
                 query,
                 selected_pids,
@@ -24315,6 +24419,7 @@ mod tests {
                 2,
                 loopback_conninfo.clone(),
                 "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -24324,6 +24429,7 @@ mod tests {
                 3,
                 loopback_conninfo.clone(),
                 "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![u64::MAX],
@@ -24333,6 +24439,7 @@ mod tests {
                 4,
                 "port=not-a-number dbname=postgres".to_owned(),
                 "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -24343,6 +24450,7 @@ mod tests {
                 "host=/tmp/ecaz_missing_pg_socket_30729 port=6543 dbname=postgres user=postgres connect_timeout=1"
                     .to_owned(),
                 "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -24352,6 +24460,7 @@ mod tests {
                 6,
                 loopback_conninfo.clone(),
                 "ec_spire_missing_candidate_receive_idx",
+                ready_remote_index_identity.clone(),
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -24361,6 +24470,7 @@ mod tests {
                 7,
                 loopback_conninfo.clone(),
                 "ec_spire_production_candidate_receive_ready_idx",
+                ready_remote_index_identity,
                 requested_epoch,
                 vec![1.0, 0.0, 0.0],
                 vec![selected_pid],
@@ -24370,6 +24480,7 @@ mod tests {
                 8,
                 decode_fail_conninfo,
                 "ec_spire_production_candidate_receive_ready_idx",
+                vec![0xaa],
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
@@ -24379,6 +24490,7 @@ mod tests {
                 9,
                 validation_fail_conninfo,
                 "ec_spire_production_candidate_receive_ready_idx",
+                vec![0xaa],
                 requested_epoch,
                 vec![1.0, 0.0],
                 vec![selected_pid],
