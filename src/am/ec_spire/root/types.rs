@@ -664,6 +664,8 @@ pub(crate) struct SpireRemoteProductionExecutorStateSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) state_model: &'static str,
     pub(crate) transport_mode: &'static str,
+    pub(crate) consistency_mode_source: &'static str,
+    pub(crate) consistency_mode: &'static str,
     pub(crate) dispatch_count: u64,
     pub(crate) planned_dispatch_count: u64,
     pub(crate) blocked_before_dispatch_count: u64,

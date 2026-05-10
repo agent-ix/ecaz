@@ -188,6 +188,10 @@ Acceptance artifact:
     - [x] First AM-boundary source-of-truth slice: session GUC
       `ec_spire.remote_search_consistency_mode` feeds a production executor
       session summary without a per-call free-form consistency string.
+    - [x] Production executor state rows now carry `consistency_mode_source`
+      and `consistency_mode`; the SQL full-state surface remains at its pgrx
+      row-width limit, so SQL mode attribution is still exposed through the
+      compact session summary.
   - [ ] Add a strict/degraded fault matrix table covering connect, secret,
     statement timeout, backend termination, query cancellation, validation,
     identity, version, stale epoch, and heap-resolution failures.

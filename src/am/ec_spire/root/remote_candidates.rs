@@ -3181,7 +3181,11 @@ impl SpireRemoteFanoutExecutor {
         )
     }
 
-    fn summary(&self) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+    fn summary(
+        &self,
+        consistency_mode_source: &'static str,
+        consistency_mode: &'static str,
+    ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
         let mut planned_dispatch_count = 0_u64;
         let mut blocked_before_dispatch_count = 0_u64;
         let mut remote_pid_count = 0_u64;
@@ -3520,6 +3524,8 @@ impl SpireRemoteFanoutExecutor {
             requested_epoch: self.requested_epoch,
             state_model: SPIRE_REMOTE_PRODUCTION_STATE_MODEL,
             transport_mode: SPIRE_REMOTE_PRODUCTION_TRANSPORT_PENDING,
+            consistency_mode_source,
+            consistency_mode,
             dispatch_count,
             planned_dispatch_count,
             blocked_before_dispatch_count,
@@ -3555,8 +3561,12 @@ impl SpireRemoteFanoutExecutor {
 fn remote_search_production_executor_state_summary_from_dispatch_rows(
     requested_epoch: u64,
     rows: &[SpireRemoteSearchLibpqDispatchPlanRow],
+    consistency_mode_source: &'static str,
+    consistency_mode: &str,
 ) -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
-    SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows).summary()
+    let consistency_mode = consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+    SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, rows)
+        .summary(consistency_mode_source, consistency_mode)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3583,7 +3593,10 @@ fn remote_search_production_executor_state_summary_from_transport_probe_rows_wit
     let mut executor =
         SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(requested_epoch, dispatch_rows);
     executor.apply_transport_probe_rows_with_consistency_mode(transport_rows, consistency_mode)?;
-    executor.summary()
+    executor.summary(
+        "function_argument",
+        consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3617,7 +3630,10 @@ fn remote_search_production_executor_state_summary_from_candidate_receive_result
         candidate_receive_results,
         consistency_mode,
     )?;
-    executor.summary()
+    executor.summary(
+        "function_argument",
+        consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3679,6 +3695,8 @@ pub(crate) unsafe fn remote_search_production_executor_state_summary_row(
         remote_search_production_executor_state_summary_from_dispatch_rows(
             requested_epoch,
             &dispatch_rows,
+            "function_argument",
+            consistency_mode,
         )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -7438,7 +7456,9 @@ mod production_executor_state_tests {
         );
 
         executor.apply_local_query_cancel();
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
         assert_eq!(row.cancelled_dispatch_count, 2);
         assert_eq!(row.first_cancellation_category, "local_query_cancelled");
         assert_eq!(row.candidate_receive_ready_dispatch_count, 0);
@@ -7468,7 +7488,9 @@ mod production_executor_state_tests {
             )])
             .expect("transport local cancel should apply globally");
 
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
         assert_eq!(row.cancelled_dispatch_count, 2);
         assert_eq!(row.first_cancellation_category, "local_query_cancelled");
         assert_eq!(row.transport_failed_dispatch_count, 0);
@@ -7497,7 +7519,9 @@ mod production_executor_state_tests {
             .apply_candidate_receive_results(&receive_results)
             .expect("receive local cancel should apply globally");
 
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
         assert_eq!(row.cancelled_dispatch_count, 2);
         assert_eq!(row.first_cancellation_category, "local_query_cancelled");
         assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
@@ -7645,7 +7669,9 @@ mod production_executor_state_tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].node_id, 52);
         assert_eq!(executor.conninfo_secret_lookup_count, 2);
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
         assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
         assert_eq!(row.candidate_receive_failed_dispatch_count, 1);
         assert_eq!(
@@ -7681,7 +7707,9 @@ mod production_executor_state_tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].node_id, 72);
         assert_eq!(executor.conninfo_secret_lookup_count, 2);
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "degraded")
+            .expect("summary should succeed");
         assert_eq!(row.candidate_receive_pending_dispatch_count, 1);
         assert_eq!(row.candidate_receive_failed_dispatch_count, 0);
         assert_eq!(row.degraded_skipped_dispatch_count, 1);
@@ -7712,7 +7740,9 @@ mod production_executor_state_tests {
 
         std::env::remove_var(&secret_62);
 
-        let row = executor.summary().expect("summary should succeed");
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
         assert_eq!(executor.conninfo_secret_lookup_count, 1);
         assert_eq!(row.candidate_receive_pending_dispatch_count, 0);
         assert_eq!(row.candidate_receive_failed_dispatch_count, 1);

@@ -235,6 +235,12 @@ executor state without accepting a per-call free-form consistency string. C5
 must use the same source unless a later reviewed packet replaces it with an
 explicit query option.
 
+The production executor state row also carries `consistency_mode_source` and
+`consistency_mode` for C5 Rust-side consumers. The existing SQL full-state
+surface is already at the pgrx row-width ceiling, so SQL mode attribution stays
+on the compact session summary unless a later packet splits the full-state
+surface into smaller views.
+
 Verification:
 
 - Fault matrix for auth or certificate failure, connection reset, remote

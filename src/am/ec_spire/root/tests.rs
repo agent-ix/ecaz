@@ -214,8 +214,13 @@ mod tests {
             ),
         ];
 
-        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(7, &rows)
-            .expect("production executor state summary should build");
+        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(
+            7,
+            &rows,
+            "function_argument",
+            "strict",
+        )
+        .expect("production executor state summary should build");
 
         assert_eq!(summary.state_model, SPIRE_REMOTE_PRODUCTION_STATE_MODEL);
         assert_eq!(summary.dispatch_count, 2);
@@ -246,8 +251,13 @@ mod tests {
             SPIRE_REMOTE_STATUS_EXECUTOR_OVERLOAD,
         )];
 
-        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(7, &rows)
-            .expect("production executor state summary should build");
+        let summary = remote_search_production_executor_state_summary_from_dispatch_rows(
+            7,
+            &rows,
+            "function_argument",
+            "strict",
+        )
+        .expect("production executor state summary should build");
 
         assert_eq!(summary.dispatch_count, 1);
         assert_eq!(summary.planned_dispatch_count, 0);
