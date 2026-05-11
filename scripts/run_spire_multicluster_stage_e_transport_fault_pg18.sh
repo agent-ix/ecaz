@@ -5,6 +5,7 @@ set -euo pipefail
 #
 # Supported cases:
 #   local_cancel
+#   local_statement_timeout
 #   remote_backend_termination
 #   remote_statement_timeout
 #
@@ -31,6 +32,7 @@ Usage: scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh --case CAS
 
 Cases:
   local_cancel
+  local_statement_timeout
   remote_backend_termination
   remote_statement_timeout
 
@@ -106,6 +108,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$FAULT_CASE" != "local_cancel" \
+  && "$FAULT_CASE" != "local_statement_timeout" \
   && "$FAULT_CASE" != "remote_backend_termination" \
   && "$FAULT_CASE" != "remote_statement_timeout" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
@@ -188,6 +191,10 @@ else
   fault_failure_category="local_query_cancelled"
   fault_injection="local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)"
 fi
+if [[ "$FAULT_CASE" == "local_statement_timeout" ]]; then
+  fault_failure_category="local_statement_timeout"
+  fault_injection="statement_timeout_after_ms=1 all_remote_sql=pg_sleep(0.30)"
+fi
 
 run_case() {
   local mode="$1"
@@ -206,6 +213,9 @@ run_case() {
   if [[ "$FAULT_CASE" == "local_cancel" ]]; then
     raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_local_cancel(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 25) ORDER BY node_id")"
     summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, candidate_receive_pending_dispatch_count, cancelled_dispatch_count, first_cancellation_category, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_local_cancel_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 25, '$mode')")"
+  elif [[ "$FAULT_CASE" == "local_statement_timeout" ]]; then
+    raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_prod_transport_stmt_timeout(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 1) ORDER BY node_id")"
+    summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, candidate_receive_pending_dispatch_count, cancelled_dispatch_count, first_cancellation_category, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_prod_transport_stmt_timeout_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 1, '$mode')")"
   elif [[ -n "$pgoptions" ]]; then
     raw_rows="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_case(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE') ORDER BY node_id")"
     summary="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_case_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE', '$mode')")"
@@ -230,7 +240,7 @@ run_case() {
     echo "observed_summary=$summary"
   } | tee "$output_log"
 
-  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" || "$FAULT_CASE" == "local_statement_timeout" ]]; then
     IFS=, read -r state_model dispatch_count sent_count ready_count failed_count pending_count cancelled_count first_cancellation degraded_count first_skip next_step status <<< "$summary"
     first_failure="none"
   else
@@ -240,14 +250,14 @@ run_case() {
   fi
   [[ "$state_model" == "spire_remote_fanout_executor_v1" ]]
   [[ "$dispatch_count" == "2" ]]
-  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" || "$FAULT_CASE" == "local_statement_timeout" ]]; then
     [[ "$ready_count" == "0" ]]
   else
     [[ "$ready_count" == "1" ]]
   fi
   [[ "$failed_count" == "$expected_transport_failed" ]]
   [[ "$first_failure" == "$expected_first_failure" ]]
-  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" || "$FAULT_CASE" == "local_statement_timeout" ]]; then
     [[ "$pending_count" == "0" ]]
   else
     [[ "$pending_count" == "1" ]]
@@ -258,7 +268,7 @@ run_case() {
   [[ "$first_skip" == "$expected_first_skip" ]]
   [[ "$next_step" == "$expected_next_step" ]]
   [[ "$status" == "$expected_status" ]]
-  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" || "$FAULT_CASE" == "local_statement_timeout" ]]; then
     [[ "$sent_count" == "0" ]]
   elif [[ "$mode" == "strict" ]]; then
     [[ "$sent_count" == "2" ]]
@@ -267,7 +277,7 @@ run_case() {
   fi
 }
 
-if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+if [[ "$FAULT_CASE" == "local_cancel" || "$FAULT_CASE" == "local_statement_timeout" ]]; then
   run_case "strict" "$STRICT_LOG" "remote_executor_cancelled" "0" "0" "remote_executor_cancellation" "none" "none" "2" "$fault_failure_category"
   run_case "degraded" "$DEGRADED_LOG" "remote_executor_cancelled" "0" "0" "remote_executor_cancellation" "none" "none" "2" "$fault_failure_category"
 else

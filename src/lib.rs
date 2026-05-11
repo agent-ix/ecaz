@@ -15176,6 +15176,127 @@ mod tests {
         ))
     }
 
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_prod_transport_stmt_timeout(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        statement_timeout_after_ms: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(node_id, i64),
+            name!(started_after_ms, i64),
+            name!(completed_after_ms, i64),
+            name!(elapsed_ms, i64),
+            name!(row_count, i64),
+            name!(status, &'static str),
+            name!(failure_category, &'static str),
+        ),
+    > {
+        let _interrupt_lock = env_var_test_lock();
+        let timeout_signal =
+            unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms) }
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire_test_prod_transport_stmt_timeout could not resolve PostgreSQL timeout symbols"
+                    )
+                });
+        if !timeout_signal.statement_timeout_pending() {
+            pgrx::error!(
+                "ec_spire_test_prod_transport_stmt_timeout did not observe a pending statement timeout"
+            );
+        }
+        let requests = ec_spire_test_transport_probe_local_cancel_requests(
+            "ec_spire_test_prod_transport_stmt_timeout",
+            node_ids,
+            conninfo_secret_names,
+        );
+        let rows = am::spire_remote_search_production_transport_probe_for_test(requests);
+
+        TableIterator::new(rows.into_iter().map(|row| {
+            (
+                i64::from(row.node_id),
+                i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+                i64::try_from(row.completed_after_ms)
+                    .expect("completed_after_ms should fit in i64"),
+                i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+                i64::try_from(row.row_count).expect("row count should fit in i64"),
+                row.status,
+                row.failure_category,
+            )
+        }))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_prod_transport_stmt_timeout_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        statement_timeout_after_ms: i32,
+        consistency_mode: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(transport_sent_dispatch_count, i64),
+            name!(transport_ready_dispatch_count, i64),
+            name!(transport_failed_dispatch_count, i64),
+            name!(candidate_receive_pending_dispatch_count, i64),
+            name!(cancelled_dispatch_count, i64),
+            name!(first_cancellation_category, &'static str),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let _interrupt_lock = env_var_test_lock();
+        let timeout_signal = unsafe {
+            ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!(
+                "ec_spire_test_prod_transport_stmt_timeout_summary could not resolve PostgreSQL timeout symbols"
+            )
+        });
+        if !timeout_signal.statement_timeout_pending() {
+            pgrx::error!(
+                "ec_spire_test_prod_transport_stmt_timeout_summary did not observe a pending statement timeout"
+            );
+        }
+        let requests = ec_spire_test_transport_probe_local_cancel_requests(
+            "ec_spire_test_prod_transport_stmt_timeout_summary",
+            node_ids,
+            conninfo_secret_names,
+        );
+        let row = am::spire_remote_search_production_transport_probe_summary_for_test(
+            requests,
+            &consistency_mode,
+        );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.transport_sent_dispatch_count)
+                .expect("transport sent count should fit in i64"),
+            i64::try_from(row.transport_ready_dispatch_count)
+                .expect("transport ready count should fit in i64"),
+            i64::try_from(row.transport_failed_dispatch_count)
+                .expect("transport failed count should fit in i64"),
+            i64::try_from(row.candidate_receive_pending_dispatch_count)
+                .expect("candidate receive pending count should fit in i64"),
+            i64::try_from(row.cancelled_dispatch_count).expect("cancelled count should fit in i64"),
+            row.first_cancellation_category,
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
+    }
+
     fn ec_spire_test_candidate_receive_requests(
         function_name: &str,
         node_ids: Vec<i32>,

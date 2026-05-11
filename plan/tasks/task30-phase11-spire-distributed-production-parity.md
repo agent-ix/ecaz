@@ -880,6 +880,12 @@ Goal: prove distributed correctness locally before AWS.
     cancellation control path while preserving its distinct category.
     Remaining Stage E connection reset, local statement-timeout, OOM, and
     lifecycle rows still need fixture logs.
+  - [x] Packet `30786` adds the local statement-timeout transport runtime row:
+    the PG interrupt bridge reports `local_statement_timeout` as a query-wide
+    cancellation category, cancels every in-flight remote, and reports
+    `remote_executor_cancelled` in both strict and degraded mode.
+    Remaining Stage E connection reset, OOM, and lifecycle rows still need
+    fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
