@@ -12303,6 +12303,34 @@ fn ec_spire_remote_search_row_materialization_mapping_contract() -> TableIterato
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_row_materialization_mirror_sync_contract() -> TableIterator<
+    'static,
+    (
+        name!(step_ordinal, i64),
+        name!(step_name, &'static str),
+        name!(operator_input, &'static str),
+        name!(validation_rule, &'static str),
+        name!(failure_behavior, &'static str),
+        name!(status, &'static str),
+        name!(recommendation, &'static str),
+    ),
+> {
+    let rows = am::spire_remote_row_materialization_mirror_sync_contract_rows();
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.step_ordinal).expect("step ordinal should fit in i64"),
+            row.step_name,
+            row.operator_input,
+            row.validation_rule,
+            row.failure_behavior,
+            row.status,
+            row.recommendation,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_heap_resolution_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -23796,6 +23824,8 @@ mod tests {
             "FROM ec_spire_remote_search_row_materialization_contract()";
         let materialization_mapping_contract_from =
             "FROM ec_spire_remote_search_row_materialization_mapping_contract()";
+        let mirror_sync_contract_from =
+            "FROM ec_spire_remote_row_materialization_mirror_sync_contract()";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {locator_contract_from}"))
             .expect("row locator contract count query should succeed")
             .expect("row locator contract count should exist");
@@ -23903,6 +23933,22 @@ mod tests {
         ))
         .expect("no-scan-write mapping status query should succeed")
         .expect("no-scan-write mapping status should exist");
+        let mirror_sync_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {mirror_sync_contract_from}"))
+                .expect("mirror sync contract count query should succeed")
+                .expect("mirror sync contract count should exist");
+        let mirror_profile_status = Spi::get_one::<String>(&format!(
+            "SELECT status {mirror_sync_contract_from} \
+             WHERE step_name = 'mirror_profile'"
+        ))
+        .expect("mirror profile status query should succeed")
+        .expect("mirror profile status should exist");
+        let mirror_fixture_status = Spi::get_one::<String>(&format!(
+            "SELECT status {mirror_sync_contract_from} \
+             WHERE step_name = 'post_refresh_probe'"
+        ))
+        .expect("mirror fixture status query should succeed")
+        .expect("mirror fixture status should exist");
 
         assert_eq!(row_count, 4);
         assert_eq!(identity_count, 10);
@@ -23939,6 +23985,9 @@ mod tests {
             "requires_remote_row_materialization"
         );
         assert_eq!(no_scan_write_status, "enforced_contract");
+        assert_eq!(mirror_sync_count, 6);
+        assert_eq!(mirror_profile_status, "required_before_refresh");
+        assert_eq!(mirror_fixture_status, "fixture_required");
     }
 
     #[pg_test]
@@ -31938,6 +31987,18 @@ mod tests {
         ))
         .expect("operator manifest freshness entrypoint query should succeed")
         .expect("operator manifest freshness entrypoint should exist");
+        let mirror_sync_use = Spi::get_one::<String>(&format!(
+            "SELECT operator_use {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_row_materialization_mirror_sync_contract'"
+        ))
+        .expect("operator mirror sync entrypoint query should succeed")
+        .expect("operator mirror sync entrypoint should exist");
+        let mirror_sync_action = Spi::get_one::<String>(&format!(
+            "SELECT next_action {operator_entrypoint_from} \
+             WHERE entrypoint_name = 'ec_spire_remote_row_materialization_mirror_sync_contract'"
+        ))
+        .expect("operator mirror sync action query should succeed")
+        .expect("operator mirror sync action should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -32065,8 +32126,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 25);
-        assert_eq!(operator_entrypoint_reachable_count, 25);
+        assert_eq!(operator_entrypoint_count, 26);
+        assert_eq!(operator_entrypoint_reachable_count, 26);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -32114,6 +32175,11 @@ mod tests {
         assert_eq!(
             manifest_freshness_use,
             "stage_e_manifest_freshness_assertion"
+        );
+        assert_eq!(mirror_sync_use, "operator_owned_mirror_sync_contract");
+        assert_eq!(
+            mirror_sync_action,
+            "implement_mirror_profile_dry_run_then_refresh_before_stage_f_or_g"
         );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");

@@ -272,6 +272,13 @@ Acceptance artifact:
     endpoint readiness and before advertising an epoch as AM-deliverable.
   - [ ] Add the mirror profile contract and dry-run diagnostics for one
     coordinator index plus one remote node.
+    - [x] First contract surface:
+      `ec_spire_remote_row_materialization_mirror_sync_contract()` defines the
+      required profile, endpoint identity gate, remote row fetch, coordinator
+      heap upsert, mapping registration, and post-refresh probe steps before
+      implementation writes rows.
+    - [ ] Add dry-run diagnostics that evaluate a concrete coordinator index,
+      remote node, and profile without writing heap rows or mappings.
   - [ ] Add the refresh SQL primitive that fetches remote rows, writes
     coordinator heap rows, and registers mappings.
   - [ ] Add the `ecaz` wrapper command with packet-local logging.

@@ -73,6 +73,7 @@ pub(crate) use self::ec_spire::{
     remote_node_descriptor_state_contract_rows as spire_remote_node_descriptor_state_contract_rows,
     remote_node_snapshot as spire_remote_node_snapshot,
     remote_operator_entrypoint_contract_rows as spire_remote_operator_entrypoint_contract_rows,
+    remote_row_materialization_mirror_sync_contract_rows as spire_remote_row_materialization_mirror_sync_contract_rows,
     remote_search_candidates as spire_remote_search_candidates,
     remote_search_coordinator_gate_summary_row as spire_remote_search_coordinator_gate_summary_row,
     remote_search_coordinator_local_candidates as spire_remote_search_coordinator_local_candidates,

@@ -422,6 +422,14 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             status_source: "node_id,freshness_status,persisted_entry_matches,next_action",
             next_action: "persist_or_refresh_manifest_before_stage_e_fixture_execution",
         },
+        SpireRemoteOperatorEntrypointContractRow {
+            entrypoint_ordinal: 26,
+            entrypoint_name: "ec_spire_remote_row_materialization_mirror_sync_contract",
+            area: "materialization",
+            operator_use: "operator_owned_mirror_sync_contract",
+            status_source: "step_name,operator_input,validation_rule,status",
+            next_action: "implement_mirror_profile_dry_run_then_refresh_before_stage_f_or_g",
+        },
     ]
 }
 
@@ -9601,6 +9609,66 @@ pub(crate) fn remote_search_row_materialization_mapping_contract_rows(
             missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
             status: "required_before_remote_origin_am_delivery",
             recommendation: "report remote_row_materialization as the blocker instead of returning origin heap coordinates",
+        },
+    ]
+}
+
+pub(crate) fn remote_row_materialization_mirror_sync_contract_rows(
+) -> Vec<SpireRemoteRowMaterializationMirrorSyncContractRow> {
+    vec![
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 1,
+            step_name: "mirror_profile",
+            operator_input: "coordinator_index_oid,origin_node_id,remote_relation_or_query,stable_source_identity,target_column_mapping,conflict_policy",
+            validation_rule: "profile_must_bind_one_coordinator_index_to_one_ready_remote_node_and_same_indexed_heap_relation",
+            failure_behavior: "fail_closed_before_remote_fetch",
+            status: "required_before_refresh",
+            recommendation: "add a dry-run profile diagnostic before materializing rows",
+        },
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 2,
+            step_name: "remote_endpoint_identity_gate",
+            operator_input: "remote_node_descriptor,requested_epoch,endpoint_identity,extension_version,opclass_identity,profile_fingerprint",
+            validation_rule: "remote_endpoint_identity_must_match_registered_descriptor_before_accepting_rows",
+            failure_behavior: "fail_closed_no_catalog_writes",
+            status: "reuse_existing_production_gate",
+            recommendation: "share the production compact-candidate endpoint identity validation path",
+        },
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 3,
+            step_name: "remote_row_fetch",
+            operator_input: "operator_declared_remote_projection,stable_source_identity,vec_id,row_locator,served_epoch",
+            validation_rule: "remote_rows_must_include_global_vec_id_and_opaque_row_locator_for_catalog_registration",
+            failure_behavior: "fail_closed_discard_batch",
+            status: "implementation_open",
+            recommendation: "fetch only the columns required to build the coordinator heap row and mapping identity",
+        },
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 4,
+            step_name: "coordinator_heap_upsert",
+            operator_input: "same_relation_target_columns,stable_source_identity,conflict_policy",
+            validation_rule: "upsert_must_create_or_find_an_ordinary_tuple_in_the_indexed_heap_relation",
+            failure_behavior: "fail_closed_no_mapping_registration",
+            status: "implementation_open",
+            recommendation: "obtain the coordinator ctid after the heap write under the refresh transaction",
+        },
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 5,
+            step_name: "mapping_registration",
+            operator_input: "requested_epoch,served_epoch,origin_node_id,vec_id,row_locator,scan_heap_relation_oid,materialized_heap_tid",
+            validation_rule: "call_ec_spire_register_remote_row_materialization_with_exact_remote_identity",
+            failure_behavior: "fail_closed_report_unregistered_row",
+            status: "implementation_open",
+            recommendation: "reuse the ADR-065 catalog path instead of direct catalog DML",
+        },
+        SpireRemoteRowMaterializationMirrorSyncContractRow {
+            step_ordinal: 6,
+            step_name: "post_refresh_probe",
+            operator_input: "coordinator_index_oid,query_vector,top_k",
+            validation_rule: "SQL_index_scan_should_return_materialized_remote_rows_without_explicit_register_calls",
+            failure_behavior: "refresh_not_stage_d_ready",
+            status: "fixture_required",
+            recommendation: "add the no-explicit-register PG18 fixture before marking Stage D complete",
         },
     ]
 }
