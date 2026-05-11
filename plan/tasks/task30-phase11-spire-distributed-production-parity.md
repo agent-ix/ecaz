@@ -1198,6 +1198,10 @@ v1 write contract from ADR-069:
   - [x] Packet `30868` adds the runtime bound-parameter PK bytea conversion
     helper for DML primitive plans, including NULL/type/count fail-closed
     checks before a CustomScan executor can call coordinator primitives.
+  - [x] Packet `30869` exposes
+    `ec_spire_dml_frontdoor_primitive_plan_sql(...)`, a SQL-visible diagnostic
+    that proves analyzed SQL can build the typed primitive plan and constant
+    PK bytea argument before planner-hook replacement is enabled.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

@@ -1220,6 +1220,125 @@ fn ec_spire_dml_frontdoor_replacement_sql(
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_primitive_plan_sql(
+    sql: &str,
+) -> TableIterator<
+    'static,
+    (
+        name!(target_relation_oid, Option<pg_sys::Oid>),
+        name!(index_oid, Option<pg_sys::Oid>),
+        name!(supported, bool),
+        name!(custom_scan_mode, &'static str),
+        name!(primitive, &'static str),
+        name!(pk_column, Option<String>),
+        name!(pk_value_kind, &'static str),
+        name!(pk_value_const, Option<i64>),
+        name!(pk_value_param_id, Option<i32>),
+        name!(pk_value_bytes, Option<Vec<u8>>),
+        name!(updated_columns, Vec<String>),
+        name!(projected_columns, Vec<String>),
+        name!(status, &'static str),
+        name!(error, Option<String>),
+        name!(next_step, &'static str),
+    ),
+> {
+    let query = unsafe {
+        analyze_single_dml_frontdoor_query(sql)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
+    };
+    let Some(decision) =
+        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
+    else {
+        return TableIterator::once((
+            None,
+            None,
+            false,
+            "none",
+            "none",
+            None,
+            "other",
+            None,
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            "unsupported_shape",
+            Some(
+                "ec_spire_distributed: DML front door requires one target heap relation".to_owned(),
+            ),
+            "raise ADR-069 planner error instead of using coordinator heap path",
+        ));
+    };
+    let target_relation_oid = Some(decision.target_relation_oid);
+    let index_oid = if decision.index_oid == pg_sys::InvalidOid {
+        None
+    } else {
+        Some(decision.index_oid)
+    };
+    let custom_scan_mode = decision.custom_scan_mode;
+    let primitive = decision.primitive;
+    let pk_column = decision.pk_column.clone();
+    let pk_value_kind = decision.pk_value_kind;
+    let pk_value_const = decision.pk_value_const;
+    let pk_value_param_id = decision.pk_value_param_id;
+    let updated_columns = decision.updated_columns.clone();
+    let projected_columns = decision.projected_columns.clone();
+
+    let primitive_plan =
+        match am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&decision) {
+            Ok(plan) => plan,
+            Err(error) => {
+                return TableIterator::once((
+                    target_relation_oid,
+                    index_oid,
+                    false,
+                    custom_scan_mode,
+                    primitive,
+                    pk_column,
+                    pk_value_kind,
+                    pk_value_const,
+                    pk_value_param_id,
+                    None,
+                    updated_columns,
+                    projected_columns,
+                    "primitive_plan_not_ready",
+                    Some(error),
+                    "fix the DML replacement decision before building a CustomScan executor node",
+                ));
+            }
+        };
+    let (pk_value_bytes, status, error, next_step) =
+        match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
+            Ok(bytes) => (Some(bytes), "primitive_plan_ready", None, "wire planner hook to DML CustomScan executor replacement"),
+            Err(error) => (
+                None,
+                "primitive_plan_requires_runtime_params",
+                Some(error),
+                "evaluate bound parameters in the DML CustomScan executor before invoking the coordinator primitive",
+            ),
+        };
+
+    TableIterator::once((
+        target_relation_oid,
+        index_oid,
+        true,
+        custom_scan_mode,
+        primitive,
+        pk_column,
+        pk_value_kind,
+        pk_value_const,
+        pk_value_param_id,
+        pk_value_bytes,
+        updated_columns,
+        projected_columns,
+        status,
+        error,
+        next_step,
+    ))
+}
+
 unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
     let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
     let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
@@ -28663,6 +28782,54 @@ mod tests {
         assert!(
             unsupported_error.contains("requires a supported decision"),
             "{unsupported_error}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_primitive_plan_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_primitive_plan_diag_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML primitive plan diagnostic table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_primitive_plan_diag_idx \
+             ON ec_spire_dml_primitive_plan_diag_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML primitive plan diagnostic ec_spire index creation should succeed");
+
+        let select_plan = "FROM ec_spire_dml_frontdoor_primitive_plan_sql(\
+             $$SELECT id, title FROM ec_spire_dml_primitive_plan_diag_sql WHERE id = 5$$)";
+        let select_summary = Spi::get_one::<String>(&format!(
+            "SELECT custom_scan_mode || '|' || primitive || '|' || \
+                    pk_column || '|' || pk_value_kind || '|' || \
+                    encode(pk_value_bytes, 'hex') || '|' || \
+                    array_to_string(projected_columns, ',') || '|' || status \
+               {select_plan}"
+        ))
+        .expect("DML primitive plan diagnostic query should succeed")
+        .expect("DML primitive plan diagnostic row should exist");
+        assert_eq!(
+            select_summary,
+            "coordinator_pk_select_tuple_payload|ec_spire_forward_coordinator_select_tuple_payload|id|const_bigint|0000000000000005|id,title|primitive_plan_ready"
+        );
+
+        let embedding_update_plan = "FROM ec_spire_dml_frontdoor_primitive_plan_sql(\
+             $$UPDATE ec_spire_dml_primitive_plan_diag_sql \
+                   SET embedding = '[1,2,3]'::ecvector \
+                 WHERE id = 5$$)";
+        let embedding_status = Spi::get_one::<String>(&format!(
+            "SELECT supported::text || '|' || status || '|' || coalesce(error, '') \
+               {embedding_update_plan}"
+        ))
+        .expect("DML primitive plan unsupported diagnostic query should succeed")
+        .expect("DML primitive plan unsupported diagnostic row should exist");
+        assert!(
+            embedding_status.contains(
+                "false|primitive_plan_not_ready|ec_spire DML frontdoor PK argument requires a supported decision"
+            ),
+            "{embedding_status}"
         );
     }
 
