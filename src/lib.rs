@@ -40,6 +40,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
     am::register_gucs();
     unsafe {
         am::register_custom_scan();
+        am::register_dml_frontdoor_planner_hook();
     }
     #[cfg(feature = "pg18")]
     unsafe {
@@ -946,6 +947,30 @@ fn ec_spire_custom_scan_status() -> TableIterator<
         row.rel_pathlist_hook_installed,
         row.path_generation_enabled,
         row.exec_wiring_enabled,
+        row.status,
+        row.next_step,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
+    'static,
+    (
+        name!(hook_name, &'static str),
+        name!(planner_hook_installed, bool),
+        name!(query_shape_classifier_enabled, bool),
+        name!(plan_rewrite_enabled, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    let row = am::spire_dml_frontdoor_hook_status_row();
+    TableIterator::once((
+        row.hook_name,
+        row.planner_hook_installed,
+        row.query_shape_classifier_enabled,
+        row.plan_rewrite_enabled,
         row.status,
         row.next_step,
     ))
@@ -8320,7 +8345,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_no_returning_non_embedding_columns",
                 "ec_spire_forward_coordinator_update_tuple_payload",
                 "frontdoor_pending",
-                "wire planner hook CustomScan executor",
+                "wire relation metadata and CustomScan executor replacement",
             ),
             (
                 "delete",
@@ -8328,7 +8353,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_no_returning",
                 "ec_spire_prepare_coordinator_delete_tuple_payload",
                 "frontdoor_pending",
-                "wire planner hook CustomScan executor",
+                "wire relation metadata and CustomScan executor replacement",
             ),
             (
                 "pk_select",
@@ -8336,7 +8361,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_projection",
                 "ec_spire_forward_coordinator_select_tuple_payload",
                 "frontdoor_pending",
-                "wire planner hook CustomScan executor",
+                "wire relation metadata and CustomScan executor replacement",
             ),
             (
                 "update_embedding",
@@ -27747,6 +27772,36 @@ mod tests {
         assert!(path_generation_enabled);
         assert!(exec_wiring_enabled);
         assert_eq!(status, "executor_stream_wired_tuple_payload_slots");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_hook_status_installed_pass_through() {
+        let status_from = "FROM ec_spire_dml_frontdoor_hook_status()";
+        let hook_name = Spi::get_one::<String>(&format!("SELECT hook_name {status_from}"))
+            .expect("DML frontdoor hook name query should succeed")
+            .expect("DML frontdoor hook name should exist");
+        let planner_hook_installed =
+            Spi::get_one::<bool>(&format!("SELECT planner_hook_installed {status_from}"))
+                .expect("DML frontdoor planner hook query should succeed")
+                .expect("DML frontdoor planner hook value should exist");
+        let query_shape_classifier_enabled = Spi::get_one::<bool>(&format!(
+            "SELECT query_shape_classifier_enabled {status_from}"
+        ))
+        .expect("DML frontdoor query classifier query should succeed")
+        .expect("DML frontdoor query classifier value should exist");
+        let plan_rewrite_enabled =
+            Spi::get_one::<bool>(&format!("SELECT plan_rewrite_enabled {status_from}"))
+                .expect("DML frontdoor plan rewrite query should succeed")
+                .expect("DML frontdoor plan rewrite value should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {status_from}"))
+            .expect("DML frontdoor status query should succeed")
+            .expect("DML frontdoor status should exist");
+
+        assert_eq!(hook_name, "ec_spire_dml_frontdoor_planner_hook");
+        assert!(planner_hook_installed);
+        assert!(query_shape_classifier_enabled);
+        assert!(!plan_rewrite_enabled);
+        assert_eq!(status, "pass_through_query_classifier_ready");
     }
 
     #[pg_test]

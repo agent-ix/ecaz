@@ -5,7 +5,7 @@
 //! fail closed before any hook can fall through to the coordinator heap path.
 #![allow(dead_code)]
 
-use pgrx::{pg_sys, PgList};
+use pgrx::{pg_guard, pg_sys, PgList};
 
 use std::ffi::CStr;
 
@@ -50,6 +50,16 @@ pub(crate) struct SpireDmlFrontdoorShapeRow {
     pub(crate) hint: Option<&'static str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireDmlFrontdoorHookStatusRow {
+    pub(crate) hook_name: &'static str,
+    pub(crate) planner_hook_installed: bool,
+    pub(crate) query_shape_classifier_enabled: bool,
+    pub(crate) plan_rewrite_enabled: bool,
+    pub(crate) status: &'static str,
+    pub(crate) next_step: &'static str,
+}
+
 pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) ec_spire_distributed_table: bool,
     pub(crate) pk_column: &'a str,
@@ -57,7 +67,50 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) embedding_columns: &'a [&'a str],
 }
 
+static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
+static mut PLANNER_HOOK_INSTALLED: bool = false;
+
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
+
+pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+    unsafe {
+        if !PLANNER_HOOK_INSTALLED {
+            PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
+            pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
+            PLANNER_HOOK_INSTALLED = true;
+        }
+    }
+}
+
+pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow {
+    let installed = unsafe { PLANNER_HOOK_INSTALLED };
+    SpireDmlFrontdoorHookStatusRow {
+        hook_name: "ec_spire_dml_frontdoor_planner_hook",
+        planner_hook_installed: installed,
+        query_shape_classifier_enabled: true,
+        plan_rewrite_enabled: false,
+        status: if installed {
+            "pass_through_query_classifier_ready"
+        } else {
+            "not_installed"
+        },
+        next_step: "wire relation metadata and CustomScan executor replacement",
+    }
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
+    parse: *mut pg_sys::Query,
+    query_string: *const core::ffi::c_char,
+    cursor_options: core::ffi::c_int,
+    bound_params: pg_sys::ParamListInfo,
+) -> *mut pg_sys::PlannedStmt {
+    if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
+        unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
+    } else {
+        unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
+    }
+}
 
 pub(crate) fn classify_dml_frontdoor_shape(
     input: SpireDmlFrontdoorShapeInput<'_>,

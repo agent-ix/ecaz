@@ -36,6 +36,7 @@ pub(crate) use self::ec_spire::{
     coordinator_update_remote_tuple_payload as spire_coordinator_update_remote_tuple_payload,
     custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,
     custom_scan_status_row as spire_custom_scan_status_row,
+    dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,
@@ -160,6 +161,10 @@ pub(crate) fn register_gucs() {
 
 pub(crate) unsafe fn register_custom_scan() {
     unsafe { ec_spire::register_custom_scan() };
+}
+
+pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
+    unsafe { ec_spire::register_dml_frontdoor_planner_hook() };
 }
 
 #[cfg(any(test, feature = "pg_test"))]

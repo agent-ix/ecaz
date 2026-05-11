@@ -1129,6 +1129,10 @@ v1 write contract from ADR-069:
     RETURNING blockers, bigint PK equality predicates, and UPDATE / SELECT
     target columns from `pg_sys::Query` without yet installing a plan-changing
     hook.
+  - [x] Packet `30849` installs the DML front-door planner hook as a
+    pass-through chained hook, exposes
+    `ec_spire_dml_frontdoor_hook_status()`, and keeps plan rewriting disabled
+    until the relation-metadata and CustomScan executor replacement slice.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
