@@ -22,7 +22,14 @@ local multi-instance fixtures first.
   relying on SQL-visible diagnostic-only libpq surfaces.
 - Finish writer-side global vector identity so cross-node and boundary-replica
   dedupe is end-to-end safe.
-- Finish origin-node remote heap resolution and final row delivery semantics.
+- Finish origin-node remote heap resolution, then deliver remote rows through
+  the ADR-067 `EcSpireDistributedScan` CustomScan node instead of the index AM
+  materialization path.
+- Extend the Stage B endpoint contract with the ADR-068 tuple-payload
+  side-channel needed by CustomScan.
+- Land the ADR-069 v1 distributed write contract: coordinator-routed
+  INSERT/UPDATE/DELETE/PK-read, placement directory, embedding-UPDATE
+  rejection, and bulk-load primitives only where required by that ADR.
 - Add local multi-instance fixtures that exercise coordinator, remote nodes,
   epoch handling, failure/degradation behavior, and merged result ordering.
 - Tighten multi-NVMe/local-store readiness with production diagnostics and local
@@ -42,10 +49,12 @@ local multi-instance fixtures first.
 - Coordinator high availability and multi-coordinator consensus. Phase 11 may
   allow a coordinator to also serve local SPIRE partitions, but failover and
   coordinator election are deferred.
-- Distributed writes across remote nodes. Phase 11 defines read fanout and
-  origin-node heap resolution first; cross-node insert routing and
-  read-after-write semantics remain a later distributed-write phase unless a
-  slice explicitly narrows and lands the contract.
+- Bulk-load tooling and CLI orchestration. ADR-069 keeps classification and
+  batch-registration primitives in scope but schedules high-throughput bulk
+  ingestion as a separate task.
+- Cross-shard non-vector scatter-gather, DDL propagation, cross-shard
+  embedding UPDATE moves, and multi-coordinator deployments. ADR-069 defers
+  each to future ADRs.
 - Credential rotation, audit-log schema, and a full TLS runbook. Phase 11 keeps
   the narrower libpq contract: preserve `sslmode` through
   `conninfo_secret_name`, keep raw conninfo hidden, and define sanitized
@@ -129,6 +138,9 @@ Acceptance artifact:
 - [ ] Remote nodes must score near their partition objects and return compact
   candidate rows with served epoch, node identity, vector identity, row locator,
   score, flags, and diagnostics.
+- [ ] For the ADR-067 CustomScan path, remote nodes must also return requested
+  tuple columns through the ADR-068 side-channel keyed by `(node_id, vec_id)`.
+  The existing 18-column envelope remains stable.
 - [ ] Bind remote candidate rows to the served quantizer/index identity:
   RaBitQ profile, code length, training-stat fingerprint, index build format,
   and served epoch must be compatible before coordinator merge accepts scores.
@@ -181,9 +193,10 @@ Acceptance artifact:
   - [x] First adapter primitive: production receive and transport use a
     `tokio-postgres` cancel token and map local cancellation to global
     dispatch cleanup.
-  - [x] Before C5 AM integration, pin and implement the PostgreSQL backend
-    interrupt bridge from actual local query cancel / statement timeout into
-    the adapter cancel token; test-only triggers are not production evidence.
+  - [x] Before final executor integration, pin and implement the PostgreSQL
+    backend interrupt bridge from actual local query cancel / statement timeout
+    into the adapter cancel token; test-only triggers are not production
+    evidence.
     - [x] First PostgreSQL interrupt bridge: production transport and compact
       candidate receive now poll backend `InterruptPending` /
       `QueryCancelPending` while remote work is in flight and map the signal to
@@ -200,11 +213,11 @@ Acceptance artifact:
     as `degraded_skipped`, preserve the first skip category, and merge only
     ready candidate batches in degraded mode while strict mode remains
     fail-closed.
-  - [ ] Before C5 AM integration, pin AM-boundary consistency-mode policy:
-    source of strict/degraded mode, single per-query threading into executor
-    state, and final diagnostics or warning that name skipped nodes or at
-    least count plus first skip category.
-    - [x] First AM-boundary source-of-truth slice: session GUC
+  - [ ] Before CustomScan integration, pin executor-boundary consistency-mode
+    policy: source of strict/degraded mode, single per-query threading into
+    executor state, and final diagnostics or warning that name skipped nodes or
+    at least count plus first skip category.
+    - [x] First executor-boundary source-of-truth slice: session GUC
       `ec_spire.remote_search_consistency_mode` feeds a production executor
       session summary without a per-call free-form consistency string.
     - [x] Production executor state rows now carry `consistency_mode_source`
@@ -224,10 +237,11 @@ Acceptance artifact:
       stale/served epoch, and reserved Stage D heap-resolution categories.
     - [x] Include `consistency_mode_mismatch` alongside the transport and
       receive categories when the matrix lands.
-    - [x] Reviewer P3 follow-up: C5 must consume this matrix, or a Rust-side
-      equivalent generated from the same category list, as the AM-boundary
-      source of truth. Reserved Stage D heap-resolution rows are category names
-      only until the heap executor emits them.
+    - [x] Reviewer P3 follow-up: final executor integration must consume this
+      matrix, or a Rust-side equivalent generated from the same category list,
+      as the executor-boundary source of truth. Reserved Stage D
+      heap-resolution rows are category names only until the heap executor
+      emits them.
 - [x] Add local multi-instance tests proving tail latency is not serialized
   across ready remotes under an instrumented slow-remote fixture.
   - [x] First multi-instance timing proof: packet `30752` adds a PG18 harness
@@ -237,57 +251,84 @@ Acceptance artifact:
     adapter. This is transport-overlap evidence only; the broader Stage E
     epoch/lifecycle/fault matrix remains open.
 
-## Phase 11.5: Remote Heap Resolution and Final Row Delivery
+## Phase 11.5: CustomScan Distributed Read and v1 Write Contract
 
-- [ ] Implement origin-node heap visibility filtering for remote candidates
-  before the coordinator claims final SQL row readiness.
-- [ ] Keep coordinator row locators opaque except through the documented remote
-  heap resolution path.
-- [ ] Return one coordinator-visible ordered result stream after local and
-  remote candidate merge/dedupe.
-- [ ] Implement the remote row materialization provider required before
-  remote-origin outputs can be returned by the PostgreSQL index AM.
-  - [x] First provider seam: AM result-stream materialization now accepts only
-    pre-existing coordinator heap TID mappings that match
-    requested_epoch, served_epoch, origin node, global vec-id, row locator,
-    scan heap relation, and scan-snapshot visibility. The default provider is
-    intentionally empty, so remote-origin rows remain blocked until a
-    catalog-backed mapping surface lands.
-  - [x] Catalog-backed provider storage: ADR-065 defines the
-    `ec_spire_remote_row_materialization` mapping catalog. The AM provider now
-    batch-loads ready catalog mappings for the current result stream and
-    validates the materialized coordinator heap TID under the executor scan
-    snapshot before delivery. Registration/catalog SQL surfaces and remote
-    catalog cleanup cover the new table.
-  - [x] AM SQL delivery proof: planner/cost diagnostics now tolerate
-    remote-owned placements by reading the coordinator metadata copy while
-    preserving remote execution ownership, and a PG18 loopback SQL scan proves
-    a remote heap candidate with a registered mapping can be returned through
-    `amrescan`/`amgettuple` as the materialized coordinator row.
-- [ ] Implement the operator-owned mirror sync mechanism that creates
-  coordinator heap rows and registers mappings without explicit per-test
-  `ec_spire_register_remote_row_materialization(...)` calls.
-  - [x] ADR-066 selects the v1 mechanism: an explicit operator-owned mirror
-    refresh SQL primitive wrapped by `ecaz`, run outside AM scans after remote
-    endpoint readiness and before advertising an epoch as AM-deliverable.
-  - [ ] Add the mirror profile contract and dry-run diagnostics for one
-    coordinator index plus one remote node.
-    - [x] First contract surface:
-      `ec_spire_remote_row_materialization_mirror_sync_contract()` defines the
-      required profile, endpoint identity gate, remote row fetch, coordinator
-      heap upsert, mapping registration, and post-refresh probe steps before
-      implementation writes rows.
-    - [ ] Add dry-run diagnostics that evaluate a concrete coordinator index,
-      remote node, and profile without writing heap rows or mappings.
-  - [ ] Add the refresh SQL primitive that fetches remote rows, writes
-    coordinator heap rows, and registers mappings.
-  - [ ] Add the `ecaz` wrapper command with packet-local logging.
-  - [ ] Add a PG18 fixture proving refresh-driven SQL delivery without
-    explicit register calls in the test body.
-- [ ] Preserve deterministic tie-break ordering across local rows, remote rows,
-  and boundary replicas.
-- [ ] Add tests for missing/dead remote rows, stale locators, and duplicate
-  replicated candidates across nodes.
+Pivot note, 2026-05-10: ADR-067 / ADR-068 / ADR-069 supersede the
+ADR-064 / ADR-065 / ADR-066 index-AM materialization path. The Stage C
+executor, origin-node heap visibility resolution, diagnostics, and Stage E
+fault/lifecycle matrices remain reusable. The final distributed read path now
+returns tuples directly from `EcSpireDistributedScan`; the index AM remains the
+local-only path.
+
+- [ ] Extend the Stage B production endpoint with the ADR-068 tuple-payload
+  side-channel while preserving the existing 18-column candidate envelope,
+  fingerprint, identity, version, and status fields.
+  - [ ] Let the coordinator declare required projected columns at request build
+    time.
+  - [ ] Key tuple payloads by `(node_id, vec_id)` so the executor can attach
+    payloads to heap-visible candidates without changing the candidate
+    envelope shape.
+  - [ ] Add focused PG18 coverage for tuple-payload responses. Existing Stage B
+    endpoint and identity tests must stay valid.
+- [ ] Register the `EcSpireDistributedScan` CustomScan provider and planner
+  path.
+  - [ ] Hook planner path generation for tables with an `ec_spire` index and
+    active remote placements when the query shape is
+    `ORDER BY <vector-distance-op> LIMIT k`.
+  - [ ] Cost the CustomPath so remote-placement scans choose CustomScan over
+    the local-only AM path, and declare path keys so ordered output does not
+    require an extra sort.
+  - [ ] Implement Begin/Exec/End callbacks that invoke the existing
+    `SpireRemoteFanoutExecutor` state machine and return tuples directly via
+    the CustomScan tuple interface.
+  - [ ] Preserve local-only `ec_spire` index AM behavior unchanged.
+  - [ ] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
+- [ ] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
+  placements, remote shard rows, SPIRE index, and
+  `SELECT cols FROM tbl ORDER BY embedding <-> $1 LIMIT k` returning the
+  correct remote rows through CustomScan.
+  - [ ] The fixture must not call
+    `ec_spire_register_remote_row_materialization(...)`.
+  - [ ] This fixture is the Stage D feature-complete signal for distributed
+    reads.
+- [ ] Land the ADR-069 placement directory and coordinator-routed INSERT.
+  - [ ] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
+    served_epoch, source_identity)` with the required primary key and identity
+    index.
+  - [ ] Add `ec_spire_classify_centroid(embedding, index_oid)`.
+  - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
+    row to the target remote, and atomically updating the placement directory
+    with remote `PREPARE TRANSACTION` / local commit / remote commit.
+  - [ ] PG18 fixture: INSERT at the coordinator, verify the row lands on the
+    target remote, verify placement-directory state, and verify CustomScan
+    SELECT returns the row.
+- [ ] Land coordinator-routed non-embedding UPDATE, DELETE, and PK-keyed SELECT.
+  - [ ] UPDATE non-embedding columns by placement-directory lookup and remote
+    forwarding.
+  - [ ] DELETE through remote prepared DELETE plus placement-directory delete.
+  - [ ] PK-keyed SELECT through placement-directory lookup and remote SELECT.
+  - [ ] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
+  - [ ] Add PG18 fixtures per operation.
+- [ ] Migrate Stage E fault and lifecycle fixtures onto the CustomScan path.
+  - [ ] Preserve the existing 11 fault-matrix and 6 lifecycle-matrix cases
+    where they already assert executor state and diagnostic SQL surfaces.
+  - [ ] Replace only the subset that exercised the AM cursor or
+    materialization-specific blocker.
+  - [ ] Run and attach packet-local logs for the full Stage E matrix against
+    the CustomScan path.
+- [ ] Cleanup after CustomScan read and v1 writes are feature-complete.
+  - [ ] Remove or migrate away from the vestigial
+    `ec_spire_remote_row_materialization` table and
+    `ec_spire_register_remote_row_materialization` function in the next
+    extension upgrade script.
+  - [ ] Remove dead AM cursor references to
+    `requires_remote_row_materialization`; the local-only AM path must keep its
+    classifier logic but no longer reference the superseded materialization
+    catalog.
+  - [ ] Keep the catalog/register function until this cleanup packet rather
+    than deleting it in the Step 0 docs rewrite, because the repository still
+    has in-flight Shape-A code and an untracked `30802` mirror-sync packet in
+    the local worktree.
 
 ## Phase 11.6: Multi-Instance Epoch and Placement Readiness
 
@@ -322,9 +363,10 @@ Acceptance artifact:
     that names each Stage E local multi-instance fault case, maps it to the
     existing production failure category, and states strict/degraded action,
     status, next executor step, expected counter delta, and required evidence.
-    It also closes the packet `30765` row-materialization mapping matrix
-    follow-up by representing missing or stale coordinator mappings under the
-    existing `requires_remote_row_materialization` production blocker.
+    It also captured the now-superseded packet `30765` row-materialization
+    mapping matrix follow-up; CustomScan migration must replace any
+    materialization-specific assertions with tuple-payload and executor-state
+    assertions.
   - [x] Packet `30773` documents the Stage E per-case artifact convention and
     network-partition simulation mechanism before fixture implementation.
 - [x] Add operator diagnostics that show remote node readiness, served epoch,
@@ -395,11 +437,11 @@ The remaining work should land in this order. The plan is intentionally broad,
 but each item still needs a narrow code checkpoint and a packet-local review
 request before the next item depends on it.
 
-1. **C4/C5 AM-boundary preflight.** Finish the pre-AM consistency and
-   cancellation gate: expose active-epoch consistency-policy mismatch as a
-   named row-returning category, document that the session GUC is the stable
-   contract, and keep future query-level options as statement-local overrides
-   of that GUC rather than replacements.
+1. **C4/C5 executor-boundary preflight.** Finish the consistency and
+   cancellation gate before CustomScan depends on it: expose active-epoch
+   consistency-policy mismatch as a named row-returning category, document that
+   the session GUC is the stable contract, and keep future query-level options
+   as statement-local overrides of that GUC rather than replacements.
 2. **C2 backend interrupt bridge.** Connect actual PostgreSQL local cancel and
    local statement timeout to the production adapter cancel token. Evidence
    must prove cancelled work releases global and per-node governance slots and
@@ -410,31 +452,33 @@ request before the next item depends on it.
    compact receive and Stage D remote heap resolution. Evidence must show one
    validated identity decision can be reused without caching raw conninfo or
    silently accepting a live fingerprint mismatch.
-4. **C5 candidate-only AM integration.** Wire production compact candidate
-   receive into the coordinator AM scan path behind the readiness gate. Until
-   Stage D lands, the scan may prove ordered compact-candidate merge, but final
-   SQL row readiness must still report `requires_remote_heap_resolution`.
-   Packet `30754` lands the first handoff surface:
-   `ec_spire_remote_search_production_scan_handoff_summary` derives selected
-   PIDs from the scan router, runs live production compact receive, merges
-   validated compact candidates, and keeps remote SQL row readiness blocked on
-   Stage D.
-5. **Stage D remote heap finalization.** Resolve remote heap visibility on the
-   origin node, keep coordinator locators opaque, and produce one
-   coordinator-visible ordered result stream only after local and remote
-   candidates are visibility-correct.
-   Packet `30755` lands the first heap-resolution proof surface:
-   `ec_spire_remote_search_production_scan_heap_resolution_summary` gates
-   origin-node heap receive on production compact-candidate readiness, resolves
-   remote heap visibility under the origin PostgreSQL snapshot, exact-reranks
-   visible heap rows, fails strict mode for missing remote heap rows, and merges
-   ready local plus remote heap candidates. The actual `amrescan`/`amgettuple`
-   tuple stream still remains open.
-6. **Stage E local multi-instance matrix.** Build the one-coordinator /
+4. **Stage B tuple-payload extension.** Keep the existing 18-column candidate
+   envelope and add the ADR-068 side-channel that returns requested tuple
+   columns for CustomScan delivery.
+5. **Stage D CustomScan read path.** Register `EcSpireDistributedScan`, add
+   planner path selection for `ORDER BY <vector-distance-op> LIMIT k` on
+   indexes with active remote placements, invoke the existing production
+   executor from CustomScan `Exec`, and return ordered tuples directly. No
+   mirror sync, no materialization catalog, and no register calls are allowed on
+   this path.
+6. **Stage D read-path end-to-end fixture.** Prove a coordinator with
+   remote-only placements returns remote rows through CustomScan with the
+   requested columns.
+7. **ADR-069 v1 write contract.** Add the placement directory,
+   coordinator-routed INSERT with remote 2PC, coordinator-routed
+   non-embedding UPDATE / DELETE / PK-keyed SELECT, and embedding-UPDATE
+   rejection. Bulk-load tooling stays separate.
+8. **Stage E CustomScan matrix migration.** Re-run the 11 fault-matrix and 6
+   lifecycle-matrix fixtures against the CustomScan path, replacing only
+   AM-cursor-specific assertions.
+9. **Cleanup.** Remove the superseded materialization catalog/register
+   function and dead AM materialization blocker references after the CustomScan
+   read path and ADR-069 writes are feature-complete.
+10. **Stage E local multi-instance matrix.** Build the one-coordinator /
    two-remote local fixture and run the strict/degraded matrix for epoch,
    version, fingerprint, connection, backend termination, timeout, cancel,
    network partition, OOM, and remote index lifecycle faults.
-7. **Stage F/G local readiness bundle.** Add the repeatable multi-store and
+11. **Stage F/G local readiness bundle.** Add the repeatable multi-store and
    distributed harness commands, publish numeric local capacity targets, and
    capture recall, latency, fanout, heap, route, candidate, byte, timeout,
    cancel, strict-failure, and degraded-skip counters. AWS/RDS-class scale
@@ -735,89 +779,99 @@ global and per-node permits on the tested production paths.
       `slow_completed_after_ms=304` from separate local PG18 remote clusters
       through the production transport adapter.
 
-### Stage D: Remote Heap Resolution and Final Rows
+### Stage D: CustomScan Distributed Read Path and v1 Writes
 
-Goal: make the coordinator-visible result stream production-correct.
+Goal: make the coordinator-visible result stream production-correct by using
+the ADR-067 CustomScan integration point. The previous index-AM
+materialization direction is superseded: ADR-064, ADR-065, ADR-066 and packets
+`30761`, `30762`, `30765`, `30796`, `30797`, `30798`, `30799`, `30801`, and
+the in-flight mirror-sync work are Shape-A history. Do not extend that path.
 
-- [x] Keep remote row locators opaque at the coordinator for the first heap
-  proof surface; packet `30755` asks the origin node to interpret locators and
-  only receives heap block/offset diagnostics after origin-side visibility
-  resolution.
-- [x] Resolve remote heap visibility on the origin node before claiming
-  heap-resolution summary readiness; packet `30755` fails strict mode with
-  `remote_heap_resolution_failed` when a remote indexed locator no longer
-  resolves to a visible heap row.
-- [x] Merge local and remote heap-resolved candidates into one ordered stream
-  with the existing deterministic tie-breaks across score, role, epoch, node,
-  PID, object version, row index, and locator.
-- [x] Introduce a narrow Rust-side production scan handoff/result-stream state
-  that `amrescan` / `amgettuple` can consume directly, with SQL summary
-  functions serializing from that state rather than becoming the internal AM
-  contract. Packet `30756` adds
-  `SpireRemoteProductionScanResultStream`, keeps the existing SQL summary
-  stable, and preserves ordered heap-resolved output rows for the final AM
-  cursor slice.
-- [ ] Move the heap-resolved stream from the summary/proof surface into
-  `amrescan` / `amgettuple` final tuple delivery.
-  - [x] Packet `30757` classifies stream outputs into local coordinator heap
-    TIDs that are safe for `xs_heaptid` and remote-origin outputs that must
-    block on `remote_row_materialization`; it explicitly prevents treating
-    remote origin heap coordinates as local heap TIDs.
-  - [x] Packet `30758` gates the local manifest loader used by `amrescan` and
-    other coordinator-local heap consumers so active remote placements report
-    `remote_row_materialization` before any legacy local `xs_heaptid` path can
-    consume them.
-  - [x] Packet `30760` reuses the shared `remote_row_materialization` executor
-    step constant in the AM remote-placement gate, closing the `30758` reviewer
-    P2 before cursor wiring depends on the symbol.
-  - [x] Packet `30761` defines the SQL-visible remote row materialization
-    contract: origin-node heap coordinates are never coordinator `xs_heaptid`s;
-    remote-origin AM delivery requires a same-indexed-heap shadow/proxy row,
-    while FDW/custom-executor tuple paths are future non-AM integrations.
-  - [ ] Implement the remote row materialization mechanism required
-    before remote-origin outputs can be returned by a PostgreSQL index scan.
-  - [x] Packet `30762` cursors AM-deliverable production-stream outputs through
-    scan opaque state: `amrescan` now feeds the production heap-resolution
-    result stream into an AM output cursor, and `amgettuple` only receives local
-    coordinator heap TIDs while remote-origin outputs keep blocking on
-    `remote_row_materialization`.
-  - [x] Packet `30768` adds focused scan-opaque cursor coverage for the
-    reviewer `30762` P3: default state returns no rows, an exhausted output
-    cursor stays exhausted, and a later rescan replaces the exhausted cursor
-    with the new query/output stream instead of reusing stale results.
-  - [x] ADR-064 proposes the shadow/proxy lifecycle required by the `30761`
-    reviewer P2: v1 AM materialization must be a pre-existing coordinator heap
-    row in the same scanned relation, not a per-query temp/scratch/proxy tuple.
-  - [x] Packet `30769` resolves the `30763` reviewer P3 design cleanup:
-    ADR-059 and ADR-064 now cross-reference their respective ownership
-    boundaries, and ADR-064 pins cleanup ownership to epoch maintenance /
-    operator mirror lifecycle outside `amrescan` / `amgettuple`.
-  - [x] Add the materialized-row mapping contract required by ADR-064 before
-    storage-provider implementation: the mapping key must preserve requested
-    and served epoch, origin node, global vec-id, and opaque row locator; the
-    mapped TID must belong to the same scanned heap relation and be visible to
-    the scan snapshot; `amrescan` / `amgettuple` may validate existing mappings
-    only and must keep missing or stale mappings blocked as
-    `remote_row_materialization`.
-  - [ ] Verification: tests for dead/missing remote rows, stale locators,
-  duplicate cross-node replicas, local-only node-scoped IDs, and global-ID
-  dedupe.
-  - [x] Packet `30755` covers visible remote heap rows and missing remote heap
-    rows in a focused PG18 loopback fixture.
-  - [ ] Add stale locator, duplicate cross-node replica, local-only
-    node-scoped ID, and global-ID dedupe coverage on the final AM tuple path.
-    - [x] Packet `30796` adds Rust-side final AM tuple-path coverage from
-      heap-candidate merge through AM delivery classification: global vec IDs
-      dedupe before delivery, remote global winners still block on
-      `remote_row_materialization`, node-scoped local vec IDs remain distinct
-      across nodes, and stale remote locators preserve the heap-resolution
-      blocker.
-  - [x] Run a broader PG18 pgrx pass across coordinator fanout call sites once
-    the packet `30753` sandbox loader issue is resolved.
-    - [x] Packet `30766` fixes pg_test-only advisory-governance test
-      namespacing so production governance/cancel tests do not interfere under
-      the default parallel pgrx runner, then validates
-      `cargo pgrx test pg18 test_ec_spire_prod_` with 20 passed tests.
+Preserved evidence from the superseded path:
+
+- [x] Packet `30755` proves origin-node heap visibility resolution with opaque
+  row locators and `remote_heap_resolution_failed` for missing remote heap
+  rows.
+- [x] Packet `30756` introduces `SpireRemoteProductionScanResultStream` as a
+  Rust-side handoff/result-stream state.
+- [x] Packets `30757`, `30758`, `30760`, `30761`, `30762`, `30768`, `30769`,
+  and `30796` are retained as historical AM-boundary evidence but no longer
+  define the production distributed read path.
+- [x] Packets `30770` through `30795` remain reusable Stage E executor,
+  diagnostic, fault-matrix, and lifecycle-matrix evidence.
+
+CustomScan read-path work:
+
+- [ ] Extend the production endpoint with ADR-068 tuple payloads.
+  - [ ] Coordinator request building declares the exact target-column list
+    required by the CustomScan projection.
+  - [ ] Remote endpoint returns payloads keyed by `(node_id, vec_id)` alongside
+    the unchanged 18-column candidate envelope.
+  - [ ] Existing identity, fingerprint, version, and endpoint-status fields are
+    unchanged and still gate merge eligibility.
+  - [ ] Add a focused tuple-payload PG18 fixture.
+- [ ] Register `EcSpireDistributedScan`.
+  - [ ] Register the CustomScan provider.
+  - [ ] Add planner path generation for tables with an `ec_spire` index and
+    active remote placements when the query shape is
+    `ORDER BY <vector-distance-op> LIMIT k`.
+  - [ ] Add a cost model that chooses CustomScan when active remote placements
+    exist.
+  - [ ] Declare path keys so PostgreSQL can consume the ordered output without
+    adding an explicit sort.
+  - [ ] Implement Begin/Exec/End callbacks that invoke
+    `SpireRemoteFanoutExecutor` directly and return tuples through the
+    CustomScan tuple interface.
+  - [ ] Keep the existing index AM unchanged for local-only scans.
+  - [ ] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
+- [ ] Add the end-to-end distributed read fixture.
+  - [ ] Fixture creates a coordinator with remote-only placements and remote
+    shard rows.
+  - [ ] Fixture issues
+    `SELECT cols FROM tbl ORDER BY embedding <-> $1 LIMIT k`.
+  - [ ] Fixture proves the selected remote rows and projected columns are
+    returned through CustomScan.
+  - [ ] Fixture contains no
+    `ec_spire_register_remote_row_materialization(...)` calls.
+
+v1 write contract from ADR-069:
+
+- [ ] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
+  served_epoch, source_identity)` plus required indexes.
+- [ ] Add `ec_spire_classify_centroid(embedding, index_oid)` using the same
+  placement decision coordinator-routed INSERT will use.
+- [ ] Coordinator-routed INSERT:
+  - [ ] classify embedding to target `node_id`;
+  - [ ] forward remote INSERT through the Stage C transport;
+  - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
+    remote commit for atomicity;
+  - [ ] add PG18 coverage for remote row, placement row, and CustomScan
+    read-after-insert.
+- [ ] Coordinator-routed non-embedding UPDATE:
+  - [ ] lookup `node_id` from the placement directory;
+  - [ ] forward UPDATE to the owning remote;
+  - [ ] add PG18 coverage.
+- [ ] Coordinator-routed DELETE:
+  - [ ] lookup `node_id` from the placement directory;
+  - [ ] use remote prepared DELETE plus local placement-directory delete;
+  - [ ] add PG18 coverage.
+- [ ] PK-keyed SELECT:
+  - [ ] lookup `node_id` from the placement directory;
+  - [ ] forward SELECT to the owning remote;
+  - [ ] add PG18 coverage.
+- [ ] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
+- [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
+  scatter-gather, DDL propagation, and multi-coordinator deployments remain out
+  of Phase 11 scope unless a later accepted ADR reopens them.
+
+Cleanup decision:
+
+- [ ] Keep `ec_spire_remote_row_materialization` and
+  `ec_spire_register_remote_row_materialization` temporarily for migration and
+  to avoid deleting in-flight Shape-A code before the CustomScan path exists.
+- [ ] Remove the materialization catalog/register function and dead
+  `requires_remote_row_materialization` CustomScan-adjacent references in the
+  cleanup packet after CustomScan read and ADR-069 writes are feature-complete.
 
 ### Stage E: Multi-Instance Epoch, Lifecycle, and Fault Matrix
 
