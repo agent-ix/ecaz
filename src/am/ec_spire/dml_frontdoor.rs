@@ -96,6 +96,7 @@ static mut LAST_HOOK_CLASSIFICATION_STATUS: Option<&'static str> = None;
 
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
+const DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH: usize = 32;
 
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
     unsafe {
@@ -943,7 +944,17 @@ unsafe fn dml_frontdoor_var_column(
 }
 
 unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    unsafe { dml_frontdoor_value_kind_inner(expr, 0) }
+}
+
+unsafe fn dml_frontdoor_value_kind_inner(
+    expr: *mut pg_sys::Expr,
+    wrapper_depth: usize,
+) -> SpireDmlFrontdoorValueKind {
     if expr.is_null() {
+        return SpireDmlFrontdoorValueKind::Other;
+    }
+    if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
         return SpireDmlFrontdoorValueKind::Other;
     }
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
@@ -970,21 +981,21 @@ unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoor
             if func_expr.funcresulttype != pg_sys::INT8OID {
                 return SpireDmlFrontdoorValueKind::Other;
             }
-            unsafe { dml_frontdoor_single_coerced_arg_value_kind(func_expr.args) }
+            unsafe { dml_frontdoor_single_coerced_arg_value_kind(func_expr.args, wrapper_depth) }
         }
         pg_sys::NodeTag::T_RelabelType => {
             let relabel = unsafe { &*expr.cast::<pg_sys::RelabelType>() };
             if relabel.resulttype != pg_sys::INT8OID {
                 return SpireDmlFrontdoorValueKind::Other;
             }
-            unsafe { dml_frontdoor_coercible_integer_value_kind(relabel.arg) }
+            unsafe { dml_frontdoor_coercible_integer_value_kind(relabel.arg, wrapper_depth) }
         }
         pg_sys::NodeTag::T_CoerceViaIO => {
             let coerce = unsafe { &*expr.cast::<pg_sys::CoerceViaIO>() };
             if coerce.resulttype != pg_sys::INT8OID {
                 return SpireDmlFrontdoorValueKind::Other;
             }
-            unsafe { dml_frontdoor_coercible_integer_value_kind(coerce.arg) }
+            unsafe { dml_frontdoor_coercible_integer_value_kind(coerce.arg, wrapper_depth) }
         }
         _ => SpireDmlFrontdoorValueKind::Other,
     }
@@ -992,11 +1003,12 @@ unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoor
 
 unsafe fn dml_frontdoor_single_coerced_arg_value_kind(
     args: *mut pg_sys::List,
+    wrapper_depth: usize,
 ) -> SpireDmlFrontdoorValueKind {
     let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
         return SpireDmlFrontdoorValueKind::Other;
     };
-    unsafe { dml_frontdoor_coercible_integer_value_kind(arg) }
+    unsafe { dml_frontdoor_coercible_integer_value_kind(arg, wrapper_depth) }
 }
 
 unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
@@ -1004,11 +1016,14 @@ unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<
     if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
         return None;
     }
+    // PG18 exposes List cells through `elements`; this remains the stable
+    // single-argument check for implicit-cast FuncExpr wrappers.
     Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
 }
 
 unsafe fn dml_frontdoor_coercible_integer_value_kind(
     expr: *mut pg_sys::Expr,
+    wrapper_depth: usize,
 ) -> SpireDmlFrontdoorValueKind {
     if expr.is_null() {
         return SpireDmlFrontdoorValueKind::Other;
@@ -1032,7 +1047,7 @@ unsafe fn dml_frontdoor_coercible_integer_value_kind(
                 SpireDmlFrontdoorValueKind::Other
             }
         }
-        _ => dml_frontdoor_value_kind(expr),
+        _ => unsafe { dml_frontdoor_value_kind_inner(expr, wrapper_depth + 1) },
     }
 }
 
@@ -1278,6 +1293,42 @@ mod tests {
                 )
             },
             SpireDmlFrontdoorValueKind::ParamBigint
+        );
+    }
+
+    #[test]
+    fn query_layer_walks_nested_integer_coercion_wrappers() {
+        let mut int_param = pg_sys::Param::default();
+        int_param.xpr.type_ = pg_sys::NodeTag::T_Param;
+        int_param.paramtype = pg_sys::INT4OID;
+
+        let mut coerce = pg_sys::CoerceViaIO::default();
+        coerce.xpr.type_ = pg_sys::NodeTag::T_CoerceViaIO;
+        coerce.resulttype = pg_sys::INT8OID;
+        coerce.arg = (&mut int_param as *mut pg_sys::Param).cast::<pg_sys::Expr>();
+
+        let mut relabel = pg_sys::RelabelType::default();
+        relabel.xpr.type_ = pg_sys::NodeTag::T_RelabelType;
+        relabel.resulttype = pg_sys::INT8OID;
+        relabel.arg = (&mut coerce as *mut pg_sys::CoerceViaIO).cast::<pg_sys::Expr>();
+
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_value_kind(
+                    (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
+                )
+            },
+            SpireDmlFrontdoorValueKind::ParamBigint
+        );
+
+        relabel.resulttype = pg_sys::INT4OID;
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_value_kind(
+                    (&mut relabel as *mut pg_sys::RelabelType).cast::<pg_sys::Expr>(),
+                )
+            },
+            SpireDmlFrontdoorValueKind::Other
         );
     }
 

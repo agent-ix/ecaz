@@ -57,6 +57,14 @@ The transparent v1 front door is intentionally narrow:
   from modifying CTEs after the classifier can prove the rewritten target
   relation and predicate are still unambiguous.
 
+The diagnostic helper `ec_spire_dml_frontdoor_classify_sql(sql text)` parses,
+analyzes, and rewrites the supplied statement through PostgreSQL before it
+invokes the front-door classifier. Standard PostgreSQL analysis errors, such
+as missing relations, missing columns, or type mismatches, surface before any
+SPIRE-specific diagnostic row is returned. This helper is an operator probe;
+planner-hook execution must use catalog/relcache relation context and must not
+call this SPI-backed diagnostic path.
+
 ### Coordinator-routed INSERT
 
 Applications INSERT against the coordinator's logical relation:

@@ -1161,6 +1161,10 @@ v1 write contract from ADR-069:
     the backend-local last classification through
     `ec_spire_dml_frontdoor_hook_status()`; plan rewriting remains disabled
     until the CustomScan executor replacement slice.
+  - [x] Packet `30857` folds reviewer feedback into the DML classifier and
+    ADR: nested PostgreSQL coercion wrappers are regression-locked for bigint
+    PK predicates, and ADR-069 documents that the SQL classifier diagnostic
+    surfaces normal PostgreSQL analysis errors before SPIRE classification.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
