@@ -233,6 +233,19 @@ committing a remote row, staging its coordinator placement, refreshing the
 remote descriptor identity, and reading the row back through
 `EcSpireDistributedScan`.
 
+The first transparent INSERT front door is trigger-based. Operators call
+`ec_spire_enable_coordinator_insert(table_oid, index_oid, pk_column,
+embedding_column, source_identity_column)` to install a `BEFORE INSERT`
+row trigger. The trigger supports the v1 narrow shape: bigint primary key
+columns encoded with PostgreSQL's `int8send`, an `ecvector` embedding
+column cast to `real[]`, and a 16-byte `bytea` source-identity column. It
+forwards the row through
+`ec_spire_prepare_coordinator_insert_tuple_payload(...)` and returns
+`NULL`, so remote-owned rows are not mirrored in the coordinator heap.
+Automatic remote descriptor epoch/identity refresh after the prepared
+remote INSERT commits remains an open follow-up before read-after-INSERT
+is fully transparent without operator re-registration.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

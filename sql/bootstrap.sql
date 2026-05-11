@@ -308,6 +308,159 @@ BEGIN
 END
 $$;
 
+CREATE FUNCTION ec_spire_coordinator_insert_forward_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_index_oid oid;
+    pk_column text;
+    embedding_column text;
+    source_identity_column text;
+    pk_value bytea;
+    embedding real[];
+    source_identity bytea;
+    row_payload jsonb;
+    requested_columns text[];
+BEGIN
+    IF TG_WHEN <> 'BEFORE' OR TG_LEVEL <> 'ROW' OR TG_OP <> 'INSERT' THEN
+        RAISE EXCEPTION 'ec_spire_coordinator_insert_forward_trigger must be a BEFORE INSERT row trigger'
+            USING ERRCODE = '0A000';
+    END IF;
+    IF TG_NARGS <> 4 THEN
+        RAISE EXCEPTION 'ec_spire_coordinator_insert_forward_trigger requires 4 trigger arguments'
+            USING ERRCODE = '22023',
+                  HINT = 'Use ec_spire_enable_coordinator_insert(table_oid, index_oid, pk_column, embedding_column, source_identity_column).';
+    END IF;
+
+    target_index_oid := TG_ARGV[0]::oid;
+    pk_column := TG_ARGV[1];
+    embedding_column := TG_ARGV[2];
+    source_identity_column := TG_ARGV[3];
+
+    EXECUTE format(
+        'SELECT int8send(($1).%1$I::bigint)::bytea, (($1).%2$I)::real[], (($1).%3$I)::bytea, to_jsonb($1)',
+        pk_column,
+        embedding_column,
+        source_identity_column
+    )
+    USING NEW
+    INTO pk_value, embedding, source_identity, row_payload;
+
+    SELECT array_agg(attname ORDER BY attnum)
+      INTO requested_columns
+      FROM pg_attribute
+     WHERE attrelid = TG_RELID
+       AND attnum > 0
+       AND NOT attisdropped;
+
+    PERFORM 1
+      FROM ec_spire_prepare_coordinator_insert_tuple_payload(
+           target_index_oid,
+           pk_value,
+           embedding,
+           source_identity,
+           row_payload,
+           requested_columns
+      );
+
+    RETURN NULL;
+END
+$$;
+
+CREATE FUNCTION ec_spire_enable_coordinator_insert(
+    table_oid regclass,
+    index_oid regclass,
+    pk_column text,
+    embedding_column text,
+    source_identity_column text DEFAULT 'source_identity'
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    indexed_table_oid oid;
+    index_am_name name;
+    pk_type oid;
+    embedding_type oid;
+    source_identity_type oid;
+BEGIN
+    SELECT i.indrelid, am.amname
+      INTO indexed_table_oid, index_am_name
+      FROM pg_index i
+      JOIN pg_class c ON c.oid = i.indexrelid
+      JOIN pg_am am ON am.oid = c.relam
+     WHERE i.indexrelid = index_oid::oid;
+
+    IF indexed_table_oid IS NULL THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert index_oid must reference an index'
+            USING ERRCODE = '42809';
+    END IF;
+    IF indexed_table_oid <> table_oid::oid THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert index % does not belong to table %',
+            index_oid::text, table_oid::text
+            USING ERRCODE = '42809';
+    END IF;
+    IF index_am_name <> 'ec_spire' THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert requires an ec_spire index, got %',
+            index_am_name
+            USING ERRCODE = '42809';
+    END IF;
+
+    SELECT atttypid INTO pk_type
+      FROM pg_attribute
+     WHERE attrelid = table_oid::oid AND attname = pk_column
+       AND attnum > 0 AND NOT attisdropped;
+    SELECT atttypid INTO embedding_type
+      FROM pg_attribute
+     WHERE attrelid = table_oid::oid AND attname = embedding_column
+       AND attnum > 0 AND NOT attisdropped;
+    SELECT atttypid INTO source_identity_type
+      FROM pg_attribute
+     WHERE attrelid = table_oid::oid AND attname = source_identity_column
+       AND attnum > 0 AND NOT attisdropped;
+
+    IF pk_type IS NULL THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert missing pk column %', pk_column
+            USING ERRCODE = '42703';
+    END IF;
+    IF embedding_type IS NULL THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert missing embedding column %', embedding_column
+            USING ERRCODE = '42703';
+    END IF;
+    IF source_identity_type IS NULL THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert missing source_identity column %',
+            source_identity_column
+            USING ERRCODE = '42703';
+    END IF;
+    IF pk_type <> 'bigint'::regtype THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert v1 requires a bigint pk column, got %',
+            pk_type::regtype::text
+            USING ERRCODE = '42804';
+    END IF;
+    IF embedding_type <> 'ecvector'::regtype THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert requires an ecvector embedding column, got %',
+            embedding_type::regtype::text
+            USING ERRCODE = '42804';
+    END IF;
+    IF source_identity_type <> 'bytea'::regtype THEN
+        RAISE EXCEPTION 'ec_spire_enable_coordinator_insert requires a bytea source_identity column, got %',
+            source_identity_type::regtype::text
+            USING ERRCODE = '42804';
+    END IF;
+
+    EXECUTE format('DROP TRIGGER IF EXISTS ec_spire_coordinator_insert_forward ON %s', table_oid);
+    EXECUTE format(
+        'CREATE TRIGGER ec_spire_coordinator_insert_forward BEFORE INSERT ON %s FOR EACH ROW EXECUTE FUNCTION ec_spire_coordinator_insert_forward_trigger(%L, %L, %L, %L)',
+        table_oid,
+        index_oid::oid::text,
+        pk_column,
+        embedding_column,
+        source_identity_column
+    );
+END
+$$;
+
 CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql

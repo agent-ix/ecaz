@@ -19854,6 +19854,159 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_enable_coordinator_insert_trigger_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_INSERT_TRIGGER_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_insert_trigger_remote_sql; \
+                 CREATE TABLE ec_spire_coord_insert_trigger_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_coord_insert_trigger_remote_idx \
+                     ON ec_spire_coord_insert_trigger_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote trigger target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_insert_trigger_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator trigger table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_insert_trigger_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator positive', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                 decode('000102030405060708090a0b0c0d0e0f', 'hex')), \
+             (2, 'coordinator negative', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42), \
+                 decode('101112131415161718191a1b1c1d1e1f', 'hex'))",
+        )
+        .expect("coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_insert_trigger_idx \
+             ON ec_spire_coord_insert_trigger_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator trigger ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_coord_insert_trigger_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_insert_trigger_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT child_pid \
+               FROM ec_spire_index_routing_centroid_snapshot(\
+                    'ec_spire_coord_insert_trigger_idx'::regclass) r \
+               CROSS JOIN LATERAL ( \
+                    SELECT sum(q.value * c.value)::real AS score \
+                      FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                      JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+               ) scored \
+              WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+              ORDER BY scored.score DESC, centroid_index, child_pid \
+              LIMIT 1",
+        )
+        .expect("selected pid query should succeed")
+        .expect("selected pid should exist");
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 14) };
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_insert_trigger_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_insert_trigger_idx'::regclass, \
+                 14, 17, 'spire/remote/coordinator_insert_trigger_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_insert_trigger_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(
+            "SELECT ec_spire_enable_coordinator_insert(\
+                 'ec_spire_coord_insert_trigger_sql'::regclass, \
+                 'ec_spire_coord_insert_trigger_idx'::regclass, \
+                 'id', 'embedding', 'source_identity')",
+        )
+        .expect("coordinator insert trigger enable should succeed");
+
+        Spi::run(
+            "INSERT INTO ec_spire_coord_insert_trigger_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (404, 'trigger routed coordinator payload', \
+                 encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                 decode('303132333435363738393a3b3c3d3e3f', 'hex'))",
+        )
+        .expect("coordinator insert trigger should forward row");
+
+        let coordinator_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_coord_insert_trigger_sql WHERE id = 404",
+        )
+        .expect("coordinator row count query should succeed")
+        .expect("coordinator row count should exist");
+        let placement_query = format!(
+            "SELECT count(*) FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_insert_trigger_idx'::regclass \
+                AND pk_value = int8send(404::bigint)::bytea \
+                AND node_id = 14 \
+                AND centroid_id = {selected_pid} \
+                AND served_epoch = {active_epoch} \
+                AND source_identity = decode('303132333435363738393a3b3c3d3e3f', 'hex')"
+        );
+        let placement_count = Spi::get_one::<i64>(&placement_query)
+            .expect("placement query should succeed")
+            .expect("placement count should exist");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_coord_insert_trigger_remote_sql \
+                  WHERE id = 404",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+
+        assert_eq!(
+            coordinator_row_count, 0,
+            "BEFORE trigger should suppress the coordinator heap row"
+        );
+        assert_eq!(placement_count, 1);
+        assert_eq!(
+            remote_visible_count, 0,
+            "remote INSERT should remain prepared until local transaction commit"
+        );
+        assert_eq!(prepared_count, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_hierarchy_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_hierarchy_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

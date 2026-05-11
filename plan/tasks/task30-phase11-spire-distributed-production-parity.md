@@ -1028,6 +1028,11 @@ v1 write contract from ADR-069:
       `remote_insert_prepared_pending_local_commit` / `await_local_commit`, so
       callers do not mistake a prepared remote transaction for a committed,
       durable remote row.
+    - [x] Packet `30835` adds the trigger-based transparent INSERT front door:
+      `ec_spire_enable_coordinator_insert(...)` installs a `BEFORE INSERT`
+      row trigger for the v1 bigint-PK / `ecvector` / bytea source-identity
+      table shape, forwards through the helper, stages placement, and
+      suppresses the coordinator heap row for remote-owned inserts.
   - [x] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
     - [x] Packet `30834` adds
@@ -1036,6 +1041,12 @@ v1 write contract from ADR-069:
       `ec_spire_prepare_coordinator_insert_tuple_payload(...)`, verifies the
       remote row and coordinator placement row, and confirms
       `Custom Scan (EcSpireDistributedScan)` returns the inserted remote row.
+  - [ ] refresh remote descriptor epoch/identity automatically after the
+    prepared remote INSERT commits, so a subsequent CustomScan read does not
+    require manual descriptor re-registration.
+  - [ ] add PG18 multicluster coverage for `INSERT INTO coordinator_table ...`
+    through the trigger front door, including remote row, placement row, and
+    CustomScan read-after-insert once descriptor refresh is automatic.
 - [ ] Coordinator-routed non-embedding UPDATE:
   - [ ] lookup `node_id` from the placement directory;
   - [ ] forward UPDATE to the owning remote;
