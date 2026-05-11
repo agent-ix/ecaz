@@ -25,6 +25,7 @@ pub(crate) use self::ec_ivf::{
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
+    custom_scan_status_row as spire_custom_scan_status_row,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,
@@ -145,6 +146,10 @@ pub(crate) fn register_gucs() {
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
     ec_spire::register_gucs();
+}
+
+pub(crate) unsafe fn register_custom_scan() {
+    unsafe { ec_spire::register_custom_scan() };
 }
 
 #[cfg(any(test, feature = "pg_test"))]

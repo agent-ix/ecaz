@@ -811,7 +811,12 @@ CustomScan read-path work:
     unchanged and still gate merge eligibility.
   - [ ] Add a focused tuple-payload PG18 fixture.
 - [ ] Register `EcSpireDistributedScan`.
-  - [ ] Register the CustomScan provider.
+  - [x] Register the CustomScan provider.
+    - [x] Packet `30805` registers `EcSpireDistributedScan` in `_PG_init`,
+      chains the `set_rel_pathlist_hook`, exposes
+      `ec_spire_custom_scan_status()`, and fails closed if executor callbacks
+      are reached before planner path generation and tuple payload wiring
+      land.
   - [ ] Add planner path generation for tables with an `ec_spire` index and
     active remote placements when the query shape is
     `ORDER BY <vector-distance-op> LIMIT k`.

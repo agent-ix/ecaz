@@ -38,6 +38,9 @@ use quant::prod::{payload_len, ProdQuantizer};
 #[pg_guard]
 pub unsafe extern "C-unwind" fn _PG_init() {
     am::register_gucs();
+    unsafe {
+        am::register_custom_scan();
+    }
     #[cfg(feature = "pg18")]
     unsafe {
         am::explain::register_pg18_explain_hooks();
@@ -920,6 +923,32 @@ fn ec_diskann_index_graph_summary(
         ),
     ];
     TableIterator::new(rows)
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_custom_scan_status() -> TableIterator<
+    'static,
+    (
+        name!(provider_name, &'static str),
+        name!(registered, bool),
+        name!(rel_pathlist_hook_installed, bool),
+        name!(path_generation_enabled, bool),
+        name!(exec_wiring_enabled, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    let row = am::spire_custom_scan_status_row();
+    TableIterator::once((
+        row.provider_name,
+        row.registered,
+        row.rel_pathlist_hook_installed,
+        row.path_generation_enabled,
+        row.exec_wiring_enabled,
+        row.status,
+        row.next_step,
+    ))
 }
 
 #[pg_extern(stable, strict)]
@@ -23988,6 +24017,39 @@ mod tests {
         assert_eq!(mirror_sync_count, 6);
         assert_eq!(mirror_profile_status, "required_before_refresh");
         assert_eq!(mirror_fixture_status, "fixture_required");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_custom_scan_status_registered_fail_closed() {
+        let status_from = "FROM ec_spire_custom_scan_status()";
+        let provider_name = Spi::get_one::<String>(&format!("SELECT provider_name {status_from}"))
+            .expect("custom scan provider name query should succeed")
+            .expect("custom scan provider name should exist");
+        let registered = Spi::get_one::<bool>(&format!("SELECT registered {status_from}"))
+            .expect("custom scan registered query should succeed")
+            .expect("custom scan registered value should exist");
+        let hook_installed =
+            Spi::get_one::<bool>(&format!("SELECT rel_pathlist_hook_installed {status_from}"))
+                .expect("custom scan hook query should succeed")
+                .expect("custom scan hook value should exist");
+        let path_generation_enabled =
+            Spi::get_one::<bool>(&format!("SELECT path_generation_enabled {status_from}"))
+                .expect("custom scan path generation query should succeed")
+                .expect("custom scan path generation value should exist");
+        let exec_wiring_enabled =
+            Spi::get_one::<bool>(&format!("SELECT exec_wiring_enabled {status_from}"))
+                .expect("custom scan exec wiring query should succeed")
+                .expect("custom scan exec wiring value should exist");
+        let status = Spi::get_one::<String>(&format!("SELECT status {status_from}"))
+            .expect("custom scan status query should succeed")
+            .expect("custom scan status should exist");
+
+        assert_eq!(provider_name, "EcSpireDistributedScan");
+        assert!(registered);
+        assert!(hook_installed);
+        assert!(!path_generation_enabled);
+        assert!(!exec_wiring_enabled);
+        assert_eq!(status, "registered");
     }
 
     #[pg_test]

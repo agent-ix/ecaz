@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 mod assign;
 mod build;
 mod cost;
+mod custom_scan;
 mod diagnostics;
 mod insert;
 mod meta;
@@ -22,6 +23,7 @@ use pgrx::{pg_sys, Spi};
 use self::storage::SpireObjectReader;
 
 pub(crate) use self::cost::index_cost_snapshot;
+pub(crate) use self::custom_scan::{custom_scan_status_row, register_custom_scan};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{
     debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,
