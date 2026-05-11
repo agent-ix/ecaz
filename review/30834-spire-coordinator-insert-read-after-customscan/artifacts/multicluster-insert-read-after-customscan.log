@@ -1,0 +1,17 @@
+run_dir=/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-20260511T172633Z-rerun4
+remote_port=39238
+coord_port=39239
+remote_epoch=1
+coord_epoch=2
+remote_pids=2,3
+coord_pids=2,3
+remote_identity_hex=b9578df7ba82fdb1
+remote_epoch_after_insert=2
+remote_identity_hex_after_insert=1577927d2ed63206
+insert_result=2,remote_insert_prepared_pending_local_commit,await_local_commit,true,true
+remote_row=303,remote inserted via coordinator
+placement_row=2,3,2
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_insert_read_coord_sql
+read_row=303,remote inserted via coordinator
+SPIRE multicluster coordinator insert read-after-CustomScan passed
