@@ -287,7 +287,11 @@ local-only path.
     - [x] Packet `30815` extends the tuple-payload endpoint with heap
       coordinates needed by the production executor decode path and proves a
       coordinator CustomScan can return the projected remote tuple.
-  - [ ] Preserve local-only `ec_spire` index AM behavior unchanged.
+  - [x] Preserve local-only `ec_spire` index AM behavior unchanged.
+    - [x] Packet `30821` adds PG18 plan coverage proving a local-only
+      `ORDER BY <#> ... LIMIT 1` query does not use
+      `Custom Scan (EcSpireDistributedScan)` and still plans through the
+      `ec_spire` index AM path.
   - [x] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
 - [x] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
   placements, remote shard rows, SPIRE index, and
@@ -924,7 +928,11 @@ CustomScan read-path work:
         `read_row=10,remote alpha`, and tuple-payload probe
         `ready,2,{"id": 10, "title": "remote alpha"}` across separate
         coordinator/remote clusters.
-  - [ ] Keep the existing index AM unchanged for local-only scans.
+  - [x] Keep the existing index AM unchanged for local-only scans.
+    - [x] Packet `30821` adds
+      `test_ec_spire_customscan_does_not_replace_local_only_index_plan`, which
+      disables seqscan, leaves indexscan enabled, and asserts the local-only
+      plan contains `Index Scan` but not `Custom Scan (EcSpireDistributedScan)`.
   - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
     - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`
       PG18 query and asserts `Custom Scan (EcSpireDistributedScan)`.

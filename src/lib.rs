@@ -25080,6 +25080,60 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_customscan_does_not_replace_local_only_index_plan() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_local_only_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("local-only table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_local_only_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("local-only insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_local_only_idx \
+             ON ec_spire_customscan_local_only_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("local-only ec_spire index creation should succeed");
+        Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM ec_spire_customscan_local_only_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("local-only EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("local-only plan row should decode")
+                        .expect("local-only plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            !plan.contains("Custom Scan (EcSpireDistributedScan)"),
+            "local-only plan must not use EcSpireDistributedScan:\n{plan}"
+        );
+        assert!(
+            plan.contains("Index Scan"),
+            "local-only plan should preserve the ec_spire index AM path:\n{plan}"
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "EcSpireDistributedScan production executor blocked")]
     fn test_ec_spire_customscan_exec_reaches_production_executor() {
         Spi::run(
