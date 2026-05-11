@@ -138,6 +138,10 @@ pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow 
     }
 }
 
+// The DML front door intentionally keeps two relation-context loaders with the
+// same contract. The SPI-backed loader is an operator diagnostic path, while
+// the catalog/relcache-backed loader is safe for planner-hook observation and
+// later plan replacement because it does not enter SPI recursively.
 pub(crate) fn dml_frontdoor_relation_context_row(
     heap_relation_oid: pg_sys::Oid,
 ) -> Result<SpireDmlFrontdoorRelationContext, String> {
@@ -333,6 +337,8 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     heap_relation: pg_sys::Relation,
 ) -> Result<(pg_sys::Oid, Option<SpireDmlFrontdoorPrimaryKeyColumn>), String> {
     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    // RelationGetIndexList returns a private OID list, so each index can be
+    // opened and closed under AccessShareLock while walking this copy.
     let index_list =
         unsafe { PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation)) };
     let mut ec_spire_index_count = 0_i64;

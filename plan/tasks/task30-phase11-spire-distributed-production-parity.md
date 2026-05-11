@@ -1165,6 +1165,9 @@ v1 write contract from ADR-069:
     ADR: nested PostgreSQL coercion wrappers are regression-locked for bigint
     PK predicates, and ADR-069 documents that the SQL classifier diagnostic
     surfaces normal PostgreSQL analysis errors before SPIRE classification.
+  - [x] Packet `30858` documents the deliberate split between SPI-backed
+    diagnostic relation context and catalog/relcache planner-hook relation
+    context, including the `RelationGetIndexList` index-open/close pattern.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
