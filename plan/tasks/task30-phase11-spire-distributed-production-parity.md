@@ -1141,6 +1141,10 @@ v1 write contract from ADR-069:
     analyzed PostgreSQL `Query` trees for UPDATE, DELETE, and single-table
     SELECT, with PG18 coverage rejecting joined SELECT shapes before metadata
     lookup.
+  - [x] Packet `30852` folds 30850 reviewer hardening into the relation
+    context: v1 rejects multiple `ec_spire` indexes on one heap, ADR-069 pins
+    the single-index / single-column-bigint-PK rule, and PG18 coverage proves
+    INCLUDE columns stay out of `embedding_columns`.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

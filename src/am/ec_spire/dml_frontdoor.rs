@@ -180,9 +180,10 @@ struct SpireDmlFrontdoorPrimaryKeyColumn {
 
 fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg_sys::Oid, String> {
     Spi::connect(|client| {
-        client
+        let (index_count, index_oid) = client
             .select(
-                "SELECT coalesce(min(idx.indexrelid::oid), 0::oid) AS index_oid \
+                "SELECT count(*)::bigint AS index_count, \
+                        coalesce(min(idx.indexrelid::oid), 0::oid) AS index_oid \
                    FROM pg_index AS idx \
                    JOIN pg_class AS index_class \
                      ON index_class.oid = idx.indexrelid \
@@ -194,10 +195,27 @@ fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg
                 &[heap_relation_oid.into()],
             )
             .map_err(|e| format!("ec_spire DML frontdoor index lookup failed: {e}"))?
-            .first()
-            .get_one::<pg_sys::Oid>()
-            .map_err(|e| format!("ec_spire DML frontdoor index oid decode failed: {e}"))?
-            .ok_or_else(|| "ec_spire DML frontdoor index oid is null".to_owned())
+            .map(|row| {
+                let index_count = row["index_count"]
+                    .value::<i64>()
+                    .map_err(|e| format!("ec_spire DML frontdoor index count decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire DML frontdoor index count is null".to_owned())?;
+                let index_oid = row["index_oid"]
+                    .value::<pg_sys::Oid>()
+                    .map_err(|e| format!("ec_spire DML frontdoor index oid decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire DML frontdoor index oid is null".to_owned())?;
+                Ok::<(i64, pg_sys::Oid), String>((index_count, index_oid))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "ec_spire DML frontdoor index lookup returned no row".to_owned())?;
+        if index_count > 1 {
+            return Err(
+                "ec_spire DML frontdoor v1 requires at most one ec_spire index per heap relation"
+                    .to_owned(),
+            );
+        }
+        Ok(index_oid)
     })
 }
 

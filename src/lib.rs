@@ -27882,6 +27882,55 @@ mod tests {
         assert_eq!(pk_type, "bigint");
         assert_eq!(ordinary_column_count, 3);
         assert_eq!(embedding_columns, "embedding");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_frontdoor_include_context_sql \
+             (id bigint primary key, title text not null, embedding ecvector, source_identity bytea not null)",
+        )
+        .expect("DML frontdoor INCLUDE context table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_frontdoor_include_context_idx \
+             ON ec_spire_dml_frontdoor_include_context_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) \
+             WITH (source_identity = 'include')",
+        )
+        .expect("DML frontdoor INCLUDE context ec_spire index creation should succeed");
+        let include_context = "FROM ec_spire_dml_frontdoor_relation_context(\
+                               'ec_spire_dml_frontdoor_include_context_sql'::regclass)";
+        let include_embedding_columns = Spi::get_one::<String>(&format!(
+            "SELECT array_to_string(embedding_columns, ',') {include_context}"
+        ))
+        .expect("DML frontdoor INCLUDE context embedding query should succeed")
+        .expect("DML frontdoor INCLUDE context embedding columns should exist");
+        assert_eq!(include_embedding_columns, "embedding");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "requires at most one ec_spire index")]
+    fn test_ec_spire_dml_frontdoor_rejects_multi_index() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_frontdoor_multi_index_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML frontdoor multi-index table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_frontdoor_multi_index_a_idx \
+             ON ec_spire_dml_frontdoor_multi_index_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML frontdoor multi-index first ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_frontdoor_multi_index_b_idx \
+             ON ec_spire_dml_frontdoor_multi_index_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML frontdoor multi-index second ec_spire index creation should succeed");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_dml_frontdoor_relation_context(\
+                 'ec_spire_dml_frontdoor_multi_index_sql'::regclass)",
+        )
+        .expect("DML frontdoor multi-index relation context should fail");
     }
 
     #[pg_test]

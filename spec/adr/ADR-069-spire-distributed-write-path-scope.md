@@ -42,6 +42,16 @@ The v1 SPIRE distributed table write contract is **coordinator-routed
 writes** for normal application workloads, with explicit bulk-load
 escape hatches available for high-throughput ingestion.
 
+The transparent v1 front door is intentionally narrow:
+
+- Each distributed heap relation has at most one `ec_spire` index. Multiple
+  `ec_spire` indexes on the same heap are rejected for coordinator-routed DML
+  because routing centroids, placement rows, and tuple-payload dispatch are
+  scoped to one index OID.
+- The coordinator-visible primary key is one `bigint` column. Composite
+  primary keys and non-`bigint` primary keys are deferred; they fail closed as
+  `unsupported_pk_shape` rather than being encoded ambiguously.
+
 ### Coordinator-routed INSERT
 
 Applications INSERT against the coordinator's logical relation:
