@@ -1072,9 +1072,17 @@ v1 write contract from ADR-069:
     hook; row-level table triggers cannot capture remote-owned rows because the
     coordinator heap row is suppressed by the INSERT trigger.
 - [ ] Coordinator-routed DELETE:
-  - [ ] lookup `node_id` from the placement directory;
-  - [ ] use remote prepared DELETE plus local placement-directory delete;
-  - [ ] add PG18 coverage.
+  - [x] lookup `node_id` from the placement directory;
+  - [x] use remote prepared DELETE plus local placement-directory delete;
+  - [x] add PG18 coverage for the forwarding primitive.
+    - [x] Packet `30839` adds
+      `ec_spire_prepare_coordinator_delete_tuple_payload(...)` plus the remote
+      `ec_spire_remote_delete_tuple_payload(...)` endpoint, proving a DELETE is
+      prepared remotely while the placement row is removed locally in the same
+      transaction.
+  - [ ] wire transparent `DELETE ... WHERE pk = ...` into a ModifyTable/view
+    hook; row-level table triggers cannot capture remote-owned rows because the
+    coordinator heap row is suppressed by the INSERT trigger.
 - [ ] PK-keyed SELECT:
   - [ ] lookup `node_id` from the placement directory;
   - [ ] forward SELECT to the owning remote;

@@ -2313,6 +2313,26 @@ fn coordinator_update_remote_tuple_payload_sql(
     ))
 }
 
+fn coordinator_delete_remote_tuple_payload_sql(
+    remote_index_regclass: &str,
+    pk_column: &str,
+    pk_value: &[u8],
+) -> Result<String, String> {
+    if pk_column.is_empty() {
+        return Err("ec_spire coordinator delete pk column is empty".to_owned());
+    }
+    if pk_value.is_empty() {
+        return Err("ec_spire coordinator delete pk_value is empty".to_owned());
+    }
+    Ok(format!(
+        "SELECT * FROM ec_spire_remote_delete_tuple_payload(\
+             {}::regclass, {}::text, decode({}, 'hex'))",
+        quote_sql_literal(remote_index_regclass),
+        quote_sql_literal(pk_column),
+        quote_sql_literal(&hex::encode(pk_value))
+    ))
+}
+
 fn coordinator_insert_remote_descriptor_metadata(
     client: &mut postgres::Client,
     node_id: u32,
@@ -2530,6 +2550,89 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
         remote_updated_count,
         status: "remote_update_applied",
         next_step: "done",
+    })
+}
+
+pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+    pk_column: &str,
+    pk_value: &[u8],
+) -> Result<SpireCoordinatorDeleteRemotePrepareRow, String> {
+    let dispatch =
+        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire coordinator delete remote dispatch for node_id {} is blocked with status {}",
+            node_id, dispatch.status
+        ));
+    }
+    let remote_sql =
+        coordinator_delete_remote_tuple_payload_sql(&dispatch.remote_index_regclass, pk_column, pk_value)?;
+
+    let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
+    let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire coordinator delete conninfo secret for node_id {node_id} is not resolved: {status}"
+        )
+    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        node_id,
+        "coordinator delete remote prepare",
+    )?;
+    let prepared_gid = coordinator_insert_prepared_gid(dispatch.index_oid, node_id, served_epoch);
+    client.batch_execute("BEGIN").map_err(|_| {
+        format!(
+            "ec_spire coordinator delete failed to begin remote transaction for node_id {node_id}"
+        )
+    })?;
+    let row = match client.query_one(remote_sql.as_str(), &[]) {
+        Ok(row) => row,
+        Err(error) => {
+            let _ = client.batch_execute("ROLLBACK");
+            return Err(format!(
+                "ec_spire coordinator delete remote SQL failed for node_id {node_id}: {error}"
+            ));
+        }
+    };
+    let remote_deleted_count = row
+        .try_get::<_, i64>("deleted_count")
+        .map_err(|_| "ec_spire coordinator delete remote deleted_count decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| "ec_spire coordinator delete remote deleted_count is negative".to_owned())
+        })?;
+    client
+        .batch_execute(&format!(
+            "PREPARE TRANSACTION {}",
+            quote_sql_literal(&prepared_gid)
+        ))
+        .map_err(|error| {
+            format!(
+                "ec_spire coordinator delete remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
+            )
+        })?;
+
+    let commit_conninfo = conninfo.clone();
+    let commit_gid = prepared_gid.clone();
+    let rollback_gid = prepared_gid.clone();
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+        coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+        coordinator_insert_resolve_remote_prepared(conninfo, node_id, rollback_gid, false);
+    });
+
+    Ok(SpireCoordinatorDeleteRemotePrepareRow {
+        node_id,
+        prepared_gid,
+        remote_delete_sent: true,
+        remote_prepared: true,
+        remote_deleted_count,
+        status: "remote_delete_prepared",
+        next_step: "local_placement_directory_delete",
     })
 }
 

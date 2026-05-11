@@ -28,6 +28,7 @@ pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
     classify_centroid as spire_classify_centroid,
+    coordinator_delete_prepare_remote_tuple_payload as spire_coordinator_delete_prepare_remote_tuple_payload,
     coordinator_insert_dispatch_plan_row as spire_coordinator_insert_dispatch_plan_row,
     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
     coordinator_insert_prepare_remote_tuple_payload as spire_coordinator_insert_prepare_remote_tuple_payload,

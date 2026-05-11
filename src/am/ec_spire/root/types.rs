@@ -584,6 +584,17 @@ pub(crate) struct SpireCoordinatorUpdateRemoteRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireCoordinatorDeleteRemotePrepareRow {
+    pub(crate) node_id: u32,
+    pub(crate) prepared_gid: String,
+    pub(crate) remote_delete_sent: bool,
+    pub(crate) remote_prepared: bool,
+    pub(crate) remote_deleted_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) next_step: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqDispatchSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) dispatch_count: u64,

@@ -7923,6 +7923,160 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     ))
 }
 
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_prepare_coordinator_delete_tuple_payload(
+    index_oid: pg_sys::Oid,
+    pk_column: String,
+    pk_value: Vec<u8>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(pk_value, Vec<u8>),
+        name!(node_id, i64),
+        name!(served_epoch, i64),
+        name!(prepared_gid, String),
+        name!(remote_delete_sent, bool),
+        name!(remote_prepared, bool),
+        name!(remote_deleted_count, i64),
+        name!(placement_deleted, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    const POST_DELETE_STATUS: &str = "remote_delete_prepared_pending_local_commit";
+    const POST_DELETE_NEXT_STEP: &str = "await_local_commit";
+
+    if pk_column.is_empty() {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_delete_tuple_payload pk_column must be nonempty"
+        );
+    }
+    if pk_value.is_empty() {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_delete_tuple_payload pk_value must not be empty"
+        );
+    }
+
+    let (node_id, served_epoch) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT node_id, served_epoch \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = $1::oid \
+                    AND pk_value = $2::bytea",
+                None,
+                &[index_oid.into(), pk_value.clone().into()],
+            )
+            .map_err(|e| format!("ec_spire coordinator delete placement lookup failed: {e}"))?
+            .map(|row| {
+                let node_id = row["node_id"]
+                    .value::<i32>()
+                    .map_err(|e| {
+                        format!("ec_spire coordinator delete placement node_id decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator delete placement node_id is null".to_owned()
+                    })?;
+                let served_epoch = row["served_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire coordinator delete placement served_epoch decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator delete placement served_epoch is null".to_owned()
+                    })?;
+                Ok::<(i32, i64), String>((node_id, served_epoch))
+            })
+            .next()
+            .transpose()
+            .map(|value| {
+                value.ok_or_else(|| {
+                    "ec_spire coordinator delete placement row is missing".to_owned()
+                })
+            })?
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if node_id <= 0 {
+        pgrx::error!("ec_spire coordinator delete placement points at local node 0");
+    }
+    if served_epoch <= 0 {
+        pgrx::error!("ec_spire coordinator delete placement served_epoch must be greater than 0");
+    }
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_prepare_coordinator_delete_tuple_payload",
+        )
+    };
+    let delete_row = unsafe {
+        am::spire_coordinator_delete_prepare_remote_tuple_payload(
+            index_relation,
+            u32::try_from(node_id).expect("positive node_id should fit u32"),
+            u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
+            &pk_column,
+            &pk_value,
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if delete_row.remote_deleted_count != 1 {
+        pgrx::error!(
+            "ec_spire coordinator delete expected exactly one remote row, got {}",
+            delete_row.remote_deleted_count
+        );
+    }
+
+    let placement_deleted = Spi::connect_mut(|client| {
+        client
+            .select(
+                "DELETE FROM ec_spire_placement \
+                  WHERE index_oid = $1::oid \
+                    AND pk_value = $2::bytea \
+              RETURNING true AS deleted",
+                None,
+                &[index_oid.into(), pk_value.clone().into()],
+            )
+            .map_err(|e| format!("ec_spire coordinator delete placement delete failed: {e}"))?
+            .map(|row| {
+                row["deleted"]
+                    .value::<bool>()
+                    .map_err(|e| {
+                        format!("ec_spire coordinator delete placement delete decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator delete placement delete result is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| {
+                value.ok_or_else(|| {
+                    "ec_spire coordinator delete placement row disappeared before delete".to_owned()
+                })
+            })?
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((
+        index_oid,
+        pk_value,
+        i64::from(delete_row.node_id),
+        served_epoch,
+        delete_row.prepared_gid,
+        delete_row.remote_delete_sent,
+        delete_row.remote_prepared,
+        i64::try_from(delete_row.remote_deleted_count).expect("deleted count should fit i64"),
+        placement_deleted,
+        POST_DELETE_STATUS,
+        POST_DELETE_NEXT_STEP,
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
@@ -13279,6 +13433,65 @@ fn ec_spire_remote_update_tuple_payload(
         payload_column_count,
         "ready",
     ))
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_delete_tuple_payload(
+    index_oid: pg_sys::Oid,
+    pk_column: String,
+    pk_value: Vec<u8>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(heap_relation_oid, pg_sys::Oid),
+        name!(deleted_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_delete_tuple_payload") };
+    let heap_relation_oid = unsafe {
+        (*index_relation)
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    if pk_column.is_empty() {
+        pgrx::error!("ec_spire_remote_delete_tuple_payload pk_column must be nonempty");
+    }
+    if pk_value.is_empty() {
+        pgrx::error!("ec_spire_remote_delete_tuple_payload pk_value must not be empty");
+    }
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &[pk_column.clone()])
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
+    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
+    let pk_identifier = ec_spire_quote_identifier(&pk_column);
+    let delete_sql = format!(
+        "WITH deleted AS ( \
+             DELETE FROM {heap_relation_regclass} AS target \
+              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $1::bytea \
+          RETURNING 1 \
+         ) \
+         SELECT count(*)::bigint AS deleted_count FROM deleted"
+    );
+    let deleted_count = Spi::connect_mut(|client| {
+        client
+            .select(delete_sql.as_str(), None, &[pk_value.into()])
+            .map_err(|e| format!("ec_spire remote tuple payload delete failed: {e}"))?
+            .first()
+            .get_one::<i64>()
+            .map_err(|e| format!("ec_spire remote tuple payload deleted_count decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire remote tuple payload deleted_count is null".to_owned())
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
+
+    TableIterator::once((index_oid, heap_relation_oid, deleted_count, "ready"))
 }
 
 fn ec_spire_remote_search_tuple_payloads_for_ctids(
@@ -20416,6 +20629,148 @@ mod tests {
             format!("15|{active_epoch}|true|1|remote_update_applied|done")
         );
         assert_eq!(remote_title, "after update");
+        let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_DELETE_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_delete_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_delete_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_delete_payload_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (606, 'delete me', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('606162636465666768696a6b6c6d6e6f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_delete_payload_remote_idx \
+                     ON ec_spire_coord_delete_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote delete target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator delete table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_delete_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('707172737475767778797a7b7c7d7e7f', 'hex'))",
+        )
+        .expect("coordinator delete seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_payload_idx \
+             ON ec_spire_coord_delete_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator delete ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_coord_delete_payload_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_delete_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_delete_payload_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_delete_payload_idx'::regclass, \
+                 16, 20, 'spire/remote/coordinator_delete_payload_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_delete_payload_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_payload_idx'::regclass, int8send(606::bigint)::bytea, \
+                     16, 2, {active_epoch}, decode('606162636465666768696a6b6c6d6e6f', 'hex'))"
+        ))
+        .expect("placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_payload_idx'::regclass, \
+                     'id', \
+                     int8send(606::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_delete_sent::text || '|' || remote_prepared::text || '|' || \
+                    remote_deleted_count::text || '|' || placement_deleted::text || '|' || \
+                    status || '|' || next_step || '|' || prepared_gid \
+               FROM result",
+        )
+        .expect("coordinator delete helper query should succeed")
+        .expect("coordinator delete helper should return a row");
+        let parts = result.split('|').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 9);
+        let prepared_gid = parts[8].to_owned();
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&prepared_gid],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_coord_delete_payload_remote_sql \
+                  WHERE id = 606",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_payload_idx'::regclass \
+                AND pk_value = int8send(606::bigint)::bytea",
+        )
+        .expect("placement query should succeed")
+        .expect("placement count should exist");
+
+        assert_eq!(parts[0], "16");
+        assert_eq!(parts[1], active_epoch.to_string());
+        assert_eq!(parts[2], "true");
+        assert_eq!(parts[3], "true");
+        assert_eq!(parts[4], "1");
+        assert_eq!(parts[5], "true");
+        assert_eq!(parts[6], "remote_delete_prepared_pending_local_commit");
+        assert_eq!(parts[7], "await_local_commit");
+        assert_eq!(prepared_count, 1);
+        assert_eq!(
+            remote_visible_count, 1,
+            "prepared remote DELETE should not be visible before transaction resolution"
+        );
+        assert_eq!(placement_count, 0);
         let _ = index_oid;
     }
 

@@ -131,6 +131,16 @@ Two-phase commit applies for the same reason as INSERT: the placement
 directory is coordinator-side state that must stay consistent with the
 remote.
 
+The implementation surface is
+`ec_spire_prepare_coordinator_delete_tuple_payload(index_oid, pk_column,
+pk_value)`. It looks up `node_id` and `served_epoch` from
+`ec_spire_placement`, prepares a remote
+`ec_spire_remote_delete_tuple_payload(...)` call in a remote transaction,
+then deletes the coordinator placement row in the local transaction. The
+existing transaction callback resolves the remote prepared transaction on
+local commit or abort, so the remote heap delete and placement-directory
+delete commit or roll back together.
+
 ### UPDATE of the embedding column
 
 An UPDATE that changes the embedding column may change the row's home
