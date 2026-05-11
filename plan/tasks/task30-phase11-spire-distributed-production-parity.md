@@ -1051,9 +1051,14 @@ v1 write contract from ADR-069:
 	  - [x] refresh remote descriptor epoch/identity automatically after the
 	    prepared remote INSERT commits, so a subsequent CustomScan read does not
 	    require manual descriptor re-registration.
-  - [ ] add PG18 multicluster coverage for `INSERT INTO coordinator_table ...`
-    through the trigger front door, including remote row, placement row, and
-    CustomScan read-after-insert once descriptor refresh is automatic.
+	  - [x] add PG18 multicluster coverage for `INSERT INTO coordinator_table ...`
+	    through the trigger front door, including remote row, placement row, and
+	    CustomScan read-after-insert once descriptor refresh is automatic.
+	    - [x] Packet `30837` adds `--insert-mode trigger` coverage to
+	      `scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh`,
+	      proving the trigger suppresses the coordinator heap row, forwards to
+	      the remote, refreshes the descriptor, stages placement, and returns the
+	      row through `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Coordinator-routed non-embedding UPDATE:
   - [ ] lookup `node_id` from the placement directory;
   - [ ] forward UPDATE to the owning remote;
