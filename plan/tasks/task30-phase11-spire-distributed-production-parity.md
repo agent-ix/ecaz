@@ -821,6 +821,12 @@ Goal: prove distributed correctness locally before AWS.
     before receive, and expects the same strict fail-closed / degraded skip
     contract at the `remote_index_unavailable` boundary. Remaining REINDEX and
     CREATE INDEX CONCURRENTLY lifecycle rows still need fixture logs.
+  - [x] Packet `30791` adds `reindex_remote_index_before_fanout` runtime
+    evidence: the fixture captures the planned remote endpoint identity,
+    runs `REINDEX INDEX CONCURRENTLY` before fanout, and verifies strict
+    fail-closed / degraded skip behavior at the `endpoint_identity_mismatch`
+    boundary. Remaining in-flight REINDEX and CREATE INDEX CONCURRENTLY
+    lifecycle rows still need fixture logs.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

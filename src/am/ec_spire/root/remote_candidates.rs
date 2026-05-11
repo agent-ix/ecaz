@@ -5379,7 +5379,7 @@ pub(crate) fn remote_search_stage_e_lifecycle_matrix_rows(
             "before_fanout_planning",
             "remote_index_identity",
             "fail_closed",
-            SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
             "skip_node",
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
@@ -5393,7 +5393,7 @@ pub(crate) fn remote_search_stage_e_lifecycle_matrix_rows(
             "after_fanout_before_receive",
             "remote_index_identity",
             "fail_closed",
-            SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
+            SPIRE_REMOTE_STATUS_CANDIDATE_RECEIVE_FAILED,
             "skip_node",
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH,
@@ -7126,6 +7126,32 @@ fn remote_search_endpoint_opclass_identity(index_relid: pg_sys::Oid) -> Result<S
     })
 }
 
+fn remote_search_endpoint_generation_identity(index_relid: pg_sys::Oid) -> Result<String, String> {
+    let sql = format!(
+        "SELECT pg_relation_filenode('{}'::oid)::text AS generation_identity",
+        u32::from(index_relid)
+    );
+
+    Spi::connect(|client| {
+        client
+            .select(sql.as_str(), None, &[])
+            .map_err(|e| format!("ec_spire endpoint identity generation read failed: {e}"))?
+            .map(|row| {
+                row["generation_identity"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire endpoint identity generation decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire endpoint identity generation is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or_else(|| "unknown".to_owned()))
+    })
+}
+
 fn remote_search_stable_fingerprint(parts: &[String]) -> String {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for part in parts {
@@ -7309,6 +7335,8 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
             remote_search_endpoint_quantizer_profile(assignment_payload_format);
         let opclass_identity =
             remote_search_endpoint_opclass_identity(unsafe { (*index_relation).rd_id })?;
+        let generation_identity =
+            remote_search_endpoint_generation_identity(unsafe { (*index_relation).rd_id })?;
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let scoring_profile = "inner_product_score_v1";
         let storage_format = relation_options.storage_format.reloption_name();
@@ -7326,6 +7354,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
             relation_options.seed.to_string(),
             relation_options.pq_group_size.to_string(),
             root_control.active_epoch.to_string(),
+            generation_identity,
         ]);
 
         let (status, recommendation) =

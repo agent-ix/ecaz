@@ -276,6 +276,7 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
 enum StageELifecycleCase {
     DropRemoteIndexBeforeFanout,
     DropRemoteIndexInFlight,
+    ReindexRemoteIndexBeforeFanout,
 }
 
 impl StageELifecycleCase {
@@ -283,6 +284,9 @@ impl StageELifecycleCase {
         match self {
             StageELifecycleCase::DropRemoteIndexBeforeFanout => "drop_remote_index_before_fanout",
             StageELifecycleCase::DropRemoteIndexInFlight => "drop_remote_index_in_flight",
+            StageELifecycleCase::ReindexRemoteIndexBeforeFanout => {
+                "reindex_remote_index_before_fanout"
+            }
         }
     }
 
@@ -299,8 +303,11 @@ fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecy
         "drop_remote_index_in_flight" | "drop-remote-index-in-flight" => {
             Ok(StageELifecycleCase::DropRemoteIndexInFlight)
         }
+        "reindex_remote_index_before_fanout" | "reindex-remote-index-before-fanout" => {
+            Ok(StageELifecycleCase::ReindexRemoteIndexBeforeFanout)
+        }
         other => Err(format!(
-            "unsupported Stage E lifecycle case {other:?}; supported: drop_remote_index_before_fanout, drop_remote_index_in_flight"
+            "unsupported Stage E lifecycle case {other:?}; supported: drop_remote_index_before_fanout, drop_remote_index_in_flight, reindex_remote_index_before_fanout"
         )),
     }
 }

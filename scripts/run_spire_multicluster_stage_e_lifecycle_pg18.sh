@@ -6,6 +6,7 @@ set -euo pipefail
 # Supported cases:
 #   drop_remote_index_before_fanout
 #   drop_remote_index_in_flight
+#   reindex_remote_index_before_fanout
 #
 # These rows exercise production libpq candidate receive after a remote DDL
 # lifecycle event and prove strict/degraded handling matches the lifecycle
@@ -31,6 +32,7 @@ Usage: scripts/run_spire_multicluster_stage_e_lifecycle_pg18.sh --case CASE [opt
 Cases:
   drop_remote_index_before_fanout
   drop_remote_index_in_flight
+  reindex_remote_index_before_fanout
 
 Options:
   --artifact-dir DIR       Store fixture and PostgreSQL logs in DIR.
@@ -104,7 +106,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" \
-  && "$LIFECYCLE_CASE" != "drop_remote_index_in_flight" ]]; then
+  && "$LIFECYCLE_CASE" != "drop_remote_index_in_flight" \
+  && "$LIFECYCLE_CASE" != "reindex_remote_index_before_fanout" ]]; then
   echo "unsupported or missing --case: ${LIFECYCLE_CASE:-<none>}" >&2
   usage >&2
   exit 2
@@ -195,6 +198,7 @@ CREATE INDEX ec_spire_stage_e_lifecycle_coord_idx
 SQL
 
 remote_dropped_identity_hex=""
+remote_reindexed_identity_hex=""
 drop_regclass="f"
 
 prepare_remote_dropped_index() {
@@ -231,6 +235,20 @@ if [[ "$LIFECYCLE_CASE" == "drop_remote_index_before_fanout" ]]; then
     echo "expected dropped remote index to be absent, got to_regclass null=$drop_regclass" >&2
     exit 3
   fi
+elif [[ "$LIFECYCLE_CASE" == "reindex_remote_index_before_fanout" ]]; then
+  planned_reindex_identity_hex="$remote_dropped_identity_hex"
+  "${remote_ready_psql[@]}" -c "REINDEX INDEX CONCURRENTLY ec_spire_stage_e_lifecycle_dropped_idx" >/dev/null
+  remote_reindexed_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_dropped_idx'::regclass)")"
+  drop_regclass="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_dropped_idx') IS NULL")"
+  if [[ "$drop_regclass" != "f" ]]; then
+    echo "expected reindexed remote index to exist, got to_regclass null=$drop_regclass" >&2
+    exit 3
+  fi
+  if [[ "$remote_reindexed_identity_hex" == "$planned_reindex_identity_hex" ]]; then
+    echo "expected REINDEX CONCURRENTLY to change endpoint identity, still got $remote_reindexed_identity_hex" >&2
+    exit 3
+  fi
+  remote_dropped_identity_hex="$planned_reindex_identity_hex"
 fi
 
 run_case() {
@@ -245,6 +263,15 @@ run_case() {
   local case_coord_identity="$coord_ready_identity_hex"
 
   if [[ "$mode" == "degraded" ]]; then
+    if [[ "$LIFECYCLE_CASE" == "reindex_remote_index_before_fanout" ]]; then
+      "${remote_ready_psql[@]}" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    'ec_spire_stage_e_lifecycle_dropped_idx'::regclass::oid,
+    'degraded'
+);
+SQL
+      remote_reindexed_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_dropped_idx'::regclass)")"
+    fi
     "${coord_psql[@]}" <<'SQL' >/dev/null
 SELECT tests.ec_spire_test_rewrite_consistency_mode(
     'ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid,
@@ -274,7 +301,11 @@ SQL
       exit 3
     fi
   else
-    injection="DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout"
+    if [[ "$LIFECYCLE_CASE" == "reindex_remote_index_before_fanout" ]]; then
+      injection="REINDEX INDEX CONCURRENTLY ec_spire_stage_e_lifecycle_dropped_idx before fanout"
+    else
+      injection="DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout"
+    fi
     query_command="tests.ec_spire_test_production_candidate_receive_summary(..., '$mode')"
     raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_production_candidate_receive(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode') ORDER BY node_id")"
     summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_candidate_receive_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode')")"
@@ -285,6 +316,7 @@ SQL
     echo "injection=$injection"
     echo "dropped_index_to_regclass_is_null=$drop_regclass"
     echo "dropped_remote_identity_before_drop=$remote_dropped_identity_hex"
+    echo "remote_reindexed_identity=$remote_reindexed_identity_hex"
     echo "coord_ready_identity=$case_coord_identity"
     echo "coord_ready_epoch=$coord_ready_epoch"
     echo "coord_ready_pids=$coord_ready_pids"
@@ -317,8 +349,13 @@ SQL
   fi
 }
 
-run_case "strict" "$STRICT_LOG" "remote_candidate_receive_failed" "1" "0" "compact_candidate_receive" "remote_index_unavailable" "none"
-run_case "degraded" "$DEGRADED_LOG" "degraded_ready" "0" "1" "remote_heap_resolution" "none" "remote_index_unavailable"
+if [[ "$LIFECYCLE_CASE" == "reindex_remote_index_before_fanout" ]]; then
+  run_case "strict" "$STRICT_LOG" "remote_candidate_receive_failed" "1" "0" "compact_candidate_receive" "endpoint_identity_mismatch" "none"
+  run_case "degraded" "$DEGRADED_LOG" "degraded_ready" "0" "1" "remote_heap_resolution" "none" "endpoint_identity_mismatch"
+else
+  run_case "strict" "$STRICT_LOG" "remote_candidate_receive_failed" "1" "0" "compact_candidate_receive" "remote_index_unavailable" "none"
+  run_case "degraded" "$DEGRADED_LOG" "degraded_ready" "0" "1" "remote_heap_resolution" "none" "remote_index_unavailable"
+fi
 
 echo "strict_log=$STRICT_LOG"
 echo "degraded_log=$DEGRADED_LOG"

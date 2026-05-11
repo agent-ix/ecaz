@@ -23178,6 +23178,17 @@ mod tests {
             Spi::get_one::<i32>(&format!("SELECT length(profile_fingerprint) {rabitq_from}"))
                 .expect("rabitq identity fingerprint query should succeed")
                 .expect("rabitq identity fingerprint should exist");
+        let fingerprint_before_reindex =
+            Spi::get_one::<String>(&format!("SELECT profile_fingerprint {rabitq_from}"))
+                .expect("rabitq identity fingerprint query should succeed")
+                .expect("rabitq identity fingerprint should exist");
+
+        Spi::run("REINDEX INDEX ec_spire_endpoint_identity_rabitq_idx")
+            .expect("reindex should succeed");
+        let fingerprint_after_reindex =
+            Spi::get_one::<String>(&format!("SELECT profile_fingerprint {rabitq_from}"))
+                .expect("reindexed rabitq identity fingerprint query should succeed")
+                .expect("reindexed rabitq identity fingerprint should exist");
 
         assert_eq!(default_status, "requires_rabitq_storage_format");
         assert_eq!(default_assignment_payload, "turboquant");
@@ -23190,6 +23201,7 @@ mod tests {
         assert_eq!(quantizer_profile, "rabitq_v1");
         assert_eq!(scoring_profile, "inner_product_score_v1");
         assert_eq!(fingerprint_length, 16);
+        assert_ne!(fingerprint_before_reindex, fingerprint_after_reindex);
     }
 
     #[pg_test]
@@ -25895,7 +25907,7 @@ mod tests {
         .expect("drop index detection query should succeed")
         .expect("drop index detection should exist");
         let reindex_status = Spi::get_one::<String>(
-            "SELECT strict_status FROM ec_spire_remote_search_stage_e_lifecycle_matrix() \
+            "SELECT required_detection FROM ec_spire_remote_search_stage_e_lifecycle_matrix() \
              WHERE lifecycle_case = 'reindex_remote_index_in_flight'",
         )
         .expect("reindex status query should succeed")
