@@ -840,6 +840,10 @@ Goal: prove distributed correctness locally before AWS.
     and verifies strict blocks at `requires_remote_node_descriptor` while
     degraded skips the pre-dispatch blocker without opening sockets. The new
     descriptor deferral row still needs fixture logs.
+  - [x] Packet `30794` processes lifecycle reindex reviewer follow-up by
+    documenting the filenode contribution to endpoint fingerprints and
+    confirming the existing identity-cache matrix still covers filenode-driven
+    fingerprint changes.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

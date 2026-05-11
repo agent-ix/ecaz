@@ -221,6 +221,9 @@ Verification:
   one identity decision.
 - Fingerprint mismatch invalidates the cache and never reseats descriptor
   identity from the remote.
+- Endpoint generation changes from `REINDEX INDEX CONCURRENTLY` are covered by
+  the same fingerprint mismatch rule because endpoint fingerprints include the
+  index relation filenode.
 
 ### C4: Strict / Degraded Failure Semantics
 

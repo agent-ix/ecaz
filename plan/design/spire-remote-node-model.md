@@ -274,12 +274,19 @@ training_sample_rows
 seed
 pq_group_size
 active_epoch
+generation_identity
 ```
 
 `active_epoch` is included so a rebuilt or republished endpoint cannot reuse an
 old serving fingerprint accidentally. A retained historical epoch would expose
 the fingerprint for the epoch it actually serves, not the coordinator's current
 epoch.
+
+`generation_identity` is the endpoint index relation filenode
+(`pg_relation_filenode(index_oid)`) encoded as canonical decimal ASCII. It is
+included so `REINDEX INDEX CONCURRENTLY` changes the serving fingerprint even
+when the logical index name, opclass, storage format, quantizer profile, and
+active epoch remain unchanged.
 
 Future training-stat fingerprinting must not silently broaden the v1 digest
 input set after candidate rows are on the wire. If persisted training metadata

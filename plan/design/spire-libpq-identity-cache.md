@@ -44,6 +44,12 @@ profile_fingerprint
 equal to the live endpoint `profile_fingerprint` bytes before the entry can be
 inserted or reused.
 
+Because the live `profile_fingerprint` includes
+`pg_relation_filenode(index_oid)` as its generation identity, a remote
+`REINDEX INDEX CONCURRENTLY` is observed as a fingerprint change. The existing
+cache key and mismatch rule therefore invalidate stale entries without adding a
+second generation token beside `remote_index_identity`.
+
 Raw conninfo is not a cache key and must not be stored in the identity cache.
 The cache may store `conninfo_secret_name` only as a diagnostic binding to the
 descriptor generation; secret resolution remains a separate executor step.
