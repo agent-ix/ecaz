@@ -464,6 +464,23 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
     }))
 }
 
+pub(crate) unsafe fn dml_frontdoor_target_relation_oid(
+    query: *mut pg_sys::Query,
+) -> Option<pg_sys::Oid> {
+    if query.is_null() {
+        return None;
+    }
+    let query_ref = unsafe { query.as_ref()? };
+    let operation = dml_frontdoor_operation_for_query(query_ref)?;
+    let target_rtindex = match operation {
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+            query_ref.resultRelation
+        }
+        SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query_ref)? },
+    };
+    unsafe { dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex) }
+}
+
 fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFrontdoorOperation> {
     match query.commandType {
         pg_sys::CmdType::CMD_UPDATE => Some(SpireDmlFrontdoorOperation::Update),
@@ -496,6 +513,22 @@ unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
     }
     let range_table_ref = from_node.cast::<pg_sys::RangeTblRef>();
     Some(unsafe { (*range_table_ref).rtindex })
+}
+
+unsafe fn dml_frontdoor_relation_oid_from_rtable(
+    query: &pg_sys::Query,
+    rtindex: i32,
+) -> Option<pg_sys::Oid> {
+    if rtindex <= 0 || query.rtable.is_null() {
+        return None;
+    }
+    let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
+    let rte = rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?;
+    let rte = unsafe { rte.as_ref()? };
+    if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
+        return None;
+    }
+    Some(rte.relid)
 }
 
 unsafe fn dml_frontdoor_pk_predicate(

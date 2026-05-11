@@ -1137,6 +1137,10 @@ v1 write contract from ADR-069:
     planner hook, exposing the table's selected `ec_spire` index, bigint
     primary-key column, ordinary heap columns, and indexed embedding columns
     through `ec_spire_dml_frontdoor_relation_context(...)`.
+  - [x] Packet `30851` adds hook-side target heap relation extraction from
+    analyzed PostgreSQL `Query` trees for UPDATE, DELETE, and single-table
+    SELECT, with PG18 coverage rejecting joined SELECT shapes before metadata
+    lookup.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

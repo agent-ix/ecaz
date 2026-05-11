@@ -27885,6 +27885,65 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_target_relation_oid_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_target_oid_sql \
+             (id bigint primary key, title text not null)",
+        )
+        .expect("DML target oid table creation should succeed");
+        let relation_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_dml_target_oid_sql'::regclass::oid")
+                .expect("DML target oid relation lookup should succeed")
+                .expect("DML target oid relation should exist");
+
+        for sql in [
+            "UPDATE ec_spire_dml_target_oid_sql SET title = 'updated' WHERE id = 1",
+            "DELETE FROM ec_spire_dml_target_oid_sql WHERE id = 1",
+            "SELECT id, title FROM ec_spire_dml_target_oid_sql WHERE id = 1",
+        ] {
+            let query = unsafe { analyzed_query(sql) };
+            assert_eq!(
+                unsafe { am::spire_dml_frontdoor_target_relation_oid(query) },
+                Some(relation_oid),
+                "{sql}"
+            );
+        }
+
+        let join_query = unsafe {
+            analyzed_query(
+                "SELECT l.id \
+                   FROM ec_spire_dml_target_oid_sql AS l \
+                   JOIN ec_spire_dml_target_oid_sql AS r ON l.id = r.id",
+            )
+        };
+        assert_eq!(
+            unsafe { am::spire_dml_frontdoor_target_relation_oid(join_query) },
+            None
+        );
+    }
+
+    unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
+        let sql = CString::new(sql).expect("test SQL should not contain NUL");
+        let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
+        assert!(
+            !raw_parses.is_null(),
+            "parse should return a raw statement list"
+        );
+        let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
+        let queries = unsafe {
+            pg_sys::pg_analyze_and_rewrite_fixedparams(
+                raw_stmt,
+                sql.as_ptr(),
+                std::ptr::null(),
+                0,
+                std::ptr::null_mut(),
+            )
+        };
+        assert!(!queries.is_null(), "analyze should return a query list");
+        unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>()
+    }
+
+    #[pg_test]
     fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
         Spi::run(
             "CREATE TABLE ec_spire_customscan_payload_slot_sql \
