@@ -1148,6 +1148,10 @@ v1 write contract from ADR-069:
   - [x] Packet `30853` pins the v1 CTE rejection rule in ADR-069 and proves
     PostgreSQL-analyzed `WHERE id = 5` cross-type integer equality still
     classifies as `pk_select_by_pk`.
+  - [x] Packet `30854` adds `ec_spire_dml_frontdoor_classify_sql(...)`, a
+    SQL-visible diagnostic bridge that combines target relation extraction,
+    relation context, and the shared query classifier before hook-side plan
+    replacement.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

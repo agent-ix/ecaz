@@ -1011,6 +1011,121 @@ fn ec_spire_dml_frontdoor_relation_context(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_classify_sql(
+    sql: &str,
+) -> TableIterator<
+    'static,
+    (
+        name!(target_relation_oid, Option<pg_sys::Oid>),
+        name!(relation_status, Option<&'static str>),
+        name!(supported, bool),
+        name!(operation, &'static str),
+        name!(kind, &'static str),
+        name!(status, &'static str),
+        name!(error, Option<&'static str>),
+        name!(hint, Option<&'static str>),
+        name!(next_step, &'static str),
+    ),
+> {
+    let query = unsafe {
+        analyze_single_dml_frontdoor_query(sql)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
+    };
+    let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
+    else {
+        return TableIterator::once((
+            None,
+            None,
+            false,
+            "unsupported",
+            "unsupported_target_relation",
+            "unsupported_shape",
+            Some("ec_spire_distributed: DML front door requires one target heap relation"),
+            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+        ));
+    };
+    let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let pk_column = relation.pk_column.as_deref().unwrap_or("");
+    let column_names = relation
+        .column_names
+        .iter()
+        .map(|(attnum, name)| (*attnum, name.as_str()))
+        .collect::<Vec<_>>();
+    let embedding_columns = relation
+        .embedding_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let query_context = am::SpireDmlFrontdoorQueryContext {
+        ec_spire_distributed_table: relation.ec_spire_distributed_table,
+        pk_column,
+        column_names: &column_names,
+        embedding_columns: &embedding_columns,
+    };
+    let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
+    else {
+        return TableIterator::once((
+            Some(target_relation_oid),
+            Some(relation.status),
+            false,
+            "unsupported",
+            "unsupported_operation",
+            "unsupported_shape",
+            Some("ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1"),
+            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+        ));
+    };
+
+    TableIterator::once((
+        Some(target_relation_oid),
+        Some(relation.status),
+        shape.supported,
+        shape.operation,
+        shape.kind,
+        shape.status,
+        shape.error,
+        shape.hint,
+        if shape.supported {
+            "wire planner hook to CustomScan executor replacement"
+        } else {
+            "rewrite query to fit the ADR-069 v1 DML front-door shape"
+        },
+    ))
+}
+
+unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
+    let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
+    let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
+    if raw_parses.is_null() {
+        return Err("parser returned no statements".to_owned());
+    }
+    if unsafe { pg_sys::list_length(raw_parses) } != 1 {
+        return Err("expected exactly one SQL statement".to_owned());
+    }
+    let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
+    let queries = unsafe {
+        pg_sys::pg_analyze_and_rewrite_fixedparams(
+            raw_stmt,
+            sql.as_ptr(),
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if queries.is_null() {
+        return Err("analyzer returned no query".to_owned());
+    }
+    if unsafe { pg_sys::list_length(queries) } != 1 {
+        return Err("expected exactly one analyzed query".to_owned());
+    }
+    Ok(unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>())
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_custom_scan_index_eligibility(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -27978,6 +28093,12 @@ mod tests {
              (id bigint primary key, title text not null, embedding ecvector)",
         )
         .expect("DML query shape table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_query_shape_idx \
+             ON ec_spire_dml_query_shape_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML query shape ec_spire index creation should succeed");
 
         let context = am::SpireDmlFrontdoorQueryContext {
             ec_spire_distributed_table: true,
@@ -28008,6 +28129,22 @@ mod tests {
             .expect("CTE-prefixed query should classify");
         assert!(!cte_shape.supported);
         assert_eq!(cte_shape.kind, "unsupported_subquery_shape");
+
+        let diagnostic_kind = Spi::get_one::<String>(
+            "SELECT kind FROM ec_spire_dml_frontdoor_classify_sql(\
+             $$SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5$$)",
+        )
+        .expect("DML frontdoor diagnostic classifier should succeed")
+        .expect("DML frontdoor diagnostic classifier should return a kind");
+        let diagnostic_cte_kind = Spi::get_one::<String>(
+            "SELECT kind FROM ec_spire_dml_frontdoor_classify_sql(\
+             $$WITH marker AS (SELECT 1) \
+               SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5$$)",
+        )
+        .expect("DML frontdoor diagnostic CTE classifier should succeed")
+        .expect("DML frontdoor diagnostic CTE classifier should return a kind");
+        assert_eq!(diagnostic_kind, "pk_select_by_pk");
+        assert_eq!(diagnostic_cte_kind, "unsupported_subquery_shape");
     }
 
     unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
