@@ -1156,6 +1156,11 @@ v1 write contract from ADR-069:
     `ec_spire_dml_frontdoor_relation_context_catalog(...)` relation-context
     loader so a later planner-hook slice can classify without recursive SPI
     catalog lookup.
+  - [x] Packet `30856` has the pass-through planner hook invoke the shared
+    query-shape classifier with non-SPI catalog relation context and expose
+    the backend-local last classification through
+    `ec_spire_dml_frontdoor_hook_status()`; plan rewriting remains disabled
+    until the CustomScan executor replacement slice.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

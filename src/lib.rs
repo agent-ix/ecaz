@@ -960,7 +960,11 @@ fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
         name!(hook_name, &'static str),
         name!(planner_hook_installed, bool),
         name!(query_shape_classifier_enabled, bool),
+        name!(query_shape_classifier_invoked_by_hook, bool),
         name!(plan_rewrite_enabled, bool),
+        name!(last_classification_supported, Option<bool>),
+        name!(last_classification_kind, Option<&'static str>),
+        name!(last_classification_status, Option<&'static str>),
         name!(status, &'static str),
         name!(next_step, &'static str),
     ),
@@ -970,7 +974,11 @@ fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
         row.hook_name,
         row.planner_hook_installed,
         row.query_shape_classifier_enabled,
+        row.query_shape_classifier_invoked_by_hook,
         row.plan_rewrite_enabled,
+        row.last_classification_supported,
+        row.last_classification_kind,
+        row.last_classification_status,
         row.status,
         row.next_step,
     ))
@@ -27970,6 +27978,11 @@ mod tests {
         ))
         .expect("DML frontdoor query classifier query should succeed")
         .expect("DML frontdoor query classifier value should exist");
+        let query_shape_classifier_invoked_by_hook = Spi::get_one::<bool>(&format!(
+            "SELECT query_shape_classifier_invoked_by_hook {status_from}"
+        ))
+        .expect("DML frontdoor hook classifier observation query should succeed")
+        .expect("DML frontdoor hook classifier observation value should exist");
         let plan_rewrite_enabled =
             Spi::get_one::<bool>(&format!("SELECT plan_rewrite_enabled {status_from}"))
                 .expect("DML frontdoor plan rewrite query should succeed")
@@ -27982,7 +27995,15 @@ mod tests {
         assert!(planner_hook_installed);
         assert!(query_shape_classifier_enabled);
         assert!(!plan_rewrite_enabled);
-        assert_eq!(status, "pass_through_query_classifier_ready");
+        assert_eq!(
+            query_shape_classifier_invoked_by_hook,
+            status == "pass_through_classifier_observed"
+        );
+        assert!(
+            status == "pass_through_query_classifier_ready"
+                || status == "pass_through_classifier_observed",
+            "{status}"
+        );
     }
 
     #[pg_test]
@@ -28196,6 +28217,32 @@ mod tests {
         .expect("DML frontdoor diagnostic CTE classifier should return a kind");
         assert_eq!(diagnostic_kind, "pk_select_by_pk");
         assert_eq!(diagnostic_cte_kind, "unsupported_subquery_shape");
+
+        Spi::run("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5")
+            .expect("DML frontdoor planner hook SELECT should pass through");
+        let hook_status = "FROM ec_spire_dml_frontdoor_hook_status()";
+        let hook_classifier_invoked = Spi::get_one::<bool>(&format!(
+            "SELECT query_shape_classifier_invoked_by_hook {hook_status}"
+        ))
+        .expect("DML frontdoor hook classifier observation query should succeed")
+        .expect("DML frontdoor hook classifier observation value should exist");
+        let hook_classification_supported = Spi::get_one::<bool>(&format!(
+            "SELECT last_classification_supported {hook_status}"
+        ))
+        .expect("DML frontdoor hook last supported query should succeed")
+        .expect("DML frontdoor hook last supported value should exist");
+        let hook_classification_kind =
+            Spi::get_one::<String>(&format!("SELECT last_classification_kind {hook_status}"))
+                .expect("DML frontdoor hook last kind query should succeed")
+                .expect("DML frontdoor hook last kind should exist");
+        let hook_classification_status =
+            Spi::get_one::<String>(&format!("SELECT last_classification_status {hook_status}"))
+                .expect("DML frontdoor hook last status query should succeed")
+                .expect("DML frontdoor hook last status should exist");
+        assert!(hook_classifier_invoked);
+        assert!(hook_classification_supported);
+        assert_eq!(hook_classification_kind, "pk_select_by_pk");
+        assert_eq!(hook_classification_status, "supported_v1_shape");
     }
 
     unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {

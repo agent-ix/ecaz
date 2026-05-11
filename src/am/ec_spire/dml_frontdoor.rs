@@ -57,7 +57,11 @@ pub(crate) struct SpireDmlFrontdoorHookStatusRow {
     pub(crate) hook_name: &'static str,
     pub(crate) planner_hook_installed: bool,
     pub(crate) query_shape_classifier_enabled: bool,
+    pub(crate) query_shape_classifier_invoked_by_hook: bool,
     pub(crate) plan_rewrite_enabled: bool,
+    pub(crate) last_classification_supported: Option<bool>,
+    pub(crate) last_classification_kind: Option<&'static str>,
+    pub(crate) last_classification_status: Option<&'static str>,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,
 }
@@ -85,6 +89,10 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
 
 static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
 static mut PLANNER_HOOK_INSTALLED: bool = false;
+static mut HOOK_CLASSIFICATION_ATTEMPTED: bool = false;
+static mut LAST_HOOK_CLASSIFICATION_SUPPORTED: Option<bool> = None;
+static mut LAST_HOOK_CLASSIFICATION_KIND: Option<&'static str> = None;
+static mut LAST_HOOK_CLASSIFICATION_STATUS: Option<&'static str> = None;
 
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
@@ -100,18 +108,32 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
 }
 
 pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow {
-    let installed = unsafe { PLANNER_HOOK_INSTALLED };
+    let (installed, classifier_invoked, last_supported, last_kind, last_status) = unsafe {
+        (
+            PLANNER_HOOK_INSTALLED,
+            HOOK_CLASSIFICATION_ATTEMPTED,
+            LAST_HOOK_CLASSIFICATION_SUPPORTED,
+            LAST_HOOK_CLASSIFICATION_KIND,
+            LAST_HOOK_CLASSIFICATION_STATUS,
+        )
+    };
     SpireDmlFrontdoorHookStatusRow {
         hook_name: "ec_spire_dml_frontdoor_planner_hook",
         planner_hook_installed: installed,
         query_shape_classifier_enabled: true,
+        query_shape_classifier_invoked_by_hook: classifier_invoked,
         plan_rewrite_enabled: false,
-        status: if installed {
+        last_classification_supported: last_supported,
+        last_classification_kind: last_kind,
+        last_classification_status: last_status,
+        status: if installed && classifier_invoked {
+            "pass_through_classifier_observed"
+        } else if installed {
             "pass_through_query_classifier_ready"
         } else {
             "not_installed"
         },
-        next_step: "wire relation metadata and CustomScan executor replacement",
+        next_step: "replace supported DML front-door plans with CustomScan executor nodes",
     }
 }
 
@@ -195,13 +217,62 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     cursor_options: core::ffi::c_int,
     bound_params: pg_sys::ParamListInfo,
 ) -> *mut pg_sys::PlannedStmt {
-    // Classification and plan replacement are intentionally separate follow-up
-    // slices; this checkpoint only installs a visible pass-through hook chain.
+    unsafe { dml_frontdoor_observe_planner_query(parse) };
     if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
         unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
     } else {
         unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
     }
+}
+
+unsafe fn dml_frontdoor_observe_planner_query(query: *mut pg_sys::Query) {
+    let Some(shape) = (unsafe { dml_frontdoor_classify_query_with_catalog_context(query) }) else {
+        return;
+    };
+    unsafe {
+        HOOK_CLASSIFICATION_ATTEMPTED = true;
+        LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(shape.supported);
+        LAST_HOOK_CLASSIFICATION_KIND = Some(shape.kind);
+        LAST_HOOK_CLASSIFICATION_STATUS = Some(shape.status);
+    }
+}
+
+unsafe fn dml_frontdoor_classify_query_with_catalog_context(
+    query: *mut pg_sys::Query,
+) -> Option<SpireDmlFrontdoorShapeRow> {
+    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+    let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+    {
+        Ok(relation) => relation,
+        Err(_err) => {
+            return Some(SpireDmlFrontdoorShapeRow {
+                supported: false,
+                operation: "unsupported",
+                kind: "relation_context_error",
+                status: "unsupported_shape",
+                error: Some("ec_spire_distributed: relation context could not be loaded"),
+                hint: Some(ADR_069_HINT),
+            });
+        }
+    };
+    let pk_column = relation.pk_column.as_deref().unwrap_or("");
+    let column_names = relation
+        .column_names
+        .iter()
+        .map(|(attnum, name)| (*attnum, name.as_str()))
+        .collect::<Vec<_>>();
+    let embedding_columns = relation
+        .embedding_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let query_context = SpireDmlFrontdoorQueryContext {
+        ec_spire_distributed_table: relation.ec_spire_distributed_table,
+        pk_column,
+        column_names: &column_names,
+        embedding_columns: &embedding_columns,
+    };
+    unsafe { classify_dml_frontdoor_query(query, query_context) }
 }
 
 struct SpireDmlFrontdoorPrimaryKeyColumn {
