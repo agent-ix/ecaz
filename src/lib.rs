@@ -7581,6 +7581,69 @@ fn ec_spire_plan_coordinator_insert(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_plan_coordinator_insert_dispatch(
+    index_oid: pg_sys::Oid,
+    node_id: i32,
+    served_epoch: i64,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(node_id, i64),
+        name!(served_epoch, i64),
+        name!(dispatch_transport, &'static str),
+        name!(transaction_protocol, &'static str),
+        name!(conninfo_secret_name, String),
+        name!(conninfo_provider_lookup_key, String),
+        name!(remote_index_regclass, String),
+        name!(descriptor_generation, i64),
+        name!(remote_index_identity_bytes, i64),
+        name!(dispatch_action, &'static str),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    if node_id <= 0 {
+        pgrx::error!("ec_spire_plan_coordinator_insert_dispatch node_id must be greater than 0");
+    }
+    if served_epoch <= 0 {
+        pgrx::error!(
+            "ec_spire_plan_coordinator_insert_dispatch served_epoch must be greater than 0"
+        );
+    }
+
+    let node_id = u32::try_from(node_id).expect("positive node_id should fit in u32");
+    let served_epoch =
+        u64::try_from(served_epoch).expect("positive served_epoch should fit in u64");
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(index_oid, "ec_spire_plan_coordinator_insert_dispatch")
+    };
+    let row = unsafe {
+        am::spire_coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch)
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        row.index_oid,
+        i64::from(row.node_id),
+        i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+        row.dispatch_transport,
+        row.transaction_protocol,
+        row.conninfo_secret_name,
+        row.conninfo_provider_lookup_key,
+        row.remote_index_regclass,
+        i64::try_from(row.descriptor_generation).expect("descriptor generation should fit in i64"),
+        i64::try_from(row.remote_index_identity_bytes)
+            .expect("remote index identity byte count should fit in i64"),
+        row.dispatch_action,
+        row.status,
+        row.next_step,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -18973,6 +19036,165 @@ mod tests {
                  decode('0001', 'hex'))",
         )
         .expect("coordinator insert planning should reject bad source identity");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_plan_coordinator_insert_dispatch_ready_sql() {
+        let _env_lock = env_var_test_lock();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_READY",
+            "host=127.0.0.1 port=1 dbname=postgres",
+        );
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_dispatch_ready_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_dispatch_ready_idx \
+             ON ec_spire_insert_dispatch_ready_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_insert_dispatch_ready_idx'::regclass, \
+                 7, 11, 'spire/remote/insert_dispatch_ready', \
+                 decode('aabb', 'hex'), 'remote_insert_ready_idx', \
+                 'active', 9, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let dispatch_row = Spi::get_one::<String>(
+            "SELECT status || ':' || dispatch_action || ':' || next_step || ':' || \
+                    dispatch_transport || ':' || transaction_protocol || ':' || \
+                    conninfo_provider_lookup_key || ':' || remote_index_regclass || ':' || \
+                    descriptor_generation::text || ':' || \
+                    remote_index_identity_bytes::text \
+               FROM ec_spire_plan_coordinator_insert_dispatch(\
+                    'ec_spire_insert_dispatch_ready_idx'::regclass, 7, 5)",
+        )
+        .expect("coordinator insert dispatch plan query should succeed")
+        .expect("coordinator insert dispatch plan should exist");
+
+        assert_eq!(
+            dispatch_row,
+            "ready:open_remote_transaction_send_insert_prepare_xact:remote_insert_prepare_transaction:libpq:remote_prepare_local_placement_commit_remote_prepared:EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_READY:remote_insert_ready_idx:11:2"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_dispatch_missing_descriptor_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_dispatch_missing_desc_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_dispatch_missing_desc_idx \
+             ON ec_spire_insert_dispatch_missing_desc_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let dispatch_row = Spi::get_one::<String>(
+            "SELECT status || ':' || dispatch_action || ':' || next_step || ':' || \
+                    conninfo_secret_name || ':' || remote_index_regclass \
+               FROM ec_spire_plan_coordinator_insert_dispatch(\
+                    'ec_spire_insert_dispatch_missing_desc_idx'::regclass, 8, 5)",
+        )
+        .expect("coordinator insert dispatch plan query should succeed")
+        .expect("coordinator insert dispatch plan should exist");
+
+        assert_eq!(
+            dispatch_row,
+            "requires_remote_node_descriptor:blocked:remote_node_descriptor:none:none"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_dispatch_missing_secret_sql() {
+        let _env_lock = env_var_test_lock();
+        let _missing_secret = ScopedEnvVar {
+            key: "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_MISSING_SECRET",
+            previous: std::env::var_os(
+                "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_MISSING_SECRET",
+            ),
+        };
+        std::env::remove_var(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_MISSING_SECRET",
+        );
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_dispatch_missing_secret_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_dispatch_missing_secret_idx \
+             ON ec_spire_insert_dispatch_missing_secret_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_insert_dispatch_missing_secret_idx'::regclass, \
+                 9, 12, 'spire/remote/insert_dispatch_missing_secret', \
+                 decode('ccdd', 'hex'), 'remote_insert_missing_secret_idx', \
+                 'active', 9, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let dispatch_row = Spi::get_one::<String>(
+            "SELECT status || ':' || dispatch_action || ':' || next_step || ':' || \
+                    conninfo_provider_lookup_key || ':' || remote_index_regclass \
+               FROM ec_spire_plan_coordinator_insert_dispatch(\
+                    'ec_spire_insert_dispatch_missing_secret_idx'::regclass, 9, 5)",
+        )
+        .expect("coordinator insert dispatch plan query should succeed")
+        .expect("coordinator insert dispatch plan should exist");
+
+        assert_eq!(
+            dispatch_row,
+            "requires_conninfo_secret_resolution:blocked:conninfo_secret_resolution:EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_MISSING_SECRET:remote_insert_missing_secret_idx"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_plan_coordinator_insert_dispatch_stale_epoch_sql() {
+        let _env_lock = env_var_test_lock();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_DISPATCH_STALE",
+            "host=127.0.0.1 port=1 dbname=postgres",
+        );
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_dispatch_stale_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_dispatch_stale_idx \
+             ON ec_spire_insert_dispatch_stale_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_insert_dispatch_stale_idx'::regclass, \
+                 10, 13, 'spire/remote/insert_dispatch_stale', \
+                 decode('eeff', 'hex'), 'remote_insert_stale_idx', \
+                 'active', 4, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let dispatch_row = Spi::get_one::<String>(
+            "SELECT status || ':' || dispatch_action || ':' || next_step \
+               FROM ec_spire_plan_coordinator_insert_dispatch(\
+                    'ec_spire_insert_dispatch_stale_idx'::regclass, 10, 5)",
+        )
+        .expect("coordinator insert dispatch plan query should succeed")
+        .expect("coordinator insert dispatch plan should exist");
+
+        assert_eq!(dispatch_row, "stale_epoch:blocked:remote_epoch_window");
     }
 
     #[pg_test]

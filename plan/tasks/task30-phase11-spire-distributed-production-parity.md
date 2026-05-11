@@ -335,6 +335,13 @@ local-only path.
   - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
     with remote `PREPARE TRANSACTION` / local commit / remote commit.
+    - [x] Packet `30829` adds the side-effect-free
+      `ec_spire_plan_coordinator_insert_dispatch(...)` readiness primitive for
+      the classified remote target. It reuses the Stage C
+      `ec_spire_remote_node_descriptor` and external conninfo-secret contract,
+      checks the remote descriptor's served-epoch window, and reports the
+      libpq/2PC dispatch action without opening a connection or mutating
+      placement state.
   - [ ] PG18 fixture: INSERT at the coordinator, verify the row lands on the
     target remote, verify placement-directory state, and verify CustomScan
     SELECT returns the row.
@@ -990,6 +997,8 @@ v1 write contract from ADR-069:
       `pk_value`/`source_identity`, calls the active classifier, and returns the
       placement tuple fields the 2PC INSERT path will persist.
   - [ ] forward remote INSERT through the Stage C transport;
+    - [x] Packet `30829` adds the Stage C descriptor/secret/epoch-window
+      readiness gate the mutating transport call will consume.
   - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
     remote commit for atomicity;
   - [ ] add PG18 coverage for remote row, placement row, and CustomScan

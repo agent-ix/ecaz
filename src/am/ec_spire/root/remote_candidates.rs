@@ -127,6 +127,13 @@ const SPIRE_REMOTE_DESCRIPTOR_STATE_DISABLED: &str = "disabled";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_FAILED: &str = "failed";
 const SPIRE_REMOTE_DESCRIPTOR_STATE_MISSING: &str = "missing";
 const SPIRE_REMOTE_CONNINFO_ENV_PREFIX: &str = "EC_SPIRE_REMOTE_CONNINFO_";
+const SPIRE_COORDINATOR_INSERT_DISPATCH_TRANSPORT_LIBPQ: &str = "libpq";
+const SPIRE_COORDINATOR_INSERT_TRANSACTION_PROTOCOL_2PC: &str =
+    "remote_prepare_local_placement_commit_remote_prepared";
+const SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_PREPARE: &str =
+    "open_remote_transaction_send_insert_prepare_xact";
+const SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED: &str = "blocked";
+const SPIRE_COORDINATOR_INSERT_NEXT_STEP_PREPARE: &str = "remote_insert_prepare_transaction";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireRemoteSearchLibpqExecutorBudgetLimits {
@@ -1722,6 +1729,8 @@ struct SpireRemoteLibpqConnectionDescriptorRow {
     remote_index_regclass: String,
     remote_index_identity: Vec<u8>,
     remote_index_identity_bytes: u64,
+    last_served_epoch: u64,
+    min_retained_epoch: u64,
 }
 
 fn load_remote_libpq_connection_descriptors(
@@ -1742,7 +1751,9 @@ fn load_remote_libpq_connection_descriptors(
                 descriptor_generation::bigint, \
                 conninfo_secret_name, \
                 remote_index_identity, \
-                remote_index_regclass \
+                remote_index_regclass, \
+                last_served_epoch::bigint, \
+                min_retained_epoch::bigint \
            FROM ec_spire_remote_node_descriptor \
           WHERE coordinator_index_oid = '{}'::oid \
             AND node_id = ANY (ARRAY[{}]::integer[]) \
@@ -1810,6 +1821,32 @@ fn load_remote_libpq_connection_descriptors(
                     .map_err(|_| {
                         "ec_spire libpq connection remote identity length exceeds u64".to_owned()
                     })?;
+                let last_served_epoch = row["last_served_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!("ec_spire libpq connection last served epoch decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection last served epoch is null".to_owned()
+                    })
+                    .and_then(|value| {
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire libpq connection last served epoch is negative".to_owned()
+                        })
+                    })?;
+                let min_retained_epoch = row["min_retained_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!("ec_spire libpq connection min retained epoch decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire libpq connection min retained epoch is null".to_owned()
+                    })
+                    .and_then(|value| {
+                        u64::try_from(value).map_err(|_| {
+                            "ec_spire libpq connection min retained epoch is negative".to_owned()
+                        })
+                    })?;
 
                 Ok((
                     node_id,
@@ -1819,6 +1856,8 @@ fn load_remote_libpq_connection_descriptors(
                         remote_index_regclass,
                         remote_index_identity,
                         remote_index_identity_bytes,
+                        last_served_epoch,
+                        min_retained_epoch,
                     },
                 ))
             })
@@ -2086,6 +2125,81 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
             }
         })
         .collect()
+}
+
+pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+) -> SpireCoordinatorInsertDispatchPlanRow {
+    let index_oid = unsafe { (*index_relation).rd_id };
+    let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
+        let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;
+        let Some(descriptor) = descriptors.get(&node_id) else {
+            return Ok(SpireCoordinatorInsertDispatchPlanRow {
+                index_oid,
+                node_id,
+                served_epoch,
+                dispatch_transport: SPIRE_COORDINATOR_INSERT_DISPATCH_TRANSPORT_LIBPQ,
+                transaction_protocol: SPIRE_COORDINATOR_INSERT_TRANSACTION_PROTOCOL_2PC,
+                conninfo_secret_name: SPIRE_REMOTE_NONE.to_owned(),
+                conninfo_provider_lookup_key: SPIRE_REMOTE_NONE.to_owned(),
+                remote_index_regclass: SPIRE_REMOTE_NONE.to_owned(),
+                descriptor_generation: 0,
+                remote_index_identity_bytes: 0,
+                dispatch_action: SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED,
+                status: SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR,
+                next_step: SPIRE_REMOTE_EXECUTOR_STEP_DESCRIPTOR,
+            });
+        };
+
+        let secret_status =
+            remote_conninfo_secret_resolution_status_row(&descriptor.conninfo_secret_name);
+        let epoch_status = if served_epoch > descriptor.last_served_epoch {
+            Some(SPIRE_REMOTE_STATUS_STALE_EPOCH)
+        } else if served_epoch < descriptor.min_retained_epoch {
+            Some(SPIRE_REMOTE_STATUS_RETENTION_GAP)
+        } else {
+            None
+        };
+        let (dispatch_action, status, next_step) = if let Some(epoch_status) = epoch_status {
+            (
+                SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED,
+                epoch_status,
+                SPIRE_REMOTE_EXECUTOR_STEP_EPOCH_WINDOW,
+            )
+        } else if secret_status.status == SPIRE_REMOTE_CONNINFO_RESOLVED {
+            (
+                SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_PREPARE,
+                SPIRE_REMOTE_STATUS_READY,
+                SPIRE_COORDINATOR_INSERT_NEXT_STEP_PREPARE,
+            )
+        } else {
+            (
+                SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED,
+                secret_status.status,
+                SPIRE_REMOTE_EXECUTOR_STEP_SECRET,
+            )
+        };
+
+        Ok(SpireCoordinatorInsertDispatchPlanRow {
+            index_oid,
+            node_id,
+            served_epoch,
+            dispatch_transport: SPIRE_COORDINATOR_INSERT_DISPATCH_TRANSPORT_LIBPQ,
+            transaction_protocol: SPIRE_COORDINATOR_INSERT_TRANSACTION_PROTOCOL_2PC,
+            conninfo_secret_name: descriptor.conninfo_secret_name.clone(),
+            conninfo_provider_lookup_key: secret_status.provider_lookup_key,
+            remote_index_regclass: descriptor.remote_index_regclass.clone(),
+            descriptor_generation: descriptor.descriptor_generation,
+            remote_index_identity_bytes: descriptor.remote_index_identity_bytes,
+            dispatch_action,
+            status,
+            next_step,
+        })
+    })();
+
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 fn remote_search_libpq_dispatch_budget_blocked(

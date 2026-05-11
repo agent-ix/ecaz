@@ -181,6 +181,14 @@ the embedding, and returns the placement tuple fields. The later
 coordinator-routed INSERT executor must persist that placement tuple only
 after remote prepare succeeds.
 
+The remote dispatch readiness gate for the later mutating executor is
+exposed as `ec_spire_plan_coordinator_insert_dispatch(index_oid, node_id,
+served_epoch)`. It reuses the Stage C remote-node descriptor and external
+conninfo-secret contract, checks the descriptor's served-epoch window, and
+returns the libpq dispatch action for the 2PC protocol. It does not expose
+raw conninfo, open a socket, forward a row, write `ec_spire_placement`, or
+prepare a remote transaction.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

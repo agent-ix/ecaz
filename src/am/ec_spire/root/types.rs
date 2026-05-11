@@ -543,6 +543,23 @@ pub(crate) struct SpireRemoteSearchLibpqDispatchPlanRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireCoordinatorInsertDispatchPlanRow {
+    pub(crate) index_oid: pg_sys::Oid,
+    pub(crate) node_id: u32,
+    pub(crate) served_epoch: u64,
+    pub(crate) dispatch_transport: &'static str,
+    pub(crate) transaction_protocol: &'static str,
+    pub(crate) conninfo_secret_name: String,
+    pub(crate) conninfo_provider_lookup_key: String,
+    pub(crate) remote_index_regclass: String,
+    pub(crate) descriptor_generation: u64,
+    pub(crate) remote_index_identity_bytes: u64,
+    pub(crate) dispatch_action: &'static str,
+    pub(crate) status: &'static str,
+    pub(crate) next_step: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchLibpqDispatchSummaryRow {
     pub(crate) requested_epoch: u64,
     pub(crate) dispatch_count: u64,
