@@ -17881,6 +17881,41 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_register_placement_batch_sql() {
+        let registered_count = Spi::get_one::<i64>(
+            "SELECT ec_spire_register_placement_batch( \
+                 '4294967290'::oid, \
+                 ARRAY[ \
+                   ROW(decode('01', 'hex'), 2, 7, 5, \
+                       decode('000102030405060708090a0b0c0d0e0f', 'hex'))::ec_spire_placement_entry, \
+                   ROW(decode('02', 'hex'), 3, 8, 5, \
+                       decode('101112131415161718191a1b1c1d1e1f', 'hex'))::ec_spire_placement_entry \
+                 ] \
+             )",
+        )
+        .expect("placement batch registration should succeed")
+        .expect("placement batch registration count should exist");
+        let stored_rows = Spi::get_one::<String>(
+            "SELECT string_agg( \
+                    encode(pk_value, 'hex') || ':' || node_id::text || ':' || \
+                    centroid_id::text || ':' || served_epoch::text || ':' || \
+                    encode(source_identity, 'hex'), \
+                    ',' ORDER BY pk_value) \
+               FROM ec_spire_placement \
+              WHERE index_oid = '4294967290'::oid",
+        )
+        .expect("placement batch rows query should succeed")
+        .expect("placement batch rows should exist");
+
+        assert_eq!(registered_count, 2);
+        assert_eq!(
+            stored_rows,
+            "01:2:7:5:000102030405060708090a0b0c0d0e0f,\
+             02:3:8:5:101112131415161718191a1b1c1d1e1f"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_placement_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_place_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

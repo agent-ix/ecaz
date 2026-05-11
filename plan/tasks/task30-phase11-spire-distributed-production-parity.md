@@ -310,6 +310,10 @@ local-only path.
   - [x] Add `ec_spire_classify_centroid(embedding, index_oid)`.
     - [x] Packet `30818` adds the coordinator-side classifier helper using
       active routing centroids and returns `(node_id, centroid_id, epoch)`.
+  - [x] Add `ec_spire_register_placement_batch(index_oid,
+    ec_spire_placement_entry[])` for bulk-load post-write registration.
+    - [x] Packet `30819` adds the composite entry type and SQL batch
+      registration primitive.
   - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
     with remote `PREPARE TRANSACTION` / local commit / remote commit.
@@ -934,6 +938,10 @@ v1 write contract from ADR-069:
   placement decision coordinator-routed INSERT will use.
   - [x] Packet `30818` classifies against the active routing hierarchy and
     returns the selected placement node, leaf-centroid id, and epoch.
+- [x] Add `ec_spire_register_placement_batch(index_oid,
+  ec_spire_placement_entry[])` for bulk-load post-write registration.
+  - [x] Packet `30819` inserts validated placement entries into the
+    coordinator-local placement directory.
 - [ ] Coordinator-routed INSERT:
   - [ ] classify embedding to target `node_id`;
   - [ ] forward remote INSERT through the Stage C transport;

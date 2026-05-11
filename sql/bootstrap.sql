@@ -257,6 +257,38 @@ CREATE TABLE ec_spire_placement (
 CREATE INDEX ec_spire_placement_by_identity
 ON ec_spire_placement (index_oid, source_identity);
 
+CREATE TYPE ec_spire_placement_entry AS (
+    pk_value bytea,
+    node_id integer,
+    centroid_id bigint,
+    served_epoch bigint,
+    source_identity bytea
+);
+
+CREATE FUNCTION ec_spire_register_placement_batch(
+    index_oid oid,
+    entries ec_spire_placement_entry[]
+)
+RETURNS bigint
+STRICT
+LANGUAGE sql
+AS $$
+    WITH inserted AS (
+        INSERT INTO ec_spire_placement
+            (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity)
+        SELECT
+            $1,
+            entry.pk_value,
+            entry.node_id,
+            entry.centroid_id,
+            entry.served_epoch,
+            entry.source_identity
+        FROM unnest($2) AS entry
+        RETURNING 1
+    )
+    SELECT count(*)::bigint FROM inserted
+$$;
+
 CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql
