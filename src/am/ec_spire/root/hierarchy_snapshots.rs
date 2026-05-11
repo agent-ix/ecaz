@@ -1996,9 +1996,16 @@ pub(crate) unsafe fn classify_centroid(
     let mut parent = root.ok_or_else(|| {
         "ec_spire_classify_centroid found no local root routing object".to_owned()
     })?;
+    let max_routing_depth = usize::from(parent.header.level).saturating_add(1);
     let mut visited = HashSet::new();
 
     loop {
+        if visited.len() >= max_routing_depth {
+            return Err(format!(
+                "ec_spire_classify_centroid exceeded routing depth bound {max_routing_depth} from root pid {}",
+                parent.header.pid
+            ));
+        }
         if parent.header.kind != storage::SpirePartitionObjectKind::Root
             && parent.header.kind != storage::SpirePartitionObjectKind::Internal
         {

@@ -18730,6 +18730,85 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_classify_centroid_recursive_sql() {
+        Spi::run("CREATE TABLE ec_spire_classify_recursive_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_classify_recursive_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_classify_recursive_sql_idx \
+             ON ec_spire_classify_recursive_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 4, recursive_fanout = 2)",
+        )
+        .expect("recursive ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_classify_recursive_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let max_parent_level = Spi::get_one::<i32>(
+            "SELECT max(parent_level) FROM \
+             ec_spire_index_routing_centroid_snapshot('ec_spire_classify_recursive_sql_idx'::regclass)",
+        )
+        .expect("routing centroid max level query should succeed")
+        .expect("routing centroid max level should exist");
+        let expected_leaf_pid = Spi::get_one::<i64>(
+            "WITH centroid_scores AS ( \
+                 SELECT r.*, scored.score \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_classify_recursive_sql_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+             ), root_choice AS ( \
+                 SELECT child_pid \
+                   FROM centroid_scores \
+                  WHERE parent_kind = 'root' AND child_kind = 'internal' \
+                  ORDER BY score DESC, centroid_index, child_pid \
+                  LIMIT 1 \
+             ) \
+             SELECT child_pid \
+               FROM centroid_scores \
+              WHERE parent_pid = (SELECT child_pid FROM root_choice) \
+                AND child_kind = 'leaf' \
+              ORDER BY score DESC, centroid_index, child_pid \
+              LIMIT 1",
+        )
+        .expect("expected recursive leaf query should succeed")
+        .expect("expected recursive leaf should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_classify_recursive_sql_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, expected_leaf_pid as u64, 9) };
+
+        let classification = Spi::get_one::<String>(
+            "SELECT node_id::text || ',' || centroid_id::text || ',' || epoch::text \
+               FROM ec_spire_classify_centroid(\
+                    ARRAY[1.0, 0.0]::real[], 'ec_spire_classify_recursive_sql_idx'::regclass)",
+        )
+        .expect("recursive classification query should succeed")
+        .expect("recursive classification should exist");
+
+        assert_eq!(max_parent_level, 2);
+        assert_eq!(
+            classification,
+            format!("9,{expected_leaf_pid},{active_epoch}")
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_hierarchy_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_hierarchy_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

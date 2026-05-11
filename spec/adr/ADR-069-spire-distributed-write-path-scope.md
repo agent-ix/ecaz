@@ -200,6 +200,13 @@ CREATE INDEX ec_spire_placement_by_identity
   ON ec_spire_placement (index_oid, source_identity);
 ```
 
+For v1, `centroid_id` is the active-epoch routing leaf pid selected by
+`ec_spire_classify_centroid`. Consumers should treat it as an opaque
+routing-leaf identity scoped to `(index_oid, served_epoch)`, not as a
+stable semantic centroid across retraining or rebalance. Future epoch
+retraining must either rewrite affected placement rows or reclassify
+them before using this value for pruning.
+
 The placement directory is the authoritative `id → node_id` map for
 coordinator-routed UPDATE/DELETE/PK-read. It is updated atomically with
 remote INSERT/DELETE via two-phase commit.

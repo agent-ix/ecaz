@@ -322,6 +322,9 @@ local-only path.
   - [x] Add `ec_spire_classify_centroid(embedding, index_oid)`.
     - [x] Packet `30818` adds the coordinator-side classifier helper using
       active routing centroids and returns `(node_id, centroid_id, epoch)`.
+    - [x] Packet `30826` pins `centroid_id` as the active-epoch routing leaf
+      pid, adds recursive classifier coverage, and bounds routing traversal by
+      the root routing level.
   - [x] Add `ec_spire_register_placement_batch(index_oid,
     ec_spire_placement_entry[])` for bulk-load post-write registration.
     - [x] Packet `30819` adds the composite entry type and SQL batch
@@ -968,6 +971,8 @@ v1 write contract from ADR-069:
   placement decision coordinator-routed INSERT will use.
   - [x] Packet `30818` classifies against the active routing hierarchy and
     returns the selected placement node, leaf-centroid id, and epoch.
+  - [x] Packet `30826` documents the leaf-pid semantics for `centroid_id` and
+    adds a recursive routing fixture before write paths consume the helper.
 - [x] Add `ec_spire_register_placement_batch(index_oid,
   ec_spire_placement_entry[])` for bulk-load post-write registration.
   - [x] Packet `30819` inserts validated placement entries into the
