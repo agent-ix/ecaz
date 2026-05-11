@@ -15376,6 +15376,35 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    fn ec_spire_test_conninfo_from_secret(
+        function_name: &str,
+        conninfo_secret_name: &str,
+    ) -> String {
+        let provider_lookup_key =
+            am::spire_remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)
+                .unwrap_or_else(|e| pgrx::error!("{function_name} {e}"));
+        let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
+            pgrx::error!("{function_name} missing conninfo secret {conninfo_secret_name}")
+        });
+        if conninfo.is_empty() {
+            pgrx::error!("{function_name} empty conninfo secret {conninfo_secret_name}");
+        }
+        conninfo
+    }
+
+    fn ec_spire_test_run_remote_sql_after_request_build(
+        function_name: &str,
+        conninfo_secret_name: &str,
+        remote_sql: &str,
+    ) {
+        let conninfo = ec_spire_test_conninfo_from_secret(function_name, conninfo_secret_name);
+        let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
+            .unwrap_or_else(|e| pgrx::error!("{function_name} remote SQL connection failed: {e}"));
+        client
+            .batch_execute(remote_sql)
+            .unwrap_or_else(|e| pgrx::error!("{function_name} remote SQL execution failed: {e}"));
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn ec_spire_test_production_candidate_receive(
@@ -15411,6 +15440,65 @@ mod tests {
             query,
             top_k,
             consistency_mode,
+        );
+        let rows = am::spire_remote_search_production_candidate_receive_for_test(requests);
+
+        TableIterator::new(rows.into_iter().map(|row| {
+            (
+                i64::from(row.node_id),
+                i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+                i64::try_from(row.completed_after_ms)
+                    .expect("completed_after_ms should fit in i64"),
+                i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+                i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
+                row.status,
+                row.failure_category,
+            )
+        }))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_prod_receive_after_remote_sql(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+        remote_sql_conninfo_secret_name: String,
+        remote_sql: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(node_id, i64),
+            name!(started_after_ms, i64),
+            name!(completed_after_ms, i64),
+            name!(elapsed_ms, i64),
+            name!(candidate_count, i64),
+            name!(status, &'static str),
+            name!(failure_category, &'static str),
+        ),
+    > {
+        let requests = ec_spire_test_candidate_receive_requests(
+            "ec_spire_test_prod_receive_after_remote_sql",
+            node_ids,
+            conninfo_secret_names,
+            remote_index_regclasses,
+            remote_index_identity_hexes,
+            selected_pids,
+            requested_epoch,
+            query,
+            top_k,
+            consistency_mode,
+        );
+        ec_spire_test_run_remote_sql_after_request_build(
+            "ec_spire_test_prod_receive_after_remote_sql",
+            &remote_sql_conninfo_secret_name,
+            &remote_sql,
         );
         let rows = am::spire_remote_search_production_candidate_receive_for_test(requests);
 
@@ -15467,6 +15555,77 @@ mod tests {
             query,
             top_k,
             consistency_mode.clone(),
+        );
+        let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
+            requests,
+            &consistency_mode,
+        );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.candidate_receive_sent_dispatch_count)
+                .expect("candidate receive sent count should fit in i64"),
+            i64::try_from(row.candidate_receive_ready_dispatch_count)
+                .expect("candidate receive ready count should fit in i64"),
+            i64::try_from(row.candidate_receive_failed_dispatch_count)
+                .expect("candidate receive failed count should fit in i64"),
+            row.first_candidate_receive_failure_category,
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_prod_receive_after_remote_sql_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+        remote_sql_conninfo_secret_name: String,
+        remote_sql: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(candidate_receive_sent_dispatch_count, i64),
+            name!(candidate_receive_ready_dispatch_count, i64),
+            name!(candidate_receive_failed_dispatch_count, i64),
+            name!(first_candidate_receive_failure_category, &'static str),
+            name!(candidate_row_count, i64),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let requests = ec_spire_test_candidate_receive_requests(
+            "ec_spire_test_prod_receive_after_remote_sql_summary",
+            node_ids,
+            conninfo_secret_names,
+            remote_index_regclasses,
+            remote_index_identity_hexes,
+            selected_pids,
+            requested_epoch,
+            query,
+            top_k,
+            consistency_mode.clone(),
+        );
+        ec_spire_test_run_remote_sql_after_request_build(
+            "ec_spire_test_prod_receive_after_remote_sql_summary",
+            &remote_sql_conninfo_secret_name,
+            &remote_sql,
         );
         let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
             requests,

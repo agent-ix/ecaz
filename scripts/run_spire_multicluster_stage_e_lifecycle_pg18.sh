@@ -5,10 +5,10 @@ set -euo pipefail
 #
 # Supported cases:
 #   drop_remote_index_before_fanout
+#   drop_remote_index_in_flight
 #
 # These rows exercise production libpq candidate receive after a remote DDL
-# lifecycle event. The first landed case drops the remote index before fanout
-# request construction and proves strict/degraded handling matches the lifecycle
+# lifecycle event and prove strict/degraded handling matches the lifecycle
 # matrix.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,6 +30,7 @@ Usage: scripts/run_spire_multicluster_stage_e_lifecycle_pg18.sh --case CASE [opt
 
 Cases:
   drop_remote_index_before_fanout
+  drop_remote_index_in_flight
 
 Options:
   --artifact-dir DIR       Store fixture and PostgreSQL logs in DIR.
@@ -102,7 +103,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" ]]; then
+if [[ "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" \
+  && "$LIFECYCLE_CASE" != "drop_remote_index_in_flight" ]]; then
   echo "unsupported or missing --case: ${LIFECYCLE_CASE:-<none>}" >&2
   usage >&2
   exit 2
@@ -177,9 +179,6 @@ INSERT INTO ec_spire_stage_e_lifecycle_remote_sql (id, embedding) VALUES
     (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)),
     (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)),
     (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42));
-CREATE INDEX ec_spire_stage_e_lifecycle_dropped_idx
-    ON ec_spire_stage_e_lifecycle_remote_sql USING ec_spire
-    (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq');
 SQL
 
 "${coord_psql[@]}" <<'SQL' >/dev/null
@@ -195,7 +194,25 @@ CREATE INDEX ec_spire_stage_e_lifecycle_coord_idx
     (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq');
 SQL
 
-remote_dropped_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_dropped_idx'::regclass)")"
+remote_dropped_identity_hex=""
+drop_regclass="f"
+
+prepare_remote_dropped_index() {
+  "${remote_ready_psql[@]}" <<'SQL' >/dev/null
+DROP INDEX IF EXISTS ec_spire_stage_e_lifecycle_dropped_idx;
+CREATE INDEX ec_spire_stage_e_lifecycle_dropped_idx
+    ON ec_spire_stage_e_lifecycle_remote_sql USING ec_spire
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq');
+SQL
+  remote_dropped_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_dropped_idx'::regclass)")"
+  drop_regclass="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_dropped_idx') IS NULL")"
+  if [[ "$drop_regclass" != "f" ]]; then
+    echo "expected prepared remote index to exist, got to_regclass null=$drop_regclass" >&2
+    exit 3
+  fi
+}
+
+prepare_remote_dropped_index
 coord_ready_identity_hex="$("${coord_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
 coord_ready_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
 coord_ready_pids="$("${coord_psql[@]}" -At -F ',' -c "SELECT string_agg(leaf_pid::text, ',' ORDER BY leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
@@ -207,11 +224,13 @@ if [[ -z "$dropped_pid" || -z "$ready_pid" || -n "${extra_pid:-}" ]]; then
   exit 3
 fi
 
-"${remote_ready_psql[@]}" -c "DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx" >/dev/null
-drop_regclass="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_dropped_idx') IS NULL")"
-if [[ "$drop_regclass" != "t" ]]; then
-  echo "expected dropped remote index to be absent, got to_regclass null=$drop_regclass" >&2
-  exit 3
+if [[ "$LIFECYCLE_CASE" == "drop_remote_index_before_fanout" ]]; then
+  "${remote_ready_psql[@]}" -c "DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx" >/dev/null
+  drop_regclass="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_dropped_idx') IS NULL")"
+  if [[ "$drop_regclass" != "t" ]]; then
+    echo "expected dropped remote index to be absent, got to_regclass null=$drop_regclass" >&2
+    exit 3
+  fi
 fi
 
 run_case() {
@@ -235,20 +254,41 @@ SQL
     case_coord_identity="$("${coord_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
   fi
 
+  local injection
+  local query_command
   local raw_rows
-  raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_production_candidate_receive(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode') ORDER BY node_id")"
   local summary
-  summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_candidate_receive_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode')")"
+
+  if [[ "$LIFECYCLE_CASE" == "drop_remote_index_in_flight" ]]; then
+    injection="DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx after request construction before receive"
+    query_command="tests.ec_spire_test_prod_receive_after_remote_sql_summary(..., '$mode')"
+    prepare_remote_dropped_index
+    local raw_identity="$remote_dropped_identity_hex"
+    raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_prod_receive_after_remote_sql(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$raw_identity','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode', 'spire/remote/stage_e/lifecycle/dropped', \$\$DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx\$\$) ORDER BY node_id")"
+    prepare_remote_dropped_index
+    local summary_identity="$remote_dropped_identity_hex"
+    summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_prod_receive_after_remote_sql_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$summary_identity','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode', 'spire/remote/stage_e/lifecycle/dropped', \$\$DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx\$\$)")"
+    drop_regclass="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_dropped_idx') IS NULL")"
+    if [[ "$drop_regclass" != "t" ]]; then
+      echo "expected in-flight dropped remote index to be absent, got to_regclass null=$drop_regclass" >&2
+      exit 3
+    fi
+  else
+    injection="DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout"
+    query_command="tests.ec_spire_test_production_candidate_receive_summary(..., '$mode')"
+    raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, candidate_count FROM tests.ec_spire_test_production_candidate_receive(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode') ORDER BY node_id")"
+    summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_candidate_receive_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$remote_dropped_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode')")"
+  fi
 
   {
     echo "lifecycle_row=$lifecycle_row"
-    echo "injection=DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout"
+    echo "injection=$injection"
     echo "dropped_index_to_regclass_is_null=$drop_regclass"
     echo "dropped_remote_identity_before_drop=$remote_dropped_identity_hex"
     echo "coord_ready_identity=$case_coord_identity"
     echo "coord_ready_epoch=$coord_ready_epoch"
     echo "coord_ready_pids=$coord_ready_pids"
-    echo "query_command=tests.ec_spire_test_production_candidate_receive_summary(..., '$mode')"
+    echo "query_command=$query_command"
     echo "expected_status=$expected_status"
     echo "expected_candidate_receive_failed_dispatch_count=$expected_failed_receive"
     echo "expected_degraded_skipped_dispatch_count=$expected_degraded_skipped"

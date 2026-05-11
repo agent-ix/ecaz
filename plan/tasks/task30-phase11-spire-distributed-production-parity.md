@@ -815,6 +815,12 @@ Goal: prove distributed correctness locally before AWS.
     before candidate-receive fanout, strict fails closed with
     `remote_index_unavailable`, and degraded skips that dispatch while keeping
     the ready remote moving. Remaining lifecycle rows still need fixture logs.
+  - [x] Packet `30790` extends lifecycle runtime evidence with
+    `drop_remote_index_in_flight`: the fixture builds production candidate
+    receive requests while the remote index exists, injects `DROP INDEX`
+    before receive, and expects the same strict fail-closed / degraded skip
+    contract at the `remote_index_unavailable` boundary. Remaining REINDEX and
+    CREATE INDEX CONCURRENTLY lifecycle rows still need fixture logs.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

@@ -490,4 +490,28 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
     }
+
+    #[test]
+    fn cli_parses_spire_multicluster_lifecycle_drop_in_flight_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "lifecycle-pg18",
+            "--case",
+            "drop_remote_index_in_flight",
+            "--artifact-dir",
+            "review/30790-spire-stage-e-lifecycle-drop-in-flight/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
 }
