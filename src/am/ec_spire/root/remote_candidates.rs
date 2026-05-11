@@ -2711,6 +2711,21 @@ impl SpireRemoteProductionTransportAdapter {
                     .try_get::<_, Option<u32>>(0)
                     .map_err(|_| SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?
                     .ok_or(SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE)?;
+                let endpoint_identity_row = client
+                    .query_one(
+                        SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE,
+                        &[&remote_index_oid],
+                    )
+                    .await
+                    .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                let endpoint_identity =
+                    validate_remote_search_endpoint_identity_row(&endpoint_identity_row)
+                        .map_err(|_| SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)?;
+                if endpoint_identity.profile_fingerprint_bytes.as_slice()
+                    != request.remote_index_identity.as_slice()
+                {
+                    return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
+                }
                 client
                     .query(
                         SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE,
