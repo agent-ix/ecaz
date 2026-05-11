@@ -1,4 +1,6 @@
-use pgrx::{pg_guard, pg_sys, PgBox, PgList};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList};
+
+use std::ptr;
 
 use super::meta;
 
@@ -63,6 +65,17 @@ static mut CUSTOM_EXEC_METHODS: pg_sys::CustomExecMethods = pg_sys::CustomExecMe
     ExplainCustomScan: None,
 };
 
+#[repr(C)]
+struct SpireCustomScanExecState {
+    custom_scan_state: pg_sys::CustomScanState,
+    index_oid: pg_sys::Oid,
+    top_k: usize,
+    query: Vec<f32>,
+    outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
+    next_output: usize,
+    loaded_outputs: bool,
+}
+
 pub(crate) unsafe fn register_custom_scan() {
     unsafe {
         if !CUSTOM_SCAN_REGISTERED {
@@ -86,13 +99,13 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         registered,
         rel_pathlist_hook_installed: hook_installed,
         path_generation_enabled: true,
-        exec_wiring_enabled: false,
+        exec_wiring_enabled: true,
         status: if registered && hook_installed {
-            "planner_path_generation_enabled"
+            "executor_stream_wired_tuple_payload_pending"
         } else {
             "not_registered"
         },
-        next_step: "wire CustomScan executor callbacks to SpireRemoteFanoutExecutor",
+        next_step: "wire remote tuple-payload delivery into CustomScan tuple slots",
     }
 }
 
@@ -224,14 +237,25 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
-    _root: *mut pg_sys::PlannerInfo,
-    _rel: *mut pg_sys::RelOptInfo,
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
     best_path: *mut pg_sys::CustomPath,
     tlist: *mut pg_sys::List,
     clauses: *mut pg_sys::List,
     custom_plans: *mut pg_sys::List,
 ) -> *mut pg_sys::Plan {
     unsafe {
+        let top_k = custom_scan_top_k(root).unwrap_or(1);
+        let query_expr = custom_scan_orderby_query_expr(root, rel).unwrap_or_else(|| {
+            pgrx::error!(
+                "EcSpireDistributedScan could not extract ORDER BY vector query expression"
+            )
+        });
+        let custom_exprs = pg_sys::lappend(
+            std::ptr::null_mut(),
+            pg_sys::copyObjectImpl(query_expr.cast()).cast(),
+        );
+
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
@@ -252,8 +276,16 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
         custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
         custom_scan.flags = (*best_path).flags;
         custom_scan.custom_plans = custom_plans;
-        custom_scan.custom_exprs = clauses;
-        custom_scan.custom_private = (*best_path).custom_private;
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = pg_sys::lappend_oid(
+            pg_sys::lappend_oid(
+                std::ptr::null_mut(),
+                pg_sys::list_nth_oid((*best_path).custom_private, 0),
+            ),
+            pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan LIMIT exceeds CustomScan plan-private range")
+            })),
+        );
         custom_scan.custom_scan_tlist = std::ptr::null_mut();
         custom_scan.custom_relids = std::ptr::null_mut();
         custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
@@ -280,6 +312,7 @@ unsafe fn custom_scan_candidate_index_oid(
     if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
         return None;
     }
+    let _ = unsafe { custom_scan_orderby_query_expr(root, rel)? };
 
     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
     if ec_spire_am_oid == pg_sys::InvalidOid {
@@ -350,57 +383,329 @@ unsafe fn add_custom_scan_path(
     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
 }
 
+unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
+    let root_ref = unsafe { root.as_ref()? };
+    if root_ref.limit_tuples < 0.0 || !root_ref.limit_tuples.is_finite() {
+        return None;
+    }
+    Some(root_ref.limit_tuples.max(0.0).ceil() as usize)
+}
+
+unsafe fn custom_scan_orderby_query_expr(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<*mut pg_sys::Expr> {
+    if root.is_null() || rel.is_null() {
+        return None;
+    }
+    let root_ref = unsafe { root.as_ref()? };
+    let rel_ref = unsafe { rel.as_ref()? };
+    let query = unsafe { root_ref.parse.as_ref()? };
+    if query.sortClause.is_null() || query.targetList.is_null() {
+        return None;
+    }
+    let sort_clauses = unsafe { PgList::<pg_sys::SortGroupClause>::from_pg(query.sortClause) };
+    if sort_clauses.len() != 1 {
+        return None;
+    }
+    let sort_clause = unsafe { sort_clauses.get_ptr(0)?.as_ref()? };
+    let target_list = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(query.targetList) };
+    for target_entry in target_list.iter_ptr() {
+        let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
+            continue;
+        };
+        if target_entry.ressortgroupref != sort_clause.tleSortGroupRef {
+            continue;
+        }
+        return unsafe { custom_scan_query_expr_from_sort_expr(target_entry.expr, rel_ref.relid) };
+    }
+    None
+}
+
+unsafe fn custom_scan_query_expr_from_sort_expr(
+    expr: *mut pg_sys::Expr,
+    relid: pg_sys::Index,
+) -> Option<*mut pg_sys::Expr> {
+    if expr.is_null() {
+        return None;
+    }
+    let node = expr.cast::<pg_sys::Node>();
+    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_OpExpr {
+        return None;
+    }
+    let op_expr = unsafe { &*expr.cast::<pg_sys::OpExpr>() };
+    let args = unsafe { PgList::<pg_sys::Expr>::from_pg(op_expr.args) };
+    if args.len() != 2 {
+        return None;
+    }
+    let left = args.get_ptr(0)?;
+    let right = args.get_ptr(1)?;
+    if unsafe {
+        custom_scan_expr_is_relation_var(left, relid) && custom_scan_expr_is_query_value(right)
+    } {
+        return Some(right);
+    }
+    if unsafe {
+        custom_scan_expr_is_relation_var(right, relid) && custom_scan_expr_is_query_value(left)
+    } {
+        return Some(left);
+    }
+    None
+}
+
+unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
+    if expr.is_null() {
+        return false;
+    }
+    let node = expr.cast::<pg_sys::Node>();
+    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {
+        return false;
+    }
+    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
+    u32::try_from(var.varno).ok() == Some(relid)
+}
+
+unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
+    if expr.is_null() {
+        return false;
+    }
+    let node = expr.cast::<pg_sys::Node>();
+    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Const {
+        return false;
+    }
+    unsafe { custom_scan_query_values_from_const(expr.cast()).is_some() }
+}
+
+unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
+    if const_expr.is_null() {
+        return None;
+    }
+    let const_ref = unsafe { &*const_expr };
+    if const_ref.constisnull || const_ref.consttype != pg_sys::FLOAT4ARRAYOID {
+        return None;
+    }
+    let values = unsafe {
+        Vec::<f32>::from_polymorphic_datum(const_ref.constvalue, false, pg_sys::FLOAT4ARRAYOID)?
+    };
+    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(values)
+}
+
+unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
+    unsafe { (*node).ss.ps.plan.cast::<pg_sys::CustomScan>() }
+}
+
+unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing private index OID");
+        }
+        pg_sys::list_nth_oid((*custom_scan).custom_private, 0)
+    }
+}
+
+unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing private LIMIT");
+        }
+        let raw = pg_sys::list_nth_oid((*custom_scan).custom_private, 1);
+        usize::try_from(raw.to_u32())
+            .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan plan LIMIT is out of range"))
+    }
+}
+
+unsafe fn custom_scan_query_from_plan(custom_scan: *mut pg_sys::CustomScan) -> Vec<f32> {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing ORDER BY query expression");
+        }
+        let expr = pg_sys::list_nth((*custom_scan).custom_exprs, 0).cast::<pg_sys::Expr>();
+        if expr.is_null() || (*expr.cast::<pg_sys::Node>()).type_ != pg_sys::NodeTag::T_Const {
+            pgrx::error!(
+                "EcSpireDistributedScan currently requires a constant real[] ORDER BY query"
+            );
+        }
+        custom_scan_query_values_from_const(expr.cast()).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan requires a non-null finite real[] ORDER BY query")
+        })
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     _cscan: *mut pg_sys::CustomScan,
 ) -> *mut pg_sys::Node {
     unsafe {
-        let mut state =
-            PgBox::<pg_sys::CustomScanState>::alloc_node(pg_sys::NodeTag::T_CustomScanState);
-        state.methods = &raw const CUSTOM_EXEC_METHODS;
-        state.into_pg() as *mut pg_sys::Node
+        let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
+            .cast::<SpireCustomScanExecState>();
+        ptr::write(
+            state,
+            SpireCustomScanExecState {
+                custom_scan_state: std::mem::zeroed(),
+                index_oid: pg_sys::InvalidOid,
+                top_k: 0,
+                query: Vec::new(),
+                outputs: Vec::new(),
+                next_output: 0,
+                loaded_outputs: false,
+            },
+        );
+        (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
+        (*state).custom_scan_state.methods = &raw const CUSTOM_EXEC_METHODS;
+        state.cast::<pg_sys::Node>()
     }
 }
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
-    _node: *mut pg_sys::CustomScanState,
+    node: *mut pg_sys::CustomScanState,
     _estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
-    // EXPLAIN initializes executor state even without ANALYZE. Keep Begin
-    // side-effect-free until Exec is wired to SpireRemoteFanoutExecutor.
+    unsafe {
+        let state = node.cast::<SpireCustomScanExecState>();
+        let custom_scan = custom_scan_plan(node);
+        (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
+        (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
+        (*state).query = custom_scan_query_from_plan(custom_scan);
+    }
 }
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_exec_custom_scan(
-    _node: *mut pg_sys::CustomScanState,
+    node: *mut pg_sys::CustomScanState,
 ) -> *mut pg_sys::TupleTableSlot {
-    pgrx::error!(
-        "EcSpireDistributedScan executor callbacks are not wired to SpireRemoteFanoutExecutor yet"
-    );
+    unsafe {
+        pg_sys::ExecScan(
+            &mut (*node).ss,
+            Some(ec_spire_custom_scan_access),
+            Some(ec_spire_custom_scan_recheck),
+        )
+    }
 }
 
 #[pg_guard]
-unsafe extern "C-unwind" fn ec_spire_end_custom_scan(_node: *mut pg_sys::CustomScanState) {}
+unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomScanState) {
+    unsafe {
+        if node.is_null() {
+            return;
+        }
+        let state = node.cast::<SpireCustomScanExecState>();
+        ptr::drop_in_place(state);
+        pg_sys::pfree(state.cast());
+    }
+}
 
 #[pg_guard]
-unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(_node: *mut pg_sys::CustomScanState) {}
+unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
+    unsafe {
+        let state = node.cast::<SpireCustomScanExecState>();
+        (*state).outputs.clear();
+        (*state).next_output = 0;
+        (*state).loaded_outputs = false;
+    }
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
+    scan_state: *mut pg_sys::ScanState,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if scan_state.is_null() {
+            pgrx::error!("EcSpireDistributedScan access method received null scan state");
+        }
+        let state = scan_state.cast::<SpireCustomScanExecState>();
+        custom_scan_ensure_outputs(state);
+        loop {
+            let Some(output) = (&(*state).outputs).get((*state).next_output) else {
+                return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+            };
+            (*state).next_output = (*state).next_output.saturating_add(1);
+            if !matches!(
+                output.heap_lookup_owner,
+                super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+                    | super::SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
+            ) {
+                pgrx::error!(
+                    "EcSpireDistributedScan tuple payload delivery is not wired for remote-origin node_id {} output; heap_lookup_owner {}",
+                    output.node_id,
+                    output.heap_lookup_owner
+                );
+            }
+
+            let mut tid = pg_sys::ItemPointerData::default();
+            pgrx::itemptr::item_pointer_set_all(&mut tid, output.heap_block, output.heap_offset);
+            pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+            let estate = (*scan_state).ps.state;
+            if estate.is_null() {
+                pgrx::error!("EcSpireDistributedScan missing executor estate");
+            }
+            let visible = pg_sys::table_tuple_fetch_row_version(
+                (*scan_state).ss_currentRelation,
+                &mut tid,
+                (*estate).es_snapshot,
+                (*scan_state).ss_ScanTupleSlot,
+            );
+            if visible {
+                return (*scan_state).ss_ScanTupleSlot;
+            }
+        }
+    }
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
+    _scan_state: *mut pg_sys::ScanState,
+    _slot: *mut pg_sys::TupleTableSlot,
+) -> bool {
+    true
+}
+
+unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
+    unsafe {
+        if (*state).loaded_outputs {
+            return;
+        }
+        let index_relation = pg_sys::index_open(
+            (*state).index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+        let stream = super::remote_search_production_scan_heap_resolution_result_stream(
+            index_relation,
+            (*state).query.clone(),
+            (*state).top_k,
+        );
+        pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
+            pgrx::error!(
+                "EcSpireDistributedScan production executor blocked: status {}, next_blocker {}, recommendation {}",
+                stream.summary.status,
+                stream.summary.next_blocker,
+                stream.summary.recommendation
+            );
+        }
+        (*state).outputs = stream.outputs;
+        (*state).loaded_outputs = true;
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn custom_scan_status_reports_provider_name_and_disabled_execution() {
+    fn custom_scan_status_reports_executor_stream_pending_tuple_payload() {
         let row = custom_scan_status_row();
 
         assert_eq!(row.provider_name, "EcSpireDistributedScan");
         assert!(row.path_generation_enabled);
-        assert!(!row.exec_wiring_enabled);
+        assert!(row.exec_wiring_enabled);
         assert_eq!(
             row.next_step,
-            "wire CustomScan executor callbacks to SpireRemoteFanoutExecutor"
+            "wire remote tuple-payload delivery into CustomScan tuple slots"
         );
     }
 

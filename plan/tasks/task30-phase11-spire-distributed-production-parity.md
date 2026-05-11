@@ -281,6 +281,9 @@ local-only path.
   - [ ] Implement Begin/Exec/End callbacks that invoke the existing
     `SpireRemoteFanoutExecutor` state machine and return tuples directly via
     the CustomScan tuple interface.
+    - [x] Packet `30810` wires the callbacks through the production executor
+      result stream and PostgreSQL scan/projection machinery.
+    - [ ] Remote-origin tuple-payload slot delivery remains open.
   - [ ] Preserve local-only `ec_spire` index AM behavior unchanged.
   - [ ] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
@@ -857,6 +860,16 @@ CustomScan read-path work:
   - [ ] Implement Begin/Exec/End callbacks that invoke
     `SpireRemoteFanoutExecutor` directly and return tuples through the
     CustomScan tuple interface.
+    - [x] Packet `30810` adds serializable CustomScan plan-private state for
+      the selected index, constant `real[]` query, and `LIMIT`, allocates
+      provider-owned executor state, routes `ExecCustomScan` through
+      PostgreSQL `ExecScan`, and calls the production
+      `SpireRemoteFanoutExecutor` result-stream entry point.
+    - [x] Packet `30810` proves a remote-placement `SELECT ... ORDER BY ... LIMIT`
+      reaches the production executor and fails on the real remote transport
+      gate instead of the old scaffold "not wired" error.
+    - [ ] Wire ADR-068 remote tuple payloads into CustomScan tuple slots so
+      remote-origin outputs return projected coordinator-visible tuples.
   - [ ] Keep the existing index AM unchanged for local-only scans.
   - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
     - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`
