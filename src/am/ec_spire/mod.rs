@@ -30,7 +30,8 @@ pub(crate) use self::custom_scan::{
     custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
 };
 pub(crate) use self::dml_frontdoor::{
-    dml_frontdoor_hook_status_row, register_dml_frontdoor_planner_hook,
+    dml_frontdoor_hook_status_row, dml_frontdoor_relation_context_row,
+    register_dml_frontdoor_planner_hook,
 };
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{

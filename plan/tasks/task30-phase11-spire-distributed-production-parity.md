@@ -1133,6 +1133,10 @@ v1 write contract from ADR-069:
     pass-through chained hook, exposes
     `ec_spire_dml_frontdoor_hook_status()`, and keeps plan rewriting disabled
     until the relation-metadata and CustomScan executor replacement slice.
+  - [x] Packet `30850` adds the relation-context metadata bridge for the DML
+    planner hook, exposing the table's selected `ec_spire` index, bigint
+    primary-key column, ordinary heap columns, and indexed embedding columns
+    through `ec_spire_dml_frontdoor_relation_context(...)`.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

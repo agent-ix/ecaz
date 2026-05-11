@@ -37,6 +37,7 @@ pub(crate) use self::ec_spire::{
     custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,
     custom_scan_status_row as spire_custom_scan_status_row,
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+    dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
     index_cost_snapshot as spire_index_cost_snapshot,

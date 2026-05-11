@@ -5,7 +5,7 @@
 //! fail closed before any hook can fall through to the coordinator heap path.
 #![allow(dead_code)]
 
-use pgrx::{pg_guard, pg_sys, PgList};
+use pgrx::{pg_guard, pg_sys, PgList, Spi};
 
 use std::ffi::CStr;
 
@@ -60,6 +60,19 @@ pub(crate) struct SpireDmlFrontdoorHookStatusRow {
     pub(crate) next_step: &'static str,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SpireDmlFrontdoorRelationContext {
+    pub(crate) heap_relation_oid: pg_sys::Oid,
+    pub(crate) index_oid: pg_sys::Oid,
+    pub(crate) ec_spire_distributed_table: bool,
+    pub(crate) pk_column: Option<String>,
+    pub(crate) pk_type: Option<String>,
+    pub(crate) column_names: Vec<(pg_sys::AttrNumber, String)>,
+    pub(crate) embedding_columns: Vec<String>,
+    pub(crate) status: &'static str,
+    pub(crate) next_step: &'static str,
+}
+
 pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) ec_spire_distributed_table: bool,
     pub(crate) pk_column: &'a str,
@@ -98,6 +111,54 @@ pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow 
     }
 }
 
+pub(crate) fn dml_frontdoor_relation_context_row(
+    heap_relation_oid: pg_sys::Oid,
+) -> Result<SpireDmlFrontdoorRelationContext, String> {
+    let index_oid = dml_frontdoor_ec_spire_index_oid(heap_relation_oid)?;
+    let column_names = dml_frontdoor_relation_column_names(heap_relation_oid)?;
+    let pk = dml_frontdoor_primary_key_column(heap_relation_oid)?;
+    let embedding_columns = if index_oid == pg_sys::InvalidOid {
+        Vec::new()
+    } else {
+        dml_frontdoor_index_key_column_names(index_oid)?
+    };
+
+    let (status, next_step, ec_spire_distributed_table) = if index_oid == pg_sys::InvalidOid {
+        (
+            "no_ec_spire_index",
+            "create ec_spire index before DML front-door routing",
+            false,
+        )
+    } else if pk.is_none() {
+        (
+            "unsupported_pk_shape",
+            "define one bigint primary-key column for ADR-069 v1 routing",
+            false,
+        )
+    } else {
+        (
+            "relation_context_ready",
+            "wire planner hook query classification to CustomScan executor replacement",
+            true,
+        )
+    };
+    let (pk_column, pk_type) = pk
+        .map(|pk| (Some(pk.column_name), Some(pk.column_type)))
+        .unwrap_or((None, None));
+
+    Ok(SpireDmlFrontdoorRelationContext {
+        heap_relation_oid,
+        index_oid,
+        ec_spire_distributed_table,
+        pk_column,
+        pk_type,
+        column_names,
+        embedding_columns,
+        status,
+        next_step,
+    })
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     parse: *mut pg_sys::Query,
@@ -110,6 +171,140 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     } else {
         unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
     }
+}
+
+struct SpireDmlFrontdoorPrimaryKeyColumn {
+    column_name: String,
+    column_type: String,
+}
+
+fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg_sys::Oid, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT coalesce(min(idx.indexrelid::oid), 0::oid) AS index_oid \
+                   FROM pg_index AS idx \
+                   JOIN pg_class AS index_class \
+                     ON index_class.oid = idx.indexrelid \
+                   JOIN pg_am AS access_method \
+                     ON access_method.oid = index_class.relam \
+                    AND access_method.amname = 'ec_spire' \
+                  WHERE idx.indrelid = $1::oid",
+                None,
+                &[heap_relation_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire DML frontdoor index lookup failed: {e}"))?
+            .first()
+            .get_one::<pg_sys::Oid>()
+            .map_err(|e| format!("ec_spire DML frontdoor index oid decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire DML frontdoor index oid is null".to_owned())
+    })
+}
+
+fn dml_frontdoor_relation_column_names(
+    heap_relation_oid: pg_sys::Oid,
+) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT attr.attnum::smallint AS attnum, attr.attname::text AS attname \
+                   FROM pg_attribute AS attr \
+                  WHERE attr.attrelid = $1::oid \
+                    AND attr.attnum > 0 \
+                    AND NOT attr.attisdropped \
+                  ORDER BY attr.attnum",
+                None,
+                &[heap_relation_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire DML frontdoor column lookup failed: {e}"))?
+            .map(|row| {
+                let attnum = row["attnum"]
+                    .value::<i16>()
+                    .map_err(|e| {
+                        format!("ec_spire DML frontdoor column attnum decode failed: {e}")
+                    })?
+                    .ok_or_else(|| "ec_spire DML frontdoor column attnum is null".to_owned())?;
+                let attname = row["attname"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire DML frontdoor column attname decode failed: {e}")
+                    })?
+                    .ok_or_else(|| "ec_spire DML frontdoor column attname is null".to_owned())?;
+                Ok::<(pg_sys::AttrNumber, String), String>((attnum, attname))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })
+}
+
+fn dml_frontdoor_primary_key_column(
+    heap_relation_oid: pg_sys::Oid,
+) -> Result<Option<SpireDmlFrontdoorPrimaryKeyColumn>, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT attr.attname::text AS column_name, \
+                        format_type(attr.atttypid, attr.atttypmod)::text AS column_type \
+                   FROM pg_index AS idx \
+                   JOIN unnest(idx.indkey) WITH ORDINALITY AS key_column(attnum, ord) \
+                     ON key_column.attnum > 0 \
+                    AND key_column.ord <= idx.indnkeyatts \
+                   JOIN pg_attribute AS attr \
+                     ON attr.attrelid = idx.indrelid \
+                    AND attr.attnum = key_column.attnum \
+                  WHERE idx.indrelid = $1::oid \
+                    AND idx.indisprimary \
+                    AND idx.indnkeyatts = 1 \
+                    AND attr.atttypid = 'int8'::regtype::oid",
+                None,
+                &[heap_relation_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire DML frontdoor primary-key lookup failed: {e}"))?
+            .map(|row| {
+                let column_name = row["column_name"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire DML frontdoor primary-key name decode failed: {e}")
+                    })?
+                    .ok_or_else(|| "ec_spire DML frontdoor primary-key name is null".to_owned())?;
+                let column_type = row["column_type"]
+                    .value::<String>()
+                    .map_err(|e| {
+                        format!("ec_spire DML frontdoor primary-key type decode failed: {e}")
+                    })?
+                    .ok_or_else(|| "ec_spire DML frontdoor primary-key type is null".to_owned())?;
+                Ok::<SpireDmlFrontdoorPrimaryKeyColumn, String>(SpireDmlFrontdoorPrimaryKeyColumn {
+                    column_name,
+                    column_type,
+                })
+            })
+            .next()
+            .transpose()
+    })
+}
+
+fn dml_frontdoor_index_key_column_names(index_oid: pg_sys::Oid) -> Result<Vec<String>, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT coalesce(array_agg(attr.attname::text ORDER BY key_column.ord), ARRAY[]::text[]) \
+                   AS key_columns \
+                   FROM pg_index AS idx \
+                   JOIN unnest(idx.indkey) WITH ORDINALITY AS key_column(attnum, ord) \
+                     ON key_column.attnum > 0 \
+                    AND key_column.ord <= idx.indnkeyatts \
+                   JOIN pg_attribute AS attr \
+                     ON attr.attrelid = idx.indrelid \
+                    AND attr.attnum = key_column.attnum \
+                  WHERE idx.indexrelid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire DML frontdoor index key column lookup failed: {e}"))?
+            .first()
+            .get_one::<Vec<String>>()
+            .map_err(|e| format!("ec_spire DML frontdoor index key column decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire DML frontdoor index key column list is null".to_owned())
+    })
 }
 
 pub(crate) fn classify_dml_frontdoor_shape(

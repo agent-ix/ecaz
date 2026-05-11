@@ -978,6 +978,39 @@ fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_relation_context(
+    heap_relation_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(heap_relation_oid, pg_sys::Oid),
+        name!(index_oid, pg_sys::Oid),
+        name!(ec_spire_distributed_table, bool),
+        name!(pk_column, Option<String>),
+        name!(pk_type, Option<String>),
+        name!(ordinary_column_count, i64),
+        name!(embedding_columns, Vec<String>),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    let row = am::spire_dml_frontdoor_relation_context_row(heap_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    TableIterator::once((
+        row.heap_relation_oid,
+        row.index_oid,
+        row.ec_spire_distributed_table,
+        row.pk_column,
+        row.pk_type,
+        i64::try_from(row.column_names.len()).expect("column count should fit i64"),
+        row.embedding_columns,
+        row.status,
+        row.next_step,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_custom_scan_index_eligibility(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -27802,6 +27835,53 @@ mod tests {
         assert!(query_shape_classifier_enabled);
         assert!(!plan_rewrite_enabled);
         assert_eq!(status, "pass_through_query_classifier_ready");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_relation_context_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_frontdoor_context_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML frontdoor context table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_frontdoor_context_idx \
+             ON ec_spire_dml_frontdoor_context_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML frontdoor context ec_spire index creation should succeed");
+
+        let context = "FROM ec_spire_dml_frontdoor_relation_context(\
+                       'ec_spire_dml_frontdoor_context_sql'::regclass)";
+        let status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML frontdoor relation context status query should succeed")
+            .expect("DML frontdoor relation context status should exist");
+        let distributed =
+            Spi::get_one::<bool>(&format!("SELECT ec_spire_distributed_table {context}"))
+                .expect("DML frontdoor relation context distributed query should succeed")
+                .expect("DML frontdoor relation context distributed value should exist");
+        let pk_column = Spi::get_one::<String>(&format!("SELECT pk_column {context}"))
+            .expect("DML frontdoor relation context PK query should succeed")
+            .expect("DML frontdoor relation context PK should exist");
+        let pk_type = Spi::get_one::<String>(&format!("SELECT pk_type {context}"))
+            .expect("DML frontdoor relation context PK type query should succeed")
+            .expect("DML frontdoor relation context PK type should exist");
+        let ordinary_column_count =
+            Spi::get_one::<i64>(&format!("SELECT ordinary_column_count {context}"))
+                .expect("DML frontdoor relation context column count query should succeed")
+                .expect("DML frontdoor relation context column count should exist");
+        let embedding_columns = Spi::get_one::<String>(&format!(
+            "SELECT array_to_string(embedding_columns, ',') {context}"
+        ))
+        .expect("DML frontdoor relation context embedding query should succeed")
+        .expect("DML frontdoor relation context embedding columns should exist");
+
+        assert_eq!(status, "relation_context_ready");
+        assert!(distributed);
+        assert_eq!(pk_column, "id");
+        assert_eq!(pk_type, "bigint");
+        assert_eq!(ordinary_column_count, 3);
+        assert_eq!(embedding_columns, "embedding");
     }
 
     #[pg_test]
