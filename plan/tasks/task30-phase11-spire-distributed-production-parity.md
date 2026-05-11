@@ -245,6 +245,14 @@ Acceptance artifact:
   heap resolution path.
 - [ ] Return one coordinator-visible ordered result stream after local and
   remote candidate merge/dedupe.
+- [ ] Implement the remote row materialization provider required before
+  remote-origin outputs can be returned by the PostgreSQL index AM.
+  - [x] First provider seam: AM result-stream materialization now accepts only
+    pre-existing coordinator heap TID mappings that match
+    requested_epoch, served_epoch, origin node, global vec-id, row locator,
+    scan heap relation, and scan-snapshot visibility. The default provider is
+    intentionally empty, so remote-origin rows remain blocked until a
+    catalog-backed mapping surface lands.
 - [ ] Preserve deterministic tie-break ordering across local rows, remote rows,
   and boundary replicas.
 - [ ] Add tests for missing/dead remote rows, stale locators, and duplicate

@@ -108,6 +108,7 @@ const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local
 const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0xA0;
 const SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL: u8 = 0xA1;
 const SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION: &str = "coordinator_local_heap";
+const SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION: &str = "coordinator_materialized_heap";
 const SPIRE_REMOTE_HEAP_RESOLUTION: &str = "origin_node_row_locator";
 const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
 const SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY: &str = "remote_ready";
@@ -5759,8 +5760,136 @@ fn production_scan_outputs_from_heap_candidates(
 }
 
 fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOutputRow) -> bool {
-    output.node_id == meta::SPIRE_LOCAL_NODE_ID
-        && output.heap_lookup_owner == SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+    matches!(
+        output.heap_lookup_owner,
+        SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION | SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteMaterializedRowMapping {
+    pub(crate) requested_epoch: u64,
+    pub(crate) served_epoch: u64,
+    pub(crate) origin_node_id: u32,
+    pub(crate) vec_id: Vec<u8>,
+    pub(crate) row_locator: Vec<u8>,
+    pub(crate) scan_heap_relation_oid: pg_sys::Oid,
+    pub(crate) materialized_heap_block: u32,
+    pub(crate) materialized_heap_offset: u16,
+    pub(crate) visible_to_scan_snapshot: bool,
+}
+
+pub(crate) trait SpireRemoteRowMaterializationProvider {
+    fn materialized_row_mapping(
+        &self,
+        scan_heap_relation_oid: pg_sys::Oid,
+        output: &SpireRemoteProductionScanOutputRow,
+    ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String>;
+}
+
+pub(crate) struct SpireRemoteNoRowMaterializationProvider;
+
+impl SpireRemoteRowMaterializationProvider for SpireRemoteNoRowMaterializationProvider {
+    fn materialized_row_mapping(
+        &self,
+        _scan_heap_relation_oid: pg_sys::Oid,
+        _output: &SpireRemoteProductionScanOutputRow,
+    ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String> {
+        Ok(None)
+    }
+}
+
+fn production_scan_validate_materialized_row_mapping(
+    scan_heap_relation_oid: pg_sys::Oid,
+    output: &SpireRemoteProductionScanOutputRow,
+    mapping: &SpireRemoteMaterializedRowMapping,
+) -> Result<(), String> {
+    if mapping.requested_epoch != output.requested_epoch {
+        return Err(format!(
+            "ec_spire remote_row_materialization mapping requested_epoch mismatch: output {}, mapping {}",
+            output.requested_epoch, mapping.requested_epoch
+        ));
+    }
+    if mapping.served_epoch != output.served_epoch {
+        return Err(format!(
+            "ec_spire remote_row_materialization mapping served_epoch mismatch: output {}, mapping {}",
+            output.served_epoch, mapping.served_epoch
+        ));
+    }
+    if mapping.origin_node_id != output.node_id {
+        return Err(format!(
+            "ec_spire remote_row_materialization mapping origin_node_id mismatch: output {}, mapping {}",
+            output.node_id, mapping.origin_node_id
+        ));
+    }
+    if mapping.vec_id != output.vec_id {
+        return Err("ec_spire remote_row_materialization mapping vec_id mismatch".to_owned());
+    }
+    if mapping.row_locator != output.row_locator {
+        return Err("ec_spire remote_row_materialization mapping row_locator mismatch".to_owned());
+    }
+    if mapping.scan_heap_relation_oid != scan_heap_relation_oid {
+        return Err(format!(
+            "ec_spire remote_row_materialization mapping relation mismatch: scan heap {}, mapping heap {}",
+            scan_heap_relation_oid, mapping.scan_heap_relation_oid
+        ));
+    }
+    if !mapping.visible_to_scan_snapshot {
+        return Err(
+            "ec_spire remote_row_materialization mapping is not visible to the scan snapshot"
+                .to_owned(),
+        );
+    }
+
+    Ok(())
+}
+
+fn production_scan_output_from_materialized_row_mapping(
+    output: &SpireRemoteProductionScanOutputRow,
+    mapping: &SpireRemoteMaterializedRowMapping,
+) -> SpireRemoteProductionScanOutputRow {
+    SpireRemoteProductionScanOutputRow {
+        requested_epoch: output.requested_epoch,
+        served_epoch: output.served_epoch,
+        node_id: output.node_id,
+        heap_block: mapping.materialized_heap_block,
+        heap_offset: mapping.materialized_heap_offset,
+        score: output.score,
+        heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
+        vec_id: output.vec_id.clone(),
+        row_locator: output.row_locator.clone(),
+    }
+}
+
+fn production_scan_apply_row_materialization_provider(
+    summary: SpireRemoteProductionScanHeapResolutionSummaryRow,
+    outputs: Vec<SpireRemoteProductionScanOutputRow>,
+    scan_heap_relation_oid: pg_sys::Oid,
+    provider: &impl SpireRemoteRowMaterializationProvider,
+) -> Result<SpireRemoteProductionScanResultStream, String> {
+    let mut materialized_outputs = Vec::with_capacity(outputs.len());
+    for output in outputs {
+        if production_scan_output_is_local_heap_tid(&output) {
+            materialized_outputs.push(output);
+            continue;
+        }
+
+        match provider.materialized_row_mapping(scan_heap_relation_oid, &output)? {
+            Some(mapping) => {
+                production_scan_validate_materialized_row_mapping(
+                    scan_heap_relation_oid,
+                    &output,
+                    &mapping,
+                )?;
+                materialized_outputs.push(production_scan_output_from_materialized_row_mapping(
+                    &output, &mapping,
+                ));
+            }
+            None => materialized_outputs.push(output),
+        }
+    }
+
+    production_scan_result_stream(summary, materialized_outputs)
 }
 
 fn production_scan_am_delivery_summary(
@@ -6107,9 +6236,23 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str
     index_relation: pg_sys::Relation,
     query: Vec<f32>,
 ) -> SpireRemoteProductionScanResultStream {
-    let result = unsafe {
-        remote_search_production_scan_heap_resolution_result_stream_impl(index_relation, query, None)
-    };
+    let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
+        let stream = unsafe {
+            remote_search_production_scan_heap_resolution_result_stream_impl(
+                index_relation,
+                query,
+                None,
+            )?
+        };
+        let scan_heap_relation_oid =
+            unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        production_scan_apply_row_materialization_provider(
+            stream.summary,
+            stream.outputs,
+            scan_heap_relation_oid,
+            &SpireRemoteNoRowMaterializationProvider,
+        )
+    })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 

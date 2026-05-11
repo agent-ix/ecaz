@@ -297,6 +297,41 @@
     }
 
     #[test]
+    fn production_scan_result_stream_am_outputs_accepts_materialized_remote_rows() {
+        let stream = production_scan_stream_for_am(
+            SpireRemoteProductionScanAmDeliverySummaryRow {
+                requested_epoch: 1,
+                output_count: 1,
+                local_heap_tid_output_count: 1,
+                remote_origin_output_count: 0,
+                am_deliverable_output_count: 1,
+                status: SPIRE_REMOTE_STATUS_READY,
+                next_blocker: SPIRE_REMOTE_NONE,
+                recommendation: SPIRE_REMOTE_NONE,
+            },
+            vec![SpireRemoteProductionScanOutputRow {
+                requested_epoch: 1,
+                served_epoch: 1,
+                node_id: 9,
+                heap_block: 70,
+                heap_offset: 5,
+                score: -1.75,
+                heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
+                vec_id: vec![1],
+                row_locator: vec![2],
+            }],
+        );
+
+        assert_eq!(
+            production_scan_result_stream_am_outputs(&stream).unwrap(),
+            vec![SpireScanOutput {
+                heap_tid: tid(70, 5),
+                orderby_score: -1.75,
+            }]
+        );
+    }
+
+    #[test]
     fn scan_query_accepts_nonzero_finite_vectors() {
         let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
 

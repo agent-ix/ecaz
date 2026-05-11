@@ -778,6 +778,210 @@ mod tests {
         );
     }
 
+    #[derive(Clone)]
+    struct TestRemoteRowMaterializationProvider {
+        mapping: Option<SpireRemoteMaterializedRowMapping>,
+    }
+
+    impl SpireRemoteRowMaterializationProvider for TestRemoteRowMaterializationProvider {
+        fn materialized_row_mapping(
+            &self,
+            _scan_heap_relation_oid: pg_sys::Oid,
+            _output: &SpireRemoteProductionScanOutputRow,
+        ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String> {
+            Ok(self.mapping.clone())
+        }
+    }
+
+    fn materialized_mapping_for_output(
+        output: &SpireRemoteProductionScanOutputRow,
+        scan_heap_relation_oid: pg_sys::Oid,
+    ) -> SpireRemoteMaterializedRowMapping {
+        SpireRemoteMaterializedRowMapping {
+            requested_epoch: output.requested_epoch,
+            served_epoch: output.served_epoch,
+            origin_node_id: output.node_id,
+            vec_id: output.vec_id.clone(),
+            row_locator: output.row_locator.clone(),
+            scan_heap_relation_oid,
+            materialized_heap_block: 900,
+            materialized_heap_offset: 7,
+            visible_to_scan_snapshot: true,
+        }
+    }
+
+    #[test]
+    fn production_scan_row_materialization_provider_converts_remote_origin_to_coordinator_tid() {
+        let remote = remote_heap_candidate(
+            3,
+            20,
+            1,
+            remote_global_vec_id(b"remote-materialized"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[remote]);
+        let scan_heap_relation_oid = pg_sys::Oid::from(42);
+        let provider = TestRemoteRowMaterializationProvider {
+            mapping: Some(materialized_mapping_for_output(
+                &outputs[0],
+                scan_heap_relation_oid,
+            )),
+        };
+
+        let stream = production_scan_apply_row_materialization_provider(
+            ready_production_scan_heap_summary(1),
+            outputs,
+            scan_heap_relation_oid,
+            &provider,
+        )
+        .expect("valid materialization mapping should produce an AM-deliverable stream");
+
+        assert_eq!(stream.outputs.len(), 1);
+        assert_eq!(stream.outputs[0].node_id, 3);
+        assert_eq!(stream.outputs[0].heap_block, 900);
+        assert_eq!(stream.outputs[0].heap_offset, 7);
+        assert_eq!(
+            stream.outputs[0].heap_lookup_owner,
+            SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
+        );
+        assert_eq!(stream.am_delivery.output_count, 1);
+        assert_eq!(stream.am_delivery.local_heap_tid_output_count, 1);
+        assert_eq!(stream.am_delivery.remote_origin_output_count, 0);
+        assert_eq!(stream.am_delivery.am_deliverable_output_count, 1);
+        assert_eq!(stream.am_delivery.status, SPIRE_REMOTE_STATUS_READY);
+    }
+
+    #[test]
+    fn production_scan_row_materialization_provider_missing_mapping_keeps_remote_blocker() {
+        let remote = remote_heap_candidate(
+            3,
+            20,
+            1,
+            remote_global_vec_id(b"remote-missing-materialization"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[remote]);
+        let provider = TestRemoteRowMaterializationProvider { mapping: None };
+
+        let stream = production_scan_apply_row_materialization_provider(
+            ready_production_scan_heap_summary(1),
+            outputs,
+            pg_sys::Oid::from(42),
+            &provider,
+        )
+        .expect("missing mapping should remain a classified blocker, not an internal error");
+
+        assert_eq!(stream.am_delivery.local_heap_tid_output_count, 0);
+        assert_eq!(stream.am_delivery.remote_origin_output_count, 1);
+        assert_eq!(stream.am_delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            stream.am_delivery.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+        assert_eq!(
+            stream.am_delivery.next_blocker,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+        );
+    }
+
+    #[test]
+    fn production_scan_row_materialization_provider_rejects_identity_mismatches() {
+        let remote = remote_heap_candidate(
+            3,
+            20,
+            1,
+            remote_global_vec_id(b"remote-identity-materialization"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[remote]);
+        let output = &outputs[0];
+        let scan_heap_relation_oid = pg_sys::Oid::from(42);
+        let base = materialized_mapping_for_output(output, scan_heap_relation_oid);
+
+        let mut requested_epoch_mismatch = base.clone();
+        requested_epoch_mismatch.requested_epoch += 1;
+        let mut served_epoch_mismatch = base.clone();
+        served_epoch_mismatch.served_epoch += 1;
+        let mut origin_node_mismatch = base.clone();
+        origin_node_mismatch.origin_node_id += 1;
+        let mut vec_id_mismatch = base.clone();
+        vec_id_mismatch.vec_id = remote_global_vec_id(b"different-identity");
+        let mut row_locator_mismatch = base;
+        row_locator_mismatch.row_locator.push(99);
+
+        for (expected, mapping) in [
+            ("requested_epoch mismatch", requested_epoch_mismatch),
+            ("served_epoch mismatch", served_epoch_mismatch),
+            ("origin_node_id mismatch", origin_node_mismatch),
+            ("vec_id mismatch", vec_id_mismatch),
+            ("row_locator mismatch", row_locator_mismatch),
+        ] {
+            let provider = TestRemoteRowMaterializationProvider {
+                mapping: Some(mapping),
+            };
+            let error = production_scan_apply_row_materialization_provider(
+                ready_production_scan_heap_summary(1),
+                outputs.clone(),
+                scan_heap_relation_oid,
+                &provider,
+            )
+            .expect_err("identity mismatch must not produce an AM-deliverable stream");
+            assert!(
+                error.contains(expected),
+                "expected {expected:?} in error {error:?}"
+            );
+            assert!(error.contains("remote_row_materialization"));
+        }
+    }
+
+    #[test]
+    fn production_scan_row_materialization_provider_rejects_wrong_relation_or_invisible_tid() {
+        let remote = remote_heap_candidate(
+            3,
+            20,
+            1,
+            remote_global_vec_id(b"remote-visibility"),
+            0.2,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        let outputs = production_scan_outputs_from_heap_candidates(&[remote]);
+        let output = &outputs[0];
+        let scan_heap_relation_oid = pg_sys::Oid::from(42);
+
+        let mut wrong_relation = materialized_mapping_for_output(output, scan_heap_relation_oid);
+        wrong_relation.scan_heap_relation_oid = pg_sys::Oid::from(43);
+        let provider = TestRemoteRowMaterializationProvider {
+            mapping: Some(wrong_relation),
+        };
+        let error = production_scan_apply_row_materialization_provider(
+            ready_production_scan_heap_summary(1),
+            outputs.clone(),
+            scan_heap_relation_oid,
+            &provider,
+        )
+        .expect_err("wrong heap relation must not produce an AM-deliverable stream");
+        assert!(error.contains("relation mismatch"));
+        assert!(error.contains("remote_row_materialization"));
+
+        let mut invisible = materialized_mapping_for_output(output, scan_heap_relation_oid);
+        invisible.visible_to_scan_snapshot = false;
+        let provider = TestRemoteRowMaterializationProvider {
+            mapping: Some(invisible),
+        };
+        let error = production_scan_apply_row_materialization_provider(
+            ready_production_scan_heap_summary(1),
+            outputs,
+            scan_heap_relation_oid,
+            &provider,
+        )
+        .expect_err("invisible heap tuple must not produce an AM-deliverable stream");
+        assert!(error.contains("not visible"));
+        assert!(error.contains("remote_row_materialization"));
+    }
+
     #[test]
     fn row_materialization_contract_blocks_origin_heap_tid_as_xs_heaptid() {
         let rows = remote_search_row_materialization_contract_rows();
