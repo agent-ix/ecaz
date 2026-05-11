@@ -99,6 +99,19 @@ The coordinator:
 No two-phase commit is required because no coordinator-side state changes
 on a non-embedding UPDATE.
 
+The first implementation surface is
+`ec_spire_forward_coordinator_update_tuple_payload(index_oid, pk_column,
+pk_value, row_payload, updated_columns)`. It looks up `node_id` and
+`served_epoch` in `ec_spire_placement`, reuses the remote descriptor and
+conninfo-secret dispatch gate, and calls the remote
+`ec_spire_remote_update_tuple_payload(...)` endpoint. The remote endpoint
+updates only the explicit non-PK columns supplied in `updated_columns`,
+matching the row by the v1 canonical bigint primary-key bytes. This is the
+forwarding primitive; transparent `UPDATE documents SET ... WHERE id = ...`
+still requires a ModifyTable/view-hook integration because remote-owned
+rows are not present in the coordinator heap and therefore cannot be
+captured by a normal row-level table trigger.
+
 ### Coordinator-routed DELETE
 
 ```sql

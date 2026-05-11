@@ -2279,6 +2279,40 @@ fn coordinator_insert_remote_tuple_payload_sql(
     ))
 }
 
+fn coordinator_update_remote_tuple_payload_sql(
+    remote_index_regclass: &str,
+    pk_column: &str,
+    pk_value: &[u8],
+    row_payload_json: &str,
+    updated_columns: &[String],
+) -> Result<String, String> {
+    if pk_column.is_empty() {
+        return Err("ec_spire coordinator update pk column is empty".to_owned());
+    }
+    if updated_columns.is_empty() {
+        return Err("ec_spire coordinator update column list is empty".to_owned());
+    }
+    let column_literals = updated_columns
+        .iter()
+        .map(|column| {
+            if column.is_empty() {
+                return Err("ec_spire coordinator update column name is empty".to_owned());
+            }
+            Ok(quote_sql_literal(column))
+        })
+        .collect::<Result<Vec<_>, String>>()?
+        .join(", ");
+    Ok(format!(
+        "SELECT * FROM ec_spire_remote_update_tuple_payload(\
+             {}::regclass, {}::text, decode({}, 'hex'), {}::jsonb, ARRAY[{}]::text[])",
+        quote_sql_literal(remote_index_regclass),
+        quote_sql_literal(pk_column),
+        quote_sql_literal(&hex::encode(pk_value)),
+        quote_sql_literal(row_payload_json),
+        column_literals
+    ))
+}
+
 fn coordinator_insert_remote_descriptor_metadata(
     client: &mut postgres::Client,
     node_id: u32,
@@ -2441,6 +2475,62 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
     unsafe {
         coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)
     }
+}
+
+pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+    pk_column: &str,
+    pk_value: &[u8],
+    row_payload_json: &str,
+    updated_columns: &[String],
+) -> Result<SpireCoordinatorUpdateRemoteRow, String> {
+    let dispatch =
+        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire coordinator update remote dispatch for node_id {} is blocked with status {}",
+            node_id, dispatch.status
+        ));
+    }
+    let remote_sql = coordinator_update_remote_tuple_payload_sql(
+        &dispatch.remote_index_regclass,
+        pk_column,
+        pk_value,
+        row_payload_json,
+        updated_columns,
+    )?;
+
+    let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
+    let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire coordinator update conninfo secret for node_id {node_id} is not resolved: {status}"
+        )
+    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        node_id,
+        "coordinator update remote dispatch",
+    )?;
+    let row = client.query_one(remote_sql.as_str(), &[]).map_err(|error| {
+        format!("ec_spire coordinator update remote SQL failed for node_id {node_id}: {error}")
+    })?;
+    let remote_updated_count = row
+        .try_get::<_, i64>("updated_count")
+        .map_err(|_| "ec_spire coordinator update remote updated_count decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value)
+                .map_err(|_| "ec_spire coordinator update remote updated_count is negative".to_owned())
+        })?;
+
+    Ok(SpireCoordinatorUpdateRemoteRow {
+        node_id,
+        remote_update_sent: true,
+        remote_updated_count,
+        status: "remote_update_applied",
+        next_step: "done",
+    })
 }
 
 fn remote_search_libpq_dispatch_budget_blocked(

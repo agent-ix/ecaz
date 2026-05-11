@@ -1060,9 +1060,17 @@ v1 write contract from ADR-069:
 	      the remote, refreshes the descriptor, stages placement, and returns the
 	      row through `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Coordinator-routed non-embedding UPDATE:
-  - [ ] lookup `node_id` from the placement directory;
-  - [ ] forward UPDATE to the owning remote;
-  - [ ] add PG18 coverage.
+  - [x] lookup `node_id` from the placement directory;
+  - [x] forward UPDATE to the owning remote;
+  - [x] add PG18 coverage for the forwarding primitive.
+    - [x] Packet `30838` adds
+      `ec_spire_forward_coordinator_update_tuple_payload(...)` plus the remote
+      `ec_spire_remote_update_tuple_payload(...)` endpoint, proving a
+      non-embedding `title` update routes by placement row and mutates the
+      owning remote row.
+  - [ ] wire transparent `UPDATE ... WHERE pk = ...` into a ModifyTable/view
+    hook; row-level table triggers cannot capture remote-owned rows because the
+    coordinator heap row is suppressed by the INSERT trigger.
 - [ ] Coordinator-routed DELETE:
   - [ ] lookup `node_id` from the placement directory;
   - [ ] use remote prepared DELETE plus local placement-directory delete;
