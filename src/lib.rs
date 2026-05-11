@@ -28764,6 +28764,22 @@ mod tests {
             param_error.contains("requires executor parameter evaluation"),
             "{param_error}"
         );
+        for value in [i64::MAX, i64::MIN] {
+            let mut const_decision = select_decision.clone();
+            const_decision.pk_value_kind = "const_bigint";
+            const_decision.pk_value_const = Some(value);
+            const_decision.pk_value_param_id = None;
+            let const_plan =
+                am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&const_decision)
+                    .expect("boundary const PK primitive plan should be buildable");
+            let expected = am::spire_dml_frontdoor_bigint_pk_value_bytes(value);
+            assert_eq!(
+                am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&const_plan)
+                    .expect("boundary const PK primitive plan should produce bytea"),
+                expected,
+                "{value}"
+            );
+        }
         unsafe {
             let params = pg_sys::makeParamList(1);
             assert!(
@@ -28783,6 +28799,25 @@ mod tests {
                     .expect("bound bigint parameter primitive invocation should be buildable");
             assert_eq!(hex::encode(param_invocation.pk_value), "fffffffffffffff9");
             assert_eq!(param_invocation.pk_column, "id");
+            for value in [i64::MAX, i64::MIN] {
+                (*param).value = pg_sys::Int64GetDatum(value);
+                (*param).isnull = false;
+                (*param).ptype = pg_sys::INT8OID;
+                let expected = am::spire_dml_frontdoor_bigint_pk_value_bytes(value);
+                assert_eq!(
+                    am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                        .expect("boundary bound bigint parameter should produce bytea"),
+                    expected,
+                    "{value}"
+                );
+                assert_eq!(
+                    am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, params)
+                        .expect("boundary bound bigint invocation should be buildable")
+                        .pk_value,
+                    expected,
+                    "{value}"
+                );
+            }
 
             (*param).isnull = true;
             let null_error =

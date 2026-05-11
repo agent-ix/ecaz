@@ -1206,6 +1206,10 @@ v1 write contract from ADR-069:
     typed DML primitive plan with runtime PK bytea evaluation, yielding the
     exact argument bundle a CustomScan executor will pass to coordinator
     primitives.
+  - [x] Packet `30871` folds runtime PK parameter reviewer feedback into the
+    executor-boundary tests: `paramFetch` workspace lifetime is documented and
+    `i64::MIN`/`i64::MAX` are regression-locked through both const and runtime
+    parameter bytea paths.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

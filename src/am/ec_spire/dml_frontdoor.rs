@@ -568,6 +568,8 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
     }
     let param = if let Some(fetch) = params_ref.paramFetch {
         let mut workspace = pg_sys::ParamExternData::default();
+        // paramFetch may return a pointer into workspace; consume it before
+        // this function returns rather than handing it to a caller.
         unsafe { fetch(params, param_id, false, &mut workspace) }
     } else {
         unsafe { params_ref.params.as_ptr().add((param_id - 1) as usize) }
