@@ -810,6 +810,11 @@ Goal: prove distributed correctness locally before AWS.
     remote index DROP, REINDEX CONCURRENTLY, and CREATE INDEX CONCURRENTLY
     strict/degraded behavior. The later fixture still needs packet-local logs
     proving each lifecycle case.
+  - [x] Packet `30789` starts lifecycle runtime evidence with
+    `drop_remote_index_before_fanout`: the fixture drops the remote index
+    before candidate-receive fanout, strict fails closed with
+    `remote_index_unavailable`, and degraded skips that dispatch while keeping
+    the ready remote moving. Remaining lifecycle rows still need fixture logs.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

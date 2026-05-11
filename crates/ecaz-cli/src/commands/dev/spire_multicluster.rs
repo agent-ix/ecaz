@@ -14,6 +14,8 @@ pub enum SpireMulticlusterCommand {
     TransportOverlapPg18(TransportOverlapPg18Args),
     /// Run a PG18 Stage E fault-matrix fixture case.
     FaultPg18(StageEFaultPg18Args),
+    /// Run a PG18 Stage E lifecycle-matrix fixture case.
+    LifecyclePg18(StageELifecyclePg18Args),
 }
 
 impl SpireMulticlusterCommand {
@@ -23,6 +25,7 @@ impl SpireMulticlusterCommand {
                 run_transport_overlap_pg18(args).await
             }
             SpireMulticlusterCommand::FaultPg18(args) => run_stage_e_fault_pg18(args).await,
+            SpireMulticlusterCommand::LifecyclePg18(args) => run_stage_e_lifecycle_pg18(args).await,
         }
     }
 }
@@ -83,6 +86,57 @@ pub struct StageEFaultPg18Args {
     /// Stage E fault matrix case to run.
     #[arg(long, value_parser = parse_stage_e_fault_case)]
     case: StageEFaultCase,
+
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Explicit PostgreSQL bin directory. Defaults to the newest matching pgrx install.
+    #[arg(long)]
+    pgbin: Option<PathBuf>,
+
+    /// Store fixture and PostgreSQL logs in a review packet artifact directory.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
+    /// Run directory. Defaults to the script-owned target/ path.
+    #[arg(long)]
+    run_dir: Option<PathBuf>,
+
+    /// Store PostgreSQL logs outside the run directory.
+    #[arg(long)]
+    log_dir: Option<PathBuf>,
+
+    /// Tee fixture stdout/stderr to this file.
+    #[arg(long)]
+    smoke_log: Option<PathBuf>,
+
+    /// Coordinator PostgreSQL port.
+    #[arg(long)]
+    coord_port: Option<u16>,
+
+    /// Ready remote PostgreSQL port.
+    #[arg(long)]
+    remote_ready_port: Option<u16>,
+
+    /// Run id used in the default run directory.
+    #[arg(long)]
+    run_id: Option<String>,
+
+    /// Skip cargo pgrx install before starting fixture clusters.
+    #[arg(long)]
+    skip_install: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct StageELifecyclePg18Args {
+    /// Stage E lifecycle matrix case to run.
+    #[arg(long, value_parser = parse_stage_e_lifecycle_case)]
+    case: StageELifecycleCase,
 
     /// PostgreSQL major version from the local pgrx install.
     #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
@@ -218,6 +272,34 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StageELifecycleCase {
+    DropRemoteIndexBeforeFanout,
+}
+
+impl StageELifecycleCase {
+    fn as_matrix_key(self) -> &'static str {
+        match self {
+            StageELifecycleCase::DropRemoteIndexBeforeFanout => "drop_remote_index_before_fanout",
+        }
+    }
+
+    fn script_name(self) -> &'static str {
+        "scripts/run_spire_multicluster_stage_e_lifecycle_pg18.sh"
+    }
+}
+
+fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecycleCase, String> {
+    match value {
+        "drop_remote_index_before_fanout" | "drop-remote-index-before-fanout" => {
+            Ok(StageELifecycleCase::DropRemoteIndexBeforeFanout)
+        }
+        other => Err(format!(
+            "unsupported Stage E lifecycle case {other:?}; supported: drop_remote_index_before_fanout"
+        )),
+    }
+}
+
 async fn run_transport_overlap_pg18(args: TransportOverlapPg18Args) -> Result<()> {
     if args.pg != 18 {
         bail!("transport-overlap-pg18 requires --pg 18, got {}", args.pg);
@@ -337,6 +419,69 @@ async fn run_stage_e_fault_pg18(args: StageEFaultPg18Args) -> Result<()> {
     run_status(command)
         .await
         .wrap_err("running SPIRE PG18 Stage E fault fixture")
+}
+
+async fn run_stage_e_lifecycle_pg18(args: StageELifecyclePg18Args) -> Result<()> {
+    if args.pg != 18 {
+        bail!("lifecycle-pg18 requires --pg 18, got {}", args.pg);
+    }
+    let repo_root = repo_root()?;
+    let pgbin = match args.pgbin {
+        Some(path) => path,
+        None => {
+            let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+            find_pgrx_install(args.pg, &pgrx_home)?.bin_dir
+        }
+    };
+    let script = repo_root.join(args.case.script_name());
+    if !script.is_file() {
+        bail!(
+            "SPIRE Stage E lifecycle fixture script is missing: {}",
+            script.display()
+        );
+    }
+
+    crate::ecaz_println!("[spire-multicluster] repo={}", repo_root.display());
+    crate::ecaz_println!("[spire-multicluster] pgbin={}", pgbin.display());
+    crate::ecaz_println!(
+        "[spire-multicluster] lifecycle_case={}",
+        args.case.as_matrix_key()
+    );
+    if let Some(artifact_dir) = &args.artifact_dir {
+        crate::ecaz_println!(
+            "[spire-multicluster] artifact_dir={}",
+            artifact_dir.display()
+        );
+    }
+
+    let mut command = Command::new("bash");
+    command
+        .arg(&script)
+        .arg("--case")
+        .arg(args.case.as_matrix_key())
+        .arg("--pgbin")
+        .arg(&pgbin)
+        .current_dir(&repo_root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    push_path_arg(&mut command, "--artifact-dir", args.artifact_dir.as_ref());
+    push_path_arg(&mut command, "--run-dir", args.run_dir.as_ref());
+    push_path_arg(&mut command, "--log-dir", args.log_dir.as_ref());
+    push_path_arg(&mut command, "--smoke-log", args.smoke_log.as_ref());
+    push_u16_arg(&mut command, "--coord-port", args.coord_port);
+    push_u16_arg(&mut command, "--remote-ready-port", args.remote_ready_port);
+    if let Some(run_id) = args.run_id {
+        command.arg("--run-id").arg(run_id);
+    }
+    if args.skip_install {
+        command.arg("--skip-install");
+    }
+
+    run_status(command)
+        .await
+        .wrap_err("running SPIRE PG18 Stage E lifecycle fixture")
 }
 
 fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
