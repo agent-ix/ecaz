@@ -150,7 +150,9 @@ pk_value)`. It looks up `node_id` and `served_epoch` from
 then deletes the coordinator placement row in the local transaction. The
 existing transaction callback resolves the remote prepared transaction on
 local commit or abort, so the remote heap delete and placement-directory
-delete commit or roll back together.
+delete commit or roll back together. If the placement row points at local
+node `0`, the same helper deletes directly from the coordinator heap and
+removes the placement row without opening a remote transaction.
 
 ### UPDATE of the embedding column
 

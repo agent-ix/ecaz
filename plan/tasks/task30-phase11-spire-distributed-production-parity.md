@@ -1083,6 +1083,9 @@ v1 write contract from ADR-069:
       `ec_spire_remote_delete_tuple_payload(...)` endpoint, proving a DELETE is
       prepared remotely while the placement row is removed locally in the same
       transaction.
+    - [x] Packet `30842` accepts placement rows with `node_id = 0` and applies
+      those deletes directly to the coordinator heap while removing the
+      placement row in the same local transaction.
   - [ ] wire transparent `DELETE ... WHERE pk = ...` into a ModifyTable/view
     hook; row-level table triggers cannot capture remote-owned rows because the
     coordinator heap row is suppressed by the INSERT trigger.

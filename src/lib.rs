@@ -8041,8 +8041,8 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             })?
     })
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    if node_id <= 0 {
-        pgrx::error!("ec_spire coordinator delete placement points at local node 0");
+    if node_id < 0 {
+        pgrx::error!("ec_spire coordinator delete placement node_id must not be negative");
     }
     if served_epoch <= 0 {
         pgrx::error!("ec_spire coordinator delete placement served_epoch must be greater than 0");
@@ -8054,6 +8054,44 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             "ec_spire_prepare_coordinator_delete_tuple_payload",
         )
     };
+    if node_id == 0 {
+        let heap_relation_oid = unsafe {
+            (*index_relation)
+                .rd_index
+                .as_ref()
+                .expect("opened index relation should expose pg_index metadata")
+                .indrelid
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let deleted_count = ec_spire_delete_tuple_payload_on_heap(
+            heap_relation_oid,
+            &pk_column,
+            &pk_value,
+            "ec_spire_prepare_coordinator_delete_tuple_payload",
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if deleted_count != 1 {
+            pgrx::error!(
+                "ec_spire coordinator local delete expected exactly one row, got {}",
+                deleted_count
+            );
+        }
+        let placement_deleted = ec_spire_delete_placement_row(index_oid, &pk_value)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        return TableIterator::once((
+            index_oid,
+            pk_value,
+            0,
+            served_epoch,
+            "none".to_owned(),
+            false,
+            false,
+            i64::try_from(deleted_count).expect("deleted count should fit i64"),
+            placement_deleted,
+            "local_delete_applied",
+            "done",
+        ));
+    }
     let delete_row = unsafe {
         am::spire_coordinator_delete_prepare_remote_tuple_payload(
             index_relation,
@@ -8072,36 +8110,8 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         );
     }
 
-    let placement_deleted = Spi::connect_mut(|client| {
-        client
-            .select(
-                "DELETE FROM ec_spire_placement \
-                  WHERE index_oid = $1::oid \
-                    AND pk_value = $2::bytea \
-              RETURNING true AS deleted",
-                None,
-                &[index_oid.into(), pk_value.clone().into()],
-            )
-            .map_err(|e| format!("ec_spire coordinator delete placement delete failed: {e}"))?
-            .map(|row| {
-                row["deleted"]
-                    .value::<bool>()
-                    .map_err(|e| {
-                        format!("ec_spire coordinator delete placement delete decode failed: {e}")
-                    })?
-                    .ok_or_else(|| {
-                        "ec_spire coordinator delete placement delete result is null".to_owned()
-                    })
-            })
-            .next()
-            .transpose()
-            .map(|value| {
-                value.ok_or_else(|| {
-                    "ec_spire coordinator delete placement row disappeared before delete".to_owned()
-                })
-            })?
-    })
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let placement_deleted =
+        ec_spire_delete_placement_row(index_oid, &pk_value).unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
         index_oid,
@@ -13495,6 +13505,38 @@ fn ec_spire_reject_distributed_embedding_update() -> ! {
     unreachable!();
 }
 
+fn ec_spire_delete_placement_row(index_oid: pg_sys::Oid, pk_value: &[u8]) -> Result<bool, String> {
+    Spi::connect_mut(|client| {
+        client
+            .select(
+                "DELETE FROM ec_spire_placement \
+                  WHERE index_oid = $1::oid \
+                    AND pk_value = $2::bytea \
+              RETURNING true AS deleted",
+                None,
+                &[index_oid.into(), pk_value.to_vec().into()],
+            )
+            .map_err(|e| format!("ec_spire coordinator delete placement delete failed: {e}"))?
+            .map(|row| {
+                row["deleted"]
+                    .value::<bool>()
+                    .map_err(|e| {
+                        format!("ec_spire coordinator delete placement delete decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator delete placement delete result is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()
+            .map(|value| {
+                value.ok_or_else(|| {
+                    "ec_spire coordinator delete placement row disappeared before delete".to_owned()
+                })
+            })?
+    })
+}
+
 #[pg_extern(strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_insert_tuple_payload(
@@ -13623,6 +13665,40 @@ fn ec_spire_update_tuple_payload_on_heap(
                 u64::try_from(value).map_err(|_| {
                     format!("{context} remote tuple payload updated_count is negative")
                 })
+            })
+    })
+}
+
+fn ec_spire_delete_tuple_payload_on_heap(
+    heap_relation_oid: pg_sys::Oid,
+    pk_column: &str,
+    pk_value: &[u8],
+    context: &str,
+) -> Result<u64, String> {
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &[pk_column.to_owned()])
+        .map_err(|e| format!("{context} {e}"))?;
+    let heap_relation_regclass =
+        ec_spire_relation_regclass_text(heap_relation_oid).map_err(|e| format!("{context} {e}"))?;
+    let pk_identifier = ec_spire_quote_identifier(pk_column);
+    let delete_sql = format!(
+        "WITH deleted AS ( \
+             DELETE FROM {heap_relation_regclass} AS target \
+              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $1::bytea \
+          RETURNING 1 \
+         ) \
+         SELECT count(*)::bigint AS deleted_count FROM deleted"
+    );
+    Spi::connect_mut(|client| {
+        client
+            .select(delete_sql.as_str(), None, &[pk_value.to_vec().into()])
+            .map_err(|e| format!("{context} tuple payload delete failed: {e}"))?
+            .first()
+            .get_one::<i64>()
+            .map_err(|e| format!("{context} tuple payload deleted_count decode failed: {e}"))?
+            .ok_or_else(|| format!("{context} tuple payload deleted_count is null"))
+            .and_then(|value| {
+                u64::try_from(value)
+                    .map_err(|_| format!("{context} tuple payload deleted_count is negative"))
             })
     })
 }
@@ -13789,31 +13865,20 @@ fn ec_spire_remote_delete_tuple_payload(
     if pk_value.is_empty() {
         pgrx::error!("ec_spire_remote_delete_tuple_payload pk_value must not be empty");
     }
-    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &[pk_column.clone()])
-        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
-    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
-    let pk_identifier = ec_spire_quote_identifier(&pk_column);
-    let delete_sql = format!(
-        "WITH deleted AS ( \
-             DELETE FROM {heap_relation_regclass} AS target \
-              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $1::bytea \
-          RETURNING 1 \
-         ) \
-         SELECT count(*)::bigint AS deleted_count FROM deleted"
-    );
-    let deleted_count = Spi::connect_mut(|client| {
-        client
-            .select(delete_sql.as_str(), None, &[pk_value.into()])
-            .map_err(|e| format!("ec_spire remote tuple payload delete failed: {e}"))?
-            .first()
-            .get_one::<i64>()
-            .map_err(|e| format!("ec_spire remote tuple payload deleted_count decode failed: {e}"))?
-            .ok_or_else(|| "ec_spire remote tuple payload deleted_count is null".to_owned())
-    })
-    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
+    let deleted_count = ec_spire_delete_tuple_payload_on_heap(
+        heap_relation_oid,
+        &pk_column,
+        &pk_value,
+        "ec_spire_remote_delete_tuple_payload",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
 
-    TableIterator::once((index_oid, heap_relation_oid, deleted_count, "ready"))
+    TableIterator::once((
+        index_oid,
+        heap_relation_oid,
+        i64::try_from(deleted_count).expect("deleted count should fit i64"),
+        "ready",
+    ))
 }
 
 #[pg_extern(strict)]
@@ -21269,6 +21334,78 @@ mod tests {
         );
         assert_eq!(placement_count, 0);
         let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_local_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator delete table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_delete_local_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1002, 'local delete me', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('d0d1d2d3d4d5d6d7d8d9dadbdcdddedf', 'hex'))",
+        )
+        .expect("local coordinator delete row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_local_payload_idx \
+             ON ec_spire_coord_delete_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator delete ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_delete_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_local_payload_idx'::regclass, int8send(1002::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('d0d1d2d3d4d5d6d7d8d9dadbdcdddedf', 'hex'))"
+        ))
+        .expect("local delete placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(1002::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator delete helper query should succeed")
+        .expect("local coordinator delete helper should return a row");
+        let local_row_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_coord_delete_local_payload_sql WHERE id = 1002",
+        )
+        .expect("local delete row count query should succeed")
+        .expect("local delete row count should exist");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_local_payload_idx'::regclass \
+                AND pk_value = int8send(1002::bigint)::bytea",
+        )
+        .expect("local delete placement count query should succeed")
+        .expect("local delete placement count should exist");
+
+        assert_eq!(
+            result,
+            format!("0|{active_epoch}|none|false|false|1|true|local_delete_applied|done")
+        );
+        assert_eq!(local_row_count, 0);
+        assert_eq!(placement_count, 0);
     }
 
     #[pg_test]
