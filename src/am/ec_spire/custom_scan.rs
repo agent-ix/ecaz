@@ -20,8 +20,11 @@ pub(crate) struct SpireCustomScanIndexEligibilityRow {
     pub(crate) active_epoch: u64,
     pub(crate) local_placement_count: u64,
     pub(crate) remote_node_count: u64,
+    pub(crate) remote_available_node_count: u64,
     pub(crate) remote_placement_count: u64,
     pub(crate) remote_available_placement_count: u64,
+    pub(crate) remote_unavailable_placement_count: u64,
+    pub(crate) all_remote_placements_available: bool,
     pub(crate) eligible_for_custom_scan: bool,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,
@@ -31,6 +34,7 @@ static mut PREVIOUS_SET_REL_PATHLIST_HOOK: pg_sys::set_rel_pathlist_hook_type = 
 static mut CUSTOM_SCAN_REGISTERED: bool = false;
 static mut REL_PATHLIST_HOOK_INSTALLED: bool = false;
 
+// Intentionally inert until the planner path-generation slice builds CustomPath nodes.
 static mut CUSTOM_PATH_METHODS: pg_sys::CustomPathMethods = pg_sys::CustomPathMethods {
     CustomName: CUSTOM_SCAN_NAME.as_ptr(),
     PlanCustomPath: Some(ec_spire_plan_custom_path),
@@ -100,23 +104,28 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
             active_epoch: 0,
             local_placement_count: 0,
             remote_node_count: 0,
+            remote_available_node_count: 0,
             remote_placement_count: 0,
             remote_available_placement_count: 0,
+            remote_unavailable_placement_count: 0,
+            all_remote_placements_available: false,
             eligible_for_custom_scan: false,
             status: "no_active_epoch",
             next_step: "keep local-only ec_spire index AM path",
         };
     }
 
-    let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
-        super::load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)
+    let placement_directory = unsafe {
+        load_custom_scan_placement_directory(index_relation, root_control)
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     };
     let active_epoch = root_control.active_epoch;
     let mut local_placement_count = 0_u64;
     let mut remote_placement_count = 0_u64;
     let mut remote_available_placement_count = 0_u64;
+    let mut remote_unavailable_placement_count = 0_u64;
     let mut remote_node_ids = std::collections::BTreeSet::new();
+    let mut remote_available_node_ids = std::collections::BTreeSet::new();
 
     for placement in placement_directory.entries {
         if placement.node_id == meta::SPIRE_LOCAL_NODE_ID {
@@ -127,17 +136,26 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
             if placement.state == meta::SpirePlacementState::Available {
                 remote_available_placement_count =
                     remote_available_placement_count.saturating_add(1);
+                remote_available_node_ids.insert(placement.node_id);
+            } else {
+                remote_unavailable_placement_count =
+                    remote_unavailable_placement_count.saturating_add(1);
             }
         }
     }
 
     let eligible = active_epoch != 0 && remote_available_placement_count > 0;
+    let all_remote_placements_available =
+        remote_placement_count > 0 && remote_unavailable_placement_count == 0;
     SpireCustomScanIndexEligibilityRow {
         active_epoch,
         local_placement_count,
         remote_node_count: remote_node_ids.len() as u64,
+        remote_available_node_count: remote_available_node_ids.len() as u64,
         remote_placement_count,
         remote_available_placement_count,
+        remote_unavailable_placement_count,
+        all_remote_placements_available,
         eligible_for_custom_scan: eligible,
         status: if eligible {
             "customscan_candidate"
@@ -156,6 +174,30 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
     }
 }
 
+unsafe fn load_custom_scan_placement_directory(
+    index_relation: pg_sys::Relation,
+    root_control: meta::SpireRootControlState,
+) -> Result<meta::SpirePlacementDirectory, String> {
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire cannot load placement directory for empty active epoch".to_owned());
+    }
+
+    // ADR-067 planner eligibility needs only placement availability. Avoid the
+    // heavier fanout loader used by executor paths, which also decodes epoch
+    // and object manifests.
+    let placement_bytes = unsafe {
+        super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)?
+    };
+    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+    if placement_directory.epoch != root_control.active_epoch {
+        return Err(format!(
+            "ec_spire root/control active epoch {} does not match placement directory {}",
+            root_control.active_epoch, placement_directory.epoch
+        ));
+    }
+    Ok(placement_directory)
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     root: *mut pg_sys::PlannerInfo,
@@ -168,6 +210,7 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
+    // CustomPath generation lands in the next planner slice.
 }
 
 #[pg_guard]
@@ -243,8 +286,11 @@ mod tests {
             active_epoch: 7,
             local_placement_count: 1,
             remote_node_count: 1,
+            remote_available_node_count: 1,
             remote_placement_count: 2,
             remote_available_placement_count: 2,
+            remote_unavailable_placement_count: 0,
+            all_remote_placements_available: true,
             eligible_for_custom_scan: true,
             status: "customscan_candidate",
             next_step:

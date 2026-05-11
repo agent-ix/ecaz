@@ -961,8 +961,11 @@ fn ec_spire_custom_scan_index_eligibility(
         name!(active_epoch, i64),
         name!(local_placement_count, i64),
         name!(remote_node_count, i64),
+        name!(remote_available_node_count, i64),
         name!(remote_placement_count, i64),
         name!(remote_available_placement_count, i64),
+        name!(remote_unavailable_placement_count, i64),
+        name!(all_remote_placements_available, bool),
         name!(eligible_for_custom_scan, bool),
         name!(status, &'static str),
         name!(next_step, &'static str),
@@ -977,10 +980,15 @@ fn ec_spire_custom_scan_index_eligibility(
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
         i64::try_from(row.local_placement_count).expect("local placement count should fit in i64"),
         i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.remote_available_node_count)
+            .expect("remote available node count should fit in i64"),
         i64::try_from(row.remote_placement_count)
             .expect("remote placement count should fit in i64"),
         i64::try_from(row.remote_available_placement_count)
             .expect("remote available placement count should fit in i64"),
+        i64::try_from(row.remote_unavailable_placement_count)
+            .expect("remote unavailable placement count should fit in i64"),
+        row.all_remote_placements_available,
         row.eligible_for_custom_scan,
         row.status,
         row.next_step,
@@ -24306,6 +24314,40 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_customscan_eligibility_no_active_epoch() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_empty_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("empty table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_empty_sql_idx \
+             ON ec_spire_customscan_empty_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("empty ec_spire index creation should succeed");
+
+        let eligibility_from = "FROM ec_spire_custom_scan_index_eligibility(\
+             'ec_spire_customscan_empty_sql_idx'::regclass)";
+        let status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
+            .expect("empty eligibility status query should succeed")
+            .expect("empty eligibility status should exist");
+        let eligible = Spi::get_one::<bool>(&format!(
+            "SELECT eligible_for_custom_scan {eligibility_from}"
+        ))
+        .expect("empty eligibility query should succeed")
+        .expect("empty eligibility value should exist");
+        let remote_placement_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_placement_count {eligibility_from}"))
+                .expect("empty remote placement count query should succeed")
+                .expect("empty remote placement count should exist");
+
+        assert_eq!(status, "no_active_epoch");
+        assert!(!eligible);
+        assert_eq!(remote_placement_count, 0);
+    }
+
+    #[pg_test]
     fn test_ec_spire_custom_scan_index_eligibility_remote() {
         Spi::run(
             "CREATE TABLE ec_spire_customscan_eligibility_sql \
@@ -24365,16 +24407,111 @@ mod tests {
             Spi::get_one::<i64>(&format!("SELECT remote_node_count {eligibility_from}"))
                 .expect("remote node count query should succeed")
                 .expect("remote node count should exist");
+        let remote_available_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_available_node_count {eligibility_from}"
+        ))
+        .expect("remote available node count query should succeed")
+        .expect("remote available node count should exist");
         let remote_available_placement_count = Spi::get_one::<i64>(&format!(
             "SELECT remote_available_placement_count {eligibility_from}"
         ))
         .expect("remote available placement count query should succeed")
         .expect("remote available placement count should exist");
+        let remote_unavailable_placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_unavailable_placement_count {eligibility_from}"
+        ))
+        .expect("remote unavailable placement count query should succeed")
+        .expect("remote unavailable placement count should exist");
+        let all_remote_placements_available = Spi::get_one::<bool>(&format!(
+            "SELECT all_remote_placements_available {eligibility_from}"
+        ))
+        .expect("all remote placements available query should succeed")
+        .expect("all remote placements available value should exist");
 
         assert_eq!(remote_status, "customscan_candidate");
         assert!(remote_eligible);
         assert_eq!(remote_node_count, 1);
+        assert_eq!(remote_available_node_count, 1);
         assert_eq!(remote_available_placement_count, 1);
+        assert_eq!(remote_unavailable_placement_count, 0);
+        assert!(all_remote_placements_available);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_customscan_eligibility_no_available_remote() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_unavailable_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_unavailable_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_unavailable_sql_idx \
+             ON ec_spire_customscan_unavailable_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_unavailable_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_unavailable_sql_idx'::regclass) \
+             ORDER BY leaf_pid LIMIT 1",
+        )
+        .expect("leaf pid query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+            am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable");
+        }
+
+        let eligibility_from = "FROM ec_spire_custom_scan_index_eligibility(\
+             'ec_spire_customscan_unavailable_sql_idx'::regclass)";
+        let status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
+            .expect("unavailable eligibility status query should succeed")
+            .expect("unavailable eligibility status should exist");
+        let eligible = Spi::get_one::<bool>(&format!(
+            "SELECT eligible_for_custom_scan {eligibility_from}"
+        ))
+        .expect("unavailable eligibility query should succeed")
+        .expect("unavailable eligibility value should exist");
+        let remote_available_node_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_available_node_count {eligibility_from}"
+        ))
+        .expect("remote available node count query should succeed")
+        .expect("remote available node count should exist");
+        let remote_available_placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_available_placement_count {eligibility_from}"
+        ))
+        .expect("remote available placement count query should succeed")
+        .expect("remote available placement count should exist");
+        let remote_unavailable_placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_unavailable_placement_count {eligibility_from}"
+        ))
+        .expect("remote unavailable placement count query should succeed")
+        .expect("remote unavailable placement count should exist");
+        let all_remote_placements_available = Spi::get_one::<bool>(&format!(
+            "SELECT all_remote_placements_available {eligibility_from}"
+        ))
+        .expect("all remote placements available query should succeed")
+        .expect("all remote placements available value should exist");
+
+        assert_eq!(status, "no_available_remote_placements");
+        assert!(!eligible);
+        assert_eq!(remote_available_node_count, 0);
+        assert_eq!(remote_available_placement_count, 0);
+        assert_eq!(remote_unavailable_placement_count, 1);
+        assert!(!all_remote_placements_available);
     }
 
     #[pg_test]

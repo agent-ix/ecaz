@@ -260,15 +260,15 @@ fault/lifecycle matrices remain reusable. The final distributed read path now
 returns tuples directly from `EcSpireDistributedScan`; the index AM remains the
 local-only path.
 
-- [ ] Extend the Stage B production endpoint with the ADR-068 tuple-payload
+- [x] Extend the Stage B production endpoint with the ADR-068 tuple-payload
   side-channel while preserving the existing 18-column candidate envelope,
   fingerprint, identity, version, and status fields.
-  - [ ] Let the coordinator declare required projected columns at request build
+  - [x] Let the coordinator declare required projected columns at request build
     time.
-  - [ ] Key tuple payloads by `(node_id, vec_id)` so the executor can attach
+  - [x] Key tuple payloads by `(node_id, vec_id)` so the executor can attach
     payloads to heap-visible candidates without changing the candidate
     envelope shape.
-  - [ ] Add focused PG18 coverage for tuple-payload responses. Existing Stage B
+  - [x] Add focused PG18 coverage for tuple-payload responses. Existing Stage B
     endpoint and identity tests must stay valid.
 - [ ] Register the `EcSpireDistributedScan` CustomScan provider and planner
   path.
@@ -601,12 +601,13 @@ admission, per-query budget/governance gates, overlapped transport probes,
 per-node transport and compact-receive isolation, remote-side regclass
 resolution, executor-owned receive request state, state-owned compact receive
 execution, cancel-clears-batch invariants, strict compact merge preconditions,
-and a routing-only selected-leaf PID handoff for the future AM scan integration.
+and a routing-only selected-leaf PID handoff for the future CustomScan
+integration.
 This is not a production-ready distributed scan claim. The remaining blockers
 are C2 cancellation propagation to in-flight remote work, C3/C4 production use
-and strict/degraded normalization at the AM boundary, C5 AM scan integration,
-Stage D remote heap resolution, and the local multi-instance fault/readiness
-bundle.
+and strict/degraded normalization at the CustomScan executor boundary, C5
+CustomScan read integration, Stage D tuple delivery, and the local
+multi-instance fault/readiness bundle.
 
 Stage C update, packet 30753: the production async transport and compact
 candidate receive adapters now enter the same global/per-node advisory
@@ -818,7 +819,7 @@ CustomScan read-path work:
     the unchanged 18-column candidate envelope.
     - [x] Packet `30807` exposes `payload_key = 'node_id_vec_id'` and leaves
       the Stage B envelope endpoint unchanged.
-  - [ ] Existing identity, fingerprint, version, and endpoint-status fields are
+  - [x] Existing identity, fingerprint, version, and endpoint-status fields are
     unchanged and still gate merge eligibility.
   - [x] Add a focused tuple-payload PG18 fixture.
     - [x] Packet `30807` covers `id,title` projection payloads and proves the
@@ -838,6 +839,10 @@ CustomScan read-path work:
       identify active remote placements without using the superseded AM-local
       materialization-gated placement snapshot. Query-shape detection and actual
       path creation remain open.
+    - [x] Packet `30808` narrows that eligibility read to the placement
+      directory object tuple, adds available-node / unavailable-placement /
+      all-available signals for planner gating, and covers `no_active_epoch`
+      plus `no_available_remote_placements` SQL states.
   - [ ] Add a cost model that chooses CustomScan when active remote placements
     exist.
   - [ ] Declare path keys so PostgreSQL can consume the ordered output without
