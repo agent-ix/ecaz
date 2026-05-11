@@ -7540,6 +7540,46 @@ fn ec_spire_classify_centroid(
 }
 
 #[pg_extern(stable, strict)]
+fn ec_spire_plan_coordinator_insert(
+    index_oid: pg_sys::Oid,
+    pk_value: Vec<u8>,
+    embedding: Vec<f32>,
+    source_identity: Vec<u8>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(pk_value, Vec<u8>),
+        name!(node_id, i64),
+        name!(centroid_id, i64),
+        name!(served_epoch, i64),
+        name!(source_identity, Vec<u8>),
+    ),
+> {
+    if pk_value.is_empty() {
+        pgrx::error!("ec_spire_plan_coordinator_insert pk_value must not be empty");
+    }
+    if source_identity.len() != 16 {
+        pgrx::error!("ec_spire_plan_coordinator_insert source_identity must be exactly 16 bytes");
+    }
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_plan_coordinator_insert") };
+    let classification = unsafe { am::spire_classify_centroid(index_relation, &embedding) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((
+        index_oid,
+        pk_value,
+        i64::from(node_id),
+        i64::try_from(centroid_id).expect("centroid id should fit in i64"),
+        i64::try_from(epoch).expect("served epoch should fit in i64"),
+        source_identity,
+    ))
+}
+
+#[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
     index_oid: pg_sys::Oid,
@@ -18806,6 +18846,133 @@ mod tests {
             classification,
             format!("9,{expected_leaf_pid},{active_epoch}")
         );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_plan_coordinator_insert_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_plan_sql (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_plan_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_plan_sql_idx ON ec_spire_insert_plan_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_insert_plan_sql_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let expected_centroid_id = Spi::get_one::<i64>(
+            "SELECT child_pid \
+               FROM ec_spire_index_routing_centroid_snapshot(\
+                    'ec_spire_insert_plan_sql_idx'::regclass) r \
+               CROSS JOIN LATERAL ( \
+                    SELECT sum(q.value * c.value)::real AS score \
+                      FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                      JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+               ) scored \
+              WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+              ORDER BY scored.score DESC, centroid_index, child_pid \
+              LIMIT 1",
+        )
+        .expect("expected centroid query should succeed")
+        .expect("expected centroid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_insert_plan_sql_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 7)
+        };
+
+        let plan_row = Spi::get_one::<String>(
+            "SELECT index_oid::text || ':' || encode(pk_value, 'hex') || ':' || \
+                    node_id::text || ':' || centroid_id::text || ':' || \
+                    served_epoch::text || ':' || encode(source_identity, 'hex') \
+               FROM ec_spire_plan_coordinator_insert(\
+                    'ec_spire_insert_plan_sql_idx'::regclass, \
+                    decode('010203', 'hex'), \
+                    ARRAY[1.0, 0.0]::real[], \
+                    decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        )
+        .expect("coordinator insert plan query should succeed")
+        .expect("coordinator insert plan should exist");
+
+        assert_eq!(
+            plan_row,
+            format!(
+                "{}:010203:7:{expected_centroid_id}:{active_epoch}:000102030405060708090a0b0c0d0e0f",
+                u32::from(index_oid)
+            )
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "pk_value must not be empty")]
+    fn test_ec_spire_plan_coordinator_insert_rejects_empty_pk_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_plan_empty_pk_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_plan_empty_pk_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_plan_empty_pk_idx \
+             ON ec_spire_insert_plan_empty_pk_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run(
+            "SELECT * FROM ec_spire_plan_coordinator_insert(\
+                 'ec_spire_insert_plan_empty_pk_idx'::regclass, \
+                 ''::bytea, \
+                 ARRAY[1.0, 0.0]::real[], \
+                 decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        )
+        .expect("coordinator insert planning should reject empty pk");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "source_identity must be exactly 16 bytes")]
+    fn test_ec_spire_plan_coordinator_insert_rejects_bad_identity_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_plan_bad_identity_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_plan_bad_identity_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_plan_bad_identity_idx \
+             ON ec_spire_insert_plan_bad_identity_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("ec_spire index creation should succeed");
+        Spi::run(
+            "SELECT * FROM ec_spire_plan_coordinator_insert(\
+                 'ec_spire_insert_plan_bad_identity_idx'::regclass, \
+                 decode('01', 'hex'), \
+                 ARRAY[1.0, 0.0]::real[], \
+                 decode('0001', 'hex'))",
+        )
+        .expect("coordinator insert planning should reject bad source identity");
     }
 
     #[pg_test]

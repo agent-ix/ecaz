@@ -172,6 +172,15 @@ delivered in a separate task with its own packets. The coordinator-side
 classification helper and batch-register primitive are the only v1
 contracts.
 
+The same classification and placement-entry preparation used by
+coordinator-routed INSERT is exposed as
+`ec_spire_plan_coordinator_insert(index_oid, pk_value, embedding,
+source_identity)`. It is a side-effect-free planning primitive: it
+validates the canonical primary-key bytes and source identity, classifies
+the embedding, and returns the placement tuple fields. The later
+coordinator-routed INSERT executor must persist that placement tuple only
+after remote prepare succeeds.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

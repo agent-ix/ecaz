@@ -985,6 +985,10 @@ v1 write contract from ADR-069:
     entries before coordinator-routed writes consume the primitive.
 - [ ] Coordinator-routed INSERT:
   - [ ] classify embedding to target `node_id`;
+    - [x] Packet `30828` adds the side-effect-free
+      `ec_spire_plan_coordinator_insert(...)` primitive that validates
+      `pk_value`/`source_identity`, calls the active classifier, and returns the
+      placement tuple fields the 2PC INSERT path will persist.
   - [ ] forward remote INSERT through the Stage C transport;
   - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
     remote commit for atomicity;
