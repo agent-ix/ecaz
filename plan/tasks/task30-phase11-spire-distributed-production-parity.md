@@ -844,6 +844,11 @@ Goal: prove distributed correctness locally before AWS.
     documenting the filenode contribution to endpoint fingerprints and
     confirming the existing identity-cache matrix still covers filenode-driven
     fingerprint changes.
+  - [x] Packet `30795` adds
+    `create_index_concurrently_new_descriptor` runtime evidence: the fixture
+    builds receive requests against an old descriptor, injects CREATE INDEX
+    CONCURRENTLY plus descriptor generation advancement before receive, and
+    verifies the already-planned old descriptor remains the receive target.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

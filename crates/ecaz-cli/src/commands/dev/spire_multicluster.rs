@@ -275,6 +275,7 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StageELifecycleCase {
     CreateIndexConcurrentlyMissingDescriptor,
+    CreateIndexConcurrentlyNewDescriptor,
     DropRemoteIndexBeforeFanout,
     DropRemoteIndexInFlight,
     ReindexRemoteIndexBeforeFanout,
@@ -286,6 +287,9 @@ impl StageELifecycleCase {
         match self {
             StageELifecycleCase::CreateIndexConcurrentlyMissingDescriptor => {
                 "create_index_concurrently_missing_descriptor"
+            }
+            StageELifecycleCase::CreateIndexConcurrentlyNewDescriptor => {
+                "create_index_concurrently_new_descriptor"
             }
             StageELifecycleCase::DropRemoteIndexBeforeFanout => "drop_remote_index_before_fanout",
             StageELifecycleCase::DropRemoteIndexInFlight => "drop_remote_index_in_flight",
@@ -307,6 +311,10 @@ fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecy
         | "create-index-concurrently-missing-descriptor" => {
             Ok(StageELifecycleCase::CreateIndexConcurrentlyMissingDescriptor)
         }
+        "create_index_concurrently_new_descriptor"
+        | "create-index-concurrently-new-descriptor" => {
+            Ok(StageELifecycleCase::CreateIndexConcurrentlyNewDescriptor)
+        }
         "drop_remote_index_before_fanout" | "drop-remote-index-before-fanout" => {
             Ok(StageELifecycleCase::DropRemoteIndexBeforeFanout)
         }
@@ -320,7 +328,7 @@ fn parse_stage_e_lifecycle_case(value: &str) -> std::result::Result<StageELifecy
             Ok(StageELifecycleCase::ReindexRemoteIndexInFlight)
         }
         other => Err(format!(
-            "unsupported Stage E lifecycle case {other:?}; supported: create_index_concurrently_missing_descriptor, drop_remote_index_before_fanout, drop_remote_index_in_flight, reindex_remote_index_before_fanout, reindex_remote_index_in_flight"
+            "unsupported Stage E lifecycle case {other:?}; supported: create_index_concurrently_missing_descriptor, create_index_concurrently_new_descriptor, drop_remote_index_before_fanout, drop_remote_index_in_flight, reindex_remote_index_before_fanout, reindex_remote_index_in_flight"
         )),
     }
 }

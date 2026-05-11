@@ -15405,6 +15405,31 @@ mod tests {
             .unwrap_or_else(|e| pgrx::error!("{function_name} remote SQL execution failed: {e}"));
     }
 
+    fn ec_spire_test_remote_endpoint_identity_hex(
+        function_name: &str,
+        conninfo_secret_name: &str,
+        remote_index_regclass: &str,
+    ) -> String {
+        let conninfo = ec_spire_test_conninfo_from_secret(function_name, conninfo_secret_name);
+        let mut client =
+            postgres::Client::connect(&conninfo, postgres::NoTls).unwrap_or_else(|e| {
+                pgrx::error!("{function_name} remote endpoint identity connection failed: {e}")
+            });
+        let remote_index_regclass = remote_index_regclass.replace('\'', "''");
+        client
+            .query_one(
+                &format!(
+                    "SELECT profile_fingerprint \
+                       FROM ec_spire_remote_search_endpoint_identity('{remote_index_regclass}'::regclass)"
+                ),
+                &[],
+            )
+            .and_then(|row| row.try_get::<_, String>(0))
+            .unwrap_or_else(|e| {
+                pgrx::error!("{function_name} remote endpoint identity query failed: {e}")
+            })
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn ec_spire_test_production_candidate_receive(
@@ -15626,6 +15651,109 @@ mod tests {
             "ec_spire_test_prod_receive_after_remote_sql_summary",
             &remote_sql_conninfo_secret_name,
             &remote_sql,
+        );
+        let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
+            requests,
+            &consistency_mode,
+        );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.candidate_receive_sent_dispatch_count)
+                .expect("candidate receive sent count should fit in i64"),
+            i64::try_from(row.candidate_receive_ready_dispatch_count)
+                .expect("candidate receive ready count should fit in i64"),
+            i64::try_from(row.candidate_receive_failed_dispatch_count)
+                .expect("candidate receive failed count should fit in i64"),
+            row.first_candidate_receive_failure_category,
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn ec_spire_test_prod_receive_after_remote_descriptor_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        remote_index_regclasses: Vec<String>,
+        remote_index_identity_hexes: Vec<String>,
+        selected_pids: Vec<i64>,
+        requested_epoch: i64,
+        query: Vec<f32>,
+        top_k: i32,
+        consistency_mode: String,
+        remote_sql_conninfo_secret_name: String,
+        remote_sql: String,
+        descriptor_index_oid: pg_sys::Oid,
+        descriptor_node_id: i32,
+        descriptor_generation: i64,
+        descriptor_conninfo_secret_name: String,
+        descriptor_remote_index_regclass: String,
+        descriptor_state: String,
+        descriptor_last_served_epoch: i64,
+        descriptor_min_retained_epoch: i64,
+        descriptor_extension_version: String,
+        descriptor_last_error: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(candidate_receive_sent_dispatch_count, i64),
+            name!(candidate_receive_ready_dispatch_count, i64),
+            name!(candidate_receive_failed_dispatch_count, i64),
+            name!(first_candidate_receive_failure_category, &'static str),
+            name!(candidate_row_count, i64),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let function_name = "ec_spire_test_prod_receive_after_remote_descriptor_summary";
+        let requests = ec_spire_test_candidate_receive_requests(
+            function_name,
+            node_ids,
+            conninfo_secret_names,
+            remote_index_regclasses,
+            remote_index_identity_hexes,
+            selected_pids,
+            requested_epoch,
+            query,
+            top_k,
+            consistency_mode.clone(),
+        );
+        ec_spire_test_run_remote_sql_after_request_build(
+            function_name,
+            &remote_sql_conninfo_secret_name,
+            &remote_sql,
+        );
+        let descriptor_identity_hex = ec_spire_test_remote_endpoint_identity_hex(
+            function_name,
+            &remote_sql_conninfo_secret_name,
+            &descriptor_remote_index_regclass,
+        );
+        let descriptor_identity = hex::decode(&descriptor_identity_hex).unwrap_or_else(|e| {
+            pgrx::error!("{function_name} descriptor identity decode failed: {e}")
+        });
+        ec_spire_register_remote_node_descriptor(
+            descriptor_index_oid,
+            descriptor_node_id,
+            descriptor_generation,
+            descriptor_conninfo_secret_name,
+            descriptor_identity,
+            descriptor_remote_index_regclass,
+            descriptor_state,
+            descriptor_last_served_epoch,
+            descriptor_min_retained_epoch,
+            descriptor_extension_version,
+            descriptor_last_error,
         );
         let row = am::spire_remote_search_production_candidate_receive_summary_for_test(
             requests,

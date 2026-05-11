@@ -5,6 +5,7 @@ set -euo pipefail
 #
 # Supported cases:
 #   create_index_concurrently_missing_descriptor
+#   create_index_concurrently_new_descriptor
 #   drop_remote_index_before_fanout
 #   drop_remote_index_in_flight
 #   reindex_remote_index_before_fanout
@@ -33,6 +34,7 @@ Usage: scripts/run_spire_multicluster_stage_e_lifecycle_pg18.sh --case CASE [opt
 
 Cases:
   create_index_concurrently_missing_descriptor
+  create_index_concurrently_new_descriptor
   drop_remote_index_before_fanout
   drop_remote_index_in_flight
   reindex_remote_index_before_fanout
@@ -110,6 +112,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$LIFECYCLE_CASE" != "create_index_concurrently_missing_descriptor" \
+  && "$LIFECYCLE_CASE" != "create_index_concurrently_new_descriptor" \
   && "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" \
   && "$LIFECYCLE_CASE" != "drop_remote_index_in_flight" \
   && "$LIFECYCLE_CASE" != "reindex_remote_index_before_fanout" \
@@ -239,6 +242,7 @@ SQL
 prepare_remote_dropped_index
 coord_ready_identity_hex="$("${coord_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
 coord_ready_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
+extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHERE extname = 'ecaz'")"
 coord_ready_pids="$("${coord_psql[@]}" -At -F ',' -c "SELECT string_agg(leaf_pid::text, ',' ORDER BY leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
 lifecycle_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT lifecycle_case, ddl_event, fanout_timing, strict_action, strict_status, degraded_action, degraded_status, required_detection, next_executor_step FROM ec_spire_remote_search_stage_e_lifecycle_matrix() WHERE lifecycle_case = '$LIFECYCLE_CASE'")"
 
@@ -341,6 +345,89 @@ if [[ "$LIFECYCLE_CASE" == "create_index_concurrently_missing_descriptor" ]]; th
 
   run_missing_descriptor_case "strict" "$STRICT_LOG" "requires_remote_node_descriptor" "0" "1" "0" "none" "remote_node_descriptor"
   run_missing_descriptor_case "degraded" "$DEGRADED_LOG" "degraded_skipped" "1" "0" "1" "requires_remote_node_descriptor" "remote_heap_resolution"
+
+  echo "strict_log=$STRICT_LOG"
+  echo "degraded_log=$DEGRADED_LOG"
+  echo "stage_e_lifecycle_${LIFECYCLE_CASE}_passed=true"
+  echo "SPIRE Stage E lifecycle $LIFECYCLE_CASE PG18 fixture passed"
+  exit 0
+fi
+
+run_new_descriptor_case() {
+  local mode="$1"
+  local output_log="$2"
+  local descriptor_generation="$3"
+  local new_index_name="$4"
+  local case_coord_identity="$coord_ready_identity_hex"
+
+  prepare_remote_dropped_index
+  local case_old_identity_hex="$remote_dropped_identity_hex"
+  if [[ "$mode" == "degraded" ]]; then
+    "${remote_ready_psql[@]}" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    'ec_spire_stage_e_lifecycle_dropped_idx'::regclass::oid,
+    'degraded'
+);
+SQL
+    case_old_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_dropped_idx'::regclass)")"
+    "${coord_psql[@]}" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    'ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid,
+    'degraded'
+);
+SQL
+    case_coord_identity="$("${coord_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_lifecycle_coord_idx'::regclass)")"
+  fi
+
+  "${coord_psql[@]}" -c "SELECT ec_spire_register_remote_node_descriptor('ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid, 2, $((descriptor_generation - 1)), 'spire/remote/stage_e/lifecycle/dropped', decode('$case_old_identity_hex', 'hex'), 'ec_spire_stage_e_lifecycle_dropped_idx', 'active', $coord_ready_epoch, $coord_ready_epoch, '$extversion', 'none')" >/dev/null
+
+  local remote_sql
+  remote_sql="CREATE INDEX CONCURRENTLY $new_index_name ON ec_spire_stage_e_lifecycle_remote_sql USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq')"
+  local summary
+  summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, candidate_receive_sent_dispatch_count, candidate_receive_ready_dispatch_count, candidate_receive_failed_dispatch_count, first_candidate_receive_failure_category, candidate_row_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_prod_receive_after_remote_descriptor_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/lifecycle/dropped','spire/remote/stage_e/lifecycle/coord_ready']::text[], ARRAY['ec_spire_stage_e_lifecycle_dropped_idx','ec_spire_stage_e_lifecycle_coord_idx']::text[], ARRAY['$case_old_identity_hex','$case_coord_identity']::text[], ARRAY[$dropped_pid,$ready_pid]::bigint[], $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], 1, '$mode', 'spire/remote/stage_e/lifecycle/dropped', \$\$$remote_sql\$\$, 'ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid, 2, $descriptor_generation, 'spire/remote/stage_e/lifecycle/dropped', '$new_index_name', 'active', $coord_ready_epoch, $coord_ready_epoch, '$extversion', 'none')")"
+  local new_identity_hex
+  new_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('$new_index_name'::regclass)")"
+  local descriptor_row
+  descriptor_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, descriptor_generation, remote_index_regclass, encode(remote_index_identity, 'hex'), descriptor_state FROM ec_spire_remote_node_descriptor WHERE coordinator_index_oid = 'ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid AND node_id = 2")"
+
+  {
+    echo "lifecycle_row=$lifecycle_row"
+    echo "injection=CREATE INDEX CONCURRENTLY $new_index_name after request construction before receive; register descriptor_generation=$descriptor_generation before receive"
+    echo "old_descriptor_index=ec_spire_stage_e_lifecycle_dropped_idx"
+    echo "old_descriptor_identity=$case_old_identity_hex"
+    echo "new_descriptor_index=$new_index_name"
+    echo "new_descriptor_identity=$new_identity_hex"
+    echo "coord_ready_identity=$case_coord_identity"
+    echo "coord_ready_epoch=$coord_ready_epoch"
+    echo "coord_ready_pids=$coord_ready_pids"
+    echo "query_command=tests.ec_spire_test_prod_receive_after_remote_descriptor_summary(..., '$mode')"
+    echo "expected_status=requires_remote_heap_resolution"
+    echo "expected_candidate_receive_ready_dispatch_count=2"
+    echo "expected_candidate_receive_failed_dispatch_count=0"
+    echo "expected_degraded_skipped_dispatch_count=0"
+    echo "expected_next_executor_step=remote_heap_resolution"
+    echo "observed_descriptor_row=$descriptor_row"
+    echo "observed_summary=$summary"
+  } | tee "$output_log"
+
+  IFS=, read -r state_model dispatch_count sent_count ready_receive_count failed_receive_count first_failure candidate_row_count degraded_count first_skip next_step status <<< "$summary"
+  [[ "$state_model" == "spire_remote_fanout_executor_v1" ]]
+  [[ "$dispatch_count" == "2" ]]
+  [[ "$sent_count" == "2" ]]
+  [[ "$ready_receive_count" == "2" ]]
+  [[ "$failed_receive_count" == "0" ]]
+  [[ "$first_failure" == "none" ]]
+  [[ "$candidate_row_count" == "2" ]]
+  [[ "$degraded_count" == "0" ]]
+  [[ "$first_skip" == "none" ]]
+  [[ "$next_step" == "remote_heap_resolution" ]]
+  [[ "$status" == "requires_remote_heap_resolution" ]]
+  [[ "$new_identity_hex" != "$case_old_identity_hex" ]]
+}
+
+if [[ "$LIFECYCLE_CASE" == "create_index_concurrently_new_descriptor" ]]; then
+  run_new_descriptor_case "strict" "$STRICT_LOG" "11" "ec_spire_stage_e_lifecycle_new_descriptor_strict_idx"
+  run_new_descriptor_case "degraded" "$DEGRADED_LOG" "21" "ec_spire_stage_e_lifecycle_new_descriptor_degraded_idx"
 
   echo "strict_log=$STRICT_LOG"
   echo "degraded_log=$DEGRADED_LOG"
