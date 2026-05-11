@@ -138,6 +138,7 @@ enum StageEFaultCase {
     LocalStatementTimeout,
     MissingOrReindexedRemoteIndex,
     RemoteBackendTermination,
+    RemoteOom,
     RemoteStatementTimeout,
     VersionSkew,
     SimulatedNetworkPartition,
@@ -153,6 +154,7 @@ impl StageEFaultCase {
             StageEFaultCase::LocalStatementTimeout => "local_statement_timeout",
             StageEFaultCase::MissingOrReindexedRemoteIndex => "missing_or_reindexed_remote_index",
             StageEFaultCase::RemoteBackendTermination => "remote_backend_termination",
+            StageEFaultCase::RemoteOom => "remote_oom",
             StageEFaultCase::RemoteStatementTimeout => "remote_statement_timeout",
             StageEFaultCase::VersionSkew => "version_skew",
             StageEFaultCase::SimulatedNetworkPartition => "simulated_network_partition",
@@ -172,6 +174,7 @@ impl StageEFaultCase {
             | StageEFaultCase::ConnectionResetMidBatch
             | StageEFaultCase::LocalStatementTimeout
             | StageEFaultCase::RemoteBackendTermination
+            | StageEFaultCase::RemoteOom
             | StageEFaultCase::RemoteStatementTimeout => {
                 "scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh"
             }
@@ -205,11 +208,12 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
         "remote_backend_termination" | "remote-backend-termination" => {
             Ok(StageEFaultCase::RemoteBackendTermination)
         }
+        "remote_oom" | "remote-oom" => Ok(StageEFaultCase::RemoteOom),
         "simulated_network_partition" | "simulated-network-partition" => {
             Ok(StageEFaultCase::SimulatedNetworkPartition)
         }
         other => Err(format!(
-            "unsupported Stage E fault case {other:?}; supported: connection_reset_mid_batch, epoch_mismatch, fingerprint_mismatch, local_cancel, local_statement_timeout, missing_or_reindexed_remote_index, remote_backend_termination, remote_statement_timeout, simulated_network_partition, version_skew"
+            "unsupported Stage E fault case {other:?}; supported: connection_reset_mid_batch, epoch_mismatch, fingerprint_mismatch, local_cancel, local_statement_timeout, missing_or_reindexed_remote_index, remote_backend_termination, remote_oom, remote_statement_timeout, simulated_network_partition, version_skew"
         )),
     }
 }

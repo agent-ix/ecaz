@@ -14818,6 +14818,9 @@ mod tests {
             "connection_reset_mid_batch" => {
                 "SELECT CASE WHEN g = 1 THEN 1 ELSE CASE WHEN pg_terminate_backend(pg_backend_pid()) THEN 2 ELSE 3 END END FROM generate_series(1, 2) AS g"
             }
+            "remote_oom" => {
+                "DO $$ BEGIN RAISE EXCEPTION 'simulated remote out of memory' USING ERRCODE = '53200'; END $$"
+            }
             "remote_statement_timeout" => "SELECT pg_sleep(0.30)",
             "remote_backend_termination" => "SELECT pg_terminate_backend(pg_backend_pid())",
             other => pgrx::error!("{function_name} unsupported fault_case {other}"),

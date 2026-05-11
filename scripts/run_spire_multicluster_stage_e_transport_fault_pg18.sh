@@ -8,6 +8,7 @@ set -euo pipefail
 #   local_cancel
 #   local_statement_timeout
 #   remote_backend_termination
+#   remote_oom
 #   remote_statement_timeout
 #
 # These rows fail in the production transport adapter after a remote connection
@@ -36,6 +37,7 @@ Cases:
   local_cancel
   local_statement_timeout
   remote_backend_termination
+  remote_oom
   remote_statement_timeout
 
 Options:
@@ -113,6 +115,7 @@ if [[ "$FAULT_CASE" != "connection_reset_mid_batch" \
   && "$FAULT_CASE" != "local_cancel" \
   && "$FAULT_CASE" != "local_statement_timeout" \
   && "$FAULT_CASE" != "remote_backend_termination" \
+  && "$FAULT_CASE" != "remote_oom" \
   && "$FAULT_CASE" != "remote_statement_timeout" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
   usage >&2
@@ -193,6 +196,9 @@ elif [[ "$FAULT_CASE" == "remote_backend_termination" ]]; then
 elif [[ "$FAULT_CASE" == "connection_reset_mid_batch" ]]; then
   fault_failure_category="remote_backend_terminated"
   fault_injection="fault_node_sql=generate_series_first_row_then_pg_terminate_backend"
+elif [[ "$FAULT_CASE" == "remote_oom" ]]; then
+  fault_failure_category="remote_query_failed"
+  fault_injection="fault_node_sql=raise_exception_sqlstate_53200"
 else
   fault_failure_category="local_query_cancelled"
   fault_injection="local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)"

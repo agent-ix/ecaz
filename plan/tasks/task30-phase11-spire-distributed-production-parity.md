@@ -892,6 +892,11 @@ Goal: prove distributed correctness locally before AWS.
     closed while degraded skips that dispatch and advances the ready remote to
     `compact_candidate_receive`.
     Remaining Stage E OOM and lifecycle rows still need fixture logs.
+  - [x] Packet `30788` adds the remote-OOM transport runtime row: the fault
+    remote raises SQLSTATE `53200`, the coordinator surfaces only the
+    sanitized `remote_query_failed` category, strict fails closed, and degraded
+    skips the failed dispatch while keeping the ready remote moving.
+    Remaining Stage E lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
