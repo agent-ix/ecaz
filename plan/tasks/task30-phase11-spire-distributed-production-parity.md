@@ -307,7 +307,9 @@ local-only path.
     index.
     - [x] Packet `30817` adds the catalog table to bootstrap and upgrade SQL
       and wires it into remote catalog orphan/index cleanup diagnostics.
-  - [ ] Add `ec_spire_classify_centroid(embedding, index_oid)`.
+  - [x] Add `ec_spire_classify_centroid(embedding, index_oid)`.
+    - [x] Packet `30818` adds the coordinator-side classifier helper using
+      active routing centroids and returns `(node_id, centroid_id, epoch)`.
   - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
     with remote `PREPARE TRANSACTION` / local commit / remote commit.
@@ -928,8 +930,10 @@ v1 write contract from ADR-069:
   served_epoch, source_identity)` plus required indexes.
   - [x] Packet `30817` lands the table, primary key, identity index, and
     cleanup diagnostics coverage.
-- [ ] Add `ec_spire_classify_centroid(embedding, index_oid)` using the same
+- [x] Add `ec_spire_classify_centroid(embedding, index_oid)` using the same
   placement decision coordinator-routed INSERT will use.
+  - [x] Packet `30818` classifies against the active routing hierarchy and
+    returns the selected placement node, leaf-centroid id, and epoch.
 - [ ] Coordinator-routed INSERT:
   - [ ] classify embedding to target `node_id`;
   - [ ] forward remote INSERT through the Stage C transport;

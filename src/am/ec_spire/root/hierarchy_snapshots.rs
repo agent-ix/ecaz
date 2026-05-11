@@ -1940,6 +1940,166 @@ pub(crate) unsafe fn index_routing_centroid_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) unsafe fn classify_centroid(
+    index_relation: pg_sys::Relation,
+    embedding: &[f32],
+) -> Result<(u32, u64, u64), String> {
+    if embedding.is_empty() {
+        return Err("ec_spire_classify_centroid embedding must not be empty".to_owned());
+    }
+    if embedding.iter().any(|component| !component.is_finite()) {
+        return Err("ec_spire_classify_centroid embedding components must be finite".to_owned());
+    }
+
+    let root_control = unsafe { page::read_root_control_page(index_relation) };
+    if root_control.active_epoch == 0 {
+        return Err("ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned());
+    }
+
+    let epoch_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
+    let object_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
+    let placement_bytes =
+        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
+    let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
+    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+    if epoch_manifest.epoch != root_control.active_epoch {
+        return Err(format!(
+            "ec_spire root/control active epoch {} does not match epoch manifest {}",
+            root_control.active_epoch, epoch_manifest.epoch
+        ));
+    }
+    let snapshot = meta::SpireValidatedEpochSnapshot::new(
+        &epoch_manifest,
+        &object_manifest,
+        &placement_directory,
+    )?;
+    let object_store =
+        unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+    let mut root = None;
+    for manifest_entry in &snapshot.object_manifest().entries {
+        let lookup = snapshot.require_lookup(manifest_entry.pid, "classify centroid root load")?;
+        if lookup.placement.node_id != meta::SPIRE_LOCAL_NODE_ID {
+            continue;
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind != storage::SpirePartitionObjectKind::Root {
+            continue;
+        }
+        if root.is_some() {
+            return Err("ec_spire_classify_centroid found multiple local root routing objects".to_owned());
+        }
+        root = Some(object_store.read_routing_object(lookup.placement)?);
+    }
+    let mut parent = root.ok_or_else(|| {
+        "ec_spire_classify_centroid found no local root routing object".to_owned()
+    })?;
+    let mut visited = HashSet::new();
+
+    loop {
+        if parent.header.kind != storage::SpirePartitionObjectKind::Root
+            && parent.header.kind != storage::SpirePartitionObjectKind::Internal
+        {
+            return Err("ec_spire_classify_centroid parent must be a routing object".to_owned());
+        }
+        if !visited.insert(parent.header.pid) {
+            return Err(format!(
+                "ec_spire_classify_centroid detected routing cycle at parent pid {}",
+                parent.header.pid
+            ));
+        }
+        let (centroid_index, child_pid) = classify_best_routing_child(&parent, embedding)?;
+        let lookup = snapshot.require_lookup(child_pid, "classify centroid child")?;
+        if lookup.placement.state != meta::SpirePlacementState::Available {
+            return Err(format!(
+                "ec_spire_classify_centroid selected centroid {centroid_index} pid {child_pid} is not available"
+            ));
+        }
+        if parent.header.level == 1 {
+            return Ok((
+                lookup.placement.node_id,
+                child_pid,
+                snapshot.epoch_manifest().epoch,
+            ));
+        }
+        if lookup.placement.node_id != meta::SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire_classify_centroid selected non-leaf routing pid {child_pid} on remote node_id {}; coordinator routing objects must remain local",
+                lookup.placement.node_id
+            ));
+        }
+        let header = object_store.read_object_header(lookup.placement)?;
+        if header.kind != storage::SpirePartitionObjectKind::Internal {
+            return Err(format!(
+                "ec_spire_classify_centroid selected non-leaf pid {child_pid} with unsupported kind {}",
+                partition_object_kind_name(header.kind)
+            ));
+        }
+        parent = object_store.read_routing_object(lookup.placement)?;
+    }
+}
+
+fn classify_best_routing_child(
+    parent: &storage::SpireRoutingPartitionObject,
+    embedding: &[f32],
+) -> Result<(u32, u64), String> {
+    let expected_dimensions = usize::from(parent.dimensions);
+    if embedding.len() != expected_dimensions {
+        return Err(format!(
+            "ec_spire_classify_centroid embedding dimensions mismatch: got {}, expected {expected_dimensions}",
+            embedding.len()
+        ));
+    }
+
+    let mut best = None;
+    for child in parent.children() {
+        if child.centroid.len() != expected_dimensions {
+            return Err(format!(
+                "ec_spire_classify_centroid centroid {} dimensions mismatch: got {}, expected {expected_dimensions}",
+                child.centroid_index,
+                child.centroid.len()
+            ));
+        }
+        if child.centroid.iter().any(|component| !component.is_finite()) {
+            return Err(format!(
+                "ec_spire_classify_centroid centroid {} components must be finite",
+                child.centroid_index
+            ));
+        }
+        let score = embedding
+            .iter()
+            .zip(child.centroid.iter())
+            .map(|(left, right)| left * right)
+            .sum::<f32>();
+        let replace = match best {
+            None => true,
+            Some((best_centroid_index, best_child_pid, best_score)) => {
+                match score.total_cmp(&best_score) {
+                    std::cmp::Ordering::Greater => true,
+                    std::cmp::Ordering::Equal => {
+                        (child.centroid_index, child.child_pid)
+                            < (best_centroid_index, best_child_pid)
+                    }
+                    std::cmp::Ordering::Less => false,
+                }
+            }
+        };
+        if replace {
+            best = Some((child.centroid_index, child.child_pid, score));
+        };
+    }
+
+    best.map(|(centroid_index, child_pid, _score)| (centroid_index, child_pid))
+        .ok_or_else(|| {
+            format!(
+                "ec_spire_classify_centroid found no routing children for parent pid {}",
+                parent.header.pid
+            )
+        })
+}
+
 fn collect_root_routing_snapshot_rows(
     snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
     object_store: &impl storage::SpireObjectReader,

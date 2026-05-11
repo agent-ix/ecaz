@@ -7515,6 +7515,31 @@ fn ec_spire_index_routing_centroid_snapshot(
 }
 
 #[pg_extern(stable, strict)]
+fn ec_spire_classify_centroid(
+    embedding: Vec<f32>,
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(node_id, i64),
+        name!(centroid_id, i64),
+        name!(epoch, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_classify_centroid") };
+    let classification = unsafe { am::spire_classify_centroid(index_relation, &embedding) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((
+        i64::from(node_id),
+        i64::try_from(centroid_id).expect("centroid id should fit in i64"),
+        i64::try_from(epoch).expect("epoch should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
     index_oid: pg_sys::Oid,
@@ -18533,6 +18558,67 @@ mod tests {
         assert_eq!(min_child_level, 0);
         assert!(centroid_lengths_match);
         assert!(parent_links_match);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_classify_centroid_sql() {
+        Spi::run("CREATE TABLE ec_spire_classify_sql (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_classify_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_classify_sql_idx ON ec_spire_classify_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_spire_classify_sql_idx'::regclass::oid")
+                .expect("index oid query should succeed")
+                .expect("index oid should exist");
+        let expected_centroid_id = Spi::get_one::<i64>(
+            "SELECT child_pid \
+               FROM ec_spire_index_routing_centroid_snapshot(\
+                    'ec_spire_classify_sql_idx'::regclass) r \
+               CROSS JOIN LATERAL ( \
+                    SELECT sum(q.value * c.value)::real AS score \
+                      FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                      JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+               ) scored \
+              WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+              ORDER BY scored.score DESC, centroid_index, child_pid \
+              LIMIT 1",
+        )
+        .expect("expected centroid query should succeed")
+        .expect("expected centroid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_classify_sql_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 7)
+        };
+
+        let classification = Spi::get_one::<String>(
+            "SELECT node_id::text || ',' || centroid_id::text || ',' || epoch::text \
+               FROM ec_spire_classify_centroid(\
+                    ARRAY[1.0, 0.0]::real[], 'ec_spire_classify_sql_idx'::regclass)",
+        )
+        .expect("classification query should succeed")
+        .expect("classification should exist");
+
+        assert_eq!(
+            classification,
+            format!("7,{expected_centroid_id},{active_epoch}")
+        );
     }
 
     #[pg_test]
