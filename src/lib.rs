@@ -12809,6 +12809,10 @@ fn ec_spire_validate_tuple_payload_columns(
     Ok(())
 }
 
+fn ec_spire_quote_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
 fn ec_spire_relation_regclass_text(relation_oid: pg_sys::Oid) -> Result<String, String> {
     Spi::connect(|client| {
         client
@@ -12823,6 +12827,79 @@ fn ec_spire_relation_regclass_text(relation_oid: pg_sys::Oid) -> Result<String, 
             .map_err(|e| format!("ec_spire tuple payload relation name decode failed: {e}"))?
             .ok_or_else(|| "ec_spire tuple payload relation name is null".to_owned())
     })
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_insert_tuple_payload(
+    index_oid: pg_sys::Oid,
+    row_payload: pgrx::JsonB,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(heap_relation_oid, pg_sys::Oid),
+        name!(inserted_count, i64),
+        name!(payload_column_count, i32),
+        name!(status, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_insert_tuple_payload") };
+    let heap_relation_oid = unsafe {
+        (*index_relation)
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    if requested_columns.is_empty() {
+        pgrx::error!("ec_spire_remote_insert_tuple_payload requested column list must be nonempty");
+    }
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &requested_columns)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_insert_tuple_payload {e}"));
+    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_insert_tuple_payload {e}"));
+    let payload_column_count = i32::try_from(requested_columns.len())
+        .unwrap_or_else(|_| pgrx::error!("ec_spire_remote_insert_tuple_payload too many columns"));
+    let column_list = requested_columns
+        .iter()
+        .map(|column| ec_spire_quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let row_payload_text = row_payload.0.to_string();
+    let insert_sql = format!(
+        "WITH inserted AS ( \
+             INSERT INTO {heap_relation_regclass} ({column_list}) \
+             SELECT {column_list} \
+               FROM jsonb_populate_record(NULL::{heap_relation_regclass}, $1::text::jsonb) \
+             RETURNING 1 \
+         ) \
+         SELECT count(*)::bigint AS inserted_count FROM inserted"
+    );
+    let inserted_count = Spi::connect_mut(|client| {
+        client
+            .select(insert_sql.as_str(), None, &[row_payload_text.into()])
+            .map_err(|e| format!("ec_spire remote tuple payload insert failed: {e}"))?
+            .first()
+            .get_one::<i64>()
+            .map_err(|e| {
+                format!("ec_spire remote tuple payload inserted_count decode failed: {e}")
+            })?
+            .ok_or_else(|| "ec_spire remote tuple payload inserted_count is null".to_owned())
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_insert_tuple_payload {e}"));
+
+    TableIterator::once((
+        index_oid,
+        heap_relation_oid,
+        inserted_count,
+        payload_column_count,
+        "ready",
+    ))
 }
 
 fn ec_spire_remote_search_tuple_payloads_for_ctids(
@@ -26332,6 +26409,44 @@ mod tests {
         assert_eq!(alpha_count, 1);
         assert_eq!(missing_count, 0);
         assert_eq!(ready_count, payload_count);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_insert_tuple_payload_endpoint_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_remote_insert_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_remote_insert_payload_sql_idx \
+             ON ec_spire_remote_insert_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let insert_status = Spi::get_one::<String>(
+            "SELECT status || ':' || inserted_count::text || ':' || payload_column_count::text \
+               FROM ec_spire_remote_insert_tuple_payload(\
+                    'ec_spire_remote_insert_payload_sql_idx'::regclass, \
+                    jsonb_build_object(\
+                        'id', 101, \
+                        'title', 'remote payload', \
+                        'embedding', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)::text), \
+                    ARRAY['id', 'title', 'embedding']::text[])",
+        )
+        .expect("remote insert tuple payload status query should succeed")
+        .expect("remote insert tuple payload status should exist");
+        let inserted_row = Spi::get_one::<String>(
+            "SELECT id::text || ':' || title \
+               FROM ec_spire_remote_insert_payload_sql \
+              WHERE id = 101",
+        )
+        .expect("inserted row query should succeed")
+        .expect("inserted row should exist");
+
+        assert_eq!(insert_status, "ready:1:3");
+        assert_eq!(inserted_row, "101:remote payload");
     }
 
     #[pg_test]

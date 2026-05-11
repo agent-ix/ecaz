@@ -999,6 +999,11 @@ v1 write contract from ADR-069:
   - [ ] forward remote INSERT through the Stage C transport;
     - [x] Packet `30829` adds the Stage C descriptor/secret/epoch-window
       readiness gate the mutating transport call will consume.
+    - [x] Packet `30831` adds the remote-side
+      `ec_spire_remote_insert_tuple_payload(index_oid, row_payload,
+      requested_columns)` endpoint. The endpoint derives the heap relation from
+      the remote SPIRE index, validates the explicit column list, projects JSON
+      through PostgreSQL type input, and inserts the named tuple columns.
   - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
     remote commit for atomicity;
     - [x] Packet `30830` adds the internal remote-prepare primitive: it opens

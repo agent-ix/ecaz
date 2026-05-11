@@ -200,6 +200,15 @@ prepared transaction is committed. A failed callback resolution leaves the
 prepared transaction visible to normal PostgreSQL prepared-transaction
 operator recovery.
 
+The remote shard exposes `ec_spire_remote_insert_tuple_payload(index_oid,
+row_payload, requested_columns)` as the typed INSERT endpoint the
+coordinator can call inside that prepared remote transaction. The endpoint
+derives the remote heap relation from the remote SPIRE index, validates the
+requested column list against ordinary heap attributes, projects the JSON
+payload through PostgreSQL type input, and inserts exactly the named
+columns. The coordinator still owns classification, placement-directory
+staging, and transaction resolution.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that
