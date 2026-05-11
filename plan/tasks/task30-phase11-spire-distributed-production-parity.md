@@ -283,17 +283,24 @@ local-only path.
     the CustomScan tuple interface.
     - [x] Packet `30810` wires the callbacks through the production executor
       result stream and PostgreSQL scan/projection machinery.
-    - [ ] Remote-origin tuple-payload slot delivery remains open.
+    - [x] Packet `30814` adds remote-origin tuple-payload slot delivery.
+    - [x] Packet `30815` extends the tuple-payload endpoint with heap
+      coordinates needed by the production executor decode path and proves a
+      coordinator CustomScan can return the projected remote tuple.
   - [ ] Preserve local-only `ec_spire` index AM behavior unchanged.
-  - [ ] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
+  - [x] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
   placements, remote shard rows, SPIRE index, and
   `SELECT cols FROM tbl ORDER BY embedding <-> $1 LIMIT k` returning the
   correct remote rows through CustomScan.
-  - [ ] The fixture must not call
+  - [x] Packet `30815` adds a PG18 loopback-remote fixture with coordinator
+    placements rewritten to a remote node, an active remote descriptor, and
+    `SELECT id, title ... ORDER BY embedding <#> ... LIMIT 1` returning the
+    remote shard row through `EcSpireDistributedScan`.
+  - [x] The fixture must not call
     `ec_spire_register_remote_row_materialization(...)`.
-  - [ ] This fixture is the Stage D feature-complete signal for distributed
-    reads.
+  - [ ] Broaden the fixture to the final multi-instance distributed read lane
+    before calling Stage D reads feature-complete.
 - [ ] Land the ADR-069 placement directory and coordinator-routed INSERT.
   - [ ] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
     served_epoch, source_identity)` with the required primary key and identity
@@ -889,20 +896,24 @@ CustomScan read-path work:
       the production remote heap receive path, carries payload JSON on
       remote-origin output rows, and stores typed coordinator-visible values in
       a CustomScan virtual tuple slot.
-    - [ ] Add the end-to-end multi-instance fixture proving remote-origin
-      output rows return through CustomScan without the materialization catalog.
+    - [x] Packet `30815` adds the first end-to-end PG18 loopback-remote fixture
+      proving remote-origin output rows return through CustomScan without the
+      materialization catalog.
+    - [ ] Add the final multi-instance fixture proving the same path across
+      separate local PostgreSQL instances.
   - [ ] Keep the existing index AM unchanged for local-only scans.
   - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
     - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`
       PG18 query and asserts `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Add the end-to-end distributed read fixture.
-  - [ ] Fixture creates a coordinator with remote-only placements and remote
+  - [x] Packet `30815` fixture creates a coordinator with remote-only
+    placements and loopback-remote
     shard rows.
-  - [ ] Fixture issues
+  - [x] Fixture issues
     `SELECT cols FROM tbl ORDER BY embedding <-> $1 LIMIT k`.
-  - [ ] Fixture proves the selected remote rows and projected columns are
+  - [x] Fixture proves the selected remote rows and projected columns are
     returned through CustomScan.
-  - [ ] Fixture contains no
+  - [x] Fixture contains no
     `ec_spire_register_remote_row_materialization(...)` calls.
 
 v1 write contract from ADR-069:

@@ -12640,7 +12640,10 @@ fn ec_spire_remote_search_tuple_payloads_for_ctids(
     heap_relation_regclass: &str,
     requested_columns: &[String],
     ctids: &[String],
-) -> Result<std::collections::HashMap<String, (pgrx::JsonB, bool)>, String> {
+) -> Result<Vec<(pgrx::JsonB, bool)>, String> {
+    if ctids.is_empty() {
+        return Ok(Vec::new());
+    }
     let requested_column_refs = requested_columns
         .iter()
         .map(String::as_str)
@@ -12680,10 +12683,9 @@ fn ec_spire_remote_search_tuple_payloads_for_ctids(
                 ],
             )
             .map_err(|e| format!("ec_spire tuple payload heap fetch failed: {e}"))?;
-        let mut payloads = std::collections::HashMap::with_capacity(ctids.len());
+        let mut payloads = Vec::with_capacity(ctids.len());
         for row in rows {
-            let ctid_text = row
-                .get::<String>(1)
+            row.get::<String>(1)
                 .map_err(|e| format!("ec_spire tuple payload ctid decode failed: {e}"))?
                 .ok_or_else(|| "ec_spire tuple payload ctid is null".to_owned())?;
             let tuple_payload_missing = row
@@ -12694,7 +12696,14 @@ fn ec_spire_remote_search_tuple_payloads_for_ctids(
                 .get::<pgrx::JsonB>(3)
                 .map_err(|e| format!("ec_spire tuple payload decode failed: {e}"))?
                 .ok_or_else(|| "ec_spire tuple payload is null".to_owned())?;
-            payloads.insert(ctid_text, (tuple_payload, tuple_payload_missing));
+            payloads.push((tuple_payload, tuple_payload_missing));
+        }
+        if payloads.len() != ctids.len() {
+            return Err(format!(
+                "ec_spire tuple payload heap fetch returned {} rows for {} CTIDs",
+                payloads.len(),
+                ctids.len()
+            ));
         }
         Ok(payloads)
     })
@@ -12722,6 +12731,8 @@ fn ec_spire_remote_search_tuple_payload(
         name!(assignment_flags, i16),
         name!(vec_id, Vec<u8>),
         name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
         name!(score, f32),
         name!(tuple_payload, pgrx::JsonB),
         name!(tuple_payload_missing, bool),
@@ -12779,7 +12790,7 @@ fn ec_spire_remote_search_tuple_payload(
         .iter()
         .map(|row| format!("({},{})", row.heap_block, row.heap_offset))
         .collect::<Vec<_>>();
-    let mut payloads = ec_spire_remote_search_tuple_payloads_for_ctids(
+    let payloads = ec_spire_remote_search_tuple_payloads_for_ctids(
         &heap_relation_regclass,
         &requested_columns,
         &ctids,
@@ -12788,14 +12799,8 @@ fn ec_spire_remote_search_tuple_payload(
 
     let payload_rows = rows
         .into_iter()
-        .map(|row| {
-            let ctid = format!("({},{})", row.heap_block, row.heap_offset);
-            let (tuple_payload, tuple_payload_missing) =
-                payloads.remove(&ctid).unwrap_or_else(|| {
-                    pgrx::error!(
-                        "ec_spire_remote_search_tuple_payload missing payload result for ctid {ctid}"
-                    )
-                });
+        .zip(payloads)
+        .map(|(row, (tuple_payload, tuple_payload_missing))| {
             let status = if tuple_payload_missing {
                 "remote_tuple_payload_missing"
             } else {
@@ -12811,6 +12816,8 @@ fn ec_spire_remote_search_tuple_payload(
                 i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
                 row.vec_id,
                 row.row_locator,
+                i64::from(row.heap_block),
+                i32::from(row.heap_offset),
                 row.score,
                 tuple_payload,
                 tuple_payload_missing,
@@ -24400,6 +24407,177 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_customscan_returns_loopback_remote_tuple_payload() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_PAYLOAD",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_customscan_payload_remote_sql; \
+                 CREATE TABLE ec_spire_customscan_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector); \
+                 INSERT INTO ec_spire_customscan_payload_remote_sql (id, title, embedding) VALUES \
+                     (10, 'remote alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, 'remote beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_customscan_payload_remote_idx \
+                     ON ec_spire_customscan_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback remote CustomScan payload fixture should be created");
+        let remote_active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_customscan_payload_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("remote active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote active epoch should decode");
+        let remote_leaf_pids = loopback_client
+            .query_one(
+                "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_customscan_payload_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("remote leaf pid query should succeed")
+            .try_get::<_, Vec<i64>>(0)
+            .expect("remote leaf pids should decode");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut loopback_client,
+            "ec_spire_customscan_payload_remote_idx",
+        );
+
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_payload_coord_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_payload_coord_sql (id, title, embedding) VALUES \
+             (1, 'coordinator alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'coordinator beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("coordinator insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_payload_coord_idx \
+             ON ec_spire_customscan_payload_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+        )
+        .expect("coordinator index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_payload_coord_idx'::regclass::oid",
+        )
+        .expect("coordinator index oid query should succeed")
+        .expect("coordinator index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_customscan_payload_coord_idx'::regclass)",
+        )
+        .expect("coordinator active epoch query should succeed")
+        .expect("coordinator active epoch should exist");
+        let coord_leaf_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_payload_coord_idx'::regclass)",
+        )
+        .expect("coordinator leaf pid query should succeed")
+        .expect("coordinator leaf pids should exist");
+        assert_eq!(remote_active_epoch, active_epoch);
+        assert_eq!(remote_leaf_pids, coord_leaf_pids);
+
+        unsafe {
+            for pid in &coord_leaf_pids {
+                am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
+            }
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 91, 'spire/remote/customscan/payload', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_customscan_payload_remote_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+        let selected_pids_for_remote = coord_leaf_pids.clone();
+        let remote_probe_rows = loopback_client
+            .query(
+                "SELECT payload.*, payload.tuple_payload::text AS tuple_payload_text \
+                   FROM ec_spire_remote_search_tuple_payload(\
+                        'ec_spire_customscan_payload_remote_idx'::regclass::oid, \
+                        $1::bigint, ARRAY[1.0, 0.0]::real[], $2::bigint[], \
+                        1, 'strict', ARRAY['id','title']::text[]) AS payload",
+                &[&active_epoch, &selected_pids_for_remote],
+            )
+            .expect("loopback tuple payload probe should succeed");
+        assert_eq!(remote_probe_rows.len(), 1);
+        let remote_probe_status = remote_probe_rows[0]
+            .try_get::<_, String>("status")
+            .expect("loopback tuple payload status should decode");
+        assert_eq!(remote_probe_status, "ready");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disable seqscan should succeed");
+        Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id, title FROM ec_spire_customscan_payload_coord_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("CustomScan explain should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("CustomScan explain row should decode")
+                        .expect("CustomScan explain row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+        let row = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT id, title FROM ec_spire_customscan_payload_coord_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("CustomScan remote tuple query should succeed");
+            let row = rows.first();
+            let id = row
+                .get_one::<i64>()
+                .expect("CustomScan remote id should decode")
+                .expect("CustomScan remote id should exist");
+            let title = row
+                .get::<String>(2)
+                .expect("CustomScan remote title should decode")
+                .expect("CustomScan remote title should exist");
+            (id, title)
+        });
+
+        assert!(
+            plan.contains("Custom Scan (EcSpireDistributedScan)"),
+            "expected EcSpireDistributedScan in plan:\n{plan}"
+        );
+        assert_eq!(row, (10, "remote alpha".to_owned()));
+    }
+
+    #[pg_test]
     fn test_ec_spire_customscan_eligibility_no_active_epoch() {
         Spi::run(
             "CREATE TABLE ec_spire_customscan_empty_sql \
@@ -25091,19 +25269,18 @@ mod tests {
         let payloads = ec_spire_remote_search_tuple_payloads_for_ctids(
             &heap_relation_regclass,
             &requested_columns,
-            std::slice::from_ref(&missing_ctid),
+            &[missing_ctid.clone(), missing_ctid],
         )
         .expect("tuple payload batch fetch should succeed");
-        let (tuple_payload, tuple_payload_missing) = payloads
-            .get(&missing_ctid)
-            .expect("missing ctid payload row should be present");
-
-        assert!(*tuple_payload_missing);
-        assert!(tuple_payload
-            .0
-            .as_object()
-            .expect("missing tuple payload should be a JSON object")
-            .is_empty());
+        assert_eq!(payloads.len(), 2);
+        for (tuple_payload, tuple_payload_missing) in payloads {
+            assert!(tuple_payload_missing);
+            assert!(tuple_payload
+                .0
+                .as_object()
+                .expect("missing tuple payload should be a JSON object")
+                .is_empty());
+        }
     }
 
     #[pg_test]

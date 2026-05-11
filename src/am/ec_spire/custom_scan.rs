@@ -590,7 +590,10 @@ unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Ve
     Some(values)
 }
 
-unsafe fn custom_scan_tuple_payload_columns(node: *mut pg_sys::CustomScanState) -> Vec<String> {
+unsafe fn custom_scan_tuple_payload_columns(
+    node: *mut pg_sys::CustomScanState,
+    custom_scan: *mut pg_sys::CustomScan,
+) -> Vec<String> {
     unsafe {
         let relation = (*node).ss.ss_currentRelation;
         if relation.is_null() {
@@ -600,11 +603,35 @@ unsafe fn custom_scan_tuple_payload_columns(node: *mut pg_sys::CustomScanState) 
         if tuple_desc.is_null() {
             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
         }
+        let mut attr_numbers = std::collections::BTreeSet::new();
+        if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
+            let target_list =
+                PgList::<pg_sys::TargetEntry>::from_pg((*custom_scan).scan.plan.targetlist);
+            for target_entry in target_list.iter_ptr() {
+                let Some(target_entry) = target_entry.as_ref() else {
+                    continue;
+                };
+                if target_entry.resjunk || target_entry.expr.is_null() {
+                    continue;
+                }
+                let expr = target_entry.expr.cast::<pg_sys::Node>();
+                if (*expr).type_ != pg_sys::NodeTag::T_Var {
+                    continue;
+                }
+                let var = &*target_entry.expr.cast::<pg_sys::Var>();
+                if var.varattno > 0 {
+                    attr_numbers.insert(var.varattno);
+                }
+            }
+        }
         let natts = (*tuple_desc).natts;
         let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
         for attr_index in 0..natts {
             let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
             if attr.is_null() || (*attr).attisdropped {
+                continue;
+            }
+            if !attr_numbers.is_empty() && !attr_numbers.contains(&(*attr).attnum) {
                 continue;
             }
             let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
@@ -657,7 +684,7 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
         (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
         (*state).query = custom_scan_query_from_plan(node, custom_scan);
-        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node);
+        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
     }
 }
 
