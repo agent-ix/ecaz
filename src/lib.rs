@@ -28718,6 +28718,28 @@ mod tests {
             ),
             "0000000000000005"
         );
+        let select_invocation = unsafe {
+            am::spire_dml_frontdoor_primitive_invocation_from_plan(
+                &select_plan,
+                std::ptr::null_mut(),
+            )
+        }
+        .expect("const PK primitive invocation should be buildable");
+        assert_eq!(
+            select_invocation.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        );
+        assert_eq!(
+            select_invocation.primitive,
+            "ec_spire_forward_coordinator_select_tuple_payload"
+        );
+        assert_eq!(select_invocation.pk_column, "id");
+        assert_eq!(hex::encode(select_invocation.pk_value), "0000000000000005");
+        assert!(select_invocation.updated_columns.is_empty());
+        assert_eq!(
+            select_invocation.projected_columns,
+            vec!["id".to_owned(), "title".to_owned()]
+        );
 
         let mut mismatched_primitive = select_decision.clone();
         mismatched_primitive.primitive = "ec_spire_forward_coordinator_update_tuple_payload";
@@ -28756,6 +28778,11 @@ mod tests {
                 am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
                     .expect("bound bigint parameter should produce bytea");
             assert_eq!(hex::encode(param_bytes), "fffffffffffffff9");
+            let param_invocation =
+                am::spire_dml_frontdoor_primitive_invocation_from_plan(&param_plan, params)
+                    .expect("bound bigint parameter primitive invocation should be buildable");
+            assert_eq!(hex::encode(param_invocation.pk_value), "fffffffffffffff9");
+            assert_eq!(param_invocation.pk_column, "id");
 
             (*param).isnull = true;
             let null_error =

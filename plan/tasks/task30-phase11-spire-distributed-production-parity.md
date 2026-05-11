@@ -1202,6 +1202,10 @@ v1 write contract from ADR-069:
     `ec_spire_dml_frontdoor_primitive_plan_sql(...)`, a SQL-visible diagnostic
     that proves analyzed SQL can build the typed primitive plan and constant
     PK bytea argument before planner-hook replacement is enabled.
+  - [x] Packet `30870` adds the primitive invocation builder that combines a
+    typed DML primitive plan with runtime PK bytea evaluation, yielding the
+    exact argument bundle a CustomScan executor will pass to coordinator
+    primitives.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

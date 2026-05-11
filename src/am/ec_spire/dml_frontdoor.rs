@@ -111,6 +111,17 @@ pub(crate) struct SpireDmlFrontdoorPrimitivePlan {
     pub(crate) projected_columns: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireDmlFrontdoorPrimitiveInvocation {
+    pub(crate) index_oid: pg_sys::Oid,
+    pub(crate) mode: SpireDmlFrontdoorCustomScanMode,
+    pub(crate) primitive: &'static str,
+    pub(crate) pk_column: String,
+    pub(crate) pk_value: Vec<u8>,
+    pub(crate) updated_columns: Vec<String>,
+    pub(crate) projected_columns: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpireDmlFrontdoorCustomScanMode {
     CoordinatorUpdateTuplePayload,
@@ -510,6 +521,28 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
             Ok(dml_frontdoor_bigint_pk_value_bytes(value))
         }
     }
+}
+
+pub(crate) unsafe fn dml_frontdoor_primitive_invocation_from_plan(
+    plan: &SpireDmlFrontdoorPrimitivePlan,
+    params: pg_sys::ParamListInfo,
+) -> Result<SpireDmlFrontdoorPrimitiveInvocation, String> {
+    let pk_value = unsafe { dml_frontdoor_primitive_plan_pk_value_bytes(plan, params)? };
+    if pk_value.is_empty() {
+        return Err("ec_spire DML frontdoor primitive invocation requires pk_value".to_owned());
+    }
+    if plan.pk_argument.pk_column.is_empty() {
+        return Err("ec_spire DML frontdoor primitive invocation requires pk_column".to_owned());
+    }
+    Ok(SpireDmlFrontdoorPrimitiveInvocation {
+        index_oid: plan.index_oid,
+        mode: plan.mode,
+        primitive: plan.primitive,
+        pk_column: plan.pk_argument.pk_column.clone(),
+        pk_value,
+        updated_columns: plan.updated_columns.clone(),
+        projected_columns: plan.projected_columns.clone(),
+    })
 }
 
 unsafe fn dml_frontdoor_bound_param_bigint_value(
