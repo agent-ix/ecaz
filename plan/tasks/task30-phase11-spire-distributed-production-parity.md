@@ -1184,6 +1184,8 @@ v1 write contract from ADR-069:
     argument shape (`const_bigint` value or `param_bigint` parameter id) needed
     by the future DML CustomScan executor to build `int8send(...)::bytea`
     primitive calls.
+  - [x] Packet `30864` pins the Rust-side bigint PK byte encoder used by the
+    DML CustomScan executor path to PostgreSQL `int8send(...)::bytea`.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

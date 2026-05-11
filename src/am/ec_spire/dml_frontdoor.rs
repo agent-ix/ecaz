@@ -346,6 +346,10 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
     ))
 }
 
+pub(crate) fn dml_frontdoor_bigint_pk_value_bytes(value: i64) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
 unsafe fn dml_frontdoor_classify_query_with_catalog_context(
     query: *mut pg_sys::Query,
 ) -> Option<SpireDmlFrontdoorShapeRow> {

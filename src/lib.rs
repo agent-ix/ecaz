@@ -28451,6 +28451,22 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send() {
+        for value in [0_i64, 5, -5, i64::MAX, i64::MIN] {
+            let pg_hex = Spi::get_one::<String>(&format!(
+                "SELECT encode(int8send('{value}'::bigint)::bytea, 'hex')"
+            ))
+            .expect("PostgreSQL int8send hex query should succeed")
+            .expect("PostgreSQL int8send hex should exist");
+            assert_eq!(
+                hex::encode(am::spire_dml_frontdoor_bigint_pk_value_bytes(value)),
+                pg_hex,
+                "{value}"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_replacement_sql \

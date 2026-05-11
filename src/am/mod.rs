@@ -37,6 +37,7 @@ pub(crate) use self::ec_spire::{
     coordinator_update_remote_tuple_payload as spire_coordinator_update_remote_tuple_payload,
     custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,
     custom_scan_status_row as spire_custom_scan_status_row,
+    dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
