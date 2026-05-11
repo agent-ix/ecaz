@@ -803,13 +803,26 @@ Preserved evidence from the superseded path:
 CustomScan read-path work:
 
 - [ ] Extend the production endpoint with ADR-068 tuple payloads.
-  - [ ] Coordinator request building declares the exact target-column list
-    required by the CustomScan projection.
-  - [ ] Remote endpoint returns payloads keyed by `(node_id, vec_id)` alongside
+  - [x] Add the first tuple-payload side-channel endpoint.
+    - [x] Packet `30807` adds
+      `ec_spire_remote_search_tuple_payload(...)`, which reuses the existing
+      local heap candidate visibility path and returns JSON payload rows keyed
+      by `(node_id, vec_id)` without changing the existing 18-column
+      `ec_spire_remote_search(...)` envelope.
+  - [x] Coordinator request building declares the exact target-column list
+    required by the CustomScan projection at the endpoint boundary.
+    - [x] Packet `30807` requires `requested_columns text[]`, validates the
+      names against the indexed heap relation, rejects duplicate/empty names,
+      and returns only those columns in the payload JSON object.
+  - [x] Remote endpoint returns payloads keyed by `(node_id, vec_id)` alongside
     the unchanged 18-column candidate envelope.
+    - [x] Packet `30807` exposes `payload_key = 'node_id_vec_id'` and leaves
+      the Stage B envelope endpoint unchanged.
   - [ ] Existing identity, fingerprint, version, and endpoint-status fields are
     unchanged and still gate merge eligibility.
-  - [ ] Add a focused tuple-payload PG18 fixture.
+  - [x] Add a focused tuple-payload PG18 fixture.
+    - [x] Packet `30807` covers `id,title` projection payloads and proves the
+      unrequested `embedding` column is omitted.
 - [ ] Register `EcSpireDistributedScan`.
   - [x] Register the CustomScan provider.
     - [x] Packet `30805` registers `EcSpireDistributedScan` in `_PG_init`,

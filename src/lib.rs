@@ -12557,6 +12557,223 @@ fn ec_spire_remote_search_local_heap_candidates(
     }))
 }
 
+fn ec_spire_validate_tuple_payload_columns(
+    heap_relation_oid: pg_sys::Oid,
+    requested_columns: &[String],
+) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for column in requested_columns {
+        if column.is_empty() {
+            return Err("requested column name must be nonempty".to_owned());
+        }
+        if !seen.insert(column.as_str()) {
+            return Err(format!(
+                "requested column \"{column}\" appears more than once"
+            ));
+        }
+    }
+
+    let requested_column_refs = requested_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let valid_count = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT count(*)::bigint AS valid_count \
+                   FROM unnest($1::text[]) AS requested(column_name) \
+                   JOIN pg_attribute AS attr \
+                     ON attr.attrelid = $2::oid \
+                    AND attr.attname = requested.column_name \
+                    AND attr.attnum > 0 \
+                    AND NOT attr.attisdropped",
+                None,
+                &[
+                    requested_column_refs.as_slice().into(),
+                    heap_relation_oid.into(),
+                ],
+            )
+            .map_err(|e| format!("ec_spire tuple payload column validation failed: {e}"))?
+            .first()
+            .get_one::<i64>()
+            .map_err(|e| format!("ec_spire tuple payload valid_count decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire tuple payload valid_count is null".to_owned())
+    })?;
+
+    let requested_count = i64::try_from(requested_columns.len())
+        .map_err(|_| "requested column count exceeds i64".to_owned())?;
+    if valid_count != requested_count {
+        return Err(
+            "requested columns must all be ordinary columns on the indexed heap relation"
+                .to_owned(),
+        );
+    }
+
+    Ok(())
+}
+
+fn ec_spire_relation_regclass_text(relation_oid: pg_sys::Oid) -> Result<String, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT $1::oid::regclass::text AS relation_name",
+                None,
+                &[relation_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire tuple payload relation lookup failed: {e}"))?
+            .first()
+            .get_one::<String>()
+            .map_err(|e| format!("ec_spire tuple payload relation name decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire tuple payload relation name is null".to_owned())
+    })
+}
+
+fn ec_spire_remote_search_tuple_payload_for_ctid(
+    heap_relation_regclass: &str,
+    requested_columns: &[String],
+    heap_block: u32,
+    heap_offset: u16,
+) -> Result<pgrx::JsonB, String> {
+    let ctid = format!("({heap_block},{heap_offset})");
+    let requested_column_refs = requested_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let sql = format!(
+        "SELECT coalesce( \
+             jsonb_object_agg(requested.column_name, heap.payload -> requested.column_name \
+                              ORDER BY requested.ordinality), \
+             '{{}}'::jsonb) AS tuple_payload \
+           FROM unnest($1::text[]) WITH ORDINALITY AS requested(column_name, ordinality) \
+           CROSS JOIN LATERAL ( \
+             SELECT to_jsonb(heap_row) AS payload \
+               FROM {heap_relation_regclass} AS heap_row \
+              WHERE heap_row.ctid = $2::tid \
+           ) AS heap"
+    );
+
+    Spi::connect(|client| {
+        client
+            .select(
+                sql.as_str(),
+                None,
+                &[requested_column_refs.as_slice().into(), ctid.into()],
+            )
+            .map_err(|e| format!("ec_spire tuple payload heap fetch failed: {e}"))?
+            .first()
+            .get_one::<pgrx::JsonB>()
+            .map_err(|e| format!("ec_spire tuple payload decode failed: {e}"))?
+            .ok_or_else(|| "ec_spire tuple payload is null".to_owned())
+    })
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_tuple_payload(
+    index_oid: pg_sys::Oid,
+    requested_epoch: i64,
+    query: Vec<f32>,
+    selected_pids: Vec<i64>,
+    top_k: i32,
+    consistency_mode: String,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(served_epoch, i64),
+        name!(node_id, i64),
+        name!(pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(score, f32),
+        name!(tuple_payload, pgrx::JsonB),
+        name!(payload_key, &'static str),
+        name!(payload_column_count, i32),
+        name!(status, &'static str),
+    ),
+> {
+    if requested_epoch <= 0 {
+        pgrx::error!("ec_spire_remote_search_tuple_payload requested_epoch must be greater than 0");
+    }
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_tuple_payload top_k must be non-negative");
+    }
+    let selected_pids = selected_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!("ec_spire_remote_search_tuple_payload selected PID {pid} is negative")
+            })
+        })
+        .collect::<Vec<_>>();
+    let requested_epoch =
+        u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_search_tuple_payload") };
+    let heap_relation_oid = unsafe {
+        (*index_relation)
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    };
+    let rows = unsafe {
+        am::spire_remote_search_local_heap_candidate_rows(
+            index_relation,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            &consistency_mode,
+        )
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &requested_columns)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
+    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
+        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
+    let payload_column_count = i32::try_from(requested_columns.len())
+        .unwrap_or_else(|_| pgrx::error!("ec_spire_remote_search_tuple_payload too many columns"));
+
+    let payload_rows = rows
+        .into_iter()
+        .map(|row| {
+            let tuple_payload = ec_spire_remote_search_tuple_payload_for_ctid(
+                &heap_relation_regclass,
+                &requested_columns,
+                row.heap_block,
+                row.heap_offset,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
+            (
+                i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+                i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
+                i64::from(row.node_id),
+                i64::try_from(row.pid).expect("pid should fit in i64"),
+                i64::try_from(row.object_version).expect("object version should fit in i64"),
+                i64::from(row.row_index),
+                i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+                row.vec_id,
+                row.row_locator,
+                row.score,
+                tuple_payload,
+                "node_id_vec_id",
+                payload_column_count,
+                row.status,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    TableIterator::new(payload_rows.into_iter())
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_local_heap_candidate_summary(
@@ -24342,6 +24559,82 @@ mod tests {
         assert_eq!(result_status, "ready");
         assert_eq!(result_returned_candidate_count, candidate_count);
         assert_eq!(result_next_blocker, "none");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_tuple_payload_side_channel() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_sql (id, title, embedding) VALUES \
+             (1, 'alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'beta', encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_sql_idx \
+             ON ec_spire_tuple_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_sql_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_sql_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let payload_from = format!(
+            "FROM ec_spire_remote_search_tuple_payload(\
+             'ec_spire_tuple_payload_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY['id', 'title']::text[])",
+            selected_pids[0], selected_pids[1],
+        );
+        let payload_count = Spi::get_one::<i64>(&format!("SELECT count(*) {payload_from}"))
+            .expect("tuple payload count query should succeed")
+            .expect("tuple payload count should exist");
+        let key_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {payload_from} WHERE payload_key = 'node_id_vec_id'"
+        ))
+        .expect("tuple payload key query should succeed")
+        .expect("tuple payload key count should exist");
+        let column_count =
+            Spi::get_one::<i32>(&format!("SELECT min(payload_column_count) {payload_from}"))
+                .expect("tuple payload column count query should succeed")
+                .expect("tuple payload column count should exist");
+        let exact_projection_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {payload_from} \
+             WHERE tuple_payload ? 'id' \
+               AND tuple_payload ? 'title' \
+               AND NOT tuple_payload ? 'embedding'"
+        ))
+        .expect("tuple payload projection query should succeed")
+        .expect("tuple payload projection count should exist");
+        let alpha_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {payload_from} \
+             WHERE tuple_payload ->> 'id' = '1' \
+               AND tuple_payload ->> 'title' = 'alpha'"
+        ))
+        .expect("tuple payload value query should succeed")
+        .expect("tuple payload value count should exist");
+
+        assert_eq!(payload_count, 2);
+        assert_eq!(key_count, payload_count);
+        assert_eq!(column_count, 2);
+        assert_eq!(exact_projection_count, payload_count);
+        assert_eq!(alpha_count, 1);
     }
 
     #[pg_test]
