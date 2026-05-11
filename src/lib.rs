@@ -15336,7 +15336,7 @@ mod unit_tests {
 pub mod pg_test {
     pub fn setup(_options: Vec<&str>) {}
     pub fn postgresql_conf_options() -> Vec<&'static str> {
-        vec![]
+        vec!["max_prepared_transactions = 10"]
     }
 }
 
@@ -16615,6 +16615,64 @@ mod tests {
             .expect("user should exist");
 
         format!("host={socket_dir} port={port} dbname={database} user={user} connect_timeout=1")
+    }
+
+    struct TestCoordinatorInsertPrepareResult {
+        prepared_gid: String,
+        status: &'static str,
+        next_step: &'static str,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn test_prepare_coordinator_insert_remote_sql(
+        index_oid: pg_sys::Oid,
+        pk_value: Vec<u8>,
+        node_id: i32,
+        centroid_id: i64,
+        served_epoch: i64,
+        source_identity: Vec<u8>,
+        remote_sql: &str,
+    ) -> TestCoordinatorInsertPrepareResult {
+        let node_id_u32 = u32::try_from(node_id).expect("node_id should fit u32");
+        let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
+        let index_relation = unsafe {
+            open_valid_ec_spire_index(index_oid, "test_prepare_coordinator_insert_remote_sql")
+        };
+        let row = unsafe {
+            am::spire_coordinator_insert_prepare_remote_sql(
+                index_relation,
+                node_id_u32,
+                served_epoch_u64,
+                remote_sql,
+            )
+        }
+        .expect("remote insert prepare should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "INSERT INTO ec_spire_placement \
+                         (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                     VALUES ($1::oid, $2::bytea, $3::integer, $4::bigint, $5::bigint, $6::bytea)",
+                    None,
+                    &[
+                        index_oid.into(),
+                        pk_value.into(),
+                        node_id.into(),
+                        centroid_id.into(),
+                        served_epoch.into(),
+                        source_identity.into(),
+                    ],
+                )
+                .expect("placement insert should succeed");
+        });
+
+        TestCoordinatorInsertPrepareResult {
+            prepared_gid: row.prepared_gid,
+            status: row.status,
+            next_step: row.next_step,
+        }
     }
 
     fn loopback_remote_index_identity_bytes(
@@ -19195,6 +19253,106 @@ mod tests {
         .expect("coordinator insert dispatch plan should exist");
 
         assert_eq!(dispatch_row, "stale_epoch:blocked:remote_epoch_window");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_remote_prepare_stages_placement_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_INSERT_PREPARE",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_insert_prepare_remote_sql; \
+                 CREATE TABLE ec_spire_insert_prepare_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null);",
+            )
+            .expect("loopback remote INSERT target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_prepare_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_insert_prepare_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_insert_prepare_coord_idx \
+             ON ec_spire_insert_prepare_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_insert_prepare_coord_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_insert_prepare_coord_idx'::regclass, \
+                 11, 14, 'spire/remote/insert_prepare', \
+                 decode('1234', 'hex'), 'ec_spire_insert_prepare_remote_idx', \
+                 'active', 9, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let result = test_prepare_coordinator_insert_remote_sql(
+            index_oid,
+            vec![0x11],
+            11,
+            7,
+            5,
+            hex::decode("000102030405060708090a0b0c0d0e0f").expect("source identity hex"),
+            "INSERT INTO ec_spire_insert_prepare_remote_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (101, 'prepared alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        );
+
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&result.prepared_gid],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM ec_spire_insert_prepare_remote_sql WHERE id = 101",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_insert_prepare_coord_idx'::regclass \
+                AND pk_value = decode('11', 'hex') \
+                AND node_id = 11 \
+                AND centroid_id = 7 \
+                AND served_epoch = 5 \
+                AND source_identity = decode('000102030405060708090a0b0c0d0e0f', 'hex')",
+        )
+        .expect("placement query should succeed")
+        .expect("placement count should exist");
+
+        assert_eq!(result.status, "remote_insert_prepared");
+        assert_eq!(result.next_step, "local_placement_directory_write");
+        assert_eq!(prepared_count, 1);
+        assert_eq!(
+            remote_visible_count, 0,
+            "prepared remote INSERT should not be visible before transaction resolution"
+        );
+        assert_eq!(placement_count, 1);
     }
 
     #[pg_test]

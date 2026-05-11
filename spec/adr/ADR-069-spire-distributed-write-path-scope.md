@@ -189,6 +189,17 @@ returns the libpq dispatch action for the 2PC protocol. It does not expose
 raw conninfo, open a socket, forward a row, write `ec_spire_placement`, or
 prepare a remote transaction.
 
+The mutating executor's first internal 2PC primitive sends the remote
+INSERT inside a remote transaction, issues `PREPARE TRANSACTION`, and
+registers transaction callbacks so the prepared remote transaction is
+resolved according to the coordinator transaction outcome. The local
+placement row is inserted only after the remote prepare succeeds. If the
+coordinator transaction aborts before commit, the remote prepared
+transaction is rolled back; if the coordinator commits, the remote
+prepared transaction is committed. A failed callback resolution leaves the
+prepared transaction visible to normal PostgreSQL prepared-transaction
+operator recovery.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

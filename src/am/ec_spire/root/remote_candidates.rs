@@ -134,6 +134,9 @@ const SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_PREPARE: &str =
     "open_remote_transaction_send_insert_prepare_xact";
 const SPIRE_COORDINATOR_INSERT_DISPATCH_ACTION_BLOCKED: &str = "blocked";
 const SPIRE_COORDINATOR_INSERT_NEXT_STEP_PREPARE: &str = "remote_insert_prepare_transaction";
+const SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT: &str =
+    "local_placement_directory_write";
+const SPIRE_COORDINATOR_INSERT_PREPARED_STATUS: &str = "remote_insert_prepared";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireRemoteSearchLibpqExecutorBudgetLimits {
@@ -2200,6 +2203,122 @@ pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
     })();
 
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn quote_sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn coordinator_insert_prepared_gid(
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    served_epoch: u64,
+) -> String {
+    let transaction_id = unsafe { pg_sys::GetTopTransactionId() };
+    let process_id = unsafe { pg_sys::MyProcPid };
+    format!(
+        "ec_spire_insert_{}_{}_{}_{}_{}",
+        u32::from(index_oid),
+        node_id,
+        served_epoch,
+        u32::from(transaction_id),
+        process_id
+    )
+}
+
+fn coordinator_insert_resolve_remote_prepared(
+    conninfo: String,
+    node_id: u32,
+    gid: String,
+    commit: bool,
+) {
+    let context = if commit {
+        "coordinator insert remote prepared commit callback"
+    } else {
+        "coordinator insert remote prepared rollback callback"
+    };
+    let Ok(mut client) =
+        remote_search_libpq_connect_with_session_timeouts(&conninfo, node_id, context)
+    else {
+        return;
+    };
+    let command = if commit {
+        "COMMIT PREPARED"
+    } else {
+        "ROLLBACK PREPARED"
+    };
+    let _ = client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid)));
+}
+
+pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+    remote_sql: &str,
+) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
+    let dispatch =
+        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
+            node_id, dispatch.status
+        ));
+    }
+
+    let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
+    let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire coordinator insert conninfo secret for node_id {node_id} is not resolved: {status}"
+        )
+    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        node_id,
+        "coordinator insert remote prepare",
+    )?;
+    let prepared_gid = coordinator_insert_prepared_gid(dispatch.index_oid, node_id, served_epoch);
+    client
+        .batch_execute("BEGIN")
+        .map_err(|_| {
+            format!(
+                "ec_spire coordinator insert failed to begin remote transaction for node_id {node_id}"
+            )
+        })?;
+    if let Err(error) = client.batch_execute(remote_sql) {
+        let _ = client.batch_execute("ROLLBACK");
+        return Err(format!(
+            "ec_spire coordinator insert remote SQL failed for node_id {node_id}: {error}"
+        ));
+    }
+    client
+        .batch_execute(&format!(
+            "PREPARE TRANSACTION {}",
+            quote_sql_literal(&prepared_gid)
+        ))
+        .map_err(|error| {
+            format!(
+                "ec_spire coordinator insert remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
+            )
+        })?;
+
+    let commit_conninfo = conninfo.clone();
+    let commit_gid = prepared_gid.clone();
+    let rollback_gid = prepared_gid.clone();
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+        coordinator_insert_resolve_remote_prepared(commit_conninfo, node_id, commit_gid, true);
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+        coordinator_insert_resolve_remote_prepared(conninfo, node_id, rollback_gid, false);
+    });
+
+    Ok(SpireCoordinatorInsertRemotePrepareRow {
+        node_id,
+        prepared_gid,
+        remote_insert_sent: true,
+        remote_prepared: true,
+        status: SPIRE_COORDINATOR_INSERT_PREPARED_STATUS,
+        next_step: SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT,
+    })
 }
 
 fn remote_search_libpq_dispatch_budget_blocked(

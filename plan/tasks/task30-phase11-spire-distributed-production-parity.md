@@ -1001,6 +1001,13 @@ v1 write contract from ADR-069:
       readiness gate the mutating transport call will consume.
   - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
     remote commit for atomicity;
+    - [x] Packet `30830` adds the internal remote-prepare primitive: it opens
+      Stage C libpq transport, runs remote INSERT SQL inside a remote
+      transaction, issues `PREPARE TRANSACTION`, registers coordinator
+      transaction callbacks for remote `COMMIT PREPARED` / `ROLLBACK
+      PREPARED`, and stages the local placement row only after remote prepare
+      succeeds. The generic tuple-to-remote-INSERT builder and transparent DML
+      hook remain open.
   - [ ] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
 - [ ] Coordinator-routed non-embedding UPDATE:
