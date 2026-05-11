@@ -247,7 +247,7 @@ CREATE TABLE ec_spire_remote_row_materialization (
 CREATE TABLE ec_spire_placement (
     index_oid oid NOT NULL,
     pk_value bytea NOT NULL CHECK (octet_length(pk_value) > 0),
-    node_id integer NOT NULL CHECK (node_id > 0),
+    node_id integer NOT NULL CHECK (node_id >= 0),
     centroid_id bigint NOT NULL CHECK (centroid_id >= 0),
     served_epoch bigint NOT NULL CHECK (served_epoch > 0),
     source_identity bytea NOT NULL CHECK (octet_length(source_identity) = 16),

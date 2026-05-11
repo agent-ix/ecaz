@@ -316,6 +316,9 @@ local-only path.
     index.
     - [x] Packet `30817` adds the catalog table to bootstrap and upgrade SQL
       and wires it into remote catalog orphan/index cleanup diagnostics.
+    - [x] Packet `30824` relaxes the placement directory `node_id` constraint
+      to `node_id >= 0`, preserving ADR-068 local node `0` for
+      coordinator-local shard rows.
   - [x] Add `ec_spire_classify_centroid(embedding, index_oid)`.
     - [x] Packet `30818` adds the coordinator-side classifier helper using
       active routing centroids and returns `(node_id, centroid_id, epoch)`.
@@ -956,6 +959,8 @@ v1 write contract from ADR-069:
   served_epoch, source_identity)` plus required indexes.
   - [x] Packet `30817` lands the table, primary key, identity index, and
     cleanup diagnostics coverage.
+  - [x] Packet `30824` allows `node_id = 0` so ADR-069 placement rows can
+    represent coordinator-local shard ownership as well as remote ownership.
 - [x] Add `ec_spire_classify_centroid(embedding, index_oid)` using the same
   placement decision coordinator-routed INSERT will use.
   - [x] Packet `30818` classifies against the active routing hierarchy and

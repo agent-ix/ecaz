@@ -17857,18 +17857,33 @@ mod tests {
         )
         .expect("placement source identity check query should succeed")
         .expect("placement source identity check count should exist");
+        let node_id_check_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM pg_constraint \
+              WHERE conrelid = 'ec_spire_placement'::regclass \
+                AND contype = 'c' \
+                AND pg_get_constraintdef(oid) LIKE '%node_id >= 0%'",
+        )
+        .expect("placement node id check query should succeed")
+        .expect("placement node id check count should exist");
 
         Spi::run(
             "INSERT INTO ec_spire_placement \
              (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
-             VALUES ('4294967291'::oid, decode('01', 'hex'), 2, 7, 5, \
-                     decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+             VALUES \
+                 ('4294967291'::oid, decode('01', 'hex'), 2, 7, 5, \
+                  decode('000102030405060708090a0b0c0d0e0f', 'hex')), \
+                 ('4294967291'::oid, decode('02', 'hex'), 0, 7, 5, \
+                  decode('101112131415161718191a1b1c1d1e1f', 'hex'))",
         )
         .expect("placement directory insert should succeed");
         let stored_row = Spi::get_one::<String>(
-            "SELECT node_id::text || ',' || centroid_id::text || ',' || served_epoch::text \
+            "SELECT string_agg( \
+                    encode(pk_value, 'hex') || ':' || node_id::text || ':' || \
+                    centroid_id::text || ':' || served_epoch::text, \
+                    ',' ORDER BY pk_value) \
                FROM ec_spire_placement \
-              WHERE index_oid = '4294967291'::oid AND pk_value = decode('01', 'hex')",
+              WHERE index_oid = '4294967291'::oid",
         )
         .expect("placement directory stored row query should succeed")
         .expect("placement directory stored row should exist");
@@ -17877,7 +17892,8 @@ mod tests {
         assert!(identity_index_exists);
         assert_eq!(primary_key_columns, "index_oid,pk_value");
         assert_eq!(source_identity_check_count, 1);
-        assert_eq!(stored_row, "2,7,5");
+        assert_eq!(node_id_check_count, 1);
+        assert_eq!(stored_row, "01:2:7:5,02:0:7:5");
     }
 
     #[pg_test]
@@ -17888,7 +17904,7 @@ mod tests {
                  ARRAY[ \
                    ROW(decode('01', 'hex'), 2, 7, 5, \
                        decode('000102030405060708090a0b0c0d0e0f', 'hex'))::ec_spire_placement_entry, \
-                   ROW(decode('02', 'hex'), 3, 8, 5, \
+                   ROW(decode('02', 'hex'), 0, 8, 5, \
                        decode('101112131415161718191a1b1c1d1e1f', 'hex'))::ec_spire_placement_entry \
                  ] \
              )",
@@ -17911,7 +17927,7 @@ mod tests {
         assert_eq!(
             stored_rows,
             "01:2:7:5:000102030405060708090a0b0c0d0e0f,\
-             02:3:8:5:101112131415161718191a1b1c1d1e1f"
+             02:0:8:5:101112131415161718191a1b1c1d1e1f"
         );
     }
 
