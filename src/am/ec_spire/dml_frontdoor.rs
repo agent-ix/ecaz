@@ -497,6 +497,78 @@ pub(crate) fn dml_frontdoor_primitive_plan_const_pk_value_bytes(
     }
 }
 
+pub(crate) unsafe fn dml_frontdoor_primitive_plan_pk_value_bytes(
+    plan: &SpireDmlFrontdoorPrimitivePlan,
+    params: pg_sys::ParamListInfo,
+) -> Result<Vec<u8>, String> {
+    match plan.pk_argument.value {
+        SpireDmlFrontdoorPkValuePlan::ConstBigint(value) => {
+            Ok(dml_frontdoor_bigint_pk_value_bytes(value))
+        }
+        SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => {
+            let value = unsafe { dml_frontdoor_bound_param_bigint_value(params, param_id)? };
+            Ok(dml_frontdoor_bigint_pk_value_bytes(value))
+        }
+    }
+}
+
+unsafe fn dml_frontdoor_bound_param_bigint_value(
+    params: pg_sys::ParamListInfo,
+    param_id: i32,
+) -> Result<i64, String> {
+    if param_id <= 0 {
+        return Err(format!(
+            "ec_spire DML frontdoor PK parameter id {param_id} is invalid"
+        ));
+    }
+    if params.is_null() {
+        return Err(format!(
+            "ec_spire DML frontdoor PK parameter ${param_id} has no bound parameter list"
+        ));
+    }
+    let params_ref = unsafe { &*params };
+    if param_id > params_ref.numParams {
+        return Err(format!(
+            "ec_spire DML frontdoor PK parameter ${param_id} exceeds bound parameter count {}",
+            params_ref.numParams
+        ));
+    }
+    let param = if let Some(fetch) = params_ref.paramFetch {
+        let mut workspace = pg_sys::ParamExternData::default();
+        unsafe { fetch(params, param_id, false, &mut workspace) }
+    } else {
+        unsafe { params_ref.params.as_ptr().add((param_id - 1) as usize) }
+    };
+    if param.is_null() {
+        return Err(format!(
+            "ec_spire DML frontdoor PK parameter ${param_id} fetch returned NULL"
+        ));
+    }
+    let param_ref = unsafe { &*param };
+    if param_ref.isnull {
+        return Err(format!(
+            "ec_spire DML frontdoor PK parameter ${param_id} must not be NULL"
+        ));
+    }
+    unsafe { dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype) }
+}
+
+unsafe fn dml_frontdoor_param_datum_to_bigint(
+    param_id: i32,
+    datum: pg_sys::Datum,
+    typoid: pg_sys::Oid,
+) -> Result<i64, String> {
+    match typoid {
+        pg_sys::INT2OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt16(datum) })),
+        pg_sys::INT4OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt32(datum) })),
+        pg_sys::INT8OID => Ok(unsafe { pg_sys::DatumGetInt64(datum) }),
+        other => Err(format!(
+            "ec_spire DML frontdoor PK parameter ${param_id} has unsupported type OID {}",
+            other.to_u32()
+        )),
+    }
+}
+
 fn dml_frontdoor_custom_scan_mode_from_decision(
     decision: &SpireDmlFrontdoorReplacementDecisionRow,
 ) -> Result<SpireDmlFrontdoorCustomScanMode, String> {

@@ -28623,6 +28623,27 @@ mod tests {
             param_error.contains("requires executor parameter evaluation"),
             "{param_error}"
         );
+        unsafe {
+            let params = pg_sys::makeParamList(1);
+            assert!(
+                !params.is_null(),
+                "bound parameter list allocation should succeed"
+            );
+            let param = (*params).params.as_mut_ptr();
+            (*param).value = pg_sys::Int64GetDatum(-7);
+            (*param).isnull = false;
+            (*param).ptype = pg_sys::INT8OID;
+            let param_bytes =
+                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                    .expect("bound bigint parameter should produce bytea");
+            assert_eq!(hex::encode(param_bytes), "fffffffffffffff9");
+
+            (*param).isnull = true;
+            let null_error =
+                am::spire_dml_frontdoor_primitive_plan_pk_value_bytes(&param_plan, params)
+                    .expect_err("NULL bound PK parameter should fail closed");
+            assert!(null_error.contains("must not be NULL"), "{null_error}");
+        }
 
         let embedding_update_query = unsafe {
             analyzed_query(

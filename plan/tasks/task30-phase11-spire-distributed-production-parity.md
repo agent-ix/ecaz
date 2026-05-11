@@ -1195,6 +1195,9 @@ v1 write contract from ADR-069:
   - [x] Packet `30867` adds the primitive-plan PK bytea conversion boundary:
     constant bigint PK values can be converted to the ADR-069 bytea argument,
     while parameterized PK plans stay blocked until executor runtime evaluation.
+  - [x] Packet `30868` adds the runtime bound-parameter PK bytea conversion
+    helper for DML primitive plans, including NULL/type/count fail-closed
+    checks before a CustomScan executor can call coordinator primitives.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
