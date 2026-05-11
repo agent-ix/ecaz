@@ -21176,14 +21176,15 @@ mod tests {
     fn test_ec_spire_forward_coordinator_update_local_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_coord_update_local_payload_sql \
-             (id bigint primary key, title text not null, embedding ecvector, \
+             (id bigint primary key, title text not null, body text not null, embedding ecvector, \
               source_identity bytea not null)",
         )
         .expect("local coordinator update table creation should succeed");
         Spi::run(
             "INSERT INTO ec_spire_coord_update_local_payload_sql \
-                 (id, title, embedding, source_identity) VALUES \
-             (707, 'local before update', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                 (id, title, body, embedding, source_identity) VALUES \
+             (707, 'local before update', 'local body before update', \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
               decode('808182838485868788898a8b8c8d8e8f', 'hex'))",
         )
         .expect("local coordinator update row insert should succeed");
@@ -21213,8 +21214,10 @@ mod tests {
                      'ec_spire_coord_update_local_payload_idx'::regclass, \
                      'id', \
                      int8send(707::bigint)::bytea, \
-                     jsonb_build_object('title', 'local after update'), \
-                     ARRAY['title']::text[]) \
+                     jsonb_build_object(\
+                         'title', 'local after update', \
+                         'body', 'local body after update'), \
+                     ARRAY['title', 'body']::text[]) \
              ) \
              SELECT node_id::text || '|' || served_epoch::text || '|' || \
                     remote_update_sent::text || '|' || remote_updated_count::text || '|' || \
@@ -21223,17 +21226,54 @@ mod tests {
         )
         .expect("local coordinator update helper query should succeed")
         .expect("local coordinator update helper should return a row");
-        let local_title = Spi::get_one::<String>(
-            "SELECT title FROM ec_spire_coord_update_local_payload_sql WHERE id = 707",
+        let local_tuple = Spi::get_one::<String>(
+            "SELECT title || '|' || body \
+               FROM ec_spire_coord_update_local_payload_sql \
+              WHERE id = 707",
         )
-        .expect("local title query should succeed")
-        .expect("local title should exist");
+        .expect("local tuple query should succeed")
+        .expect("local tuple should exist");
 
         assert_eq!(
             result,
             format!("0|{active_epoch}|false|1|local_update_applied|done")
         );
-        assert_eq!(local_title, "local after update");
+        assert_eq!(local_tuple, "local after update|local body after update");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire coordinator update placement row is missing")]
+    fn test_ec_spire_forward_coordinator_update_missing_placement_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_missing_placement_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("missing placement update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_missing_placement_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (808, 'missing placement before update', \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('909192939495969798999a9b9c9d9e9f', 'hex'))",
+        )
+        .expect("missing placement update seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_missing_placement_idx \
+             ON ec_spire_coord_update_missing_placement_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("missing placement ec_spire index creation should succeed");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                 'ec_spire_coord_update_missing_placement_idx'::regclass, \
+                 'id', \
+                 int8send(808::bigint)::bytea, \
+                 jsonb_build_object('title', 'should not update'), \
+                 ARRAY['title']::text[])",
+        )
+        .expect("missing placement update should fail before returning");
     }
 
     #[pg_test]

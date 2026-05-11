@@ -1075,6 +1075,9 @@ v1 write contract from ADR-069:
     - [x] Packet `30839` resolves the 30838 reviewer P1 by accepting placement
       rows with `node_id = 0` and applying those updates directly to the
       coordinator heap instead of rejecting the valid local placement.
+    - [x] Packet `30845` adds focused UPDATE primitive edge coverage for
+      multi-column local updates and missing placement rows before a
+      transparent front door calls the helper.
   - [ ] wire transparent `UPDATE ... WHERE pk = ...` into a ModifyTable/view
     hook; row-level table triggers cannot capture remote-owned rows because the
     coordinator heap row is suppressed by the INSERT trigger.
