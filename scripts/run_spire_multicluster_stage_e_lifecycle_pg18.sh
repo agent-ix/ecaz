@@ -4,6 +4,7 @@ set -euo pipefail
 # Lifecycle Stage E fixture family.
 #
 # Supported cases:
+#   create_index_concurrently_missing_descriptor
 #   drop_remote_index_before_fanout
 #   drop_remote_index_in_flight
 #   reindex_remote_index_before_fanout
@@ -31,6 +32,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_lifecycle_pg18.sh --case CASE [options]
 
 Cases:
+  create_index_concurrently_missing_descriptor
   drop_remote_index_before_fanout
   drop_remote_index_in_flight
   reindex_remote_index_before_fanout
@@ -107,7 +109,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" \
+if [[ "$LIFECYCLE_CASE" != "create_index_concurrently_missing_descriptor" \
+  && "$LIFECYCLE_CASE" != "drop_remote_index_before_fanout" \
   && "$LIFECYCLE_CASE" != "drop_remote_index_in_flight" \
   && "$LIFECYCLE_CASE" != "reindex_remote_index_before_fanout" \
   && "$LIFECYCLE_CASE" != "reindex_remote_index_in_flight" ]]; then
@@ -266,6 +269,84 @@ elif [[ "$LIFECYCLE_CASE" == "reindex_remote_index_before_fanout" ]]; then
     exit 3
   fi
   remote_dropped_identity_hex="$planned_reindex_identity_hex"
+fi
+
+run_missing_descriptor_case() {
+  local mode="$1"
+  local output_log="$2"
+  local expected_status="$3"
+  local expected_planned_dispatches="$4"
+  local expected_blocked_before_dispatches="$5"
+  local expected_degraded_skipped="$6"
+  local expected_first_skip="$7"
+  local expected_next_step="$8"
+
+  if [[ "$mode" == "degraded" ]]; then
+    "${coord_psql[@]}" -c "SELECT tests.ec_spire_test_rewrite_placement_node('ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid, $dropped_pid, 0)" >/dev/null
+    "${coord_psql[@]}" <<'SQL' >/dev/null
+SELECT tests.ec_spire_test_rewrite_consistency_mode(
+    'ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid,
+    'degraded'
+);
+SQL
+    "${coord_psql[@]}" -c "SELECT tests.ec_spire_test_rewrite_placement_node('ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid, $dropped_pid, 2)" >/dev/null
+  fi
+
+  local summary
+  summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, planned_dispatch_count, blocked_before_dispatch_count, remote_pid_count, planned_pid_count, blocked_pid_count, conninfo_secret_lookup_count, socket_open_count, endpoint_identity_query_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM ec_spire_remote_search_production_executor_state_summary('ec_spire_stage_e_lifecycle_coord_idx'::regclass, $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], ARRAY[$dropped_pid,$ready_pid]::bigint[], 1, '$mode')")"
+  local readiness
+  readiness="$("${coord_psql[@]}" -At -F ',' -c "SELECT target_kind, node_id, descriptor_state, node_status, status FROM ec_spire_remote_search_request_readiness('ec_spire_stage_e_lifecycle_coord_idx'::regclass, $coord_ready_epoch, ARRAY[1.0, 0.0]::real[], ARRAY[$dropped_pid,$ready_pid]::bigint[], 1, '$mode') ORDER BY node_id, target_kind")"
+
+  {
+    echo "lifecycle_row=$lifecycle_row"
+    echo "injection=CREATE INDEX CONCURRENTLY ec_spire_stage_e_lifecycle_missing_descriptor_idx before descriptor registration"
+    echo "created_index_to_regclass_is_not_null=$missing_descriptor_index_exists"
+    echo "coord_remote_pid=$dropped_pid"
+    echo "coord_local_pid=$ready_pid"
+    echo "coord_ready_epoch=$coord_ready_epoch"
+    echo "query_command=ec_spire_remote_search_production_executor_state_summary(..., '$mode')"
+    echo "expected_status=$expected_status"
+    echo "expected_planned_dispatch_count=$expected_planned_dispatches"
+    echo "expected_blocked_before_dispatch_count=$expected_blocked_before_dispatches"
+    echo "expected_degraded_skipped_dispatch_count=$expected_degraded_skipped"
+    echo "expected_first_degraded_skip_category=$expected_first_skip"
+    echo "expected_next_executor_step=$expected_next_step"
+    echo "observed_request_readiness_rows=$readiness"
+    echo "observed_summary=$summary"
+  } | tee "$output_log"
+
+  IFS=, read -r state_model dispatch_count planned_count blocked_count remote_pid_count planned_pid_count blocked_pid_count secret_count socket_count identity_count degraded_count first_skip next_step status <<< "$summary"
+  [[ "$state_model" == "spire_remote_fanout_executor_v1" ]]
+  [[ "$dispatch_count" == "1" ]]
+  [[ "$planned_count" == "$expected_planned_dispatches" ]]
+  [[ "$blocked_count" == "$expected_blocked_before_dispatches" ]]
+  [[ "$remote_pid_count" == "1" ]]
+  [[ "$secret_count" == "0" ]]
+  [[ "$socket_count" == "0" ]]
+  [[ "$identity_count" == "0" ]]
+  [[ "$degraded_count" == "$expected_degraded_skipped" ]]
+  [[ "$first_skip" == "$expected_first_skip" ]]
+  [[ "$next_step" == "$expected_next_step" ]]
+  [[ "$status" == "$expected_status" ]]
+}
+
+if [[ "$LIFECYCLE_CASE" == "create_index_concurrently_missing_descriptor" ]]; then
+  "${remote_ready_psql[@]}" -c "CREATE INDEX CONCURRENTLY ec_spire_stage_e_lifecycle_missing_descriptor_idx ON ec_spire_stage_e_lifecycle_remote_sql USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq')" >/dev/null
+  missing_descriptor_index_exists="$("${remote_ready_psql[@]}" -At -c "SELECT to_regclass('ec_spire_stage_e_lifecycle_missing_descriptor_idx') IS NOT NULL")"
+  if [[ "$missing_descriptor_index_exists" != "t" ]]; then
+    echo "expected CREATE INDEX CONCURRENTLY target to exist, got to_regclass not null=$missing_descriptor_index_exists" >&2
+    exit 3
+  fi
+  "${coord_psql[@]}" -c "SELECT tests.ec_spire_test_rewrite_placement_node('ec_spire_stage_e_lifecycle_coord_idx'::regclass::oid, $dropped_pid, 2)" >/dev/null
+
+  run_missing_descriptor_case "strict" "$STRICT_LOG" "requires_remote_node_descriptor" "0" "1" "0" "none" "remote_node_descriptor"
+  run_missing_descriptor_case "degraded" "$DEGRADED_LOG" "degraded_skipped" "1" "0" "1" "requires_remote_node_descriptor" "remote_heap_resolution"
+
+  echo "strict_log=$STRICT_LOG"
+  echo "degraded_log=$DEGRADED_LOG"
+  echo "stage_e_lifecycle_${LIFECYCLE_CASE}_passed=true"
+  echo "SPIRE Stage E lifecycle $LIFECYCLE_CASE PG18 fixture passed"
+  exit 0
 fi
 
 run_case() {

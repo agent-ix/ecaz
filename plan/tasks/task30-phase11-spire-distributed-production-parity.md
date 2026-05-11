@@ -833,6 +833,13 @@ Goal: prove distributed correctness locally before AWS.
     receive, and verifies strict fail-closed / degraded skip behavior at
     `endpoint_identity_mismatch`. CREATE INDEX CONCURRENTLY lifecycle rows
     still need fixture logs.
+  - [x] Packet `30793` adds
+    `create_index_concurrently_missing_descriptor` runtime evidence: the
+    fixture creates a remote index before descriptor registration, rewrites a
+    coordinator placement to that remote node without registering a descriptor,
+    and verifies strict blocks at `requires_remote_node_descriptor` while
+    degraded skips the pre-dispatch blocker without opening sockets. The new
+    descriptor deferral row still needs fixture logs.
 - [ ] Run a strict/degraded fault matrix: epoch mismatch, version skew,
   fingerprint mismatch, connection reset, backend termination, remote and local
   statement timeout, local cancel, simulated network partition, remote OOM, and

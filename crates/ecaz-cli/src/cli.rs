@@ -562,4 +562,28 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
     }
+
+    #[test]
+    fn cli_parses_spire_multicluster_lifecycle_create_missing_descriptor_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "spire-multicluster",
+            "lifecycle-pg18",
+            "--case",
+            "create_index_concurrently_missing_descriptor",
+            "--artifact-dir",
+            "review/30793-spire-stage-e-lifecycle-create-missing-descriptor/artifacts",
+            "--run-id",
+            "parse-test",
+            "--skip-install",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::SpireMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
 }

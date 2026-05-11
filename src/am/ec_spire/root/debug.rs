@@ -423,8 +423,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_state(
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
-        let (epoch_manifest, object_manifest, mut placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (epoch_manifest, object_manifest, mut placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         let placement = placement_directory
             .entries
             .iter_mut()
@@ -486,8 +487,9 @@ pub(crate) unsafe fn debug_spire_rewrite_placement_nodes(
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
-        let (epoch_manifest, object_manifest, mut placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (epoch_manifest, object_manifest, mut placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         for (pid, node_id) in rewrites {
             let placement = placement_directory
                 .entries
@@ -535,8 +537,9 @@ pub(crate) unsafe fn debug_spire_rewrite_consistency_mode(
         let root_control = unsafe { page::read_root_control_page(index_relation) };
         let local_store_config =
             unsafe { scan::load_relation_local_store_config(index_relation, root_control)? };
-        let (mut epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (mut epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         epoch_manifest.consistency_mode = match mode {
             "strict" => meta::SpireConsistencyMode::Strict,
             "degraded" => meta::SpireConsistencyMode::Degraded,
