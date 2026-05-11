@@ -1059,6 +1059,10 @@ v1 write contract from ADR-069:
 	      proving the trigger suppresses the coordinator heap row, forwards to
 	      the remote, refreshes the descriptor, stages placement, and returns the
 	      row through `Custom Scan (EcSpireDistributedScan)`.
+	    - [x] Packet `30844` adds focused bytea source-identity JSON roundtrip
+	      coverage for the trigger's `to_jsonb(NEW)` / remote
+	      `jsonb_populate_record(...)` payload shape and documents the v1
+	      bigint-PK / `ecvector` / bytea trigger constraints in ADR-069.
 - [ ] Coordinator-routed non-embedding UPDATE:
   - [x] lookup `node_id` from the placement directory;
   - [x] forward UPDATE to the owning remote;

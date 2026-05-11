@@ -21025,6 +21025,39 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_insert_trigger_source_identity_json_roundtrip_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_insert_trigger_json_roundtrip_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("json roundtrip table creation should succeed");
+
+        let roundtrip_identity_hex = Spi::get_one::<String>(
+            "WITH original AS ( \
+                 SELECT ROW( \
+                            515::bigint, \
+                            'json bytea roundtrip'::text, \
+                            encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                            decode('0001feff102030405060708090a0b0c0', 'hex') \
+                        )::ec_spire_insert_trigger_json_roundtrip_sql AS row_value \
+             ) \
+             SELECT encode( \
+                        (jsonb_populate_record( \
+                             NULL::ec_spire_insert_trigger_json_roundtrip_sql, \
+                             to_jsonb(row_value) \
+                         )).source_identity, \
+                        'hex' \
+                    ) \
+               FROM original",
+        )
+        .expect("json roundtrip query should succeed")
+        .expect("json roundtrip identity should exist");
+
+        assert_eq!(roundtrip_identity_hex, "0001feff102030405060708090a0b0c0");
+    }
+
+    #[pg_test]
     fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();

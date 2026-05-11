@@ -293,6 +293,22 @@ forwards the row through
 The trigger uses the same helper path, including automatic remote
 descriptor epoch/identity refresh.
 
+UUID primary keys and non-`bytea` trigger source-identity columns are
+deferred. ADR-063 still allows `uuid` source identity for index INCLUDE
+columns, but the v1 coordinator-routed INSERT trigger pins its front-door
+wire shape to a canonical bigint primary key plus exact 16-byte `bytea`
+source identity. A future packet can add `uuid_send` primary-key encoding
+and a richer trigger/hook contract without changing the existing bigint
+shape.
+
+Descriptor refresh uses the remote endpoint's post-INSERT descriptor
+generation as a monotonic guard. If concurrent coordinator INSERTs for the
+same `(index_oid, node_id)` race and a newer descriptor generation wins
+first, the older transaction can fail to advance the descriptor and roll
+back. That is acceptable v1 behavior; callers should retry the INSERT.
+Stage F can replace this with an explicit live-row compatibility check or
+per-node INSERT serialization if concurrent INSERT throughput requires it.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that
