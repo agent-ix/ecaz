@@ -1098,7 +1098,11 @@ v1 write contract from ADR-069:
   - [ ] wire transparent `SELECT ... WHERE pk = ...` into the coordinator
     planner/view hook; the primitive is the dispatch operation that front door
     should call.
-- [ ] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
+- [x] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
+  - [x] Packet `30841` rejects updates to the indexed `ec_spire` embedding
+    column in `ec_spire_forward_coordinator_update_tuple_payload(...)` before
+    placement lookup or remote dispatch, and PG18 coverage asserts both the ADR
+    error message and hint.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

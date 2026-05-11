@@ -7841,6 +7841,18 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
             "ec_spire_forward_coordinator_update_tuple_payload must not update the primary-key column"
         );
     }
+    let index_key_columns = ec_spire_index_key_column_names(
+        index_oid,
+        "ec_spire_forward_coordinator_update_tuple_payload",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if updated_columns.iter().any(|column| {
+        index_key_columns
+            .iter()
+            .any(|key_column| key_column == column)
+    }) {
+        ec_spire_reject_distributed_embedding_update();
+    }
 
     let (node_id, served_epoch) = Spi::connect(|client| {
         client
@@ -13443,6 +13455,44 @@ fn ec_spire_relation_regclass_text(relation_oid: pg_sys::Oid) -> Result<String, 
             .map_err(|e| format!("ec_spire tuple payload relation name decode failed: {e}"))?
             .ok_or_else(|| "ec_spire tuple payload relation name is null".to_owned())
     })
+}
+
+fn ec_spire_index_key_column_names(
+    index_oid: pg_sys::Oid,
+    context: &str,
+) -> Result<Vec<String>, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT coalesce(array_agg(attr.attname::text ORDER BY key_column.ord), ARRAY[]::text[]) \
+                   AS key_columns \
+                   FROM pg_index AS idx \
+                   JOIN unnest(idx.indkey) WITH ORDINALITY AS key_column(attnum, ord) \
+                     ON key_column.attnum > 0 \
+                   JOIN pg_attribute AS attr \
+                     ON attr.attrelid = idx.indrelid \
+                    AND attr.attnum = key_column.attnum \
+                  WHERE idx.indexrelid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("{context} index key column lookup failed: {e}"))?
+            .first()
+            .get_one::<Vec<String>>()
+            .map_err(|e| format!("{context} index key column decode failed: {e}"))?
+            .ok_or_else(|| format!("{context} index key column list is null"))
+    })
+}
+
+fn ec_spire_reject_distributed_embedding_update() -> ! {
+    pgrx::pg_sys::panic::ErrorReport::new(
+        pgrx::PgSqlErrorCode::ERRCODE_FEATURE_NOT_SUPPORTED,
+        "ec_spire_distributed: UPDATE of indexed embedding column is not supported on a distributed ec_spire table. Use DELETE + INSERT.",
+        pgrx::function_name!(),
+    )
+    .set_hint("Cross-shard atomic moves will be available in a future release.")
+    .report(pgrx::PgLogLevel::ERROR);
+    unreachable!();
 }
 
 #[pg_extern(strict)]
@@ -21026,6 +21076,57 @@ mod tests {
             format!("0|{active_epoch}|false|1|local_update_applied|done")
         );
         assert_eq!(local_title, "local after update");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_update_rejects_embedding_column_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_embedding_reject_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("embedding reject update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_embedding_reject_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1001, 'before embedding update', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('c0c1c2c3c4c5c6c7c8c9cacbcccdcecf', 'hex'))",
+        )
+        .expect("embedding reject update row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_embedding_reject_idx \
+             ON ec_spire_coord_update_embedding_reject_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("embedding reject ec_spire index creation should succeed");
+        let error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run(
+                "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_coord_update_embedding_reject_idx'::regclass, \
+                     'id', \
+                     int8send(1001::bigint)::bytea, \
+                     jsonb_build_object(\
+                         'embedding', encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42)::text), \
+                     ARRAY['embedding']::text[])",
+            )
+            .expect("embedding update rejection query should raise before returning");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => {
+                format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+            }
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+            }
+        })
+        .execute();
+
+        assert_eq!(
+            error,
+            "ec_spire_distributed: UPDATE of indexed embedding column is not supported on a distributed ec_spire table. Use DELETE + INSERT.|Cross-shard atomic moves will be available in a future release."
+        );
     }
 
     #[pg_test]

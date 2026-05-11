@@ -170,6 +170,13 @@ DELETE followed by INSERT in their own transaction (or transactions).
 This is operationally identical to how Citus handles updates to
 distribution-key columns.
 
+Packet `30841` wires this rejection into
+`ec_spire_forward_coordinator_update_tuple_payload(...)` by detecting updates
+to the `ec_spire` index key column before placement lookup or remote dispatch.
+The transparent `UPDATE ... WHERE pk = ...` front door remains a follow-up, but
+the shared coordinator UPDATE primitive now fails with the documented error and
+hint.
+
 A future ADR may add atomic cross-shard UPDATE-as-move. v1 keeps
 the contract narrow.
 
