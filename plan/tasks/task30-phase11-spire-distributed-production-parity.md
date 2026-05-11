@@ -899,6 +899,10 @@ CustomScan read-path work:
     - [x] Packet `30815` adds the first end-to-end PG18 loopback-remote fixture
       proving remote-origin output rows return through CustomScan without the
       materialization catalog.
+    - [x] Packet `30816` closes the immediate JSON payload-slot review
+      blockers by rejecting projected array/composite payload columns before
+      dispatch, rejecting non-scalar JSON values before type input, and caching
+      per-attribute input functions for scalar slot delivery.
     - [ ] Add the final multi-instance fixture proving the same path across
       separate local PostgreSQL instances.
   - [ ] Keep the existing index AM unchanged for local-only scans.

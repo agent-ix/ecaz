@@ -23,7 +23,8 @@ pub(crate) struct SpireCustomScanIndexEligibilityRow {
     pub(crate) active_epoch: u64,
     pub(crate) local_placement_count: u64,
     // Total remote nodes represented by active-epoch placements, including
-    // currently unavailable placements.
+    // currently unavailable placements; historical epochs are filtered before
+    // this count is computed.
     pub(crate) remote_node_count: u64,
     // Planner-relevant subset of remote nodes with at least one available
     // placement.
@@ -76,9 +77,16 @@ struct SpireCustomScanExecState {
     top_k: usize,
     query: Vec<f32>,
     tuple_payload_columns: Vec<String>,
+    tuple_payload_inputs: Vec<Option<SpireCustomScanPayloadAttrInput>>,
     outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
     next_output: usize,
     loaded_outputs: bool,
+}
+
+struct SpireCustomScanPayloadAttrInput {
+    flinfo: pg_sys::FmgrInfo,
+    typioparam: pg_sys::Oid,
+    typmod: i32,
 }
 
 pub(crate) unsafe fn register_custom_scan() {
@@ -110,7 +118,7 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         } else {
             "not_registered"
         },
-        next_step: "add end-to-end remote CustomScan tuple delivery fixture",
+        next_step: "add multi-instance CustomScan read fixture and ADR-069 write path",
     }
 }
 
@@ -640,9 +648,55 @@ unsafe fn custom_scan_tuple_payload_columns(
                     pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
                 })
                 .to_owned();
+            custom_scan_validate_tuple_payload_attr(attr, &name);
             columns.push(name);
         }
         columns
+    }
+}
+
+unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribute, name: &str) {
+    unsafe {
+        if pg_sys::get_element_type((*attr).atttypid) != pg_sys::InvalidOid {
+            pgrx::error!(
+                "EcSpireDistributedScan tuple payload column \"{name}\" has unsupported array type"
+            );
+        }
+        if pg_sys::type_is_rowtype((*attr).atttypid) {
+            pgrx::error!(
+                "EcSpireDistributedScan tuple payload column \"{name}\" has unsupported composite type"
+            );
+        }
+    }
+}
+
+unsafe fn custom_scan_payload_attr_inputs(
+    tuple_desc: pg_sys::TupleDesc,
+) -> Vec<Option<SpireCustomScanPayloadAttrInput>> {
+    unsafe {
+        if tuple_desc.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload input descriptor is null");
+        }
+        let natts = (*tuple_desc).natts;
+        let mut inputs = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+        for attr_index in 0..natts {
+            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
+            if attr.is_null() || (*attr).attisdropped {
+                inputs.push(None);
+                continue;
+            }
+            let mut typinput = pg_sys::InvalidOid;
+            let mut typioparam = pg_sys::InvalidOid;
+            pg_sys::getTypeInputInfo((*attr).atttypid, &mut typinput, &mut typioparam);
+            let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
+            pg_sys::fmgr_info(typinput, &mut flinfo);
+            inputs.push(Some(SpireCustomScanPayloadAttrInput {
+                flinfo,
+                typioparam,
+                typmod: (*attr).atttypmod,
+            }));
+        }
+        inputs
     }
 }
 
@@ -661,6 +715,7 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
                 top_k: 0,
                 query: Vec::new(),
                 tuple_payload_columns: Vec::new(),
+                tuple_payload_inputs: Vec::new(),
                 outputs: Vec::new(),
                 next_output: 0,
                 loaded_outputs: false,
@@ -685,6 +740,8 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
         (*state).query = custom_scan_query_from_plan(node, custom_scan);
         (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
+        (*state).tuple_payload_inputs =
+            custom_scan_payload_attr_inputs((*(*node).ss.ss_currentRelation).rd_att);
     }
 }
 
@@ -743,7 +800,7 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
                 super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
                     | super::SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
             ) {
-                return custom_scan_store_remote_tuple_payload(scan_state, output);
+                return custom_scan_store_remote_tuple_payload(state, scan_state, output);
             }
 
             let mut tid = pg_sys::ItemPointerData::default();
@@ -775,6 +832,7 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
 }
 
 unsafe fn custom_scan_store_remote_tuple_payload(
+    state: *mut SpireCustomScanExecState,
     scan_state: *mut pg_sys::ScanState,
     output: &super::SpireRemoteProductionScanOutputRow,
 ) -> *mut pg_sys::TupleTableSlot {
@@ -792,13 +850,18 @@ unsafe fn custom_scan_store_remote_tuple_payload(
                 output.heap_lookup_owner
             );
         };
-        custom_scan_store_tuple_payload_json((*scan_state).ss_ScanTupleSlot, payload_json)
+        custom_scan_store_tuple_payload_json(
+            (*scan_state).ss_ScanTupleSlot,
+            payload_json,
+            &mut (*state).tuple_payload_inputs,
+        )
     }
 }
 
 unsafe fn custom_scan_store_tuple_payload_json(
     slot: *mut pg_sys::TupleTableSlot,
     payload_json: &str,
+    attr_inputs: &mut [Option<SpireCustomScanPayloadAttrInput>],
 ) -> *mut pg_sys::TupleTableSlot {
     unsafe {
         if slot.is_null() {
@@ -814,6 +877,10 @@ unsafe fn custom_scan_store_tuple_payload_json(
         let payload_object = payload.as_object().unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan remote tuple payload must be a JSON object")
         });
+
+        if attr_inputs.len() != usize::try_from((*tuple_desc).natts).unwrap_or(usize::MAX) {
+            pgrx::error!("EcSpireDistributedScan tuple payload input cache width mismatch");
+        }
 
         pg_sys::ExecClearTuple(slot);
         let natts = (*tuple_desc).natts;
@@ -836,8 +903,17 @@ unsafe fn custom_scan_store_tuple_payload_json(
                 }
                 Some(value) => {
                     *(*slot).tts_isnull.add(attr_index as usize) = false;
+                    let Some(attr_input) = attr_inputs
+                        .get_mut(attr_index as usize)
+                        .and_then(Option::as_mut)
+                    else {
+                        pgrx::error!(
+                            "EcSpireDistributedScan tuple payload input cache missing attribute {}",
+                            attr_index + 1
+                        );
+                    };
                     *(*slot).tts_values.add(attr_index as usize) =
-                        custom_scan_json_value_to_datum(value, attr);
+                        custom_scan_json_value_to_datum(value, attr_name, attr_input);
                 }
             }
         }
@@ -852,35 +928,41 @@ pub(crate) unsafe fn custom_scan_store_tuple_payload_json_for_test(
     slot: *mut pg_sys::TupleTableSlot,
     payload_json: &str,
 ) -> *mut pg_sys::TupleTableSlot {
-    unsafe { custom_scan_store_tuple_payload_json(slot, payload_json) }
+    unsafe {
+        if slot.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
+        }
+        let mut attr_inputs = custom_scan_payload_attr_inputs((*slot).tts_tupleDescriptor);
+        custom_scan_store_tuple_payload_json(slot, payload_json, &mut attr_inputs)
+    }
 }
 
 unsafe fn custom_scan_json_value_to_datum(
     value: &serde_json::Value,
-    attr: pg_sys::Form_pg_attribute,
+    attr_name: &str,
+    attr_input: &mut SpireCustomScanPayloadAttrInput,
 ) -> pg_sys::Datum {
     unsafe {
         let input_text = match value {
             serde_json::Value::String(value) => value.clone(),
             serde_json::Value::Bool(value) => value.to_string(),
             serde_json::Value::Number(value) => value.to_string(),
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => value.to_string(),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                pgrx::error!(
+                    "EcSpireDistributedScan tuple payload column \"{attr_name}\" has unsupported non-scalar JSON value"
+                )
+            }
             serde_json::Value::Null => {
                 pgrx::error!("EcSpireDistributedScan cannot convert JSON null to non-null datum")
             }
         };
         let input = CString::new(input_text)
             .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan tuple payload contains NUL"));
-        let mut typinput = pg_sys::InvalidOid;
-        let mut typioparam = pg_sys::InvalidOid;
-        pg_sys::getTypeInputInfo((*attr).atttypid, &mut typinput, &mut typioparam);
-        let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
-        pg_sys::fmgr_info(typinput, &mut flinfo);
         pg_sys::InputFunctionCall(
-            &mut flinfo,
+            &mut attr_input.flinfo,
             input.as_ptr().cast_mut(),
-            typioparam,
-            (*attr).atttypmod,
+            attr_input.typioparam,
+            attr_input.typmod,
         )
     }
 }
@@ -927,7 +1009,7 @@ mod tests {
         assert!(row.exec_wiring_enabled);
         assert_eq!(
             row.next_step,
-            "add end-to-end remote CustomScan tuple delivery fixture"
+            "add multi-instance CustomScan read fixture and ADR-069 write path"
         );
     }
 
