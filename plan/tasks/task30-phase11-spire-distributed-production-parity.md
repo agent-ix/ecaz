@@ -1168,6 +1168,10 @@ v1 write contract from ADR-069:
   - [x] Packet `30858` documents the deliberate split between SPI-backed
     diagnostic relation context and catalog/relcache planner-hook relation
     context, including the `RelationGetIndexList` index-open/close pattern.
+  - [x] Packet `30859` adds a catalog-backed DML front-door replacement
+    decision surface that maps supported UPDATE, DELETE, and PK SELECT shapes
+    to their exact DML CustomScan mode and coordinator primitive while keeping
+    plan rewriting disabled.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

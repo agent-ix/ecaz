@@ -1137,6 +1137,67 @@ fn ec_spire_dml_frontdoor_classify_sql(
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_replacement_sql(
+    sql: &str,
+) -> TableIterator<
+    'static,
+    (
+        name!(target_relation_oid, Option<pg_sys::Oid>),
+        name!(index_oid, Option<pg_sys::Oid>),
+        name!(supported, bool),
+        name!(operation, &'static str),
+        name!(kind, &'static str),
+        name!(status, &'static str),
+        name!(custom_scan_mode, &'static str),
+        name!(primitive, &'static str),
+        name!(error, Option<&'static str>),
+        name!(hint, Option<&'static str>),
+        name!(next_step, &'static str),
+    ),
+> {
+    let query = unsafe {
+        analyze_single_dml_frontdoor_query(sql)
+            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
+    };
+    let Some(decision) =
+        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
+    else {
+        return TableIterator::once((
+            None,
+            None,
+            false,
+            "unsupported",
+            "unsupported_target_relation",
+            "unsupported_shape",
+            "none",
+            "none",
+            Some("ec_spire_distributed: DML front door requires one target heap relation"),
+            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+            "raise ADR-069 planner error instead of using coordinator heap path",
+        ));
+    };
+
+    TableIterator::once((
+        Some(decision.target_relation_oid),
+        if decision.index_oid == pg_sys::InvalidOid {
+            None
+        } else {
+            Some(decision.index_oid)
+        },
+        decision.supported,
+        decision.operation,
+        decision.kind,
+        decision.status,
+        decision.custom_scan_mode,
+        decision.primitive,
+        decision.error,
+        decision.hint,
+        decision.next_step,
+    ))
+}
+
 unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
     let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
     let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
@@ -28243,6 +28304,99 @@ mod tests {
         assert!(hook_classification_supported);
         assert_eq!(hook_classification_kind, "pk_select_by_pk");
         assert_eq!(hook_classification_status, "supported_v1_shape");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_replacement_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML replacement table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_replacement_idx \
+             ON ec_spire_dml_replacement_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML replacement ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_replacement_other_sql \
+             (id bigint primary key)",
+        )
+        .expect("DML replacement join helper table creation should succeed");
+
+        let select_replacement = "FROM ec_spire_dml_frontdoor_replacement_sql(\
+             $$SELECT id, title FROM ec_spire_dml_replacement_sql WHERE id = 5$$)";
+        let select_supported =
+            Spi::get_one::<bool>(&format!("SELECT supported {select_replacement}"))
+                .expect("DML replacement SELECT supported query should succeed")
+                .expect("DML replacement SELECT supported value should exist");
+        let select_mode =
+            Spi::get_one::<String>(&format!("SELECT custom_scan_mode {select_replacement}"))
+                .expect("DML replacement SELECT mode query should succeed")
+                .expect("DML replacement SELECT mode should exist");
+        let select_primitive =
+            Spi::get_one::<String>(&format!("SELECT primitive {select_replacement}"))
+                .expect("DML replacement SELECT primitive query should succeed")
+                .expect("DML replacement SELECT primitive should exist");
+        assert!(select_supported);
+        assert_eq!(select_mode, "coordinator_pk_select_tuple_payload");
+        assert_eq!(
+            select_primitive,
+            "ec_spire_forward_coordinator_select_tuple_payload"
+        );
+
+        let update_replacement = "FROM ec_spire_dml_frontdoor_replacement_sql(\
+             $$UPDATE ec_spire_dml_replacement_sql SET title = 'updated' WHERE id = 5$$)";
+        let update_supported =
+            Spi::get_one::<bool>(&format!("SELECT supported {update_replacement}"))
+                .expect("DML replacement UPDATE supported query should succeed")
+                .expect("DML replacement UPDATE supported value should exist");
+        let update_kind = Spi::get_one::<String>(&format!("SELECT kind {update_replacement}"))
+            .expect("DML replacement UPDATE kind query should succeed")
+            .expect("DML replacement UPDATE kind should exist");
+        let update_primitive =
+            Spi::get_one::<String>(&format!("SELECT primitive {update_replacement}"))
+                .expect("DML replacement UPDATE primitive query should succeed")
+                .expect("DML replacement UPDATE primitive should exist");
+        assert!(update_supported, "{update_kind}");
+        assert_eq!(
+            update_primitive,
+            "ec_spire_forward_coordinator_update_tuple_payload"
+        );
+
+        let embedding_update = "FROM ec_spire_dml_frontdoor_replacement_sql(\
+             $$UPDATE ec_spire_dml_replacement_sql SET embedding = '[1,2,3]'::ecvector \
+               WHERE id = 5$$)";
+        let embedding_supported =
+            Spi::get_one::<bool>(&format!("SELECT supported {embedding_update}"))
+                .expect("DML replacement embedding UPDATE supported query should succeed")
+                .expect("DML replacement embedding UPDATE supported value should exist");
+        let embedding_kind = Spi::get_one::<String>(&format!("SELECT kind {embedding_update}"))
+            .expect("DML replacement embedding UPDATE kind query should succeed")
+            .expect("DML replacement embedding UPDATE kind should exist");
+        let embedding_mode =
+            Spi::get_one::<String>(&format!("SELECT custom_scan_mode {embedding_update}"))
+                .expect("DML replacement embedding UPDATE mode query should succeed")
+                .expect("DML replacement embedding UPDATE mode should exist");
+        assert!(!embedding_supported);
+        assert_eq!(embedding_kind, "embedding_update_rejected");
+        assert_eq!(embedding_mode, "none");
+
+        let update_from = "FROM ec_spire_dml_frontdoor_replacement_sql(\
+             $$UPDATE ec_spire_dml_replacement_sql AS target \
+                  SET title = 'joined' \
+                 FROM ec_spire_dml_replacement_other_sql AS other \
+                WHERE target.id = other.id AND target.id = 5$$)";
+        let update_from_supported =
+            Spi::get_one::<bool>(&format!("SELECT supported {update_from}"))
+                .expect("DML replacement UPDATE FROM supported query should succeed")
+                .expect("DML replacement UPDATE FROM supported value should exist");
+        let update_from_kind = Spi::get_one::<String>(&format!("SELECT kind {update_from}"))
+            .expect("DML replacement UPDATE FROM kind query should succeed")
+            .expect("DML replacement UPDATE FROM kind should exist");
+        assert!(!update_from_supported);
+        assert_eq!(update_from_kind, "unsupported_join_shape");
     }
 
     unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {

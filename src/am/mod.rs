@@ -40,6 +40,7 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
+    dml_frontdoor_replacement_decision_catalog_row as spire_dml_frontdoor_replacement_decision_catalog_row,
     dml_frontdoor_target_relation_oid as spire_dml_frontdoor_target_relation_oid,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,

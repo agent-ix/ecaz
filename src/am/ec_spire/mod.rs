@@ -32,8 +32,8 @@ pub(crate) use self::custom_scan::{
 pub(crate) use self::dml_frontdoor::{classify_dml_frontdoor_query, SpireDmlFrontdoorQueryContext};
 pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_hook_status_row, dml_frontdoor_relation_context_catalog_row,
-    dml_frontdoor_relation_context_row, dml_frontdoor_target_relation_oid,
-    register_dml_frontdoor_planner_hook,
+    dml_frontdoor_relation_context_row, dml_frontdoor_replacement_decision_catalog_row,
+    dml_frontdoor_target_relation_oid, register_dml_frontdoor_planner_hook,
 };
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{
