@@ -7883,9 +7883,6 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
             })?
     })
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-    if node_id <= 0 {
-        pgrx::error!("ec_spire coordinator update placement points at local node 0");
-    }
     if served_epoch <= 0 {
         pgrx::error!("ec_spire coordinator update placement served_epoch must be greater than 0");
     }
@@ -7897,6 +7894,38 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
         )
     };
     let row_payload_json = row_payload.0.to_string();
+    if node_id == 0 {
+        let heap_relation_oid = unsafe {
+            (*index_relation)
+                .rd_index
+                .as_ref()
+                .expect("opened index relation should expose pg_index metadata")
+                .indrelid
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let updated_count = ec_spire_update_tuple_payload_on_heap(
+            heap_relation_oid,
+            &pk_column,
+            &pk_value,
+            &row_payload_json,
+            &updated_columns,
+            "ec_spire_forward_coordinator_update_tuple_payload",
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        return TableIterator::once((
+            index_oid,
+            pk_value,
+            0,
+            served_epoch,
+            false,
+            i64::try_from(updated_count).expect("updated count should fit i64"),
+            "local_update_applied",
+            "done",
+        ));
+    }
+    if node_id < 0 {
+        pgrx::error!("ec_spire coordinator update placement node_id must not be negative");
+    }
     let update_row = unsafe {
         am::spire_coordinator_update_remote_tuple_payload(
             index_relation,
@@ -13337,6 +13366,65 @@ fn ec_spire_remote_insert_tuple_payload(
     ))
 }
 
+fn ec_spire_update_tuple_payload_on_heap(
+    heap_relation_oid: pg_sys::Oid,
+    pk_column: &str,
+    pk_value: &[u8],
+    row_payload_json: &str,
+    updated_columns: &[String],
+    context: &str,
+) -> Result<u64, String> {
+    let mut validation_columns = Vec::with_capacity(updated_columns.len() + 1);
+    validation_columns.push(pk_column.to_owned());
+    validation_columns.extend(updated_columns.iter().cloned());
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &validation_columns)
+        .map_err(|e| format!("{context} {e}"))?;
+    let heap_relation_regclass =
+        ec_spire_relation_regclass_text(heap_relation_oid).map_err(|e| format!("{context} {e}"))?;
+    let pk_identifier = ec_spire_quote_identifier(pk_column);
+    let set_list = updated_columns
+        .iter()
+        .map(|column| {
+            let identifier = ec_spire_quote_identifier(column);
+            format!("{identifier} = payload.{identifier}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let update_sql = format!(
+        "WITH payload AS ( \
+             SELECT * \
+               FROM jsonb_populate_record(NULL::{heap_relation_regclass}, $1::text::jsonb) \
+         ), updated AS ( \
+             UPDATE {heap_relation_regclass} AS target \
+                SET {set_list} \
+               FROM payload \
+              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $2::bytea \
+          RETURNING 1 \
+         ) \
+         SELECT count(*)::bigint AS updated_count FROM updated"
+    );
+    Spi::connect_mut(|client| {
+        client
+            .select(
+                update_sql.as_str(),
+                None,
+                &[row_payload_json.into(), pk_value.to_vec().into()],
+            )
+            .map_err(|e| format!("{context} remote tuple payload update failed: {e}"))?
+            .first()
+            .get_one::<i64>()
+            .map_err(|e| {
+                format!("{context} remote tuple payload updated_count decode failed: {e}")
+            })?
+            .ok_or_else(|| format!("{context} remote tuple payload updated_count is null"))
+            .and_then(|value| {
+                u64::try_from(value).map_err(|_| {
+                    format!("{context} remote tuple payload updated_count is negative")
+                })
+            })
+    })
+}
+
 #[pg_extern(strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_update_tuple_payload(
@@ -13378,58 +13466,24 @@ fn ec_spire_remote_update_tuple_payload(
     if updated_columns.iter().any(|column| column == &pk_column) {
         pgrx::error!("ec_spire_remote_update_tuple_payload must not update the primary-key column");
     }
-    let mut validation_columns = Vec::with_capacity(updated_columns.len() + 1);
-    validation_columns.push(pk_column.clone());
-    validation_columns.extend(updated_columns.iter().cloned());
-    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &validation_columns)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_update_tuple_payload {e}"));
-    let heap_relation_regclass = ec_spire_relation_regclass_text(heap_relation_oid)
-        .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_update_tuple_payload {e}"));
     let payload_column_count = i32::try_from(updated_columns.len()).unwrap_or_else(|_| {
         pgrx::error!("ec_spire_remote_update_tuple_payload too many updated columns")
     });
-    let pk_identifier = ec_spire_quote_identifier(&pk_column);
-    let set_list = updated_columns
-        .iter()
-        .map(|column| {
-            let identifier = ec_spire_quote_identifier(column);
-            format!("{identifier} = payload.{identifier}")
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
     let row_payload_text = row_payload.0.to_string();
-    let update_sql = format!(
-        "WITH payload AS ( \
-             SELECT * \
-               FROM jsonb_populate_record(NULL::{heap_relation_regclass}, $1::text::jsonb) \
-         ), updated AS ( \
-             UPDATE {heap_relation_regclass} AS target \
-                SET {set_list} \
-               FROM payload \
-              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $2::bytea \
-          RETURNING 1 \
-         ) \
-         SELECT count(*)::bigint AS updated_count FROM updated"
-    );
-    let updated_count = Spi::connect_mut(|client| {
-        client
-            .select(
-                update_sql.as_str(),
-                None,
-                &[row_payload_text.into(), pk_value.into()],
-            )
-            .map_err(|e| format!("ec_spire remote tuple payload update failed: {e}"))?
-            .first()
-            .get_one::<i64>()
-            .map_err(|e| format!("ec_spire remote tuple payload updated_count decode failed: {e}"))?
-            .ok_or_else(|| "ec_spire remote tuple payload updated_count is null".to_owned())
-    })
-    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_update_tuple_payload {e}"));
+    let updated_count = ec_spire_update_tuple_payload_on_heap(
+        heap_relation_oid,
+        &pk_column,
+        &pk_value,
+        &row_payload_text,
+        &updated_columns,
+        "ec_spire_remote_update_tuple_payload",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
         index_oid,
         heap_relation_oid,
-        updated_count,
+        i64::try_from(updated_count).expect("updated count should fit i64"),
         payload_column_count,
         "ready",
     ))
@@ -20630,6 +20684,70 @@ mod tests {
         );
         assert_eq!(remote_title, "after update");
         let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_update_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_update_local_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator update table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_update_local_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (707, 'local before update', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('808182838485868788898a8b8c8d8e8f', 'hex'))",
+        )
+        .expect("local coordinator update row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_update_local_payload_idx \
+             ON ec_spire_coord_update_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator update ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_update_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_update_local_payload_idx'::regclass, int8send(707::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('808182838485868788898a8b8c8d8e8f', 'hex'))"
+        ))
+        .expect("local placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_coord_update_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(707::bigint)::bytea, \
+                     jsonb_build_object('title', 'local after update'), \
+                     ARRAY['title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_update_sent::text || '|' || remote_updated_count::text || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator update helper query should succeed")
+        .expect("local coordinator update helper should return a row");
+        let local_title = Spi::get_one::<String>(
+            "SELECT title FROM ec_spire_coord_update_local_payload_sql WHERE id = 707",
+        )
+        .expect("local title query should succeed")
+        .expect("local title should exist");
+
+        assert_eq!(
+            result,
+            format!("0|{active_epoch}|false|1|local_update_applied|done")
+        );
+        assert_eq!(local_title, "local after update");
     }
 
     #[pg_test]

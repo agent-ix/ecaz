@@ -107,10 +107,21 @@ conninfo-secret dispatch gate, and calls the remote
 `ec_spire_remote_update_tuple_payload(...)` endpoint. The remote endpoint
 updates only the explicit non-PK columns supplied in `updated_columns`,
 matching the row by the v1 canonical bigint primary-key bytes. This is the
-forwarding primitive; transparent `UPDATE documents SET ... WHERE id = ...`
-still requires a ModifyTable/view-hook integration because remote-owned
-rows are not present in the coordinator heap and therefore cannot be
-captured by a normal row-level table trigger.
+forwarding primitive. If the placement row points at local node `0`, the
+same helper applies the payload update directly to the coordinator heap
+instead of attempting remote dispatch. Transparent
+`UPDATE documents SET ... WHERE id = ...` still requires a
+ModifyTable/view-hook integration because remote-owned rows are not
+present in the coordinator heap and therefore cannot be captured by a
+normal row-level table trigger.
+
+Non-embedding UPDATE has at-most-once visible semantics from the
+application's perspective: if the connection drops after the remote
+commits but before the coordinator receives the result, retrying may
+apply the statement again. Idempotent assignments such as
+`SET title = $new_value WHERE id = $id` are safe to retry; non-idempotent
+statements such as counter increments need application-level
+idempotency.
 
 ### Coordinator-routed DELETE
 
