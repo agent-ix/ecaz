@@ -26832,6 +26832,180 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_prod_scan_am_delivers_materialized_remote_row() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_SCAN_AM_MATERIALIZED",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_prod_scan_am_materialized_remote_sql; \
+                 CREATE TABLE ec_spire_prod_scan_am_materialized_remote_sql \
+                     (id bigint primary key, embedding ecvector); \
+                 INSERT INTO ec_spire_prod_scan_am_materialized_remote_sql (id, embedding) VALUES \
+                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
+                 CREATE INDEX ec_spire_prod_scan_am_materialized_remote_idx \
+                     ON ec_spire_prod_scan_am_materialized_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops) \
+                     WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+            )
+            .expect("loopback remote AM materialization fixture should be created");
+        let remote_active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot('ec_spire_prod_scan_am_materialized_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("remote active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote active epoch should decode");
+        let remote_leaf_pids = loopback_client
+            .query_one(
+                "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+                 ec_spire_index_leaf_snapshot('ec_spire_prod_scan_am_materialized_remote_idx'::regclass)",
+                &[],
+            )
+            .expect("remote leaf pid query should succeed")
+            .try_get::<_, Vec<i64>>(0)
+            .expect("remote leaf pids should decode");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut loopback_client,
+            "ec_spire_prod_scan_am_materialized_remote_idx",
+        );
+
+        Spi::run(
+            "CREATE TABLE ec_spire_prod_scan_am_materialized_coord_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_prod_scan_am_materialized_coord_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (900, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
+        )
+        .expect("coordinator insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_prod_scan_am_materialized_coord_idx \
+             ON ec_spire_prod_scan_am_materialized_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
+        )
+        .expect("coordinator index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass::oid",
+        )
+        .expect("coordinator index oid query should succeed")
+        .expect("coordinator index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_prod_scan_am_materialized_coord_idx'::regclass)",
+        )
+        .expect("coordinator active epoch query should succeed")
+        .expect("coordinator active epoch should exist");
+        let coord_leaf_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_prod_scan_am_materialized_coord_idx'::regclass)",
+        )
+        .expect("coordinator leaf pid query should succeed")
+        .expect("coordinator leaf pids should exist");
+        assert_eq!(remote_active_epoch, active_epoch);
+        assert_eq!(remote_leaf_pids, coord_leaf_pids);
+        assert_eq!(coord_leaf_pids.len(), 2);
+        let materialized_tid =
+            heap_tid_for_row("ec_spire_prod_scan_am_materialized_coord_sql", 900);
+
+        unsafe {
+            for pid in &coord_leaf_pids {
+                am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
+            }
+        }
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 81, 'spire/remote/scan-am-materialized', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_prod_scan_am_materialized_remote_idx', 'active', {active_epoch}, \
+                     {active_epoch}, '{}', 'none')",
+            u32::from(index_oid),
+            env!("CARGO_PKG_VERSION")
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        let pid_array = coord_leaf_pids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let heap_candidates_from = format!(
+            "FROM ec_spire_remote_search_libpq_executor_heap_candidates(\
+                 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass, \
+                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+                 ARRAY[{pid_array}]::bigint[], 1, 'strict')"
+        );
+        let remote_heap_count =
+            Spi::get_one::<i64>(&format!("SELECT count(*) {heap_candidates_from}"))
+                .expect("remote heap candidate count query should succeed")
+                .expect("remote heap candidate count should exist");
+        let served_epoch = Spi::get_one::<i64>(&format!(
+            "SELECT served_epoch {heap_candidates_from} LIMIT 1"
+        ))
+        .expect("served epoch query should succeed")
+        .expect("served epoch should exist");
+        let origin_node_id =
+            Spi::get_one::<i64>(&format!("SELECT node_id {heap_candidates_from} LIMIT 1"))
+                .expect("origin node query should succeed")
+                .expect("origin node should exist");
+        let vec_id =
+            Spi::get_one::<Vec<u8>>(&format!("SELECT vec_id {heap_candidates_from} LIMIT 1"))
+                .expect("remote vec_id query should succeed")
+                .expect("remote vec_id should exist");
+        let row_locator = Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT row_locator {heap_candidates_from} LIMIT 1"
+        ))
+        .expect("remote row locator query should succeed")
+        .expect("remote row locator should exist");
+        assert_eq!(remote_heap_count, 1);
+        assert_eq!(origin_node_id, 2);
+
+        let materialized_registered = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_row_materialization(\
+                 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass, \
+                 {active_epoch}, {served_epoch}, {origin_node_id}, \
+                 decode('{}', 'hex'), decode('{}', 'hex'), \
+                 'ec_spire_prod_scan_am_materialized_coord_sql'::regclass, {}, {})",
+            hex::encode(vec_id),
+            hex::encode(row_locator),
+            materialized_tid.block_number,
+            materialized_tid.offset_number
+        ))
+        .expect("remote row materialization registration should succeed")
+        .expect("remote row materialization registration result should exist");
+        assert!(materialized_registered);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("seqscan disable should succeed");
+        Spi::run("SET LOCAL ec_spire.max_candidate_rows = 1")
+            .expect("candidate limit SET should succeed");
+        let returned_id = Spi::get_one::<i64>(
+            "SELECT id \
+             FROM ec_spire_prod_scan_am_materialized_coord_sql \
+             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+             LIMIT 1",
+        )
+        .expect("AM materialized remote query should succeed")
+        .expect("AM materialized remote query should return one row");
+
+        assert_eq!(returned_id, 900);
+    }
+
+    #[pg_test]
     fn test_ec_spire_production_transport_probe_overlaps_ready_remotes() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let rows = am::spire_remote_search_production_transport_probe_for_test(vec![

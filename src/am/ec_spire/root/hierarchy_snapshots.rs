@@ -283,6 +283,14 @@ fn remote_search_status_allows_local_heap_rows(status: &str) -> bool {
     )
 }
 
+fn coordinator_metadata_read_placement(
+    placement: &meta::SpirePlacementEntry,
+) -> meta::SpirePlacementEntry {
+    let mut placement = *placement;
+    placement.node_id = meta::SPIRE_LOCAL_NODE_ID;
+    placement
+}
+
 unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
@@ -1422,8 +1430,9 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             });
         }
 
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         let snapshot = meta::SpireValidatedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,
@@ -1456,12 +1465,16 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
             if placement.state != meta::SpirePlacementState::Available {
                 continue;
             }
-            let header = storage::SpireObjectReader::read_object_header(&object_store, placement)?;
+            let metadata_placement = coordinator_metadata_read_placement(placement);
+            let header =
+                storage::SpireObjectReader::read_object_header(&object_store, &metadata_placement)?;
             max_observed_level = max_observed_level.max(header.level);
             match header.kind {
                 storage::SpirePartitionObjectKind::Root => {
-                    let routing_object =
-                        storage::SpireObjectReader::read_routing_object(&object_store, placement)?;
+                    let routing_object = storage::SpireObjectReader::read_routing_object(
+                        &object_store,
+                        &metadata_placement,
+                    )?;
                     routing_object_count =
                         routing_object_count.checked_add(1).ok_or_else(|| {
                             "ec_spire hierarchy snapshot routing object count overflow".to_owned()
@@ -1492,8 +1505,10 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
                         .ok_or_else(|| {
                             "ec_spire hierarchy snapshot internal object count overflow".to_owned()
                         })?;
-                    let routing_object =
-                        storage::SpireObjectReader::read_routing_object(&object_store, placement)?;
+                    let routing_object = storage::SpireObjectReader::read_routing_object(
+                        &object_store,
+                        &metadata_placement,
+                    )?;
                     hierarchy_objects.push(hierarchy_object_summary(
                         &routing_object.header,
                         routing_object.child_pids.clone(),

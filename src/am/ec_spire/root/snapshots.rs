@@ -7,8 +7,9 @@ pub(crate) unsafe fn active_snapshot_diagnostics(
             return Ok(SpireActiveSnapshotDiagnostics::empty(root_control));
         }
 
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
+        let (epoch_manifest, object_manifest, placement_directory) = unsafe {
+            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?
+        };
         let snapshot = meta::SpirePublishedEpochSnapshot::new(
             &epoch_manifest,
             &object_manifest,

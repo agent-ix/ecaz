@@ -259,6 +259,11 @@ Acceptance artifact:
     validates the materialized coordinator heap TID under the executor scan
     snapshot before delivery. Registration/catalog SQL surfaces and remote
     catalog cleanup cover the new table.
+  - [x] AM SQL delivery proof: planner/cost diagnostics now tolerate
+    remote-owned placements by reading the coordinator metadata copy while
+    preserving remote execution ownership, and a PG18 loopback SQL scan proves
+    a remote heap candidate with a registered mapping can be returned through
+    `amrescan`/`amgettuple` as the materialized coordinator row.
 - [ ] Preserve deterministic tie-break ordering across local rows, remote rows,
   and boundary replicas.
 - [ ] Add tests for missing/dead remote rows, stale locators, and duplicate
