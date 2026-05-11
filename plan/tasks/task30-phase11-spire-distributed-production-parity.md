@@ -1013,6 +1013,11 @@ v1 write contract from ADR-069:
       PREPARED`, and stages the local placement row only after remote prepare
       succeeds. The generic tuple-to-remote-INSERT builder and transparent DML
       hook remain open.
+    - [x] Packet `30832` wires the remote-prepare primitive to the typed
+      tuple-payload endpoint from packet `30831`, deriving the remote endpoint
+      call from descriptor `remote_index_regclass`, JSON tuple payload, and an
+      explicit column list before staging the local placement row in PG18
+      coverage.
   - [ ] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
 - [ ] Coordinator-routed non-embedding UPDATE:

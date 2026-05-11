@@ -209,6 +209,12 @@ payload through PostgreSQL type input, and inserts exactly the named
 columns. The coordinator still owns classification, placement-directory
 staging, and transaction resolution.
 
+The coordinator-side remote-prepare primitive builds its mutating remote
+statement as a call to that endpoint, using the remote index regclass from
+the active remote-node descriptor and the executor-provided JSON tuple
+payload plus explicit column list. This keeps table-specific INSERT
+construction on the coordinator side out of the wire contract.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

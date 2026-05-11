@@ -2250,6 +2250,35 @@ fn coordinator_insert_resolve_remote_prepared(
     let _ = client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid)));
 }
 
+fn coordinator_insert_remote_tuple_payload_sql(
+    remote_index_regclass: &str,
+    row_payload_json: &str,
+    requested_columns: &[String],
+) -> Result<String, String> {
+    if requested_columns.is_empty() {
+        return Err("ec_spire coordinator insert tuple payload column list is empty".to_owned());
+    }
+    let column_literals = requested_columns
+        .iter()
+        .map(|column| {
+            if column.is_empty() {
+                return Err(
+                    "ec_spire coordinator insert tuple payload column name is empty".to_owned(),
+                );
+            }
+            Ok(quote_sql_literal(column))
+        })
+        .collect::<Result<Vec<_>, String>>()?
+        .join(", ");
+    Ok(format!(
+        "SELECT * FROM ec_spire_remote_insert_tuple_payload(\
+             {}::regclass, {}::jsonb, ARRAY[{}]::text[])",
+        quote_sql_literal(remote_index_regclass),
+        quote_sql_literal(row_payload_json),
+        column_literals
+    ))
+}
+
 pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
@@ -2319,6 +2348,31 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
         status: SPIRE_COORDINATOR_INSERT_PREPARED_STATUS,
         next_step: SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT,
     })
+}
+
+pub(crate) unsafe fn coordinator_insert_prepare_remote_tuple_payload(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+    row_payload_json: &str,
+    requested_columns: &[String],
+) -> Result<SpireCoordinatorInsertRemotePrepareRow, String> {
+    let dispatch =
+        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire coordinator insert remote dispatch for node_id {} is blocked with status {}",
+            node_id, dispatch.status
+        ));
+    }
+    let remote_sql = coordinator_insert_remote_tuple_payload_sql(
+        &dispatch.remote_index_regclass,
+        row_payload_json,
+        requested_columns,
+    )?;
+    unsafe {
+        coordinator_insert_prepare_remote_sql(index_relation, node_id, served_epoch, &remote_sql)
+    }
 }
 
 fn remote_search_libpq_dispatch_budget_blocked(
