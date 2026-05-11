@@ -58,10 +58,12 @@ pub(crate) struct SpireDmlFrontdoorHookStatusRow {
     pub(crate) planner_hook_installed: bool,
     pub(crate) query_shape_classifier_enabled: bool,
     pub(crate) query_shape_classifier_invoked_by_hook: bool,
+    pub(crate) unsupported_shape_fail_closed_enabled: bool,
     pub(crate) plan_rewrite_enabled: bool,
     pub(crate) last_classification_supported: Option<bool>,
     pub(crate) last_classification_kind: Option<&'static str>,
     pub(crate) last_classification_status: Option<&'static str>,
+    pub(crate) last_hook_action: Option<&'static str>,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,
 }
@@ -111,6 +113,7 @@ static mut HOOK_CLASSIFICATION_ATTEMPTED: bool = false;
 static mut LAST_HOOK_CLASSIFICATION_SUPPORTED: Option<bool> = None;
 static mut LAST_HOOK_CLASSIFICATION_KIND: Option<&'static str> = None;
 static mut LAST_HOOK_CLASSIFICATION_STATUS: Option<&'static str> = None;
+static mut LAST_HOOK_ACTION: Option<&'static str> = None;
 
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
@@ -127,13 +130,14 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
 }
 
 pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow {
-    let (installed, classifier_invoked, last_supported, last_kind, last_status) = unsafe {
+    let (installed, classifier_invoked, last_supported, last_kind, last_status, last_action) = unsafe {
         (
             PLANNER_HOOK_INSTALLED,
             HOOK_CLASSIFICATION_ATTEMPTED,
             LAST_HOOK_CLASSIFICATION_SUPPORTED,
             LAST_HOOK_CLASSIFICATION_KIND,
             LAST_HOOK_CLASSIFICATION_STATUS,
+            LAST_HOOK_ACTION,
         )
     };
     SpireDmlFrontdoorHookStatusRow {
@@ -141,14 +145,16 @@ pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow 
         planner_hook_installed: installed,
         query_shape_classifier_enabled: true,
         query_shape_classifier_invoked_by_hook: classifier_invoked,
+        unsupported_shape_fail_closed_enabled: true,
         plan_rewrite_enabled: false,
         last_classification_supported: last_supported,
         last_classification_kind: last_kind,
         last_classification_status: last_status,
+        last_hook_action: last_action,
         status: if installed && classifier_invoked {
-            "pass_through_classifier_observed"
+            last_action.unwrap_or("pass_through_classifier_observed")
         } else if installed {
-            "pass_through_query_classifier_ready"
+            "fail_closed_guard_ready"
         } else {
             "not_installed"
         },
@@ -252,12 +258,48 @@ unsafe fn dml_frontdoor_observe_planner_query(query: *mut pg_sys::Query) {
     let Some(decision) = (unsafe { dml_frontdoor_replacement_decision_catalog_row(query) }) else {
         return;
     };
+    let action = dml_frontdoor_hook_action(&decision);
     unsafe {
         HOOK_CLASSIFICATION_ATTEMPTED = true;
         LAST_HOOK_CLASSIFICATION_SUPPORTED = Some(decision.supported);
         LAST_HOOK_CLASSIFICATION_KIND = Some(decision.kind);
         LAST_HOOK_CLASSIFICATION_STATUS = Some(decision.status);
+        LAST_HOOK_ACTION = Some(action);
     }
+    if action == "planner_error_fail_closed" {
+        dml_frontdoor_raise_planner_error(&decision);
+    }
+}
+
+fn dml_frontdoor_hook_action(decision: &SpireDmlFrontdoorReplacementDecisionRow) -> &'static str {
+    if decision.supported {
+        "pass_through_until_rewrite"
+    } else if dml_frontdoor_decision_is_spire_frontdoor_candidate(decision) {
+        "planner_error_fail_closed"
+    } else {
+        "pass_through_not_spire_frontdoor"
+    }
+}
+
+fn dml_frontdoor_decision_is_spire_frontdoor_candidate(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+) -> bool {
+    decision.index_oid != pg_sys::InvalidOid || decision.kind == "relation_context_error"
+}
+
+fn dml_frontdoor_raise_planner_error(decision: &SpireDmlFrontdoorReplacementDecisionRow) -> ! {
+    let message = decision
+        .error
+        .unwrap_or("ec_spire_distributed: unsupported DML shape for v1 coordinator routing");
+    let hint = decision.hint.unwrap_or(ADR_069_HINT);
+    pgrx::pg_sys::panic::ErrorReport::new(
+        pgrx::PgSqlErrorCode::ERRCODE_FEATURE_NOT_SUPPORTED,
+        message,
+        pgrx::function_name!(),
+    )
+    .set_hint(hint)
+    .report(pgrx::PgLogLevel::ERROR);
+    unreachable!();
 }
 
 pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(

@@ -961,10 +961,12 @@ fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
         name!(planner_hook_installed, bool),
         name!(query_shape_classifier_enabled, bool),
         name!(query_shape_classifier_invoked_by_hook, bool),
+        name!(unsupported_shape_fail_closed_enabled, bool),
         name!(plan_rewrite_enabled, bool),
         name!(last_classification_supported, Option<bool>),
         name!(last_classification_kind, Option<&'static str>),
         name!(last_classification_status, Option<&'static str>),
+        name!(last_hook_action, Option<&'static str>),
         name!(status, &'static str),
         name!(next_step, &'static str),
     ),
@@ -975,10 +977,12 @@ fn ec_spire_dml_frontdoor_hook_status() -> TableIterator<
         row.planner_hook_installed,
         row.query_shape_classifier_enabled,
         row.query_shape_classifier_invoked_by_hook,
+        row.unsupported_shape_fail_closed_enabled,
         row.plan_rewrite_enabled,
         row.last_classification_supported,
         row.last_classification_kind,
         row.last_classification_status,
+        row.last_hook_action,
         row.status,
         row.next_step,
     ))
@@ -28057,6 +28061,11 @@ mod tests {
             Spi::get_one::<bool>(&format!("SELECT plan_rewrite_enabled {status_from}"))
                 .expect("DML frontdoor plan rewrite query should succeed")
                 .expect("DML frontdoor plan rewrite value should exist");
+        let unsupported_shape_fail_closed_enabled = Spi::get_one::<bool>(&format!(
+            "SELECT unsupported_shape_fail_closed_enabled {status_from}"
+        ))
+        .expect("DML frontdoor fail-closed guard query should succeed")
+        .expect("DML frontdoor fail-closed guard value should exist");
         let status = Spi::get_one::<String>(&format!("SELECT status {status_from}"))
             .expect("DML frontdoor status query should succeed")
             .expect("DML frontdoor status should exist");
@@ -28064,14 +28073,17 @@ mod tests {
         assert_eq!(hook_name, "ec_spire_dml_frontdoor_planner_hook");
         assert!(planner_hook_installed);
         assert!(query_shape_classifier_enabled);
+        assert!(unsupported_shape_fail_closed_enabled);
         assert!(!plan_rewrite_enabled);
         assert_eq!(
             query_shape_classifier_invoked_by_hook,
-            status == "pass_through_classifier_observed"
+            status != "fail_closed_guard_ready"
         );
         assert!(
-            status == "pass_through_query_classifier_ready"
-                || status == "pass_through_classifier_observed",
+            status == "fail_closed_guard_ready"
+                || status == "pass_through_until_rewrite"
+                || status == "pass_through_not_spire_frontdoor"
+                || status == "planner_error_fail_closed",
             "{status}"
         );
     }
@@ -28313,6 +28325,65 @@ mod tests {
         assert!(hook_classification_supported);
         assert_eq!(hook_classification_kind, "pk_select_by_pk");
         assert_eq!(hook_classification_status, "supported_v1_shape");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_failclosed_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML fail-closed table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_failclosed_idx \
+             ON ec_spire_dml_failclosed_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML fail-closed ec_spire index creation should succeed");
+
+        let error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run(
+                "UPDATE ec_spire_dml_failclosed_sql \
+                    SET embedding = '[1,2,3]'::ecvector \
+                  WHERE id = 5",
+            )
+            .expect("embedding UPDATE should fail closed in the planner hook");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => {
+                format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+            }
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+            }
+        })
+        .execute();
+
+        assert_eq!(
+            error,
+            "ec_spire_distributed: UPDATE of indexed embedding column is not supported on a distributed ec_spire table. Use DELETE + INSERT.|Cross-shard atomic moves will be available in a future release."
+        );
+
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML frontdoor hook action query should succeed")
+        .expect("DML frontdoor hook action should exist");
+        assert_eq!(action, "planner_error_fail_closed");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_failclosed_plain_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("plain fail-closed table creation should succeed");
+        Spi::run(
+            "UPDATE ec_spire_dml_failclosed_plain_sql \
+                SET embedding = '[1,2,3]'::ecvector \
+              WHERE id = 5",
+        )
+        .expect("plain non-ec_spire table should pass through the DML frontdoor hook");
     }
 
     #[pg_test]

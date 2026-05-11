@@ -1175,6 +1175,11 @@ v1 write contract from ADR-069:
   - [x] Packet `30860` extends the replacement decision with executor argument
     shape: bigint PK column, non-embedding UPDATE target columns, and PK SELECT
     projection columns.
+  - [x] Packet `30861` adds the interim fail-closed planner-hook guard:
+    unsupported ADR-069 DML shapes that target an `ec_spire` front-door
+    candidate now raise the classifier error instead of falling through to the
+    coordinator heap path, while supported shapes continue to pass through
+    until CustomScan executor replacement lands.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
