@@ -633,6 +633,152 @@ mod tests {
     }
 
     #[test]
+    fn production_scan_am_tuple_path_dedupes_global_vec_ids_before_delivery() {
+        let global = remote_global_vec_id(b"am-global-dedupe");
+        let local_best = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            &global,
+            0.2,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let mut remote_replica =
+            remote_heap_candidate(3, 20, 0, &global, 0.4, SPIRE_REMOTE_HEAP_RESOLUTION);
+        remote_replica.assignment_flags = storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA;
+
+        let merged = merge_remote_search_heap_candidates_for_result(
+            vec![remote_replica, local_best.clone()],
+            10,
+        )
+        .expect("global vec_ids should dedupe before AM delivery");
+        let outputs = production_scan_outputs_from_heap_candidates(&merged);
+        let delivery = production_scan_am_delivery_summary(
+            &ready_production_scan_heap_summary(outputs.len() as u64),
+            &outputs,
+        )
+        .expect("deduped local output should classify");
+
+        assert_eq!(merged, vec![local_best]);
+        assert_eq!(delivery.output_count, 1);
+        assert_eq!(delivery.local_heap_tid_output_count, 1);
+        assert_eq!(delivery.remote_origin_output_count, 0);
+        assert_eq!(delivery.am_deliverable_output_count, 1);
+        assert_eq!(delivery.status, SPIRE_REMOTE_STATUS_READY);
+    }
+
+    #[test]
+    fn production_scan_am_tuple_path_blocks_remote_global_dedupe_winner() {
+        let global = remote_global_vec_id(b"am-global-remote-winner");
+        let local_worse = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            &global,
+            0.9,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let remote_best = remote_heap_candidate(3, 20, 0, &global, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
+
+        let merged = merge_remote_search_heap_candidates_for_result(
+            vec![local_worse, remote_best.clone()],
+            10,
+        )
+        .expect("global vec_ids should dedupe to best ranked row");
+        let outputs = production_scan_outputs_from_heap_candidates(&merged);
+        let delivery = production_scan_am_delivery_summary(
+            &ready_production_scan_heap_summary(outputs.len() as u64),
+            &outputs,
+        )
+        .expect("remote winner should classify");
+
+        assert_eq!(merged, vec![remote_best]);
+        assert_eq!(delivery.output_count, 1);
+        assert_eq!(delivery.local_heap_tid_output_count, 0);
+        assert_eq!(delivery.remote_origin_output_count, 1);
+        assert_eq!(delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            delivery.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+        assert_eq!(
+            delivery.next_blocker,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+        );
+    }
+
+    #[test]
+    fn production_scan_am_tuple_path_keeps_node_scoped_local_vec_ids_distinct() {
+        let local_vec = remote_local_vec_id(7);
+        let local = remote_heap_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            0,
+            &local_vec,
+            0.2,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+        );
+        let remote =
+            remote_heap_candidate(3, 20, 0, &local_vec, 0.1, SPIRE_REMOTE_HEAP_RESOLUTION);
+
+        let merged =
+            merge_remote_search_heap_candidates_for_result(vec![local.clone(), remote.clone()], 10)
+                .expect("node-scoped local vec_ids should not dedupe across nodes");
+        let outputs = production_scan_outputs_from_heap_candidates(&merged);
+        let delivery = production_scan_am_delivery_summary(
+            &ready_production_scan_heap_summary(outputs.len() as u64),
+            &outputs,
+        )
+        .expect("mixed node-scoped outputs should classify");
+
+        assert_eq!(merged, vec![remote, local]);
+        assert_eq!(delivery.output_count, 2);
+        assert_eq!(delivery.local_heap_tid_output_count, 1);
+        assert_eq!(delivery.remote_origin_output_count, 1);
+        assert_eq!(delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            delivery.status,
+            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
+        );
+    }
+
+    #[test]
+    fn production_scan_am_tuple_path_preserves_stale_locator_blocker() {
+        let mut stale_remote = remote_heap_candidate(
+            3,
+            20,
+            0,
+            remote_global_vec_id(b"stale-remote-locator"),
+            0.1,
+            SPIRE_REMOTE_HEAP_RESOLUTION,
+        );
+        stale_remote.status = SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED;
+
+        let merged = merge_remote_search_heap_candidates_for_result(vec![stale_remote], 10)
+            .expect("stale remote rows should be filtered before AM delivery");
+        let outputs = production_scan_outputs_from_heap_candidates(&merged);
+        let mut summary = ready_production_scan_heap_summary(0);
+        summary.status = SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED;
+        summary.next_blocker = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
+        summary.recommendation = "remote locator no longer resolves to a visible heap row";
+
+        let delivery = production_scan_am_delivery_summary(&summary, &outputs)
+            .expect("stale remote locator blocker should classify");
+
+        assert!(merged.is_empty());
+        assert_eq!(delivery.output_count, 0);
+        assert_eq!(delivery.am_deliverable_output_count, 0);
+        assert_eq!(
+            delivery.status,
+            SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED
+        );
+        assert_eq!(
+            delivery.next_blocker,
+            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION
+        );
+    }
+
+    #[test]
     fn row_materialization_contract_blocks_origin_heap_tid_as_xs_heaptid() {
         let rows = remote_search_row_materialization_contract_rows();
 

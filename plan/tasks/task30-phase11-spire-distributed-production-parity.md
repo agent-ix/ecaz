@@ -767,6 +767,12 @@ Goal: make the coordinator-visible result stream production-correct.
     rows in a focused PG18 loopback fixture.
   - [ ] Add stale locator, duplicate cross-node replica, local-only
     node-scoped ID, and global-ID dedupe coverage on the final AM tuple path.
+    - [x] Packet `30796` adds Rust-side final AM tuple-path coverage from
+      heap-candidate merge through AM delivery classification: global vec IDs
+      dedupe before delivery, remote global winners still block on
+      `remote_row_materialization`, node-scoped local vec IDs remain distinct
+      across nodes, and stale remote locators preserve the heap-resolution
+      blocker.
   - [x] Run a broader PG18 pgrx pass across coordinator fanout call sites once
     the packet `30753` sandbox loader issue is resolved.
     - [x] Packet `30766` fixes pg_test-only advisory-governance test
