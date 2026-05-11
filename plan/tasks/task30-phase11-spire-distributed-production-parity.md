@@ -1124,6 +1124,11 @@ v1 write contract from ADR-069:
   - [x] Packet `30847` adds the pure DML front-door shape classifier scaffold
     for the reviewer-confirmed planner/CustomScan hook direction and updates
     the diagnostic surface to name that integration point.
+  - [x] Packet `30848` adds the first PostgreSQL query-tree extraction layer
+    for that classifier, mapping command type, single-table shape, subquery /
+    RETURNING blockers, bigint PK equality predicates, and UPDATE / SELECT
+    target columns from `pg_sys::Query` without yet installing a plan-changing
+    hook.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

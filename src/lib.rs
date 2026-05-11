@@ -8320,7 +8320,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_no_returning_non_embedding_columns",
                 "ec_spire_forward_coordinator_update_tuple_payload",
                 "frontdoor_pending",
-                "add planner hook shape classifier and CustomScan executor",
+                "wire planner hook CustomScan executor",
             ),
             (
                 "delete",
@@ -8328,7 +8328,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_no_returning",
                 "ec_spire_prepare_coordinator_delete_tuple_payload",
                 "frontdoor_pending",
-                "add planner hook shape classifier and CustomScan executor",
+                "wire planner hook CustomScan executor",
             ),
             (
                 "pk_select",
@@ -8336,7 +8336,7 @@ fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
                 "single_table_bigint_pk_equality_projection",
                 "ec_spire_forward_coordinator_select_tuple_payload",
                 "frontdoor_pending",
-                "add planner hook shape classifier and CustomScan executor",
+                "wire planner hook CustomScan executor",
             ),
             (
                 "update_embedding",

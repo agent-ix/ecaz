@@ -5,6 +5,10 @@
 //! fail closed before any hook can fall through to the coordinator heap path.
 #![allow(dead_code)]
 
+use pgrx::{pg_sys, PgList};
+
+use std::ffi::CStr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpireDmlFrontdoorOperation {
     Update,
@@ -44,6 +48,13 @@ pub(crate) struct SpireDmlFrontdoorShapeRow {
     pub(crate) status: &'static str,
     pub(crate) error: Option<&'static str>,
     pub(crate) hint: Option<&'static str>,
+}
+
+pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
+    pub(crate) ec_spire_distributed_table: bool,
+    pub(crate) pk_column: &'a str,
+    pub(crate) column_names: &'a [(pg_sys::AttrNumber, &'a str)],
+    pub(crate) embedding_columns: &'a [&'a str],
 }
 
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
@@ -149,6 +160,220 @@ fn classify_pk_select(input: SpireDmlFrontdoorShapeInput<'_>) -> SpireDmlFrontdo
         );
     }
     supported(operation, "pk_select_by_pk")
+}
+
+pub(crate) unsafe fn classify_dml_frontdoor_query(
+    query: *mut pg_sys::Query,
+    context: SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<SpireDmlFrontdoorShapeRow> {
+    if query.is_null() {
+        return None;
+    }
+    let query_ref = unsafe { query.as_ref()? };
+    let operation = dml_frontdoor_operation_for_query(query_ref)?;
+    let range_table_ref = unsafe { single_range_table_ref(query_ref) };
+    let target_rtindex = match operation {
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+            query_ref.resultRelation
+        }
+        SpireDmlFrontdoorOperation::PkSelect => range_table_ref.unwrap_or_default(),
+    };
+    let (predicate_column, predicate_operator, predicate_value_kind) =
+        unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
+    let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+    } else {
+        Vec::new()
+    };
+    let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
+    } else {
+        Vec::new()
+    };
+    let updated_column_refs = updated_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let projected_column_refs = projected_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+
+    Some(classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
+        operation,
+        ec_spire_distributed_table: context.ec_spire_distributed_table,
+        single_table: range_table_ref.is_some(),
+        has_join: range_table_ref.is_none(),
+        has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
+        has_returning: !query_ref.returningList.is_null(),
+        pk_column: context.pk_column,
+        predicate_column: predicate_column.as_deref(),
+        predicate_operator,
+        predicate_value_kind,
+        updated_columns: &updated_column_refs,
+        projected_columns: &projected_column_refs,
+        embedding_columns: context.embedding_columns,
+    }))
+}
+
+fn dml_frontdoor_operation_for_query(query: &pg_sys::Query) -> Option<SpireDmlFrontdoorOperation> {
+    match query.commandType {
+        pg_sys::CmdType::CMD_UPDATE => Some(SpireDmlFrontdoorOperation::Update),
+        pg_sys::CmdType::CMD_DELETE => Some(SpireDmlFrontdoorOperation::Delete),
+        pg_sys::CmdType::CMD_SELECT => Some(SpireDmlFrontdoorOperation::PkSelect),
+        _ => None,
+    }
+}
+
+fn dml_frontdoor_query_has_subquery_shape(query: &pg_sys::Query) -> bool {
+    query.hasSubLinks
+        || query.hasModifyingCTE
+        || query.hasRecursive
+        || !query.cteList.is_null()
+        || !query.setOperations.is_null()
+}
+
+unsafe fn single_range_table_ref(query: &pg_sys::Query) -> Option<i32> {
+    let jointree = unsafe { query.jointree.as_ref()? };
+    if jointree.fromlist.is_null() {
+        return None;
+    }
+    let fromlist = unsafe { PgList::<pg_sys::Node>::from_pg(jointree.fromlist) };
+    if fromlist.len() != 1 {
+        return None;
+    }
+    let from_node = fromlist.get_ptr(0)?;
+    if from_node.is_null() || unsafe { (*from_node).type_ } != pg_sys::NodeTag::T_RangeTblRef {
+        return None;
+    }
+    let range_table_ref = from_node.cast::<pg_sys::RangeTblRef>();
+    Some(unsafe { (*range_table_ref).rtindex })
+}
+
+unsafe fn dml_frontdoor_pk_predicate(
+    query: &pg_sys::Query,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> (
+    Option<String>,
+    Option<&'static str>,
+    SpireDmlFrontdoorValueKind,
+) {
+    let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
+        return (None, None, SpireDmlFrontdoorValueKind::Other);
+    };
+    let qual = jointree.quals;
+    if qual.is_null() || unsafe { (*qual).type_ } != pg_sys::NodeTag::T_OpExpr {
+        return (None, None, SpireDmlFrontdoorValueKind::Other);
+    }
+    let op_expr = qual.cast::<pg_sys::OpExpr>();
+    let operator =
+        if unsafe { pg_sys::get_opcode((*op_expr).opno) } == pg_sys::Oid::from(pg_sys::F_INT8EQ) {
+            Some("=")
+        } else {
+            Some("other")
+        };
+    let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
+    if args.len() != 2 {
+        return (None, operator, SpireDmlFrontdoorValueKind::Other);
+    }
+    let left = args.get_ptr(0);
+    let right = args.get_ptr(1);
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            if let Some(column) = unsafe { dml_frontdoor_var_column(left, target_rtindex, context) }
+            {
+                return (Some(column), operator, unsafe {
+                    dml_frontdoor_value_kind(right)
+                });
+            }
+            if let Some(column) =
+                unsafe { dml_frontdoor_var_column(right, target_rtindex, context) }
+            {
+                return (Some(column), operator, unsafe {
+                    dml_frontdoor_value_kind(left)
+                });
+            }
+            (None, operator, SpireDmlFrontdoorValueKind::Other)
+        }
+        _ => (None, operator, SpireDmlFrontdoorValueKind::Other),
+    }
+}
+
+unsafe fn dml_frontdoor_var_column(
+    expr: *mut pg_sys::Expr,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<String> {
+    if expr.is_null() || unsafe { (*expr.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_Var {
+        return None;
+    }
+    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
+    if var.varno != target_rtindex || var.varlevelsup != 0 || var.varattno <= 0 {
+        return None;
+    }
+    context
+        .column_names
+        .iter()
+        .find_map(|(attno, name)| (*attno == var.varattno).then(|| (*name).to_owned()))
+}
+
+unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
+    if expr.is_null() {
+        return SpireDmlFrontdoorValueKind::Other;
+    }
+    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+        pg_sys::NodeTag::T_Const => {
+            let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
+            if !const_expr.constisnull && const_expr.consttype == pg_sys::INT8OID {
+                SpireDmlFrontdoorValueKind::ConstBigint
+            } else {
+                SpireDmlFrontdoorValueKind::Other
+            }
+        }
+        pg_sys::NodeTag::T_Param => {
+            let param = unsafe { &*expr.cast::<pg_sys::Param>() };
+            if param.paramtype == pg_sys::INT8OID {
+                SpireDmlFrontdoorValueKind::ParamBigint
+            } else {
+                SpireDmlFrontdoorValueKind::Other
+            }
+        }
+        _ => SpireDmlFrontdoorValueKind::Other,
+    }
+}
+
+unsafe fn dml_frontdoor_target_columns(
+    target_list: *mut pg_sys::List,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Vec<String> {
+    if target_list.is_null() {
+        return Vec::new();
+    }
+    let targets = unsafe { PgList::<pg_sys::TargetEntry>::from_pg(target_list) };
+    let mut columns = Vec::new();
+    for target_entry in targets.iter_ptr() {
+        let Some(target_entry) = (unsafe { target_entry.as_ref() }) else {
+            continue;
+        };
+        if target_entry.resjunk {
+            continue;
+        }
+        if let Some(column) = context
+            .column_names
+            .iter()
+            .find_map(|(attno, name)| (*attno == target_entry.resno).then(|| (*name).to_owned()))
+        {
+            columns.push(column);
+            continue;
+        }
+        if !target_entry.resname.is_null() {
+            if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
+                columns.push(column.to_owned());
+            }
+        }
+    }
+    columns
 }
 
 fn operation_name(operation: SpireDmlFrontdoorOperation) -> &'static str {
@@ -283,6 +508,108 @@ mod tests {
         assert_eq!(
             classify_dml_frontdoor_shape(select_input(&[])).kind,
             "unsupported_empty_projection"
+        );
+    }
+
+    #[test]
+    fn query_layer_maps_command_and_subquery_flags() {
+        let mut update_query = pg_sys::Query::default();
+        update_query.commandType = pg_sys::CmdType::CMD_UPDATE;
+        assert_eq!(
+            dml_frontdoor_operation_for_query(&update_query),
+            Some(SpireDmlFrontdoorOperation::Update)
+        );
+
+        let mut delete_query = pg_sys::Query::default();
+        delete_query.commandType = pg_sys::CmdType::CMD_DELETE;
+        assert_eq!(
+            dml_frontdoor_operation_for_query(&delete_query),
+            Some(SpireDmlFrontdoorOperation::Delete)
+        );
+
+        let mut select_query = pg_sys::Query::default();
+        select_query.commandType = pg_sys::CmdType::CMD_SELECT;
+        assert_eq!(
+            dml_frontdoor_operation_for_query(&select_query),
+            Some(SpireDmlFrontdoorOperation::PkSelect)
+        );
+        assert!(!dml_frontdoor_query_has_subquery_shape(&select_query));
+
+        select_query.hasSubLinks = true;
+        assert!(dml_frontdoor_query_has_subquery_shape(&select_query));
+    }
+
+    #[test]
+    fn query_layer_recognizes_bigint_const_and_param_values() {
+        let mut bigint_const = pg_sys::Const::default();
+        bigint_const.xpr.type_ = pg_sys::NodeTag::T_Const;
+        bigint_const.consttype = pg_sys::INT8OID;
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_value_kind(
+                    (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
+                )
+            },
+            SpireDmlFrontdoorValueKind::ConstBigint
+        );
+
+        bigint_const.constisnull = true;
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_value_kind(
+                    (&mut bigint_const as *mut pg_sys::Const).cast::<pg_sys::Expr>(),
+                )
+            },
+            SpireDmlFrontdoorValueKind::Other
+        );
+
+        let mut bigint_param = pg_sys::Param::default();
+        bigint_param.xpr.type_ = pg_sys::NodeTag::T_Param;
+        bigint_param.paramtype = pg_sys::INT8OID;
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_value_kind(
+                    (&mut bigint_param as *mut pg_sys::Param).cast::<pg_sys::Expr>(),
+                )
+            },
+            SpireDmlFrontdoorValueKind::ParamBigint
+        );
+    }
+
+    #[test]
+    fn query_layer_binds_target_relation_var_to_column_name() {
+        let context = SpireDmlFrontdoorQueryContext {
+            ec_spire_distributed_table: true,
+            pk_column: "id",
+            column_names: &[(1, "id"), (2, "title"), (3, "embedding")],
+            embedding_columns: &["embedding"],
+        };
+        let mut var = pg_sys::Var::default();
+        var.xpr.type_ = pg_sys::NodeTag::T_Var;
+        var.varno = 1;
+        var.varattno = 1;
+
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_var_column(
+                    (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
+                    1,
+                    &context,
+                )
+            },
+            Some("id".to_owned())
+        );
+
+        var.varno = 2;
+        assert_eq!(
+            unsafe {
+                dml_frontdoor_var_column(
+                    (&mut var as *mut pg_sys::Var).cast::<pg_sys::Expr>(),
+                    1,
+                    &context,
+                )
+            },
+            None
         );
     }
 
