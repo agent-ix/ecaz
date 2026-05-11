@@ -28396,6 +28396,61 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_hook_fail_closed_context_error() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_failclosed_context_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML fail-closed context table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_failclosed_context_a_idx \
+             ON ec_spire_dml_failclosed_context_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML fail-closed context first ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_failclosed_context_b_idx \
+             ON ec_spire_dml_failclosed_context_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML fail-closed context second ec_spire index creation should succeed");
+
+        let error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run("SELECT id FROM ec_spire_dml_failclosed_context_sql WHERE id = 5")
+                .expect("multi-index context error should fail closed in the planner hook");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => {
+                format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+            }
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+            }
+        })
+        .execute();
+
+        assert_eq!(
+            error,
+            "ec_spire_distributed: relation context could not be loaded|See ADR-069 for the v1 SPIRE distributed DML shape."
+        );
+
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML frontdoor context hook action query should succeed")
+        .expect("DML frontdoor context hook action should exist");
+        let kind = Spi::get_one::<String>(
+            "SELECT last_classification_kind FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML frontdoor context hook kind query should succeed")
+        .expect("DML frontdoor context hook kind should exist");
+        assert_eq!(action, "planner_error_fail_closed");
+        assert_eq!(kind, "relation_context_error");
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_replacement_sql \

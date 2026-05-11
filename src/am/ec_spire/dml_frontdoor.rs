@@ -112,6 +112,8 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
 
 static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
 static mut PLANNER_HOOK_INSTALLED: bool = false;
+// These hook diagnostics are intentionally backend-local. They answer "what
+// did this session's planner hook last see?" rather than aggregating globally.
 static mut HOOK_CLASSIFICATION_ATTEMPTED: bool = false;
 static mut LAST_HOOK_CLASSIFICATION_SUPPORTED: Option<bool> = None;
 static mut LAST_HOOK_CLASSIFICATION_KIND: Option<&'static str> = None;
@@ -249,6 +251,8 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     cursor_options: core::ffi::c_int,
     bound_params: pg_sys::ParamListInfo,
 ) -> *mut pg_sys::PlannedStmt {
+    // Run the SPIRE fail-closed guard before chained hooks so unsupported
+    // distributed DML cannot be rewritten into a coordinator-heap base plan.
     unsafe { dml_frontdoor_observe_planner_query(parse) };
     if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
         unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
