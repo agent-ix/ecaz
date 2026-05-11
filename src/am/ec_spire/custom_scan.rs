@@ -612,9 +612,11 @@ unsafe fn custom_scan_tuple_payload_columns(
             pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
         }
         let mut attr_numbers = std::collections::BTreeSet::new();
+        let mut can_narrow_projection = false;
         if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
             let target_list =
                 PgList::<pg_sys::TargetEntry>::from_pg((*custom_scan).scan.plan.targetlist);
+            can_narrow_projection = true;
             for target_entry in target_list.iter_ptr() {
                 let Some(target_entry) = target_entry.as_ref() else {
                     continue;
@@ -624,13 +626,20 @@ unsafe fn custom_scan_tuple_payload_columns(
                 }
                 let expr = target_entry.expr.cast::<pg_sys::Node>();
                 if (*expr).type_ != pg_sys::NodeTag::T_Var {
-                    continue;
+                    can_narrow_projection = false;
+                    break;
                 }
                 let var = &*target_entry.expr.cast::<pg_sys::Var>();
                 if var.varattno > 0 {
                     attr_numbers.insert(var.varattno);
+                } else {
+                    can_narrow_projection = false;
+                    break;
                 }
             }
+        }
+        if !can_narrow_projection {
+            attr_numbers.clear();
         }
         let natts = (*tuple_desc).natts;
         let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));

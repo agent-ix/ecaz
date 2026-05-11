@@ -24804,12 +24804,34 @@ mod tests {
                 .expect("CustomScan remote title should exist");
             (id, title)
         });
+        let expression_row = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT id, title || ' (boosted)' AS boosted_title \
+                     FROM ec_spire_customscan_payload_coord_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("CustomScan remote expression tuple query should succeed");
+            let row = rows.first();
+            let id = row
+                .get_one::<i64>()
+                .expect("CustomScan remote expression id should decode")
+                .expect("CustomScan remote expression id should exist");
+            let boosted_title = row
+                .get::<String>(2)
+                .expect("CustomScan remote expression title should decode")
+                .expect("CustomScan remote expression title should exist");
+            (id, boosted_title)
+        });
 
         assert!(
             plan.contains("Custom Scan (EcSpireDistributedScan)"),
             "expected EcSpireDistributedScan in plan:\n{plan}"
         );
         assert_eq!(row, (10, "remote alpha".to_owned()));
+        assert_eq!(expression_row, (10, "remote alpha (boosted)".to_owned()));
     }
 
     #[pg_test]
