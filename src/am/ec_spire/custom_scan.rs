@@ -118,7 +118,7 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         } else {
             "not_registered"
         },
-        next_step: "add multi-instance CustomScan read fixture and ADR-069 write path",
+        next_step: "add ADR-069 write path and production CustomScan cost model",
     }
 }
 
@@ -1009,7 +1009,7 @@ mod tests {
         assert!(row.exec_wiring_enabled);
         assert_eq!(
             row.next_step,
-            "add multi-instance CustomScan read fixture and ADR-069 write path"
+            "add ADR-069 write path and production CustomScan cost model"
         );
     }
 

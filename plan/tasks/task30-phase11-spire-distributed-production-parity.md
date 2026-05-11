@@ -289,7 +289,7 @@ local-only path.
       coordinator CustomScan can return the projected remote tuple.
   - [ ] Preserve local-only `ec_spire` index AM behavior unchanged.
   - [x] Add `EXPLAIN` coverage showing `Custom Scan (EcSpireDistributedScan)`.
-- [ ] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
+- [x] Add the read-path end-to-end PG18 fixture: coordinator with remote-only
   placements, remote shard rows, SPIRE index, and
   `SELECT cols FROM tbl ORDER BY embedding <-> $1 LIMIT k` returning the
   correct remote rows through CustomScan.
@@ -299,8 +299,13 @@ local-only path.
     remote shard row through `EcSpireDistributedScan`.
   - [x] The fixture must not call
     `ec_spire_register_remote_row_materialization(...)`.
-  - [ ] Broaden the fixture to the final multi-instance distributed read lane
+  - [x] Broaden the fixture to the final multi-instance distributed read lane
     before calling Stage D reads feature-complete.
+    - [x] Packet `30820` adds
+      `scripts/run_spire_multicluster_customscan_read_pg18.sh`, which starts
+      separate coordinator and remote PG18 clusters, registers the real remote
+      endpoint fingerprint, asserts `Custom Scan (EcSpireDistributedScan)`,
+      and verifies the returned projected tuple is the remote shard row.
 - [ ] Land the ADR-069 placement directory and coordinator-routed INSERT.
   - [x] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
     served_epoch, source_identity)` with the required primary key and identity
@@ -911,13 +916,19 @@ CustomScan read-path work:
       blockers by rejecting projected array/composite payload columns before
       dispatch, rejecting non-scalar JSON values before type input, and caching
       per-attribute input functions for scalar slot delivery.
-    - [ ] Add the final multi-instance fixture proving the same path across
+    - [x] Add the final multi-instance fixture proving the same path across
       separate local PostgreSQL instances.
+      - [x] Packet `30820` adds
+        `scripts/run_spire_multicluster_customscan_read_pg18.sh`; packet-local
+        evidence shows `plan=Limit -> Custom Scan (EcSpireDistributedScan)`,
+        `read_row=10,remote alpha`, and tuple-payload probe
+        `ready,2,{"id": 10, "title": "remote alpha"}` across separate
+        coordinator/remote clusters.
   - [ ] Keep the existing index AM unchanged for local-only scans.
   - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
     - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`
       PG18 query and asserts `Custom Scan (EcSpireDistributedScan)`.
-- [ ] Add the end-to-end distributed read fixture.
+- [x] Add the end-to-end distributed read fixture.
   - [x] Packet `30815` fixture creates a coordinator with remote-only
     placements and loopback-remote
     shard rows.
@@ -927,6 +938,9 @@ CustomScan read-path work:
     returned through CustomScan.
   - [x] Fixture contains no
     `ec_spire_register_remote_row_materialization(...)` calls.
+  - [x] Packet `30820` extends this from loopback evidence to a local
+    multi-cluster PG18 script with separate coordinator and remote data
+    directories and socket endpoints.
 
 v1 write contract from ADR-069:
 
