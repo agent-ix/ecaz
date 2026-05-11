@@ -953,6 +953,42 @@ fn ec_spire_custom_scan_status() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_custom_scan_index_eligibility(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(local_placement_count, i64),
+        name!(remote_node_count, i64),
+        name!(remote_placement_count, i64),
+        name!(remote_available_placement_count, i64),
+        name!(eligible_for_custom_scan, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_custom_scan_index_eligibility") };
+    let row = unsafe { am::spire_custom_scan_index_eligibility_row(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.local_placement_count).expect("local placement count should fit in i64"),
+        i64::try_from(row.remote_node_count).expect("remote node count should fit in i64"),
+        i64::try_from(row.remote_placement_count)
+            .expect("remote placement count should fit in i64"),
+        i64::try_from(row.remote_available_placement_count)
+            .expect("remote available placement count should fit in i64"),
+        row.eligible_for_custom_scan,
+        row.status,
+        row.next_step,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_ivf_index_drift_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -24050,6 +24086,78 @@ mod tests {
         assert!(!path_generation_enabled);
         assert!(!exec_wiring_enabled);
         assert_eq!(status, "registered");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_custom_scan_index_eligibility_remote() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_eligibility_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_eligibility_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_eligibility_sql_idx \
+             ON ec_spire_customscan_eligibility_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_eligibility_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_eligibility_sql_idx'::regclass) \
+             ORDER BY leaf_pid LIMIT 1",
+        )
+        .expect("leaf pid query should succeed")
+        .expect("leaf pid should exist");
+
+        let eligibility_from = "FROM ec_spire_custom_scan_index_eligibility(\
+             'ec_spire_customscan_eligibility_sql_idx'::regclass)";
+        let initial_status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
+            .expect("initial eligibility status query should succeed")
+            .expect("initial eligibility status should exist");
+        let initial_eligible = Spi::get_one::<bool>(&format!(
+            "SELECT eligible_for_custom_scan {eligibility_from}"
+        ))
+        .expect("initial eligibility query should succeed")
+        .expect("initial eligibility value should exist");
+        assert_eq!(initial_status, "local_only");
+        assert!(!initial_eligible);
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+
+        let remote_status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
+            .expect("remote eligibility status query should succeed")
+            .expect("remote eligibility status should exist");
+        let remote_eligible = Spi::get_one::<bool>(&format!(
+            "SELECT eligible_for_custom_scan {eligibility_from}"
+        ))
+        .expect("remote eligibility query should succeed")
+        .expect("remote eligibility value should exist");
+        let remote_node_count =
+            Spi::get_one::<i64>(&format!("SELECT remote_node_count {eligibility_from}"))
+                .expect("remote node count query should succeed")
+                .expect("remote node count should exist");
+        let remote_available_placement_count = Spi::get_one::<i64>(&format!(
+            "SELECT remote_available_placement_count {eligibility_from}"
+        ))
+        .expect("remote available placement count query should succeed")
+        .expect("remote available placement count should exist");
+
+        assert_eq!(remote_status, "customscan_candidate");
+        assert!(remote_eligible);
+        assert_eq!(remote_node_count, 1);
+        assert_eq!(remote_available_placement_count, 1);
     }
 
     #[pg_test]

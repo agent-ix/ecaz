@@ -23,7 +23,9 @@ use pgrx::{pg_sys, Spi};
 use self::storage::SpireObjectReader;
 
 pub(crate) use self::cost::index_cost_snapshot;
-pub(crate) use self::custom_scan::{custom_scan_status_row, register_custom_scan};
+pub(crate) use self::custom_scan::{
+    custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
+};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{
     debug_spire_vacuum_bulkdelete_heap_tids, debug_spire_vacuum_remove_heap_tids,

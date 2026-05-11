@@ -820,6 +820,11 @@ CustomScan read-path work:
   - [ ] Add planner path generation for tables with an `ec_spire` index and
     active remote placements when the query shape is
     `ORDER BY <vector-distance-op> LIMIT k`.
+    - [x] Packet `30806` adds
+      `ec_spire_custom_scan_index_eligibility()` so planner-path work can
+      identify active remote placements without using the superseded AM-local
+      materialization-gated placement snapshot. Query-shape detection and actual
+      path creation remain open.
   - [ ] Add a cost model that chooses CustomScan when active remote placements
     exist.
   - [ ] Declare path keys so PostgreSQL can consume the ordered output without

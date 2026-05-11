@@ -1,5 +1,7 @@
 use pgrx::{pg_guard, pg_sys, PgBox};
 
+use super::meta;
+
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +11,18 @@ pub(crate) struct SpireCustomScanStatusRow {
     pub(crate) rel_pathlist_hook_installed: bool,
     pub(crate) path_generation_enabled: bool,
     pub(crate) exec_wiring_enabled: bool,
+    pub(crate) status: &'static str,
+    pub(crate) next_step: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireCustomScanIndexEligibilityRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) local_placement_count: u64,
+    pub(crate) remote_node_count: u64,
+    pub(crate) remote_placement_count: u64,
+    pub(crate) remote_available_placement_count: u64,
+    pub(crate) eligible_for_custom_scan: bool,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,
 }
@@ -74,6 +88,71 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
             "not_registered"
         },
         next_step: "add planner path generation for ec_spire indexes with active remote placements",
+    }
+}
+
+pub(crate) unsafe fn custom_scan_index_eligibility_row(
+    index_relation: pg_sys::Relation,
+) -> SpireCustomScanIndexEligibilityRow {
+    let root_control = unsafe { super::page::read_root_control_page(index_relation) };
+    if root_control.active_epoch == 0 {
+        return SpireCustomScanIndexEligibilityRow {
+            active_epoch: 0,
+            local_placement_count: 0,
+            remote_node_count: 0,
+            remote_placement_count: 0,
+            remote_available_placement_count: 0,
+            eligible_for_custom_scan: false,
+            status: "no_active_epoch",
+            next_step: "keep local-only ec_spire index AM path",
+        };
+    }
+
+    let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
+        super::load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+    };
+    let active_epoch = root_control.active_epoch;
+    let mut local_placement_count = 0_u64;
+    let mut remote_placement_count = 0_u64;
+    let mut remote_available_placement_count = 0_u64;
+    let mut remote_node_ids = std::collections::BTreeSet::new();
+
+    for placement in placement_directory.entries {
+        if placement.node_id == meta::SPIRE_LOCAL_NODE_ID {
+            local_placement_count = local_placement_count.saturating_add(1);
+        } else {
+            remote_node_ids.insert(placement.node_id);
+            remote_placement_count = remote_placement_count.saturating_add(1);
+            if placement.state == meta::SpirePlacementState::Available {
+                remote_available_placement_count =
+                    remote_available_placement_count.saturating_add(1);
+            }
+        }
+    }
+
+    let eligible = active_epoch != 0 && remote_available_placement_count > 0;
+    SpireCustomScanIndexEligibilityRow {
+        active_epoch,
+        local_placement_count,
+        remote_node_count: remote_node_ids.len() as u64,
+        remote_placement_count,
+        remote_available_placement_count,
+        eligible_for_custom_scan: eligible,
+        status: if eligible {
+            "customscan_candidate"
+        } else if active_epoch == 0 {
+            "no_active_epoch"
+        } else if remote_placement_count == 0 {
+            "local_only"
+        } else {
+            "no_available_remote_placements"
+        },
+        next_step: if eligible {
+            "planner path generation must also verify ORDER BY vector distance LIMIT query shape"
+        } else {
+            "keep local-only ec_spire index AM path"
+        },
     }
 }
 
@@ -156,5 +235,24 @@ mod tests {
             row.next_step,
             "add planner path generation for ec_spire indexes with active remote placements"
         );
+    }
+
+    #[test]
+    fn custom_scan_eligibility_counts_remote_available_placements() {
+        let row = SpireCustomScanIndexEligibilityRow {
+            active_epoch: 7,
+            local_placement_count: 1,
+            remote_node_count: 1,
+            remote_placement_count: 2,
+            remote_available_placement_count: 2,
+            eligible_for_custom_scan: true,
+            status: "customscan_candidate",
+            next_step:
+                "planner path generation must also verify ORDER BY vector distance LIMIT query shape",
+        };
+
+        assert!(row.eligible_for_custom_scan);
+        assert_eq!(row.status, "customscan_candidate");
+        assert_eq!(row.remote_node_count, 1);
     }
 }

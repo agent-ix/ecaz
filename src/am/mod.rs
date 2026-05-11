@@ -25,6 +25,7 @@ pub(crate) use self::ec_ivf::{
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
+    custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,
     custom_scan_status_row as spire_custom_scan_status_row,
     index_allocator_snapshot as spire_index_allocator_snapshot,
     index_boundary_replica_identity_snapshot as spire_index_boundary_replica_identity_snapshot,
