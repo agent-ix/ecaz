@@ -5766,6 +5766,27 @@ fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOu
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SpireRemoteMaterializedRowMappingKey {
+    requested_epoch: u64,
+    served_epoch: u64,
+    origin_node_id: u32,
+    vec_id: Vec<u8>,
+    row_locator: Vec<u8>,
+}
+
+impl SpireRemoteMaterializedRowMappingKey {
+    fn from_output(output: &SpireRemoteProductionScanOutputRow) -> Self {
+        Self {
+            requested_epoch: output.requested_epoch,
+            served_epoch: output.served_epoch,
+            origin_node_id: output.node_id,
+            vec_id: output.vec_id.clone(),
+            row_locator: output.row_locator.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteMaterializedRowMapping {
     pub(crate) requested_epoch: u64,
@@ -5797,6 +5818,284 @@ impl SpireRemoteRowMaterializationProvider for SpireRemoteNoRowMaterializationPr
     ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String> {
         Ok(None)
     }
+}
+
+pub(crate) struct SpireRemoteCatalogRowMaterializationProvider {
+    mappings: HashMap<SpireRemoteMaterializedRowMappingKey, SpireRemoteMaterializedRowMapping>,
+}
+
+impl SpireRemoteCatalogRowMaterializationProvider {
+    fn empty() -> Self {
+        Self {
+            mappings: HashMap::new(),
+        }
+    }
+
+    unsafe fn load(
+        coordinator_index_oid: pg_sys::Oid,
+        scan_heap_relation_oid: pg_sys::Oid,
+        heap_relation: pg_sys::Relation,
+        snapshot: pg_sys::Snapshot,
+        outputs: &[SpireRemoteProductionScanOutputRow],
+    ) -> Result<Self, String> {
+        let remote_keys = outputs
+            .iter()
+            .filter(|output| !production_scan_output_is_local_heap_tid(output))
+            .map(SpireRemoteMaterializedRowMappingKey::from_output)
+            .collect::<HashSet<_>>();
+        if remote_keys.is_empty() {
+            return Ok(Self::empty());
+        }
+
+        let requested_epochs = remote_keys
+            .iter()
+            .map(|key| key.requested_epoch.to_string())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(",");
+        let served_epochs = remote_keys
+            .iter()
+            .map(|key| key.served_epoch.to_string())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(",");
+        let origin_node_ids = remote_keys
+            .iter()
+            .map(|key| key.origin_node_id.to_string())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT requested_epoch::bigint, \
+                    served_epoch::bigint, \
+                    origin_node_id::integer, \
+                    vec_id, \
+                    row_locator, \
+                    scan_heap_relation_oid, \
+                    materialized_heap_block::bigint, \
+                    materialized_heap_offset::integer \
+               FROM ec_spire_remote_row_materialization \
+              WHERE coordinator_index_oid = '{}'::oid \
+                AND scan_heap_relation_oid = '{}'::oid \
+                AND status = 'ready' \
+                AND requested_epoch = ANY (ARRAY[{}]::bigint[]) \
+                AND served_epoch = ANY (ARRAY[{}]::bigint[]) \
+                AND origin_node_id = ANY (ARRAY[{}]::integer[])",
+            u32::from(coordinator_index_oid),
+            u32::from(scan_heap_relation_oid),
+            requested_epochs,
+            served_epochs,
+            origin_node_ids
+        );
+
+        let mappings = Spi::connect(|client| {
+            client
+                .select(sql.as_str(), None, &[])
+                .map_err(|e| {
+                    format!("ec_spire remote row materialization catalog read failed: {e}")
+                })?
+                .map(|row| {
+                    let requested_epoch = row["requested_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization requested_epoch decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization requested_epoch is null".to_owned()
+                        })
+                        .and_then(|value| {
+                            u64::try_from(value).map_err(|_| {
+                                "ec_spire remote row materialization requested_epoch is negative"
+                                    .to_owned()
+                            })
+                        })?;
+                    let served_epoch = row["served_epoch"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization served_epoch decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization served_epoch is null".to_owned()
+                        })
+                        .and_then(|value| {
+                            u64::try_from(value).map_err(|_| {
+                                "ec_spire remote row materialization served_epoch is negative"
+                                    .to_owned()
+                            })
+                        })?;
+                    let origin_node_id = row["origin_node_id"]
+                        .value::<i32>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization origin_node_id decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization origin_node_id is null".to_owned()
+                        })
+                        .and_then(|value| {
+                            u32::try_from(value).map_err(|_| {
+                                "ec_spire remote row materialization origin_node_id is negative"
+                                    .to_owned()
+                            })
+                        })?;
+                    let vec_id = row["vec_id"]
+                        .value::<Vec<u8>>()
+                        .map_err(|e| {
+                            format!("ec_spire remote row materialization vec_id decode failed: {e}")
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization vec_id is null".to_owned()
+                        })?;
+                    let row_locator = row["row_locator"]
+                        .value::<Vec<u8>>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization row_locator decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization row_locator is null".to_owned()
+                        })?;
+                    let row_scan_heap_relation_oid = row["scan_heap_relation_oid"]
+                        .value::<pg_sys::Oid>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization heap relation oid decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization heap relation oid is null"
+                                .to_owned()
+                        })?;
+                    let materialized_heap_block = row["materialized_heap_block"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization heap block decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization heap block is null".to_owned()
+                        })
+                        .and_then(|value| {
+                            u32::try_from(value).map_err(|_| {
+                                "ec_spire remote row materialization heap block is out of range"
+                                    .to_owned()
+                            })
+                        })?;
+                    let materialized_heap_offset = row["materialized_heap_offset"]
+                        .value::<i32>()
+                        .map_err(|e| {
+                            format!(
+                                "ec_spire remote row materialization heap offset decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "ec_spire remote row materialization heap offset is null".to_owned()
+                        })
+                        .and_then(|value| {
+                            u16::try_from(value).map_err(|_| {
+                                "ec_spire remote row materialization heap offset is out of range"
+                                    .to_owned()
+                            })
+                        })?;
+
+                    let key = SpireRemoteMaterializedRowMappingKey {
+                        requested_epoch,
+                        served_epoch,
+                        origin_node_id,
+                        vec_id: vec_id.clone(),
+                        row_locator: row_locator.clone(),
+                    };
+                    if !remote_keys.contains(&key) {
+                        return Ok(None);
+                    }
+                    let visible_to_scan_snapshot = unsafe {
+                        production_scan_materialized_heap_tid_visible(
+                            heap_relation,
+                            snapshot,
+                            materialized_heap_block,
+                            materialized_heap_offset,
+                        )?
+                    };
+                    Ok(Some((
+                        key,
+                        SpireRemoteMaterializedRowMapping {
+                            requested_epoch,
+                            served_epoch,
+                            origin_node_id,
+                            vec_id,
+                            row_locator,
+                            scan_heap_relation_oid: row_scan_heap_relation_oid,
+                            materialized_heap_block,
+                            materialized_heap_offset,
+                            visible_to_scan_snapshot,
+                        },
+                    )))
+                })
+                .filter_map(Result::transpose)
+                .collect::<Result<HashMap<_, _>, String>>()
+        })?;
+
+        Ok(Self { mappings })
+    }
+}
+
+impl SpireRemoteRowMaterializationProvider for SpireRemoteCatalogRowMaterializationProvider {
+    fn materialized_row_mapping(
+        &self,
+        _scan_heap_relation_oid: pg_sys::Oid,
+        output: &SpireRemoteProductionScanOutputRow,
+    ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String> {
+        Ok(self
+            .mappings
+            .get(&SpireRemoteMaterializedRowMappingKey::from_output(output))
+            .cloned())
+    }
+}
+
+unsafe fn production_scan_materialized_heap_tid_visible(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    heap_block: u32,
+    heap_offset: u16,
+) -> Result<bool, String> {
+    if heap_relation.is_null() {
+        return Err("ec_spire remote row materialization requires heap relation".to_owned());
+    }
+    if snapshot.is_null() {
+        return Err("ec_spire remote row materialization requires scan snapshot".to_owned());
+    }
+
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        return Err(
+            "ec_spire remote row materialization failed to allocate heap tuple slot".to_owned(),
+        );
+    }
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(&mut tid, heap_block, heap_offset);
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    let visible =
+        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    unsafe {
+        pg_sys::ExecClearTuple(slot);
+        pg_sys::ExecDropSingleTupleTableSlot(slot);
+    }
+    Ok(visible)
 }
 
 fn production_scan_validate_materialized_row_mapping(
@@ -6234,6 +6533,8 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
 
 pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_stream(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
     query: Vec<f32>,
 ) -> SpireRemoteProductionScanResultStream {
     let result = (|| -> Result<SpireRemoteProductionScanResultStream, String> {
@@ -6246,11 +6547,20 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str
         };
         let scan_heap_relation_oid =
             unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let provider = unsafe {
+            SpireRemoteCatalogRowMaterializationProvider::load(
+                (*index_relation).rd_id,
+                scan_heap_relation_oid,
+                heap_relation,
+                snapshot,
+                &stream.outputs,
+            )?
+        };
         production_scan_apply_row_materialization_provider(
             stream.summary,
             stream.outputs,
             scan_heap_relation_oid,
-            &SpireRemoteNoRowMaterializationProvider,
+            &provider,
         )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))

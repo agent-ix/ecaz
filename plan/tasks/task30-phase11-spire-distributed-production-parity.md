@@ -253,6 +253,12 @@ Acceptance artifact:
     scan heap relation, and scan-snapshot visibility. The default provider is
     intentionally empty, so remote-origin rows remain blocked until a
     catalog-backed mapping surface lands.
+  - [x] Catalog-backed provider storage: ADR-065 defines the
+    `ec_spire_remote_row_materialization` mapping catalog. The AM provider now
+    batch-loads ready catalog mappings for the current result stream and
+    validates the materialized coordinator heap TID under the executor scan
+    snapshot before delivery. Registration/catalog SQL surfaces and remote
+    catalog cleanup cover the new table.
 - [ ] Preserve deterministic tie-break ordering across local rows, remote rows,
   and boundary replicas.
 - [ ] Add tests for missing/dead remote rows, stale locators, and duplicate

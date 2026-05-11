@@ -51,6 +51,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE IMI reshape | `ADR-061-spire-imi-reshape-deferred.md` | DEFERRED | Deferred until a larger local fixture can exercise the storage-format and routing-space A/B. |
 | SPIRE query difficulty estimator | `ADR-062-spire-query-difficulty-estimator-deferred.md` | DEFERRED | Deferred to research track; adaptive `nprobe` diagnostics are the input signal for future estimator work. |
 | SPIRE remote row materialization lifecycle | `ADR-064-spire-remote-row-materialization-lifecycle.md` | PROPOSED | Remote-origin AM rows require pre-existing same-relation coordinator heap materialization; per-query temp/scratch proxy rows are rejected for the v1 index AM path. |
+| SPIRE remote row materialization catalog | `ADR-065-spire-remote-row-materialization-catalog.md` | PROPOSED | Extension-owned mapping catalog records exact remote identity to coordinator heap TID mappings; AM provider batch-reads and snapshot-validates before delivery. |
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 

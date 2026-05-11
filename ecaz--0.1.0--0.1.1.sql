@@ -178,6 +178,32 @@ CREATE TABLE ec_spire_remote_epoch_manifest_applied_entry (
         ON DELETE CASCADE
 );
 
+CREATE TABLE ec_spire_remote_row_materialization (
+    coordinator_index_oid oid NOT NULL,
+    requested_epoch bigint NOT NULL CHECK (requested_epoch > 0),
+    served_epoch bigint NOT NULL CHECK (served_epoch > 0),
+    origin_node_id integer NOT NULL CHECK (origin_node_id > 0),
+    vec_id bytea NOT NULL CHECK (octet_length(vec_id) > 0),
+    row_locator bytea NOT NULL CHECK (octet_length(row_locator) > 0),
+    scan_heap_relation_oid oid NOT NULL,
+    materialized_heap_block bigint NOT NULL CHECK (
+        materialized_heap_block >= 0 AND materialized_heap_block <= 4294967295
+    ),
+    materialized_heap_offset integer NOT NULL CHECK (
+        materialized_heap_offset > 0 AND materialized_heap_offset <= 65535
+    ),
+    status text NOT NULL CHECK (length(status) > 0),
+    materialized_at_micros bigint NOT NULL CHECK (materialized_at_micros > 0),
+    PRIMARY KEY (
+        coordinator_index_oid,
+        requested_epoch,
+        served_epoch,
+        origin_node_id,
+        vec_id,
+        row_locator
+    )
+);
+
 DROP EVENT TRIGGER IF EXISTS ec_spire_remote_catalog_drop_index_cleanup;
 
 CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
