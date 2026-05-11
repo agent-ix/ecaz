@@ -66,7 +66,7 @@ pub(crate) struct SpireDmlFrontdoorHookStatusRow {
     pub(crate) next_step: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireDmlFrontdoorReplacementDecisionRow {
     pub(crate) target_relation_oid: pg_sys::Oid,
     pub(crate) index_oid: pg_sys::Oid,
@@ -76,6 +76,9 @@ pub(crate) struct SpireDmlFrontdoorReplacementDecisionRow {
     pub(crate) status: &'static str,
     pub(crate) custom_scan_mode: &'static str,
     pub(crate) primitive: &'static str,
+    pub(crate) pk_column: Option<String>,
+    pub(crate) updated_columns: Vec<String>,
+    pub(crate) projected_columns: Vec<String>,
     pub(crate) error: Option<&'static str>,
     pub(crate) hint: Option<&'static str>,
     pub(crate) next_step: &'static str,
@@ -274,17 +277,20 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
                 status: "unsupported_shape",
                 custom_scan_mode: "none",
                 primitive: "none",
+                pk_column: None,
+                updated_columns: Vec::new(),
+                projected_columns: Vec::new(),
                 error: Some("ec_spire_distributed: relation context could not be loaded"),
                 hint: Some(ADR_069_HINT),
                 next_step: "raise ADR-069 planner error instead of using coordinator heap path",
             });
         }
     };
-    let shape = unsafe { dml_frontdoor_classify_query_with_relation(query, &relation)? };
+    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
     Some(dml_frontdoor_replacement_decision_from_shape(
         target_relation_oid,
         relation.index_oid,
-        shape,
+        detail,
     ))
 }
 
@@ -313,6 +319,23 @@ unsafe fn dml_frontdoor_classify_query_with_relation(
     query: *mut pg_sys::Query,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorShapeRow> {
+    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, relation)? };
+    Some(detail.shape)
+}
+
+struct SpireDmlFrontdoorQueryDetail {
+    shape: SpireDmlFrontdoorShapeRow,
+    pk_column: Option<String>,
+    updated_columns: Vec<String>,
+    projected_columns: Vec<String>,
+}
+
+unsafe fn dml_frontdoor_query_detail_with_relation(
+    query: *mut pg_sys::Query,
+    relation: &SpireDmlFrontdoorRelationContext,
+) -> Option<SpireDmlFrontdoorQueryDetail> {
+    let query_ref = unsafe { query.as_ref()? };
+    let operation = dml_frontdoor_operation_for_query(query_ref)?;
     let pk_column = relation.pk_column.as_deref().unwrap_or("");
     let column_names = relation
         .column_names
@@ -330,14 +353,31 @@ unsafe fn dml_frontdoor_classify_query_with_relation(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
-    unsafe { classify_dml_frontdoor_query(query, query_context) }
+    let shape = unsafe { classify_dml_frontdoor_query(query, query_context)? };
+    let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    } else {
+        Vec::new()
+    };
+    let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    } else {
+        Vec::new()
+    };
+    Some(SpireDmlFrontdoorQueryDetail {
+        shape,
+        pk_column: relation.pk_column.clone(),
+        updated_columns,
+        projected_columns,
+    })
 }
 
 fn dml_frontdoor_replacement_decision_from_shape(
     target_relation_oid: pg_sys::Oid,
     index_oid: pg_sys::Oid,
-    shape: SpireDmlFrontdoorShapeRow,
+    detail: SpireDmlFrontdoorQueryDetail,
 ) -> SpireDmlFrontdoorReplacementDecisionRow {
+    let shape = detail.shape;
     let (custom_scan_mode, primitive, next_step) = if shape.supported {
         match shape.operation {
             "update_non_embedding" => (
@@ -377,6 +417,9 @@ fn dml_frontdoor_replacement_decision_from_shape(
         status: shape.status,
         custom_scan_mode,
         primitive,
+        pk_column: detail.pk_column,
+        updated_columns: detail.updated_columns,
+        projected_columns: detail.projected_columns,
         error: shape.error,
         hint: shape.hint,
         next_step,

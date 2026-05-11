@@ -1172,6 +1172,9 @@ v1 write contract from ADR-069:
     decision surface that maps supported UPDATE, DELETE, and PK SELECT shapes
     to their exact DML CustomScan mode and coordinator primitive while keeping
     plan rewriting disabled.
+  - [x] Packet `30860` extends the replacement decision with executor argument
+    shape: bigint PK column, non-embedding UPDATE target columns, and PK SELECT
+    projection columns.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

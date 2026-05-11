@@ -1152,6 +1152,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(status, &'static str),
         name!(custom_scan_mode, &'static str),
         name!(primitive, &'static str),
+        name!(pk_column, Option<String>),
+        name!(updated_columns, Vec<String>),
+        name!(projected_columns, Vec<String>),
         name!(error, Option<&'static str>),
         name!(hint, Option<&'static str>),
         name!(next_step, &'static str),
@@ -1173,6 +1176,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
             "unsupported_shape",
             "none",
             "none",
+            None,
+            Vec::new(),
+            Vec::new(),
             Some("ec_spire_distributed: DML front door requires one target heap relation"),
             Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
             "raise ADR-069 planner error instead of using coordinator heap path",
@@ -1192,6 +1198,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         decision.status,
         decision.custom_scan_mode,
         decision.primitive,
+        decision.pk_column,
+        decision.updated_columns,
+        decision.projected_columns,
         decision.error,
         decision.hint,
         decision.next_step,
@@ -28339,12 +28348,18 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT primitive {select_replacement}"))
                 .expect("DML replacement SELECT primitive query should succeed")
                 .expect("DML replacement SELECT primitive should exist");
+        let select_projected_columns = Spi::get_one::<String>(&format!(
+            "SELECT array_to_string(projected_columns, ',') {select_replacement}"
+        ))
+        .expect("DML replacement SELECT projected columns query should succeed")
+        .expect("DML replacement SELECT projected columns should exist");
         assert!(select_supported);
         assert_eq!(select_mode, "coordinator_pk_select_tuple_payload");
         assert_eq!(
             select_primitive,
             "ec_spire_forward_coordinator_select_tuple_payload"
         );
+        assert_eq!(select_projected_columns, "id,title");
 
         let update_replacement = "FROM ec_spire_dml_frontdoor_replacement_sql(\
              $$UPDATE ec_spire_dml_replacement_sql SET title = 'updated' WHERE id = 5$$)";
@@ -28359,7 +28374,18 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT primitive {update_replacement}"))
                 .expect("DML replacement UPDATE primitive query should succeed")
                 .expect("DML replacement UPDATE primitive should exist");
+        let update_pk_column =
+            Spi::get_one::<String>(&format!("SELECT pk_column {update_replacement}"))
+                .expect("DML replacement UPDATE pk column query should succeed")
+                .expect("DML replacement UPDATE pk column should exist");
+        let update_columns = Spi::get_one::<String>(&format!(
+            "SELECT array_to_string(updated_columns, ',') {update_replacement}"
+        ))
+        .expect("DML replacement UPDATE updated columns query should succeed")
+        .expect("DML replacement UPDATE updated columns should exist");
         assert!(update_supported, "{update_kind}");
+        assert_eq!(update_pk_column, "id");
+        assert_eq!(update_columns, "title");
         assert_eq!(
             update_primitive,
             "ec_spire_forward_coordinator_update_tuple_payload"
