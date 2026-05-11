@@ -7,6 +7,7 @@ mod build;
 mod cost;
 mod custom_scan;
 mod diagnostics;
+mod dml_frontdoor;
 mod insert;
 mod meta;
 mod options;

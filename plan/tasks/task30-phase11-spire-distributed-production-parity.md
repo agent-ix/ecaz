@@ -1121,6 +1121,9 @@ v1 write contract from ADR-069:
     `ec_spire_coordinator_dml_frontdoor_plan()`, which records the ready INSERT
     and embedding-UPDATE surfaces plus pending UPDATE/DELETE/PK SELECT hook
     integrations and their narrow v1 query shapes.
+  - [x] Packet `30847` adds the pure DML front-door shape classifier scaffold
+    for the reviewer-confirmed planner/CustomScan hook direction and updates
+    the diagnostic surface to name that integration point.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
