@@ -1,0 +1,5 @@
+command: cargo fmt --check
+timestamp: 2026-05-11 America/Los_Angeles
+
+Warning: rustfmt reported that imports_granularity and group_imports are unstable on stable toolchain.
+Result: exited 0.
