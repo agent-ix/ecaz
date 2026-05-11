@@ -4,6 +4,7 @@ set -euo pipefail
 # Transport Stage E fixture family.
 #
 # Supported cases:
+#   connection_reset_mid_batch
 #   local_cancel
 #   local_statement_timeout
 #   remote_backend_termination
@@ -31,6 +32,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh --case CASE [options]
 
 Cases:
+  connection_reset_mid_batch
   local_cancel
   local_statement_timeout
   remote_backend_termination
@@ -107,7 +109,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$FAULT_CASE" != "local_cancel" \
+if [[ "$FAULT_CASE" != "connection_reset_mid_batch" \
+  && "$FAULT_CASE" != "local_cancel" \
   && "$FAULT_CASE" != "local_statement_timeout" \
   && "$FAULT_CASE" != "remote_backend_termination" \
   && "$FAULT_CASE" != "remote_statement_timeout" ]]; then
@@ -187,6 +190,9 @@ if [[ "$FAULT_CASE" == "remote_statement_timeout" ]]; then
 elif [[ "$FAULT_CASE" == "remote_backend_termination" ]]; then
   fault_failure_category="remote_backend_terminated"
   fault_injection="fault_node_sql=pg_terminate_backend(pg_backend_pid())"
+elif [[ "$FAULT_CASE" == "connection_reset_mid_batch" ]]; then
+  fault_failure_category="remote_backend_terminated"
+  fault_injection="fault_node_sql=generate_series_first_row_then_pg_terminate_backend"
 else
   fault_failure_category="local_query_cancelled"
   fault_injection="local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)"

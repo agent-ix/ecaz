@@ -886,6 +886,12 @@ Goal: prove distributed correctness locally before AWS.
     `remote_executor_cancelled` in both strict and degraded mode.
     Remaining Stage E connection reset, OOM, and lifecycle rows still need
     fixture logs.
+  - [x] Packet `30787` adds the connection-reset-mid-batch transport runtime
+    row: the fault remote starts a result stream and then terminates its own
+    backend, which is classified as `remote_backend_terminated`; strict fails
+    closed while degraded skips that dispatch and advances the ready remote to
+    `compact_candidate_receive`.
+    Remaining Stage E OOM and lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
