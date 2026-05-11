@@ -220,9 +220,18 @@ embedding, source_identity, row_payload, requested_columns)` composes the
 v1 INSERT operation before the transparent DML hook is installed. It
 classifies the embedding, prepares the typed remote tuple-payload INSERT,
 and stages the placement-directory row in the coordinator transaction.
+After staging succeeds it reports
+`remote_insert_prepared_pending_local_commit` with next step
+`await_local_commit`; the remote prepared transaction is not durable or
+visible until the caller's coordinator transaction commits and resolves the
+remote prepared transaction.
 The eventual INSERT hook must call the same operation after constructing
 the canonical primary-key bytes, ADR-063 source identity, JSON tuple
 payload, and explicit column list from the executor tuple.
+The packet `30834` PG18 multicluster smoke validates the helper path by
+committing a remote row, staging its coordinator placement, refreshing the
+remote descriptor identity, and reading the row back through
+`EcSpireDistributedScan`.
 
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or

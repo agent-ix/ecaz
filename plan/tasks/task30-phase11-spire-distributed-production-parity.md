@@ -1024,8 +1024,18 @@ v1 write contract from ADR-069:
       staging into the production operation the transparent INSERT hook will
       call after it builds tuple JSON, canonical primary-key bytes, and
       ADR-063 source identity from the executor tuple.
-  - [ ] add PG18 coverage for remote row, placement row, and CustomScan
+    - [x] Packet `30834` advances the helper's post-staging SQL status to
+      `remote_insert_prepared_pending_local_commit` / `await_local_commit`, so
+      callers do not mistake a prepared remote transaction for a committed,
+      durable remote row.
+  - [x] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
+    - [x] Packet `30834` adds
+      `scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh`,
+      which runs separate coordinator and remote PG18 clusters, invokes
+      `ec_spire_prepare_coordinator_insert_tuple_payload(...)`, verifies the
+      remote row and coordinator placement row, and confirms
+      `Custom Scan (EcSpireDistributedScan)` returns the inserted remote row.
 - [ ] Coordinator-routed non-embedding UPDATE:
   - [ ] lookup `node_id` from the placement directory;
   - [ ] forward UPDATE to the owning remote;

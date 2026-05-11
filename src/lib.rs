@@ -7668,6 +7668,9 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
         name!(next_step, &'static str),
     ),
 > {
+    const POST_STAGING_STATUS: &str = "remote_insert_prepared_pending_local_commit";
+    const POST_STAGING_NEXT_STEP: &str = "await_local_commit";
+
     if pk_value.is_empty() {
         pgrx::error!(
             "ec_spire_prepare_coordinator_insert_tuple_payload pk_value must not be empty"
@@ -7739,8 +7742,8 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
         prepare_row.remote_insert_sent,
         prepare_row.remote_prepared,
         true,
-        prepare_row.status,
-        prepare_row.next_step,
+        POST_STAGING_STATUS,
+        POST_STAGING_NEXT_STEP,
     ))
 }
 
@@ -19835,8 +19838,8 @@ mod tests {
             .expect("placement query should succeed")
             .expect("placement count should exist");
 
-        assert_eq!(parts[0], "remote_insert_prepared");
-        assert_eq!(parts[1], "local_placement_directory_write");
+        assert_eq!(parts[0], "remote_insert_prepared_pending_local_commit");
+        assert_eq!(parts[1], "await_local_commit");
         assert_eq!(parts[2], "13");
         assert_eq!(parts[3], expected_centroid_id.to_string());
         assert_eq!(parts[4], active_epoch.to_string());
