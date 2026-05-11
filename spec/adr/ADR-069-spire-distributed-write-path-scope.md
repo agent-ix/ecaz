@@ -51,6 +51,11 @@ The transparent v1 front door is intentionally narrow:
 - The coordinator-visible primary key is one `bigint` column. Composite
   primary keys and non-`bigint` primary keys are deferred; they fail closed as
   `unsupported_pk_shape` rather than being encoded ambiguously.
+- CTE-prefixed front-door statements are not supported in v1, including
+  read-only `WITH` clauses. The planner hook rejects them as
+  `unsupported_subquery_shape`; a later packet may distinguish read-only CTEs
+  from modifying CTEs after the classifier can prove the rewritten target
+  relation and predicate are still unambiguous.
 
 ### Coordinator-routed INSERT
 

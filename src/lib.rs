@@ -27971,6 +27971,45 @@ mod tests {
         );
     }
 
+    #[pg_test]
+    fn test_ec_spire_dml_frontdoor_const_coercion_and_cte() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_query_shape_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML query shape table creation should succeed");
+
+        let context = am::SpireDmlFrontdoorQueryContext {
+            ec_spire_distributed_table: true,
+            pk_column: "id",
+            column_names: &[(1, "id"), (2, "title"), (3, "embedding")],
+            embedding_columns: &["embedding"],
+        };
+
+        let coerced_const_query =
+            unsafe { analyzed_query("SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5") };
+        let coerced_const_shape =
+            unsafe { am::spire_classify_dml_frontdoor_query(coerced_const_query, context) }
+                .expect("coerced const query should classify");
+        assert!(
+            coerced_const_shape.supported,
+            "coerced const shape: {:?}",
+            coerced_const_shape
+        );
+        assert_eq!(coerced_const_shape.kind, "pk_select_by_pk");
+
+        let cte_query = unsafe {
+            analyzed_query(
+                "WITH marker AS (SELECT 1) \
+                 SELECT id FROM ec_spire_dml_query_shape_sql WHERE id = 5",
+            )
+        };
+        let cte_shape = unsafe { am::spire_classify_dml_frontdoor_query(cte_query, context) }
+            .expect("CTE-prefixed query should classify");
+        assert!(!cte_shape.supported);
+        assert_eq!(cte_shape.kind, "unsupported_subquery_shape");
+    }
+
     unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
         let sql = CString::new(sql).expect("test SQL should not contain NUL");
         let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };

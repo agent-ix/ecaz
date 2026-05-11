@@ -148,6 +148,11 @@ pub(crate) use self::ec_spire::{
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
 };
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::{
+    classify_dml_frontdoor_query as spire_classify_dml_frontdoor_query,
+    SpireDmlFrontdoorQueryContext,
+};
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::remote_search_libpq_executor_budget_contract_probe_counts as spire_remote_search_libpq_executor_budget_contract_probe_counts;

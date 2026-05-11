@@ -1,6 +1,8 @@
 //! ADR-069 DML front-door shape classification.
 //!
 //! The planner hook maps PostgreSQL query trees into this small input model.
+//! Query-tree helpers each extract one fact and let the pure classifier compose
+//! the final supported/unsupported result.
 //! Keeping the v1 safety rules here makes unsupported distributed DML shapes
 //! fail closed before any hook can fall through to the coordinator heap path.
 #![allow(dead_code)]
@@ -73,6 +75,7 @@ pub(crate) struct SpireDmlFrontdoorRelationContext {
     pub(crate) next_step: &'static str,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) ec_spire_distributed_table: bool,
     pub(crate) pk_column: &'a str,
@@ -166,6 +169,8 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     cursor_options: core::ffi::c_int,
     bound_params: pg_sys::ParamListInfo,
 ) -> *mut pg_sys::PlannedStmt {
+    // Classification and plan replacement are intentionally separate follow-up
+    // slices; this checkpoint only installs a visible pass-through hook chain.
     if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
         unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
     } else {
@@ -442,7 +447,11 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
             query_ref.resultRelation
         }
-        SpireDmlFrontdoorOperation::PkSelect => range_table_ref.unwrap_or_default(),
+        SpireDmlFrontdoorOperation::PkSelect => {
+            // Keep unsupported SELECT shapes flowing into the shared classifier
+            // so diagnostics report the same fail-closed status/kind matrix.
+            range_table_ref.unwrap_or_default()
+        }
     };
     let (predicate_column, predicate_operator, predicate_value_kind) =
         unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
@@ -567,7 +576,7 @@ unsafe fn dml_frontdoor_pk_predicate(
     }
     let op_expr = qual.cast::<pg_sys::OpExpr>();
     let operator =
-        if unsafe { pg_sys::get_opcode((*op_expr).opno) } == pg_sys::Oid::from(pg_sys::F_INT8EQ) {
+        if dml_frontdoor_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
             Some("=")
         } else {
             Some("other")
@@ -624,7 +633,9 @@ unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoor
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Const => {
             let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
-            if !const_expr.constisnull && const_expr.consttype == pg_sys::INT8OID {
+            if !const_expr.constisnull
+                && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+            {
                 SpireDmlFrontdoorValueKind::ConstBigint
             } else {
                 SpireDmlFrontdoorValueKind::Other
@@ -632,14 +643,93 @@ unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoor
         }
         pg_sys::NodeTag::T_Param => {
             let param = unsafe { &*expr.cast::<pg_sys::Param>() };
-            if param.paramtype == pg_sys::INT8OID {
+            if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
                 SpireDmlFrontdoorValueKind::ParamBigint
             } else {
                 SpireDmlFrontdoorValueKind::Other
             }
         }
+        pg_sys::NodeTag::T_FuncExpr => {
+            let func_expr = unsafe { &*expr.cast::<pg_sys::FuncExpr>() };
+            if func_expr.funcresulttype != pg_sys::INT8OID {
+                return SpireDmlFrontdoorValueKind::Other;
+            }
+            unsafe { dml_frontdoor_single_coerced_arg_value_kind(func_expr.args) }
+        }
+        pg_sys::NodeTag::T_RelabelType => {
+            let relabel = unsafe { &*expr.cast::<pg_sys::RelabelType>() };
+            if relabel.resulttype != pg_sys::INT8OID {
+                return SpireDmlFrontdoorValueKind::Other;
+            }
+            unsafe { dml_frontdoor_coercible_integer_value_kind(relabel.arg) }
+        }
+        pg_sys::NodeTag::T_CoerceViaIO => {
+            let coerce = unsafe { &*expr.cast::<pg_sys::CoerceViaIO>() };
+            if coerce.resulttype != pg_sys::INT8OID {
+                return SpireDmlFrontdoorValueKind::Other;
+            }
+            unsafe { dml_frontdoor_coercible_integer_value_kind(coerce.arg) }
+        }
         _ => SpireDmlFrontdoorValueKind::Other,
     }
+}
+
+unsafe fn dml_frontdoor_single_coerced_arg_value_kind(
+    args: *mut pg_sys::List,
+) -> SpireDmlFrontdoorValueKind {
+    let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
+        return SpireDmlFrontdoorValueKind::Other;
+    };
+    unsafe { dml_frontdoor_coercible_integer_value_kind(arg) }
+}
+
+unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+    let args = unsafe { args.as_ref()? };
+    if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
+        return None;
+    }
+    Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
+}
+
+unsafe fn dml_frontdoor_coercible_integer_value_kind(
+    expr: *mut pg_sys::Expr,
+) -> SpireDmlFrontdoorValueKind {
+    if expr.is_null() {
+        return SpireDmlFrontdoorValueKind::Other;
+    }
+    match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
+        pg_sys::NodeTag::T_Const => {
+            let const_expr = unsafe { &*expr.cast::<pg_sys::Const>() };
+            if !const_expr.constisnull
+                && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
+            {
+                SpireDmlFrontdoorValueKind::ConstBigint
+            } else {
+                SpireDmlFrontdoorValueKind::Other
+            }
+        }
+        pg_sys::NodeTag::T_Param => {
+            let param = unsafe { &*expr.cast::<pg_sys::Param>() };
+            if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
+                SpireDmlFrontdoorValueKind::ParamBigint
+            } else {
+                SpireDmlFrontdoorValueKind::Other
+            }
+        }
+        _ => dml_frontdoor_value_kind(expr),
+    }
+}
+
+fn dml_frontdoor_integer_oid_can_coerce_to_bigint(oid: pg_sys::Oid) -> bool {
+    oid == pg_sys::INT8OID || oid == pg_sys::INT4OID || oid == pg_sys::INT2OID
+}
+
+fn dml_frontdoor_bigint_equality_opcode(opcode: pg_sys::Oid) -> bool {
+    opcode == pg_sys::Oid::from(pg_sys::F_INT8EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT84EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT82EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT48EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT28EQ)
 }
 
 unsafe fn dml_frontdoor_target_columns(
@@ -873,6 +963,24 @@ mod tests {
             },
             SpireDmlFrontdoorValueKind::ParamBigint
         );
+    }
+
+    #[test]
+    fn query_layer_recognizes_bigint_integer_equality_variants() {
+        for opcode in [
+            pg_sys::F_INT8EQ,
+            pg_sys::F_INT84EQ,
+            pg_sys::F_INT82EQ,
+            pg_sys::F_INT48EQ,
+            pg_sys::F_INT28EQ,
+        ] {
+            assert!(dml_frontdoor_bigint_equality_opcode(pg_sys::Oid::from(
+                opcode
+            )));
+        }
+        assert!(!dml_frontdoor_bigint_equality_opcode(pg_sys::Oid::from(
+            pg_sys::F_INT4EQ
+        )));
     }
 
     #[test]

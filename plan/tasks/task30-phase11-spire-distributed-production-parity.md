@@ -1145,6 +1145,9 @@ v1 write contract from ADR-069:
     context: v1 rejects multiple `ec_spire` indexes on one heap, ADR-069 pins
     the single-index / single-column-bigint-PK rule, and PG18 coverage proves
     INCLUDE columns stay out of `embedding_columns`.
+  - [x] Packet `30853` pins the v1 CTE rejection rule in ADR-069 and proves
+    PostgreSQL-analyzed `WHERE id = 5` cross-type integer equality still
+    classifies as `pk_select_by_pk`.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
