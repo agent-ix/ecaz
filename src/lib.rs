@@ -24352,7 +24352,51 @@ mod tests {
         assert!(hook_installed);
         assert!(path_generation_enabled);
         assert!(exec_wiring_enabled);
-        assert_eq!(status, "executor_stream_wired_tuple_payload_pending");
+        assert_eq!(status, "executor_stream_wired_tuple_payload_slots");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_payload_slot_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("payload slot table creation should succeed");
+        let relation_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_payload_slot_sql'::regclass::oid",
+        )
+        .expect("payload slot relation oid query should succeed")
+        .expect("payload slot relation oid should exist");
+
+        unsafe {
+            let relation =
+                pg_sys::table_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            let slot = pg_sys::MakeSingleTupleTableSlot(
+                (*relation).rd_att,
+                pg_sys::table_slot_callbacks(relation),
+            );
+            am::spire_custom_scan_store_tuple_payload_json_for_test(
+                slot,
+                r#"{"id":42,"title":"remote alpha"}"#,
+            );
+
+            let mut id_is_null = false;
+            let id_datum = pg_sys::slot_getattr(slot, 1, &mut id_is_null);
+            let id = i64::from_datum(id_datum, id_is_null).expect("id should decode");
+            let mut title_is_null = false;
+            let title_datum = pg_sys::slot_getattr(slot, 2, &mut title_is_null);
+            let title =
+                String::from_datum(title_datum, title_is_null).expect("title should decode");
+            let mut embedding_is_null = false;
+            let _ = pg_sys::slot_getattr(slot, 3, &mut embedding_is_null);
+
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+            pg_sys::table_close(relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+
+            assert_eq!(id, 42);
+            assert_eq!(title, "remote alpha");
+            assert!(embedding_is_null);
+        }
     }
 
     #[pg_test]

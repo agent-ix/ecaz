@@ -104,6 +104,8 @@ mod tests {
             heap_offset: 1 + row_index as u16,
             score,
             heap_lookup_owner,
+            tuple_payload_json: None,
+            tuple_payload_missing: false,
             status: SPIRE_REMOTE_STATUS_READY,
         }
     }

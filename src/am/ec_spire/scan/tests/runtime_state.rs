@@ -251,6 +251,8 @@
                 heap_lookup_owner: SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
                 vec_id: vec![1],
                 row_locator: vec![2],
+                tuple_payload_json: None,
+                tuple_payload_missing: false,
             }],
         );
 
@@ -286,6 +288,8 @@
                 heap_lookup_owner: "origin_node_heap",
                 vec_id: vec![1],
                 row_locator: vec![2],
+                tuple_payload_json: None,
+                tuple_payload_missing: false,
             }],
         );
 
@@ -319,6 +323,8 @@
                 heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
                 vec_id: vec![1],
                 row_locator: vec![2],
+                tuple_payload_json: None,
+                tuple_payload_missing: false,
             }],
         );
 

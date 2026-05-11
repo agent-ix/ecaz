@@ -885,8 +885,12 @@ CustomScan read-path work:
       `real[]` expressions to prepared-statement parameters, covering
       `ORDER BY embedding <#> $1 LIMIT k` through the same production executor
       path.
-    - [ ] Wire ADR-068 remote tuple payloads into CustomScan tuple slots so
-      remote-origin outputs return projected coordinator-visible tuples.
+    - [x] Packet `30814` threads ADR-068 tuple-payload column requests through
+      the production remote heap receive path, carries payload JSON on
+      remote-origin output rows, and stores typed coordinator-visible values in
+      a CustomScan virtual tuple slot.
+    - [ ] Add the end-to-end multi-instance fixture proving remote-origin
+      output rows return through CustomScan without the materialization catalog.
   - [ ] Keep the existing index AM unchanged for local-only scans.
   - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
     - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`

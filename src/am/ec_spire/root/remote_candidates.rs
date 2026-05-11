@@ -1587,6 +1587,9 @@ const SPIRE_REMOTE_SEARCH_LIBPQ_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_local_heap_candidates($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)";
+const SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE: &str =
+    "SELECT payload.*, payload.tuple_payload::text AS tuple_payload_text \
+       FROM ec_spire_remote_search_tuple_payload($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text, $7::text[]) AS payload";
 const SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_endpoint_identity($1::oid)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
@@ -2351,6 +2354,7 @@ pub(crate) struct SpireRemoteProductionHeapReceiveRequest {
     pub(crate) selected_pids: Vec<u64>,
     pub(crate) top_k: usize,
     pub(crate) consistency_mode: String,
+    pub(crate) tuple_payload_columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2953,20 +2957,37 @@ impl SpireRemoteProductionTransportAdapter {
                 {
                     return Err(SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH);
                 }
-                client
-                    .query(
-                        SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
-                        &[
-                            &remote_index_oid,
-                            &requested_epoch,
-                            &request.query,
-                            &selected_pids,
-                            &top_k,
-                            &request.consistency_mode,
-                        ],
-                    )
-                    .await
-                    .map_err(|error| production_remote_query_failure_category(&error))
+                match request.tuple_payload_columns.as_ref() {
+                    Some(tuple_payload_columns) => client
+                        .query(
+                            SPIRE_REMOTE_SEARCH_LIBPQ_TUPLE_PAYLOAD_SQL_TEMPLATE,
+                            &[
+                                &remote_index_oid,
+                                &requested_epoch,
+                                &request.query,
+                                &selected_pids,
+                                &top_k,
+                                &request.consistency_mode,
+                                tuple_payload_columns,
+                            ],
+                        )
+                        .await
+                        .map_err(|error| production_remote_query_failure_category(&error)),
+                    None => client
+                        .query(
+                            SPIRE_REMOTE_SEARCH_LIBPQ_HEAP_SQL_TEMPLATE,
+                            &[
+                                &remote_index_oid,
+                                &requested_epoch,
+                                &request.query,
+                                &selected_pids,
+                                &top_k,
+                                &request.consistency_mode,
+                            ],
+                        )
+                        .await
+                        .map_err(|error| production_remote_query_failure_category(&error)),
+                }
             },
             local_cancel_source,
         )
@@ -3992,6 +4013,7 @@ impl SpireRemoteFanoutExecutor {
         query: &[f32],
         top_k: usize,
         consistency_mode: &str,
+        tuple_payload_columns: Option<&[String]>,
     ) -> Result<Vec<SpireRemoteProductionHeapReceiveRequest>, String> {
         let degraded =
             parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
@@ -4018,6 +4040,7 @@ impl SpireRemoteFanoutExecutor {
                     selected_pids: dispatch.selected_pids.clone(),
                     top_k,
                     consistency_mode: consistency_mode.to_owned(),
+                    tuple_payload_columns: tuple_payload_columns.map(<[String]>::to_vec),
                 }),
                 Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
                 Err(_) => {
@@ -4041,8 +4064,10 @@ impl SpireRemoteFanoutExecutor {
         query: &[f32],
         top_k: usize,
         consistency_mode: &str,
+        tuple_payload_columns: Option<&[String]>,
     ) -> Result<(), String> {
-        let requests = self.remote_heap_receive_requests(query, top_k, consistency_mode)?;
+        let requests =
+            self.remote_heap_receive_requests(query, top_k, consistency_mode, tuple_payload_columns)?;
         if requests.is_empty() {
             return Ok(());
         }
@@ -5755,6 +5780,8 @@ fn production_scan_output_from_heap_candidate(
         heap_lookup_owner: candidate.heap_lookup_owner,
         vec_id: candidate.vec_id.clone(),
         row_locator: candidate.row_locator.clone(),
+        tuple_payload_json: candidate.tuple_payload_json.clone(),
+        tuple_payload_missing: candidate.tuple_payload_missing,
     }
 }
 
@@ -6165,6 +6192,8 @@ fn production_scan_output_from_materialized_row_mapping(
         heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
         vec_id: output.vec_id.clone(),
         row_locator: output.row_locator.clone(),
+        tuple_payload_json: output.tuple_payload_json.clone(),
+        tuple_payload_missing: output.tuple_payload_missing,
     }
 }
 
@@ -6275,6 +6304,7 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
     index_relation: pg_sys::Relation,
     query: Vec<f32>,
     top_k_override: Option<usize>,
+    tuple_payload_columns: Option<&[String]>,
 ) -> Result<SpireRemoteProductionScanResultStream, String> {
         let query_for_scan = scan::SpireScanQuery::new(query.clone())?;
         let consistency_mode = options::current_session_remote_search_consistency_mode_name();
@@ -6430,7 +6460,7 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
                 | SPIRE_REMOTE_STATUS_READY
         );
         if compact_allows_heap {
-            executor.run_remote_heap_receive(&query, top_k, consistency_mode)?;
+            executor.run_remote_heap_receive(&query, top_k, consistency_mode, tuple_payload_columns)?;
         }
         let (remote_heap_ready_dispatch_count, remote_heap_failed_dispatch_count, remote_heap_candidate_count) =
             executor.remote_heap_resolution_counts()?;
@@ -6534,6 +6564,24 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_result_stream
             index_relation,
             query,
             Some(top_k),
+            None,
+        )
+    };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) unsafe fn remote_search_production_scan_tuple_payload_result_stream(
+    index_relation: pg_sys::Relation,
+    query: Vec<f32>,
+    top_k: usize,
+    tuple_payload_columns: &[String],
+) -> SpireRemoteProductionScanResultStream {
+    let result = unsafe {
+        remote_search_production_scan_heap_resolution_result_stream_impl(
+            index_relation,
+            query,
+            Some(top_k),
+            Some(tuple_payload_columns),
         )
     };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -6550,6 +6598,7 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str
             remote_search_production_scan_heap_resolution_result_stream_impl(
                 index_relation,
                 query,
+                None,
                 None,
             )?
         };
@@ -8378,6 +8427,10 @@ fn decode_remote_search_heap_candidate_pg_row(
         heap_offset,
         score: candidate.score,
         heap_lookup_owner: SPIRE_REMOTE_HEAP_RESOLUTION,
+        tuple_payload_json: row.try_get::<_, String>("tuple_payload_text").ok(),
+        tuple_payload_missing: row
+            .try_get::<_, bool>("tuple_payload_missing")
+            .unwrap_or(false),
         status: SPIRE_REMOTE_STATUS_READY,
     })
 }
@@ -10588,6 +10641,36 @@ mod production_executor_state_tests {
         assert_eq!(row.next_executor_step, "remote_heap_resolution");
         assert_eq!(row.status, "requires_remote_heap_resolution");
         assert_eq!(row.first_candidate_receive_failure_category, "none");
+    }
+
+    #[test]
+    fn production_executor_heap_receive_requests_carry_tuple_payload_columns() {
+        let dispatch_rows = vec![planned_dispatch(82, 1)];
+        let transport_rows = vec![ready_transport_row(82, 1)];
+        let receive_results = vec![ready_candidate_receive_result(82, vec![0], 1)];
+        let secret_key = remote_conninfo_secret_provider_lookup_key("spire/remote/82")
+            .expect("secret key should build");
+        std::env::set_var(&secret_key, "host=127.0.0.1 port=1");
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&transport_rows)
+            .expect("transport rows should apply");
+        executor
+            .apply_candidate_receive_results(&receive_results)
+            .expect("receive rows should apply");
+        let requested_columns = vec!["id".to_owned(), "title".to_owned()];
+
+        let requests = executor
+            .remote_heap_receive_requests(&[1.0, 0.0], 1, "strict", Some(&requested_columns))
+            .expect("heap receive requests should build");
+        std::env::remove_var(secret_key);
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].tuple_payload_columns.as_deref(),
+            Some(requested_columns.as_slice())
+        );
     }
 
     #[test]

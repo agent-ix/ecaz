@@ -1,6 +1,6 @@
 use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList};
 
-use std::ptr;
+use std::{ffi::CString, ptr};
 
 use super::meta;
 
@@ -75,6 +75,7 @@ struct SpireCustomScanExecState {
     index_oid: pg_sys::Oid,
     top_k: usize,
     query: Vec<f32>,
+    tuple_payload_columns: Vec<String>,
     outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
     next_output: usize,
     loaded_outputs: bool,
@@ -105,11 +106,11 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         path_generation_enabled: true,
         exec_wiring_enabled: true,
         status: if registered && hook_installed {
-            "executor_stream_wired_tuple_payload_pending"
+            "executor_stream_wired_tuple_payload_slots"
         } else {
             "not_registered"
         },
-        next_step: "wire remote tuple-payload delivery into CustomScan tuple slots",
+        next_step: "add end-to-end remote CustomScan tuple delivery fixture",
     }
 }
 
@@ -589,6 +590,35 @@ unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Ve
     Some(values)
 }
 
+unsafe fn custom_scan_tuple_payload_columns(node: *mut pg_sys::CustomScanState) -> Vec<String> {
+    unsafe {
+        let relation = (*node).ss.ss_currentRelation;
+        if relation.is_null() {
+            pgrx::error!("EcSpireDistributedScan missing scan relation for tuple payload columns");
+        }
+        let tuple_desc = (*relation).rd_att;
+        if tuple_desc.is_null() {
+            pgrx::error!("EcSpireDistributedScan missing scan relation tuple descriptor");
+        }
+        let natts = (*tuple_desc).natts;
+        let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+        for attr_index in 0..natts {
+            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
+            if attr.is_null() || (*attr).attisdropped {
+                continue;
+            }
+            let name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
+                })
+                .to_owned();
+            columns.push(name);
+        }
+        columns
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     _cscan: *mut pg_sys::CustomScan,
@@ -603,6 +633,7 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
                 index_oid: pg_sys::InvalidOid,
                 top_k: 0,
                 query: Vec::new(),
+                tuple_payload_columns: Vec::new(),
                 outputs: Vec::new(),
                 next_output: 0,
                 loaded_outputs: false,
@@ -626,6 +657,7 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
         (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
         (*state).query = custom_scan_query_from_plan(node, custom_scan);
+        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node);
     }
 }
 
@@ -684,11 +716,7 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
                 super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
                     | super::SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
             ) {
-                pgrx::error!(
-                    "EcSpireDistributedScan tuple payload delivery is not wired for remote-origin node_id {} output; heap_lookup_owner {}",
-                    output.node_id,
-                    output.heap_lookup_owner
-                );
+                return custom_scan_store_remote_tuple_payload(scan_state, output);
             }
 
             let mut tid = pg_sys::ItemPointerData::default();
@@ -719,6 +747,117 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_recheck(
     true
 }
 
+unsafe fn custom_scan_store_remote_tuple_payload(
+    scan_state: *mut pg_sys::ScanState,
+    output: &super::SpireRemoteProductionScanOutputRow,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if output.tuple_payload_missing {
+            pgrx::error!(
+                "EcSpireDistributedScan remote tuple payload is missing for node_id {} output",
+                output.node_id
+            );
+        }
+        let Some(payload_json) = output.tuple_payload_json.as_deref() else {
+            pgrx::error!(
+                "EcSpireDistributedScan tuple payload delivery requires remote payload for node_id {} output; heap_lookup_owner {}",
+                output.node_id,
+                output.heap_lookup_owner
+            );
+        };
+        custom_scan_store_tuple_payload_json((*scan_state).ss_ScanTupleSlot, payload_json)
+    }
+}
+
+unsafe fn custom_scan_store_tuple_payload_json(
+    slot: *mut pg_sys::TupleTableSlot,
+    payload_json: &str,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if slot.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload slot is null");
+        }
+        let tuple_desc = (*slot).tts_tupleDescriptor;
+        if tuple_desc.is_null() {
+            pgrx::error!("EcSpireDistributedScan tuple payload slot has no tuple descriptor");
+        }
+        let payload = serde_json::from_str::<serde_json::Value>(payload_json).unwrap_or_else(|e| {
+            pgrx::error!("EcSpireDistributedScan remote tuple payload JSON decode failed: {e}")
+        });
+        let payload_object = payload.as_object().unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan remote tuple payload must be a JSON object")
+        });
+
+        pg_sys::ExecClearTuple(slot);
+        let natts = (*tuple_desc).natts;
+        for attr_index in 0..natts {
+            let attr = pg_sys::TupleDescAttr(tuple_desc, attr_index);
+            if attr.is_null() || (*attr).attisdropped {
+                *(*slot).tts_isnull.add(attr_index as usize) = true;
+                *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                continue;
+            }
+            let attr_name = std::ffi::CStr::from_ptr((*attr).attname.data.as_ptr())
+                .to_str()
+                .unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan relation attribute name is not UTF-8")
+                });
+            match payload_object.get(attr_name) {
+                None | Some(serde_json::Value::Null) => {
+                    *(*slot).tts_isnull.add(attr_index as usize) = true;
+                    *(*slot).tts_values.add(attr_index as usize) = pg_sys::Datum::from(0);
+                }
+                Some(value) => {
+                    *(*slot).tts_isnull.add(attr_index as usize) = false;
+                    *(*slot).tts_values.add(attr_index as usize) =
+                        custom_scan_json_value_to_datum(value, attr);
+                }
+            }
+        }
+        (*slot).tts_nvalid = i16::try_from(natts)
+            .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan tuple descriptor too wide"));
+        pg_sys::ExecStoreVirtualTuple(slot)
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn custom_scan_store_tuple_payload_json_for_test(
+    slot: *mut pg_sys::TupleTableSlot,
+    payload_json: &str,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe { custom_scan_store_tuple_payload_json(slot, payload_json) }
+}
+
+unsafe fn custom_scan_json_value_to_datum(
+    value: &serde_json::Value,
+    attr: pg_sys::Form_pg_attribute,
+) -> pg_sys::Datum {
+    unsafe {
+        let input_text = match value {
+            serde_json::Value::String(value) => value.clone(),
+            serde_json::Value::Bool(value) => value.to_string(),
+            serde_json::Value::Number(value) => value.to_string(),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => value.to_string(),
+            serde_json::Value::Null => {
+                pgrx::error!("EcSpireDistributedScan cannot convert JSON null to non-null datum")
+            }
+        };
+        let input = CString::new(input_text)
+            .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan tuple payload contains NUL"));
+        let mut typinput = pg_sys::InvalidOid;
+        let mut typioparam = pg_sys::InvalidOid;
+        pg_sys::getTypeInputInfo((*attr).atttypid, &mut typinput, &mut typioparam);
+        let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
+        pg_sys::fmgr_info(typinput, &mut flinfo);
+        pg_sys::InputFunctionCall(
+            &mut flinfo,
+            input.as_ptr().cast_mut(),
+            typioparam,
+            (*attr).atttypmod,
+        )
+    }
+}
+
 unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
     unsafe {
         if (*state).loaded_outputs {
@@ -728,10 +867,11 @@ unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
             (*state).index_oid,
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         );
-        let stream = super::remote_search_production_scan_heap_resolution_result_stream(
+        let stream = super::remote_search_production_scan_tuple_payload_result_stream(
             index_relation,
             (*state).query.clone(),
             (*state).top_k,
+            &(*state).tuple_payload_columns,
         );
         pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         if stream.summary.next_blocker != super::SPIRE_REMOTE_NONE {
@@ -752,7 +892,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn custom_scan_status_reports_executor_stream_pending_tuple_payload() {
+    fn custom_scan_status_reports_executor_stream_tuple_payload_slots() {
         let row = custom_scan_status_row();
 
         assert_eq!(row.provider_name, "EcSpireDistributedScan");
@@ -760,7 +900,7 @@ mod tests {
         assert!(row.exec_wiring_enabled);
         assert_eq!(
             row.next_step,
-            "wire remote tuple-payload delivery into CustomScan tuple slots"
+            "add end-to-end remote CustomScan tuple delivery fixture"
         );
     }
 

@@ -192,6 +192,8 @@ pub(crate) struct SpireRemoteSearchLocalHeapCandidateRow {
     pub(crate) heap_offset: u16,
     pub(crate) score: f32,
     pub(crate) heap_lookup_owner: &'static str,
+    pub(crate) tuple_payload_json: Option<String>,
+    pub(crate) tuple_payload_missing: bool,
     pub(crate) status: &'static str,
 }
 
@@ -820,6 +822,8 @@ pub(crate) struct SpireRemoteProductionScanOutputRow {
     pub(crate) heap_lookup_owner: &'static str,
     pub(crate) vec_id: Vec<u8>,
     pub(crate) row_locator: Vec<u8>,
+    pub(crate) tuple_payload_json: Option<String>,
+    pub(crate) tuple_payload_missing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

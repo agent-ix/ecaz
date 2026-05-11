@@ -256,6 +256,8 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
                 heap_offset: heap_tid.offset_number,
                 score,
                 heap_lookup_owner,
+                tuple_payload_json: None,
+                tuple_payload_missing: false,
                 status,
             });
         }
