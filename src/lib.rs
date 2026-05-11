@@ -24642,6 +24642,71 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "EcSpireDistributedScan production executor blocked")]
+    fn test_ec_spire_customscan_exec_accepts_parameter_query() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_param_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_param_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_param_sql_idx \
+             ON ec_spire_customscan_param_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_param_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_customscan_param_sql_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_param_sql_idx'::regclass) \
+             ORDER BY leaf_pid LIMIT 1",
+        )
+        .expect("leaf pid query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        let register_result = Spi::get_one::<bool>(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                     '{}'::oid, 2, 1, 'spire/remote/customscan/param', \
+                     decode('0a', 'hex'), 'remote_spire_idx', 'active', \
+                     {active_epoch}, {active_epoch}, '0.1.1', 'none')",
+            u32::from(index_oid)
+        ))
+        .expect("remote descriptor registration should succeed")
+        .expect("remote descriptor registration result should exist");
+        assert!(register_result);
+
+        Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
+        Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");
+        Spi::run(
+            "PREPARE ec_spire_customscan_param_query(real[]) AS \
+             SELECT id FROM ec_spire_customscan_param_sql \
+             ORDER BY embedding <#> $1 \
+             LIMIT 1",
+        )
+        .expect("prepare should succeed");
+        Spi::run("EXECUTE ec_spire_customscan_param_query(ARRAY[1.0, 0.0]::real[])")
+            .expect("parameterized CustomScan execution should fail in production executor");
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_search_local_heap_resolution_plan() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_local_heap_res_sql \

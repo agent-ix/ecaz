@@ -868,6 +868,10 @@ CustomScan read-path work:
     - [x] Packet `30810` proves a remote-placement `SELECT ... ORDER BY ... LIMIT`
       reaches the production executor and fails on the real remote transport
       gate instead of the old scaffold "not wired" error.
+    - [x] Packet `30811` extends the query-vector contract from constant
+      `real[]` expressions to prepared-statement parameters, covering
+      `ORDER BY embedding <#> $1 LIMIT k` through the same production executor
+      path.
     - [ ] Wire ADR-068 remote tuple payloads into CustomScan tuple slots so
       remote-origin outputs return projected coordinator-visible tuples.
   - [ ] Keep the existing index AM unchanged for local-only scans.

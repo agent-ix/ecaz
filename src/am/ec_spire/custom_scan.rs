@@ -470,10 +470,16 @@ unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
         return false;
     }
     let node = expr.cast::<pg_sys::Node>();
-    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Const {
-        return false;
+    match unsafe { (*node).type_ } {
+        pg_sys::NodeTag::T_Const => unsafe {
+            custom_scan_query_values_from_const(expr.cast()).is_some()
+        },
+        pg_sys::NodeTag::T_Param => unsafe {
+            let param = &*expr.cast::<pg_sys::Param>();
+            param.paramtype == pg_sys::FLOAT4ARRAYOID
+        },
+        _ => false,
     }
-    unsafe { custom_scan_query_values_from_const(expr.cast()).is_some() }
 }
 
 unsafe fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option<Vec<f32>> {
@@ -517,21 +523,62 @@ unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> u
     }
 }
 
-unsafe fn custom_scan_query_from_plan(custom_scan: *mut pg_sys::CustomScan) -> Vec<f32> {
+unsafe fn custom_scan_query_from_plan(
+    node: *mut pg_sys::CustomScanState,
+    custom_scan: *mut pg_sys::CustomScan,
+) -> Vec<f32> {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing ORDER BY query expression");
         }
         let expr = pg_sys::list_nth((*custom_scan).custom_exprs, 0).cast::<pg_sys::Expr>();
-        if expr.is_null() || (*expr.cast::<pg_sys::Node>()).type_ != pg_sys::NodeTag::T_Const {
-            pgrx::error!(
-                "EcSpireDistributedScan currently requires a constant real[] ORDER BY query"
-            );
+        if expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan has a null ORDER BY query expression");
         }
-        custom_scan_query_values_from_const(expr.cast()).unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan requires a non-null finite real[] ORDER BY query")
+        let datum = match (*expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => {
+                return custom_scan_query_values_from_const(expr.cast()).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "EcSpireDistributedScan requires a non-null finite real[] ORDER BY query"
+                    )
+                });
+            }
+            pg_sys::NodeTag::T_Param => {
+                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                if expr_state.is_null() {
+                    pgrx::error!("EcSpireDistributedScan failed to initialize ORDER BY query parameter expression");
+                }
+                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                    pgrx::error!(
+                        "EcSpireDistributedScan ORDER BY query expression has no evaluator"
+                    )
+                });
+                let mut is_null = false;
+                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                if is_null {
+                    pgrx::error!(
+                        "EcSpireDistributedScan ORDER BY query parameter must not be NULL"
+                    );
+                }
+                datum
+            }
+            _ => pgrx::error!(
+                "EcSpireDistributedScan requires a constant or parameter real[] ORDER BY query"
+            ),
+        };
+        custom_scan_query_values_from_datum(datum).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan requires a finite real[] ORDER BY query parameter")
         })
     }
+}
+
+unsafe fn custom_scan_query_values_from_datum(datum: pg_sys::Datum) -> Option<Vec<f32>> {
+    let values =
+        unsafe { Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)? };
+    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(values)
 }
 
 #[pg_guard]
@@ -570,7 +617,7 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         let custom_scan = custom_scan_plan(node);
         (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
         (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
-        (*state).query = custom_scan_query_from_plan(custom_scan);
+        (*state).query = custom_scan_query_from_plan(node, custom_scan);
     }
 }
 
