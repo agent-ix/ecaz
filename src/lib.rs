@@ -7642,6 +7642,108 @@ fn ec_spire_plan_coordinator_insert_dispatch(
     ))
 }
 
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_prepare_coordinator_insert_tuple_payload(
+    index_oid: pg_sys::Oid,
+    pk_value: Vec<u8>,
+    embedding: Vec<f32>,
+    source_identity: Vec<u8>,
+    row_payload: pgrx::JsonB,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(pk_value, Vec<u8>),
+        name!(node_id, i64),
+        name!(centroid_id, i64),
+        name!(served_epoch, i64),
+        name!(source_identity, Vec<u8>),
+        name!(prepared_gid, String),
+        name!(remote_insert_sent, bool),
+        name!(remote_prepared, bool),
+        name!(placement_staged, bool),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    if pk_value.is_empty() {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload pk_value must not be empty"
+        );
+    }
+    if source_identity.len() != 16 {
+        pgrx::error!(
+            "ec_spire_prepare_coordinator_insert_tuple_payload source_identity must be exactly 16 bytes"
+        );
+    }
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_prepare_coordinator_insert_tuple_payload",
+        )
+    };
+    let (node_id, centroid_id, served_epoch) =
+        unsafe { am::spire_classify_centroid(index_relation, &embedding) }
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let row_payload_json = row_payload.0.to_string();
+    let prepare_row = unsafe {
+        am::spire_coordinator_insert_prepare_remote_tuple_payload(
+            index_relation,
+            node_id,
+            served_epoch,
+            &row_payload_json,
+            &requested_columns,
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "INSERT INTO ec_spire_placement \
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                 VALUES ($1::oid, $2::bytea, $3::integer, $4::bigint, $5::bigint, $6::bytea)",
+                None,
+                &[
+                    index_oid.into(),
+                    pk_value.clone().into(),
+                    i32::try_from(node_id)
+                        .expect("coordinator insert node_id should fit i32")
+                        .into(),
+                    i64::try_from(centroid_id)
+                        .expect("coordinator insert centroid_id should fit i64")
+                        .into(),
+                    i64::try_from(served_epoch)
+                        .expect("coordinator insert served_epoch should fit i64")
+                        .into(),
+                    source_identity.clone().into(),
+                ],
+            )
+            .map_err(|e| format!("ec_spire coordinator insert placement staging failed: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((
+        index_oid,
+        pk_value,
+        i64::from(node_id),
+        i64::try_from(centroid_id).expect("centroid id should fit in i64"),
+        i64::try_from(served_epoch).expect("served epoch should fit in i64"),
+        source_identity,
+        prepare_row.prepared_gid,
+        prepare_row.remote_insert_sent,
+        prepare_row.remote_prepared,
+        true,
+        prepare_row.status,
+        prepare_row.next_step,
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
@@ -19595,6 +19697,155 @@ mod tests {
         assert_eq!(
             remote_visible_count, 0,
             "prepared remote tuple-payload INSERT should not be visible before transaction resolution"
+        );
+        assert_eq!(placement_count, 1);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_insert_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_INSERT_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_insert_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_insert_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector); \
+                 CREATE INDEX ec_spire_coord_insert_payload_remote_idx \
+                     ON ec_spire_coord_insert_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote tuple-payload target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_insert_payload_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_insert_payload_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[0.8, 0.2], 4, 42)), \
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
+             (4, encode_to_ecvector(ARRAY[-0.8, 0.2], 4, 42))",
+        )
+        .expect("coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_insert_payload_idx \
+             ON ec_spire_coord_insert_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("coordinator ec_spire index creation should succeed");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_coord_insert_payload_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let expected_centroid_id = Spi::get_one::<i64>(
+            "SELECT child_pid \
+               FROM ec_spire_index_routing_centroid_snapshot(\
+                    'ec_spire_coord_insert_payload_idx'::regclass) r \
+               CROSS JOIN LATERAL ( \
+                    SELECT sum(q.value * c.value)::real AS score \
+                      FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                      JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+               ) scored \
+              WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+              ORDER BY scored.score DESC, centroid_index, child_pid \
+              LIMIT 1",
+        )
+        .expect("expected centroid query should succeed")
+        .expect("expected centroid should exist");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_insert_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        unsafe {
+            am::debug_spire_rewrite_placement_node(index_oid, expected_centroid_id as u64, 13)
+        };
+        Spi::run(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_insert_payload_idx'::regclass, \
+                 13, 16, 'spire/remote/coordinator_insert_payload_sql', \
+                 decode('9abc', 'hex'), 'ec_spire_coord_insert_payload_remote_idx', \
+                 'active', 9, 1, '0.1.1', '')",
+        )
+        .expect("remote descriptor registration should succeed");
+
+        let result_row = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_insert_tuple_payload(\
+                     'ec_spire_coord_insert_payload_idx'::regclass, \
+                     decode('13', 'hex'), \
+                     ARRAY[1.0, 0.0]::real[], \
+                     decode('202122232425262728292a2b2c2d2e2f', 'hex'), \
+                     jsonb_build_object(\
+                         'id', 303, \
+                         'title', 'prepared coordinator payload', \
+                         'embedding', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)::text), \
+                     ARRAY['id', 'title', 'embedding']::text[]) \
+             ) \
+             SELECT status || '|' || next_step || '|' || node_id::text || '|' || \
+                    centroid_id::text || '|' || served_epoch::text || '|' || \
+                    placement_staged::text || '|' || remote_prepared::text || '|' || \
+                    prepared_gid \
+               FROM result",
+        )
+        .expect("coordinator insert tuple-payload helper query should succeed")
+        .expect("coordinator insert tuple-payload helper should return a row");
+        let parts = result_row.split('|').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 8);
+        let prepared_gid = parts[7].to_owned();
+
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
+                &[&prepared_gid],
+            )
+            .expect("prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_coord_insert_payload_remote_sql \
+                  WHERE id = 303",
+                &[],
+            )
+            .expect("remote visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("remote visibility count should decode");
+        let placement_query = format!(
+            "SELECT count(*) FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_insert_payload_idx'::regclass \
+                AND pk_value = decode('13', 'hex') \
+                AND node_id = 13 \
+                AND centroid_id = {expected_centroid_id} \
+                AND served_epoch = {active_epoch} \
+                AND source_identity = decode('202122232425262728292a2b2c2d2e2f', 'hex')"
+        );
+        let placement_count = Spi::get_one::<i64>(&placement_query)
+            .expect("placement query should succeed")
+            .expect("placement count should exist");
+
+        assert_eq!(parts[0], "remote_insert_prepared");
+        assert_eq!(parts[1], "local_placement_directory_write");
+        assert_eq!(parts[2], "13");
+        assert_eq!(parts[3], expected_centroid_id.to_string());
+        assert_eq!(parts[4], active_epoch.to_string());
+        assert_eq!(parts[5], "true");
+        assert_eq!(parts[6], "true");
+        assert_eq!(prepared_count, 1);
+        assert_eq!(
+            remote_visible_count, 0,
+            "prepared coordinator helper INSERT should not be visible before transaction resolution"
         );
         assert_eq!(placement_count, 1);
     }

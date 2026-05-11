@@ -215,6 +215,15 @@ the active remote-node descriptor and the executor-provided JSON tuple
 payload plus explicit column list. This keeps table-specific INSERT
 construction on the coordinator side out of the wire contract.
 
+`ec_spire_prepare_coordinator_insert_tuple_payload(index_oid, pk_value,
+embedding, source_identity, row_payload, requested_columns)` composes the
+v1 INSERT operation before the transparent DML hook is installed. It
+classifies the embedding, prepares the typed remote tuple-payload INSERT,
+and stages the placement-directory row in the coordinator transaction.
+The eventual INSERT hook must call the same operation after constructing
+the canonical primary-key bytes, ADR-063 source identity, JSON tuple
+payload, and explicit column list from the executor tuple.
+
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or
 NULL element in the `entries` array aborts the whole batch; callers that

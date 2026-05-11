@@ -1018,6 +1018,12 @@ v1 write contract from ADR-069:
       call from descriptor `remote_index_regclass`, JSON tuple payload, and an
       explicit column list before staging the local placement row in PG18
       coverage.
+    - [x] Packet `30833` adds
+      `ec_spire_prepare_coordinator_insert_tuple_payload(...)`, which composes
+      classification, remote tuple-payload prepare, and placement-directory
+      staging into the production operation the transparent INSERT hook will
+      call after it builds tuple JSON, canonical primary-key bytes, and
+      ADR-063 source identity from the executor tuple.
   - [ ] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
 - [ ] Coordinator-routed non-embedding UPDATE:
