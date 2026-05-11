@@ -243,22 +243,7 @@ if [[ "$remote_epoch_after" != "$coord_epoch" ]]; then
   echo "post-insert epoch mismatch remote_after=$remote_epoch_after coord=$coord_epoch" >&2
   exit 5
 fi
-"${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v remote_epoch_after="$remote_epoch_after" -v extversion="$extversion" \
-  -v remote_identity_hex_after="$remote_identity_hex_after" <<'SQL' >/dev/null
-SELECT ec_spire_register_remote_node_descriptor(
-    'ec_spire_insert_read_coord_idx'::regclass,
-    2,
-    93,
-    'spire/remote/insert/read_after_customscan',
-    decode(:'remote_identity_hex_after', 'hex'),
-    'ec_spire_insert_read_remote_idx',
-    'active',
-    :remote_epoch_after::bigint,
-    :coord_epoch::bigint,
-    :'extversion',
-    'none'
-);
-SQL
+descriptor_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT descriptor_generation::text, last_served_epoch::text, min_retained_epoch::text, encode(remote_index_identity, 'hex') FROM ec_spire_remote_node_descriptor WHERE coordinator_index_oid = 'ec_spire_insert_read_coord_idx'::regclass AND node_id = 2")"
 
 remote_row="$("${remote_psql[@]}" -At -F ',' -c "SELECT id, title FROM ec_spire_insert_read_remote_sql WHERE id = 303")"
 placement_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id::text, centroid_id::text, served_epoch::text FROM ec_spire_placement WHERE index_oid = 'ec_spire_insert_read_coord_idx'::regclass AND pk_value = decode('0303', 'hex')")"
@@ -272,6 +257,7 @@ echo "coord_pids=$coord_pids"
 echo "remote_identity_hex=$remote_identity_hex"
 echo "remote_epoch_after_insert=$remote_epoch_after"
 echo "remote_identity_hex_after_insert=$remote_identity_hex_after"
+echo "descriptor_row=$descriptor_row"
 echo "insert_result=$insert_result"
 echo "remote_row=$remote_row"
 echo "placement_row=$placement_row"
@@ -279,6 +265,7 @@ echo "plan=$plan"
 echo "read_row=$read_row"
 
 [[ "$insert_result" == "2,remote_insert_prepared_pending_local_commit,await_local_commit,true,true" ]]
+[[ "$descriptor_row" == "93,$coord_epoch,$coord_epoch,$remote_identity_hex_after" ]]
 [[ "$remote_row" == "303,remote inserted via coordinator" ]]
 [[ "$placement_row" == 2,*",$coord_epoch" ]]
 [[ "$plan" == *"Custom Scan (EcSpireDistributedScan)"* ]]

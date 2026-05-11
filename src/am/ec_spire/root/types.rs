@@ -565,6 +565,11 @@ pub(crate) struct SpireCoordinatorInsertRemotePrepareRow {
     pub(crate) prepared_gid: String,
     pub(crate) remote_insert_sent: bool,
     pub(crate) remote_prepared: bool,
+    pub(crate) descriptor_generation: u64,
+    pub(crate) remote_index_identity: Vec<u8>,
+    pub(crate) remote_last_served_epoch: u64,
+    pub(crate) remote_min_retained_epoch: u64,
+    pub(crate) remote_extension_version: String,
     pub(crate) status: &'static str,
     pub(crate) next_step: &'static str,
 }

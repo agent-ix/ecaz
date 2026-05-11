@@ -2279,6 +2279,57 @@ fn coordinator_insert_remote_tuple_payload_sql(
     ))
 }
 
+fn coordinator_insert_remote_descriptor_metadata(
+    client: &mut postgres::Client,
+    node_id: u32,
+    remote_index_regclass: &str,
+) -> Result<(u64, Vec<u8>, String), String> {
+    let row = client
+        .query_one(
+            "SELECT h.active_epoch::bigint AS active_epoch, \
+                    e.protocol_version, e.extension_version, e.opclass_identity, \
+                    e.storage_format, e.assignment_payload_format, e.quantizer_profile, \
+                    e.scoring_profile, e.profile_fingerprint, e.status, e.recommendation \
+               FROM ec_spire_index_hierarchy_snapshot($1::text::regclass) h \
+              CROSS JOIN ec_spire_remote_search_endpoint_identity($1::text::regclass::oid) e",
+            &[&remote_index_regclass],
+        )
+        .map_err(|error| {
+            format!(
+                "ec_spire coordinator insert remote descriptor metadata query failed for node_id {node_id}: {error}"
+            )
+        })?;
+    let active_epoch = row
+        .try_get::<_, i64>("active_epoch")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor active_epoch decode failed".to_owned()
+        })
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire coordinator insert remote descriptor active_epoch is negative".to_owned()
+            })
+        })?;
+    let profile_fingerprint = row
+        .try_get::<_, String>("profile_fingerprint")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor profile_fingerprint decode failed"
+                .to_owned()
+        })?;
+    let remote_index_identity = remote_search_endpoint_profile_fingerprint_bytes(&profile_fingerprint)?;
+    let extension_version = row
+        .try_get::<_, String>("extension_version")
+        .map_err(|_| {
+            "ec_spire coordinator insert remote descriptor extension_version decode failed".to_owned()
+        })?;
+    if extension_version.is_empty() {
+        return Err(
+            "ec_spire coordinator insert remote descriptor extension_version is empty".to_owned(),
+        );
+    }
+
+    Ok((active_epoch, remote_index_identity, extension_version))
+}
+
 pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
@@ -2319,6 +2370,18 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
             "ec_spire coordinator insert remote SQL failed for node_id {node_id}: {error}"
         ));
     }
+    let (remote_last_served_epoch, remote_index_identity, remote_extension_version) =
+        match coordinator_insert_remote_descriptor_metadata(
+            &mut client,
+            node_id,
+            &dispatch.remote_index_regclass,
+        ) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                let _ = client.batch_execute("ROLLBACK");
+                return Err(error);
+            }
+        };
     client
         .batch_execute(&format!(
             "PREPARE TRANSACTION {}",
@@ -2345,6 +2408,11 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
         prepared_gid,
         remote_insert_sent: true,
         remote_prepared: true,
+        descriptor_generation: dispatch.descriptor_generation.saturating_add(1),
+        remote_index_identity,
+        remote_last_served_epoch,
+        remote_min_retained_epoch: remote_last_served_epoch,
+        remote_extension_version,
         status: SPIRE_COORDINATOR_INSERT_PREPARED_STATUS,
         next_step: SPIRE_COORDINATOR_INSERT_NEXT_STEP_LOCAL_PLACEMENT,
     })

@@ -224,14 +224,19 @@ After staging succeeds it reports
 `remote_insert_prepared_pending_local_commit` with next step
 `await_local_commit`; the remote prepared transaction is not durable or
 visible until the caller's coordinator transaction commits and resolves the
-remote prepared transaction.
+remote prepared transaction. Before staging the placement row, the helper
+captures the remote index active epoch and endpoint fingerprint inside the
+remote transaction and advances the coordinator remote-node descriptor in
+the same local transaction. If local staging aborts, the descriptor refresh
+rolls back with the placement row and the existing transaction callback
+rolls back the remote prepared transaction.
 The eventual INSERT hook must call the same operation after constructing
 the canonical primary-key bytes, ADR-063 source identity, JSON tuple
 payload, and explicit column list from the executor tuple.
-The packet `30834` PG18 multicluster smoke validates the helper path by
-committing a remote row, staging its coordinator placement, refreshing the
-remote descriptor identity, and reading the row back through
-`EcSpireDistributedScan`.
+The packet `30836` PG18 multicluster smoke validates the helper path by
+committing a remote row, staging its coordinator placement, proving the
+descriptor epoch/identity refresh happens automatically, and reading the
+row back through `EcSpireDistributedScan`.
 
 The first transparent INSERT front door is trigger-based. Operators call
 `ec_spire_enable_coordinator_insert(table_oid, index_oid, pk_column,
@@ -242,9 +247,8 @@ column cast to `real[]`, and a 16-byte `bytea` source-identity column. It
 forwards the row through
 `ec_spire_prepare_coordinator_insert_tuple_payload(...)` and returns
 `NULL`, so remote-owned rows are not mirrored in the coordinator heap.
-Automatic remote descriptor epoch/identity refresh after the prepared
-remote INSERT commits remains an open follow-up before read-after-INSERT
-is fully transparent without operator re-registration.
+The trigger uses the same helper path, including automatic remote
+descriptor epoch/identity refresh.
 
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or

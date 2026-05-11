@@ -7705,6 +7705,59 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     Spi::connect_mut(|client| {
+        let descriptor_refreshed = client
+            .select(
+                "UPDATE ec_spire_remote_node_descriptor \
+                    SET descriptor_generation = $3::bigint, \
+                        remote_index_identity = $4::bytea, \
+                        last_seen_at = clock_timestamp(), \
+                        last_served_epoch = $5::bigint, \
+                        min_retained_epoch = $6::bigint, \
+                        extension_version = $7::text, \
+                        last_error = 'none' \
+                  WHERE coordinator_index_oid = $1::oid \
+                    AND node_id = $2::integer \
+                    AND descriptor_generation < $3::bigint \
+              RETURNING true AS refreshed",
+                None,
+                &[
+                    index_oid.into(),
+                    i32::try_from(node_id)
+                        .expect("coordinator insert node_id should fit i32")
+                        .into(),
+                    i64::try_from(prepare_row.descriptor_generation)
+                        .expect("descriptor generation should fit i64")
+                        .into(),
+                    prepare_row.remote_index_identity.clone().into(),
+                    i64::try_from(prepare_row.remote_last_served_epoch)
+                        .expect("remote last served epoch should fit i64")
+                        .into(),
+                    i64::try_from(prepare_row.remote_min_retained_epoch)
+                        .expect("remote min retained epoch should fit i64")
+                        .into(),
+                    prepare_row.remote_extension_version.as_str().into(),
+                ],
+            )
+            .map_err(|e| format!("ec_spire coordinator insert descriptor refresh failed: {e}"))?
+            .map(|row| {
+                row["refreshed"]
+                    .value::<bool>()
+                    .map_err(|e| {
+                        format!("ec_spire coordinator insert descriptor refresh decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator insert descriptor refresh result is null".to_owned()
+                    })
+            })
+            .next()
+            .transpose()?
+            .unwrap_or(false);
+        if !descriptor_refreshed {
+            return Err(
+                "ec_spire coordinator insert descriptor refresh did not advance descriptor_generation"
+                    .to_owned(),
+            );
+        }
         client
             .update(
                 "INSERT INTO ec_spire_placement \
@@ -19837,6 +19890,17 @@ mod tests {
         let placement_count = Spi::get_one::<i64>(&placement_query)
             .expect("placement query should succeed")
             .expect("placement count should exist");
+        let descriptor_row = Spi::get_one::<String>(
+            "SELECT descriptor_generation::text || '|' || \
+                    (last_served_epoch >= 1)::text || '|' || \
+                    (min_retained_epoch = last_served_epoch)::text || '|' || \
+                    (octet_length(remote_index_identity) > 0)::text \
+               FROM ec_spire_remote_node_descriptor \
+              WHERE coordinator_index_oid = 'ec_spire_coord_insert_payload_idx'::regclass \
+                AND node_id = 13",
+        )
+        .expect("descriptor refresh query should succeed")
+        .expect("descriptor refresh row should exist");
 
         assert_eq!(parts[0], "remote_insert_prepared_pending_local_commit");
         assert_eq!(parts[1], "await_local_commit");
@@ -19851,6 +19915,7 @@ mod tests {
             "prepared coordinator helper INSERT should not be visible before transaction resolution"
         );
         assert_eq!(placement_count, 1);
+        assert_eq!(descriptor_row, "17|true|true|true");
     }
 
     #[pg_test]
@@ -19993,6 +20058,17 @@ mod tests {
             .expect("prepared xact query should succeed")
             .try_get::<_, i64>(0)
             .expect("prepared xact count should decode");
+        let descriptor_row = Spi::get_one::<String>(
+            "SELECT descriptor_generation::text || '|' || \
+                    (last_served_epoch >= 1)::text || '|' || \
+                    (min_retained_epoch = last_served_epoch)::text || '|' || \
+                    (octet_length(remote_index_identity) > 0)::text \
+               FROM ec_spire_remote_node_descriptor \
+              WHERE coordinator_index_oid = 'ec_spire_coord_insert_trigger_idx'::regclass \
+                AND node_id = 14",
+        )
+        .expect("trigger descriptor refresh query should succeed")
+        .expect("trigger descriptor refresh row should exist");
 
         assert_eq!(
             coordinator_row_count, 0,
@@ -20004,6 +20080,7 @@ mod tests {
             "remote INSERT should remain prepared until local transaction commit"
         );
         assert_eq!(prepared_count, 1);
+        assert_eq!(descriptor_row, "18|true|true|true");
     }
 
     #[pg_test]

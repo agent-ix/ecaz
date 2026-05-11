@@ -1028,22 +1028,29 @@ v1 write contract from ADR-069:
       `remote_insert_prepared_pending_local_commit` / `await_local_commit`, so
       callers do not mistake a prepared remote transaction for a committed,
       durable remote row.
-    - [x] Packet `30835` adds the trigger-based transparent INSERT front door:
-      `ec_spire_enable_coordinator_insert(...)` installs a `BEFORE INSERT`
-      row trigger for the v1 bigint-PK / `ecvector` / bytea source-identity
-      table shape, forwards through the helper, stages placement, and
-      suppresses the coordinator heap row for remote-owned inserts.
+	    - [x] Packet `30835` adds the trigger-based transparent INSERT front door:
+	      `ec_spire_enable_coordinator_insert(...)` installs a `BEFORE INSERT`
+	      row trigger for the v1 bigint-PK / `ecvector` / bytea source-identity
+	      table shape, forwards through the helper, stages placement, and
+	      suppresses the coordinator heap row for remote-owned inserts.
+	    - [x] Packet `30836` refreshes the coordinator remote-node descriptor
+	      automatically from the remote transaction's post-INSERT active epoch and
+	      endpoint fingerprint before staging placement, so read-after-insert no
+	      longer requires operator descriptor re-registration.
   - [x] add PG18 coverage for remote row, placement row, and CustomScan
     read-after-insert.
-    - [x] Packet `30834` adds
-      `scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh`,
-      which runs separate coordinator and remote PG18 clusters, invokes
-      `ec_spire_prepare_coordinator_insert_tuple_payload(...)`, verifies the
-      remote row and coordinator placement row, and confirms
-      `Custom Scan (EcSpireDistributedScan)` returns the inserted remote row.
-  - [ ] refresh remote descriptor epoch/identity automatically after the
-    prepared remote INSERT commits, so a subsequent CustomScan read does not
-    require manual descriptor re-registration.
+	    - [x] Packet `30834` adds
+	      `scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh`,
+	      which runs separate coordinator and remote PG18 clusters, invokes
+	      `ec_spire_prepare_coordinator_insert_tuple_payload(...)`, verifies the
+	      remote row and coordinator placement row, and confirms
+	      `Custom Scan (EcSpireDistributedScan)` returns the inserted remote row.
+	    - [x] Packet `30836` updates that smoke so the descriptor assertion is
+	      satisfied by the helper's automatic refresh rather than a manual
+	      `ec_spire_register_remote_node_descriptor(...)` call.
+	  - [x] refresh remote descriptor epoch/identity automatically after the
+	    prepared remote INSERT commits, so a subsequent CustomScan read does not
+	    require manual descriptor re-registration.
   - [ ] add PG18 multicluster coverage for `INSERT INTO coordinator_table ...`
     through the trigger front door, including remote row, placement row, and
     CustomScan read-after-insert once descriptor refresh is automatic.
