@@ -22,7 +22,11 @@ pub(crate) struct SpireCustomScanStatusRow {
 pub(crate) struct SpireCustomScanIndexEligibilityRow {
     pub(crate) active_epoch: u64,
     pub(crate) local_placement_count: u64,
+    // Total remote nodes represented by active-epoch placements, including
+    // currently unavailable placements.
     pub(crate) remote_node_count: u64,
+    // Planner-relevant subset of remote nodes with at least one available
+    // placement.
     pub(crate) remote_available_node_count: u64,
     pub(crate) remote_placement_count: u64,
     pub(crate) remote_available_placement_count: u64,
@@ -198,13 +202,17 @@ unsafe fn load_custom_scan_placement_directory(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
 ) -> Result<meta::SpirePlacementDirectory, String> {
+    // The SQL eligibility wrapper normally returns `no_active_epoch` before
+    // this helper is called. Keep the helper fail-closed so future callers
+    // cannot accidentally dereference an empty placement-directory TID.
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load placement directory for empty active epoch".to_owned());
     }
 
     // ADR-067 planner eligibility needs only placement availability. Avoid the
     // heavier fanout loader used by executor paths, which also decodes epoch
-    // and object manifests.
+    // and object manifests; executor paths remain responsible for full
+    // identity and manifest validation before result-stream merge.
     let placement_bytes = unsafe {
         super::page::read_object_tuple(index_relation, root_control.placement_directory_tid)?
     };

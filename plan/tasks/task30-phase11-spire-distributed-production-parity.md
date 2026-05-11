@@ -856,13 +856,20 @@ CustomScan read-path work:
       relations with an eligible remote-placement `ec_spire` index and
       `ORDER BY ... LIMIT` pathkeys. It builds a `CustomScan` plan for EXPLAIN
       and keeps execution fail-closed until the executor wiring slice.
-  - [x] Add a cost model that chooses CustomScan when active remote placements
-    exist.
+  - [x] Add a first planner cost model that chooses CustomScan when active
+    remote placements exist.
     - [x] Packet `30809` assigns startup cost `0` and total cost based on the
-      LIMIT row goal so the remote-placement path wins this query shape.
+      LIMIT row goal so the remote-placement path wins this query shape. This
+      is intentionally provisional.
+    - [ ] Replace the provisional cost with a production model that accounts
+      for coordinator routing traversal, per-remote dispatch latency by fanout
+      count, and bounded heap-rerank/tuple-delivery cost before treating
+      CustomScan costing as production-ready.
   - [x] Declare path keys so PostgreSQL can consume the ordered output without
     adding an explicit sort.
     - [x] Packet `30809` carries the planner sort pathkeys onto the CustomPath.
+      Packet `30810` makes this true-by-construction by gating path generation
+      on the vector-distance `ORDER BY ... LIMIT` query shape.
   - [ ] Implement Begin/Exec/End callbacks that invoke
     `SpireRemoteFanoutExecutor` directly and return tuples through the
     CustomScan tuple interface.
