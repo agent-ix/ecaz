@@ -866,6 +866,13 @@ Goal: prove distributed correctness locally before AWS.
     `compact_candidate_receive`, and strict/degraded logs are packet-local.
     Remaining Stage E backend termination, connection reset, local
     timeout/cancel, OOM, and lifecycle rows still need fixture logs.
+  - [x] Packet `30784` adds the remote backend-termination transport runtime
+    row: strict mode records one `remote_backend_terminated` transport failure
+    while a ready remote still completes, degraded mode records one
+    `remote_backend_terminated` skip and advances the ready remote to
+    `compact_candidate_receive`, and strict/degraded logs are packet-local.
+    Remaining Stage E connection reset, local timeout/cancel, OOM, and
+    lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 

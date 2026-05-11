@@ -4,6 +4,7 @@ set -euo pipefail
 # Transport Stage E fixture family.
 #
 # Supported cases:
+#   remote_backend_termination
 #   remote_statement_timeout
 #
 # These rows fail in the production transport adapter after a remote connection
@@ -28,6 +29,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh --case CASE [options]
 
 Cases:
+  remote_backend_termination
   remote_statement_timeout
 
 Options:
@@ -101,7 +103,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$FAULT_CASE" != "remote_statement_timeout" ]]; then
+if [[ "$FAULT_CASE" != "remote_backend_termination" \
+  && "$FAULT_CASE" != "remote_statement_timeout" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
   usage >&2
   exit 2
@@ -154,8 +157,8 @@ fi
 "$PG_CTL" initdb -D "$REMOTE_READY_DATA" -o "-A trust -U postgres" >/dev/null
 "$PG_CTL" initdb -D "$COORD_DATA" -o "-A trust -U postgres" >/dev/null
 
-export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TIMEOUT_SLOW="host=$SOCKET_DIR port=$REMOTE_READY_PORT dbname=postgres user=postgres connect_timeout=1"
-export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TIMEOUT_READY="$EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TIMEOUT_SLOW"
+export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TRANSPORT_FAULT="host=$SOCKET_DIR port=$REMOTE_READY_PORT dbname=postgres user=postgres connect_timeout=1"
+export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TRANSPORT_READY="$EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_TRANSPORT_FAULT"
 
 "$PG_CTL" -w -D "$REMOTE_READY_DATA" -l "$LOG_DIR/remote-ready-postgres.log" \
   -o "-p $REMOTE_READY_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
@@ -170,6 +173,16 @@ coord_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U post
 
 matrix_row="$("${coord_psql[@]}" -At -F ',' -c "SELECT fault_case, failure_category, strict_action, strict_status, degraded_action, degraded_status, counter_delta FROM ec_spire_remote_search_stage_e_fault_matrix() WHERE fault_case = '$FAULT_CASE'")"
 
+fault_failure_category="remote_statement_timeout"
+fault_injection="ec_spire.remote_search_statement_timeout_ms=25 fault_node_sql=pg_sleep(0.30)"
+pgoptions=""
+if [[ "$FAULT_CASE" == "remote_statement_timeout" ]]; then
+  pgoptions="-c ec_spire.remote_search_statement_timeout_ms=25"
+else
+  fault_failure_category="remote_backend_terminated"
+  fault_injection="fault_node_sql=pg_terminate_backend(pg_backend_pid())"
+fi
+
 run_case() {
   local mode="$1"
   local output_log="$2"
@@ -182,13 +195,18 @@ run_case() {
   local raw_rows
   local summary
 
-  raw_rows="$(PGOPTIONS="-c ec_spire.remote_search_statement_timeout_ms=25" "${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/timeout_slow','spire/remote/stage_e/timeout_ready']::text[], 2) ORDER BY node_id")"
-  summary="$(PGOPTIONS="-c ec_spire.remote_search_statement_timeout_ms=25" "${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/timeout_slow','spire/remote/stage_e/timeout_ready']::text[], 2, '$mode')")"
+  if [[ -n "$pgoptions" ]]; then
+    raw_rows="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_case(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE') ORDER BY node_id")"
+    summary="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_case_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE', '$mode')")"
+  else
+    raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_case(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE') ORDER BY node_id")"
+    summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_case_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE', '$mode')")"
+  fi
 
   {
     echo "matrix_row=$matrix_row"
-    echo "injection=ec_spire.remote_search_statement_timeout_ms=25 slow_node_sql=pg_sleep(0.30)"
-    echo "query_command=tests.ec_spire_test_production_transport_probe_summary(..., '$mode')"
+    echo "injection=$fault_injection"
+    echo "query_command=tests.ec_spire_test_production_transport_probe_case_summary(..., '$mode')"
     echo "expected_status=$expected_status"
     echo "expected_transport_failed_dispatch_count=$expected_transport_failed"
     echo "expected_degraded_skipped_dispatch_count=$expected_degraded_skipped"
@@ -217,8 +235,8 @@ run_case() {
   fi
 }
 
-run_case "strict" "$STRICT_LOG" "remote_transport_failed" "1" "0" "production_transport_adapter" "remote_statement_timeout" "none"
-run_case "degraded" "$DEGRADED_LOG" "requires_compact_candidate_receive" "0" "1" "compact_candidate_receive" "none" "remote_statement_timeout"
+run_case "strict" "$STRICT_LOG" "remote_transport_failed" "1" "0" "production_transport_adapter" "$fault_failure_category" "none"
+run_case "degraded" "$DEGRADED_LOG" "requires_compact_candidate_receive" "0" "1" "compact_candidate_receive" "none" "$fault_failure_category"
 
 echo "strict_log=$STRICT_LOG"
 echo "degraded_log=$DEGRADED_LOG"
