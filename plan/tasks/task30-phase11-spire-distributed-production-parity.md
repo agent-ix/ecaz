@@ -1152,6 +1152,10 @@ v1 write contract from ADR-069:
     SQL-visible diagnostic bridge that combines target relation extraction,
     relation context, and the shared query classifier before hook-side plan
     replacement.
+  - [x] Packet `30855` adds the non-SPI
+    `ec_spire_dml_frontdoor_relation_context_catalog(...)` relation-context
+    loader so a later planner-hook slice can classify without recursive SPI
+    catalog lookup.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

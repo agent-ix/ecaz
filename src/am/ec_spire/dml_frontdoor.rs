@@ -86,6 +86,7 @@ pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
 static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
 static mut PLANNER_HOOK_INSTALLED: bool = false;
 
+const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
 
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
@@ -162,6 +163,31 @@ pub(crate) fn dml_frontdoor_relation_context_row(
     })
 }
 
+pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
+    heap_relation_oid: pg_sys::Oid,
+) -> Result<SpireDmlFrontdoorRelationContext, String> {
+    if heap_relation_oid == pg_sys::InvalidOid {
+        return Err(
+            "ec_spire DML frontdoor catalog relation context requires a valid heap relation OID"
+                .to_owned(),
+        );
+    }
+
+    let heap_relation = unsafe {
+        pg_sys::table_open(
+            heap_relation_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )
+    };
+    if heap_relation.is_null() {
+        return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
+    }
+
+    let result = unsafe { dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation) };
+    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
     parse: *mut pg_sys::Query,
@@ -181,6 +207,225 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
 struct SpireDmlFrontdoorPrimaryKeyColumn {
     column_name: String,
     column_type: String,
+}
+
+unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
+    heap_relation: pg_sys::Relation,
+) -> Result<SpireDmlFrontdoorRelationContext, String> {
+    let heap_relation_oid = unsafe { (*heap_relation).rd_id };
+    let column_names = unsafe { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
+    let (index_oid, pk) = unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+    let embedding_columns = if index_oid == pg_sys::InvalidOid {
+        Vec::new()
+    } else {
+        unsafe { dml_frontdoor_index_key_column_names_from_rel(index_oid, heap_relation)? }
+    };
+
+    let (status, next_step, ec_spire_distributed_table) = if index_oid == pg_sys::InvalidOid {
+        (
+            "no_ec_spire_index",
+            "create ec_spire index before DML front-door routing",
+            false,
+        )
+    } else if pk.is_none() {
+        (
+            "unsupported_pk_shape",
+            "define one bigint primary-key column for ADR-069 v1 routing",
+            false,
+        )
+    } else {
+        (
+            "relation_context_ready",
+            "wire planner hook query classification to CustomScan executor replacement",
+            true,
+        )
+    };
+    let (pk_column, pk_type) = pk
+        .map(|pk| (Some(pk.column_name), Some(pk.column_type)))
+        .unwrap_or((None, None));
+
+    Ok(SpireDmlFrontdoorRelationContext {
+        heap_relation_oid,
+        index_oid,
+        ec_spire_distributed_table,
+        pk_column,
+        pk_type,
+        column_names,
+        embedding_columns,
+        status,
+        next_step,
+    })
+}
+
+unsafe fn dml_frontdoor_catalog_index_and_pk(
+    heap_relation: pg_sys::Relation,
+) -> Result<(pg_sys::Oid, Option<SpireDmlFrontdoorPrimaryKeyColumn>), String> {
+    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    let index_list =
+        unsafe { PgList::<pg_sys::Oid>::from_pg(pg_sys::RelationGetIndexList(heap_relation)) };
+    let mut ec_spire_index_count = 0_i64;
+    let mut ec_spire_index_oid = pg_sys::InvalidOid;
+    let mut primary_key = None;
+
+    for index_oid in index_list.iter_oid() {
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        if index_relation.is_null() {
+            continue;
+        }
+        let index_form = unsafe { (*index_relation).rd_index.as_ref() };
+        let class_form = unsafe { (*index_relation).rd_rel.as_ref() };
+        if let Some(class_form) = class_form {
+            if ec_spire_am_oid != pg_sys::InvalidOid && class_form.relam == ec_spire_am_oid {
+                ec_spire_index_count += 1;
+                if ec_spire_index_oid == pg_sys::InvalidOid
+                    || index_oid.to_u32() < ec_spire_index_oid.to_u32()
+                {
+                    ec_spire_index_oid = index_oid;
+                }
+            }
+        }
+        if primary_key.is_none() {
+            if let Some(index_form) = index_form {
+                primary_key = unsafe {
+                    dml_frontdoor_primary_key_column_from_index(heap_relation, index_form)?
+                };
+            }
+        }
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    if ec_spire_index_count > 1 {
+        return Err(
+            "ec_spire DML frontdoor v1 requires at most one ec_spire index per heap relation"
+                .to_owned(),
+        );
+    }
+    Ok((ec_spire_index_oid, primary_key))
+}
+
+unsafe fn dml_frontdoor_primary_key_column_from_index(
+    heap_relation: pg_sys::Relation,
+    index_form: &pg_sys::FormData_pg_index,
+) -> Result<Option<SpireDmlFrontdoorPrimaryKeyColumn>, String> {
+    if !index_form.indisprimary || index_form.indnkeyatts != 1 {
+        return Ok(None);
+    }
+    let attnum = unsafe { *index_form.indkey.values.as_ptr() };
+    if attnum <= 0 {
+        return Ok(None);
+    }
+    let Some((column_name, attr)) =
+        (unsafe { dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)? })
+    else {
+        return Ok(None);
+    };
+    if attr.atttypid != pg_sys::INT8OID {
+        return Ok(None);
+    }
+    Ok(Some(SpireDmlFrontdoorPrimaryKeyColumn {
+        column_name,
+        column_type: unsafe { dml_frontdoor_format_type_name(attr.atttypid)? },
+    }))
+}
+
+unsafe fn dml_frontdoor_relation_column_names_from_rel(
+    heap_relation: pg_sys::Relation,
+) -> Result<Vec<(pg_sys::AttrNumber, String)>, String> {
+    let tuple_desc = unsafe { (*heap_relation).rd_att };
+    if tuple_desc.is_null() {
+        return Err("ec_spire DML frontdoor catalog relation tuple descriptor is NULL".to_owned());
+    }
+    let natts = unsafe { (*tuple_desc).natts };
+    let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+    for attr_index in 0..natts {
+        let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, attr_index) };
+        if attr.is_null() || unsafe { (*attr).attisdropped } {
+            continue;
+        }
+        let attnum = unsafe { (*attr).attnum };
+        if attnum <= 0 {
+            continue;
+        }
+        let name = unsafe { dml_frontdoor_attr_name(attr)? };
+        columns.push((attnum, name));
+    }
+    Ok(columns)
+}
+
+unsafe fn dml_frontdoor_index_key_column_names_from_rel(
+    index_oid: pg_sys::Oid,
+    heap_relation: pg_sys::Relation,
+) -> Result<Vec<String>, String> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if index_relation.is_null() {
+        return Err("ec_spire DML frontdoor catalog index open returned NULL".to_owned());
+    }
+    let result = unsafe {
+        let index_form = (*index_relation)
+            .rd_index
+            .as_ref()
+            .ok_or_else(|| "ec_spire DML frontdoor catalog index metadata is NULL".to_owned())?;
+        let mut columns = Vec::new();
+        for key_index in 0..index_form.indnkeyatts {
+            let attnum = *index_form
+                .indkey
+                .values
+                .as_ptr()
+                .add(usize::try_from(key_index).unwrap_or(usize::MAX));
+            if attnum <= 0 {
+                continue;
+            }
+            if let Some((column_name, _attr)) =
+                dml_frontdoor_relation_attr_name_and_form(heap_relation, attnum)?
+            {
+                columns.push(column_name);
+            }
+        }
+        Ok(columns)
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
+unsafe fn dml_frontdoor_relation_attr_name_and_form(
+    heap_relation: pg_sys::Relation,
+    attnum: pg_sys::AttrNumber,
+) -> Result<Option<(String, pg_sys::FormData_pg_attribute)>, String> {
+    let tuple_desc = unsafe { (*heap_relation).rd_att };
+    if tuple_desc.is_null() || attnum <= 0 || i32::from(attnum) > unsafe { (*tuple_desc).natts } {
+        return Ok(None);
+    }
+    let attr = unsafe { pg_sys::TupleDescAttr(tuple_desc, i32::from(attnum - 1)) };
+    if attr.is_null() || unsafe { (*attr).attisdropped } {
+        return Ok(None);
+    }
+    Ok(Some((unsafe { dml_frontdoor_attr_name(attr)? }, unsafe {
+        *attr
+    })))
+}
+
+unsafe fn dml_frontdoor_attr_name(
+    attr: *mut pg_sys::FormData_pg_attribute,
+) -> Result<String, String> {
+    unsafe { CStr::from_ptr((*attr).attname.data.as_ptr()) }
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|e| format!("ec_spire DML frontdoor catalog attribute name is not UTF-8: {e}"))
+}
+
+unsafe fn dml_frontdoor_format_type_name(type_oid: pg_sys::Oid) -> Result<String, String> {
+    let type_name = unsafe { pg_sys::format_type_be(type_oid) };
+    if type_name.is_null() {
+        return Err("ec_spire DML frontdoor catalog format_type returned NULL".to_owned());
+    }
+    let decoded = unsafe { CStr::from_ptr(type_name) }
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|e| format!("ec_spire DML frontdoor catalog type name is not UTF-8: {e}"));
+    unsafe { pg_sys::pfree(type_name.cast()) };
+    decoded
 }
 
 fn dml_frontdoor_ec_spire_index_oid(heap_relation_oid: pg_sys::Oid) -> Result<pg_sys::Oid, String> {

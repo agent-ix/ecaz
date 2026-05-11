@@ -1011,6 +1011,39 @@ fn ec_spire_dml_frontdoor_relation_context(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_relation_context_catalog(
+    heap_relation_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(heap_relation_oid, pg_sys::Oid),
+        name!(index_oid, pg_sys::Oid),
+        name!(ec_spire_distributed_table, bool),
+        name!(pk_column, Option<String>),
+        name!(pk_type, Option<String>),
+        name!(ordinary_column_count, i64),
+        name!(embedding_columns, Vec<String>),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    let row = unsafe { am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid) }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    TableIterator::once((
+        row.heap_relation_oid,
+        row.index_oid,
+        row.ec_spire_distributed_table,
+        row.pk_column,
+        row.pk_type,
+        i64::try_from(row.column_names.len()).expect("column count should fit i64"),
+        row.embedding_columns,
+        row.status,
+        row.next_step,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_dml_frontdoor_classify_sql(
     sql: &str,
 ) -> TableIterator<
@@ -28018,6 +28051,24 @@ mod tests {
         .expect("DML frontdoor INCLUDE context embedding query should succeed")
         .expect("DML frontdoor INCLUDE context embedding columns should exist");
         assert_eq!(include_embedding_columns, "embedding");
+
+        let catalog_context = "FROM ec_spire_dml_frontdoor_relation_context_catalog(\
+                               'ec_spire_dml_frontdoor_context_sql'::regclass)";
+        let catalog_status = Spi::get_one::<String>(&format!("SELECT status {catalog_context}"))
+            .expect("DML frontdoor catalog relation context status query should succeed")
+            .expect("DML frontdoor catalog relation context status should exist");
+        let catalog_pk_column =
+            Spi::get_one::<String>(&format!("SELECT pk_column {catalog_context}"))
+                .expect("DML frontdoor catalog relation context PK query should succeed")
+                .expect("DML frontdoor catalog relation context PK should exist");
+        let catalog_embedding_columns = Spi::get_one::<String>(&format!(
+            "SELECT array_to_string(embedding_columns, ',') {catalog_context}"
+        ))
+        .expect("DML frontdoor catalog relation context embedding query should succeed")
+        .expect("DML frontdoor catalog relation context embedding columns should exist");
+        assert_eq!(catalog_status, status);
+        assert_eq!(catalog_pk_column, pk_column);
+        assert_eq!(catalog_embedding_columns, embedding_columns);
     }
 
     #[pg_test]
