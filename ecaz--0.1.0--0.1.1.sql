@@ -231,22 +231,41 @@ CREATE FUNCTION ec_spire_register_placement_batch(
 )
 RETURNS bigint
 STRICT
-LANGUAGE sql
+LANGUAGE plpgsql
 AS $$
-    WITH inserted AS (
-        INSERT INTO ec_spire_placement
-            (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity)
-        SELECT
-            $1,
-            entry.pk_value,
-            entry.node_id,
-            entry.centroid_id,
-            entry.served_epoch,
-            entry.source_identity
-        FROM unnest($2) AS entry
-        RETURNING 1
-    )
-    SELECT count(*)::bigint FROM inserted
+DECLARE
+    input_index_oid ALIAS FOR $1;
+    input_entries ALIAS FOR $2;
+    inserted_count bigint;
+    null_entry_ordinal bigint;
+BEGIN
+    SELECT entry_position
+      INTO null_entry_ordinal
+      FROM generate_subscripts(input_entries, 1) AS entry_position
+     WHERE input_entries[entry_position]::text IS NULL
+     LIMIT 1;
+
+    IF null_entry_ordinal IS NOT NULL THEN
+        RAISE EXCEPTION 'ec_spire_register_placement_batch entries[%] is NULL',
+            null_entry_ordinal
+            USING ERRCODE = '22004',
+                  HINT = 'Pass only non-NULL ec_spire_placement_entry values.';
+    END IF;
+
+    INSERT INTO ec_spire_placement
+        (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity)
+    SELECT
+        input_index_oid,
+        entry.pk_value,
+        entry.node_id,
+        entry.centroid_id,
+        entry.served_epoch,
+        entry.source_identity
+    FROM unnest(input_entries) AS entry;
+
+    GET DIAGNOSTICS inserted_count = ROW_COUNT;
+    RETURN inserted_count;
+END
 $$;
 
 DROP EVENT TRIGGER IF EXISTS ec_spire_remote_catalog_drop_index_cleanup;

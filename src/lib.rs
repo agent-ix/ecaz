@@ -17898,6 +17898,14 @@ mod tests {
 
     #[pg_test]
     fn test_ec_spire_register_placement_batch_sql() {
+        let empty_registered_count = Spi::get_one::<i64>(
+            "SELECT ec_spire_register_placement_batch( \
+                 '4294967289'::oid, \
+                 ARRAY[]::ec_spire_placement_entry[] \
+             )",
+        )
+        .expect("empty placement batch registration should succeed")
+        .expect("empty placement batch registration count should exist");
         let registered_count = Spi::get_one::<i64>(
             "SELECT ec_spire_register_placement_batch( \
                  '4294967290'::oid, \
@@ -17923,12 +17931,61 @@ mod tests {
         .expect("placement batch rows query should succeed")
         .expect("placement batch rows should exist");
 
+        assert_eq!(empty_registered_count, 0);
         assert_eq!(registered_count, 2);
         assert_eq!(
             stored_rows,
             "01:2:7:5:000102030405060708090a0b0c0d0e0f,\
              02:0:8:5:101112131415161718191a1b1c1d1e1f"
         );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "entries[1] is NULL")]
+    fn test_ec_spire_register_placement_batch_rejects_null_entry_sql() {
+        Spi::run(
+            "SELECT ec_spire_register_placement_batch( \
+                 '4294967288'::oid, \
+                 ARRAY[ \
+                   NULL::ec_spire_placement_entry, \
+                   ROW(decode('01', 'hex'), 2, 7, 5, \
+                       decode('000102030405060708090a0b0c0d0e0f', 'hex'))::ec_spire_placement_entry \
+                 ] \
+             )",
+        )
+        .expect("placement batch registration should reject null entries");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire_placement_pkey")]
+    fn test_ec_spire_register_placement_batch_rejects_duplicate_pk_sql() {
+        Spi::run(
+            "SELECT ec_spire_register_placement_batch( \
+                 '4294967287'::oid, \
+                 ARRAY[ \
+                   ROW(decode('01', 'hex'), 2, 7, 5, \
+                       decode('000102030405060708090a0b0c0d0e0f', 'hex'))::ec_spire_placement_entry, \
+                   ROW(decode('01', 'hex'), 3, 8, 5, \
+                       decode('101112131415161718191a1b1c1d1e1f', 'hex'))::ec_spire_placement_entry \
+                 ] \
+             )",
+        )
+        .expect("placement batch registration should reject duplicate primary keys");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire_placement_source_identity_check")]
+    fn test_ec_spire_register_placement_batch_rejects_invalid_sql() {
+        Spi::run(
+            "SELECT ec_spire_register_placement_batch( \
+                 '4294967286'::oid, \
+                 ARRAY[ \
+                   ROW(decode('01', 'hex'), 2, 7, 5, decode('0001', 'hex')) \
+                       ::ec_spire_placement_entry \
+                 ] \
+             )",
+        )
+        .expect("placement batch registration should reject invalid entries");
     }
 
     #[pg_test]

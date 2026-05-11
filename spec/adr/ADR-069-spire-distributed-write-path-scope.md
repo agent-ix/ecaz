@@ -172,6 +172,15 @@ delivered in a separate task with its own packets. The coordinator-side
 classification helper and batch-register primitive are the only v1
 contracts.
 
+`ec_spire_register_placement_batch` runs inside the caller's
+transaction. A primary-key conflict, catalog constraint violation, or
+NULL element in the `entries` array aborts the whole batch; callers that
+need partial recovery must split work into smaller transactions. The v1
+`ec_spire_placement_entry` composite field order is frozen as
+`(pk_value, node_id, centroid_id, served_epoch, source_identity)`; future
+payload extensions must use a new type or append-only compatible
+contract rather than reordering this shape.
+
 ## The placement directory
 
 The placement directory is a coordinator-local table that maps every

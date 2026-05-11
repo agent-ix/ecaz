@@ -326,6 +326,9 @@ local-only path.
     ec_spire_placement_entry[])` for bulk-load post-write registration.
     - [x] Packet `30819` adds the composite entry type and SQL batch
       registration primitive.
+    - [x] Packet `30825` hardens the primitive with explicit NULL-entry
+      rejection, empty-batch/duplicate/constraint regression tests, and ADR
+      notes for transaction and v1 entry-shape semantics.
   - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
     with remote `PREPARE TRANSACTION` / local commit / remote commit.
@@ -969,6 +972,9 @@ v1 write contract from ADR-069:
   ec_spire_placement_entry[])` for bulk-load post-write registration.
   - [x] Packet `30819` inserts validated placement entries into the
     coordinator-local placement directory.
+  - [x] Packet `30825` makes malformed array entries explicit, pins
+    all-or-nothing batch behavior, and covers empty, duplicate, and invalid
+    entries before coordinator-routed writes consume the primitive.
 - [ ] Coordinator-routed INSERT:
   - [ ] classify embedding to target `node_id`;
   - [ ] forward remote INSERT through the Stage C transport;
