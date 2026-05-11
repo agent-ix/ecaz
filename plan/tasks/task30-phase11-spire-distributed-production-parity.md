@@ -264,6 +264,19 @@ Acceptance artifact:
     preserving remote execution ownership, and a PG18 loopback SQL scan proves
     a remote heap candidate with a registered mapping can be returned through
     `amrescan`/`amgettuple` as the materialized coordinator row.
+- [ ] Implement the operator-owned mirror sync mechanism that creates
+  coordinator heap rows and registers mappings without explicit per-test
+  `ec_spire_register_remote_row_materialization(...)` calls.
+  - [x] ADR-066 selects the v1 mechanism: an explicit operator-owned mirror
+    refresh SQL primitive wrapped by `ecaz`, run outside AM scans after remote
+    endpoint readiness and before advertising an epoch as AM-deliverable.
+  - [ ] Add the mirror profile contract and dry-run diagnostics for one
+    coordinator index plus one remote node.
+  - [ ] Add the refresh SQL primitive that fetches remote rows, writes
+    coordinator heap rows, and registers mappings.
+  - [ ] Add the `ecaz` wrapper command with packet-local logging.
+  - [ ] Add a PG18 fixture proving refresh-driven SQL delivery without
+    explicit register calls in the test body.
 - [ ] Preserve deterministic tie-break ordering across local rows, remote rows,
   and boundary replicas.
 - [ ] Add tests for missing/dead remote rows, stale locators, and duplicate
