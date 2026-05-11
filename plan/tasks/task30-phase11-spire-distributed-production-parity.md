@@ -827,6 +827,12 @@ CustomScan read-path work:
   - [x] Add a focused tuple-payload PG18 fixture.
     - [x] Packet `30807` covers `id,title` projection payloads and proves the
       unrequested `embedding` column is omitted.
+  - [x] Make missing heap rows explicit and avoid per-candidate SPI heap fetches.
+    - [x] Packet `30812` batches tuple-payload CTID resolution through one SPI
+      query, adds `tuple_payload_missing`, reports
+      `remote_tuple_payload_missing`, and covers the missing-row signal. The
+      JSON side-channel remains an endpoint/diagnostic bridge; production
+      CustomScan slot delivery remains open below.
 - [ ] Register `EcSpireDistributedScan`.
   - [x] Register the CustomScan provider.
     - [x] Packet `30805` registers `EcSpireDistributedScan` in `_PG_init`,

@@ -12636,42 +12636,67 @@ fn ec_spire_relation_regclass_text(relation_oid: pg_sys::Oid) -> Result<String, 
     })
 }
 
-fn ec_spire_remote_search_tuple_payload_for_ctid(
+fn ec_spire_remote_search_tuple_payloads_for_ctids(
     heap_relation_regclass: &str,
     requested_columns: &[String],
-    heap_block: u32,
-    heap_offset: u16,
-) -> Result<pgrx::JsonB, String> {
-    let ctid = format!("({heap_block},{heap_offset})");
+    ctids: &[String],
+) -> Result<std::collections::HashMap<String, (pgrx::JsonB, bool)>, String> {
     let requested_column_refs = requested_columns
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
+    let ctid_refs = ctids.iter().map(String::as_str).collect::<Vec<_>>();
     let sql = format!(
-        "SELECT coalesce( \
-             jsonb_object_agg(requested.column_name, heap.payload -> requested.column_name \
-                              ORDER BY requested.ordinality), \
-             '{{}}'::jsonb) AS tuple_payload \
-           FROM unnest($1::text[]) WITH ORDINALITY AS requested(column_name, ordinality) \
-           CROSS JOIN LATERAL ( \
+        "SELECT candidate.ctid_text, \
+                heap.payload IS NULL AS tuple_payload_missing, \
+                CASE WHEN heap.payload IS NULL THEN '{{}}'::jsonb \
+                     ELSE ( \
+                       SELECT coalesce( \
+                                jsonb_object_agg(requested.column_name, \
+                                                 heap.payload -> requested.column_name \
+                                                 ORDER BY requested.ordinality), \
+                                '{{}}'::jsonb) \
+                         FROM unnest($2::text[]) WITH ORDINALITY \
+                              AS requested(column_name, ordinality) \
+                     ) \
+                 END AS tuple_payload \
+           FROM unnest($1::text[]) WITH ORDINALITY AS candidate(ctid_text, ordinality) \
+           LEFT JOIN LATERAL ( \
              SELECT to_jsonb(heap_row) AS payload \
                FROM {heap_relation_regclass} AS heap_row \
-              WHERE heap_row.ctid = $2::tid \
-           ) AS heap"
+              WHERE heap_row.ctid = candidate.ctid_text::tid \
+           ) AS heap ON true \
+          ORDER BY candidate.ordinality"
     );
 
     Spi::connect(|client| {
-        client
+        let rows = client
             .select(
                 sql.as_str(),
                 None,
-                &[requested_column_refs.as_slice().into(), ctid.into()],
+                &[
+                    ctid_refs.as_slice().into(),
+                    requested_column_refs.as_slice().into(),
+                ],
             )
-            .map_err(|e| format!("ec_spire tuple payload heap fetch failed: {e}"))?
-            .first()
-            .get_one::<pgrx::JsonB>()
-            .map_err(|e| format!("ec_spire tuple payload decode failed: {e}"))?
-            .ok_or_else(|| "ec_spire tuple payload is null".to_owned())
+            .map_err(|e| format!("ec_spire tuple payload heap fetch failed: {e}"))?;
+        let mut payloads = std::collections::HashMap::with_capacity(ctids.len());
+        for row in rows {
+            let ctid_text = row
+                .get::<String>(1)
+                .map_err(|e| format!("ec_spire tuple payload ctid decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire tuple payload ctid is null".to_owned())?;
+            let tuple_payload_missing = row
+                .get::<bool>(2)
+                .map_err(|e| format!("ec_spire tuple payload missing flag decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire tuple payload missing flag is null".to_owned())?;
+            let tuple_payload = row
+                .get::<pgrx::JsonB>(3)
+                .map_err(|e| format!("ec_spire tuple payload decode failed: {e}"))?
+                .ok_or_else(|| "ec_spire tuple payload is null".to_owned())?;
+            payloads.insert(ctid_text, (tuple_payload, tuple_payload_missing));
+        }
+        Ok(payloads)
     })
 }
 
@@ -12699,6 +12724,7 @@ fn ec_spire_remote_search_tuple_payload(
         name!(row_locator, Vec<u8>),
         name!(score, f32),
         name!(tuple_payload, pgrx::JsonB),
+        name!(tuple_payload_missing, bool),
         name!(payload_key, &'static str),
         name!(payload_column_count, i32),
         name!(status, &'static str),
@@ -12749,17 +12775,32 @@ fn ec_spire_remote_search_tuple_payload(
         .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
     let payload_column_count = i32::try_from(requested_columns.len())
         .unwrap_or_else(|_| pgrx::error!("ec_spire_remote_search_tuple_payload too many columns"));
+    let ctids = rows
+        .iter()
+        .map(|row| format!("({},{})", row.heap_block, row.heap_offset))
+        .collect::<Vec<_>>();
+    let mut payloads = ec_spire_remote_search_tuple_payloads_for_ctids(
+        &heap_relation_regclass,
+        &requested_columns,
+        &ctids,
+    )
+    .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
 
     let payload_rows = rows
         .into_iter()
         .map(|row| {
-            let tuple_payload = ec_spire_remote_search_tuple_payload_for_ctid(
-                &heap_relation_regclass,
-                &requested_columns,
-                row.heap_block,
-                row.heap_offset,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_search_tuple_payload {e}"));
+            let ctid = format!("({},{})", row.heap_block, row.heap_offset);
+            let (tuple_payload, tuple_payload_missing) =
+                payloads.remove(&ctid).unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire_remote_search_tuple_payload missing payload result for ctid {ctid}"
+                    )
+                });
+            let status = if tuple_payload_missing {
+                "remote_tuple_payload_missing"
+            } else {
+                row.status
+            };
             (
                 i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
                 i64::try_from(row.served_epoch).expect("served epoch should fit in i64"),
@@ -12772,9 +12813,10 @@ fn ec_spire_remote_search_tuple_payload(
                 row.row_locator,
                 row.score,
                 tuple_payload,
+                tuple_payload_missing,
                 "node_id_vec_id",
                 payload_column_count,
-                row.status,
+                status,
             )
         })
         .collect::<Vec<_>>();
@@ -24958,12 +25000,66 @@ mod tests {
         ))
         .expect("tuple payload value query should succeed")
         .expect("tuple payload value count should exist");
+        let missing_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {payload_from} \
+             WHERE tuple_payload_missing"
+        ))
+        .expect("tuple payload missing query should succeed")
+        .expect("tuple payload missing count should exist");
+        let ready_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) {payload_from} \
+             WHERE status = 'ready'"
+        ))
+        .expect("tuple payload status query should succeed")
+        .expect("tuple payload ready count should exist");
 
         assert_eq!(payload_count, 2);
         assert_eq!(key_count, payload_count);
         assert_eq!(column_count, 2);
         assert_eq!(exact_projection_count, payload_count);
         assert_eq!(alpha_count, 1);
+        assert_eq!(missing_count, 0);
+        assert_eq!(ready_count, payload_count);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_remote_search_tuple_payload_missing_ctid_signal() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_missing_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_missing_sql (id, title, embedding) VALUES \
+             (1, 'alpha', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        let table_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_tuple_payload_missing_sql'::regclass::oid",
+        )
+        .expect("table oid query should succeed")
+        .expect("table oid should exist");
+        let heap_relation_regclass = ec_spire_relation_regclass_text(table_oid)
+            .expect("heap relation regclass lookup should succeed");
+        let requested_columns = vec!["id".to_owned(), "title".to_owned()];
+        let missing_ctid = "(999,1)".to_owned();
+
+        let payloads = ec_spire_remote_search_tuple_payloads_for_ctids(
+            &heap_relation_regclass,
+            &requested_columns,
+            std::slice::from_ref(&missing_ctid),
+        )
+        .expect("tuple payload batch fetch should succeed");
+        let (tuple_payload, tuple_payload_missing) = payloads
+            .get(&missing_ctid)
+            .expect("missing ctid payload row should be present");
+
+        assert!(*tuple_payload_missing);
+        assert!(tuple_payload
+            .0
+            .as_object()
+            .expect("missing tuple payload should be a JSON object")
+            .is_empty());
     }
 
     #[pg_test]
