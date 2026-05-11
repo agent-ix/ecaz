@@ -24825,6 +24825,21 @@ mod tests {
                 .expect("CustomScan remote expression title should exist");
             (id, boosted_title)
         });
+        let embedding_projection = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "SELECT ecvector_to_real_array(embedding, 4, false) \
+                     FROM ec_spire_customscan_payload_coord_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("CustomScan remote ecvector projection query should succeed");
+            rows.first()
+                .get_one::<Vec<f32>>()
+                .expect("CustomScan remote ecvector projection should decode")
+                .expect("CustomScan remote ecvector projection should exist")
+        });
 
         assert!(
             plan.contains("Custom Scan (EcSpireDistributedScan)"),
@@ -24832,6 +24847,7 @@ mod tests {
         );
         assert_eq!(row, (10, "remote alpha".to_owned()));
         assert_eq!(expression_row, (10, "remote alpha (boosted)".to_owned()));
+        assert_eq!(embedding_projection, vec![1.0, 0.0]);
     }
 
     #[pg_test]

@@ -666,6 +666,8 @@ unsafe fn custom_scan_tuple_payload_columns(
 
 unsafe fn custom_scan_validate_tuple_payload_attr(attr: pg_sys::Form_pg_attribute, name: &str) {
     unsafe {
+        // Reject PG arrays and row composites while allowing scalar base/domain
+        // types such as ecvector, json/jsonb, enum, and range through type input.
         if pg_sys::get_element_type((*attr).atttypid) != pg_sys::InvalidOid {
             pgrx::error!(
                 "EcSpireDistributedScan tuple payload column \"{name}\" has unsupported array type"
