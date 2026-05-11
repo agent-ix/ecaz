@@ -28467,6 +28467,52 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_pk_argument_from_decision() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_pk_argument_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML PK argument table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_pk_argument_idx \
+             ON ec_spire_dml_pk_argument_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML PK argument ec_spire index creation should succeed");
+
+        let select_query =
+            unsafe { analyzed_query("SELECT id FROM ec_spire_dml_pk_argument_sql WHERE id = 5") };
+        let select_decision =
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
+                .expect("PK SELECT replacement decision should exist");
+        let select_pk_argument =
+            am::spire_dml_frontdoor_pk_argument_from_replacement_decision(&select_decision)
+                .expect("PK SELECT argument should be buildable");
+        assert_eq!(select_pk_argument.pk_column, "id");
+        assert_eq!(
+            select_pk_argument.value,
+            am::SpireDmlFrontdoorPkValuePlan::ConstBigint(5)
+        );
+
+        let embedding_update_query = unsafe {
+            analyzed_query(
+                "UPDATE ec_spire_dml_pk_argument_sql \
+                    SET embedding = '[1,2,3]'::ecvector \
+                  WHERE id = 5",
+            )
+        };
+        let embedding_update_decision = unsafe {
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
+        }
+        .expect("embedding UPDATE replacement decision should exist");
+        let error = am::spire_dml_frontdoor_pk_argument_from_replacement_decision(
+            &embedding_update_decision,
+        )
+        .expect_err("unsupported decisions should not build PK arguments");
+        assert!(error.contains("requires a supported decision"), "{error}");
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_replacement_sql \

@@ -89,6 +89,18 @@ pub(crate) struct SpireDmlFrontdoorReplacementDecisionRow {
     pub(crate) next_step: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireDmlFrontdoorPkArgument {
+    pub(crate) pk_column: String,
+    pub(crate) value: SpireDmlFrontdoorPkValuePlan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpireDmlFrontdoorPkValuePlan {
+    ConstBigint(i64),
+    ParamBigint(i32),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SpireDmlFrontdoorRelationContext {
     pub(crate) heap_relation_oid: pg_sys::Oid,
@@ -348,6 +360,48 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
 
 pub(crate) fn dml_frontdoor_bigint_pk_value_bytes(value: i64) -> Vec<u8> {
     value.to_be_bytes().to_vec()
+}
+
+pub(crate) fn dml_frontdoor_pk_argument_from_replacement_decision(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+) -> Result<SpireDmlFrontdoorPkArgument, String> {
+    if !decision.supported {
+        return Err(format!(
+            "ec_spire DML frontdoor PK argument requires a supported decision, got {}",
+            decision.kind
+        ));
+    }
+    let pk_column = decision
+        .pk_column
+        .as_deref()
+        .filter(|column| !column.is_empty())
+        .ok_or_else(|| "ec_spire DML frontdoor PK argument is missing pk_column".to_owned())?
+        .to_owned();
+    let value = match decision.pk_value_kind {
+        "const_bigint" => {
+            SpireDmlFrontdoorPkValuePlan::ConstBigint(decision.pk_value_const.ok_or_else(|| {
+                "ec_spire DML frontdoor const_bigint PK argument is missing a value".to_owned()
+            })?)
+        }
+        "param_bigint" => {
+            let param_id = decision.pk_value_param_id.ok_or_else(|| {
+                "ec_spire DML frontdoor param_bigint PK argument is missing a parameter id"
+                    .to_owned()
+            })?;
+            if param_id <= 0 {
+                return Err(format!(
+                    "ec_spire DML frontdoor param_bigint PK argument has invalid parameter id {param_id}"
+                ));
+            }
+            SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id)
+        }
+        other => {
+            return Err(format!(
+                "ec_spire DML frontdoor PK argument has unsupported value kind {other}"
+            ));
+        }
+    };
+    Ok(SpireDmlFrontdoorPkArgument { pk_column, value })
 }
 
 unsafe fn dml_frontdoor_classify_query_with_catalog_context(
