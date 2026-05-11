@@ -7,7 +7,7 @@
 //! fail closed before any hook can fall through to the coordinator heap path.
 #![allow(dead_code)]
 
-use pgrx::{pg_guard, pg_sys, PgList, Spi};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgList, Spi};
 
 use std::ffi::CStr;
 
@@ -79,6 +79,9 @@ pub(crate) struct SpireDmlFrontdoorReplacementDecisionRow {
     pub(crate) custom_scan_mode: &'static str,
     pub(crate) primitive: &'static str,
     pub(crate) pk_column: Option<String>,
+    pub(crate) pk_value_kind: &'static str,
+    pub(crate) pk_value_const: Option<i64>,
+    pub(crate) pk_value_param_id: Option<i32>,
     pub(crate) updated_columns: Vec<String>,
     pub(crate) projected_columns: Vec<String>,
     pub(crate) error: Option<&'static str>,
@@ -320,6 +323,9 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
                 custom_scan_mode: "none",
                 primitive: "none",
                 pk_column: None,
+                pk_value_kind: "other",
+                pk_value_const: None,
+                pk_value_param_id: None,
                 updated_columns: Vec::new(),
                 projected_columns: Vec::new(),
                 error: Some("ec_spire_distributed: relation context could not be loaded"),
@@ -368,8 +374,16 @@ unsafe fn dml_frontdoor_classify_query_with_relation(
 struct SpireDmlFrontdoorQueryDetail {
     shape: SpireDmlFrontdoorShapeRow,
     pk_column: Option<String>,
+    pk_value: SpireDmlFrontdoorPredicateValue,
     updated_columns: Vec<String>,
     projected_columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireDmlFrontdoorPredicateValue {
+    kind: SpireDmlFrontdoorValueKind,
+    const_bigint: Option<i64>,
+    param_id: Option<i32>,
 }
 
 unsafe fn dml_frontdoor_query_detail_with_relation(
@@ -396,6 +410,16 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         embedding_columns: &embedding_columns,
     };
     let shape = unsafe { classify_dml_frontdoor_query(query, query_context)? };
+    let target_rtindex = match operation {
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+            query_ref.resultRelation
+        }
+        SpireDmlFrontdoorOperation::PkSelect => unsafe {
+            single_range_table_ref(query_ref).unwrap_or_default()
+        },
+    };
+    let (_predicate_column, _predicate_operator, pk_value) =
+        unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
     } else {
@@ -409,6 +433,7 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
     Some(SpireDmlFrontdoorQueryDetail {
         shape,
         pk_column: relation.pk_column.clone(),
+        pk_value,
         updated_columns,
         projected_columns,
     })
@@ -460,6 +485,9 @@ fn dml_frontdoor_replacement_decision_from_shape(
         custom_scan_mode,
         primitive,
         pk_column: detail.pk_column,
+        pk_value_kind: dml_frontdoor_value_kind_name(detail.pk_value.kind),
+        pk_value_const: detail.pk_value.const_bigint,
+        pk_value_param_id: detail.pk_value.param_id,
         updated_columns: detail.updated_columns,
         projected_columns: detail.projected_columns,
         error: shape.error,
@@ -964,7 +992,7 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         }
     };
     let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
-    let (predicate_column, predicate_operator, predicate_value_kind) =
+    let (predicate_column, predicate_operator, predicate_value) =
         unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
@@ -995,7 +1023,7 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         pk_column: context.pk_column,
         predicate_column: predicate_column.as_deref(),
         predicate_operator,
-        predicate_value_kind,
+        predicate_value_kind: predicate_value.kind,
         updated_columns: &updated_column_refs,
         projected_columns: &projected_column_refs,
         embedding_columns: context.embedding_columns,
@@ -1112,14 +1140,14 @@ unsafe fn dml_frontdoor_pk_predicate(
 ) -> (
     Option<String>,
     Option<&'static str>,
-    SpireDmlFrontdoorValueKind,
+    SpireDmlFrontdoorPredicateValue,
 ) {
     let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
-        return (None, None, SpireDmlFrontdoorValueKind::Other);
+        return (None, None, dml_frontdoor_other_predicate_value());
     };
     let qual = jointree.quals;
     if qual.is_null() || unsafe { (*qual).type_ } != pg_sys::NodeTag::T_OpExpr {
-        return (None, None, SpireDmlFrontdoorValueKind::Other);
+        return (None, None, dml_frontdoor_other_predicate_value());
     }
     let op_expr = qual.cast::<pg_sys::OpExpr>();
     let operator =
@@ -1130,7 +1158,7 @@ unsafe fn dml_frontdoor_pk_predicate(
         };
     let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
     if args.len() != 2 {
-        return (None, operator, SpireDmlFrontdoorValueKind::Other);
+        return (None, operator, dml_frontdoor_other_predicate_value());
     }
     let left = args.get_ptr(0);
     let right = args.get_ptr(1);
@@ -1139,19 +1167,19 @@ unsafe fn dml_frontdoor_pk_predicate(
             if let Some(column) = unsafe { dml_frontdoor_var_column(left, target_rtindex, context) }
             {
                 return (Some(column), operator, unsafe {
-                    dml_frontdoor_value_kind(right)
+                    dml_frontdoor_predicate_value(right)
                 });
             }
             if let Some(column) =
                 unsafe { dml_frontdoor_var_column(right, target_rtindex, context) }
             {
                 return (Some(column), operator, unsafe {
-                    dml_frontdoor_value_kind(left)
+                    dml_frontdoor_predicate_value(left)
                 });
             }
-            (None, operator, SpireDmlFrontdoorValueKind::Other)
+            (None, operator, dml_frontdoor_other_predicate_value())
         }
-        _ => (None, operator, SpireDmlFrontdoorValueKind::Other),
+        _ => (None, operator, dml_frontdoor_other_predicate_value()),
     }
 }
 
@@ -1174,18 +1202,24 @@ unsafe fn dml_frontdoor_var_column(
 }
 
 unsafe fn dml_frontdoor_value_kind(expr: *mut pg_sys::Expr) -> SpireDmlFrontdoorValueKind {
-    unsafe { dml_frontdoor_value_kind_inner(expr, 0) }
+    unsafe { dml_frontdoor_predicate_value(expr).kind }
 }
 
-unsafe fn dml_frontdoor_value_kind_inner(
+unsafe fn dml_frontdoor_predicate_value(
+    expr: *mut pg_sys::Expr,
+) -> SpireDmlFrontdoorPredicateValue {
+    unsafe { dml_frontdoor_predicate_value_inner(expr, 0) }
+}
+
+unsafe fn dml_frontdoor_predicate_value_inner(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
-) -> SpireDmlFrontdoorValueKind {
+) -> SpireDmlFrontdoorPredicateValue {
     if expr.is_null() {
-        return SpireDmlFrontdoorValueKind::Other;
+        return dml_frontdoor_other_predicate_value();
     }
     if wrapper_depth > DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH {
-        return SpireDmlFrontdoorValueKind::Other;
+        return dml_frontdoor_other_predicate_value();
     }
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Const => {
@@ -1193,52 +1227,60 @@ unsafe fn dml_frontdoor_value_kind_inner(
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
             {
-                SpireDmlFrontdoorValueKind::ConstBigint
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
+                    param_id: None,
+                }
             } else {
-                SpireDmlFrontdoorValueKind::Other
+                dml_frontdoor_other_predicate_value()
             }
         }
         pg_sys::NodeTag::T_Param => {
             let param = unsafe { &*expr.cast::<pg_sys::Param>() };
             if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
-                SpireDmlFrontdoorValueKind::ParamBigint
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ParamBigint,
+                    const_bigint: None,
+                    param_id: Some(param.paramid as i32),
+                }
             } else {
-                SpireDmlFrontdoorValueKind::Other
+                dml_frontdoor_other_predicate_value()
             }
         }
         pg_sys::NodeTag::T_FuncExpr => {
             let func_expr = unsafe { &*expr.cast::<pg_sys::FuncExpr>() };
             if func_expr.funcresulttype != pg_sys::INT8OID {
-                return SpireDmlFrontdoorValueKind::Other;
+                return dml_frontdoor_other_predicate_value();
             }
-            unsafe { dml_frontdoor_single_coerced_arg_value_kind(func_expr.args, wrapper_depth) }
+            unsafe { dml_frontdoor_single_coerced_arg_value(func_expr.args, wrapper_depth) }
         }
         pg_sys::NodeTag::T_RelabelType => {
             let relabel = unsafe { &*expr.cast::<pg_sys::RelabelType>() };
             if relabel.resulttype != pg_sys::INT8OID {
-                return SpireDmlFrontdoorValueKind::Other;
+                return dml_frontdoor_other_predicate_value();
             }
-            unsafe { dml_frontdoor_coercible_integer_value_kind(relabel.arg, wrapper_depth) }
+            unsafe { dml_frontdoor_coercible_integer_value(relabel.arg, wrapper_depth) }
         }
         pg_sys::NodeTag::T_CoerceViaIO => {
             let coerce = unsafe { &*expr.cast::<pg_sys::CoerceViaIO>() };
             if coerce.resulttype != pg_sys::INT8OID {
-                return SpireDmlFrontdoorValueKind::Other;
+                return dml_frontdoor_other_predicate_value();
             }
-            unsafe { dml_frontdoor_coercible_integer_value_kind(coerce.arg, wrapper_depth) }
+            unsafe { dml_frontdoor_coercible_integer_value(coerce.arg, wrapper_depth) }
         }
-        _ => SpireDmlFrontdoorValueKind::Other,
+        _ => dml_frontdoor_other_predicate_value(),
     }
 }
 
-unsafe fn dml_frontdoor_single_coerced_arg_value_kind(
+unsafe fn dml_frontdoor_single_coerced_arg_value(
     args: *mut pg_sys::List,
     wrapper_depth: usize,
-) -> SpireDmlFrontdoorValueKind {
+) -> SpireDmlFrontdoorPredicateValue {
     let Some(arg) = (unsafe { dml_frontdoor_single_list_expr_arg(args) }) else {
-        return SpireDmlFrontdoorValueKind::Other;
+        return dml_frontdoor_other_predicate_value();
     };
-    unsafe { dml_frontdoor_coercible_integer_value_kind(arg, wrapper_depth) }
+    unsafe { dml_frontdoor_coercible_integer_value(arg, wrapper_depth) }
 }
 
 unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
@@ -1251,12 +1293,12 @@ unsafe fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<
     Some(unsafe { (*args.elements).ptr_value }.cast::<pg_sys::Expr>())
 }
 
-unsafe fn dml_frontdoor_coercible_integer_value_kind(
+unsafe fn dml_frontdoor_coercible_integer_value(
     expr: *mut pg_sys::Expr,
     wrapper_depth: usize,
-) -> SpireDmlFrontdoorValueKind {
+) -> SpireDmlFrontdoorPredicateValue {
     if expr.is_null() {
-        return SpireDmlFrontdoorValueKind::Other;
+        return dml_frontdoor_other_predicate_value();
     }
     match unsafe { (*expr.cast::<pg_sys::Node>()).type_ } {
         pg_sys::NodeTag::T_Const => {
@@ -1264,20 +1306,61 @@ unsafe fn dml_frontdoor_coercible_integer_value_kind(
             if !const_expr.constisnull
                 && dml_frontdoor_integer_oid_can_coerce_to_bigint(const_expr.consttype)
             {
-                SpireDmlFrontdoorValueKind::ConstBigint
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ConstBigint,
+                    const_bigint: unsafe { dml_frontdoor_const_bigint_value(const_expr) },
+                    param_id: None,
+                }
             } else {
-                SpireDmlFrontdoorValueKind::Other
+                dml_frontdoor_other_predicate_value()
             }
         }
         pg_sys::NodeTag::T_Param => {
             let param = unsafe { &*expr.cast::<pg_sys::Param>() };
             if dml_frontdoor_integer_oid_can_coerce_to_bigint(param.paramtype) {
-                SpireDmlFrontdoorValueKind::ParamBigint
+                SpireDmlFrontdoorPredicateValue {
+                    kind: SpireDmlFrontdoorValueKind::ParamBigint,
+                    const_bigint: None,
+                    param_id: Some(param.paramid as i32),
+                }
             } else {
-                SpireDmlFrontdoorValueKind::Other
+                dml_frontdoor_other_predicate_value()
             }
         }
-        _ => unsafe { dml_frontdoor_value_kind_inner(expr, wrapper_depth + 1) },
+        _ => unsafe { dml_frontdoor_predicate_value_inner(expr, wrapper_depth + 1) },
+    }
+}
+
+fn dml_frontdoor_other_predicate_value() -> SpireDmlFrontdoorPredicateValue {
+    SpireDmlFrontdoorPredicateValue {
+        kind: SpireDmlFrontdoorValueKind::Other,
+        const_bigint: None,
+        param_id: None,
+    }
+}
+
+unsafe fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+    unsafe {
+        if const_expr.constisnull {
+            return None;
+        }
+        if const_expr.consttype == pg_sys::INT8OID {
+            i64::from_datum(const_expr.constvalue, false)
+        } else if const_expr.consttype == pg_sys::INT4OID {
+            i32::from_datum(const_expr.constvalue, false).map(i64::from)
+        } else if const_expr.consttype == pg_sys::INT2OID {
+            i16::from_datum(const_expr.constvalue, false).map(i64::from)
+        } else {
+            None
+        }
+    }
+}
+
+fn dml_frontdoor_value_kind_name(kind: SpireDmlFrontdoorValueKind) -> &'static str {
+    match kind {
+        SpireDmlFrontdoorValueKind::ConstBigint => "const_bigint",
+        SpireDmlFrontdoorValueKind::ParamBigint => "param_bigint",
+        SpireDmlFrontdoorValueKind::Other => "other",
     }
 }
 

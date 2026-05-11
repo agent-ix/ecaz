@@ -1180,6 +1180,10 @@ v1 write contract from ADR-069:
     candidate now raise the classifier error instead of falling through to the
     coordinator heap path, while supported shapes continue to pass through
     until CustomScan executor replacement lands.
+  - [x] Packet `30862` extends the replacement decision with the PK predicate
+    argument shape (`const_bigint` value or `param_bigint` parameter id) needed
+    by the future DML CustomScan executor to build `int8send(...)::bytea`
+    primitive calls.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

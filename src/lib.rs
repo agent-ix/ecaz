@@ -1157,6 +1157,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(custom_scan_mode, &'static str),
         name!(primitive, &'static str),
         name!(pk_column, Option<String>),
+        name!(pk_value_kind, &'static str),
+        name!(pk_value_const, Option<i64>),
+        name!(pk_value_param_id, Option<i32>),
         name!(updated_columns, Vec<String>),
         name!(projected_columns, Vec<String>),
         name!(error, Option<&'static str>),
@@ -1181,6 +1184,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
             "none",
             "none",
             None,
+            "other",
+            None,
+            None,
             Vec::new(),
             Vec::new(),
             Some("ec_spire_distributed: DML front door requires one target heap relation"),
@@ -1203,6 +1209,9 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         decision.custom_scan_mode,
         decision.primitive,
         decision.pk_column,
+        decision.pk_value_kind,
+        decision.pk_value_const,
+        decision.pk_value_param_id,
         decision.updated_columns,
         decision.projected_columns,
         decision.error,
@@ -28424,6 +28433,14 @@ mod tests {
         ))
         .expect("DML replacement SELECT projected columns query should succeed")
         .expect("DML replacement SELECT projected columns should exist");
+        let select_pk_value_kind =
+            Spi::get_one::<String>(&format!("SELECT pk_value_kind {select_replacement}"))
+                .expect("DML replacement SELECT pk value kind query should succeed")
+                .expect("DML replacement SELECT pk value kind should exist");
+        let select_pk_value_const =
+            Spi::get_one::<i64>(&format!("SELECT pk_value_const {select_replacement}"))
+                .expect("DML replacement SELECT pk const query should succeed")
+                .expect("DML replacement SELECT pk const should exist");
         assert!(select_supported);
         assert_eq!(select_mode, "coordinator_pk_select_tuple_payload");
         assert_eq!(
@@ -28431,6 +28448,8 @@ mod tests {
             "ec_spire_forward_coordinator_select_tuple_payload"
         );
         assert_eq!(select_projected_columns, "id,title");
+        assert_eq!(select_pk_value_kind, "const_bigint");
+        assert_eq!(select_pk_value_const, 5);
 
         let update_replacement = "FROM ec_spire_dml_frontdoor_replacement_sql(\
              $$UPDATE ec_spire_dml_replacement_sql SET title = 'updated' WHERE id = 5$$)";
@@ -28454,9 +28473,19 @@ mod tests {
         ))
         .expect("DML replacement UPDATE updated columns query should succeed")
         .expect("DML replacement UPDATE updated columns should exist");
+        let update_pk_value_kind =
+            Spi::get_one::<String>(&format!("SELECT pk_value_kind {update_replacement}"))
+                .expect("DML replacement UPDATE pk value kind query should succeed")
+                .expect("DML replacement UPDATE pk value kind should exist");
+        let update_pk_value_const =
+            Spi::get_one::<i64>(&format!("SELECT pk_value_const {update_replacement}"))
+                .expect("DML replacement UPDATE pk const query should succeed")
+                .expect("DML replacement UPDATE pk const should exist");
         assert!(update_supported, "{update_kind}");
         assert_eq!(update_pk_column, "id");
         assert_eq!(update_columns, "title");
+        assert_eq!(update_pk_value_kind, "const_bigint");
+        assert_eq!(update_pk_value_const, 5);
         assert_eq!(
             update_primitive,
             "ec_spire_forward_coordinator_update_tuple_payload"
