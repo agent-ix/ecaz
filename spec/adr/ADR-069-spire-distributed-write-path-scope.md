@@ -347,6 +347,17 @@ PK-keyed reads do not use CustomScan; they go through a coordinator-side
 write/read forwarding mechanism that shares the placement-directory
 lookup with INSERT/UPDATE/DELETE.
 
+Packet `30840` adds the first PK-read primitive:
+`ec_spire_forward_coordinator_select_tuple_payload(index_oid, pk_column,
+pk_value, requested_columns)`. It looks up placement by canonical bigint
+primary-key bytes, serves `node_id = 0` placements from the coordinator heap,
+and forwards remote placements to
+`ec_spire_remote_select_tuple_payload(...)` through the same descriptor,
+conninfo-secret, epoch-window, timeout, and advisory-governance dispatch path
+used by UPDATE. The primitive returns a JSON tuple payload for the requested
+columns; transparent `SELECT ... WHERE pk = ...` integration remains a
+planner/view-hook follow-up.
+
 ## Cross-shard non-PK reads
 
 Non-vector queries without a PK qual, e.g.:

@@ -2333,6 +2333,41 @@ fn coordinator_delete_remote_tuple_payload_sql(
     ))
 }
 
+fn coordinator_select_remote_tuple_payload_sql(
+    remote_index_regclass: &str,
+    pk_column: &str,
+    pk_value: &[u8],
+    requested_columns: &[String],
+) -> Result<String, String> {
+    if pk_column.is_empty() {
+        return Err("ec_spire coordinator select pk column is empty".to_owned());
+    }
+    if pk_value.is_empty() {
+        return Err("ec_spire coordinator select pk_value is empty".to_owned());
+    }
+    if requested_columns.is_empty() {
+        return Err("ec_spire coordinator select column list is empty".to_owned());
+    }
+    let column_literals = requested_columns
+        .iter()
+        .map(|column| {
+            if column.is_empty() {
+                return Err("ec_spire coordinator select column name is empty".to_owned());
+            }
+            Ok(quote_sql_literal(column))
+        })
+        .collect::<Result<Vec<_>, String>>()?
+        .join(", ");
+    Ok(format!(
+        "SELECT * FROM ec_spire_remote_select_tuple_payload(\
+             {}::regclass, {}::text, decode({}, 'hex'), ARRAY[{}]::text[])",
+        quote_sql_literal(remote_index_regclass),
+        quote_sql_literal(pk_column),
+        quote_sql_literal(&hex::encode(pk_value)),
+        column_literals
+    ))
+}
+
 fn coordinator_insert_remote_descriptor_metadata(
     client: &mut postgres::Client,
     node_id: u32,
@@ -2633,6 +2668,65 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
         remote_deleted_count,
         status: "remote_delete_prepared",
         next_step: "local_placement_directory_delete",
+    })
+}
+
+pub(crate) unsafe fn coordinator_select_remote_tuple_payload(
+    index_relation: pg_sys::Relation,
+    node_id: u32,
+    served_epoch: u64,
+    pk_column: &str,
+    pk_value: &[u8],
+    requested_columns: &[String],
+) -> Result<SpireCoordinatorSelectRemoteRow, String> {
+    let dispatch =
+        unsafe { coordinator_insert_dispatch_plan_row(index_relation, node_id, served_epoch) };
+    if dispatch.status != SPIRE_REMOTE_STATUS_READY {
+        return Err(format!(
+            "ec_spire coordinator select remote dispatch for node_id {} is blocked with status {}",
+            node_id, dispatch.status
+        ));
+    }
+    let remote_sql = coordinator_select_remote_tuple_payload_sql(
+        &dispatch.remote_index_regclass,
+        pk_column,
+        pk_value,
+        requested_columns,
+    )?;
+
+    let _governance_permit = remote_search_libpq_executor_governance_permit_for_node(node_id)?;
+    let conninfo = remote_conninfo_secret_value(&dispatch.conninfo_secret_name).map_err(|status| {
+        format!(
+            "ec_spire coordinator select conninfo secret for node_id {node_id} is not resolved: {status}"
+        )
+    })?;
+    let mut client = remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        node_id,
+        "coordinator select remote dispatch",
+    )?;
+    let row = client.query_one(remote_sql.as_str(), &[]).map_err(|error| {
+        format!("ec_spire coordinator select remote SQL failed for node_id {node_id}: {error}")
+    })?;
+    let remote_selected_count = row
+        .try_get::<_, i64>("selected_count")
+        .map_err(|_| "ec_spire coordinator select remote selected_count decode failed".to_owned())
+        .and_then(|value| {
+            u64::try_from(value).map_err(|_| {
+                "ec_spire coordinator select remote selected_count is negative".to_owned()
+            })
+        })?;
+    let tuple_payload_json = row
+        .try_get::<_, Option<String>>("tuple_payload_json")
+        .map_err(|_| "ec_spire coordinator select remote tuple payload decode failed".to_owned())?;
+
+    Ok(SpireCoordinatorSelectRemoteRow {
+        node_id,
+        remote_select_sent: true,
+        remote_selected_count,
+        tuple_payload_json,
+        status: "remote_select_ready",
+        next_step: "done",
     })
 }
 

@@ -8106,6 +8106,158 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
     ))
 }
 
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_forward_coordinator_select_tuple_payload(
+    index_oid: pg_sys::Oid,
+    pk_column: String,
+    pk_value: Vec<u8>,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(pk_value, Vec<u8>),
+        name!(node_id, i64),
+        name!(served_epoch, i64),
+        name!(remote_select_sent, bool),
+        name!(selected_count, i64),
+        name!(payload_column_count, i32),
+        name!(tuple_payload_json, Option<String>),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    if pk_column.is_empty() {
+        pgrx::error!(
+            "ec_spire_forward_coordinator_select_tuple_payload pk_column must be nonempty"
+        );
+    }
+    if pk_value.is_empty() {
+        pgrx::error!(
+            "ec_spire_forward_coordinator_select_tuple_payload pk_value must not be empty"
+        );
+    }
+    if requested_columns.is_empty() {
+        pgrx::error!(
+            "ec_spire_forward_coordinator_select_tuple_payload requested column list must be nonempty"
+        );
+    }
+    let payload_column_count = i32::try_from(requested_columns.len()).unwrap_or_else(|_| {
+        pgrx::error!("ec_spire_forward_coordinator_select_tuple_payload too many requested columns")
+    });
+
+    let (node_id, served_epoch) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT node_id, served_epoch \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = $1::oid \
+                    AND pk_value = $2::bytea",
+                None,
+                &[index_oid.into(), pk_value.clone().into()],
+            )
+            .map_err(|e| format!("ec_spire coordinator select placement lookup failed: {e}"))?
+            .map(|row| {
+                let node_id = row["node_id"]
+                    .value::<i32>()
+                    .map_err(|e| {
+                        format!("ec_spire coordinator select placement node_id decode failed: {e}")
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator select placement node_id is null".to_owned()
+                    })?;
+                let served_epoch = row["served_epoch"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!(
+                            "ec_spire coordinator select placement served_epoch decode failed: {e}"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        "ec_spire coordinator select placement served_epoch is null".to_owned()
+                    })?;
+                Ok::<(i32, i64), String>((node_id, served_epoch))
+            })
+            .next()
+            .transpose()
+            .map(|value| {
+                value.ok_or_else(|| {
+                    "ec_spire coordinator select placement row is missing".to_owned()
+                })
+            })?
+    })
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if served_epoch <= 0 {
+        pgrx::error!("ec_spire coordinator select placement served_epoch must be greater than 0");
+    }
+
+    let index_relation = unsafe {
+        open_valid_ec_spire_index(
+            index_oid,
+            "ec_spire_forward_coordinator_select_tuple_payload",
+        )
+    };
+    if node_id == 0 {
+        let heap_relation_oid = unsafe {
+            (*index_relation)
+                .rd_index
+                .as_ref()
+                .expect("opened index relation should expose pg_index metadata")
+                .indrelid
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (selected_count, tuple_payload_json) = ec_spire_select_tuple_payload_on_heap(
+            heap_relation_oid,
+            &pk_column,
+            &pk_value,
+            &requested_columns,
+            "ec_spire_forward_coordinator_select_tuple_payload",
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        return TableIterator::once((
+            index_oid,
+            pk_value,
+            0,
+            served_epoch,
+            false,
+            i64::try_from(selected_count).expect("selected count should fit i64"),
+            payload_column_count,
+            tuple_payload_json,
+            "local_select_ready",
+            "done",
+        ));
+    }
+    if node_id < 0 {
+        pgrx::error!("ec_spire coordinator select placement node_id must not be negative");
+    }
+    let select_row = unsafe {
+        am::spire_coordinator_select_remote_tuple_payload(
+            index_relation,
+            u32::try_from(node_id).expect("positive node_id should fit u32"),
+            u64::try_from(served_epoch).expect("positive served_epoch should fit u64"),
+            &pk_column,
+            &pk_value,
+            &requested_columns,
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        index_oid,
+        pk_value,
+        i64::from(select_row.node_id),
+        served_epoch,
+        select_row.remote_select_sent,
+        i64::try_from(select_row.remote_selected_count).expect("selected count should fit i64"),
+        payload_column_count,
+        select_row.tuple_payload_json,
+        select_row.status,
+        select_row.next_step,
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
@@ -13425,6 +13577,72 @@ fn ec_spire_update_tuple_payload_on_heap(
     })
 }
 
+fn ec_spire_select_tuple_payload_on_heap(
+    heap_relation_oid: pg_sys::Oid,
+    pk_column: &str,
+    pk_value: &[u8],
+    requested_columns: &[String],
+    context: &str,
+) -> Result<(u64, Option<String>), String> {
+    let mut validation_columns = Vec::with_capacity(requested_columns.len() + 1);
+    if !requested_columns.iter().any(|column| column == pk_column) {
+        validation_columns.push(pk_column.to_owned());
+    }
+    validation_columns.extend(requested_columns.iter().cloned());
+    ec_spire_validate_tuple_payload_columns(heap_relation_oid, &validation_columns)
+        .map_err(|e| format!("{context} {e}"))?;
+    let heap_relation_regclass =
+        ec_spire_relation_regclass_text(heap_relation_oid).map_err(|e| format!("{context} {e}"))?;
+    let pk_identifier = ec_spire_quote_identifier(pk_column);
+    let column_list = requested_columns
+        .iter()
+        .map(|column| ec_spire_quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let select_sql = format!(
+        "WITH selected AS ( \
+             SELECT {column_list} \
+               FROM {heap_relation_regclass} AS target \
+              WHERE int8send(target.{pk_identifier}::bigint)::bytea = $1::bytea \
+         ), summarized AS ( \
+             SELECT count(*)::bigint AS selected_count, \
+                    jsonb_agg(to_jsonb(selected)) AS payloads \
+               FROM selected \
+         ) \
+         SELECT selected_count, \
+                CASE WHEN selected_count = 1 THEN (payloads -> 0)::text ELSE NULL END \
+                    AS tuple_payload_json \
+           FROM summarized"
+    );
+    Spi::connect(|client| {
+        client
+            .select(select_sql.as_str(), None, &[pk_value.to_vec().into()])
+            .map_err(|e| format!("{context} tuple payload select failed: {e}"))?
+            .map(|row| {
+                let selected_count = row["selected_count"]
+                    .value::<i64>()
+                    .map_err(|e| {
+                        format!("{context} tuple payload selected_count decode failed: {e}")
+                    })?
+                    .ok_or_else(|| format!("{context} tuple payload selected_count is null"))
+                    .and_then(|value| {
+                        u64::try_from(value).map_err(|_| {
+                            format!("{context} tuple payload selected_count is negative")
+                        })
+                    })?;
+                let tuple_payload_json = row["tuple_payload_json"]
+                    .value::<String>()
+                    .map_err(|e| format!("{context} tuple payload JSON decode failed: {e}"))?;
+                Ok::<(u64, Option<String>), String>((selected_count, tuple_payload_json))
+            })
+            .next()
+            .transpose()
+            .map(|value| {
+                value.ok_or_else(|| format!("{context} tuple payload select returned no rows"))
+            })?
+    })
+}
+
 #[pg_extern(strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_update_tuple_payload(
@@ -13546,6 +13764,66 @@ fn ec_spire_remote_delete_tuple_payload(
     .unwrap_or_else(|e| pgrx::error!("ec_spire_remote_delete_tuple_payload {e}"));
 
     TableIterator::once((index_oid, heap_relation_oid, deleted_count, "ready"))
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_remote_select_tuple_payload(
+    index_oid: pg_sys::Oid,
+    pk_column: String,
+    pk_value: Vec<u8>,
+    requested_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(index_oid, pg_sys::Oid),
+        name!(heap_relation_oid, pg_sys::Oid),
+        name!(selected_count, i64),
+        name!(payload_column_count, i32),
+        name!(tuple_payload_json, Option<String>),
+        name!(status, &'static str),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_remote_select_tuple_payload") };
+    let heap_relation_oid = unsafe {
+        (*index_relation)
+            .rd_index
+            .as_ref()
+            .expect("opened index relation should expose pg_index metadata")
+            .indrelid
+    };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    if pk_column.is_empty() {
+        pgrx::error!("ec_spire_remote_select_tuple_payload pk_column must be nonempty");
+    }
+    if pk_value.is_empty() {
+        pgrx::error!("ec_spire_remote_select_tuple_payload pk_value must not be empty");
+    }
+    if requested_columns.is_empty() {
+        pgrx::error!("ec_spire_remote_select_tuple_payload requested column list must be nonempty");
+    }
+    let payload_column_count = i32::try_from(requested_columns.len()).unwrap_or_else(|_| {
+        pgrx::error!("ec_spire_remote_select_tuple_payload too many requested columns")
+    });
+    let (selected_count, tuple_payload_json) = ec_spire_select_tuple_payload_on_heap(
+        heap_relation_oid,
+        &pk_column,
+        &pk_value,
+        &requested_columns,
+        "ec_spire_remote_select_tuple_payload",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    TableIterator::once((
+        index_oid,
+        heap_relation_oid,
+        i64::try_from(selected_count).expect("selected count should fit i64"),
+        payload_column_count,
+        tuple_payload_json,
+        "ready",
+    ))
 }
 
 fn ec_spire_remote_search_tuple_payloads_for_ctids(
@@ -20890,6 +21168,170 @@ mod tests {
         );
         assert_eq!(placement_count, 0);
         let _ = index_oid;
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_select_tuple_payload_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_SELECT_PAYLOAD_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_coord_select_payload_remote_sql; \
+                 CREATE TABLE ec_spire_coord_select_payload_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_select_payload_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (808, 'remote selected payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('909192939495969798999a9b9c9d9e9f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_select_payload_remote_idx \
+                     ON ec_spire_coord_select_payload_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote select target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_select_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("coordinator select table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_select_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('a0a1a2a3a4a5a6a7a8a9aaabacadaeaf', 'hex'))",
+        )
+        .expect("coordinator select seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_select_payload_idx \
+             ON ec_spire_coord_select_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("coordinator select ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_select_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_coord_select_payload_remote_idx'::regclass::oid)",
+        )
+        .expect("remote identity query should succeed")
+        .expect("remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_coord_select_payload_idx'::regclass, \
+                 17, 21, 'spire/remote/coordinator_select_payload_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_coord_select_payload_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_select_payload_idx'::regclass, int8send(808::bigint)::bytea, \
+                     17, 2, {active_epoch}, decode('909192939495969798999a9b9c9d9e9f', 'hex'))"
+        ))
+        .expect("placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                     'ec_spire_coord_select_payload_idx'::regclass, \
+                     'id', \
+                     int8send(808::bigint)::bytea, \
+                     ARRAY['id', 'title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_select_sent::text || '|' || selected_count::text || '|' || \
+                    payload_column_count::text || '|' || \
+                    (tuple_payload_json::jsonb ->> 'id') || '|' || \
+                    (tuple_payload_json::jsonb ->> 'title') || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("coordinator select helper query should succeed")
+        .expect("coordinator select helper should return a row");
+
+        assert_eq!(
+            result,
+            format!(
+                "17|{active_epoch}|true|1|2|808|remote selected payload|remote_select_ready|done"
+            )
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_forward_coordinator_select_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_select_local_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("local coordinator select table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_select_local_payload_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (909, 'local selected payload', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('b0b1b2b3b4b5b6b7b8b9babbbcbdbebf', 'hex'))",
+        )
+        .expect("local coordinator select row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_select_local_payload_idx \
+             ON ec_spire_coord_select_local_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("local coordinator select ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_select_local_payload_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_select_local_payload_idx'::regclass, int8send(909::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('b0b1b2b3b4b5b6b7b8b9babbbcbdbebf', 'hex'))"
+        ))
+        .expect("local placement row should be inserted");
+
+        let result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                     'ec_spire_coord_select_local_payload_idx'::regclass, \
+                     'id', \
+                     int8send(909::bigint)::bytea, \
+                     ARRAY['id', 'title']::text[]) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    remote_select_sent::text || '|' || selected_count::text || '|' || \
+                    payload_column_count::text || '|' || \
+                    (tuple_payload_json::jsonb ->> 'id') || '|' || \
+                    (tuple_payload_json::jsonb ->> 'title') || '|' || \
+                    status || '|' || next_step \
+               FROM result",
+        )
+        .expect("local coordinator select helper query should succeed")
+        .expect("local coordinator select helper should return a row");
+
+        assert_eq!(
+            result,
+            format!(
+                "0|{active_epoch}|false|1|2|909|local selected payload|local_select_ready|done"
+            )
+        );
     }
 
     #[pg_test]

@@ -1087,9 +1087,17 @@ v1 write contract from ADR-069:
     hook; row-level table triggers cannot capture remote-owned rows because the
     coordinator heap row is suppressed by the INSERT trigger.
 - [ ] PK-keyed SELECT:
-  - [ ] lookup `node_id` from the placement directory;
-  - [ ] forward SELECT to the owning remote;
-  - [ ] add PG18 coverage.
+  - [x] lookup `node_id` from the placement directory;
+  - [x] forward SELECT to the owning remote;
+  - [x] add PG18 coverage.
+    - [x] Packet `30840` adds
+      `ec_spire_forward_coordinator_select_tuple_payload(...)` plus the remote
+      `ec_spire_remote_select_tuple_payload(...)` endpoint, proving a
+      PK-keyed projection routes by placement row and returns the requested
+      tuple payload for both remote and `node_id = 0` local placements.
+  - [ ] wire transparent `SELECT ... WHERE pk = ...` into the coordinator
+    planner/view hook; the primitive is the dispatch operation that front door
+    should call.
 - [ ] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
