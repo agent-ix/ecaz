@@ -1105,6 +1105,9 @@ v1 write contract from ADR-069:
       `ec_spire_remote_select_tuple_payload(...)` endpoint, proving a
       PK-keyed projection routes by placement row and returns the requested
       tuple payload for both remote and `node_id = 0` local placements.
+    - [x] Packet `30846` adds the defensive `selected_count > 1` guard so
+      PK SELECT fails closed on duplicate-key/schema-drift results before a
+      transparent front door consumes the primitive.
   - [ ] wire transparent `SELECT ... WHERE pk = ...` into the coordinator
     planner/view hook; the primitive is the dispatch operation that front door
     should call.

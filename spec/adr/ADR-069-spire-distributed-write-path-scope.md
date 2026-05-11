@@ -371,6 +371,10 @@ caching is appropriate.
 PK-keyed reads do not use CustomScan; they go through a coordinator-side
 write/read forwarding mechanism that shares the placement-directory
 lookup with INSERT/UPDATE/DELETE.
+They are read-only and idempotent: if a connection drops mid-read, callers
+can retry safely. The primitive rejects multi-row matches as schema drift,
+because v1 PK lookup expects at most one row for the canonical primary-key
+bytes.
 
 Packet `30840` adds the first PK-read primitive:
 `ec_spire_forward_coordinator_select_tuple_payload(index_oid, pk_column,
@@ -382,6 +386,8 @@ conninfo-secret, epoch-window, timeout, and advisory-governance dispatch path
 used by UPDATE. The primitive returns a JSON tuple payload for the requested
 columns; transparent `SELECT ... WHERE pk = ...` integration remains a
 planner/view-hook follow-up.
+Packet `30846` adds the defensive `selected_count > 1` guard for both local
+and remote branches.
 
 ## Cross-shard non-PK reads
 

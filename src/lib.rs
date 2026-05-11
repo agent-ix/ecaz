@@ -7951,7 +7951,6 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-
     TableIterator::once((
         index_oid,
         pk_value,
@@ -8237,6 +8236,12 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
             "ec_spire_forward_coordinator_select_tuple_payload",
         )
         .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if selected_count > 1 {
+            pgrx::error!(
+                "ec_spire coordinator select expected at most one row, got {}",
+                selected_count
+            );
+        }
         return TableIterator::once((
             index_oid,
             pk_value,
@@ -8265,6 +8270,12 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    if select_row.remote_selected_count > 1 {
+        pgrx::error!(
+            "ec_spire coordinator select expected at most one remote row, got {}",
+            select_row.remote_selected_count
+        );
+    }
 
     TableIterator::once((
         index_oid,
@@ -13883,7 +13894,6 @@ fn ec_spire_remote_update_tuple_payload(
         "ec_spire_remote_update_tuple_payload",
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
-
     TableIterator::once((
         index_oid,
         heap_relation_oid,
@@ -13990,6 +14000,12 @@ fn ec_spire_remote_select_tuple_payload(
         "ec_spire_remote_select_tuple_payload",
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if selected_count > 1 {
+        pgrx::error!(
+            "ec_spire remote select expected at most one row, got {}",
+            selected_count
+        );
+    }
 
     TableIterator::once((
         index_oid,
@@ -21703,6 +21719,56 @@ mod tests {
                 "0|{active_epoch}|false|1|2|909|local selected payload|local_select_ready|done"
             )
         );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_spire coordinator select expected at most one row, got 2")]
+    fn test_ec_spire_forward_coordinator_select_rejects_multirow_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_select_multirow_local_sql \
+             (id bigint not null, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("multirow local select table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_coord_select_multirow_local_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1009, 'local selected duplicate one', \
+              encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('c0c1c2c3c4c5c6c7c8c9cacbcccdcecf', 'hex')), \
+             (1009, 'local selected duplicate two', \
+              encode_to_ecvector(ARRAY[0.9, 0.1], 4, 42), \
+              decode('d0d1d2d3d4d5d6d7d8d9dadbdcdddedf', 'hex'))",
+        )
+        .expect("multirow local select rows should be inserted");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_select_multirow_local_idx \
+             ON ec_spire_coord_select_multirow_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("multirow local select ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_coord_select_multirow_local_idx'::regclass)",
+        )
+        .expect("active epoch query should succeed")
+        .expect("active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_select_multirow_local_idx'::regclass, int8send(1009::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('c0c1c2c3c4c5c6c7c8c9cacbcccdcecf', 'hex'))"
+        ))
+        .expect("multirow local placement row should be inserted");
+
+        Spi::run(
+            "SELECT * FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                 'ec_spire_coord_select_multirow_local_idx'::regclass, \
+                 'id', \
+                 int8send(1009::bigint)::bytea, \
+                 ARRAY['id', 'title']::text[])",
+        )
+        .expect("multirow local select should fail before returning");
     }
 
     #[pg_test]
