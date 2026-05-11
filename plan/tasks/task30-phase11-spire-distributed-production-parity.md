@@ -831,7 +831,7 @@ CustomScan read-path work:
       `ec_spire_custom_scan_status()`, and fails closed if executor callbacks
       are reached before planner path generation and tuple payload wiring
       land.
-  - [ ] Add planner path generation for tables with an `ec_spire` index and
+  - [x] Add planner path generation for tables with an `ec_spire` index and
     active remote placements when the query shape is
     `ORDER BY <vector-distance-op> LIMIT k`.
     - [x] Packet `30806` adds
@@ -843,15 +843,24 @@ CustomScan read-path work:
       directory object tuple, adds available-node / unavailable-placement /
       all-available signals for planner gating, and covers `no_active_epoch`
       plus `no_available_remote_placements` SQL states.
-  - [ ] Add a cost model that chooses CustomScan when active remote placements
+    - [x] Packet `30809` adds the first CustomPath generator for base
+      relations with an eligible remote-placement `ec_spire` index and
+      `ORDER BY ... LIMIT` pathkeys. It builds a `CustomScan` plan for EXPLAIN
+      and keeps execution fail-closed until the executor wiring slice.
+  - [x] Add a cost model that chooses CustomScan when active remote placements
     exist.
-  - [ ] Declare path keys so PostgreSQL can consume the ordered output without
+    - [x] Packet `30809` assigns startup cost `0` and total cost based on the
+      LIMIT row goal so the remote-placement path wins this query shape.
+  - [x] Declare path keys so PostgreSQL can consume the ordered output without
     adding an explicit sort.
+    - [x] Packet `30809` carries the planner sort pathkeys onto the CustomPath.
   - [ ] Implement Begin/Exec/End callbacks that invoke
     `SpireRemoteFanoutExecutor` directly and return tuples through the
     CustomScan tuple interface.
   - [ ] Keep the existing index AM unchanged for local-only scans.
-  - [ ] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
+  - [x] Add `EXPLAIN` coverage for `Custom Scan (EcSpireDistributedScan)`.
+    - [x] Packet `30809` covers a remote-placement `ORDER BY <#> ... LIMIT 1`
+      PG18 query and asserts `Custom Scan (EcSpireDistributedScan)`.
 - [ ] Add the end-to-end distributed read fixture.
   - [ ] Fixture creates a coordinator with remote-only placements and remote
     shard rows.

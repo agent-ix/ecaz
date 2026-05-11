@@ -1,8 +1,9 @@
-use pgrx::{pg_guard, pg_sys, PgBox};
+use pgrx::{pg_guard, pg_sys, PgBox, PgList};
 
 use super::meta;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
+const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SpireCustomScanStatusRow {
@@ -84,23 +85,31 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         provider_name: "EcSpireDistributedScan",
         registered,
         rel_pathlist_hook_installed: hook_installed,
-        path_generation_enabled: false,
+        path_generation_enabled: true,
         exec_wiring_enabled: false,
         status: if registered && hook_installed {
-            "registered"
+            "planner_path_generation_enabled"
         } else {
             "not_registered"
         },
-        next_step: "add planner path generation for ec_spire indexes with active remote placements",
+        next_step: "wire CustomScan executor callbacks to SpireRemoteFanoutExecutor",
     }
 }
 
 pub(crate) unsafe fn custom_scan_index_eligibility_row(
     index_relation: pg_sys::Relation,
 ) -> SpireCustomScanIndexEligibilityRow {
+    unsafe {
+        custom_scan_index_eligibility_result(index_relation).unwrap_or_else(|e| pgrx::error!("{e}"))
+    }
+}
+
+unsafe fn custom_scan_index_eligibility_result(
+    index_relation: pg_sys::Relation,
+) -> Result<SpireCustomScanIndexEligibilityRow, String> {
     let root_control = unsafe { super::page::read_root_control_page(index_relation) };
     if root_control.active_epoch == 0 {
-        return SpireCustomScanIndexEligibilityRow {
+        return Ok(SpireCustomScanIndexEligibilityRow {
             active_epoch: 0,
             local_placement_count: 0,
             remote_node_count: 0,
@@ -112,13 +121,11 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
             eligible_for_custom_scan: false,
             status: "no_active_epoch",
             next_step: "keep local-only ec_spire index AM path",
-        };
+        });
     }
 
-    let placement_directory = unsafe {
-        load_custom_scan_placement_directory(index_relation, root_control)
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-    };
+    let placement_directory =
+        unsafe { load_custom_scan_placement_directory(index_relation, root_control)? };
     let active_epoch = root_control.active_epoch;
     let mut local_placement_count = 0_u64;
     let mut remote_placement_count = 0_u64;
@@ -147,7 +154,7 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
     let eligible = active_epoch != 0 && remote_available_placement_count > 0;
     let all_remote_placements_available =
         remote_placement_count > 0 && remote_unavailable_placement_count == 0;
-    SpireCustomScanIndexEligibilityRow {
+    Ok(SpireCustomScanIndexEligibilityRow {
         active_epoch,
         local_placement_count,
         remote_node_count: remote_node_ids.len() as u64,
@@ -171,7 +178,7 @@ pub(crate) unsafe fn custom_scan_index_eligibility_row(
         } else {
             "keep local-only ec_spire index AM path"
         },
-    }
+    })
 }
 
 unsafe fn load_custom_scan_placement_directory(
@@ -210,19 +217,137 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
-    // CustomPath generation lands in the next planner slice.
+    if let Some(index_oid) = unsafe { custom_scan_candidate_index_oid(root, rel, rte) } {
+        unsafe { add_custom_scan_path(root, rel, index_oid) };
+    }
 }
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     _root: *mut pg_sys::PlannerInfo,
     _rel: *mut pg_sys::RelOptInfo,
-    _best_path: *mut pg_sys::CustomPath,
-    _tlist: *mut pg_sys::List,
-    _clauses: *mut pg_sys::List,
-    _custom_plans: *mut pg_sys::List,
+    best_path: *mut pg_sys::CustomPath,
+    tlist: *mut pg_sys::List,
+    clauses: *mut pg_sys::List,
+    custom_plans: *mut pg_sys::List,
 ) -> *mut pg_sys::Plan {
-    pgrx::error!("EcSpireDistributedScan planner path generation is registered but not enabled");
+    unsafe {
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        custom_scan.scan.plan.disabled_nodes = (*best_path).path.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = (*best_path).path.startup_cost;
+        custom_scan.scan.plan.total_cost = (*best_path).path.total_cost;
+        custom_scan.scan.plan.plan_rows = (*best_path).path.rows;
+        custom_scan.scan.plan.plan_width = if !(*best_path).path.pathtarget.is_null() {
+            (*(*best_path).path.pathtarget).width
+        } else {
+            0
+        };
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = tlist;
+        custom_scan.scan.plan.qual = clauses;
+        custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
+        custom_scan.flags = (*best_path).flags;
+        custom_scan.custom_plans = custom_plans;
+        custom_scan.custom_exprs = clauses;
+        custom_scan.custom_private = (*best_path).custom_private;
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+unsafe fn custom_scan_candidate_index_oid(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    rte: *mut pg_sys::RangeTblEntry,
+) -> Option<pg_sys::Oid> {
+    if root.is_null() || rel.is_null() || rte.is_null() {
+        return None;
+    }
+    let rel_ref = unsafe { rel.as_ref()? };
+    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+        return None;
+    }
+    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+        return None;
+    }
+    let root_ref = unsafe { root.as_ref()? };
+    if root_ref.sort_pathkeys.is_null() || root_ref.limit_tuples < 0.0 {
+        return None;
+    }
+
+    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    if ec_spire_am_oid == pg_sys::InvalidOid {
+        return None;
+    }
+
+    let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };
+    for index_info in index_list.iter_ptr() {
+        let Some(index_info) = (unsafe { index_info.as_ref() }) else {
+            continue;
+        };
+        if index_info.relam != ec_spire_am_oid {
+            continue;
+        }
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_info.indexoid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+        let eligibility = unsafe { custom_scan_index_eligibility_result(index_relation) };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        if matches!(eligibility, Ok(row) if row.eligible_for_custom_scan) {
+            return Some(index_info.indexoid);
+        }
+    }
+    None
+}
+
+unsafe fn add_custom_scan_path(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    index_oid: pg_sys::Oid,
+) {
+    if root.is_null() || rel.is_null() {
+        return;
+    }
+    let root_ref = unsafe { root.as_ref().expect("checked root pointer") };
+    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
+    let mut custom_path =
+        unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };
+    let rows = if root_ref.limit_tuples >= 0.0 {
+        root_ref.limit_tuples.max(1.0)
+    } else {
+        rel_ref.rows.max(1.0)
+    };
+    custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+    custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+    custom_path.path.parent = rel;
+    custom_path.path.pathtarget = rel_ref.reltarget;
+    custom_path.path.param_info = std::ptr::null_mut();
+    custom_path.path.parallel_aware = false;
+    custom_path.path.parallel_safe = false;
+    custom_path.path.parallel_workers = 0;
+    custom_path.path.rows = rows;
+    custom_path.path.disabled_nodes = 0;
+    custom_path.path.startup_cost = 0.0;
+    custom_path.path.total_cost = rows;
+    custom_path.path.pathkeys = root_ref.sort_pathkeys;
+    custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+    custom_path.custom_paths = std::ptr::null_mut();
+    custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+    custom_path.custom_private = unsafe { pg_sys::lappend_oid(std::ptr::null_mut(), index_oid) };
+    custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+
+    unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
 }
 
 #[pg_guard]
@@ -243,9 +368,8 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     _estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
-    pgrx::error!(
-        "EcSpireDistributedScan executor callbacks are not wired to SpireRemoteFanoutExecutor yet"
-    );
+    // EXPLAIN initializes executor state even without ANALYZE. Keep Begin
+    // side-effect-free until Exec is wired to SpireRemoteFanoutExecutor.
 }
 
 #[pg_guard]
@@ -272,11 +396,11 @@ mod tests {
         let row = custom_scan_status_row();
 
         assert_eq!(row.provider_name, "EcSpireDistributedScan");
-        assert!(!row.path_generation_enabled);
+        assert!(row.path_generation_enabled);
         assert!(!row.exec_wiring_enabled);
         assert_eq!(
             row.next_step,
-            "add planner path generation for ec_spire indexes with active remote placements"
+            "wire CustomScan executor callbacks to SpireRemoteFanoutExecutor"
         );
     }
 

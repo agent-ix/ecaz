@@ -24308,9 +24308,9 @@ mod tests {
         assert_eq!(provider_name, "EcSpireDistributedScan");
         assert!(registered);
         assert!(hook_installed);
-        assert!(!path_generation_enabled);
+        assert!(path_generation_enabled);
         assert!(!exec_wiring_enabled);
-        assert_eq!(status, "registered");
+        assert_eq!(status, "planner_path_generation_enabled");
     }
 
     #[pg_test]
@@ -24512,6 +24512,72 @@ mod tests {
         assert_eq!(remote_available_placement_count, 0);
         assert_eq!(remote_unavailable_placement_count, 1);
         assert!(!all_remote_placements_available);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_customscan_explain_remote_order_limit() {
+        Spi::run(
+            "CREATE TABLE ec_spire_customscan_explain_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_customscan_explain_sql (id, embedding) VALUES \
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_customscan_explain_sql_idx \
+             ON ec_spire_customscan_explain_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_spire_customscan_explain_sql_idx'::regclass::oid",
+        )
+        .expect("index oid query should succeed")
+        .expect("index oid should exist");
+        let selected_pid = Spi::get_one::<i64>(
+            "SELECT leaf_pid FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_customscan_explain_sql_idx'::regclass) \
+             ORDER BY leaf_pid LIMIT 1",
+        )
+        .expect("leaf pid query should succeed")
+        .expect("leaf pid should exist");
+
+        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
+        Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM ec_spire_customscan_explain_sql \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Custom Scan (EcSpireDistributedScan)"),
+            "expected EcSpireDistributedScan in plan:\n{plan}"
+        );
     }
 
     #[pg_test]
