@@ -1106,6 +1106,11 @@ v1 write contract from ADR-069:
     column in `ec_spire_forward_coordinator_update_tuple_payload(...)` before
     placement lookup or remote dispatch, and PG18 coverage asserts both the ADR
     error message and hint.
+- [x] Expose the remaining DML front-door plan for reviewers/operators.
+  - [x] Packet `30843` adds
+    `ec_spire_coordinator_dml_frontdoor_plan()`, which records the ready INSERT
+    and embedding-UPDATE surfaces plus pending UPDATE/DELETE/PK SELECT hook
+    integrations and their narrow v1 query shapes.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

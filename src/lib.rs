@@ -8280,6 +8280,66 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_spire_coordinator_dml_frontdoor_plan() -> TableIterator<
+    'static,
+    (
+        name!(operation, &'static str),
+        name!(frontdoor_integration, &'static str),
+        name!(supported_shape, &'static str),
+        name!(primitive, &'static str),
+        name!(status, &'static str),
+        name!(next_step, &'static str),
+    ),
+> {
+    TableIterator::new(
+        vec![
+            (
+                "insert",
+                "before_insert_trigger",
+                "bigint_pk_ecvector_embedding_bytea_source_identity",
+                "ec_spire_prepare_coordinator_insert_tuple_payload",
+                "ready",
+                "already installed by ec_spire_enable_coordinator_insert",
+            ),
+            (
+                "update_non_embedding",
+                "modifytable_or_view_hook",
+                "single_table_bigint_pk_equality_no_returning_non_embedding_columns",
+                "ec_spire_forward_coordinator_update_tuple_payload",
+                "frontdoor_pending",
+                "confirm hook boundary in review/30803 before intercepting remote-owned rows",
+            ),
+            (
+                "delete",
+                "modifytable_or_view_hook",
+                "single_table_bigint_pk_equality_no_returning",
+                "ec_spire_prepare_coordinator_delete_tuple_payload",
+                "frontdoor_pending",
+                "confirm hook boundary in review/30803 before intercepting remote-owned rows",
+            ),
+            (
+                "pk_select",
+                "planner_or_view_hook",
+                "single_table_bigint_pk_equality_projection",
+                "ec_spire_forward_coordinator_select_tuple_payload",
+                "frontdoor_pending",
+                "confirm hook boundary in review/30803 before adding non-vector PK read path",
+            ),
+            (
+                "update_embedding",
+                "shared_update_primitive_guard",
+                "any update touching the ec_spire indexed embedding column",
+                "ec_spire_forward_coordinator_update_tuple_payload",
+                "ready",
+                "reject with ADR-069 error and hint",
+            ),
+        ]
+        .into_iter(),
+    )
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_hierarchy_snapshot(
@@ -21569,6 +21629,43 @@ mod tests {
             format!(
                 "0|{active_epoch}|false|1|2|909|local selected payload|local_select_ready|done"
             )
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_spire_coordinator_dml_frontdoor_plan_sql() {
+        let operation_count =
+            Spi::get_one::<i64>("SELECT count(*) FROM ec_spire_coordinator_dml_frontdoor_plan()")
+                .expect("frontdoor plan count query should succeed")
+                .expect("frontdoor plan count should exist");
+        let pending_operations = Spi::get_one::<String>(
+            "SELECT string_agg(operation, ',' ORDER BY operation) \
+               FROM ec_spire_coordinator_dml_frontdoor_plan() \
+              WHERE status = 'frontdoor_pending'",
+        )
+        .expect("frontdoor pending operation query should succeed")
+        .expect("frontdoor pending operations should exist");
+        let insert_frontdoor = Spi::get_one::<String>(
+            "SELECT frontdoor_integration \
+               FROM ec_spire_coordinator_dml_frontdoor_plan() \
+              WHERE operation = 'insert'",
+        )
+        .expect("insert frontdoor query should succeed")
+        .expect("insert frontdoor should exist");
+        let embedding_update_status = Spi::get_one::<String>(
+            "SELECT status || '|' || next_step \
+               FROM ec_spire_coordinator_dml_frontdoor_plan() \
+              WHERE operation = 'update_embedding'",
+        )
+        .expect("embedding update frontdoor query should succeed")
+        .expect("embedding update frontdoor should exist");
+
+        assert_eq!(operation_count, 5);
+        assert_eq!(pending_operations, "delete,pk_select,update_non_embedding");
+        assert_eq!(insert_frontdoor, "before_insert_trigger");
+        assert_eq!(
+            embedding_update_status,
+            "ready|reject with ADR-069 error and hint"
         );
     }
 
