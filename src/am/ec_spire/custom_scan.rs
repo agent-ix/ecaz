@@ -2,10 +2,15 @@ use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList};
 
 use std::{ffi::CString, ptr};
 
+use crate::am::common::cost::{current_planner_cost_constants, PlannerCostConstants};
+
 use super::meta;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
+const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
+const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 32.0;
+const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SpireCustomScanStatusRow {
@@ -118,7 +123,7 @@ pub(crate) fn custom_scan_status_row() -> SpireCustomScanStatusRow {
         } else {
             "not_registered"
         },
-        next_step: "add ADR-069 write path and production CustomScan cost model",
+        next_step: "add ADR-069 write path",
     }
 }
 
@@ -247,8 +252,10 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
             previous_hook(root, rel, rti, rte);
         }
     }
-    if let Some(index_oid) = unsafe { custom_scan_candidate_index_oid(root, rel, rte) } {
-        unsafe { add_custom_scan_path(root, rel, index_oid) };
+    if let Some((index_oid, eligibility)) =
+        unsafe { custom_scan_candidate_index_oid(root, rel, rte) }
+    {
+        unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };
     }
 }
 
@@ -314,7 +321,7 @@ unsafe fn custom_scan_candidate_index_oid(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     rte: *mut pg_sys::RangeTblEntry,
-) -> Option<pg_sys::Oid> {
+) -> Option<(pg_sys::Oid, SpireCustomScanIndexEligibilityRow)> {
     if root.is_null() || rel.is_null() || rte.is_null() {
         return None;
     }
@@ -354,8 +361,10 @@ unsafe fn custom_scan_candidate_index_oid(
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
-        if matches!(eligibility, Ok(row) if row.eligible_for_custom_scan) {
-            return Some(index_info.indexoid);
+        if let Ok(row) = eligibility {
+            if row.eligible_for_custom_scan {
+                return Some((index_info.indexoid, row));
+            }
         }
     }
     None
@@ -365,6 +374,7 @@ unsafe fn add_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     index_oid: pg_sys::Oid,
+    eligibility: SpireCustomScanIndexEligibilityRow,
 ) {
     if root.is_null() || rel.is_null() {
         return;
@@ -378,6 +388,7 @@ unsafe fn add_custom_scan_path(
     } else {
         rel_ref.rows.max(1.0)
     };
+    let cost = unsafe { estimate_custom_scan_cost(rows, rel_ref.rows.max(1.0), &eligibility) };
     custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
     custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
     custom_path.path.parent = rel;
@@ -388,8 +399,8 @@ unsafe fn add_custom_scan_path(
     custom_path.path.parallel_workers = 0;
     custom_path.path.rows = rows;
     custom_path.path.disabled_nodes = 0;
-    custom_path.path.startup_cost = 0.0;
-    custom_path.path.total_cost = rows;
+    custom_path.path.startup_cost = cost.startup_cost;
+    custom_path.path.total_cost = cost.total_cost;
     custom_path.path.pathkeys = root_ref.sort_pathkeys;
     custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
     custom_path.custom_paths = std::ptr::null_mut();
@@ -398,6 +409,57 @@ unsafe fn add_custom_scan_path(
     custom_path.methods = &raw const CUSTOM_PATH_METHODS;
 
     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpireCustomScanCostEstimate {
+    startup_cost: f64,
+    total_cost: f64,
+}
+
+unsafe fn estimate_custom_scan_cost(
+    output_rows: f64,
+    rel_rows: f64,
+    eligibility: &SpireCustomScanIndexEligibilityRow,
+) -> SpireCustomScanCostEstimate {
+    let constants = unsafe { current_planner_cost_constants() };
+    let cpu_tuple_cost = unsafe { pg_sys::cpu_tuple_cost };
+    estimate_custom_scan_cost_with_constants(
+        output_rows,
+        rel_rows,
+        eligibility,
+        constants,
+        cpu_tuple_cost,
+    )
+}
+
+fn estimate_custom_scan_cost_with_constants(
+    output_rows: f64,
+    rel_rows: f64,
+    eligibility: &SpireCustomScanIndexEligibilityRow,
+    constants: PlannerCostConstants,
+    cpu_tuple_cost: f64,
+) -> SpireCustomScanCostEstimate {
+    let output_rows = output_rows.max(1.0);
+    let rel_rows = rel_rows.max(output_rows);
+    let fanout = eligibility.remote_available_node_count.max(1) as f64;
+    let remote_placements = eligibility.remote_available_placement_count.max(1) as f64;
+    let routing_scores = remote_placements.min(CUSTOM_SCAN_ROUTING_SCORE_BOUND);
+    let routing_traversal_cost = routing_scores * constants.cpu_operator_cost;
+    let remote_dispatch_cost =
+        fanout * CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS * constants.cpu_operator_cost;
+    let bounded_heap_rows = (output_rows * fanout).min(rel_rows);
+    let heap_rerank_cost = bounded_heap_rows * (cpu_tuple_cost + constants.cpu_operator_cost);
+    let merge_cost = output_rows
+        * fanout.log2().max(1.0)
+        * CUSTOM_SCAN_MERGE_CPU_UNITS
+        * constants.cpu_operator_cost;
+    let tuple_delivery_cost = output_rows * cpu_tuple_cost;
+    let startup_cost = routing_traversal_cost + remote_dispatch_cost;
+    SpireCustomScanCostEstimate {
+        startup_cost,
+        total_cost: startup_cost + heap_rerank_cost + merge_cost + tuple_delivery_cost,
+    }
 }
 
 unsafe fn custom_scan_top_k(root: *mut pg_sys::PlannerInfo) -> Option<usize> {
@@ -1018,10 +1080,7 @@ mod tests {
         assert_eq!(row.provider_name, "EcSpireDistributedScan");
         assert!(row.path_generation_enabled);
         assert!(row.exec_wiring_enabled);
-        assert_eq!(
-            row.next_step,
-            "add ADR-069 write path and production CustomScan cost model"
-        );
+        assert_eq!(row.next_step, "add ADR-069 write path");
     }
 
     #[test]
@@ -1044,5 +1103,81 @@ mod tests {
         assert!(row.eligible_for_custom_scan);
         assert_eq!(row.status, "customscan_candidate");
         assert_eq!(row.remote_node_count, 1);
+    }
+
+    #[test]
+    fn custom_scan_cost_increases_with_remote_fanout() {
+        let mut low_fanout = eligible_cost_row();
+        low_fanout.remote_available_node_count = 1;
+        low_fanout.remote_available_placement_count = 4;
+        let mut high_fanout = low_fanout;
+        high_fanout.remote_available_node_count = 4;
+        high_fanout.remote_available_placement_count = 16;
+
+        let low = estimate_custom_scan_cost_with_constants(
+            10.0,
+            1_000.0,
+            &low_fanout,
+            default_cost_constants(),
+            0.01,
+        );
+        let high = estimate_custom_scan_cost_with_constants(
+            10.0,
+            1_000.0,
+            &high_fanout,
+            default_cost_constants(),
+            0.01,
+        );
+
+        assert!(low.total_cost.is_finite());
+        assert!(high.startup_cost > low.startup_cost);
+        assert!(high.total_cost > low.total_cost);
+    }
+
+    #[test]
+    fn custom_scan_cost_increases_with_output_rows() {
+        let eligibility = eligible_cost_row();
+        let small = estimate_custom_scan_cost_with_constants(
+            1.0,
+            1_000.0,
+            &eligibility,
+            default_cost_constants(),
+            0.01,
+        );
+        let large = estimate_custom_scan_cost_with_constants(
+            100.0,
+            1_000.0,
+            &eligibility,
+            default_cost_constants(),
+            0.01,
+        );
+
+        assert!(large.total_cost > small.total_cost);
+        assert_eq!(large.startup_cost, small.startup_cost);
+    }
+
+    fn eligible_cost_row() -> SpireCustomScanIndexEligibilityRow {
+        SpireCustomScanIndexEligibilityRow {
+            active_epoch: 7,
+            local_placement_count: 0,
+            remote_node_count: 2,
+            remote_available_node_count: 2,
+            remote_placement_count: 8,
+            remote_available_placement_count: 8,
+            remote_unavailable_placement_count: 0,
+            all_remote_placements_available: true,
+            eligible_for_custom_scan: true,
+            status: "customscan_candidate",
+            next_step:
+                "planner path generation must also verify ORDER BY vector distance LIMIT query shape",
+        }
+    }
+
+    fn default_cost_constants() -> PlannerCostConstants {
+        PlannerCostConstants {
+            random_page_cost: 4.0,
+            seq_page_cost: 1.0,
+            cpu_operator_cost: 0.0025,
+        }
     }
 }

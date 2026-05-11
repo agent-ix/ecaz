@@ -894,10 +894,13 @@ CustomScan read-path work:
     - [x] Packet `30809` assigns startup cost `0` and total cost based on the
       LIMIT row goal so the remote-placement path wins this query shape. This
       is intentionally provisional.
-    - [ ] Replace the provisional cost with a production model that accounts
+    - [x] Replace the provisional cost with a production model that accounts
       for coordinator routing traversal, per-remote dispatch latency by fanout
       count, and bounded heap-rerank/tuple-delivery cost before treating
       CustomScan costing as production-ready.
+      - [x] Packet `30827` replaces `startup=0,total=LIMIT` with a calibrated
+        fanout-aware model and Rust unit coverage for fanout/output-row cost
+        monotonicity.
   - [x] Declare path keys so PostgreSQL can consume the ordered output without
     adding an explicit sort.
     - [x] Packet `30809` carries the planner sort pathkeys onto the CustomPath.
