@@ -244,6 +244,19 @@ CREATE TABLE ec_spire_remote_row_materialization (
     )
 );
 
+CREATE TABLE ec_spire_placement (
+    index_oid oid NOT NULL,
+    pk_value bytea NOT NULL CHECK (octet_length(pk_value) > 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    centroid_id bigint NOT NULL CHECK (centroid_id >= 0),
+    served_epoch bigint NOT NULL CHECK (served_epoch > 0),
+    source_identity bytea NOT NULL CHECK (octet_length(source_identity) = 16),
+    PRIMARY KEY (index_oid, pk_value)
+);
+
+CREATE INDEX ec_spire_placement_by_identity
+ON ec_spire_placement (index_oid, source_identity);
+
 CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql

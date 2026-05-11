@@ -6481,6 +6481,7 @@ fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
         name!(manifest_orphan_count, i64),
         name!(manifest_entry_orphan_count, i64),
         name!(row_materialization_orphan_count, i64),
+        name!(placement_orphan_count, i64),
         name!(cleanup_recommended, bool),
         name!(status, String),
     ),
@@ -6514,13 +6515,18 @@ fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
                         FROM ec_spire_remote_row_materialization r \
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
                                           WHERE l.oid = r.coordinator_index_oid)) \
-                        AS row_materialization_orphan_count",
+                        AS row_materialization_orphan_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_placement p \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = p.index_oid)) \
+                        AS placement_orphan_count",
                 None,
                 &[],
             )
             .map_err(|e| format!("ec_spire remote catalog orphan summary failed: {e}"))?
             .map(|row| {
-                Ok::<(i64, i64, i64, i64), String>((
+                Ok::<(i64, i64, i64, i64, i64), String>((
                     row["descriptor_orphan_count"]
                         .value::<i64>()
                         .map_err(|e| format!("descriptor orphan count decode failed: {e}"))?
@@ -6539,22 +6545,28 @@ fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
                             format!("row materialization orphan count decode failed: {e}")
                         })?
                         .ok_or_else(|| "row materialization orphan count is null".to_owned())?,
+                    row["placement_orphan_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("placement orphan count decode failed: {e}"))?
+                        .ok_or_else(|| "placement orphan count is null".to_owned())?,
                 ))
             })
             .next()
             .transpose()
-            .map(|value| value.unwrap_or((0, 0, 0, 0)))
+            .map(|value| value.unwrap_or((0, 0, 0, 0, 0)))
     });
     let (
         descriptor_orphan_count,
         manifest_orphan_count,
         manifest_entry_orphan_count,
         row_materialization_orphan_count,
+        placement_orphan_count,
     ) = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     let cleanup_recommended = descriptor_orphan_count > 0
         || manifest_orphan_count > 0
         || manifest_entry_orphan_count > 0
-        || row_materialization_orphan_count > 0;
+        || row_materialization_orphan_count > 0
+        || placement_orphan_count > 0;
     let status = if cleanup_recommended {
         "orphaned_remote_catalog_rows"
     } else {
@@ -6566,6 +6578,7 @@ fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
         manifest_orphan_count,
         manifest_entry_orphan_count,
         row_materialization_orphan_count,
+        placement_orphan_count,
         cleanup_recommended,
         status.to_owned(),
     ))
@@ -6580,6 +6593,7 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
         name!(manifest_removed_count, i64),
         name!(manifest_entry_removed_count, i64),
         name!(row_materialization_removed_count, i64),
+        name!(placement_removed_count, i64),
         name!(status, String),
     ),
 > {
@@ -6612,13 +6626,18 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
                         FROM ec_spire_remote_row_materialization r \
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
                                           WHERE l.oid = r.coordinator_index_oid)) \
-                        AS row_materialization_removed_count",
+                        AS row_materialization_removed_count, \
+                     (SELECT count(*)::bigint \
+                        FROM ec_spire_placement p \
+                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                          WHERE l.oid = p.index_oid)) \
+                        AS placement_removed_count",
                 None,
                 &[],
             )
             .map_err(|e| format!("ec_spire remote catalog orphan cleanup count failed: {e}"))?
             .map(|row| {
-                Ok::<(i64, i64, i64, i64), String>((
+                Ok::<(i64, i64, i64, i64, i64), String>((
                     row["descriptor_removed_count"]
                         .value::<i64>()
                         .map_err(|e| format!("descriptor removed count decode failed: {e}"))?
@@ -6637,11 +6656,30 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
                             format!("row materialization removed count decode failed: {e}")
                         })?
                         .ok_or_else(|| "row materialization removed count is null".to_owned())?,
+                    row["placement_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("placement removed count decode failed: {e}"))?
+                        .ok_or_else(|| "placement removed count is null".to_owned())?,
                 ))
             })
             .next()
             .transpose()?
-            .unwrap_or((0, 0, 0, 0));
+            .unwrap_or((0, 0, 0, 0, 0));
+        client
+            .update(
+                "WITH live_spire_index AS ( \
+                     SELECT c.oid \
+                       FROM pg_class c \
+                       JOIN pg_am am ON am.oid = c.relam \
+                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
+                 ) \
+                 DELETE FROM ec_spire_placement p \
+                  WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
+                                     WHERE l.oid = p.index_oid)",
+                None,
+                &[],
+            )
+            .map_err(|e| format!("ec_spire placement orphan cleanup failed: {e}"))?;
         client
             .update(
                 "WITH live_spire_index AS ( \
@@ -6689,18 +6727,20 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
                 &[],
             )
             .map_err(|e| format!("ec_spire remote descriptor orphan cleanup failed: {e}"))?;
-        Ok::<(i64, i64, i64, i64), String>(counts)
+        Ok::<(i64, i64, i64, i64, i64), String>(counts)
     });
     let (
         descriptor_removed_count,
         manifest_removed_count,
         manifest_entry_removed_count,
         row_materialization_removed_count,
+        placement_removed_count,
     ) = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     let removed_any = descriptor_removed_count > 0
         || manifest_removed_count > 0
         || manifest_entry_removed_count > 0
-        || row_materialization_removed_count > 0;
+        || row_materialization_removed_count > 0
+        || placement_removed_count > 0;
     let status = if removed_any {
         "removed_orphaned_remote_catalog_rows"
     } else {
@@ -6712,6 +6752,7 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
         manifest_removed_count,
         manifest_entry_removed_count,
         row_materialization_removed_count,
+        placement_removed_count,
         status.to_owned(),
     ))
 }
@@ -6727,6 +6768,7 @@ fn ec_spire_remote_catalog_index_cleanup(
         name!(manifest_removed_count, i64),
         name!(manifest_entry_removed_count, i64),
         name!(row_materialization_removed_count, i64),
+        name!(placement_removed_count, i64),
         name!(applied_manifest_removed_count, i64),
         name!(applied_manifest_entry_removed_count, i64),
         name!(status, String),
@@ -6753,6 +6795,10 @@ fn ec_spire_remote_catalog_index_cleanup(
                       WHERE coordinator_index_oid = $1::oid) \
                         AS row_materialization_removed_count, \
                     (SELECT count(*)::bigint \
+                       FROM ec_spire_placement \
+                      WHERE index_oid = $1::oid) \
+                        AS placement_removed_count, \
+                    (SELECT count(*)::bigint \
                        FROM ec_spire_remote_epoch_manifest_applied \
                       WHERE remote_index_oid = $1::oid) \
                         AS applied_manifest_removed_count, \
@@ -6765,7 +6811,7 @@ fn ec_spire_remote_catalog_index_cleanup(
             )
             .map_err(|e| format!("ec_spire remote catalog index cleanup count failed: {e}"))?
             .map(|row| {
-                Ok::<(i64, i64, i64, i64, i64, i64), String>((
+                Ok::<(i64, i64, i64, i64, i64, i64, i64), String>((
                     row["descriptor_removed_count"]
                         .value::<i64>()
                         .map_err(|e| format!("descriptor removed count decode failed: {e}"))?
@@ -6784,6 +6830,10 @@ fn ec_spire_remote_catalog_index_cleanup(
                             format!("row materialization removed count decode failed: {e}")
                         })?
                         .ok_or_else(|| "row materialization removed count is null".to_owned())?,
+                    row["placement_removed_count"]
+                        .value::<i64>()
+                        .map_err(|e| format!("placement removed count decode failed: {e}"))?
+                        .ok_or_else(|| "placement removed count is null".to_owned())?,
                     row["applied_manifest_removed_count"]
                         .value::<i64>()
                         .map_err(|e| format!("applied manifest removed count decode failed: {e}"))?
@@ -6798,7 +6848,15 @@ fn ec_spire_remote_catalog_index_cleanup(
             })
             .next()
             .transpose()?
-            .unwrap_or((0, 0, 0, 0, 0, 0));
+            .unwrap_or((0, 0, 0, 0, 0, 0, 0));
+        client
+            .update(
+                "DELETE FROM ec_spire_placement \
+                  WHERE index_oid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire placement index cleanup failed: {e}"))?;
         client
             .update(
                 "DELETE FROM ec_spire_remote_row_materialization \
@@ -6833,13 +6891,14 @@ fn ec_spire_remote_catalog_index_cleanup(
                 &[index_oid.into()],
             )
             .map_err(|e| format!("ec_spire remote catalog index descriptor cleanup failed: {e}"))?;
-        Ok::<(i64, i64, i64, i64, i64, i64), String>(counts)
+        Ok::<(i64, i64, i64, i64, i64, i64, i64), String>(counts)
     });
     let (
         descriptor_removed_count,
         manifest_removed_count,
         manifest_entry_removed_count,
         row_materialization_removed_count,
+        placement_removed_count,
         applied_manifest_removed_count,
         applied_manifest_entry_removed_count,
     ) = result.unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -6847,6 +6906,7 @@ fn ec_spire_remote_catalog_index_cleanup(
         || manifest_removed_count > 0
         || manifest_entry_removed_count > 0
         || row_materialization_removed_count > 0
+        || placement_removed_count > 0
         || applied_manifest_removed_count > 0
         || applied_manifest_entry_removed_count > 0;
     let status = if removed_any {
@@ -6860,6 +6920,7 @@ fn ec_spire_remote_catalog_index_cleanup(
         manifest_removed_count,
         manifest_entry_removed_count,
         row_materialization_removed_count,
+        placement_removed_count,
         applied_manifest_removed_count,
         applied_manifest_entry_removed_count,
         status.to_owned(),
@@ -17739,6 +17800,59 @@ mod tests {
         assert_eq!(next_local_vec_seq, 2);
         assert!(!pid_near_exhaustion);
         assert!(!local_vec_id_near_exhaustion);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_placement_directory_catalog_sql() {
+        let table_exists =
+            Spi::get_one::<bool>("SELECT to_regclass('ec_spire_placement') IS NOT NULL")
+                .expect("placement directory table lookup should succeed")
+                .expect("placement directory table lookup should return a row");
+        let identity_index_exists = Spi::get_one::<bool>(
+            "SELECT to_regclass('ec_spire_placement_by_identity') IS NOT NULL",
+        )
+        .expect("placement identity index lookup should succeed")
+        .expect("placement identity index lookup should return a row");
+        let primary_key_columns = Spi::get_one::<String>(
+            "SELECT string_agg(a.attname, ',' ORDER BY k.ord) \
+               FROM pg_index i \
+               JOIN pg_class c ON c.oid = i.indrelid \
+               JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true \
+               JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum \
+              WHERE c.relname = 'ec_spire_placement' AND i.indisprimary",
+        )
+        .expect("placement primary key query should succeed")
+        .expect("placement primary key columns should exist");
+        let source_identity_check_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM pg_constraint \
+              WHERE conrelid = 'ec_spire_placement'::regclass \
+                AND contype = 'c' \
+                AND pg_get_constraintdef(oid) LIKE '%octet_length(source_identity) = 16%'",
+        )
+        .expect("placement source identity check query should succeed")
+        .expect("placement source identity check count should exist");
+
+        Spi::run(
+            "INSERT INTO ec_spire_placement \
+             (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('4294967291'::oid, decode('01', 'hex'), 2, 7, 5, \
+                     decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        )
+        .expect("placement directory insert should succeed");
+        let stored_row = Spi::get_one::<String>(
+            "SELECT node_id::text || ',' || centroid_id::text || ',' || served_epoch::text \
+               FROM ec_spire_placement \
+              WHERE index_oid = '4294967291'::oid AND pk_value = decode('01', 'hex')",
+        )
+        .expect("placement directory stored row query should succeed")
+        .expect("placement directory stored row should exist");
+
+        assert!(table_exists);
+        assert!(identity_index_exists);
+        assert_eq!(primary_key_columns, "index_oid,pk_value");
+        assert_eq!(source_identity_check_count, 1);
+        assert_eq!(stored_row, "2,7,5");
     }
 
     #[pg_test]
@@ -33548,6 +33662,13 @@ mod tests {
                      '4294967292'::oid, 10, 1, 'ready', 1)",
         )
         .expect("orphan row materialization insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_placement \
+             (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('4294967294'::oid, decode('01', 'hex'), 2, 7, 1, \
+                     decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        )
+        .expect("orphan placement insert should succeed");
 
         let summary_from = "FROM ec_spire_remote_catalog_orphan_summary()";
         let cleanup_from = "FROM ec_spire_remote_catalog_orphan_cleanup()";
@@ -33569,6 +33690,10 @@ mod tests {
         ))
         .expect("row materialization orphan count query should succeed")
         .expect("row materialization orphan count should exist");
+        let placement_orphan_count =
+            Spi::get_one::<i64>(&format!("SELECT placement_orphan_count {summary_from}"))
+                .expect("placement orphan count query should succeed")
+                .expect("placement orphan count should exist");
         let summary_status = Spi::get_one::<String>(&format!("SELECT status {summary_from}"))
             .expect("orphan summary status query should succeed")
             .expect("orphan summary status should exist");
@@ -33577,7 +33702,8 @@ mod tests {
             "SELECT descriptor_removed_count::text || ',' || \
                     manifest_removed_count::text || ',' || \
                     manifest_entry_removed_count::text || ',' || \
-                    row_materialization_removed_count::text \
+                    row_materialization_removed_count::text || ',' || \
+                    placement_removed_count::text \
                {cleanup_from}"
         ))
         .expect("orphan cleanup count query should succeed")
@@ -33598,8 +33724,9 @@ mod tests {
         assert_eq!(manifest_orphan_count, 1);
         assert_eq!(manifest_entry_orphan_count, 1);
         assert_eq!(row_materialization_orphan_count, 1);
+        assert_eq!(placement_orphan_count, 1);
         assert_eq!(summary_status, "orphaned_remote_catalog_rows");
-        assert_eq!(cleanup_counts, vec![1, 1, 1, 1]);
+        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1]);
         assert_eq!(post_cleanup_status, "ready");
     }
 
@@ -33661,6 +33788,13 @@ mod tests {
                      '4294967292'::oid, 10, 1, 'ready', 1)",
         )
         .expect("index cleanup row materialization insert should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_placement \
+             (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('4294967293'::oid, decode('01', 'hex'), 3, 7, 1, \
+                     decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
+        )
+        .expect("index cleanup placement insert should succeed");
 
         Spi::run(
             "CREATE TEMP TABLE ec_spire_remote_catalog_index_cleanup_result AS \
@@ -33673,6 +33807,7 @@ mod tests {
                     manifest_removed_count::text || ',' || \
                     manifest_entry_removed_count::text || ',' || \
                     row_materialization_removed_count::text || ',' || \
+                    placement_removed_count::text || ',' || \
                     applied_manifest_removed_count::text || ',' || \
                     applied_manifest_entry_removed_count::text \
                {cleanup_from}"
@@ -33706,7 +33841,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1, 1]);
+        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1, 1, 1]);
         assert_eq!(cleanup_status, "removed_index_remote_catalog_rows");
         assert_eq!(post_cleanup_count, 0);
         assert_eq!(post_applied_cleanup_count, 0);
@@ -33793,6 +33928,13 @@ mod tests {
                      '4294967292'::oid, 10, 1, 'ready', 1)"
         ))
         .expect("drop event row materialization insert should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+             (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('{index_oid_u32}'::oid, decode('01', 'hex'), 4, 7, 1, \
+                     decode('000102030405060708090a0b0c0d0e0f', 'hex'))"
+        ))
+        .expect("drop event placement insert should succeed");
 
         Spi::run("DROP INDEX ec_spire_remote_catalog_drop_event_sql_idx")
             .expect("drop event index drop should succeed");
@@ -33806,6 +33948,8 @@ mod tests {
                   WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_remote_row_materialization \
                   WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
+                (SELECT count(*) FROM ec_spire_placement \
+                  WHERE index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest_applied \
                   WHERE remote_index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest_applied_entry \

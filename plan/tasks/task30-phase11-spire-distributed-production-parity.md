@@ -302,9 +302,11 @@ local-only path.
   - [ ] Broaden the fixture to the final multi-instance distributed read lane
     before calling Stage D reads feature-complete.
 - [ ] Land the ADR-069 placement directory and coordinator-routed INSERT.
-  - [ ] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
+  - [x] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
     served_epoch, source_identity)` with the required primary key and identity
     index.
+    - [x] Packet `30817` adds the catalog table to bootstrap and upgrade SQL
+      and wires it into remote catalog orphan/index cleanup diagnostics.
   - [ ] Add `ec_spire_classify_centroid(embedding, index_oid)`.
   - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
@@ -922,8 +924,10 @@ CustomScan read-path work:
 
 v1 write contract from ADR-069:
 
-- [ ] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
+- [x] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
   served_epoch, source_identity)` plus required indexes.
+  - [x] Packet `30817` lands the table, primary key, identity index, and
+    cleanup diagnostics coverage.
 - [ ] Add `ec_spire_classify_centroid(embedding, index_oid)` using the same
   placement decision coordinator-routed INSERT will use.
 - [ ] Coordinator-routed INSERT:
