@@ -30,11 +30,13 @@ pub(crate) use self::custom_scan::{
     custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
 };
 pub(crate) use self::dml_frontdoor::{
-    classify_dml_frontdoor_query, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    classify_dml_frontdoor_query, SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,
+    SpireDmlFrontdoorQueryContext,
 };
 pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_bigint_pk_value_bytes, dml_frontdoor_hook_status_row,
     dml_frontdoor_pk_argument_from_replacement_decision,
+    dml_frontdoor_primitive_plan_from_replacement_decision,
     dml_frontdoor_relation_context_catalog_row, dml_frontdoor_relation_context_row,
     dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_target_relation_oid,
     register_dml_frontdoor_planner_hook,

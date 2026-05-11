@@ -28513,6 +28513,118 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_primitive_plan_from_decision() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_primitive_plan_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML primitive plan table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_primitive_plan_idx \
+             ON ec_spire_dml_primitive_plan_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML primitive plan ec_spire index creation should succeed");
+
+        let update_query = unsafe {
+            analyzed_query(
+                "UPDATE ec_spire_dml_primitive_plan_sql \
+                    SET title = 'updated' \
+                  WHERE id = 5",
+            )
+        };
+        let update_decision =
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(update_query) }
+                .expect("UPDATE primitive plan decision should exist");
+        let update_plan =
+            am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&update_decision)
+                .expect("UPDATE primitive plan should be buildable");
+        assert_eq!(
+            update_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
+        );
+        assert_eq!(
+            update_plan.primitive,
+            "ec_spire_forward_coordinator_update_tuple_payload"
+        );
+        assert_eq!(update_plan.pk_argument.pk_column, "id");
+        assert_eq!(update_plan.updated_columns, vec!["title".to_owned()]);
+        assert!(update_plan.projected_columns.is_empty());
+
+        let delete_query =
+            unsafe { analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5") };
+        let delete_decision =
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(delete_query) }
+                .expect("DELETE primitive plan decision should exist");
+        let delete_plan =
+            am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&delete_decision)
+                .expect("DELETE primitive plan should be buildable");
+        assert_eq!(
+            delete_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
+        );
+        assert_eq!(
+            delete_plan.primitive,
+            "ec_spire_prepare_coordinator_delete_tuple_payload"
+        );
+        assert!(delete_plan.updated_columns.is_empty());
+        assert!(delete_plan.projected_columns.is_empty());
+
+        let select_query = unsafe {
+            analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5")
+        };
+        let select_decision =
+            unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(select_query) }
+                .expect("PK SELECT primitive plan decision should exist");
+        let select_plan =
+            am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&select_decision)
+                .expect("PK SELECT primitive plan should be buildable");
+        assert_eq!(
+            select_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        );
+        assert_eq!(
+            select_plan.primitive,
+            "ec_spire_forward_coordinator_select_tuple_payload"
+        );
+        assert!(select_plan.updated_columns.is_empty());
+        assert_eq!(
+            select_plan.projected_columns,
+            vec!["id".to_owned(), "title".to_owned()]
+        );
+
+        let mut mismatched_primitive = select_decision.clone();
+        mismatched_primitive.primitive = "ec_spire_forward_coordinator_update_tuple_payload";
+        let mismatch_error =
+            am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&mismatched_primitive)
+                .expect_err("mode/primitive mismatch should fail closed");
+        assert!(
+            mismatch_error.contains("requires primitive"),
+            "{mismatch_error}"
+        );
+
+        let embedding_update_query = unsafe {
+            analyzed_query(
+                "UPDATE ec_spire_dml_primitive_plan_sql \
+                    SET embedding = '[1,2,3]'::ecvector \
+                  WHERE id = 5",
+            )
+        };
+        let embedding_update_decision = unsafe {
+            am::spire_dml_frontdoor_replacement_decision_catalog_row(embedding_update_query)
+        }
+        .expect("embedding UPDATE primitive plan decision should exist");
+        let unsupported_error = am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(
+            &embedding_update_decision,
+        )
+        .expect_err("unsupported decisions should not build primitive plans");
+        assert!(
+            unsupported_error.contains("requires a supported decision"),
+            "{unsupported_error}"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_replacement_decision_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_replacement_sql \

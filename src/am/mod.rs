@@ -40,6 +40,7 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
     dml_frontdoor_replacement_decision_catalog_row as spire_dml_frontdoor_replacement_decision_catalog_row,
@@ -152,7 +153,7 @@ pub(crate) use self::ec_spire::{
     remote_search_target_plan_rows as spire_remote_search_target_plan_rows,
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
-    SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
 };
 
 #[cfg(any(test, feature = "pg_test"))]

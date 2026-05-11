@@ -101,6 +101,23 @@ pub(crate) enum SpireDmlFrontdoorPkValuePlan {
     ParamBigint(i32),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireDmlFrontdoorPrimitivePlan {
+    pub(crate) index_oid: pg_sys::Oid,
+    pub(crate) mode: SpireDmlFrontdoorCustomScanMode,
+    pub(crate) primitive: &'static str,
+    pub(crate) pk_argument: SpireDmlFrontdoorPkArgument,
+    pub(crate) updated_columns: Vec<String>,
+    pub(crate) projected_columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpireDmlFrontdoorCustomScanMode {
+    CoordinatorUpdateTuplePayload,
+    CoordinatorDeleteTuplePayload,
+    CoordinatorPkSelectTuplePayload,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SpireDmlFrontdoorRelationContext {
     pub(crate) heap_relation_oid: pg_sys::Oid,
@@ -402,6 +419,102 @@ pub(crate) fn dml_frontdoor_pk_argument_from_replacement_decision(
         }
     };
     Ok(SpireDmlFrontdoorPkArgument { pk_column, value })
+}
+
+pub(crate) fn dml_frontdoor_primitive_plan_from_replacement_decision(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+) -> Result<SpireDmlFrontdoorPrimitivePlan, String> {
+    if decision.index_oid == pg_sys::InvalidOid {
+        return Err("ec_spire DML frontdoor primitive plan requires a valid index OID".to_owned());
+    }
+    let pk_argument = dml_frontdoor_pk_argument_from_replacement_decision(decision)?;
+    let mode = dml_frontdoor_custom_scan_mode_from_decision(decision)?;
+    let expected_primitive = dml_frontdoor_primitive_for_mode(mode);
+    if decision.primitive != expected_primitive {
+        return Err(format!(
+            "ec_spire DML frontdoor primitive plan mode {} requires primitive {}, got {}",
+            decision.custom_scan_mode, expected_primitive, decision.primitive
+        ));
+    }
+    match mode {
+        SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload => {
+            if decision.updated_columns.is_empty() {
+                return Err(
+                    "ec_spire DML frontdoor UPDATE primitive plan requires updated columns"
+                        .to_owned(),
+                );
+            }
+            if !decision.projected_columns.is_empty() {
+                return Err(
+                    "ec_spire DML frontdoor UPDATE primitive plan must not project columns"
+                        .to_owned(),
+                );
+            }
+        }
+        SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload => {
+            if !decision.updated_columns.is_empty() || !decision.projected_columns.is_empty() {
+                return Err(
+                    "ec_spire DML frontdoor DELETE primitive plan must not carry column payloads"
+                        .to_owned(),
+                );
+            }
+        }
+        SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload => {
+            if decision.projected_columns.is_empty() {
+                return Err(
+                    "ec_spire DML frontdoor PK SELECT primitive plan requires projected columns"
+                        .to_owned(),
+                );
+            }
+            if !decision.updated_columns.is_empty() {
+                return Err(
+                    "ec_spire DML frontdoor PK SELECT primitive plan must not update columns"
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    Ok(SpireDmlFrontdoorPrimitivePlan {
+        index_oid: decision.index_oid,
+        mode,
+        primitive: expected_primitive,
+        pk_argument,
+        updated_columns: decision.updated_columns.clone(),
+        projected_columns: decision.projected_columns.clone(),
+    })
+}
+
+fn dml_frontdoor_custom_scan_mode_from_decision(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+) -> Result<SpireDmlFrontdoorCustomScanMode, String> {
+    match decision.custom_scan_mode {
+        "coordinator_update_tuple_payload" => {
+            Ok(SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload)
+        }
+        "coordinator_delete_tuple_payload" => {
+            Ok(SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload)
+        }
+        "coordinator_pk_select_tuple_payload" => {
+            Ok(SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload)
+        }
+        other => Err(format!(
+            "ec_spire DML frontdoor primitive plan has unsupported CustomScan mode {other}"
+        )),
+    }
+}
+
+fn dml_frontdoor_primitive_for_mode(mode: SpireDmlFrontdoorCustomScanMode) -> &'static str {
+    match mode {
+        SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload => {
+            "ec_spire_forward_coordinator_update_tuple_payload"
+        }
+        SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload => {
+            "ec_spire_prepare_coordinator_delete_tuple_payload"
+        }
+        SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload => {
+            "ec_spire_forward_coordinator_select_tuple_payload"
+        }
+    }
 }
 
 unsafe fn dml_frontdoor_classify_query_with_catalog_context(

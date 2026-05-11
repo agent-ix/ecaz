@@ -1189,6 +1189,9 @@ v1 write contract from ADR-069:
   - [x] Packet `30865` adds the typed PK argument builder that validates a
     supported replacement decision and returns the PK column plus const/param
     bigint plan value for the upcoming DML CustomScan executor.
+  - [x] Packet `30866` adds the typed DML primitive plan builder that validates
+    CustomScan mode, primitive name, PK argument, and operation-specific column
+    payloads before the planner hook can hand supported shapes to an executor.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
