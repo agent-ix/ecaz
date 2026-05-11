@@ -28592,6 +28592,13 @@ mod tests {
             select_plan.projected_columns,
             vec!["id".to_owned(), "title".to_owned()]
         );
+        assert_eq!(
+            hex::encode(
+                am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&select_plan)
+                    .expect("const PK primitive plan should produce bytea")
+            ),
+            "0000000000000005"
+        );
 
         let mut mismatched_primitive = select_decision.clone();
         mismatched_primitive.primitive = "ec_spire_forward_coordinator_update_tuple_payload";
@@ -28601,6 +28608,20 @@ mod tests {
         assert!(
             mismatch_error.contains("requires primitive"),
             "{mismatch_error}"
+        );
+
+        let mut param_decision = select_decision.clone();
+        param_decision.pk_value_kind = "param_bigint";
+        param_decision.pk_value_const = None;
+        param_decision.pk_value_param_id = Some(1);
+        let param_plan =
+            am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&param_decision)
+                .expect("parameter PK primitive plan should be buildable");
+        let param_error = am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&param_plan)
+            .expect_err("parameter PK primitive plan needs runtime evaluation");
+        assert!(
+            param_error.contains("requires executor parameter evaluation"),
+            "{param_error}"
         );
 
         let embedding_update_query = unsafe {

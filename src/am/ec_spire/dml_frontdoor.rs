@@ -484,6 +484,19 @@ pub(crate) fn dml_frontdoor_primitive_plan_from_replacement_decision(
     })
 }
 
+pub(crate) fn dml_frontdoor_primitive_plan_const_pk_value_bytes(
+    plan: &SpireDmlFrontdoorPrimitivePlan,
+) -> Result<Vec<u8>, String> {
+    match plan.pk_argument.value {
+        SpireDmlFrontdoorPkValuePlan::ConstBigint(value) => {
+            Ok(dml_frontdoor_bigint_pk_value_bytes(value))
+        }
+        SpireDmlFrontdoorPkValuePlan::ParamBigint(param_id) => Err(format!(
+            "ec_spire DML frontdoor primitive plan requires executor parameter evaluation for PK parameter ${param_id}"
+        )),
+    }
+}
+
 fn dml_frontdoor_custom_scan_mode_from_decision(
     decision: &SpireDmlFrontdoorReplacementDecisionRow,
 ) -> Result<SpireDmlFrontdoorCustomScanMode, String> {
