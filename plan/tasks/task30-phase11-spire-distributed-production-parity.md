@@ -1210,6 +1210,9 @@ v1 write contract from ADR-069:
     executor-boundary tests: `paramFetch` workspace lifetime is documented and
     `i64::MIN`/`i64::MAX` are regression-locked through both const and runtime
     parameter bytea paths.
+  - [x] Packet `30872` adds the DML CustomScan expression handoff helper that
+    returns a typed primitive plan plus the raw PK value expression the planner
+    will copy into `custom_exprs` for UPDATE, DELETE, and PK SELECT rewrites.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

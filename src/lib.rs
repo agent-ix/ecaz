@@ -28669,6 +28669,19 @@ mod tests {
         assert_eq!(update_plan.pk_argument.pk_column, "id");
         assert_eq!(update_plan.updated_columns, vec!["title".to_owned()]);
         assert!(update_plan.projected_columns.is_empty());
+        let update_plan_expr =
+            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(update_query) }
+                .expect("UPDATE primitive plan expression handoff should classify")
+                .expect("UPDATE primitive plan expression handoff should be buildable");
+        assert_eq!(
+            update_plan_expr.primitive_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
+        );
+        assert!(!update_plan_expr.pk_value_expr.is_null());
+        assert_eq!(
+            unsafe { (*update_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            pg_sys::NodeTag::T_Const
+        );
 
         let delete_query =
             unsafe { analyzed_query("DELETE FROM ec_spire_dml_primitive_plan_sql WHERE id = 5") };
@@ -28688,6 +28701,19 @@ mod tests {
         );
         assert!(delete_plan.updated_columns.is_empty());
         assert!(delete_plan.projected_columns.is_empty());
+        let delete_plan_expr =
+            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(delete_query) }
+                .expect("DELETE primitive plan expression handoff should classify")
+                .expect("DELETE primitive plan expression handoff should be buildable");
+        assert_eq!(
+            delete_plan_expr.primitive_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
+        );
+        assert!(!delete_plan_expr.pk_value_expr.is_null());
+        assert_eq!(
+            unsafe { (*delete_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            pg_sys::NodeTag::T_Const
+        );
 
         let select_query = unsafe {
             analyzed_query("SELECT id, title FROM ec_spire_dml_primitive_plan_sql WHERE id = 5")
@@ -28710,6 +28736,19 @@ mod tests {
         assert_eq!(
             select_plan.projected_columns,
             vec!["id".to_owned(), "title".to_owned()]
+        );
+        let select_plan_expr =
+            unsafe { am::spire_dml_frontdoor_primitive_plan_expr_catalog_row(select_query) }
+                .expect("PK SELECT primitive plan expression handoff should classify")
+                .expect("PK SELECT primitive plan expression handoff should be buildable");
+        assert_eq!(
+            select_plan_expr.primitive_plan.mode,
+            am::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        );
+        assert!(!select_plan_expr.pk_value_expr.is_null());
+        assert_eq!(
+            unsafe { (*select_plan_expr.pk_value_expr.cast::<pg_sys::Node>()).type_ },
+            pg_sys::NodeTag::T_Const
         );
         assert_eq!(
             hex::encode(

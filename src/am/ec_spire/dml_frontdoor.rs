@@ -122,6 +122,11 @@ pub(crate) struct SpireDmlFrontdoorPrimitiveInvocation {
     pub(crate) projected_columns: Vec<String>,
 }
 
+pub(crate) struct SpireDmlFrontdoorPrimitivePlanExpr {
+    pub(crate) primitive_plan: SpireDmlFrontdoorPrimitivePlan,
+    pub(crate) pk_value_expr: *mut pg_sys::Expr,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpireDmlFrontdoorCustomScanMode {
     CoordinatorUpdateTuplePayload,
@@ -384,6 +389,39 @@ pub(crate) unsafe fn dml_frontdoor_replacement_decision_catalog_row(
         relation.index_oid,
         detail,
     ))
+}
+
+pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
+    query: *mut pg_sys::Query,
+) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    let target_relation_oid = unsafe { dml_frontdoor_target_relation_oid(query)? };
+    let relation = match unsafe { dml_frontdoor_relation_context_catalog_row(target_relation_oid) }
+    {
+        Ok(relation) => relation,
+        Err(_err) => {
+            return Some(Err(
+                "ec_spire DML frontdoor CustomScan expression handoff could not load relation context"
+                    .to_owned(),
+            ));
+        }
+    };
+    let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+    let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
+        "ec_spire DML frontdoor CustomScan expression handoff requires a PK value expression"
+            .to_owned()
+    });
+    let decision = dml_frontdoor_replacement_decision_from_shape(
+        target_relation_oid,
+        relation.index_oid,
+        detail,
+    );
+    let primitive_plan = dml_frontdoor_primitive_plan_from_replacement_decision(&decision);
+    Some(pk_value_expr.and_then(|pk_value_expr| {
+        primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
+            primitive_plan,
+            pk_value_expr,
+        })
+    }))
 }
 
 pub(crate) fn dml_frontdoor_bigint_pk_value_bytes(value: i64) -> Vec<u8> {
@@ -670,6 +708,7 @@ struct SpireDmlFrontdoorQueryDetail {
     shape: SpireDmlFrontdoorShapeRow,
     pk_column: Option<String>,
     pk_value: SpireDmlFrontdoorPredicateValue,
+    pk_value_expr: Option<*mut pg_sys::Expr>,
     updated_columns: Vec<String>,
     projected_columns: Vec<String>,
 }
@@ -713,7 +752,7 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
             single_range_table_ref(query_ref).unwrap_or_default()
         },
     };
-    let (_predicate_column, _predicate_operator, pk_value) =
+    let predicate =
         unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
@@ -728,7 +767,8 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
     Some(SpireDmlFrontdoorQueryDetail {
         shape,
         pk_column: relation.pk_column.clone(),
-        pk_value,
+        pk_value: predicate.value,
+        pk_value_expr: predicate.value_expr,
         updated_columns,
         projected_columns,
     })
@@ -1287,8 +1327,7 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         }
     };
     let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
-    let (predicate_column, predicate_operator, predicate_value) =
-        unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
+    let predicate = unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &context) };
     let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &context) }
     } else {
@@ -1316,9 +1355,9 @@ pub(crate) unsafe fn classify_dml_frontdoor_query(
         has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
         has_returning: !query_ref.returningList.is_null(),
         pk_column: context.pk_column,
-        predicate_column: predicate_column.as_deref(),
-        predicate_operator,
-        predicate_value_kind: predicate_value.kind,
+        predicate_column: predicate.column.as_deref(),
+        predicate_operator: predicate.operator,
+        predicate_value_kind: predicate.value.kind,
         updated_columns: &updated_column_refs,
         projected_columns: &projected_column_refs,
         embedding_columns: context.embedding_columns,
@@ -1432,17 +1471,13 @@ unsafe fn dml_frontdoor_pk_predicate(
     query: &pg_sys::Query,
     target_rtindex: i32,
     context: &SpireDmlFrontdoorQueryContext<'_>,
-) -> (
-    Option<String>,
-    Option<&'static str>,
-    SpireDmlFrontdoorPredicateValue,
-) {
+) -> SpireDmlFrontdoorPkPredicate {
     let Some(jointree) = (unsafe { query.jointree.as_ref() }) else {
-        return (None, None, dml_frontdoor_other_predicate_value());
+        return dml_frontdoor_empty_pk_predicate();
     };
     let qual = jointree.quals;
     if qual.is_null() || unsafe { (*qual).type_ } != pg_sys::NodeTag::T_OpExpr {
-        return (None, None, dml_frontdoor_other_predicate_value());
+        return dml_frontdoor_empty_pk_predicate();
     }
     let op_expr = qual.cast::<pg_sys::OpExpr>();
     let operator =
@@ -1453,7 +1488,12 @@ unsafe fn dml_frontdoor_pk_predicate(
         };
     let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
     if args.len() != 2 {
-        return (None, operator, dml_frontdoor_other_predicate_value());
+        return SpireDmlFrontdoorPkPredicate {
+            column: None,
+            operator,
+            value: dml_frontdoor_other_predicate_value(),
+            value_expr: None,
+        };
     }
     let left = args.get_ptr(0);
     let right = args.get_ptr(1);
@@ -1461,20 +1501,52 @@ unsafe fn dml_frontdoor_pk_predicate(
         (Some(left), Some(right)) => {
             if let Some(column) = unsafe { dml_frontdoor_var_column(left, target_rtindex, context) }
             {
-                return (Some(column), operator, unsafe {
-                    dml_frontdoor_predicate_value(right)
-                });
+                return SpireDmlFrontdoorPkPredicate {
+                    column: Some(column),
+                    operator,
+                    value: unsafe { dml_frontdoor_predicate_value(right) },
+                    value_expr: Some(right),
+                };
             }
             if let Some(column) =
                 unsafe { dml_frontdoor_var_column(right, target_rtindex, context) }
             {
-                return (Some(column), operator, unsafe {
-                    dml_frontdoor_predicate_value(left)
-                });
+                return SpireDmlFrontdoorPkPredicate {
+                    column: Some(column),
+                    operator,
+                    value: unsafe { dml_frontdoor_predicate_value(left) },
+                    value_expr: Some(left),
+                };
             }
-            (None, operator, dml_frontdoor_other_predicate_value())
+            SpireDmlFrontdoorPkPredicate {
+                column: None,
+                operator,
+                value: dml_frontdoor_other_predicate_value(),
+                value_expr: None,
+            }
         }
-        _ => (None, operator, dml_frontdoor_other_predicate_value()),
+        _ => SpireDmlFrontdoorPkPredicate {
+            column: None,
+            operator,
+            value: dml_frontdoor_other_predicate_value(),
+            value_expr: None,
+        },
+    }
+}
+
+struct SpireDmlFrontdoorPkPredicate {
+    column: Option<String>,
+    operator: Option<&'static str>,
+    value: SpireDmlFrontdoorPredicateValue,
+    value_expr: Option<*mut pg_sys::Expr>,
+}
+
+fn dml_frontdoor_empty_pk_predicate() -> SpireDmlFrontdoorPkPredicate {
+    SpireDmlFrontdoorPkPredicate {
+        column: None,
+        operator: None,
+        value: dml_frontdoor_other_predicate_value(),
+        value_expr: None,
     }
 }
 
