@@ -873,6 +873,13 @@ Goal: prove distributed correctness locally before AWS.
     `compact_candidate_receive`, and strict/degraded logs are packet-local.
     Remaining Stage E connection reset, local timeout/cancel, OOM, and
     lifecycle rows still need fixture logs.
+  - [x] Packet `30785` adds the local-cancel transport runtime row: local
+    cancellation cancels every in-flight remote and reports
+    `remote_executor_cancelled` in both strict and degraded mode. The executor
+    summary now treats `local_statement_timeout` as the same query-wide
+    cancellation control path while preserving its distinct category.
+    Remaining Stage E connection reset, local statement-timeout, OOM, and
+    lifecycle rows still need fixture logs.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 

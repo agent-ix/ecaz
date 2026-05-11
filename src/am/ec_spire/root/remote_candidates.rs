@@ -3106,6 +3106,11 @@ fn postgres_local_cancel_failure_category() -> &'static str {
     }
 }
 
+fn is_local_cancellation_failure_category(failure_category: &str) -> bool {
+    failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
+        || failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT
+}
+
 fn production_remote_query_failure_category(error: &tokio_postgres::Error) -> &'static str {
     // `tokio-postgres` reports a backend terminated during an already-open
     // query as a closed connection, while pre-query connection failures are
@@ -3289,6 +3294,53 @@ pub(crate) fn remote_search_production_transport_probe_with_local_cancel_for_tes
         Some(local_cancel_after_ms),
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_search_production_transport_probe_with_local_cancel_summary_for_test(
+    requests: Vec<SpireRemoteProductionTransportProbeRequest>,
+    local_cancel_after_ms: u64,
+    consistency_mode: &str,
+) -> SpireRemoteProductionExecutorStateSummaryRow {
+    let result = (|| -> Result<SpireRemoteProductionExecutorStateSummaryRow, String> {
+        let consistency_mode_name =
+            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
+        let dispatch_rows = requests
+            .iter()
+            .map(|request| SpireRemoteSearchLibpqDispatchPlanRow {
+                requested_epoch: 1,
+                node_id: request.node_id,
+                selected_pids: vec![u64::from(request.node_id)],
+                pid_count: 1,
+                query_dimension: 2,
+                top_k: 1,
+                consistency_mode: consistency_mode_name,
+                sql_template: "SELECT 1",
+                parameter_count: 0,
+                result_column_count: 1,
+                conninfo_secret_name: format!("tests/node/{}", request.node_id),
+                remote_index_regclass: "tests.ec_spire_transport_probe_idx".to_owned(),
+                descriptor_generation: 1,
+                remote_index_identity: Vec::new(),
+                pipeline_mode: SPIRE_REMOTE_TRANSPORT_LIBPQ_PIPELINE,
+                dispatch_action: SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION,
+                receive_validator: "test_transport_probe",
+                status: SPIRE_REMOTE_STATUS_READY,
+            })
+            .collect::<Vec<_>>();
+        let transport_rows =
+            SpireRemoteProductionTransportAdapter::run_probe_requests_with_local_cancel(
+                requests,
+                Some(local_cancel_after_ms),
+            )?;
+        remote_search_production_executor_state_summary_from_transport_probe_rows_with_consistency_mode(
+            1,
+            &dispatch_rows,
+            &transport_rows,
+            consistency_mode,
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3639,9 +3691,9 @@ impl SpireRemoteProductionDispatch {
         self.next_executor_step = SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION;
     }
 
-    fn apply_local_query_cancel(&mut self) {
+    fn apply_local_query_cancel(&mut self, failure_category: &'static str) {
         self.candidate_count = 0;
-        self.candidate_failure_category = SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED;
+        self.candidate_failure_category = failure_category;
         self.degraded_skip_category = SPIRE_REMOTE_NONE;
         self.candidate_batch = None;
         self.remote_heap_candidate_count = 0;
@@ -3695,7 +3747,7 @@ impl SpireRemoteFanoutExecutor {
             parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
         if let Some(cancelled_row) = rows
             .iter()
-            .find(|row| row.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED)
+            .find(|row| is_local_cancellation_failure_category(row.failure_category))
         {
             if !self.dispatches.iter().any(|dispatch| {
                 dispatch.node_id == cancelled_row.node_id
@@ -3706,7 +3758,7 @@ impl SpireRemoteFanoutExecutor {
                     cancelled_row.node_id
                 ));
             }
-            self.apply_local_query_cancel();
+            self.apply_local_query_cancel(cancelled_row.failure_category);
             return Ok(());
         }
         for row in rows {
@@ -3746,9 +3798,10 @@ impl SpireRemoteFanoutExecutor {
     ) -> Result<(), String> {
         let degraded =
             parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
-        if let Some(cancelled_result) = results.iter().find(|result| {
-            result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
-        }) {
+        if let Some(cancelled_result) = results
+            .iter()
+            .find(|result| is_local_cancellation_failure_category(result.failure_category))
+        {
             if !self.dispatches.iter().any(|dispatch| {
                 dispatch.node_id == cancelled_result.node_id
                     && dispatch.state == SpireRemoteProductionDispatchState::TransportReady
@@ -3758,7 +3811,7 @@ impl SpireRemoteFanoutExecutor {
                     cancelled_result.node_id
                 ));
             }
-            self.apply_local_query_cancel();
+            self.apply_local_query_cancel(cancelled_result.failure_category);
             return Ok(());
         }
         for result in results {
@@ -3791,10 +3844,10 @@ impl SpireRemoteFanoutExecutor {
     ) -> Result<(), String> {
         let degraded =
             parse_remote_search_consistency_mode(consistency_mode)? == meta::SpireConsistencyMode::Degraded;
-        if let Some(cancelled_result) = results.iter().find(|result| {
-            result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED
-                || result.failure_category == SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT
-        }) {
+        if let Some(cancelled_result) = results
+            .iter()
+            .find(|result| is_local_cancellation_failure_category(result.failure_category))
+        {
             if !self.dispatches.iter().any(|dispatch| {
                 dispatch.node_id == cancelled_result.node_id
                     && dispatch.state == SpireRemoteProductionDispatchState::CandidateReceiveReady
@@ -3804,7 +3857,7 @@ impl SpireRemoteFanoutExecutor {
                     cancelled_result.node_id
                 ));
             }
-            self.apply_local_query_cancel();
+            self.apply_local_query_cancel(cancelled_result.failure_category);
             return Ok(());
         }
         for result in results {
@@ -3830,9 +3883,9 @@ impl SpireRemoteFanoutExecutor {
         Ok(())
     }
 
-    fn apply_local_query_cancel(&mut self) {
+    fn apply_local_query_cancel(&mut self, failure_category: &'static str) {
         for dispatch in &mut self.dispatches {
-            dispatch.apply_local_query_cancel();
+            dispatch.apply_local_query_cancel(failure_category);
         }
     }
 
@@ -10150,7 +10203,7 @@ mod production_executor_state_tests {
             2
         );
 
-        executor.apply_local_query_cancel();
+        executor.apply_local_query_cancel(SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED);
         let row = executor
             .summary("function_argument", "strict")
             .expect("summary should succeed");
@@ -10188,6 +10241,32 @@ mod production_executor_state_tests {
             .expect("summary should succeed");
         assert_eq!(row.cancelled_dispatch_count, 2);
         assert_eq!(row.first_cancellation_category, "local_query_cancelled");
+        assert_eq!(row.transport_failed_dispatch_count, 0);
+        assert_eq!(row.next_executor_step, "remote_executor_cancellation");
+        assert_eq!(row.status, "remote_executor_cancelled");
+        assert!(executor.dispatches.iter().all(|dispatch| {
+            dispatch.state == SpireRemoteProductionDispatchState::Cancelled
+                && dispatch.candidate_batch.is_none()
+        }));
+    }
+
+    #[test]
+    fn production_executor_transport_local_statement_timeout_cancels_all_dispatches() {
+        let dispatch_rows = vec![planned_dispatch(2, 1), planned_dispatch(3, 1)];
+        let mut executor =
+            SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &dispatch_rows);
+        executor
+            .apply_transport_probe_rows(&[failed_transport_row(
+                2,
+                SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT,
+            )])
+            .expect("transport local statement timeout should apply globally");
+
+        let row = executor
+            .summary("function_argument", "strict")
+            .expect("summary should succeed");
+        assert_eq!(row.cancelled_dispatch_count, 2);
+        assert_eq!(row.first_cancellation_category, "local_statement_timeout");
         assert_eq!(row.transport_failed_dispatch_count, 0);
         assert_eq!(row.next_executor_step, "remote_executor_cancellation");
         assert_eq!(row.status, "remote_executor_cancelled");
@@ -10289,8 +10368,7 @@ mod production_executor_state_tests {
 
         let mut cancelled_executor =
             SpireRemoteFanoutExecutor::from_libpq_dispatch_rows(7, &[planned_dispatch(2, 1)]);
-        cancelled_executor
-            .apply_local_query_cancel();
+        cancelled_executor.apply_local_query_cancel(SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED);
         assert!(cancelled_executor
             .merge_ready_candidate_batches(None)
             .expect_err("cancelled dispatch should not merge")

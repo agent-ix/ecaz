@@ -180,6 +180,7 @@ pub(crate) use self::ec_spire::{
     remote_search_production_transport_probe_for_test as spire_remote_search_production_transport_probe_for_test,
     remote_search_production_transport_probe_summary_for_test as spire_remote_search_production_transport_probe_summary_for_test,
     remote_search_production_transport_probe_with_local_cancel_for_test as spire_remote_search_production_transport_probe_with_local_cancel_for_test,
+    remote_search_production_transport_probe_with_local_cancel_summary_for_test as spire_remote_search_production_transport_probe_with_local_cancel_summary_for_test,
     SpireRemoteProductionCandidateReceiveRequest, SpireRemoteProductionTransportProbeRequest,
 };
 

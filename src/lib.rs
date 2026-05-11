@@ -14848,6 +14848,39 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    fn ec_spire_test_transport_probe_local_cancel_requests(
+        function_name: &str,
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+    ) -> Vec<am::SpireRemoteProductionTransportProbeRequest> {
+        if node_ids.len() != conninfo_secret_names.len() {
+            pgrx::error!("{function_name} node_ids and conninfo_secret_names lengths must match");
+        }
+        node_ids
+            .into_iter()
+            .zip(conninfo_secret_names)
+            .map(|(node_id, conninfo_secret_name)| {
+                let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                    pgrx::error!("{function_name} node_id must be non-negative")
+                });
+                let provider_lookup_key =
+                    am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+                        .unwrap_or_else(|e| pgrx::error!("{function_name} {e}"));
+                let conninfo = std::env::var(&provider_lookup_key).unwrap_or_else(|_| {
+                    pgrx::error!("{function_name} missing conninfo secret {conninfo_secret_name}")
+                });
+                if conninfo.is_empty() {
+                    pgrx::error!("{function_name} empty conninfo secret {conninfo_secret_name}");
+                }
+                am::SpireRemoteProductionTransportProbeRequest {
+                    node_id,
+                    conninfo,
+                    sql: "SELECT pg_sleep(0.30)",
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn ec_spire_test_production_transport_probe(
@@ -15032,6 +15065,109 @@ mod tests {
             row.first_transport_failure_category,
             i64::try_from(row.candidate_receive_pending_dispatch_count)
                 .expect("candidate receive pending count should fit in i64"),
+            i64::try_from(row.degraded_skipped_dispatch_count)
+                .expect("degraded skipped count should fit in i64"),
+            row.first_degraded_skip_category,
+            row.next_executor_step,
+            row.status,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_transport_probe_local_cancel(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        local_cancel_after_ms: i64,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(node_id, i64),
+            name!(started_after_ms, i64),
+            name!(completed_after_ms, i64),
+            name!(elapsed_ms, i64),
+            name!(row_count, i64),
+            name!(status, &'static str),
+            name!(failure_category, &'static str),
+        ),
+    > {
+        let local_cancel_after_ms = u64::try_from(local_cancel_after_ms)
+            .unwrap_or_else(|_| pgrx::error!("local_cancel_after_ms must be non-negative"));
+        let requests = ec_spire_test_transport_probe_local_cancel_requests(
+            "ec_spire_test_production_transport_probe_local_cancel",
+            node_ids,
+            conninfo_secret_names,
+        );
+        let rows = am::spire_remote_search_production_transport_probe_with_local_cancel_for_test(
+            requests,
+            local_cancel_after_ms,
+        );
+
+        TableIterator::new(rows.into_iter().map(|row| {
+            (
+                i64::from(row.node_id),
+                i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+                i64::try_from(row.completed_after_ms)
+                    .expect("completed_after_ms should fit in i64"),
+                i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+                i64::try_from(row.row_count).expect("row count should fit in i64"),
+                row.status,
+                row.failure_category,
+            )
+        }))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn ec_spire_test_production_transport_probe_local_cancel_summary(
+        node_ids: Vec<i32>,
+        conninfo_secret_names: Vec<String>,
+        local_cancel_after_ms: i64,
+        consistency_mode: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(state_model, &'static str),
+            name!(dispatch_count, i64),
+            name!(transport_sent_dispatch_count, i64),
+            name!(transport_ready_dispatch_count, i64),
+            name!(transport_failed_dispatch_count, i64),
+            name!(candidate_receive_pending_dispatch_count, i64),
+            name!(cancelled_dispatch_count, i64),
+            name!(first_cancellation_category, &'static str),
+            name!(degraded_skipped_dispatch_count, i64),
+            name!(first_degraded_skip_category, &'static str),
+            name!(next_executor_step, &'static str),
+            name!(status, &'static str),
+        ),
+    > {
+        let local_cancel_after_ms = u64::try_from(local_cancel_after_ms)
+            .unwrap_or_else(|_| pgrx::error!("local_cancel_after_ms must be non-negative"));
+        let requests = ec_spire_test_transport_probe_local_cancel_requests(
+            "ec_spire_test_production_transport_probe_local_cancel_summary",
+            node_ids,
+            conninfo_secret_names,
+        );
+        let row =
+            am::spire_remote_search_production_transport_probe_with_local_cancel_summary_for_test(
+                requests,
+                local_cancel_after_ms,
+                &consistency_mode,
+            );
+
+        TableIterator::once((
+            row.state_model,
+            i64::try_from(row.dispatch_count).expect("dispatch count should fit in i64"),
+            i64::try_from(row.transport_sent_dispatch_count)
+                .expect("transport sent count should fit in i64"),
+            i64::try_from(row.transport_ready_dispatch_count)
+                .expect("transport ready count should fit in i64"),
+            i64::try_from(row.transport_failed_dispatch_count)
+                .expect("transport failed count should fit in i64"),
+            i64::try_from(row.candidate_receive_pending_dispatch_count)
+                .expect("candidate receive pending count should fit in i64"),
+            i64::try_from(row.cancelled_dispatch_count).expect("cancelled count should fit in i64"),
+            row.first_cancellation_category,
             i64::try_from(row.degraded_skipped_dispatch_count)
                 .expect("degraded skipped count should fit in i64"),
             row.first_degraded_skip_category,

@@ -133,6 +133,7 @@ pub struct StageEFaultPg18Args {
 enum StageEFaultCase {
     EpochMismatch,
     FingerprintMismatch,
+    LocalCancel,
     MissingOrReindexedRemoteIndex,
     RemoteBackendTermination,
     RemoteStatementTimeout,
@@ -145,6 +146,7 @@ impl StageEFaultCase {
         match self {
             StageEFaultCase::EpochMismatch => "epoch_mismatch",
             StageEFaultCase::FingerprintMismatch => "fingerprint_mismatch",
+            StageEFaultCase::LocalCancel => "local_cancel",
             StageEFaultCase::MissingOrReindexedRemoteIndex => "missing_or_reindexed_remote_index",
             StageEFaultCase::RemoteBackendTermination => "remote_backend_termination",
             StageEFaultCase::RemoteStatementTimeout => "remote_statement_timeout",
@@ -162,7 +164,9 @@ impl StageEFaultCase {
             | StageEFaultCase::MissingOrReindexedRemoteIndex => {
                 "scripts/run_spire_multicluster_stage_e_candidate_receive_fault_pg18.sh"
             }
-            StageEFaultCase::RemoteBackendTermination | StageEFaultCase::RemoteStatementTimeout => {
+            StageEFaultCase::LocalCancel
+            | StageEFaultCase::RemoteBackendTermination
+            | StageEFaultCase::RemoteStatementTimeout => {
                 "scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh"
             }
             StageEFaultCase::SimulatedNetworkPartition => {
@@ -178,6 +182,7 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
         "fingerprint_mismatch" | "fingerprint-mismatch" => {
             Ok(StageEFaultCase::FingerprintMismatch)
         }
+        "local_cancel" | "local-cancel" => Ok(StageEFaultCase::LocalCancel),
         "version_skew" | "version-skew" => Ok(StageEFaultCase::VersionSkew),
         "missing_or_reindexed_remote_index" | "missing-or-reindexed-remote-index" => {
             Ok(StageEFaultCase::MissingOrReindexedRemoteIndex)
@@ -192,7 +197,7 @@ fn parse_stage_e_fault_case(value: &str) -> std::result::Result<StageEFaultCase,
             Ok(StageEFaultCase::SimulatedNetworkPartition)
         }
         other => Err(format!(
-            "unsupported Stage E fault case {other:?}; supported: epoch_mismatch, fingerprint_mismatch, missing_or_reindexed_remote_index, remote_backend_termination, remote_statement_timeout, simulated_network_partition, version_skew"
+            "unsupported Stage E fault case {other:?}; supported: epoch_mismatch, fingerprint_mismatch, local_cancel, missing_or_reindexed_remote_index, remote_backend_termination, remote_statement_timeout, simulated_network_partition, version_skew"
         )),
     }
 }

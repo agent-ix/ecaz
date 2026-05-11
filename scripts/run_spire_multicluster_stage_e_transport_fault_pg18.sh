@@ -4,6 +4,7 @@ set -euo pipefail
 # Transport Stage E fixture family.
 #
 # Supported cases:
+#   local_cancel
 #   remote_backend_termination
 #   remote_statement_timeout
 #
@@ -29,6 +30,7 @@ usage() {
 Usage: scripts/run_spire_multicluster_stage_e_transport_fault_pg18.sh --case CASE [options]
 
 Cases:
+  local_cancel
   remote_backend_termination
   remote_statement_timeout
 
@@ -103,7 +105,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$FAULT_CASE" != "remote_backend_termination" \
+if [[ "$FAULT_CASE" != "local_cancel" \
+  && "$FAULT_CASE" != "remote_backend_termination" \
   && "$FAULT_CASE" != "remote_statement_timeout" ]]; then
   echo "unsupported or missing --case: ${FAULT_CASE:-<none>}" >&2
   usage >&2
@@ -178,9 +181,12 @@ fault_injection="ec_spire.remote_search_statement_timeout_ms=25 fault_node_sql=p
 pgoptions=""
 if [[ "$FAULT_CASE" == "remote_statement_timeout" ]]; then
   pgoptions="-c ec_spire.remote_search_statement_timeout_ms=25"
-else
+elif [[ "$FAULT_CASE" == "remote_backend_termination" ]]; then
   fault_failure_category="remote_backend_terminated"
   fault_injection="fault_node_sql=pg_terminate_backend(pg_backend_pid())"
+else
+  fault_failure_category="local_query_cancelled"
+  fault_injection="local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)"
 fi
 
 run_case() {
@@ -192,10 +198,15 @@ run_case() {
   local expected_next_step="$6"
   local expected_first_failure="$7"
   local expected_first_skip="$8"
+  local expected_cancelled_dispatches="${9:-0}"
+  local expected_first_cancellation="${10:-none}"
   local raw_rows
   local summary
 
-  if [[ -n "$pgoptions" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+    raw_rows="$("${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_local_cancel(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 25) ORDER BY node_id")"
+    summary="$("${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, candidate_receive_pending_dispatch_count, cancelled_dispatch_count, first_cancellation_category, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_local_cancel_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 25, '$mode')")"
+  elif [[ -n "$pgoptions" ]]; then
     raw_rows="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT node_id, status, failure_category, row_count FROM tests.ec_spire_test_production_transport_probe_case(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE') ORDER BY node_id")"
     summary="$(PGOPTIONS="$pgoptions" "${coord_psql[@]}" -At -F ',' -c "SELECT state_model, dispatch_count, transport_sent_dispatch_count, transport_ready_dispatch_count, transport_failed_dispatch_count, first_transport_failure_category, candidate_receive_pending_dispatch_count, degraded_skipped_dispatch_count, first_degraded_skip_category, next_executor_step, status FROM tests.ec_spire_test_production_transport_probe_case_summary(ARRAY[2,3]::integer[], ARRAY['spire/remote/stage_e/transport_fault','spire/remote/stage_e/transport_ready']::text[], 2, '$FAULT_CASE', '$mode')")"
   else
@@ -210,33 +221,59 @@ run_case() {
     echo "expected_status=$expected_status"
     echo "expected_transport_failed_dispatch_count=$expected_transport_failed"
     echo "expected_degraded_skipped_dispatch_count=$expected_degraded_skipped"
+    echo "expected_cancelled_dispatch_count=$expected_cancelled_dispatches"
     echo "expected_first_transport_failure_category=$expected_first_failure"
+    echo "expected_first_cancellation_category=$expected_first_cancellation"
     echo "expected_first_degraded_skip_category=$expected_first_skip"
     echo "expected_next_executor_step=$expected_next_step"
     echo "observed_transport_rows=$raw_rows"
     echo "observed_summary=$summary"
   } | tee "$output_log"
 
-  IFS=, read -r state_model dispatch_count sent_count ready_count failed_count first_failure pending_count degraded_count first_skip next_step status <<< "$summary"
+  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+    IFS=, read -r state_model dispatch_count sent_count ready_count failed_count pending_count cancelled_count first_cancellation degraded_count first_skip next_step status <<< "$summary"
+    first_failure="none"
+  else
+    IFS=, read -r state_model dispatch_count sent_count ready_count failed_count first_failure pending_count degraded_count first_skip next_step status <<< "$summary"
+    cancelled_count="0"
+    first_cancellation="none"
+  fi
   [[ "$state_model" == "spire_remote_fanout_executor_v1" ]]
   [[ "$dispatch_count" == "2" ]]
-  [[ "$ready_count" == "1" ]]
+  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+    [[ "$ready_count" == "0" ]]
+  else
+    [[ "$ready_count" == "1" ]]
+  fi
   [[ "$failed_count" == "$expected_transport_failed" ]]
   [[ "$first_failure" == "$expected_first_failure" ]]
-  [[ "$pending_count" == "1" ]]
+  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+    [[ "$pending_count" == "0" ]]
+  else
+    [[ "$pending_count" == "1" ]]
+  fi
+  [[ "$cancelled_count" == "$expected_cancelled_dispatches" ]]
+  [[ "$first_cancellation" == "$expected_first_cancellation" ]]
   [[ "$degraded_count" == "$expected_degraded_skipped" ]]
   [[ "$first_skip" == "$expected_first_skip" ]]
   [[ "$next_step" == "$expected_next_step" ]]
   [[ "$status" == "$expected_status" ]]
-  if [[ "$mode" == "strict" ]]; then
+  if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+    [[ "$sent_count" == "0" ]]
+  elif [[ "$mode" == "strict" ]]; then
     [[ "$sent_count" == "2" ]]
   else
     [[ "$sent_count" == "1" ]]
   fi
 }
 
-run_case "strict" "$STRICT_LOG" "remote_transport_failed" "1" "0" "production_transport_adapter" "$fault_failure_category" "none"
-run_case "degraded" "$DEGRADED_LOG" "requires_compact_candidate_receive" "0" "1" "compact_candidate_receive" "none" "$fault_failure_category"
+if [[ "$FAULT_CASE" == "local_cancel" ]]; then
+  run_case "strict" "$STRICT_LOG" "remote_executor_cancelled" "0" "0" "remote_executor_cancellation" "none" "none" "2" "$fault_failure_category"
+  run_case "degraded" "$DEGRADED_LOG" "remote_executor_cancelled" "0" "0" "remote_executor_cancellation" "none" "none" "2" "$fault_failure_category"
+else
+  run_case "strict" "$STRICT_LOG" "remote_transport_failed" "1" "0" "production_transport_adapter" "$fault_failure_category" "none"
+  run_case "degraded" "$DEGRADED_LOG" "requires_compact_candidate_receive" "0" "1" "compact_candidate_receive" "none" "$fault_failure_category"
+fi
 
 echo "strict_log=$STRICT_LOG"
 echo "degraded_log=$DEGRADED_LOG"
