@@ -117,6 +117,8 @@ struct SpireCustomScanExecState {
     query: Vec<f32>,
     dml_pk_column: String,
     dml_pk_value: Vec<u8>,
+    dml_updated_columns: Vec<String>,
+    dml_projected_columns: Vec<String>,
     tuple_payload_columns: Vec<String>,
     tuple_payload_inputs: Vec<Option<SpireCustomScanPayloadAttrInput>>,
     outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
@@ -419,10 +421,23 @@ unsafe fn plan_dml_custom_path(
         custom_scan.flags = (*best_path).flags;
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
-        custom_scan.custom_private = pg_sys::lappend_oid(
+        let mut custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(std::ptr::null_mut(), pg_sys::Oid::from(mode.raw())),
             custom_scan_index_oid_from_path(best_path),
         );
+        custom_private = custom_scan_lappend_string(
+            custom_private,
+            &custom_scan_dml_column_list_plan_private_json(
+                &plan_expr.primitive_plan.updated_columns,
+            ),
+        );
+        custom_private = custom_scan_lappend_string(
+            custom_private,
+            &custom_scan_dml_column_list_plan_private_json(
+                &plan_expr.primitive_plan.projected_columns,
+            ),
+        );
+        custom_scan.custom_private = custom_private;
         custom_scan.custom_scan_tlist = std::ptr::null_mut();
         custom_scan.custom_relids = std::ptr::null_mut();
         custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
@@ -904,6 +919,68 @@ unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) 
     }
 }
 
+unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *mut pg_sys::List {
+    unsafe {
+        let c_value = CString::new(value).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan plan-private string contains NUL")
+        });
+        let copied = pg_sys::pstrdup(c_value.as_ptr());
+        pg_sys::lappend(list, pg_sys::makeString(copied).cast())
+    }
+}
+
+fn custom_scan_dml_column_list_plan_private_json(columns: &[String]) -> String {
+    serde_json::to_string(columns).unwrap_or_else(|e| {
+        pgrx::error!("EcSpireDistributedScan DML column metadata encode failed: {e}")
+    })
+}
+
+unsafe fn custom_scan_dml_column_list_from_plan(
+    custom_scan: *mut pg_sys::CustomScan,
+    offset: i32,
+    label: &str,
+) -> Vec<String> {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
+        }
+        let custom_private = (*custom_scan).custom_private;
+        if (*custom_private).length <= offset {
+            pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
+        }
+        let node = pg_sys::list_nth(custom_private, offset).cast::<pg_sys::Node>();
+        if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_String {
+            pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} metadata");
+        }
+        let value_node = node.cast::<pg_sys::String>();
+        if (*value_node).sval.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML plan has null {label} metadata");
+        }
+        let raw = std::ffi::CStr::from_ptr((*value_node).sval)
+            .to_str()
+            .unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is not UTF-8")
+            });
+        custom_scan_dml_column_list_from_plan_private_json(raw, label)
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
+    }
+}
+
+fn custom_scan_dml_column_list_from_plan_private_json(
+    raw: &str,
+    label: &str,
+) -> Result<Vec<String>, String> {
+    let columns = serde_json::from_str::<Vec<String>>(raw).map_err(|e| {
+        format!("EcSpireDistributedScan DML plan {label} metadata decode failed: {e}")
+    })?;
+    if columns.iter().any(|column| column.is_empty()) {
+        return Err(format!(
+            "EcSpireDistributedScan DML plan {label} metadata contains an empty column name"
+        ));
+    }
+    Ok(columns)
+}
+
 unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
@@ -1103,6 +1180,8 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
                 query: Vec::new(),
                 dml_pk_column: String::new(),
                 dml_pk_value: Vec::new(),
+                dml_updated_columns: Vec::new(),
+                dml_projected_columns: Vec::new(),
                 tuple_payload_columns: Vec::new(),
                 tuple_payload_inputs: Vec::new(),
                 outputs: Vec::new(),
@@ -1141,11 +1220,19 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
                 (*state).dml_pk_column = custom_scan_dml_pk_column(node);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+                (*state).dml_updated_columns =
+                    custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
+                (*state).dml_projected_columns =
+                    custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
             }
             SpireCustomScanPlanMode::DmlUpdateTuplePayload
             | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
                 (*state).dml_pk_column = custom_scan_dml_pk_column(node);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+                (*state).dml_updated_columns =
+                    custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
+                (*state).dml_projected_columns =
+                    custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
             }
         }
     }
@@ -1650,6 +1737,36 @@ mod tests {
         assert_eq!(
             custom_scan_mode_from_u32(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
             Some(SpireCustomScanPlanMode::VectorOrderLimit)
+        );
+    }
+
+    #[test]
+    fn custom_scan_dml_column_metadata_round_trips_as_plan_private_json() {
+        let columns = vec!["title".to_owned(), "status".to_owned()];
+        let encoded = custom_scan_dml_column_list_plan_private_json(&columns);
+        let decoded =
+            custom_scan_dml_column_list_from_plan_private_json(&encoded, "updated columns")
+                .expect("DML column metadata should decode");
+
+        assert_eq!(decoded, columns);
+        assert_eq!(
+            custom_scan_dml_column_list_from_plan_private_json("[]", "projected columns")
+                .expect("empty DML column metadata should decode"),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn custom_scan_dml_column_metadata_rejects_invalid_columns() {
+        let error = custom_scan_dml_column_list_from_plan_private_json(
+            "[\"title\", \"\"]",
+            "updated columns",
+        )
+        .expect_err("empty DML column names should fail");
+
+        assert_eq!(
+            error,
+            "EcSpireDistributedScan DML plan updated columns metadata contains an empty column name"
         );
     }
 
