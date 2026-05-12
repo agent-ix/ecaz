@@ -212,8 +212,11 @@ SELECT gid, prepared, owner, database
 SPIRE GIDs have the stable form
 `ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>`. The
 `ec_spire_insert` prefix is historical and currently covers both remote INSERT
-and DELETE prepares. There is no backend pid in the GID; `top_xid` is the
-coordinator transaction identity to match against coordinator-side evidence.
+and DELETE prepares; do not use the prefix to infer the operation type. There
+is no backend pid in the GID; `top_xid` is the coordinator transaction identity
+to correlate with logs and coordinator-side evidence while the resolution
+decision remains based on the known coordinator transaction outcome and the
+placement row state for the affected key.
 
 Resolve only after the affected primary key and coordinator outcome are known:
 

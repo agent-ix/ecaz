@@ -99,6 +99,8 @@ described by reviewer packet `30896`.
     binary payload bytes via `array_send(...)`.
   - [x] Domain and composite fixture covers domain metadata with base binary
     bytes via `textsend(...)` and named composite bytes via `record_send(...)`.
+  - [x] Empty projection fixture proves typed transport returns aligned empty
+    metadata/value arrays without falling back to JSON.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path

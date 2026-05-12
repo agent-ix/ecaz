@@ -104,10 +104,12 @@ The INSERT is atomic from the application's perspective:
 - SPIRE prepared-transaction GIDs use
   `ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>`.
   The `ec_spire_insert` prefix is historical and is shared by current
-  coordinator-routed INSERT and DELETE prepares. The GID deliberately omits
-  backend pid because a crashed backend pid is not a stable recovery key;
-  `top_xid` is allocated with `GetTopTransactionId()` when the remote prepare
-  starts so the local transaction has a durable identity.
+  coordinator-routed INSERT and DELETE prepares, so operators must not infer
+  operation type from the prefix. The GID deliberately omits backend pid
+  because a crashed backend pid is not a stable recovery key; `top_xid` is
+  allocated with `GetTopTransactionId()` when the remote prepare starts so the
+  local transaction has a durable identity for correlation with logs and other
+  coordinator-side evidence.
 
 ### Coordinator-routed UPDATE (non-embedding columns)
 

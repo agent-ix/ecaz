@@ -52,7 +52,9 @@ For each non-null requested attribute, the remote calls the attribute type's
 binary send function (`pg_type.typsend`) and returns the bytes. The coordinator
 validates that the returned column name, type OID, typmod, and collation match
 the coordinator tuple descriptor before calling the corresponding receive path
-for the destination slot.
+for the destination slot. For SQL NULL attributes, `payload_nulls[i]` is true
+and `payload_values[i]` is a zero-length `bytea` placeholder that the
+coordinator must ignore instead of passing to the type receive function.
 
 Reasons to prefer per-attribute binary values:
 
@@ -107,7 +109,8 @@ target remotes and requested columns support them.
    `pg_binary_attr_v1`;
 2. validates returned projection metadata against the coordinator tuple
    descriptor;
-3. stores SQL NULLs directly from `payload_nulls`;
+3. stores SQL NULLs directly from `payload_nulls`, ignoring the corresponding
+   zero-length `payload_values` placeholder;
 4. calls the column type's receive function for non-null binary values;
 5. marks the slot virtual only after every requested attribute is validated and
    converted;

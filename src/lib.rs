@@ -13662,6 +13662,7 @@ fn ec_spire_tuple_payload_column_metadata(
                         attr.atttypid::oid AS atttypid, \
                         attr.atttypmod::int4 AS atttypmod, \
                         attr.attcollation::oid AS attcollation, \
+                        format_type(attr.atttypid, attr.atttypmod)::text AS type_name, \
                         typ.typsend::oid AS typsend_oid, \
                         proc_namespace.nspname::text AS send_schema, \
                         send_proc.proname::text AS send_name \
@@ -13707,13 +13708,17 @@ fn ec_spire_tuple_payload_column_metadata(
                 .value::<pg_sys::Oid>()
                 .map_err(|e| format!("{context} typed attcollation decode failed: {e}"))?
                 .ok_or_else(|| format!("{context} typed attcollation is null"))?;
+            let type_name = row["type_name"]
+                .value::<String>()
+                .map_err(|e| format!("{context} typed type name decode failed: {e}"))?
+                .ok_or_else(|| format!("{context} typed type name is null"))?;
             let send_oid = row["typsend_oid"]
                 .value::<pg_sys::Oid>()
                 .map_err(|e| format!("{context} typed typsend decode failed: {e}"))?
                 .ok_or_else(|| format!("{context} typed typsend is null"))?;
             if send_oid == pg_sys::InvalidOid {
                 return Err(format!(
-                    "{context} unsupported_type_binary_io for column \"{name}\""
+                    "{context} unsupported_type_binary_io for column \"{name}\" type {type_name} oid {type_oid}"
                 ));
             }
             let send_schema = row["send_schema"]
@@ -30798,10 +30803,36 @@ mod tests {
         ))
         .expect("typed tuple payload scalar value query should succeed")
         .expect("typed tuple payload scalar value count should exist");
+        let empty_projection_args = format!(
+            "'ec_spire_tuple_payload_typed_sql_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY[]::text[]",
+            selected_pids[0], selected_pids[1],
+        );
+        let empty_projection_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({empty_projection_args}) \
+              WHERE payload_column_count = 0 \
+                AND payload_attnums = ARRAY[]::int2[] \
+                AND payload_names = ARRAY[]::text[] \
+                AND payload_type_oids = ARRAY[]::oid[] \
+                AND payload_typmods = ARRAY[]::int4[] \
+                AND payload_collations = ARRAY[]::oid[] \
+                AND payload_nulls = ARRAY[]::boolean[] \
+                AND payload_values = ARRAY[]::bytea[] \
+                AND payload_formats = ARRAY[]::text[] \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport = 'pg_binary_attr_v1' \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload empty projection query should succeed")
+        .expect("typed tuple payload empty projection count should exist");
 
         assert_eq!(json_alpha_count, 1);
         assert_eq!(typed_summary, "2|2|2|2|2|2");
         assert_eq!(typed_alpha_count, 1);
+        assert_eq!(empty_projection_count, 2);
     }
 
     #[pg_test]
