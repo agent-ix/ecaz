@@ -13,12 +13,36 @@ const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 32.0;
 const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 4.0;
 const CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT: u32 = 1;
 const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
+const CUSTOM_SCAN_PLAN_MODE_DML_UPDATE: u32 = 3;
+const CUSTOM_SCAN_PLAN_MODE_DML_DELETE: u32 = 4;
 const EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO: pg_sys::AttrNumber = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpireCustomScanPlanMode {
     VectorOrderLimit,
     DmlPkSelectTuplePayload,
+    DmlUpdateTuplePayload,
+    DmlDeleteTuplePayload,
+}
+
+impl SpireCustomScanPlanMode {
+    fn is_dml(self) -> bool {
+        matches!(
+            self,
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload
+                | SpireCustomScanPlanMode::DmlUpdateTuplePayload
+                | SpireCustomScanPlanMode::DmlDeleteTuplePayload
+        )
+    }
+
+    fn raw(self) -> u32 {
+        match self {
+            SpireCustomScanPlanMode::VectorOrderLimit => CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT,
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload => CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT,
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload => CUSTOM_SCAN_PLAN_MODE_DML_UPDATE,
+            SpireCustomScanPlanMode::DmlDeleteTuplePayload => CUSTOM_SCAN_PLAN_MODE_DML_DELETE,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,15 +314,8 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
         let mode = custom_scan_mode_from_path(best_path).unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")
         });
-        if mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
-            return plan_dml_pk_select_custom_path(
-                root,
-                rel,
-                best_path,
-                tlist,
-                clauses,
-                custom_plans,
-            );
+        if mode.is_dml() {
+            return plan_dml_custom_path(root, rel, best_path, tlist, clauses, custom_plans, mode);
         }
 
         let top_k = custom_scan_top_k(root).unwrap_or(1);
@@ -352,29 +369,30 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     }
 }
 
-unsafe fn plan_dml_pk_select_custom_path(
+unsafe fn plan_dml_custom_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
     best_path: *mut pg_sys::CustomPath,
     tlist: *mut pg_sys::List,
     clauses: *mut pg_sys::List,
     custom_plans: *mut pg_sys::List,
+    mode: SpireCustomScanPlanMode,
 ) -> *mut pg_sys::Plan {
     unsafe {
-        let plan_expr =
-            match super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)
-                .unwrap_or_else(|| {
-                    pgrx::error!(
-                        "EcSpireDistributedScan could not build DML PK SELECT expression handoff"
-                    )
-                }) {
-                Ok(plan_expr) => plan_expr,
-                Err(err) => pgrx::error!("{err}"),
-            };
-        if plan_expr.primitive_plan.mode
-            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
-        {
-            pgrx::error!("EcSpireDistributedScan received non-PK-SELECT DML primitive plan")
+        let plan_expr = match super::dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)
+            .unwrap_or_else(|| {
+                pgrx::error!("EcSpireDistributedScan could not build DML expression handoff")
+            }) {
+            Ok(plan_expr) => plan_expr,
+            Err(err) => pgrx::error!("{err}"),
+        };
+        let plan_mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
+        if plan_mode != mode {
+            pgrx::error!(
+                "EcSpireDistributedScan DML plan mode {:?} does not match primitive mode {:?}",
+                mode,
+                plan_expr.primitive_plan.mode
+            )
         }
         let custom_exprs = pg_sys::lappend(
             std::ptr::null_mut(),
@@ -402,10 +420,7 @@ unsafe fn plan_dml_pk_select_custom_path(
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
         custom_scan.custom_private = pg_sys::lappend_oid(
-            pg_sys::lappend_oid(
-                std::ptr::null_mut(),
-                pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT),
-            ),
+            pg_sys::lappend_oid(std::ptr::null_mut(), pg_sys::Oid::from(mode.raw())),
             custom_scan_index_oid_from_path(best_path),
         );
         custom_scan.custom_scan_tlist = std::ptr::null_mut();
@@ -858,7 +873,25 @@ fn custom_scan_mode_from_u32(raw: u32) -> Option<SpireCustomScanPlanMode> {
         CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT => {
             Some(SpireCustomScanPlanMode::DmlPkSelectTuplePayload)
         }
+        CUSTOM_SCAN_PLAN_MODE_DML_UPDATE => Some(SpireCustomScanPlanMode::DmlUpdateTuplePayload),
+        CUSTOM_SCAN_PLAN_MODE_DML_DELETE => Some(SpireCustomScanPlanMode::DmlDeleteTuplePayload),
         _ => None,
+    }
+}
+
+fn custom_scan_plan_mode_for_dml_mode(
+    mode: super::SpireDmlFrontdoorCustomScanMode,
+) -> SpireCustomScanPlanMode {
+    match mode {
+        super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload => {
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload
+        }
+        super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload => {
+            SpireCustomScanPlanMode::DmlDeleteTuplePayload
+        }
+        super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload => {
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload
+        }
     }
 }
 
@@ -1109,6 +1142,11 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
                 (*state).dml_pk_column = custom_scan_dml_pk_column(node);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
             }
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload
+            | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+                (*state).dml_pk_column = custom_scan_dml_pk_column(node);
+                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+            }
         }
     }
 }
@@ -1162,6 +1200,13 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
         let state = scan_state.cast::<SpireCustomScanExecState>();
         if (*state).mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
             return custom_scan_dml_pk_select_access(state, scan_state);
+        }
+        if matches!(
+            (*state).mode,
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload
+                | SpireCustomScanPlanMode::DmlDeleteTuplePayload
+        ) {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE/DELETE executor path is not wired yet");
         }
         custom_scan_ensure_outputs(state);
         loop {
@@ -1366,12 +1411,12 @@ unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> Strin
     unsafe {
         let relation = (*node).ss.ss_currentRelation;
         if relation.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT missing scan relation");
+            pgrx::error!("EcSpireDistributedScan DML path missing scan relation");
         }
         let context = super::dml_frontdoor_relation_context_catalog_row((*relation).rd_id)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
         context.pk_column.unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT relation has no PK column")
+            pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
         })
     }
 }
@@ -1382,7 +1427,7 @@ unsafe fn custom_scan_dml_pk_value_from_plan(
 ) -> Vec<u8> {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT plan is missing PK expression");
+            pgrx::error!("EcSpireDistributedScan DML plan is missing PK expression");
         }
         let expr = pg_sys::list_nth((*custom_scan).custom_exprs, 0).cast::<pg_sys::Expr>();
         let value = custom_scan_bigint_expr_value(node, expr);
@@ -1396,13 +1441,13 @@ unsafe fn custom_scan_bigint_expr_value(
 ) -> i64 {
     unsafe {
         if expr.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT expression is null");
+            pgrx::error!("EcSpireDistributedScan DML PK expression is null");
         }
         match (*expr.cast::<pg_sys::Node>()).type_ {
             pg_sys::NodeTag::T_Const => {
                 let const_expr = &*expr.cast::<pg_sys::Const>();
                 if const_expr.constisnull {
-                    pgrx::error!("EcSpireDistributedScan DML PK SELECT constant PK is NULL");
+                    pgrx::error!("EcSpireDistributedScan DML constant PK is NULL");
                 }
                 custom_scan_bigint_datum_value(const_expr.constvalue, const_expr.consttype)
             }
@@ -1423,7 +1468,7 @@ unsafe fn custom_scan_bigint_expr_value(
                 custom_scan_bigint_datum_value(datum, param.paramtype)
             }
             _ => pgrx::error!(
-                "EcSpireDistributedScan DML PK SELECT requires a constant or parameter bigint PK"
+                "EcSpireDistributedScan DML path requires a constant or parameter bigint PK"
             ),
         }
     }
@@ -1436,7 +1481,7 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
             pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
             pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
             other => pgrx::error!(
-                "EcSpireDistributedScan DML PK SELECT unsupported PK type OID {}",
+                "EcSpireDistributedScan DML path unsupported PK type OID {}",
                 other.to_u32()
             ),
         }
@@ -1541,6 +1586,7 @@ unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::am::ec_spire::SpireDmlFrontdoorCustomScanMode;
 
     #[test]
     fn custom_scan_status_reports_executor_stream_tuple_payload_slots() {
@@ -1572,6 +1618,39 @@ mod tests {
         assert!(row.eligible_for_custom_scan);
         assert_eq!(row.status, "customscan_candidate");
         assert_eq!(row.remote_node_count, 1);
+    }
+
+    #[test]
+    fn custom_scan_dml_modes_map_to_plan_private_values() {
+        let cases = [
+            (
+                SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
+                CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload,
+            ),
+            (
+                SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+                CUSTOM_SCAN_PLAN_MODE_DML_UPDATE,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+            ),
+            (
+                SpireCustomScanPlanMode::DmlDeleteTuplePayload,
+                CUSTOM_SCAN_PLAN_MODE_DML_DELETE,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
+            ),
+        ];
+
+        for (plan_mode, raw, dml_mode) in cases {
+            assert!(plan_mode.is_dml());
+            assert_eq!(plan_mode.raw(), raw);
+            assert_eq!(custom_scan_mode_from_u32(raw), Some(plan_mode));
+            assert_eq!(custom_scan_plan_mode_for_dml_mode(dml_mode), plan_mode);
+        }
+        assert!(!SpireCustomScanPlanMode::VectorOrderLimit.is_dml());
+        assert_eq!(
+            custom_scan_mode_from_u32(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+            Some(SpireCustomScanPlanMode::VectorOrderLimit)
+        );
     }
 
     #[test]
