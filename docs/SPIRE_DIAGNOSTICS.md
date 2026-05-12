@@ -199,6 +199,14 @@ an acceptable pause window for publish-path work.
 ## Prepared Transaction Recovery
 
 Coordinator-routed SPIRE writes use remote PostgreSQL prepared transactions.
+Every remote PostgreSQL instance used for coordinator-routed writes must set
+`max_prepared_transactions` above zero and leave enough free slots for peak
+concurrent SPIRE remote prepares plus any other prepared transactions on that
+instance. Changing the setting requires a PostgreSQL restart. When a remote
+`PREPARE TRANSACTION` fails because prepared transactions are disabled or the
+slot pool is exhausted, SPIRE wraps the remote error with a hint naming this
+readiness requirement.
+
 If a coordinator backend crashes after remote prepare and before the xact
 callback resolves the remote transaction, inspect the remote:
 

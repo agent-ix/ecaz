@@ -164,9 +164,9 @@ described by reviewer packet `30896`.
   - [ ] fixture local cancel or statement timeout during slow remote prepare;
   - [ ] assert remote prepared transactions are rolled back, not orphaned.
 - [ ] Add `max_prepared_transactions` readiness:
-  - [ ] document it as required on every remote;
+  - [x] document it as required on every remote;
   - [ ] check or warn during descriptor registration;
-  - [ ] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.
+  - [x] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.
 - [ ] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
   lands every row on its owning remote and commits all remote prepared
   transactions on local commit.

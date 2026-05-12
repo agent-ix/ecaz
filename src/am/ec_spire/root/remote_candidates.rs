@@ -2394,6 +2394,43 @@ fn coordinator_insert_remote_descriptor_metadata(
     Ok((active_epoch, remote_index_identity, extension_version))
 }
 
+const SPIRE_PREPARED_TRANSACTION_CAPACITY_HINT: &str =
+    "SPIRE requires max_prepared_transactions > 0 and enough free prepared \
+     transaction slots on every remote PostgreSQL instance; increase \
+     max_prepared_transactions, restart the remote, and size it for peak \
+     concurrent coordinator-routed SPIRE writes plus any non-SPIRE prepared \
+     transactions";
+
+fn postgres_prepare_transaction_capacity_failure(
+    sqlstate: Option<&str>,
+    message: &str,
+) -> bool {
+    let message = message.to_ascii_lowercase();
+    let capacity_message = message.contains("prepared transactions are disabled")
+        || message.contains("maximum number of prepared transactions")
+        || message.contains("max_prepared_transactions");
+    capacity_message && matches!(sqlstate, Some("53300" | "53400" | "55000") | None)
+}
+
+fn spire_remote_prepare_transaction_error(
+    operation: &str,
+    node_id: u32,
+    error: &postgres::Error,
+) -> String {
+    let base = format!(
+        "ec_spire coordinator {operation} remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
+    );
+    let (sqlstate, message) = error
+        .as_db_error()
+        .map(|db_error| (Some(db_error.code().code()), db_error.message()))
+        .unwrap_or((None, base.as_str()));
+    if postgres_prepare_transaction_capacity_failure(sqlstate, message) {
+        format!("{base}; {SPIRE_PREPARED_TRANSACTION_CAPACITY_HINT}")
+    } else {
+        base
+    }
+}
+
 pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
     index_relation: pg_sys::Relation,
     node_id: u32,
@@ -2452,9 +2489,7 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
             quote_sql_literal(&prepared_gid)
         ))
         .map_err(|error| {
-            format!(
-                "ec_spire coordinator insert remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
-            )
+            spire_remote_prepare_transaction_error("insert", node_id, &error)
         })?;
 
     let commit_conninfo = conninfo.clone();
@@ -2620,9 +2655,7 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
             quote_sql_literal(&prepared_gid)
         ))
         .map_err(|error| {
-            format!(
-                "ec_spire coordinator delete remote PREPARE TRANSACTION failed for node_id {node_id}: {error}"
-            )
+            spire_remote_prepare_transaction_error("delete", node_id, &error)
         })?;
 
     let commit_conninfo = conninfo.clone();
@@ -11208,5 +11241,33 @@ mod production_executor_state_tests {
             "conninfo_parse_failed"
         );
         assert_eq!(row.status, "remote_candidate_receive_failed");
+    }
+
+    #[test]
+    fn prepare_transaction_capacity_classifier_matches_postgres_errors() {
+        assert!(postgres_prepare_transaction_capacity_failure(
+            Some("55000"),
+            "prepared transactions are disabled"
+        ));
+        assert!(postgres_prepare_transaction_capacity_failure(
+            Some("53300"),
+            "maximum number of prepared transactions reached"
+        ));
+        assert!(postgres_prepare_transaction_capacity_failure(
+            Some("53400"),
+            "max_prepared_transactions must be increased"
+        ));
+        assert!(postgres_prepare_transaction_capacity_failure(
+            None,
+            "maximum number of prepared transactions reached"
+        ));
+        assert!(!postgres_prepare_transaction_capacity_failure(
+            Some("40P01"),
+            "deadlock detected"
+        ));
+        assert!(!postgres_prepare_transaction_capacity_failure(
+            Some("53300"),
+            "remaining connection slots are reserved"
+        ));
     }
 }

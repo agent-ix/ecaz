@@ -299,6 +299,15 @@ returns the libpq dispatch action for the 2PC protocol. It does not expose
 raw conninfo, open a socket, forward a row, write `ec_spire_placement`, or
 prepare a remote transaction.
 
+Every remote PostgreSQL instance that accepts coordinator-routed SPIRE writes
+must run with `max_prepared_transactions` greater than zero and enough free
+prepared-transaction slots for peak concurrent SPIRE remote prepares plus any
+non-SPIRE prepared transactions on the same instance. PostgreSQL requires a
+restart after changing this setting. If remote `PREPARE TRANSACTION` fails
+because prepared transactions are disabled or capacity is exhausted, the
+coordinator wraps the remote error with a SPIRE-specific hint naming
+`max_prepared_transactions` as the readiness requirement.
+
 The mutating executor's first internal 2PC primitive sends the remote
 INSERT inside a remote transaction, issues `PREPARE TRANSACTION`, and
 registers transaction callbacks so the prepared remote transaction is
