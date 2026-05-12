@@ -8143,6 +8143,65 @@ fn remote_conninfo_secret_value(conninfo_secret_name: &str) -> Result<String, St
     }
 }
 
+pub(crate) fn remote_prepared_transaction_registration_warning(
+    conninfo_secret_name: &str,
+    node_id: i32,
+) -> Option<String> {
+    let node_id = u32::try_from(node_id).ok()?;
+    let conninfo = match remote_conninfo_secret_value(conninfo_secret_name) {
+        Ok(conninfo) => conninfo,
+        Err(status) => {
+            return Some(format!(
+                "ec_spire_register_remote_node_descriptor skipped remote \
+                 max_prepared_transactions preflight for node_id {node_id}: {status}; \
+                 resolve conninfo_secret_name before enabling coordinator-routed writes"
+            ));
+        }
+    };
+    let mut client = match remote_search_libpq_connect_with_session_timeouts(
+        &conninfo,
+        node_id,
+        "remote node descriptor max_prepared_transactions preflight",
+    ) {
+        Ok(client) => client,
+        Err(error) => {
+            return Some(format!(
+                "ec_spire_register_remote_node_descriptor could not check remote \
+                 max_prepared_transactions for node_id {node_id}: {error}"
+            ));
+        }
+    };
+    let setting = match client.query_one("SHOW max_prepared_transactions", &[]) {
+        Ok(row) => row
+            .try_get::<_, String>(0)
+            .unwrap_or_else(|_| "ec_spire_max_prepared_transactions_decode_failed".to_owned()),
+        Err(error) => {
+            return Some(format!(
+                "ec_spire_register_remote_node_descriptor could not read remote \
+                 max_prepared_transactions for node_id {node_id}: {error}"
+            ));
+        }
+    };
+    let value = match setting.parse::<i64>() {
+        Ok(value) => value,
+        Err(_) => {
+            return Some(format!(
+                "ec_spire_register_remote_node_descriptor could not parse remote \
+                 max_prepared_transactions value {setting:?} for node_id {node_id}"
+            ));
+        }
+    };
+    if value <= 0 {
+        Some(format!(
+            "ec_spire_register_remote_node_descriptor remote node_id {node_id} reports \
+             max_prepared_transactions = {value}; coordinator-routed SPIRE writes require \
+             max_prepared_transactions > 0 and enough free prepared transaction slots"
+        ))
+    } else {
+        None
+    }
+}
+
 pub(crate) fn remote_search_libpq_connect_with_session_timeouts(
     conninfo: &str,
     node_id: u32,
@@ -11269,5 +11328,29 @@ mod production_executor_state_tests {
             Some("53300"),
             "remaining connection slots are reserved"
         ));
+    }
+
+    #[test]
+    fn prepared_transaction_registration_warning_handles_unresolved_secret() {
+        let missing_secret = "spire/tests/prepared-warning/missing";
+        let missing_key = remote_conninfo_secret_provider_lookup_key(missing_secret)
+            .expect("missing secret lookup key should build");
+        std::env::remove_var(&missing_key);
+        let missing_warning =
+            remote_prepared_transaction_registration_warning(missing_secret, 2)
+                .expect("missing secret should warn");
+        assert!(missing_warning.contains("max_prepared_transactions preflight"));
+        assert!(missing_warning.contains("conninfo_secret_missing"));
+
+        let empty_secret = "spire/tests/prepared-warning/empty";
+        let empty_key = remote_conninfo_secret_provider_lookup_key(empty_secret)
+            .expect("empty secret lookup key should build");
+        std::env::set_var(&empty_key, "");
+        let empty_warning =
+            remote_prepared_transaction_registration_warning(empty_secret, 3)
+                .expect("empty secret should warn");
+        std::env::remove_var(&empty_key);
+        assert!(empty_warning.contains("max_prepared_transactions preflight"));
+        assert!(empty_warning.contains("conninfo_secret_empty"));
     }
 }

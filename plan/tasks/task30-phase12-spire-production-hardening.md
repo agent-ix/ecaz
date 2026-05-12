@@ -168,7 +168,7 @@ described by reviewer packet `30896`.
   - [ ] assert remote prepared transactions are rolled back, not orphaned.
 - [ ] Add `max_prepared_transactions` readiness:
   - [x] document it as required on every remote;
-  - [ ] check or warn during descriptor registration;
+  - [x] check or warn during descriptor registration;
   - [x] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.
 - [ ] Add a multi-row INSERT trigger fixture proving per-row trigger dispatch
   lands every row on its owning remote and commits all remote prepared

@@ -1921,6 +1921,11 @@ fn ec_spire_register_remote_node_descriptor(
     let conninfo_provider_lookup_key =
         am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
             .unwrap_or_else(|e| pgrx::error!("ec_spire_register_remote_node_descriptor {e}"));
+    if let Some(warning) =
+        am::spire_remote_prepared_transaction_registration_warning(&conninfo_secret_name, node_id)
+    {
+        pgrx::warning!("{warning}");
+    }
 
     let index_relation =
         unsafe { open_valid_ec_spire_index(index_oid, "ec_spire_register_remote_node_descriptor") };
@@ -36820,8 +36825,20 @@ mod tests {
         ))
         .expect("descriptor registration raw conninfo query should succeed")
         .expect("descriptor registration raw conninfo count should exist");
+        let prepared_capacity_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {contract_from} \
+             WHERE semantic_role = 'remote_prepared_transaction_capacity'"
+        ))
+        .expect("descriptor registration prepared capacity validator query should succeed")
+        .expect("descriptor registration prepared capacity validator should exist");
+        let prepared_capacity_action = Spi::get_one::<String>(&format!(
+            "SELECT persistence_action {contract_from} \
+             WHERE semantic_role = 'remote_prepared_transaction_capacity'"
+        ))
+        .expect("descriptor registration prepared capacity action query should succeed")
+        .expect("descriptor registration prepared capacity action should exist");
 
-        assert_eq!(step_count, 9);
+        assert_eq!(step_count, 10);
         assert_eq!(
             secret_validator,
             "must_be_nonempty_noncolliding_secret_reference"
@@ -36829,6 +36846,11 @@ mod tests {
         assert_eq!(secret_action, "persist_secret_reference_only");
         assert_eq!(generation_action, "atomically_replace_descriptor");
         assert_eq!(epoch_failure, "remote_epoch_not_served");
+        assert_eq!(
+            prepared_capacity_validator,
+            "warn_if_remote_max_prepared_transactions_unavailable_or_zero"
+        );
+        assert_eq!(prepared_capacity_action, "nonblocking_registration_warning");
         assert_eq!(raw_conninfo_count, 0);
     }
 

@@ -1378,6 +1378,15 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
         },
         SpireRemoteNodeDescriptorRegistrationContractRow {
             step_ordinal: 8,
+            step_name: "preflight_prepared_transaction_capacity",
+            input_field: "conninfo_secret_name",
+            semantic_role: "remote_prepared_transaction_capacity",
+            validator: "warn_if_remote_max_prepared_transactions_unavailable_or_zero",
+            persistence_action: "nonblocking_registration_warning",
+            failure_status: "max_prepared_transactions_not_ready",
+        },
+        SpireRemoteNodeDescriptorRegistrationContractRow {
+            step_ordinal: 9,
             step_name: "apply_policy_state",
             input_field: "state",
             semantic_role: "remote_node_policy_state",
@@ -1386,7 +1395,7 @@ pub(crate) fn remote_node_descriptor_registration_contract_rows(
             failure_status: "disabled_remote_node",
         },
         SpireRemoteNodeDescriptorRegistrationContractRow {
-            step_ordinal: 9,
+            step_ordinal: 10,
             step_name: "publish_generation",
             input_field: "generation",
             semantic_role: "membership_generation",
