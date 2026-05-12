@@ -95,6 +95,8 @@ described by reviewer packet `30896`.
   composite, NULL, and domain values where supported.
   - [x] Scalar JSON-parity fixture covers `bigint` and `text` payload bytes via
     `ec_spire_remote_search_tuple_payload_typed(...)`.
+  - [x] NULL and array fixture covers out-of-band NULL flags plus `text[]`
+    binary payload bytes via `array_send(...)`.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path

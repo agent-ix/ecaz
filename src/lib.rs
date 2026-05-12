@@ -30805,6 +30805,84 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_typed_tuple_payload_null_array_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_tuple_payload_typed_array_sql \
+             (id bigint primary key, title text, tags text[] not null, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_tuple_payload_typed_array_sql (id, title, tags, embedding) VALUES \
+             (1, NULL, ARRAY['red', 'blue']::text[], encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
+             (2, 'beta', ARRAY['green']::text[], encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_tuple_payload_typed_array_idx \
+             ON ec_spire_tuple_payload_typed_array_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops) WITH (nlists = 2)",
+        )
+        .expect("ec_spire index creation should succeed");
+
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_tuple_payload_typed_array_idx'::regclass)",
+        )
+        .expect("hierarchy snapshot query should succeed")
+        .expect("active epoch should exist");
+        let selected_pids = Spi::get_one::<Vec<i64>>(
+            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
+             ec_spire_index_leaf_snapshot('ec_spire_tuple_payload_typed_array_idx'::regclass)",
+        )
+        .expect("leaf snapshot query should succeed")
+        .expect("leaf pids should exist");
+        assert_eq!(selected_pids.len(), 2);
+
+        let endpoint_args = format!(
+            "'ec_spire_tuple_payload_typed_array_idx'::regclass, \
+             {active_epoch}, ARRAY[1.0, 0.0]::real[], \
+             ARRAY[{}, {}]::bigint[], 2, 'strict', ARRAY['id', 'title', 'tags']::text[]",
+            selected_pids[0], selected_pids[1],
+        );
+        let typed_summary = Spi::get_one::<String>(&format!(
+            "SELECT count(*)::text || '|' || \
+                    min(payload_column_count)::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport = 'pg_binary_attr_v1')::text || '|' || \
+                    count(*) FILTER (WHERE tuple_transport_status = 'ready')::text || '|' || \
+                    count(*) FILTER (WHERE status = 'ready')::text \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args})"
+        ))
+        .expect("typed tuple payload summary query should succeed")
+        .expect("typed tuple payload summary should exist");
+        let alpha_count = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) \
+               FROM ec_spire_remote_search_tuple_payload_typed({endpoint_args}) \
+              WHERE payload_attnums = ARRAY[1, 2, 3]::int2[] \
+                AND payload_names = ARRAY['id', 'title', 'tags']::text[] \
+                AND payload_type_oids = ARRAY[\
+                    'int8'::regtype::oid, \
+                    'text'::regtype::oid, \
+                    'text[]'::regtype::oid]::oid[] \
+                AND payload_nulls = ARRAY[false, true, false]::boolean[] \
+                AND payload_formats = ARRAY[\
+                    'pg_binary_attr_v1', \
+                    'pg_binary_attr_v1', \
+                    'pg_binary_attr_v1']::text[] \
+                AND payload_values[1] = int8send(1::bigint)::bytea \
+                AND payload_values[2] = ''::bytea \
+                AND payload_values[3] = array_send(ARRAY['red', 'blue']::text[])::bytea \
+                AND NOT tuple_payload_missing \
+                AND tuple_transport_status = 'ready' \
+                AND status = 'ready'"
+        ))
+        .expect("typed tuple payload NULL/array query should succeed")
+        .expect("typed tuple payload NULL/array count should exist");
+
+        assert_eq!(typed_summary, "2|3|2|2|2");
+        assert_eq!(alpha_count, 1);
+    }
+
+    #[pg_test]
     fn test_ec_spire_remote_insert_tuple_payload_endpoint_sql() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_insert_payload_sql \
