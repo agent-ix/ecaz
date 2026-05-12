@@ -361,12 +361,24 @@ unsafe fn plan_dml_pk_select_custom_path(
     custom_plans: *mut pg_sys::List,
 ) -> *mut pg_sys::Plan {
     unsafe {
-        let pk_value_expr = custom_scan_dml_pk_qual_value_expr(root, rel).unwrap_or_else(|| {
-            pgrx::error!("EcSpireDistributedScan could not build DML PK SELECT expression handoff")
-        });
+        let plan_expr =
+            match super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "EcSpireDistributedScan could not build DML PK SELECT expression handoff"
+                    )
+                }) {
+                Ok(plan_expr) => plan_expr,
+                Err(err) => pgrx::error!("{err}"),
+            };
+        if plan_expr.primitive_plan.mode
+            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        {
+            pgrx::error!("EcSpireDistributedScan received non-PK-SELECT DML primitive plan")
+        }
         let custom_exprs = pg_sys::lappend(
             std::ptr::null_mut(),
-            pg_sys::copyObjectImpl(pk_value_expr.cast()).cast(),
+            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
         );
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
@@ -471,14 +483,13 @@ unsafe fn dml_pk_select_candidate_index_oid(
     if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
         return None;
     }
-    let _ = unsafe { custom_scan_dml_pk_qual_value_expr(root, rel)? };
-
     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
     if ec_spire_am_oid == pg_sys::InvalidOid {
         return None;
     }
 
     let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };
+    let mut placement_index_oid = None;
     for index_info in index_list.iter_ptr() {
         let Some(index_info) = (unsafe { index_info.as_ref() }) else {
             continue;
@@ -486,10 +497,24 @@ unsafe fn dml_pk_select_candidate_index_oid(
         if index_info.relam == ec_spire_am_oid
             && unsafe { custom_scan_index_has_sql_placement(index_info.indexoid) }
         {
-            return Some(index_info.indexoid);
+            placement_index_oid = Some(index_info.indexoid);
+            break;
         }
     }
-    None
+    let placement_index_oid = placement_index_oid?;
+    let plan_expr = match unsafe {
+        super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)?
+    } {
+        Ok(plan_expr) => plan_expr,
+        Err(_err) => return None,
+    };
+    if plan_expr.primitive_plan.mode
+        != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+    {
+        return None;
+    }
+    (plan_expr.primitive_plan.index_oid == placement_index_oid)
+        .then_some(plan_expr.primitive_plan.index_oid)
 }
 
 unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
@@ -744,105 +769,6 @@ unsafe fn custom_scan_query_expr_from_sort_expr(
     None
 }
 
-unsafe fn custom_scan_dml_pk_qual_value_expr(
-    root: *mut pg_sys::PlannerInfo,
-    rel: *mut pg_sys::RelOptInfo,
-) -> Option<*mut pg_sys::Expr> {
-    if root.is_null() || rel.is_null() {
-        return None;
-    }
-    let root_ref = unsafe { root.as_ref()? };
-    let rel_ref = unsafe { rel.as_ref()? };
-    let query = unsafe { root_ref.parse.as_ref()? };
-    if query.commandType != pg_sys::CmdType::CMD_SELECT {
-        return None;
-    }
-    let rte = unsafe { custom_scan_range_table_entry(query, rel_ref.relid)? };
-    if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
-        return None;
-    }
-    let relation_context =
-        unsafe { super::dml_frontdoor_relation_context_catalog_row(rte.relid).ok()? };
-    if !relation_context.ec_spire_distributed_table {
-        return None;
-    }
-    let pk_column = relation_context.pk_column.as_deref()?;
-    let pk_attno = relation_context
-        .column_names
-        .iter()
-        .find_map(|(attno, name)| (name == pk_column).then_some(*attno))?;
-
-    if !rel_ref.baserestrictinfo.is_null() {
-        let restrict_infos =
-            unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(rel_ref.baserestrictinfo) };
-        for restrict_info in restrict_infos.iter_ptr() {
-            let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
-                continue;
-            };
-            if let Some(value_expr) = unsafe {
-                custom_scan_dml_pk_value_expr_from_clause(
-                    restrict_info.clause,
-                    rel_ref.relid,
-                    pk_attno,
-                )
-            } {
-                return Some(value_expr);
-            }
-        }
-    }
-
-    let jointree = unsafe { query.jointree.as_ref()? };
-    unsafe {
-        custom_scan_dml_pk_value_expr_from_clause(jointree.quals.cast(), rel_ref.relid, pk_attno)
-    }
-}
-
-unsafe fn custom_scan_dml_pk_value_expr_from_clause(
-    clause: *mut pg_sys::Expr,
-    relid: pg_sys::Index,
-    pk_attno: pg_sys::AttrNumber,
-) -> Option<*mut pg_sys::Expr> {
-    if clause.is_null()
-        || unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr
-    {
-        return None;
-    }
-    let op_expr = clause.cast::<pg_sys::OpExpr>();
-    if !custom_scan_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
-        return None;
-    }
-    let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
-    if args.len() != 2 {
-        return None;
-    }
-    let left = args.get_ptr(0)?;
-    let right = args.get_ptr(1)?;
-    if unsafe {
-        custom_scan_expr_is_relation_pk_var(left, relid, pk_attno)
-            && custom_scan_expr_is_dml_pk_value(right)
-    } {
-        return Some(right);
-    }
-    if unsafe {
-        custom_scan_expr_is_relation_pk_var(right, relid, pk_attno)
-            && custom_scan_expr_is_dml_pk_value(left)
-    } {
-        return Some(left);
-    }
-    None
-}
-
-unsafe fn custom_scan_range_table_entry(
-    query: &pg_sys::Query,
-    rtindex: pg_sys::Index,
-) -> Option<&pg_sys::RangeTblEntry> {
-    if rtindex == 0 || query.rtable.is_null() {
-        return None;
-    }
-    let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
-    unsafe { rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?.as_ref() }
-}
-
 unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
     if expr.is_null() {
         return false;
@@ -853,56 +779,6 @@ unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sy
     }
     let var = unsafe { &*expr.cast::<pg_sys::Var>() };
     u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0
-}
-
-unsafe fn custom_scan_expr_is_relation_pk_var(
-    expr: *mut pg_sys::Expr,
-    relid: pg_sys::Index,
-    pk_attno: pg_sys::AttrNumber,
-) -> bool {
-    if expr.is_null() {
-        return false;
-    }
-    let node = expr.cast::<pg_sys::Node>();
-    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {
-        return false;
-    }
-    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
-    u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0 && var.varattno == pk_attno
-}
-
-unsafe fn custom_scan_expr_is_dml_pk_value(expr: *mut pg_sys::Expr) -> bool {
-    if expr.is_null() {
-        return false;
-    }
-    let node = expr.cast::<pg_sys::Node>();
-    match unsafe { (*node).type_ } {
-        pg_sys::NodeTag::T_Const => unsafe {
-            let const_expr = &*expr.cast::<pg_sys::Const>();
-            !const_expr.constisnull && custom_scan_is_bigint_compatible_oid(const_expr.consttype)
-        },
-        pg_sys::NodeTag::T_Param => unsafe {
-            let param = &*expr.cast::<pg_sys::Param>();
-            custom_scan_is_bigint_compatible_oid(param.paramtype)
-        },
-        _ => false,
-    }
-}
-
-fn custom_scan_is_bigint_compatible_oid(typoid: pg_sys::Oid) -> bool {
-    typoid == pg_sys::INT2OID || typoid == pg_sys::INT4OID || typoid == pg_sys::INT8OID
-}
-
-fn custom_scan_bigint_equality_opcode(opcode: pg_sys::Oid) -> bool {
-    opcode == pg_sys::Oid::from(pg_sys::F_INT8EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT84EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT82EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT48EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT28EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT4EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT42EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT24EQ)
-        || opcode == pg_sys::Oid::from(pg_sys::F_INT2EQ)
 }
 
 unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {

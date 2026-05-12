@@ -1218,6 +1218,10 @@ v1 write contract from ADR-069:
     evaluate the PK expression at execution time, call the coordinator
     PK-select tuple-payload primitive, and store the returned JSON payload into
     the scan slot.
+  - [x] Packet `30874` addresses 30873 reviewer feedback by moving the
+    baserestrictinfo-aware PK SELECT expression extraction into the DML
+    frontdoor module and keeping the CustomScan planner path on that typed
+    primitive-plan handoff instead of a parallel predicate parser.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

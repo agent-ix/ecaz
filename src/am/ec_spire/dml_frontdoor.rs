@@ -424,6 +424,55 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
     }))
 }
 
+pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    unsafe {
+        if root.is_null() || rel.is_null() {
+            return None;
+        }
+        let root_ref = root.as_ref()?;
+        let rel_ref = rel.as_ref()?;
+        let query_ref = root_ref.parse.as_ref()?;
+        if dml_frontdoor_operation_for_query(query_ref)
+            != Some(SpireDmlFrontdoorOperation::PkSelect)
+        {
+            return None;
+        }
+        let target_rtindex = i32::try_from(rel_ref.relid).ok()?;
+        let target_relation_oid =
+            dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)?;
+        let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
+            Ok(relation) => relation,
+            Err(_err) => {
+                return Some(Err(
+                    "ec_spire DML frontdoor baserel expression handoff could not load relation context"
+                        .to_owned(),
+                ));
+            }
+        };
+        let detail =
+            dml_frontdoor_pk_select_query_detail_from_baserel(root_ref.parse, rel_ref, &relation)?;
+        let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
+            "ec_spire DML frontdoor baserel expression handoff requires a PK value expression"
+                .to_owned()
+        });
+        let decision = dml_frontdoor_replacement_decision_from_shape(
+            target_relation_oid,
+            relation.index_oid,
+            detail,
+        );
+        let primitive_plan = dml_frontdoor_primitive_plan_from_replacement_decision(&decision);
+        Some(pk_value_expr.and_then(|pk_value_expr| {
+            primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
+                primitive_plan,
+                pk_value_expr,
+            })
+        }))
+    }
+}
+
 pub(crate) fn dml_frontdoor_bigint_pk_value_bytes(value: i64) -> Vec<u8> {
     value.to_be_bytes().to_vec()
 }
@@ -770,6 +819,77 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         pk_value: predicate.value,
         pk_value_expr: predicate.value_expr,
         updated_columns,
+        projected_columns,
+    })
+}
+
+unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
+    query: *mut pg_sys::Query,
+    rel: &pg_sys::RelOptInfo,
+    relation: &SpireDmlFrontdoorRelationContext,
+) -> Option<SpireDmlFrontdoorQueryDetail> {
+    let query_ref = unsafe { query.as_ref()? };
+    if dml_frontdoor_operation_for_query(query_ref) != Some(SpireDmlFrontdoorOperation::PkSelect) {
+        return None;
+    }
+    let target_rtindex = i32::try_from(rel.relid).ok()?;
+    let pk_column = relation.pk_column.as_deref().unwrap_or("");
+    let column_names = relation
+        .column_names
+        .iter()
+        .map(|(attnum, name)| (*attnum, name.as_str()))
+        .collect::<Vec<_>>();
+    let embedding_columns = relation
+        .embedding_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let query_context = SpireDmlFrontdoorQueryContext {
+        ec_spire_distributed_table: relation.ec_spire_distributed_table,
+        pk_column,
+        column_names: &column_names,
+        embedding_columns: &embedding_columns,
+    };
+    let predicate = unsafe {
+        dml_frontdoor_pk_predicate_from_baserestrictinfo(
+            rel.baserestrictinfo,
+            target_rtindex,
+            &query_context,
+        )
+        .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context))
+    };
+    let projected_columns =
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) };
+    let projected_column_refs = projected_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
+        operation: SpireDmlFrontdoorOperation::PkSelect,
+        ec_spire_distributed_table: query_context.ec_spire_distributed_table,
+        single_table: target_rtindex > 0
+            && !unsafe {
+                dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
+            },
+        has_join: unsafe {
+            dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
+        },
+        has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
+        has_returning: !query_ref.returningList.is_null(),
+        pk_column: query_context.pk_column,
+        predicate_column: predicate.column.as_deref(),
+        predicate_operator: predicate.operator,
+        predicate_value_kind: predicate.value.kind,
+        updated_columns: &[],
+        projected_columns: &projected_column_refs,
+        embedding_columns: query_context.embedding_columns,
+    });
+    Some(SpireDmlFrontdoorQueryDetail {
+        shape,
+        pk_column: relation.pk_column.clone(),
+        pk_value: predicate.value,
+        pk_value_expr: predicate.value_expr,
+        updated_columns: Vec::new(),
         projected_columns,
     })
 }
@@ -1476,10 +1596,43 @@ unsafe fn dml_frontdoor_pk_predicate(
         return dml_frontdoor_empty_pk_predicate();
     };
     let qual = jointree.quals;
-    if qual.is_null() || unsafe { (*qual).type_ } != pg_sys::NodeTag::T_OpExpr {
-        return dml_frontdoor_empty_pk_predicate();
+    unsafe { dml_frontdoor_pk_predicate_from_clause(qual.cast(), target_rtindex, context) }
+        .unwrap_or_else(dml_frontdoor_empty_pk_predicate)
+}
+
+unsafe fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+    baserestrictinfo: *mut pg_sys::List,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<SpireDmlFrontdoorPkPredicate> {
+    if baserestrictinfo.is_null() {
+        return None;
     }
-    let op_expr = qual.cast::<pg_sys::OpExpr>();
+    let restrict_infos = unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo) };
+    for restrict_info in restrict_infos.iter_ptr() {
+        let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
+            continue;
+        };
+        if let Some(predicate) = unsafe {
+            dml_frontdoor_pk_predicate_from_clause(restrict_info.clause, target_rtindex, context)
+        } {
+            return Some(predicate);
+        }
+    }
+    None
+}
+
+unsafe fn dml_frontdoor_pk_predicate_from_clause(
+    clause: *mut pg_sys::Expr,
+    target_rtindex: i32,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Option<SpireDmlFrontdoorPkPredicate> {
+    if clause.is_null()
+        || unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr
+    {
+        return None;
+    }
+    let op_expr = clause.cast::<pg_sys::OpExpr>();
     let operator =
         if dml_frontdoor_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
             Some("=")
@@ -1488,12 +1641,12 @@ unsafe fn dml_frontdoor_pk_predicate(
         };
     let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
     if args.len() != 2 {
-        return SpireDmlFrontdoorPkPredicate {
+        return Some(SpireDmlFrontdoorPkPredicate {
             column: None,
             operator,
             value: dml_frontdoor_other_predicate_value(),
             value_expr: None,
-        };
+        });
     }
     let left = args.get_ptr(0);
     let right = args.get_ptr(1);
@@ -1501,36 +1654,36 @@ unsafe fn dml_frontdoor_pk_predicate(
         (Some(left), Some(right)) => {
             if let Some(column) = unsafe { dml_frontdoor_var_column(left, target_rtindex, context) }
             {
-                return SpireDmlFrontdoorPkPredicate {
+                return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
                     value: unsafe { dml_frontdoor_predicate_value(right) },
                     value_expr: Some(right),
-                };
+                });
             }
             if let Some(column) =
                 unsafe { dml_frontdoor_var_column(right, target_rtindex, context) }
             {
-                return SpireDmlFrontdoorPkPredicate {
+                return Some(SpireDmlFrontdoorPkPredicate {
                     column: Some(column),
                     operator,
                     value: unsafe { dml_frontdoor_predicate_value(left) },
                     value_expr: Some(left),
-                };
+                });
             }
-            SpireDmlFrontdoorPkPredicate {
+            Some(SpireDmlFrontdoorPkPredicate {
                 column: None,
                 operator,
                 value: dml_frontdoor_other_predicate_value(),
                 value_expr: None,
-            }
+            })
         }
-        _ => SpireDmlFrontdoorPkPredicate {
+        _ => Some(SpireDmlFrontdoorPkPredicate {
             column: None,
             operator,
             value: dml_frontdoor_other_predicate_value(),
             value_expr: None,
-        },
+        }),
     }
 }
 
