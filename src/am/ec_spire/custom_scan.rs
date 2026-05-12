@@ -421,9 +421,13 @@ unsafe fn plan_dml_custom_path(
         custom_scan.flags = (*best_path).flags;
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
-        let mut custom_private = pg_sys::lappend_oid(
-            pg_sys::lappend_oid(std::ptr::null_mut(), pg_sys::Oid::from(mode.raw())),
-            custom_scan_index_oid_from_path(best_path),
+        let mut custom_private =
+            custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
+        custom_private = custom_scan_lappend_string(
+            custom_private,
+            &custom_scan_index_oid_from_path(best_path)
+                .to_u32()
+                .to_string(),
         );
         custom_private = custom_scan_lappend_string(
             custom_private,
@@ -876,7 +880,7 @@ unsafe fn custom_scan_mode_from_plan(
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing private mode");
         }
-        let raw = pg_sys::list_nth_oid((*custom_scan).custom_private, 0).to_u32();
+        let raw = custom_scan_plan_private_u32((*custom_scan).custom_private, 0, "mode");
         custom_scan_mode_from_u32(raw)
             .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
     }
@@ -915,7 +919,51 @@ unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) 
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing private index OID");
         }
-        pg_sys::list_nth_oid((*custom_scan).custom_private, 1)
+        pg_sys::Oid::from(custom_scan_plan_private_u32(
+            (*custom_scan).custom_private,
+            1,
+            "index OID",
+        ))
+    }
+}
+
+unsafe fn custom_scan_plan_private_u32(
+    custom_private: *mut pg_sys::List,
+    offset: i32,
+    label: &str,
+) -> u32 {
+    unsafe {
+        if custom_private.is_null() || (*custom_private).length <= offset {
+            pgrx::error!("EcSpireDistributedScan plan is missing private {label}");
+        }
+        match (*custom_private).type_ {
+            pg_sys::NodeTag::T_OidList => pg_sys::list_nth_oid(custom_private, offset).to_u32(),
+            pg_sys::NodeTag::T_List => {
+                let node = pg_sys::list_nth(custom_private, offset).cast::<pg_sys::Node>();
+                if node.is_null() {
+                    pgrx::error!("EcSpireDistributedScan plan has null private {label}");
+                }
+                match (*node).type_ {
+                    pg_sys::NodeTag::T_Integer => {
+                        let value = (*node.cast::<pg_sys::Integer>()).ival;
+                        u32::try_from(value).unwrap_or_else(|_| {
+                            pgrx::error!("EcSpireDistributedScan plan private {label} is negative")
+                        })
+                    }
+                    pg_sys::NodeTag::T_String => custom_scan_string_node_value(node, label)
+                        .parse::<u32>()
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "EcSpireDistributedScan plan private {label} is not u32: {e}"
+                            )
+                        }),
+                    _ => {
+                        pgrx::error!("EcSpireDistributedScan plan has invalid private {label}")
+                    }
+                }
+            }
+            _ => pgrx::error!("EcSpireDistributedScan plan has invalid private metadata list"),
+        }
     }
 }
 
@@ -926,6 +974,24 @@ unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *m
         });
         let copied = pg_sys::pstrdup(c_value.as_ptr());
         pg_sys::lappend(list, pg_sys::makeString(copied).cast())
+    }
+}
+
+unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
+    unsafe {
+        if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_String {
+            pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} metadata");
+        }
+        let value_node = node.cast::<pg_sys::String>();
+        if (*value_node).sval.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML plan has null {label} metadata");
+        }
+        std::ffi::CStr::from_ptr((*value_node).sval)
+            .to_str()
+            .unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is not UTF-8")
+            })
+            .to_owned()
     }
 }
 
@@ -948,20 +1014,9 @@ unsafe fn custom_scan_dml_column_list_from_plan(
         if (*custom_private).length <= offset {
             pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
         }
-        let node = pg_sys::list_nth(custom_private, offset).cast::<pg_sys::Node>();
-        if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_String {
-            pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} metadata");
-        }
-        let value_node = node.cast::<pg_sys::String>();
-        if (*value_node).sval.is_null() {
-            pgrx::error!("EcSpireDistributedScan DML plan has null {label} metadata");
-        }
-        let raw = std::ffi::CStr::from_ptr((*value_node).sval)
-            .to_str()
-            .unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan DML plan {label} metadata is not UTF-8")
-            });
-        custom_scan_dml_column_list_from_plan_private_json(raw, label)
+        let raw =
+            custom_scan_string_node_value(pg_sys::list_nth(custom_private, offset).cast(), label);
+        custom_scan_dml_column_list_from_plan_private_json(&raw, label)
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     }
 }
@@ -1726,8 +1781,11 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
         {
             pgrx::error!("EcSpireDistributedScan DML PK SELECT got non-select primitive mode");
         }
-        let requested_column_refs = invocation
-            .projected_columns
+        let requested_columns = custom_scan_dml_pk_select_requested_columns(
+            &invocation,
+            &state_ref.tuple_payload_columns,
+        );
+        let requested_column_refs = requested_columns
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
@@ -1775,6 +1833,21 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
         state_ref.dml_tuple_payload_json = tuple_payload_json;
         state_ref.dml_payload_loaded = true;
     }
+}
+
+fn custom_scan_dml_pk_select_requested_columns(
+    invocation: &super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation,
+    tuple_payload_columns: &[String],
+) -> Vec<String> {
+    let mut columns = if tuple_payload_columns.is_empty() {
+        invocation.projected_columns.clone()
+    } else {
+        tuple_payload_columns.to_vec()
+    };
+    if !columns.iter().any(|column| column == &invocation.pk_column) {
+        columns.insert(0, invocation.pk_column.clone());
+    }
+    columns
 }
 
 unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
@@ -2008,6 +2081,53 @@ mod tests {
         assert_eq!(
             error,
             "EcSpireDistributedScan DML UPDATE plan requires updated columns"
+        );
+    }
+
+    #[test]
+    fn custom_scan_dml_pk_select_requested_columns_include_pk_for_quals() {
+        let invocation = custom_scan_dml_primitive_invocation_from_parts(
+            pg_sys::Oid::from(42),
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
+            "id",
+            &[0, 0, 0, 0, 0, 0, 0, 5],
+            &[],
+            &["title".to_owned()],
+        )
+        .expect("PK SELECT invocation should build");
+
+        assert_eq!(
+            custom_scan_dml_pk_select_requested_columns(&invocation, &[]),
+            vec!["id".to_owned(), "title".to_owned()]
+        );
+        assert_eq!(
+            custom_scan_dml_pk_select_requested_columns(
+                &invocation,
+                &[
+                    "id".to_owned(),
+                    "title".to_owned(),
+                    "source_identity".to_owned()
+                ]
+            ),
+            vec![
+                "id".to_owned(),
+                "title".to_owned(),
+                "source_identity".to_owned()
+            ]
+        );
+
+        let invocation = custom_scan_dml_primitive_invocation_from_parts(
+            pg_sys::Oid::from(42),
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
+            "id",
+            &[0, 0, 0, 0, 0, 0, 0, 5],
+            &[],
+            &["id".to_owned(), "title".to_owned()],
+        )
+        .expect("PK SELECT invocation should build");
+        assert_eq!(
+            custom_scan_dml_pk_select_requested_columns(&invocation, &[]),
+            vec!["id".to_owned(), "title".to_owned()]
         );
     }
 
