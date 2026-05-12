@@ -424,7 +424,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
     }))
 }
 
-pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
 ) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
@@ -435,20 +435,13 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
         let root_ref = root.as_ref()?;
         let rel_ref = rel.as_ref()?;
         let query_ref = root_ref.parse.as_ref()?;
-        if dml_frontdoor_operation_for_query(query_ref)
-            != Some(SpireDmlFrontdoorOperation::PkSelect)
-        {
-            return None;
-        }
-        let target_rtindex = match i32::try_from(rel_ref.relid) {
-            Ok(target_rtindex) => target_rtindex,
-            Err(_err) => {
-                return Some(Err(
-                    "ec_spire DML frontdoor baserel expression handoff relid exceeds planner rtindex range"
-                        .to_owned(),
-                ));
-            }
-        };
+        let operation = dml_frontdoor_operation_for_query(query_ref)?;
+        let target_rtindex =
+            match dml_frontdoor_baserel_target_rtindex(query_ref, rel_ref, operation) {
+                Ok(Some(target_rtindex)) => target_rtindex,
+                Ok(None) => return None,
+                Err(err) => return Some(Err(err)),
+            };
         let target_relation_oid =
             dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)?;
         let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
@@ -460,16 +453,20 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
                 ));
             }
         };
-        let detail =
-            dml_frontdoor_pk_select_query_detail_from_baserel(root_ref.parse, rel_ref, &relation)?;
+        let detail = dml_frontdoor_query_detail_from_baserel(
+            root_ref.parse,
+            rel_ref,
+            operation,
+            target_rtindex,
+            &relation,
+        )?;
         let pk_value_expr = detail.pk_value_expr;
         let decision = dml_frontdoor_replacement_decision_from_shape(
             target_relation_oid,
             relation.index_oid,
             detail,
         );
-        if !decision.supported || decision.custom_scan_mode != "coordinator_pk_select_tuple_payload"
-        {
+        if !decision.supported {
             return None;
         }
         let pk_value_expr = pk_value_expr.ok_or_else(|| {
@@ -482,6 +479,27 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
                 primitive_plan,
                 pk_value_expr,
             })
+        }))
+    }
+}
+
+pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    unsafe {
+        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+        Some(plan_expr.and_then(|plan_expr| {
+            if plan_expr.primitive_plan.mode
+                == SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+            {
+                Ok(plan_expr)
+            } else {
+                Err(
+                    "ec_spire DML frontdoor baserel expression handoff expected PK SELECT primitive plan"
+                        .to_owned(),
+                )
+            }
         }))
     }
 }
@@ -836,16 +854,38 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
     })
 }
 
-unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
+fn dml_frontdoor_baserel_target_rtindex(
+    query: &pg_sys::Query,
+    rel: &pg_sys::RelOptInfo,
+    operation: SpireDmlFrontdoorOperation,
+) -> Result<Option<i32>, String> {
+    let rel_rtindex = i32::try_from(rel.relid).map_err(|_| {
+        "ec_spire DML frontdoor baserel expression handoff relid exceeds planner rtindex range"
+            .to_owned()
+    })?;
+    match operation {
+        SpireDmlFrontdoorOperation::PkSelect => Ok(Some(rel_rtindex)),
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => {
+            if query.resultRelation == rel_rtindex {
+                Ok(Some(rel_rtindex))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+unsafe fn dml_frontdoor_query_detail_from_baserel(
     query: *mut pg_sys::Query,
     rel: &pg_sys::RelOptInfo,
+    operation: SpireDmlFrontdoorOperation,
+    target_rtindex: i32,
     relation: &SpireDmlFrontdoorRelationContext,
 ) -> Option<SpireDmlFrontdoorQueryDetail> {
     let query_ref = unsafe { query.as_ref()? };
-    if dml_frontdoor_operation_for_query(query_ref) != Some(SpireDmlFrontdoorOperation::PkSelect) {
+    if dml_frontdoor_operation_for_query(query_ref) != Some(operation) {
         return None;
     }
-    let target_rtindex = i32::try_from(rel.relid).ok()?;
     let pk_column = relation.pk_column.as_deref().unwrap_or("");
     let column_names = relation
         .column_names
@@ -873,17 +913,27 @@ unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
         )
         .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context))
     };
-    let projected_columns =
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) };
+    let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    } else {
+        Vec::new()
+    };
+    let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
+        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    } else {
+        Vec::new()
+    };
+    let updated_column_refs = updated_columns
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     let projected_column_refs = projected_columns
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    let has_join = unsafe {
-        dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
-    };
+    let has_join = unsafe { dml_frontdoor_query_has_join_shape(query_ref, operation) };
     let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
-        operation: SpireDmlFrontdoorOperation::PkSelect,
+        operation,
         ec_spire_distributed_table: query_context.ec_spire_distributed_table,
         single_table: target_rtindex > 0 && !has_join,
         has_join,
@@ -893,7 +943,7 @@ unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
         predicate_column: predicate.column.as_deref(),
         predicate_operator: predicate.operator,
         predicate_value_kind: predicate.value.kind,
-        updated_columns: &[],
+        updated_columns: &updated_column_refs,
         projected_columns: &projected_column_refs,
         embedding_columns: query_context.embedding_columns,
     });
@@ -902,7 +952,7 @@ unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
         pk_column: relation.pk_column.clone(),
         pk_value: predicate.value,
         pk_value_expr: predicate.value_expr,
-        updated_columns: Vec::new(),
+        updated_columns,
         projected_columns,
     })
 }
@@ -2103,6 +2153,38 @@ mod tests {
 
         select_query.hasSubLinks = true;
         assert!(dml_frontdoor_query_has_subquery_shape(&select_query));
+    }
+
+    #[test]
+    fn baserel_handoff_uses_only_target_rel_for_dml() {
+        let mut query = pg_sys::Query::default();
+        query.resultRelation = 1;
+
+        let mut rel = pg_sys::RelOptInfo::default();
+        rel.relid = 2;
+        assert_eq!(
+            dml_frontdoor_baserel_target_rtindex(&query, &rel, SpireDmlFrontdoorOperation::Update)
+                .unwrap(),
+            None
+        );
+
+        rel.relid = 1;
+        assert_eq!(
+            dml_frontdoor_baserel_target_rtindex(&query, &rel, SpireDmlFrontdoorOperation::Delete)
+                .unwrap(),
+            Some(1)
+        );
+
+        rel.relid = 2;
+        assert_eq!(
+            dml_frontdoor_baserel_target_rtindex(
+                &query,
+                &rel,
+                SpireDmlFrontdoorOperation::PkSelect
+            )
+            .unwrap(),
+            Some(2)
+        );
     }
 
     #[test]
