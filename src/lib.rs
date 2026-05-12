@@ -12270,6 +12270,9 @@ fn ec_spire_remote_search_endpoint_identity(
         name!(assignment_payload_format, &'static str),
         name!(quantizer_profile, &'static str),
         name!(scoring_profile, &'static str),
+        name!(tuple_transport_capabilities, Vec<String>),
+        name!(tuple_transport_default, &'static str),
+        name!(tuple_transport_status, &'static str),
         name!(profile_fingerprint, String),
         name!(status, &'static str),
         name!(recommendation, &'static str),
@@ -12288,6 +12291,9 @@ fn ec_spire_remote_search_endpoint_identity(
         row.assignment_payload_format,
         row.quantizer_profile,
         row.scoring_profile,
+        row.tuple_transport_capabilities,
+        row.tuple_transport_default,
+        row.tuple_transport_status,
         row.profile_fingerprint,
         row.status,
         row.recommendation,
@@ -27887,6 +27893,18 @@ mod tests {
         ))
         .expect("endpoint contract quantizer query should succeed")
         .expect("endpoint contract quantizer should exist");
+        let endpoint_tuple_transport_default = Spi::get_one::<String>(&format!(
+            "SELECT contract_value {endpoint_contract_from} \
+             WHERE contract_item = 'tuple_transport_default'"
+        ))
+        .expect("endpoint contract tuple transport query should succeed")
+        .expect("endpoint contract tuple transport should exist");
+        let endpoint_tuple_transport_validator = Spi::get_one::<String>(&format!(
+            "SELECT validator {endpoint_contract_from} \
+             WHERE contract_item = 'tuple_transport_capabilities'"
+        ))
+        .expect("endpoint contract tuple transport validator query should succeed")
+        .expect("endpoint contract tuple transport validator should exist");
         let fingerprint_status = Spi::get_one::<String>(&format!(
             "SELECT status {endpoint_contract_from} \
              WHERE contract_item = 'quantizer_index_fingerprint_binding'"
@@ -27934,9 +27952,14 @@ mod tests {
             "must_block_over_budget_rows_before_secret_lookup_or_socket_open"
         );
         assert_eq!(merge_step_validator, "must_preserve_merge_order_contract");
-        assert_eq!(endpoint_count, 12);
+        assert_eq!(endpoint_count, 15);
         assert_eq!(endpoint_protocol, "ec_spire_remote_search_v1");
         assert_eq!(endpoint_quantizer, "rabitq_only_pq_and_pqfastscan_reserved");
+        assert_eq!(endpoint_tuple_transport_default, "pg_binary_attr_v1");
+        assert_eq!(
+            endpoint_tuple_transport_validator,
+            "must_advertise_pg_binary_attr_v1_before_custom_scan_typed_receive"
+        );
         assert_eq!(fingerprint_status, "requires_fingerprint_binding");
         assert_eq!(
             direct_sql_policy_validator,
@@ -28018,6 +28041,19 @@ mod tests {
             Spi::get_one::<String>(&format!("SELECT scoring_profile {rabitq_from}"))
                 .expect("rabitq identity scoring query should succeed")
                 .expect("rabitq identity scoring should exist");
+        let tuple_transport_capabilities = Spi::get_one::<Vec<String>>(&format!(
+            "SELECT tuple_transport_capabilities {rabitq_from}"
+        ))
+        .expect("rabitq tuple transport capabilities query should succeed")
+        .expect("rabitq tuple transport capabilities should exist");
+        let tuple_transport_default =
+            Spi::get_one::<String>(&format!("SELECT tuple_transport_default {rabitq_from}"))
+                .expect("rabitq tuple transport default query should succeed")
+                .expect("rabitq tuple transport default should exist");
+        let tuple_transport_status =
+            Spi::get_one::<String>(&format!("SELECT tuple_transport_status {rabitq_from}"))
+                .expect("rabitq tuple transport status query should succeed")
+                .expect("rabitq tuple transport status should exist");
         let fingerprint_length =
             Spi::get_one::<i32>(&format!("SELECT length(profile_fingerprint) {rabitq_from}"))
                 .expect("rabitq identity fingerprint query should succeed")
@@ -28044,6 +28080,9 @@ mod tests {
         assert_eq!(assignment_payload, "rabitq");
         assert_eq!(quantizer_profile, "rabitq_v1");
         assert_eq!(scoring_profile, "inner_product_score_v1");
+        assert_eq!(tuple_transport_capabilities, vec!["pg_binary_attr_v1"]);
+        assert_eq!(tuple_transport_default, "pg_binary_attr_v1");
+        assert_eq!(tuple_transport_status, "ready");
         assert_eq!(fingerprint_length, 16);
         assert_ne!(fingerprint_before_reindex, fingerprint_after_reindex);
     }

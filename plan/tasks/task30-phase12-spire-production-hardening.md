@@ -82,6 +82,9 @@ described by reviewer packet `30896`.
 - [ ] Add endpoint negotiation so CustomScan prefers typed tuple transport when
   the remote advertises support and falls back to JSON only during the
   migration window.
+  - [x] Endpoint identity advertises `tuple_transport_capabilities`,
+    `tuple_transport_default`, and `tuple_transport_status` for
+    `pg_binary_attr_v1`.
   - [ ] Exit criterion: the JSON fallback may remain production-reachable for
     one minor-version compatibility window after the typed endpoint release;
     removal requires all scalar, array, composite, NULL, and domain fixture

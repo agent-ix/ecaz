@@ -104,6 +104,7 @@ const SPIRE_REMOTE_PRODUCTION_LOCAL_QUERY_CANCELLED: &str = "local_query_cancell
 const SPIRE_REMOTE_PRODUCTION_LOCAL_STATEMENT_TIMEOUT: &str = "local_statement_timeout";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_LOCAL: &str = "local";
 const SPIRE_REMOTE_CANDIDATE_FORMAT_V1: &str = "ec_spire_remote_search_v1";
+const SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1: &str = "pg_binary_attr_v1";
 const SPIRE_REMOTE_ROW_LOCATOR_POLICY: &str = "opaque_origin_node_bytes";
 const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local_vec_id";
 const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0xA0;
@@ -7700,6 +7701,30 @@ pub(crate) fn remote_search_endpoint_contract_rows(
         },
         SpireRemoteSearchEndpointContractRow {
             contract_ordinal: 5,
+            contract_item: "tuple_transport_capabilities",
+            contract_value: "pg_binary_attr_v1",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_advertise_pg_binary_attr_v1_before_custom_scan_typed_receive",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 6,
+            contract_item: "tuple_transport_default",
+            contract_value: "pg_binary_attr_v1",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_prefer_typed_tuple_transport_when_advertised",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 7,
+            contract_item: "tuple_transport_status",
+            contract_value: "ready",
+            status: SPIRE_REMOTE_STATUS_READY,
+            validator: "must_be_ready_before_typed_custom_scan_receive",
+            recommendation: SPIRE_REMOTE_NONE,
+        },
+        SpireRemoteSearchEndpointContractRow {
+            contract_ordinal: 8,
             contract_item: "selected_pid_semantics",
             contract_value: "selected_leaf_pid_set_with_leaf_derived_delta_rows",
             status: SPIRE_REMOTE_STATUS_READY,
@@ -7707,7 +7732,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: SPIRE_REMOTE_NONE,
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 6,
+            contract_ordinal: 9,
             contract_item: "quantizer_family",
             contract_value: "rabitq_only_pq_and_pqfastscan_reserved",
             status: SPIRE_REMOTE_STATUS_READY,
@@ -7715,7 +7740,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: SPIRE_REMOTE_NONE,
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 7,
+            contract_ordinal: 10,
             contract_item: "extension_version_binding",
             contract_value: env!("CARGO_PKG_VERSION"),
             status: SPIRE_REMOTE_STATUS_READY,
@@ -7723,7 +7748,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: SPIRE_REMOTE_NONE,
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 8,
+            contract_ordinal: 11,
             contract_item: "scoring_option_binding",
             contract_value: "fixed_index_profile_explicit_request_options_pending",
             status: SPIRE_REMOTE_STATUS_REQUIRES_SCORING_OPTION_BINDING,
@@ -7731,7 +7756,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: "add explicit scoring/rerank option fields or a stable served scoring profile binding",
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 9,
+            contract_ordinal: 12,
             contract_item: "quantizer_index_fingerprint_binding",
             contract_value: "rabitq_profile,code_length,training_stat_fingerprint,storage_format",
             status: SPIRE_REMOTE_STATUS_REQUIRES_FINGERPRINT_BINDING,
@@ -7739,7 +7764,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: "bind fingerprint fields before accepting cross-node remote scores",
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 10,
+            contract_ordinal: 13,
             contract_item: "opclass_binary_binding",
             contract_value: "opclass_identity_and_binary_score_semantics",
             status: SPIRE_REMOTE_STATUS_REQUIRES_OPCLASS_BINDING,
@@ -7747,7 +7772,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: "bind opclass identity before accepting remote scores from mixed binaries",
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 11,
+            contract_ordinal: 14,
             contract_item: "direct_sql_endpoint_status_policy",
             contract_value: "ec_spire_remote_search_exposes_non_ready_endpoint_rows_for_diagnostics_libpq_receive_accepts_ready_only",
             status: SPIRE_REMOTE_STATUS_READY,
@@ -7755,7 +7780,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
             recommendation: "use libpq executor readiness surfaces before production remote merge",
         },
         SpireRemoteSearchEndpointContractRow {
-            contract_ordinal: 12,
+            contract_ordinal: 15,
             contract_item: "remote_heap_candidate_endpoint_identity_preflight",
             contract_value: "libpq_heap_candidate_executor_validates_ec_spire_remote_search_endpoint_identity_before_origin_node_heap_rows",
             status: SPIRE_REMOTE_STATUS_READY,
@@ -8063,6 +8088,11 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
             assignment_payload_format: assignment_payload_format_name,
             quantizer_profile,
             scoring_profile,
+            tuple_transport_capabilities: vec![
+                SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1.to_owned(),
+            ],
+            tuple_transport_default: SPIRE_REMOTE_TUPLE_TRANSPORT_PG_BINARY_ATTR_V1,
+            tuple_transport_status: SPIRE_REMOTE_STATUS_READY,
             profile_fingerprint,
             status,
             recommendation,
