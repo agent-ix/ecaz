@@ -15,6 +15,7 @@ const CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT: u32 = 1;
 const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
 const CUSTOM_SCAN_PLAN_MODE_DML_UPDATE: u32 = 3;
 const CUSTOM_SCAN_PLAN_MODE_DML_DELETE: u32 = 4;
+const DML_UPDATED_COLUMN_COUNT_OFFSET: i32 = 2;
 const EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO: pg_sys::AttrNumber = 1;
 const EC_SPIRE_PLACEMENT_RELNAME: &core::ffi::CStr = c"ec_spire_placement";
 const EC_SPIRE_PLACEMENT_BY_INDEX_OID_RELNAME: &core::ffi::CStr =
@@ -1031,21 +1032,12 @@ unsafe fn custom_scan_dml_plan_private(
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
     unsafe {
-        // PostgreSQL List instances are homogeneous by node/cell kind. Keep
-        // every DML custom_private slot as T_String; do not append OidList
-        // cells to this list.
         let mut custom_private =
             custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
         custom_private =
             custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string());
-        custom_private = custom_scan_lappend_string(
-            custom_private,
-            &custom_scan_dml_column_list_plan_private_json(updated_columns),
-        );
-        custom_scan_lappend_string(
-            custom_private,
-            &custom_scan_dml_column_list_plan_private_json(projected_columns),
-        );
+        custom_private = custom_scan_lappend_counted_column_list(custom_private, updated_columns);
+        custom_private = custom_scan_lappend_counted_column_list(custom_private, projected_columns);
         custom_scan_lappend_string(custom_private, pk_column)
     }
 }
@@ -1130,6 +1122,19 @@ unsafe fn custom_scan_lappend_string(list: *mut pg_sys::List, value: &str) -> *m
     }
 }
 
+unsafe fn custom_scan_lappend_counted_column_list(
+    list: *mut pg_sys::List,
+    columns: &[String],
+) -> *mut pg_sys::List {
+    unsafe {
+        let mut list = custom_scan_lappend_string(list, &columns.len().to_string());
+        for column in columns {
+            list = custom_scan_lappend_string(list, column);
+        }
+        list
+    }
+}
+
 unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) -> String {
     unsafe {
         if node.is_null() || (*node).type_ != pg_sys::NodeTag::T_String {
@@ -1146,12 +1151,6 @@ unsafe fn custom_scan_string_node_value(node: *mut pg_sys::Node, label: &str) ->
             })
             .to_owned()
     }
-}
-
-fn custom_scan_dml_column_list_plan_private_json(columns: &[String]) -> String {
-    serde_json::to_string(columns).unwrap_or_else(|e| {
-        pgrx::error!("EcSpireDistributedScan DML column metadata encode failed: {e}")
-    })
 }
 
 unsafe fn custom_scan_dml_column_list_from_plan(
@@ -1176,26 +1175,95 @@ unsafe fn custom_scan_dml_column_list_from_plan_private(
         if custom_private.is_null() || (*custom_private).length <= offset {
             pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
         }
-        let raw =
-            custom_scan_string_node_value(pg_sys::list_nth(custom_private, offset).cast(), label);
-        custom_scan_dml_column_list_from_plan_private_json(&raw, label)
+        let count_offset = match offset {
+            DML_UPDATED_COLUMN_COUNT_OFFSET => DML_UPDATED_COLUMN_COUNT_OFFSET,
+            3 => custom_scan_dml_projected_column_count_offset(custom_private),
+            _ => pgrx::error!("EcSpireDistributedScan DML plan has invalid {label} offset"),
+        };
+        custom_scan_dml_counted_column_list_from_plan_private(custom_private, count_offset, label)
             .unwrap_or_else(|e| pgrx::error!("{e}"))
     }
 }
 
-fn custom_scan_dml_column_list_from_plan_private_json(
-    raw: &str,
+unsafe fn custom_scan_dml_counted_column_list_from_plan_private(
+    custom_private: *mut pg_sys::List,
+    count_offset: i32,
     label: &str,
 ) -> Result<Vec<String>, String> {
-    let columns = serde_json::from_str::<Vec<String>>(raw).map_err(|e| {
-        format!("EcSpireDistributedScan DML plan {label} metadata decode failed: {e}")
-    })?;
-    if columns.iter().any(|column| column.is_empty()) {
-        return Err(format!(
-            "EcSpireDistributedScan DML plan {label} metadata contains an empty column name"
-        ));
+    unsafe {
+        if custom_private.is_null() || (*custom_private).length <= count_offset {
+            return Err(format!(
+                "EcSpireDistributedScan DML plan is missing {label} count metadata"
+            ));
+        }
+        let count = usize::try_from(custom_scan_plan_private_u32(
+            custom_private,
+            count_offset,
+            &format!("{label} count"),
+        ))
+        .map_err(|_| format!("EcSpireDistributedScan DML plan {label} count is too large"))?;
+        let required_len = count_offset
+            .checked_add(1)
+            .and_then(|offset| offset.checked_add(i32::try_from(count).ok()?))
+            .ok_or_else(|| {
+                format!("EcSpireDistributedScan DML plan {label} count overflows metadata list")
+            })?;
+        if (*custom_private).length < required_len {
+            return Err(format!(
+                "EcSpireDistributedScan DML plan {label} metadata is truncated"
+            ));
+        }
+        let mut columns = Vec::with_capacity(count);
+        for index in 0..count {
+            let offset = count_offset
+                + 1
+                + i32::try_from(index).unwrap_or_else(|_| {
+                    pgrx::error!("EcSpireDistributedScan DML plan {label} index is too large")
+                });
+            let column = custom_scan_string_node_value(
+                pg_sys::list_nth(custom_private, offset).cast(),
+                label,
+            );
+            if column.is_empty() {
+                return Err(format!(
+                    "EcSpireDistributedScan DML plan {label} metadata contains an empty column name"
+                ));
+            }
+            columns.push(column);
+        }
+        Ok(columns)
     }
-    Ok(columns)
+}
+
+unsafe fn custom_scan_dml_projected_column_count_offset(custom_private: *mut pg_sys::List) -> i32 {
+    unsafe {
+        let updated_count = custom_scan_plan_private_u32(
+            custom_private,
+            DML_UPDATED_COLUMN_COUNT_OFFSET,
+            "updated column count",
+        );
+        DML_UPDATED_COLUMN_COUNT_OFFSET
+            + 1
+            + i32::try_from(updated_count).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan DML plan updated column count is too large")
+            })
+    }
+}
+
+unsafe fn custom_scan_dml_pk_column_offset(custom_private: *mut pg_sys::List) -> i32 {
+    unsafe {
+        let projected_offset = custom_scan_dml_projected_column_count_offset(custom_private);
+        let projected_count = custom_scan_plan_private_u32(
+            custom_private,
+            projected_offset,
+            "projected column count",
+        );
+        projected_offset
+            + 1
+            + i32::try_from(projected_count).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan DML plan projected column count is too large")
+            })
+    }
 }
 
 unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
@@ -1209,11 +1277,17 @@ unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomSc
 
 unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
     unsafe {
-        if custom_private.is_null() || (*custom_private).length <= 4 {
+        if custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata");
         }
-        let pk_column =
-            custom_scan_string_node_value(pg_sys::list_nth(custom_private, 4).cast(), "PK column");
+        let offset = custom_scan_dml_pk_column_offset(custom_private);
+        if (*custom_private).length <= offset {
+            pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata");
+        }
+        let pk_column = custom_scan_string_node_value(
+            pg_sys::list_nth(custom_private, offset).cast(),
+            "PK column",
+        );
         if pk_column.is_empty() {
             pgrx::error!("EcSpireDistributedScan DML plan PK column metadata is empty");
         }
@@ -2423,36 +2497,6 @@ mod tests {
         assert_eq!(
             custom_scan_mode_from_u32(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
             Some(SpireCustomScanPlanMode::VectorOrderLimit)
-        );
-    }
-
-    #[test]
-    fn custom_scan_dml_column_metadata_round_trips_as_plan_private_json() {
-        let columns = vec!["title".to_owned(), "status".to_owned()];
-        let encoded = custom_scan_dml_column_list_plan_private_json(&columns);
-        let decoded =
-            custom_scan_dml_column_list_from_plan_private_json(&encoded, "updated columns")
-                .expect("DML column metadata should decode");
-
-        assert_eq!(decoded, columns);
-        assert_eq!(
-            custom_scan_dml_column_list_from_plan_private_json("[]", "projected columns")
-                .expect("empty DML column metadata should decode"),
-            Vec::<String>::new()
-        );
-    }
-
-    #[test]
-    fn custom_scan_dml_column_metadata_rejects_invalid_columns() {
-        let error = custom_scan_dml_column_list_from_plan_private_json(
-            "[\"title\", \"\"]",
-            "updated columns",
-        )
-        .expect_err("empty DML column names should fail");
-
-        assert_eq!(
-            error,
-            "EcSpireDistributedScan DML plan updated columns metadata contains an empty column name"
         );
     }
 

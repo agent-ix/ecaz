@@ -134,8 +134,13 @@ described by reviewer packet `30896`.
   tuple payload widths.
 - [ ] Store the benchmark logs packet-locally and update the cost constants
   only when the measurement explains the chosen values.
-- [ ] Clean up `custom_private` layout by replacing JSON string lists with
+- [x] Clean up `custom_private` layout by replacing JSON string lists with
   native PostgreSQL node lists or another typed representation.
+  - [x] DML CustomScan `custom_private` now stores updated/projected column
+    metadata as native PostgreSQL `String` nodes with explicit column counts,
+    including zero-count empty projected-column metadata.
+    `test_ec_spire_custom_scan_dml_plan_private_copyobject_sql` covers
+    copyObject round-trip behavior.
 - [ ] Replace trivial per-row/per-statement PK-byte `Vec<u8>` allocations with
   stack `[u8; 8]` or caller-owned buffers where profiling shows pressure.
 
