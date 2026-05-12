@@ -8195,7 +8195,7 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         );
     }
 
-    let (node_id, served_epoch) = Spi::connect(|client| {
+    let placement = Spi::connect(|client| {
         client
             .select(
                 "SELECT node_id, served_epoch \
@@ -8229,13 +8229,24 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             })
             .next()
             .transpose()
-            .map(|value| {
-                value.ok_or_else(|| {
-                    "ec_spire coordinator delete placement row is missing".to_owned()
-                })
-            })?
+            .map_err(|e| format!("ec_spire coordinator delete placement lookup failed: {e}"))
     })
     .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let Some((node_id, served_epoch)) = placement else {
+        return TableIterator::once((
+            index_oid,
+            pk_value,
+            -1,
+            0,
+            "none".to_owned(),
+            false,
+            false,
+            0,
+            false,
+            "delete_not_found_noop",
+            "done",
+        ));
+    };
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator delete placement node_id must not be negative");
     }
@@ -8265,9 +8276,9 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             "ec_spire_prepare_coordinator_delete_tuple_payload",
         )
         .unwrap_or_else(|e| pgrx::error!("{e}"));
-        if deleted_count != 1 {
+        if deleted_count > 1 {
             pgrx::error!(
-                "ec_spire coordinator local delete expected exactly one row, got {}",
+                "ec_spire coordinator local delete expected at most one row, got {}",
                 deleted_count
             );
         }
@@ -8283,7 +8294,11 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             false,
             i64::try_from(deleted_count).expect("deleted count should fit i64"),
             placement_deleted,
-            "local_delete_applied",
+            if deleted_count == 0 {
+                "local_delete_not_found_noop"
+            } else {
+                "local_delete_applied"
+            },
             "done",
         ));
     }
@@ -8298,9 +8313,9 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
     }
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    if delete_row.remote_deleted_count != 1 {
+    if delete_row.remote_deleted_count > 1 {
         pgrx::error!(
-            "ec_spire coordinator delete expected exactly one remote row, got {}",
+            "ec_spire coordinator delete expected at most one remote row, got {}",
             delete_row.remote_deleted_count
         );
     }
@@ -8318,7 +8333,11 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
         delete_row.remote_prepared,
         i64::try_from(delete_row.remote_deleted_count).expect("deleted count should fit i64"),
         placement_deleted,
-        POST_DELETE_STATUS,
+        if delete_row.remote_deleted_count == 0 {
+            "remote_delete_not_found_prepared_pending_local_commit"
+        } else {
+            POST_DELETE_STATUS
+        },
         POST_DELETE_NEXT_STEP,
     ))
 }
@@ -13837,11 +13856,7 @@ fn ec_spire_delete_placement_row(index_oid: pg_sys::Oid, pk_value: &[u8]) -> Res
             })
             .next()
             .transpose()
-            .map(|value| {
-                value.ok_or_else(|| {
-                    "ec_spire coordinator delete placement row disappeared before delete".to_owned()
-                })
-            })?
+            .map(|value| value.unwrap_or(false))
     })
 }
 
@@ -22181,6 +22196,92 @@ mod tests {
             format!("0|{active_epoch}|none|false|false|1|true|local_delete_applied|done")
         );
         assert_eq!(local_row_count, 0);
+        assert_eq!(placement_count, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_prepare_coordinator_delete_idempotent_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_coord_delete_idempotent_payload_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("idempotent coordinator delete table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_coord_delete_idempotent_payload_idx \
+             ON ec_spire_coord_delete_idempotent_payload_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("idempotent coordinator delete ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot(\
+                 'ec_spire_coord_delete_idempotent_payload_idx'::regclass)",
+        )
+        .expect("idempotent delete active epoch query should succeed")
+        .expect("idempotent delete active epoch should exist");
+        let stale_placement_epoch = active_epoch.max(1);
+
+        let missing_placement_result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     'id', \
+                     int8send(2001::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("missing placement coordinator delete query should succeed")
+        .expect("missing placement coordinator delete should return a row");
+        assert_eq!(
+            missing_placement_result,
+            "-1|0|none|false|false|0|false|delete_not_found_noop|done"
+        );
+
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     int8send(2002::bigint)::bytea, \
+                     0, 2, {stale_placement_epoch}, \
+                     decode('e0e1e2e3e4e5e6e7e8e9eaebecedeeef', 'hex'))"
+        ))
+        .expect("stale local placement row should be inserted");
+
+        let stale_placement_result = Spi::get_one::<String>(
+            "WITH result AS ( \
+                 SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_coord_delete_idempotent_payload_idx'::regclass, \
+                     'id', \
+                     int8send(2002::bigint)::bytea) \
+             ) \
+             SELECT node_id::text || '|' || served_epoch::text || '|' || \
+                    prepared_gid || '|' || remote_delete_sent::text || '|' || \
+                    remote_prepared::text || '|' || remote_deleted_count::text || '|' || \
+                    placement_deleted::text || '|' || status || '|' || next_step \
+               FROM result",
+        )
+        .expect("stale placement coordinator delete query should succeed")
+        .expect("stale placement coordinator delete should return a row");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_coord_delete_idempotent_payload_idx'::regclass \
+                AND pk_value = int8send(2002::bigint)::bytea",
+        )
+        .expect("stale placement count query should succeed")
+        .expect("stale placement count should exist");
+
+        assert_eq!(
+            stale_placement_result,
+            format!(
+                "0|{stale_placement_epoch}|none|false|false|0|true|local_delete_not_found_noop|done"
+            )
+        );
         assert_eq!(placement_count, 0);
     }
 

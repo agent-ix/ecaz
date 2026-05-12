@@ -175,6 +175,14 @@ Two-phase commit applies for the same reason as INSERT: the placement
 directory is coordinator-side state that must stay consistent with the
 remote.
 
+V1 DELETE collision policy is idempotent not-found success. If the
+coordinator placement row is already absent, the DELETE returns zero affected
+rows and does not dispatch remotely. If the placement row exists but the owning
+heap row is already absent, the DELETE still removes the placement row and
+returns zero affected rows. This matches PostgreSQL DELETE semantics for a
+predicate that no longer matches a visible row while ensuring stale placement
+directory entries do not survive a cleanup attempt.
+
 The implementation surface is
 `ec_spire_prepare_coordinator_delete_tuple_payload(index_oid, pk_column,
 pk_value)`. It looks up `node_id` and `served_epoch` from

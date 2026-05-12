@@ -145,9 +145,9 @@ described by reviewer packet `30896`.
   - [ ] assert failed attempts leave no orphaned remote prepared transactions.
 - [ ] Pin a stable SQLSTATE for descriptor refresh races and document the safe
   retry contract in ADR-069.
-- [ ] Decide the concurrent DELETE collision policy in ADR-069:
+- [x] Decide the concurrent DELETE collision policy in ADR-069:
   `DELETE-not-found is success` versus `DELETE-not-found is error`.
-- [ ] Implement and test the chosen DELETE collision behavior, including
+- [x] Implement and test the chosen DELETE collision behavior, including
   placement-directory idempotence.
 - [x] Remove volatile backend pid from SPIRE prepared-transaction GIDs; use a
   stable `(index_oid, node_id, served_epoch, xid)`-style identity instead.
