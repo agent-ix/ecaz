@@ -555,6 +555,20 @@ independent DDL-window guard GUC or catalog flag: operators must use the
 pause/apply/refresh/resume sequence above, and the schema-drift fingerprint is
 the fail-closed safety net when that sequence is violated.
 
+The v1 fingerprint input is a canonical text representation of non-dropped heap
+columns ordered by `attnum`: column number, quoted column name, type OID,
+typmod, collation OID, and `attnotnull`. The digest is a drift token, not a
+security boundary; stability comes from ordering explicit catalog fields rather
+than hashing PostgreSQL's ad hoc record formatting. Upgrade migrations backfill
+the fingerprint for descriptors whose coordinator index still exists. A row
+that cannot be backfilled keeps the `unset` sentinel and coordinator-routed
+INSERT fails closed until the descriptor is registered again.
+
+This guard is currently INSERT-scoped. Coordinator-routed UPDATE and DELETE use
+related descriptor and payload paths, so Phase 12 tracks a follow-up to extend
+schema-drift coverage there or explicitly document why INSERT-only remains the
+accepted v1 boundary.
+
 A future ADR may add coordinator-driven DDL propagation. v1 keeps DDL
 operator-managed.
 
