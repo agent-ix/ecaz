@@ -1300,9 +1300,13 @@ v1 write contract from ADR-069:
       `estate->es_processed` from the primitive's deleted count, returns no
       tuple, and extends the plan-tree replacement fixture to prove local heap
       row deletion, placement-row deletion, and `ROW_COUNT = 1`.
-  - [ ] Add ADR-069 documentation for the v1 limitations implied by bypassing
+  - [x] Add ADR-069 documentation for the v1 limitations implied by bypassing
     `ModifyTable`: no `RETURNING`, no row-level triggers on the distributed
     table, and no statement-level transition-table semantics.
+    - [x] Packet `30888` updates ADR-069 to replace the stale
+      ModifyTable/view-hook wording with the accepted top-level CustomScan
+      plan-tree replacement contract and documents the v1 rowcount-only
+      limitations for transparent distributed UPDATE/DELETE.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
