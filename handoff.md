@@ -1,126 +1,148 @@
-# Task 30 Phase 5 Handoff
+# Task 30 Phase 12 Handoff
 
-You are continuing Task 30 SPIRE after Phase 4 has merged to `main`.
+Continue ecaz Task 30 on branch `task-30-spire` from the pushed Phase 11
+closeout state. Current pre-handoff HEAD when this file was written:
+`dba1a9a5` (`Close Task 30 Phase 11 via packet 30910`).
 
 ## Current State
 
-- Phase 4 merge commit on `main`: `8172d7cc` (`Merge SPIRE Phase 4`).
-- Source branch that landed Phase 4: `task30-spire-partition-object-spec`.
-- Reviewer merge-readiness verdict: `review/30509-spire-phase4-local-placement-design/feedback/2026-05-06-06-reviewer.md`.
-- Phase 4 is closed for local multi-store placement:
-  - auxiliary local store relations are created and published;
-  - mutation paths route through the active local store set;
-  - scan prefetch resolves placements and batches PG18 `ReadStream` reads per
-    local store relation;
-  - SQL `VACUUM` has two-store coverage;
-  - storage-debt diagnostics aggregate root/control plus auxiliary stores;
-  - same-device and `/mnt/e` two-store benchmark evidence is packet-local;
-  - multi-store REINDEX rejects explicitly until a full lifecycle exists;
-  - auxiliary store autovacuum is disabled at the parsed relcache options
-    boundary.
-- `plan/status.md` has Task 30 at 94%. Remaining Task 30 gates are
-  PQ-FastScan scorer binding and physical object reclamation / old-epoch
-  cleanup. Those are not Phase 5 boundary-replication prerequisites unless the
-  task explicitly scopes them in.
+- Phase 9 local SPIRE graph architecture is complete.
+- Phase 10 local SPIRE execution/performance architecture is complete.
+- Phase 11 is closed by reviewer packet `30910`.
+- Functional distributed SPIRE exists:
+  - vector `ORDER BY ... LIMIT` reads can return remote rows through
+    `EcSpireDistributedScan`;
+  - ADR-068 tuple payloads are wired for CustomScan delivery;
+  - ADR-069 coordinator-routed INSERT, non-embedding UPDATE, DELETE, PK SELECT,
+    and embedding-UPDATE rejection are live;
+  - the ADR-064/065/066 materialization catalog/register/mirror-sync path is
+    retired;
+  - Stage E fault matrix (11 cases) and lifecycle matrix (6 cases) pass
+    against the CustomScan build in packet `30895`.
+- Phase 12 is the active work: production hardening, performance, local
+  readiness, and runbooks before AWS.
+- Phase 13 is AWS/RDS-class verification and is blocked on Phase 12 exit.
 
-## Repo Workflow
+## Current Worktree Caveat
 
-- Start each turn by scanning `review/` for new feedback. Process owned,
-  actionable feedback before new implementation work.
-- Work in narrow, testable slices.
-- Commit each code/docs checkpoint and push immediately.
-- Add or update the matching review packet in a separate commit and push.
-- Do not run tests by default. For risky SPIRE/PostgreSQL behavior, prefer the
-  narrowest PG18-focused validation.
-- Do not run PG17 unless explicitly asked.
-- Do not revert unrelated changes.
+At handoff time, the worktree had unrelated local WIP:
 
-## Phase 5 Objective
+- `scripts/tests/test_pg17_scratch_psql_socket_resolution.py`
+- `scripts/tests/test_resolve_scratch_socket_dir.py`
+- untracked `review/30802-spire-mirror-sync-contract/`
 
-Implement boundary replication for SPIRE.
-
-The durable storage shape already supports multiple assignment rows per vector:
-
-```text
-vec_id -> one or more pid assignments
-pid -> local_store_id -> object location
-```
-
-Phase 5 should turn that latent shape into controlled behavior: a vector can be
-assigned to its primary partition and one or more nearby boundary partitions,
-then scans must deduplicate replicated `vec_id`s before final top-k output.
+Do not revert or sweep those into commits unless the user explicitly scopes
+them. This handoff intentionally replaces stale `handoff.md` content.
 
 ## Read First
 
-- `plan/tasks/30-spire-ivf-foundation.md`, especially Phase 5 and the open
-  PQ-FastScan / old-epoch cleanup notes.
-- `plan/design/spire-phase0-partition-object-storage.md`
-- `plan/design/spire-recursive-hierarchy.md`
-- `plan/design/spire-update-mechanics.md`
-- `plan/design/spire-local-multistore-placement.md`
-- `docs/SPIRE_DIAGNOSTICS.md`
-- `src/am/ec_spire/{assign,build,scan,update,storage,meta}.rs`
-- Phase 4 review packets `30531` through `30540` for local-store behavior that
-  boundary replication must preserve.
+1. `AGENTS.md`
+2. `review/README.md`
+3. `plan/tasks/task30-phase12-spire-production-hardening.md`
+4. `plan/tasks/task30-phase13-spire-aws-verification.md`
+5. `review/30896-spire-customscan-architecture-review/request.md`
+6. `review/30909-spire-hardening-task-split/feedback/2026-05-12-001-reviewer.md`
+7. `review/30910-spire-phase11-closeout/request.md`
 
-## Phase 5 Checklist
+Use `plan/tasks/task30-phase11-spire-distributed-production-parity.md` only as
+historical context. Its header says not to pick up new work from that file.
 
-- Boundary predicate: define the threshold/rule for assigning a vector to
-  multiple nearby partitions.
-- Assignment fanout: extend the assignment writer from one row per vector to
-  multiple `(vec_id, pid)` rows.
-- Duplicate control: ensure scans deduplicate replicated vector IDs before
-  final top-k.
-- Recall study: measure recall delta with boundary replication off/on at fixed
-  storage overhead.
-- Storage accounting: report leaf-assignment and posting-list growth from
-  replication.
+## Reviewer Findings To Carry Forward
 
-## Suggested First Slice
+Reviewer packet `30896` is the durable architecture review. It split remaining
+work into:
 
-Start with a design checkpoint before changing build behavior.
+- H1-H12 hardening:
+  concurrent INSERT race, concurrent DELETE collision, 2PC crash recovery,
+  cancel/timeout mid-INSERT-prepare, EvalPlanQual/isolation, schema drift,
+  trigger JSON type round-trips, predicate edge rejection,
+  `max_prepared_transactions`, DDL/write ordering, multi-row INSERT, and
+  placement-table contention.
+- P1-P9 performance:
+  typed tuple transport, placement planner indexed lookup, JSON decode
+  allocation retirement, relation-context caching, 2PC latency tradeoffs,
+  cost-model calibration, `custom_private` layout cleanup, PK-byte allocation
+  cleanup, and async INSERT dispatch.
 
-Define:
+Reviewer packet `30909` accepted the Phase 12/13 split and added small
+planning observations:
 
-- the reloption/GUC surface for enabling boundary replication, including a
-  conservative default-off path;
-- the boundary predicate, such as top-N nearby leaves or distance-margin based
-  fanout;
-- hard caps for assignment fanout so storage growth is bounded;
-- how the existing explicit scan dedupe mode transitions from primary-only to
-  replicated-assignment mode;
-- how diagnostics expose primary assignment count, boundary replica count,
-  total assignment rows, and estimated overhead;
-- how local multi-store placement remains hash-by-PID and does not need a new
-  store placement rule.
+- O1: Phase 11 closeout has now reconciled/moved remaining work via packet
+  `30910`.
+- O3/O4/O7: items that say "evaluate", "decide", or "migration window" need
+  measurable exit criteria before they are considered complete.
+- O5: Phase 13 deferrals require reviewer acceptance.
+- O6: ADR-069 deferred items remain later ADR scope, not Phase 12 unless
+  explicitly reopened.
+- O8: AWS datasets can be pinned at Phase 13 packet time.
 
-Recommended artifact:
+## Phase 12 Task Map
 
-- Add `plan/design/spire-boundary-replication.md`.
-- Add a review packet such as
-  `review/30541-spire-boundary-replication-design/`.
-- Commit the design checkpoint, push, then commit the review packet and push.
+- Phase 12.1: tracker and operator-compatibility reconciliation.
+- Phase 12.2: typed tuple transport and JSON retirement.
+- Phase 12.3: planner, metadata, and cost hardening.
+- Phase 12.4: coordinator-routed write and 2PC hardening.
+- Phase 12.5: schema drift, DDL, and type round-trip hardening.
+- Phase 12.6: isolation, EvalPlanQual, and negative DML coverage.
+- Phase 12.7: multi-instance placement, epoch, and replica readiness.
+- Phase 12.8: local multi-store and multi-NVMe readiness.
+- Phase 12.9: local production harness and runbook.
 
-## Implementation Slices
+AWS work belongs to Phase 13, not Phase 12.
 
-1. Add parsed options and diagnostics for boundary replication while preserving
-   default primary-only behavior.
-2. Extend assignment planning to compute bounded secondary PIDs without writing
-   them yet.
-3. Publish multiple assignment rows per vector in a small PG18 fixture.
-4. Switch scan dedupe to the replicated-assignment mode when fanout is enabled.
-5. Add storage-accounting diagnostics for primary rows, replica rows, and
-   growth ratio.
-6. Run a small recall/storage comparison packet with replication off/on at a
-   fixed target overhead.
+## Suggested First Coding Slices
 
-## Guardrails
+Follow review-packet discipline: one narrow code/docs slice, one matching
+review packet, commit and push each separately.
 
-- Preserve existing single-store and multi-store Phase 4 behavior.
-- Do not make product claims from local recall/latency data.
-- Do not implement full multi-store REINDEX lifecycle in Phase 5 unless the
-  user explicitly asks; it is recorded as later lifecycle work.
-- Do not pull in repo-wide hardening items from the Phase 4 review deferral
-  list unless explicitly scoped.
-- Keep PQ-FastScan populated-index scorer binding separate unless the boundary
-  replication change directly touches assignment payload scoring.
+1. **Phase 12.1 operator-compat cleanup**
+   - Add the 0.1.1 -> 0.1.2 migration comment explaining the
+     materialization-table create/drop history.
+   - Document `requires_remote_row_materialization` ->
+     `requires_custom_scan_tuple_delivery`.
+   - Document dropped mirror-sync/materialization operator-entrypoint rows.
+   - Cross-link packet `30895` to `30770`, `30772`, and `30773`.
+   - Record the future 0.2.x cleanup for zero-valued `row_materialization_*`
+     shim columns.
+
+2. **Phase 12.3 placement planner gate indexed lookup**
+   - Replace the `ec_spire_placement` planner eligibility seqscan with an
+     indexed lookup.
+   - Add focused coverage proving eligibility remains bounded as placement
+     rows grow.
+   - This is a small high-impact hardening/perf slice.
+
+3. **Phase 12.2 typed tuple transport design**
+   - Start with a design/review packet before large executor changes.
+   - Pin the protocol choice: binary composite/record vs per-attribute
+     `typsend`/`typreceive`.
+   - Define negotiation, JSON fallback window, and removal criteria so the JSON
+     bridge does not linger indefinitely.
+
+If choosing between them, start with slice 1 if the next agent is doing docs
+cleanup; start with slice 2 if the next agent is ready to code.
+
+## Validation Expectations
+
+- Do not run broad tests by default.
+- For docs-only task updates, `git diff --check` is sufficient.
+- For planner/executor changes, prefer narrow PG18-focused tests or existing
+  multicluster scripts.
+- For pgrx-facing behavior, use `cargo pgrx test pg18` only when static review
+  is not enough.
+- Do not run PG17 unless explicitly asked.
+- Do not skip hooks or use `--no-verify`.
+
+## Workflow Guardrails
+
+- Start every turn by scanning `review/` for new feedback.
+- Process owned actionable feedback before new work.
+- Do not re-triage closed review topics unless a reviewer reopens them.
+- Do not make AWS/product-scale claims from local evidence.
+- Do not open Phase 13 work until Phase 12 exit criteria are complete or every
+  remaining Phase 12 item has accepted reviewer deferral.
+- Do not revert unrelated WIP.
+- Stage feedback files and review artifacts by exact paths, never broad
+  `git add review/`.
+- Prefer the `ecaz` operator CLI for local PG18/pgrx workflows when the surface
+  exists; otherwise keep scripts packet-local and reproducible.
