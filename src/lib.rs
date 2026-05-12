@@ -29026,6 +29026,126 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_rejects_pk_predicate_edge_shapes() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_pk_edge_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML PK edge table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_pk_edge_idx \
+             ON ec_spire_dml_pk_edge_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML PK edge ec_spire index creation should succeed");
+
+        let cases = [
+            (
+                "numeric_outside_int8",
+                "SELECT id FROM ec_spire_dml_pk_edge_sql \
+                  WHERE id = 9223372036854775808::numeric",
+            ),
+            (
+                "null_int8",
+                "SELECT id FROM ec_spire_dml_pk_edge_sql WHERE id = NULL::int8",
+            ),
+            (
+                "in_list",
+                "SELECT id FROM ec_spire_dml_pk_edge_sql WHERE id IN (5, 6)",
+            ),
+            (
+                "or_equality",
+                "SELECT id FROM ec_spire_dml_pk_edge_sql WHERE id = 5 OR id = 6",
+            ),
+            (
+                "numeric_equality",
+                "SELECT id FROM ec_spire_dml_pk_edge_sql \
+                  WHERE id = 5::numeric",
+            ),
+        ];
+
+        for (label, sql) in cases {
+            let escaped_sql = sql.replace('\'', "''");
+            let summary = Spi::get_one::<String>(&format!(
+                "SELECT supported::text || '|' || kind || '|' || status \
+                   FROM ec_spire_dml_frontdoor_classify_sql('{escaped_sql}')"
+            ))
+            .expect("DML PK edge classifier query should succeed")
+            .unwrap_or_else(|| panic!("DML PK edge classifier returned no row for {label}"));
+            assert_eq!(
+                summary, "false|unsupported_pk_predicate|unsupported_shape",
+                "{label}"
+            );
+        }
+
+        Spi::run(
+            "PREPARE ec_spire_dml_pk_edge_numeric(numeric) AS \
+             SELECT id FROM ec_spire_dml_pk_edge_sql WHERE id = $1::numeric",
+        )
+        .expect("numeric-parameter PK SELECT should prepare");
+        let prepared_param_error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run("EXECUTE ec_spire_dml_pk_edge_numeric(9223372036854775808::numeric)")
+                .expect("numeric-parameter PK SELECT should fail closed during EXECUTE");
+            "no_error".to_owned()
+        })
+        .catch_when(
+            pg_sys::errcodes::PgSqlErrorCode::ERRCODE_FEATURE_NOT_SUPPORTED,
+            |cause| match cause {
+                pg_sys::panic::CaughtError::ErrorReport(report)
+                | pg_sys::panic::CaughtError::PostgresError(report) => {
+                    format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+                }
+                pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                    format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+                }
+            },
+        )
+        .catch_others(|cause| cause.rethrow())
+        .execute();
+        assert_eq!(
+            prepared_param_error,
+            "ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1|See ADR-069 for the v1 SPIRE distributed DML shape."
+        );
+
+        let in_list_error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run("SELECT id FROM ec_spire_dml_pk_edge_sql WHERE id IN (5, 6)")
+                .expect("IN-list PK SELECT should fail closed in the planner hook");
+            "no_error".to_owned()
+        })
+        .catch_when(
+            pg_sys::errcodes::PgSqlErrorCode::ERRCODE_FEATURE_NOT_SUPPORTED,
+            |cause| match cause {
+                pg_sys::panic::CaughtError::ErrorReport(report)
+                | pg_sys::panic::CaughtError::PostgresError(report) => {
+                    format!("{}|{}", report.message(), report.hint().unwrap_or(""))
+                }
+                pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                    format!("{}|{}", ereport.message(), ereport.hint().unwrap_or(""))
+                }
+            },
+        )
+        .catch_others(|cause| cause.rethrow())
+        .execute();
+        assert_eq!(
+            in_list_error,
+            "ec_spire_distributed: DML requires a bigint primary-key equality predicate in v1|See ADR-069 for the v1 SPIRE distributed DML shape."
+        );
+
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML PK edge hook action query should succeed")
+        .expect("DML PK edge hook action should exist");
+        let kind = Spi::get_one::<String>(
+            "SELECT last_classification_kind FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML PK edge hook kind query should succeed")
+        .expect("DML PK edge hook kind should exist");
+        assert_eq!(action, "planner_error_fail_closed");
+        assert_eq!(kind, "unsupported_pk_predicate");
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_hook_fail_closed_unsupported_shape() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_failclosed_sql \

@@ -226,14 +226,16 @@ described by reviewer packet `30896`.
   - [ ] Exit criterion: the decision packet must include an isolation fixture
     that demonstrates the stale-row/EvalPlanQual behavior under at least
     SERIALIZABLE and states the accepted v1 contract in ADR-068 or ADR-069.
-- [ ] Add negative classifier fixtures for unsupported PK predicate shapes:
-  - [ ] `$1::numeric` outside int8 range;
-  - [ ] `$1::int8 IS NULL` with stable SQLSTATE;
-  - [ ] `WHERE id IN (...)`;
-  - [ ] `WHERE id = $1 OR id = $2`;
-  - [ ] any non-bigint equality accepted accidentally by coercion.
-- [ ] Ensure unsupported DML shapes against a SPIRE-fronted table continue to
+- [x] Add negative classifier fixtures for unsupported PK predicate shapes:
+  - [x] `$1::numeric` outside int8 range;
+  - [x] `$1::int8 IS NULL` with stable SQLSTATE;
+  - [x] `WHERE id IN (...)`;
+  - [x] `WHERE id = $1 OR id = $2`;
+  - [x] any non-bigint equality accepted accidentally by coercion.
+- [x] Ensure unsupported DML shapes against a SPIRE-fronted table continue to
   fail closed rather than falling through to the empty coordinator heap.
+  - [x] PK predicate edge fixture asserts unsupported SELECT/PREPARE shapes
+    raise `feature_not_supported` through the planner hook before execution.
 
 ## Phase 12.7: Multi-Instance Placement, Epoch, and Replica Readiness
 
