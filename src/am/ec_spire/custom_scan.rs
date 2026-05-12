@@ -981,6 +981,50 @@ fn custom_scan_dml_column_list_from_plan_private_json(
     Ok(columns)
 }
 
+fn custom_scan_validate_dml_column_metadata(
+    mode: SpireCustomScanPlanMode,
+    updated_columns: &[String],
+    projected_columns: &[String],
+) -> Result<(), String> {
+    match mode {
+        SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+            if projected_columns.is_empty() {
+                return Err(
+                    "EcSpireDistributedScan DML PK SELECT plan requires projected columns"
+                        .to_owned(),
+                );
+            }
+            if !updated_columns.is_empty() {
+                return Err(
+                    "EcSpireDistributedScan DML PK SELECT plan must not update columns".to_owned(),
+                );
+            }
+        }
+        SpireCustomScanPlanMode::DmlUpdateTuplePayload => {
+            if updated_columns.is_empty() {
+                return Err(
+                    "EcSpireDistributedScan DML UPDATE plan requires updated columns".to_owned(),
+                );
+            }
+            if !projected_columns.is_empty() {
+                return Err(
+                    "EcSpireDistributedScan DML UPDATE plan must not project columns".to_owned(),
+                );
+            }
+        }
+        SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+            if !updated_columns.is_empty() || !projected_columns.is_empty() {
+                return Err(
+                    "EcSpireDistributedScan DML DELETE plan must not carry column payload metadata"
+                        .to_owned(),
+                );
+            }
+        }
+        SpireCustomScanPlanMode::VectorOrderLimit => {}
+    }
+    Ok(())
+}
+
 unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
@@ -1224,6 +1268,12 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
                     custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
                 (*state).dml_projected_columns =
                     custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+                custom_scan_validate_dml_column_metadata(
+                    (*state).mode,
+                    &(*state).dml_updated_columns,
+                    &(*state).dml_projected_columns,
+                )
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             }
             SpireCustomScanPlanMode::DmlUpdateTuplePayload
             | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
@@ -1233,6 +1283,12 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
                     custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
                 (*state).dml_projected_columns =
                     custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+                custom_scan_validate_dml_column_metadata(
+                    (*state).mode,
+                    &(*state).dml_updated_columns,
+                    &(*state).dml_projected_columns,
+                )
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             }
         }
     }
@@ -1767,6 +1823,51 @@ mod tests {
         assert_eq!(
             error,
             "EcSpireDistributedScan DML plan updated columns metadata contains an empty column name"
+        );
+    }
+
+    #[test]
+    fn custom_scan_dml_column_metadata_validates_by_mode() {
+        let updated = vec!["title".to_owned()];
+        let projected = vec!["id".to_owned(), "title".to_owned()];
+        let empty = Vec::<String>::new();
+
+        custom_scan_validate_dml_column_metadata(
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+            &updated,
+            &empty,
+        )
+        .expect("UPDATE metadata should validate");
+        custom_scan_validate_dml_column_metadata(
+            SpireCustomScanPlanMode::DmlDeleteTuplePayload,
+            &empty,
+            &empty,
+        )
+        .expect("DELETE metadata should validate");
+        custom_scan_validate_dml_column_metadata(
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
+            &empty,
+            &projected,
+        )
+        .expect("PK SELECT metadata should validate");
+
+        assert_eq!(
+            custom_scan_validate_dml_column_metadata(
+                SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+                &empty,
+                &empty,
+            )
+            .expect_err("UPDATE without updated columns should fail"),
+            "EcSpireDistributedScan DML UPDATE plan requires updated columns"
+        );
+        assert_eq!(
+            custom_scan_validate_dml_column_metadata(
+                SpireCustomScanPlanMode::DmlDeleteTuplePayload,
+                &updated,
+                &empty,
+            )
+            .expect_err("DELETE with updated columns should fail"),
+            "EcSpireDistributedScan DML DELETE plan must not carry column payload metadata"
         );
     }
 
