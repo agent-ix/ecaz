@@ -28768,6 +28768,30 @@ mod tests {
             expression_error,
             "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
         );
+
+        Spi::run(
+            "DO $$ \
+             DECLARE row_count bigint; \
+             BEGIN \
+                 DELETE FROM ec_spire_dml_plan_replace_sql WHERE id = 5; \
+                 GET DIAGNOSTICS row_count = ROW_COUNT; \
+                 IF row_count != 1 THEN \
+                     RAISE EXCEPTION 'unexpected DML CustomScan delete row count %', row_count; \
+                 END IF; \
+             END $$",
+        )
+        .expect("DML DELETE CustomScan execution should succeed");
+        let remaining = Spi::get_one::<String>(
+            "SELECT \
+                  (SELECT count(*) FROM ec_spire_dml_plan_replace_sql WHERE id = 5)::text \
+                  || '|' || \
+                  (SELECT count(*) FROM ec_spire_placement \
+                    WHERE index_oid = 'ec_spire_dml_plan_replace_idx'::regclass \
+                      AND pk_value = int8send(5::bigint)::bytea)::text",
+        )
+        .expect("DML DELETE remaining row query should succeed")
+        .expect("DML DELETE remaining row summary should exist");
+        assert_eq!(remaining, "0|0");
     }
 
     #[pg_test]

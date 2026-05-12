@@ -1644,11 +1644,8 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
         if (*state).mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
             return custom_scan_dml_update_access(state, scan_state);
         }
-        if matches!(
-            (*state).mode,
-            SpireCustomScanPlanMode::DmlDeleteTuplePayload
-        ) {
-            pgrx::error!("EcSpireDistributedScan DML DELETE executor path is not wired yet");
+        if (*state).mode == SpireCustomScanPlanMode::DmlDeleteTuplePayload {
+            return custom_scan_dml_delete_access(state, scan_state);
         }
         custom_scan_ensure_outputs(state);
         loop {
@@ -1715,6 +1712,23 @@ unsafe fn custom_scan_dml_update_access(
             let estate = (*scan_state).ps.state;
             if !estate.is_null() {
                 (*estate).es_processed = (*estate).es_processed.saturating_add(updated_count);
+            }
+            (*state).dml_payload_emitted = true;
+        }
+        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+    }
+}
+
+unsafe fn custom_scan_dml_delete_access(
+    state: *mut SpireCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if !(*state).dml_payload_emitted {
+            let deleted_count = custom_scan_execute_dml_delete(state);
+            let estate = (*scan_state).ps.state;
+            if !estate.is_null() {
+                (*estate).es_processed = (*estate).es_processed.saturating_add(deleted_count);
             }
             (*state).dml_payload_emitted = true;
         }
@@ -1973,6 +1987,56 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
                 other.to_u32()
             ),
         }
+    }
+}
+
+unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -> u64 {
+    unsafe {
+        let state_ref = &mut *state;
+        let invocation =
+            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
+        {
+            pgrx::error!("EcSpireDistributedScan DML DELETE got non-delete primitive mode");
+        }
+        let deleted_count = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT remote_deleted_count \
+                       FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                            $1::oid, $2::text, $3::bytea)",
+                    None,
+                    &[
+                        invocation.index_oid.into(),
+                        invocation.pk_column.as_str().into(),
+                        invocation.pk_value.clone().into(),
+                    ],
+                )
+                .map_err(|e| format!("EcSpireDistributedScan DML DELETE primitive failed: {e}"))?
+                .map(|row| {
+                    row["remote_deleted_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "EcSpireDistributedScan DML DELETE deleted_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "EcSpireDistributedScan DML DELETE deleted_count is null".to_owned()
+                        })
+                })
+                .next()
+                .transpose()
+                .map(|value| {
+                    value.ok_or_else(|| {
+                        "EcSpireDistributedScan DML DELETE primitive returned no rows".to_owned()
+                    })
+                })?
+        })
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        u64::try_from(deleted_count).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan DML DELETE returned a negative deleted_count")
+        })
     }
 }
 
