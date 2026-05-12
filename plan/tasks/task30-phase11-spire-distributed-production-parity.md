@@ -1,6 +1,9 @@
 # Task 30 Phase 11: SPIRE Distributed Production Parity
 
-Status: in progress
+Status: functional CustomScan and ADR-069 distributed read/write delivery
+complete; production hardening continues in
+`plan/tasks/task30-phase12-spire-production-hardening.md`; AWS verification is
+deferred to `plan/tasks/task30-phase13-spire-aws-verification.md`
 Owner: coder1 / SPIRE distributed production track
 Priority: 1 after Phase 9 and Phase 10 local architecture closeout
 
@@ -11,10 +14,11 @@ parity with the SPIRE paper shape: routed hierarchical index data, near-data
 remote scoring, bounded distributed fanout, stable cross-node identity, and one
 coordinator-visible ordered result stream.
 
-Phase 11 is the work that must be solid before the deferred AWS/RDS-class scale
-packet is worth running. It should not claim product performance. It should make
-the distributed path correct, bounded, observable, and repeatably testable on
-local multi-instance fixtures first.
+Phase 11 became the functional delivery baseline for the ADR-067 CustomScan
+pivot and the ADR-069 v1 write contract. It should not claim product
+performance. The remaining hardening, performance, and production-readiness
+work is intentionally split into Phase 12, and AWS/RDS-class verification is
+intentionally last in Phase 13.
 
 ## Scope
 
@@ -418,6 +422,11 @@ local-only path.
 
 ## Phase 11.6: Multi-Instance Epoch and Placement Readiness
 
+Status note, 2026-05-12: the original Phase 11.6-11.8 production-readiness
+scope is now tracked exhaustively in
+`task30-phase12-spire-production-hardening.md`. The checklist below remains as
+historical context for the items moved into Phase 12.
+
 - [ ] Add a local multi-instance fixture with at least one coordinator and two
   remote PostgreSQL nodes.
 - [ ] Publish and inspect placement metadata that maps selected PIDs to remote
@@ -502,6 +511,10 @@ local-only path.
   smoke, and AWS/RDS product-scale evidence.
 
 ## Phase 11.9: AWS Scale Entry Gate
+
+Status note, 2026-05-12: AWS/RDS-class verification is no longer part of
+Phase 11. It is intentionally deferred until after Phase 12 hardening and is
+tracked in `task30-phase13-spire-aws-verification.md`.
 
 - [ ] Do not schedule AWS/RDS-class scale until Phase 11.1-11.8 have either
   passed or have explicit accepted deferrals.
