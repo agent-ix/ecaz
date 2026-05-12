@@ -20982,6 +20982,8 @@ mod tests {
               decode('000102030405060708090a0b0c0d0e0f', 'hex'))",
         );
 
+        // The shared remote 2PC helper still uses the historical insert gid
+        // prefix for prepared DELETE transactions.
         let prepared_count = loopback_client
             .query_one(
                 "SELECT count(*)::bigint FROM pg_prepared_xacts WHERE gid = $1",
@@ -28792,6 +28794,262 @@ mod tests {
         .expect("DML DELETE remaining row query should succeed")
         .expect("DML DELETE remaining row summary should exist");
         assert_eq!(remaining, "0|0");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_customscan_remote_update_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_UPDATE_REMOTE_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_dml_customscan_update_remote_sql; \
+                 CREATE TABLE ec_spire_dml_customscan_update_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_dml_customscan_update_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1505, 'remote before transparent update', \
+                  encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('15161718191a1b1c1d1e1f2021222324', 'hex')); \
+                 CREATE INDEX ec_spire_dml_customscan_update_remote_idx \
+                     ON ec_spire_dml_customscan_update_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote transparent update target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_customscan_update_coord_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("transparent update coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dml_customscan_update_coord_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('25262728292a2b2c2d2e2f3031323334', 'hex'))",
+        )
+        .expect("transparent update coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_customscan_update_coord_idx \
+             ON ec_spire_dml_customscan_update_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("transparent update coordinator ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_dml_customscan_update_coord_idx'::regclass)",
+        )
+        .expect("transparent update active epoch query should succeed")
+        .expect("transparent update active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_dml_customscan_update_remote_idx'::regclass::oid)",
+        )
+        .expect("transparent update remote identity query should succeed")
+        .expect("transparent update remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_dml_customscan_update_coord_idx'::regclass, \
+                 25, 29, 'spire/remote/customscan_update_remote_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_dml_customscan_update_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("transparent update remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_dml_customscan_update_coord_idx'::regclass, \
+                     int8send(1505::bigint)::bytea, 25, 2, {active_epoch}, \
+                     decode('15161718191a1b1c1d1e1f2021222324', 'hex'))"
+        ))
+        .expect("transparent update remote placement row should be inserted");
+
+        Spi::run(
+            "EXPLAIN (COSTS OFF) \
+             UPDATE ec_spire_dml_customscan_update_coord_sql \
+                SET title = 'remote after transparent update' \
+              WHERE id = 1505",
+        )
+        .expect("transparent remote UPDATE EXPLAIN should succeed");
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("transparent remote update hook status query should succeed")
+        .expect("transparent remote update hook action should exist");
+        assert_eq!(action, "plan_tree_replaced_customscan");
+
+        Spi::run(
+            "DO $$ \
+             DECLARE row_count bigint; \
+             BEGIN \
+                 UPDATE ec_spire_dml_customscan_update_coord_sql \
+                    SET title = 'remote after transparent update' \
+                  WHERE id = 1505; \
+                 GET DIAGNOSTICS row_count = ROW_COUNT; \
+                 IF row_count != 1 THEN \
+                     RAISE EXCEPTION 'unexpected remote transparent update row count %', row_count; \
+                 END IF; \
+             END $$",
+        )
+        .expect("transparent remote UPDATE through CustomScan should succeed");
+        let remote_title = loopback_client
+            .query_one(
+                "SELECT title \
+                   FROM ec_spire_dml_customscan_update_remote_sql \
+                  WHERE id = 1505",
+                &[],
+            )
+            .expect("transparent remote update title query should succeed")
+            .try_get::<_, String>(0)
+            .expect("transparent remote update title should decode");
+        assert_eq!(remote_title, "remote after transparent update");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_customscan_remote_delete_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_CUSTOMSCAN_DELETE_REMOTE_SQL",
+            &loopback_conninfo,
+        );
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_dml_customscan_delete_remote_sql; \
+                 CREATE TABLE ec_spire_dml_customscan_delete_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_dml_customscan_delete_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1606, 'remote transparent delete me', \
+                  encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('35363738393a3b3c3d3e3f4041424344', 'hex')); \
+                 CREATE INDEX ec_spire_dml_customscan_delete_remote_idx \
+                     ON ec_spire_dml_customscan_delete_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback remote transparent delete target should be created");
+
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_customscan_delete_coord_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("transparent delete coordinator table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dml_customscan_delete_coord_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('45464748494a4b4c4d4e4f5051525354', 'hex'))",
+        )
+        .expect("transparent delete coordinator seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_customscan_delete_coord_idx \
+             ON ec_spire_dml_customscan_delete_coord_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("transparent delete coordinator ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_dml_customscan_delete_coord_idx'::regclass)",
+        )
+        .expect("transparent delete active epoch query should succeed")
+        .expect("transparent delete active epoch should exist");
+        let remote_identity_hex = Spi::get_one::<String>(
+            "SELECT profile_fingerprint \
+               FROM ec_spire_remote_search_endpoint_identity(\
+                    'ec_spire_dml_customscan_delete_remote_idx'::regclass::oid)",
+        )
+        .expect("transparent delete remote identity query should succeed")
+        .expect("transparent delete remote identity should exist");
+        Spi::run(&format!(
+            "SELECT ec_spire_register_remote_node_descriptor(\
+                 'ec_spire_dml_customscan_delete_coord_idx'::regclass, \
+                 26, 30, 'spire/remote/customscan_delete_remote_sql', \
+                 decode('{remote_identity_hex}', 'hex'), \
+                 'ec_spire_dml_customscan_delete_remote_idx', \
+                 'active', {active_epoch}, {active_epoch}, '0.1.1', '')"
+        ))
+        .expect("transparent delete remote descriptor registration should succeed");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_dml_customscan_delete_coord_idx'::regclass, \
+                     int8send(1606::bigint)::bytea, 26, 2, {active_epoch}, \
+                     decode('35363738393a3b3c3d3e3f4041424344', 'hex'))"
+        ))
+        .expect("transparent delete remote placement row should be inserted");
+
+        Spi::run(
+            "EXPLAIN (COSTS OFF) \
+             DELETE FROM ec_spire_dml_customscan_delete_coord_sql WHERE id = 1606",
+        )
+        .expect("transparent remote DELETE EXPLAIN should succeed");
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("transparent remote delete hook status query should succeed")
+        .expect("transparent remote delete hook action should exist");
+        assert_eq!(action, "plan_tree_replaced_customscan");
+
+        Spi::run(
+            "DO $$ \
+             DECLARE row_count bigint; \
+             BEGIN \
+                 DELETE FROM ec_spire_dml_customscan_delete_coord_sql WHERE id = 1606; \
+                 GET DIAGNOSTICS row_count = ROW_COUNT; \
+                 IF row_count != 1 THEN \
+                     RAISE EXCEPTION 'unexpected remote transparent delete row count %', row_count; \
+                 END IF; \
+             END $$",
+        )
+        .expect("transparent remote DELETE through CustomScan should succeed");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("transparent remote delete prepared xact query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("transparent remote delete prepared xact count should decode");
+        let remote_visible_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_dml_customscan_delete_remote_sql \
+                  WHERE id = 1606",
+                &[],
+            )
+            .expect("transparent remote delete visibility query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("transparent remote delete visibility count should decode");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT count(*) \
+               FROM ec_spire_placement \
+              WHERE index_oid = 'ec_spire_dml_customscan_delete_coord_idx'::regclass \
+                AND pk_value = int8send(1606::bigint)::bytea",
+        )
+        .expect("transparent remote delete placement count query should succeed")
+        .expect("transparent remote delete placement count should exist");
+
+        assert_eq!(prepared_count, 1);
+        assert_eq!(
+            remote_visible_count, 1,
+            "prepared remote DELETE should not be visible before transaction resolution"
+        );
+        assert_eq!(placement_count, 0);
     }
 
     #[pg_test]
