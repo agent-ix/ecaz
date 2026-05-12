@@ -47,6 +47,7 @@ pub(crate) use self::ec_spire::{
     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    dml_frontdoor_relation_context_cache_row as spire_dml_frontdoor_relation_context_cache_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
     dml_frontdoor_replacement_decision_catalog_row as spire_dml_frontdoor_replacement_decision_catalog_row,

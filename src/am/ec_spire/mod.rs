@@ -43,9 +43,10 @@ pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_primitive_plan_const_pk_value_bytes,
     dml_frontdoor_primitive_plan_expr_catalog_row, dml_frontdoor_primitive_plan_expr_from_baserel,
     dml_frontdoor_primitive_plan_from_replacement_decision,
-    dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_relation_context_catalog_row,
-    dml_frontdoor_relation_context_row, dml_frontdoor_replacement_decision_catalog_row,
-    dml_frontdoor_target_relation_oid, register_dml_frontdoor_planner_hook,
+    dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_relation_context_cache_row,
+    dml_frontdoor_relation_context_catalog_row, dml_frontdoor_relation_context_row,
+    dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_target_relation_oid,
+    register_dml_frontdoor_planner_hook,
 };
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::vacuum::{

@@ -125,10 +125,17 @@ described by reviewer packet `30896`.
     unrelated placement rows and asserts the `index_oid` lookup uses
     `ec_spire_placement_by_index_oid`; the existing DML PK-select CustomScan
     test still verifies planner replacement.
-- [ ] Add a per-snapshot relation-context cache keyed by heap/index relcache
+- [x] Add a per-snapshot relation-context cache keyed by heap/index relcache
   invalidation state.
-- [ ] Register relcache invalidation callbacks for the heap relation and its
+- [x] Register relcache invalidation callbacks for the heap relation and its
   `ec_spire` indexes.
+  - [x] DML frontdoor catalog relation context now uses a backend-local
+    relcache-invalidated cache, watches the heap plus its index relids, and
+    exposes `ec_spire_dml_frontdoor_relation_context_cache()` for hit/miss and
+    invalidation diagnostics.
+    `test_ec_spire_dml_context_cache_invalidation_sql`
+    warms a no-index context, verifies a cache hit, creates the `ec_spire`
+    index, and verifies the refreshed context is not stale.
 - [ ] Calibrate the symbolic CustomScan cost constants from local benchmark
   measurements across fanout counts, placement counts, output row counts, and
   tuple payload widths.

@@ -1056,6 +1056,30 @@ fn ec_spire_dml_frontdoor_relation_context_catalog(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_dml_frontdoor_relation_context_cache() -> TableIterator<
+    'static,
+    (
+        name!(relcache_callback_registered, bool),
+        name!(entry_count, i64),
+        name!(hit_count, i64),
+        name!(miss_count, i64),
+        name!(invalidation_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    let row = am::spire_dml_frontdoor_relation_context_cache_row();
+    TableIterator::once((
+        row.relcache_callback_registered,
+        row.entry_count,
+        row.hit_count,
+        row.miss_count,
+        row.invalidation_count,
+        row.status,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_dml_frontdoor_classify_sql(
     sql: &str,
 ) -> TableIterator<
@@ -29733,6 +29757,69 @@ mod tests {
         assert_eq!(catalog_status, status);
         assert_eq!(catalog_pk_column, pk_column);
         assert_eq!(catalog_embedding_columns, embedding_columns);
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_context_cache_invalidation_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_frontdoor_context_cache_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML frontdoor context cache table creation should succeed");
+
+        let cache = "FROM ec_spire_dml_frontdoor_relation_context_cache()";
+        let context = "FROM ec_spire_dml_frontdoor_relation_context_catalog(\
+                       'ec_spire_dml_frontdoor_context_cache_sql'::regclass)";
+        let before_hits = Spi::get_one::<i64>(&format!("SELECT hit_count {cache}"))
+            .expect("DML frontdoor context cache hit count query should succeed")
+            .expect("DML frontdoor context cache hit count should exist");
+        let before_misses = Spi::get_one::<i64>(&format!("SELECT miss_count {cache}"))
+            .expect("DML frontdoor context cache miss count query should succeed")
+            .expect("DML frontdoor context cache miss count should exist");
+
+        let initial_status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML frontdoor uncached context query should succeed")
+            .expect("DML frontdoor uncached context status should exist");
+        let after_first_misses = Spi::get_one::<i64>(&format!("SELECT miss_count {cache}"))
+            .expect("DML frontdoor first miss count query should succeed")
+            .expect("DML frontdoor first miss count should exist");
+        assert_eq!(initial_status, "no_ec_spire_index");
+        assert_eq!(after_first_misses, before_misses + 1);
+
+        let cached_status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML frontdoor cached context query should succeed")
+            .expect("DML frontdoor cached context status should exist");
+        let after_second_hits = Spi::get_one::<i64>(&format!("SELECT hit_count {cache}"))
+            .expect("DML frontdoor second hit count query should succeed")
+            .expect("DML frontdoor second hit count should exist");
+        assert_eq!(cached_status, "no_ec_spire_index");
+        assert_eq!(after_second_hits, before_hits + 1);
+
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_frontdoor_context_cache_idx \
+             ON ec_spire_dml_frontdoor_context_cache_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML frontdoor context cache ec_spire index creation should succeed");
+
+        let refreshed_status = Spi::get_one::<String>(&format!("SELECT status {context}"))
+            .expect("DML frontdoor refreshed context query should succeed")
+            .expect("DML frontdoor refreshed context status should exist");
+        let refreshed_index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT index_oid {context}"))
+                .expect("DML frontdoor refreshed context index query should succeed")
+                .expect("DML frontdoor refreshed context index should exist");
+        let after_refresh_misses = Spi::get_one::<i64>(&format!("SELECT miss_count {cache}"))
+            .expect("DML frontdoor refresh miss count query should succeed")
+            .expect("DML frontdoor refresh miss count should exist");
+        let cache_status = Spi::get_one::<String>(&format!("SELECT status {cache}"))
+            .expect("DML frontdoor cache status query should succeed")
+            .expect("DML frontdoor cache status should exist");
+
+        assert_eq!(refreshed_status, "relation_context_ready");
+        assert_ne!(refreshed_index_oid, pg_sys::InvalidOid);
+        assert_eq!(after_refresh_misses, before_misses + 2);
+        assert_eq!(cache_status, "relcache_invalidated_cache_ready");
     }
 
     #[pg_test]

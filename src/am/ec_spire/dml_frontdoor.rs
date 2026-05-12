@@ -9,7 +9,10 @@
 
 use pgrx::{pg_guard, pg_sys, FromDatum, PgList, Spi};
 
+use std::collections::HashMap;
 use std::ffi::CStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpireDmlFrontdoorOperation {
@@ -148,6 +151,16 @@ pub(crate) struct SpireDmlFrontdoorRelationContext {
     pub(crate) next_step: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpireDmlFrontdoorRelationContextCacheRow {
+    pub(crate) relcache_callback_registered: bool,
+    pub(crate) entry_count: i64,
+    pub(crate) hit_count: i64,
+    pub(crate) miss_count: i64,
+    pub(crate) invalidation_count: i64,
+    pub(crate) status: &'static str,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct SpireDmlFrontdoorQueryContext<'a> {
     pub(crate) ec_spire_distributed_table: bool,
@@ -165,6 +178,26 @@ static mut LAST_HOOK_CLASSIFICATION_SUPPORTED: Option<bool> = None;
 static mut LAST_HOOK_CLASSIFICATION_KIND: Option<&'static str> = None;
 static mut LAST_HOOK_CLASSIFICATION_STATUS: Option<&'static str> = None;
 static mut LAST_HOOK_ACTION: Option<&'static str> = None;
+static mut RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED: bool = false;
+
+static RELATION_CONTEXT_CACHE: OnceLock<Mutex<HashMap<u32, CachedRelationContext>>> =
+    OnceLock::new();
+static RELATION_CONTEXT_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static RELATION_CONTEXT_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
+static RELATION_CONTEXT_CACHE_INVALIDATIONS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone)]
+struct CachedRelationContext {
+    context: SpireDmlFrontdoorRelationContext,
+    watched_relation_oids: Vec<pg_sys::Oid>,
+}
+
+type RelcacheCallbackFunction =
+    Option<unsafe extern "C-unwind" fn(arg: pg_sys::Datum, relid: pg_sys::Oid)>;
+
+unsafe extern "C" {
+    fn CacheRegisterRelcacheCallback(function: RelcacheCallbackFunction, arg: pg_sys::Datum);
+}
 
 const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
@@ -177,6 +210,71 @@ pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
             pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
             PLANNER_HOOK_INSTALLED = true;
         }
+        dml_frontdoor_register_relcache_callback();
+    }
+}
+
+unsafe fn dml_frontdoor_register_relcache_callback() {
+    unsafe {
+        if !RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED {
+            CacheRegisterRelcacheCallback(
+                Some(dml_frontdoor_relation_context_relcache_callback),
+                pg_sys::Datum::from(0),
+            );
+            RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED = true;
+        }
+    }
+}
+
+unsafe extern "C-unwind" fn dml_frontdoor_relation_context_relcache_callback(
+    _arg: pg_sys::Datum,
+    relid: pg_sys::Oid,
+) {
+    let Some(cache) = RELATION_CONTEXT_CACHE.get() else {
+        return;
+    };
+    let Ok(mut guard) = cache.lock() else {
+        return;
+    };
+    let before = guard.len();
+    if relid == pg_sys::InvalidOid {
+        guard.clear();
+    } else {
+        guard.retain(|_heap_oid, entry| {
+            !entry
+                .watched_relation_oids
+                .iter()
+                .any(|watched_oid| *watched_oid == relid)
+        });
+    }
+    if guard.len() != before {
+        RELATION_CONTEXT_CACHE_INVALIDATIONS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn dml_frontdoor_relation_context_cache_row() -> SpireDmlFrontdoorRelationContextCacheRow
+{
+    let entry_count = RELATION_CONTEXT_CACHE
+        .get()
+        .and_then(|cache| cache.lock().ok().map(|guard| guard.len()))
+        .unwrap_or(0);
+    let callback_registered = unsafe { RELATION_CONTEXT_RELCACHE_CALLBACK_REGISTERED };
+    SpireDmlFrontdoorRelationContextCacheRow {
+        relcache_callback_registered: callback_registered,
+        entry_count: i64::try_from(entry_count).unwrap_or(i64::MAX),
+        hit_count: i64::try_from(RELATION_CONTEXT_CACHE_HITS.load(Ordering::Relaxed))
+            .unwrap_or(i64::MAX),
+        miss_count: i64::try_from(RELATION_CONTEXT_CACHE_MISSES.load(Ordering::Relaxed))
+            .unwrap_or(i64::MAX),
+        invalidation_count: i64::try_from(
+            RELATION_CONTEXT_CACHE_INVALIDATIONS.load(Ordering::Relaxed),
+        )
+        .unwrap_or(i64::MAX),
+        status: if callback_registered {
+            "relcache_invalidated_cache_ready"
+        } else {
+            "relcache_callback_not_registered"
+        },
     }
 }
 
@@ -270,12 +368,23 @@ pub(crate) fn dml_frontdoor_relation_context_row(
 pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
     heap_relation_oid: pg_sys::Oid,
 ) -> Result<SpireDmlFrontdoorRelationContext, String> {
+    unsafe { dml_frontdoor_register_relcache_callback() };
     if heap_relation_oid == pg_sys::InvalidOid {
         return Err(
             "ec_spire DML frontdoor catalog relation context requires a valid heap relation OID"
                 .to_owned(),
         );
     }
+
+    let cache_key = heap_relation_oid.to_u32();
+    if let Some(context) = RELATION_CONTEXT_CACHE
+        .get()
+        .and_then(|cache| cache.lock().ok()?.get(&cache_key).cloned())
+    {
+        RELATION_CONTEXT_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+        return Ok(context.context);
+    }
+    RELATION_CONTEXT_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
 
     let heap_relation = unsafe {
         pg_sys::table_open(
@@ -287,7 +396,26 @@ pub(crate) unsafe fn dml_frontdoor_relation_context_catalog_row(
         return Err("ec_spire DML frontdoor catalog relation open returned NULL".to_owned());
     }
 
-    let result = unsafe { dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation) };
+    let result = unsafe {
+        dml_frontdoor_relation_context_catalog_for_open_heap(heap_relation).map(
+            |(context, watched_relation_oids)| {
+                RELATION_CONTEXT_CACHE
+                    .get_or_init(|| Mutex::new(HashMap::new()))
+                    .lock()
+                    .map(|mut guard| {
+                        guard.insert(
+                            cache_key,
+                            CachedRelationContext {
+                                context: context.clone(),
+                                watched_relation_oids,
+                            },
+                        );
+                    })
+                    .ok();
+                context
+            },
+        )
+    };
     unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
 }
@@ -1142,10 +1270,12 @@ struct SpireDmlFrontdoorPrimaryKeyColumn {
 
 unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
     heap_relation: pg_sys::Relation,
-) -> Result<SpireDmlFrontdoorRelationContext, String> {
+) -> Result<(SpireDmlFrontdoorRelationContext, Vec<pg_sys::Oid>), String> {
     let heap_relation_oid = unsafe { (*heap_relation).rd_id };
     let column_names = unsafe { dml_frontdoor_relation_column_names_from_rel(heap_relation)? };
-    let (index_oid, pk) = unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+    let (index_oid, pk, mut watched_relation_oids) =
+        unsafe { dml_frontdoor_catalog_index_and_pk(heap_relation)? };
+    watched_relation_oids.push(heap_relation_oid);
     let embedding_columns = if index_oid == pg_sys::InvalidOid {
         Vec::new()
     } else {
@@ -1175,22 +1305,32 @@ unsafe fn dml_frontdoor_relation_context_catalog_for_open_heap(
         .map(|pk| (Some(pk.column_name), Some(pk.column_type)))
         .unwrap_or((None, None));
 
-    Ok(SpireDmlFrontdoorRelationContext {
-        heap_relation_oid,
-        index_oid,
-        ec_spire_distributed_table,
-        pk_column,
-        pk_type,
-        column_names,
-        embedding_columns,
-        status,
-        next_step,
-    })
+    Ok((
+        SpireDmlFrontdoorRelationContext {
+            heap_relation_oid,
+            index_oid,
+            ec_spire_distributed_table,
+            pk_column,
+            pk_type,
+            column_names,
+            embedding_columns,
+            status,
+            next_step,
+        },
+        watched_relation_oids,
+    ))
 }
 
 unsafe fn dml_frontdoor_catalog_index_and_pk(
     heap_relation: pg_sys::Relation,
-) -> Result<(pg_sys::Oid, Option<SpireDmlFrontdoorPrimaryKeyColumn>), String> {
+) -> Result<
+    (
+        pg_sys::Oid,
+        Option<SpireDmlFrontdoorPrimaryKeyColumn>,
+        Vec<pg_sys::Oid>,
+    ),
+    String,
+> {
     let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
     // RelationGetIndexList returns a private OID list, so each index can be
     // opened and closed under AccessShareLock while walking this copy.
@@ -1199,8 +1339,10 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
     let mut ec_spire_index_count = 0_i64;
     let mut ec_spire_index_oid = pg_sys::InvalidOid;
     let mut primary_key = None;
+    let mut watched_index_oids = Vec::new();
 
     for index_oid in index_list.iter_oid() {
+        watched_index_oids.push(index_oid);
         let index_relation =
             unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         if index_relation.is_null() {
@@ -1234,7 +1376,7 @@ unsafe fn dml_frontdoor_catalog_index_and_pk(
                 .to_owned(),
         );
     }
-    Ok((ec_spire_index_oid, primary_key))
+    Ok((ec_spire_index_oid, primary_key, watched_index_oids))
 }
 
 unsafe fn dml_frontdoor_primary_key_column_from_index(
