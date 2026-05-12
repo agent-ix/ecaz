@@ -196,7 +196,7 @@ pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow 
         query_shape_classifier_enabled: true,
         query_shape_classifier_invoked_by_hook: classifier_invoked,
         unsupported_shape_fail_closed_enabled: true,
-        plan_rewrite_enabled: false,
+        plan_rewrite_enabled: true,
         last_classification_supported: last_supported,
         last_classification_kind: last_kind,
         last_classification_status: last_status,
@@ -298,17 +298,70 @@ unsafe extern "C-unwind" fn ec_spire_dml_frontdoor_planner_hook(
 ) -> *mut pg_sys::PlannedStmt {
     // Run the SPIRE fail-closed guard before chained hooks so unsupported
     // distributed DML cannot be rewritten into a coordinator-heap base plan.
-    unsafe { dml_frontdoor_observe_planner_query(parse) };
-    if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
+    let decision = unsafe { dml_frontdoor_observe_planner_query(parse) };
+    let plan_expr = unsafe { dml_frontdoor_plan_tree_replacement_expr(parse, decision.as_ref()) };
+    let planned_stmt = if let Some(previous_hook) = unsafe { PREVIOUS_PLANNER_HOOK } {
         unsafe { previous_hook(parse, query_string, cursor_options, bound_params) }
     } else {
         unsafe { pg_sys::standard_planner(parse, query_string, cursor_options, bound_params) }
+    };
+    unsafe { dml_frontdoor_maybe_replace_plan_tree(planned_stmt, plan_expr) }
+}
+
+unsafe fn dml_frontdoor_plan_tree_replacement_expr(
+    query: *mut pg_sys::Query,
+    decision: Option<&SpireDmlFrontdoorReplacementDecisionRow>,
+) -> Option<SpireDmlFrontdoorPrimitivePlanExpr> {
+    unsafe {
+        let decision = decision?;
+        if !dml_frontdoor_uses_plan_tree_replacement(decision) {
+            return None;
+        }
+        let plan_expr = dml_frontdoor_primitive_plan_expr_catalog_row(query).unwrap_or_else(|| {
+            pgrx::error!("ec_spire DML frontdoor plan replacement lost primitive plan")
+        });
+        Some(match plan_expr {
+            Ok(plan_expr) => plan_expr,
+            Err(err) => pgrx::error!("{err}"),
+        })
     }
 }
 
-unsafe fn dml_frontdoor_observe_planner_query(query: *mut pg_sys::Query) {
+unsafe fn dml_frontdoor_maybe_replace_plan_tree(
+    planned_stmt: *mut pg_sys::PlannedStmt,
+    plan_expr: Option<SpireDmlFrontdoorPrimitivePlanExpr>,
+) -> *mut pg_sys::PlannedStmt {
+    unsafe {
+        let Some(plan_expr) = plan_expr else {
+            return planned_stmt;
+        };
+        if planned_stmt.is_null() {
+            pgrx::error!("ec_spire DML frontdoor plan replacement got null PlannedStmt");
+        }
+        (*planned_stmt).planTree = super::custom_scan::custom_scan_dml_replacement_plan(
+            plan_expr,
+            (*planned_stmt).planTree,
+        );
+        LAST_HOOK_ACTION = Some("plan_tree_replaced_customscan");
+        planned_stmt
+    }
+}
+
+fn dml_frontdoor_uses_plan_tree_replacement(
+    decision: &SpireDmlFrontdoorReplacementDecisionRow,
+) -> bool {
+    decision.supported
+        && matches!(
+            decision.custom_scan_mode,
+            "coordinator_update_tuple_payload" | "coordinator_delete_tuple_payload"
+        )
+}
+
+unsafe fn dml_frontdoor_observe_planner_query(
+    query: *mut pg_sys::Query,
+) -> Option<SpireDmlFrontdoorReplacementDecisionRow> {
     let Some(decision) = (unsafe { dml_frontdoor_replacement_decision_catalog_row(query) }) else {
-        return;
+        return None;
     };
     let action = dml_frontdoor_hook_action(&decision);
     unsafe {
@@ -321,6 +374,7 @@ unsafe fn dml_frontdoor_observe_planner_query(query: *mut pg_sys::Query) {
     if action == "planner_error_fail_closed" {
         dml_frontdoor_raise_planner_error(&decision);
     }
+    Some(decision)
 }
 
 fn dml_frontdoor_hook_action(decision: &SpireDmlFrontdoorReplacementDecisionRow) -> &'static str {

@@ -28274,7 +28274,7 @@ mod tests {
         assert!(planner_hook_installed);
         assert!(query_shape_classifier_enabled);
         assert!(unsupported_shape_fail_closed_enabled);
-        assert!(!plan_rewrite_enabled);
+        assert!(plan_rewrite_enabled);
         assert_eq!(
             query_shape_classifier_invoked_by_hook,
             status != "fail_closed_guard_ready"
@@ -28283,7 +28283,8 @@ mod tests {
             status == "fail_closed_guard_ready"
                 || status == "pass_through_until_rewrite"
                 || status == "pass_through_not_spire_frontdoor"
-                || status == "planner_error_fail_closed",
+                || status == "planner_error_fail_closed"
+                || status == "plan_tree_replaced_customscan",
             "{status}"
         );
     }
@@ -28639,6 +28640,65 @@ mod tests {
         .expect("DML frontdoor context hook kind should exist");
         assert_eq!(action, "planner_error_fail_closed");
         assert_eq!(kind, "relation_context_error");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_dml_plan_tree_replace_scaffold() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_plan_replace_sql \
+             (id bigint primary key, title text not null, embedding ecvector)",
+        )
+        .expect("DML plan replacement table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_plan_replace_idx \
+             ON ec_spire_dml_plan_replace_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML plan replacement ec_spire index creation should succeed");
+
+        Spi::run(
+            "EXPLAIN (COSTS OFF) \
+             UPDATE ec_spire_dml_plan_replace_sql SET title = 'updated' WHERE id = 5",
+        )
+        .expect("DML UPDATE plan replacement EXPLAIN should succeed");
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML UPDATE plan replacement hook action query should succeed")
+        .expect("DML UPDATE plan replacement hook action should exist");
+        assert_eq!(action, "plan_tree_replaced_customscan");
+
+        Spi::run(
+            "EXPLAIN (COSTS OFF) \
+             DELETE FROM ec_spire_dml_plan_replace_sql WHERE id = 5",
+        )
+        .expect("DML DELETE plan replacement EXPLAIN should succeed");
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML DELETE plan replacement hook action query should succeed")
+        .expect("DML DELETE plan replacement hook action should exist");
+        assert_eq!(action, "plan_tree_replaced_customscan");
+
+        let execution_error = pg_sys::PgTryBuilder::new(|| {
+            Spi::run(
+                "UPDATE ec_spire_dml_plan_replace_sql \
+                    SET title = 'updated' \
+                  WHERE id = 5",
+            )
+            .expect("DML plan replacement execution should fail closed");
+            "no_error".to_owned()
+        })
+        .catch_others(|cause| match cause {
+            pg_sys::panic::CaughtError::ErrorReport(report)
+            | pg_sys::panic::CaughtError::PostgresError(report) => report.message().to_owned(),
+            pg_sys::panic::CaughtError::RustPanic { ereport, .. } => ereport.message().to_owned(),
+        })
+        .execute();
+        assert_eq!(
+            execution_error,
+            "EcSpireDistributedScan DML UPDATE/DELETE executor path is not wired yet"
+        );
     }
 
     #[pg_test]

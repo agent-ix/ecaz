@@ -421,27 +421,64 @@ unsafe fn plan_dml_custom_path(
         custom_scan.flags = (*best_path).flags;
         custom_scan.custom_plans = custom_plans;
         custom_scan.custom_exprs = custom_exprs;
-        let mut custom_private =
-            custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
-        custom_private = custom_scan_lappend_string(
-            custom_private,
-            &custom_scan_index_oid_from_path(best_path)
-                .to_u32()
-                .to_string(),
+        custom_scan.custom_private = custom_scan_dml_plan_private(
+            mode,
+            custom_scan_index_oid_from_path(best_path),
+            &plan_expr.primitive_plan.updated_columns,
+            &plan_expr.primitive_plan.projected_columns,
         );
-        custom_private = custom_scan_lappend_string(
-            custom_private,
-            &custom_scan_dml_column_list_plan_private_json(
-                &plan_expr.primitive_plan.updated_columns,
-            ),
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+pub(crate) unsafe fn custom_scan_dml_replacement_plan(
+    plan_expr: super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
+    fallback_plan: *mut pg_sys::Plan,
+) -> *mut pg_sys::Plan {
+    unsafe {
+        let mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
+        let custom_exprs = pg_sys::lappend(
+            std::ptr::null_mut(),
+            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
         );
-        custom_private = custom_scan_lappend_string(
-            custom_private,
-            &custom_scan_dml_column_list_plan_private_json(
-                &plan_expr.primitive_plan.projected_columns,
-            ),
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        custom_scan.scan.plan.disabled_nodes = if fallback_plan.is_null() {
+            0
+        } else {
+            (*fallback_plan).disabled_nodes
+        };
+        custom_scan.scan.plan.startup_cost = if fallback_plan.is_null() {
+            0.0
+        } else {
+            (*fallback_plan).startup_cost
+        };
+        custom_scan.scan.plan.total_cost = if fallback_plan.is_null() {
+            0.0
+        } else {
+            (*fallback_plan).total_cost
+        };
+        custom_scan.scan.plan.plan_rows = 0.0;
+        custom_scan.scan.plan.plan_width = 0;
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = std::ptr::null_mut();
+        custom_scan.scan.plan.qual = std::ptr::null_mut();
+        custom_scan.scan.scanrelid = 0;
+        custom_scan.flags = 0;
+        custom_scan.custom_plans = std::ptr::null_mut();
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = custom_scan_dml_plan_private(
+            mode,
+            plan_expr.primitive_plan.index_oid,
+            &plan_expr.primitive_plan.updated_columns,
+            &plan_expr.primitive_plan.projected_columns,
         );
-        custom_scan.custom_private = custom_private;
         custom_scan.custom_scan_tlist = std::ptr::null_mut();
         custom_scan.custom_relids = std::ptr::null_mut();
         custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
@@ -927,6 +964,28 @@ unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) 
     }
 }
 
+unsafe fn custom_scan_dml_plan_private(
+    mode: SpireCustomScanPlanMode,
+    index_oid: pg_sys::Oid,
+    updated_columns: &[String],
+    projected_columns: &[String],
+) -> *mut pg_sys::List {
+    unsafe {
+        let mut custom_private =
+            custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
+        custom_private =
+            custom_scan_lappend_string(custom_private, &index_oid.to_u32().to_string());
+        custom_private = custom_scan_lappend_string(
+            custom_private,
+            &custom_scan_dml_column_list_plan_private_json(updated_columns),
+        );
+        custom_scan_lappend_string(
+            custom_private,
+            &custom_scan_dml_column_list_plan_private_json(projected_columns),
+        )
+    }
+}
+
 unsafe fn custom_scan_plan_private_u32(
     custom_private: *mut pg_sys::List,
     offset: i32,
@@ -1390,15 +1449,14 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         let custom_scan = custom_scan_plan(node);
         (*state).mode = custom_scan_mode_from_plan(custom_scan);
         (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
-        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
-        (*state).tuple_payload_inputs =
-            custom_scan_payload_attr_inputs((*(*node).ss.ss_currentRelation).rd_att);
         match (*state).mode {
             SpireCustomScanPlanMode::VectorOrderLimit => {
+                custom_scan_init_tuple_payload_state(state, node, custom_scan);
                 (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
                 (*state).query = custom_scan_query_from_plan(node, custom_scan);
             }
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+                custom_scan_init_tuple_payload_state(state, node, custom_scan);
                 (*state).dml_pk_column = custom_scan_dml_pk_column(node);
                 (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
                 (*state).dml_updated_columns =
@@ -1414,8 +1472,6 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             }
             SpireCustomScanPlanMode::DmlUpdateTuplePayload
             | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
-                (*state).dml_pk_column = custom_scan_dml_pk_column(node);
-                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
                 (*state).dml_updated_columns =
                     custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
                 (*state).dml_projected_columns =
@@ -1428,6 +1484,18 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             }
         }
+    }
+}
+
+unsafe fn custom_scan_init_tuple_payload_state(
+    state: *mut SpireCustomScanExecState,
+    node: *mut pg_sys::CustomScanState,
+    custom_scan: *mut pg_sys::CustomScan,
+) {
+    unsafe {
+        (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
+        (*state).tuple_payload_inputs =
+            custom_scan_payload_attr_inputs((*(*node).ss.ss_currentRelation).rd_att);
     }
 }
 
