@@ -1246,6 +1246,11 @@ v1 write contract from ADR-069:
     wrapper surfaces alongside the already-wired PK SELECT wrapper, with a
     shared mode guard that produces operation-specific fail-closed errors if a
     future planner path asks for the wrong DML primitive mode.
+  - [x] Packet `30880` carries DML primitive column metadata through
+    `EcSpireDistributedScan` plan-private state: UPDATE updated columns and PK
+    SELECT projected columns are serialized with the DML CustomScan plan and
+    decoded during `BeginCustomScan`, while UPDATE/DELETE path generation stays
+    disabled until executor semantics are wired.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
