@@ -654,7 +654,7 @@ fn production_scan_output_is_am_deliverable(
 ) -> bool {
     matches!(
         output.heap_lookup_owner,
-        super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION | super::SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
+        super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
     )
 }
 
@@ -665,7 +665,7 @@ fn production_scan_output_to_am_output(
         return Err(format!(
             "ec_spire production scan output for node_id {} cannot be delivered as coordinator xs_heaptid; next step is {}",
             output.node_id,
-            super::SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
+            super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY
         ));
     }
 
@@ -692,7 +692,7 @@ fn production_scan_result_stream_am_outputs(
     if stream.am_delivery.remote_origin_output_count != 0 {
         return Err(format!(
             "ec_spire production scan AM tuple delivery requires {} for {} remote-origin output(s)",
-            super::SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
+            super::SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
             stream.am_delivery.remote_origin_output_count
         ));
     }

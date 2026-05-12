@@ -1656,7 +1656,6 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
             if !matches!(
                 output.heap_lookup_owner,
                 super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
-                    | super::SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
             ) {
                 return custom_scan_store_remote_tuple_payload(state, scan_state, output);
             }

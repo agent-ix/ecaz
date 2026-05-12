@@ -60,7 +60,8 @@ const SPIRE_REMOTE_EXECUTOR_STEP_SECRET: &str = "conninfo_secret_resolution";
 const SPIRE_REMOTE_EXECUTOR_STEP_PRODUCTION_TRANSPORT: &str = "production_transport_adapter";
 const SPIRE_REMOTE_EXECUTOR_STEP_COMPACT_CANDIDATE_RECEIVE: &str = "compact_candidate_receive";
 const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_HEAP_RESOLUTION: &str = "remote_heap_resolution";
-const SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION: &str = "remote_row_materialization";
+const SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY: &str =
+    "custom_scan_tuple_delivery";
 const SPIRE_REMOTE_EXECUTOR_STEP_CANCELLATION: &str = "remote_executor_cancellation";
 const SPIRE_REMOTE_EXECUTOR_STEP_CONSISTENCY_POLICY: &str = "remote_consistency_policy";
 const SPIRE_REMOTE_ENDPOINT_SEARCH: &str = "ec_spire_remote_search";
@@ -108,14 +109,13 @@ const SPIRE_REMOTE_VEC_ID_DEDUPE_KEY: &str = "global_vec_id_or_node_scoped_local
 const SPIRE_REMOTE_VEC_ID_KEY_GLOBAL: u8 = 0xA0;
 const SPIRE_REMOTE_VEC_ID_KEY_NODE_LOCAL: u8 = 0xA1;
 const SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION: &str = "coordinator_local_heap";
-const SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION: &str = "coordinator_materialized_heap";
 const SPIRE_REMOTE_HEAP_RESOLUTION: &str = "origin_node_row_locator";
 const SPIRE_REMOTE_FINAL_STATUS_LOCAL_READY: &str = "local_ready";
 const SPIRE_REMOTE_FINAL_STATUS_REMOTE_READY: &str = "remote_ready";
 const SPIRE_REMOTE_FINAL_STATUS_NO_BATCHES: &str = "no_candidate_batches";
 const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_HEAP: &str = "requires_remote_heap_resolution";
-const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION: &str =
-    "requires_remote_row_materialization";
+const SPIRE_REMOTE_FINAL_STATUS_REQUIRES_CUSTOM_SCAN_TUPLE_DELIVERY: &str =
+    "requires_custom_scan_tuple_delivery";
 const SPIRE_REMOTE_FINAL_STATUS_BLOCKED: &str = "blocked";
 const SPIRE_REMOTE_FINAL_STATUS_PLANNED: &str = "planned";
 const SPIRE_REMOTE_RESULT_SOURCE_LOCAL_HEAP_CANDIDATES: &str = "local_heap_candidates";
@@ -386,22 +386,6 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
         },
         SpireRemoteOperatorEntrypointContractRow {
             entrypoint_ordinal: 20,
-            entrypoint_name: "ec_spire_remote_search_row_materialization_contract",
-            area: "search",
-            operator_use: "remote_origin_tuple_delivery_contract",
-            status_source: "contract_item,required_surface,blocked_status,validator",
-            next_action: "materialize_remote_origin_rows_into_coordinator_indexed_heap_before_am_delivery",
-        },
-        SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 21,
-            entrypoint_name: "ec_spire_remote_search_row_materialization_mapping_contract",
-            area: "search",
-            operator_use: "remote_origin_materialized_tid_mapping_contract",
-            status_source: "contract_item,required_input,validation_rule,status",
-            next_action: "implement_epoch_scoped_materialized_row_mapping_provider_before_remote_am_delivery",
-        },
-        SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 22,
             entrypoint_name: "ec_spire_remote_search_stage_e_fault_matrix",
             area: "search",
             operator_use: "local_multi_instance_fault_fixture_contract",
@@ -409,7 +393,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "implement_stage_e_fault_fixture_against_each_named_case",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 23,
+            entrypoint_ordinal: 21,
             entrypoint_name: "ec_spire_remote_search_operator_diagnostics",
             area: "search",
             operator_use: "packet_friendly_production_readiness_rollup",
@@ -417,7 +401,7 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "inspect_single_rollup_before_running_multi_instance_fault_fixture",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 24,
+            entrypoint_ordinal: 22,
             entrypoint_name: "ec_spire_remote_search_stage_e_lifecycle_matrix",
             area: "search",
             operator_use: "local_multi_instance_lifecycle_fixture_contract",
@@ -425,20 +409,12 @@ pub(crate) fn remote_operator_entrypoint_contract_rows(
             next_action: "implement_drop_reindex_create_concurrently_fixture_against_each_named_case",
         },
         SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 25,
+            entrypoint_ordinal: 23,
             entrypoint_name: "ec_spire_remote_epoch_manifest_freshness",
             area: "manifest",
             operator_use: "stage_e_manifest_freshness_assertion",
             status_source: "node_id,freshness_status,persisted_entry_matches,next_action",
             next_action: "persist_or_refresh_manifest_before_stage_e_fixture_execution",
-        },
-        SpireRemoteOperatorEntrypointContractRow {
-            entrypoint_ordinal: 26,
-            entrypoint_name: "ec_spire_remote_row_materialization_mirror_sync_contract",
-            area: "materialization",
-            operator_use: "operator_owned_mirror_sync_contract",
-            status_source: "step_name,operator_input,validation_rule,status",
-            next_action: "implement_mirror_profile_dry_run_then_refresh_before_stage_f_or_g",
         },
     ]
 }
@@ -5818,17 +5794,6 @@ pub(crate) fn remote_search_production_fault_matrix_rows(
             SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
             "uncategorized remote query failures, including remote OOM, cannot enter merge as empty results",
         ),
-        production_fault_matrix_row(
-            27,
-            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            "remote_row_materialization",
-            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
-            "fail_closed",
-            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            "skip_candidate",
-            SPIRE_REMOTE_STATUS_DEGRADED_SKIPPED,
-            "missing or stale coordinator materialization mappings fold under remote_row_materialization until the provider lands",
-        ),
     ]
 }
 
@@ -6439,136 +6404,8 @@ fn production_scan_outputs_from_heap_candidates(
 fn production_scan_output_is_local_heap_tid(output: &SpireRemoteProductionScanOutputRow) -> bool {
     matches!(
         output.heap_lookup_owner,
-        SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION | SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION
+        SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
     )
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SpireRemoteMaterializedRowMapping {
-    pub(crate) requested_epoch: u64,
-    pub(crate) served_epoch: u64,
-    pub(crate) origin_node_id: u32,
-    pub(crate) vec_id: Vec<u8>,
-    pub(crate) row_locator: Vec<u8>,
-    pub(crate) scan_heap_relation_oid: pg_sys::Oid,
-    pub(crate) materialized_heap_block: u32,
-    pub(crate) materialized_heap_offset: u16,
-    pub(crate) visible_to_scan_snapshot: bool,
-}
-
-pub(crate) trait SpireRemoteRowMaterializationProvider {
-    fn materialized_row_mapping(
-        &self,
-        scan_heap_relation_oid: pg_sys::Oid,
-        output: &SpireRemoteProductionScanOutputRow,
-    ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String>;
-}
-
-pub(crate) struct SpireRemoteNoRowMaterializationProvider;
-
-impl SpireRemoteRowMaterializationProvider for SpireRemoteNoRowMaterializationProvider {
-    fn materialized_row_mapping(
-        &self,
-        _scan_heap_relation_oid: pg_sys::Oid,
-        _output: &SpireRemoteProductionScanOutputRow,
-    ) -> Result<Option<SpireRemoteMaterializedRowMapping>, String> {
-        Ok(None)
-    }
-}
-
-fn production_scan_validate_materialized_row_mapping(
-    scan_heap_relation_oid: pg_sys::Oid,
-    output: &SpireRemoteProductionScanOutputRow,
-    mapping: &SpireRemoteMaterializedRowMapping,
-) -> Result<(), String> {
-    if mapping.requested_epoch != output.requested_epoch {
-        return Err(format!(
-            "ec_spire remote_row_materialization mapping requested_epoch mismatch: output {}, mapping {}",
-            output.requested_epoch, mapping.requested_epoch
-        ));
-    }
-    if mapping.served_epoch != output.served_epoch {
-        return Err(format!(
-            "ec_spire remote_row_materialization mapping served_epoch mismatch: output {}, mapping {}",
-            output.served_epoch, mapping.served_epoch
-        ));
-    }
-    if mapping.origin_node_id != output.node_id {
-        return Err(format!(
-            "ec_spire remote_row_materialization mapping origin_node_id mismatch: output {}, mapping {}",
-            output.node_id, mapping.origin_node_id
-        ));
-    }
-    if mapping.vec_id != output.vec_id {
-        return Err("ec_spire remote_row_materialization mapping vec_id mismatch".to_owned());
-    }
-    if mapping.row_locator != output.row_locator {
-        return Err("ec_spire remote_row_materialization mapping row_locator mismatch".to_owned());
-    }
-    if mapping.scan_heap_relation_oid != scan_heap_relation_oid {
-        return Err(format!(
-            "ec_spire remote_row_materialization mapping relation mismatch: scan heap {}, mapping heap {}",
-            scan_heap_relation_oid, mapping.scan_heap_relation_oid
-        ));
-    }
-    if !mapping.visible_to_scan_snapshot {
-        return Err(
-            "ec_spire remote_row_materialization mapping is not visible to the scan snapshot"
-                .to_owned(),
-        );
-    }
-
-    Ok(())
-}
-
-fn production_scan_output_from_materialized_row_mapping(
-    output: &SpireRemoteProductionScanOutputRow,
-    mapping: &SpireRemoteMaterializedRowMapping,
-) -> SpireRemoteProductionScanOutputRow {
-    SpireRemoteProductionScanOutputRow {
-        requested_epoch: output.requested_epoch,
-        served_epoch: output.served_epoch,
-        node_id: output.node_id,
-        heap_block: mapping.materialized_heap_block,
-        heap_offset: mapping.materialized_heap_offset,
-        score: output.score,
-        heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
-        vec_id: output.vec_id.clone(),
-        row_locator: output.row_locator.clone(),
-        tuple_payload_json: output.tuple_payload_json.clone(),
-        tuple_payload_missing: output.tuple_payload_missing,
-    }
-}
-
-fn production_scan_apply_row_materialization_provider(
-    summary: SpireRemoteProductionScanHeapResolutionSummaryRow,
-    outputs: Vec<SpireRemoteProductionScanOutputRow>,
-    scan_heap_relation_oid: pg_sys::Oid,
-    provider: &impl SpireRemoteRowMaterializationProvider,
-) -> Result<SpireRemoteProductionScanResultStream, String> {
-    let mut materialized_outputs = Vec::with_capacity(outputs.len());
-    for output in outputs {
-        if production_scan_output_is_local_heap_tid(&output) {
-            materialized_outputs.push(output);
-            continue;
-        }
-
-        match provider.materialized_row_mapping(scan_heap_relation_oid, &output)? {
-            Some(mapping) => {
-                production_scan_validate_materialized_row_mapping(
-                    scan_heap_relation_oid,
-                    &output,
-                    &mapping,
-                )?;
-                materialized_outputs.push(production_scan_output_from_materialized_row_mapping(
-                    &output, &mapping,
-                ));
-            }
-            None => materialized_outputs.push(output),
-        }
-    }
-
-    production_scan_result_stream(summary, materialized_outputs)
 }
 
 fn production_scan_am_delivery_summary(
@@ -6599,9 +6436,9 @@ fn production_scan_am_delivery_summary(
         } else if remote_origin_output_count > 0 {
             (
                 0,
-                SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-                SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
-                "materialize remote-origin rows into coordinator-visible tuples before amgettuple delivery",
+                SPIRE_REMOTE_FINAL_STATUS_REQUIRES_CUSTOM_SCAN_TUPLE_DELIVERY,
+                SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+                "route remote-origin rows through EcSpireDistributedScan tuple delivery instead of the index AM cursor",
             )
         } else if local_heap_tid_output_count > 0 {
             (
@@ -6946,14 +6783,7 @@ pub(crate) unsafe fn remote_search_production_scan_heap_resolution_am_result_str
             )?
         };
         let _ = (heap_relation, snapshot);
-        let scan_heap_relation_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
-        let provider = SpireRemoteNoRowMaterializationProvider;
-        production_scan_apply_row_materialization_provider(
-            stream.summary,
-            stream.outputs,
-            scan_heap_relation_oid,
-            &provider,
-        )
+        Ok(stream)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -9917,150 +9747,6 @@ pub(crate) fn remote_search_heap_resolution_contract_rows(
     ]
 }
 
-pub(crate) fn remote_search_row_materialization_contract_rows(
-) -> Vec<SpireRemoteSearchRowMaterializationContractRow> {
-    vec![
-        SpireRemoteSearchRowMaterializationContractRow {
-            contract_item: "local_am_delivery",
-            required_surface: "coordinator_local_heap_tid",
-            allowed_when: "node_id_is_local_and_heap_lookup_owner_is_coordinator_local_heap",
-            blocked_status: SPIRE_REMOTE_NONE,
-            validator: "set_xs_heaptid_only_from_coordinator_heap_relation",
-            recommendation: SPIRE_REMOTE_NONE,
-        },
-        SpireRemoteSearchRowMaterializationContractRow {
-            contract_item: "remote_origin_heap_coordinate",
-            required_surface: "origin_node_heap_tid_is_not_a_coordinator_heap_tid",
-            allowed_when: "never_for_xs_heaptid",
-            blocked_status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            validator: "must_not_assign_origin_heap_block_offset_to_xs_heaptid",
-            recommendation: "keep remote-origin outputs blocked until coordinator-visible heap rows exist",
-        },
-        SpireRemoteSearchRowMaterializationContractRow {
-            contract_item: "remote_origin_am_delivery",
-            required_surface: "same_indexed_heap_relation_shadow_row",
-            allowed_when: "materialized_tid_belongs_to_scan_heap_relation_and_preserves_global_vec_id",
-            blocked_status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            validator: "materialized_tid_must_belong_to_index_scan_heap_relation",
-            recommendation: "copy or project remote-origin rows into the coordinator indexed heap before index AM delivery",
-        },
-        SpireRemoteSearchRowMaterializationContractRow {
-            contract_item: "non_am_remote_delivery",
-            required_surface: "custom_executor_or_fdw_tuple_path",
-            allowed_when: "outside_postgresql_index_am_xs_heaptid_contract",
-            blocked_status: "not_selected_v1",
-            validator: "must_not_mix_non_am_tuple_path_with_index_am_xs_heaptid",
-            recommendation: "treat FDW/custom-scan delivery as a future executor integration, not the current SPIRE AM path",
-        },
-    ]
-}
-
-pub(crate) fn remote_search_row_materialization_mapping_contract_rows(
-) -> Vec<SpireRemoteSearchRowMaterializationMappingContractRow> {
-    vec![
-        SpireRemoteSearchRowMaterializationMappingContractRow {
-            contract_item: "mapping_identity_key",
-            required_input: "requested_epoch,served_epoch,origin_node_id,global_vec_id,row_locator",
-            validation_rule: "must_match_heap_resolved_remote_output_exactly",
-            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            status: "required_before_remote_origin_am_delivery",
-            recommendation: "lookup materialized coordinator row by stable remote identity before building AM output cursor",
-        },
-        SpireRemoteSearchRowMaterializationMappingContractRow {
-            contract_item: "same_relation_materialized_tid",
-            required_input: "scan_heap_relation_oid,materialized_heap_tid",
-            validation_rule: "materialized_tid_must_belong_to_index_scan_heap_relation",
-            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            status: "required_before_remote_origin_am_delivery",
-            recommendation: "reject temp, scratch, tuplestore, or foreign relation tuple identities for index AM delivery",
-        },
-        SpireRemoteSearchRowMaterializationMappingContractRow {
-            contract_item: "scan_snapshot_visibility",
-            required_input: "materialized_heap_tid,scan_snapshot",
-            validation_rule: "materialized_tuple_must_be_visible_to_the_current_index_scan_snapshot",
-            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            status: "required_before_remote_origin_am_delivery",
-            recommendation: "keep stale or vacuumed materialized rows out of xs_heaptid output",
-        },
-        SpireRemoteSearchRowMaterializationMappingContractRow {
-            contract_item: "no_scan_time_heap_writes",
-            required_input: "amrescan,amgettuple",
-            validation_rule: "scan_path_must_validate_existing_materialization_only",
-            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            status: "enforced_contract",
-            recommendation: "perform mirror creation, refresh, and cleanup outside the index scan cursor path",
-        },
-        SpireRemoteSearchRowMaterializationMappingContractRow {
-            contract_item: "strict_degraded_behavior",
-            required_input: "consistency_mode,missing_or_stale_mapping",
-            validation_rule: "strict_fails_closed_degraded_may_skip_with_named_diagnostic",
-            missing_or_invalid_behavior: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-            status: "required_before_remote_origin_am_delivery",
-            recommendation: "report remote_row_materialization as the blocker instead of returning origin heap coordinates",
-        },
-    ]
-}
-
-pub(crate) fn remote_row_materialization_mirror_sync_contract_rows(
-) -> Vec<SpireRemoteRowMaterializationMirrorSyncContractRow> {
-    vec![
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 1,
-            step_name: "mirror_profile",
-            operator_input: "coordinator_index_oid,origin_node_id,remote_relation_or_query,stable_source_identity,target_column_mapping,conflict_policy",
-            validation_rule: "profile_must_bind_one_coordinator_index_to_one_ready_remote_node_and_same_indexed_heap_relation",
-            failure_behavior: "fail_closed_before_remote_fetch",
-            status: "required_before_refresh",
-            recommendation: "add a dry-run profile diagnostic before materializing rows",
-        },
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 2,
-            step_name: "remote_endpoint_identity_gate",
-            operator_input: "remote_node_descriptor,requested_epoch,endpoint_identity,extension_version,opclass_identity,profile_fingerprint",
-            validation_rule: "remote_endpoint_identity_must_match_registered_descriptor_before_accepting_rows",
-            failure_behavior: "fail_closed_no_catalog_writes",
-            status: "reuse_existing_production_gate",
-            recommendation: "share the production compact-candidate endpoint identity validation path",
-        },
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 3,
-            step_name: "remote_row_fetch",
-            operator_input: "operator_declared_remote_projection,stable_source_identity,vec_id,row_locator,served_epoch",
-            validation_rule: "remote_rows_must_include_global_vec_id_and_opaque_row_locator_for_catalog_registration",
-            failure_behavior: "fail_closed_discard_batch",
-            status: "implementation_open",
-            recommendation: "fetch only the columns required to build the coordinator heap row and mapping identity",
-        },
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 4,
-            step_name: "coordinator_heap_upsert",
-            operator_input: "same_relation_target_columns,stable_source_identity,conflict_policy",
-            validation_rule: "upsert_must_create_or_find_an_ordinary_tuple_in_the_indexed_heap_relation",
-            failure_behavior: "fail_closed_no_mapping_registration",
-            status: "implementation_open",
-            recommendation: "obtain the coordinator ctid after the heap write under the refresh transaction",
-        },
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 5,
-            step_name: "mapping_registration",
-            operator_input: "requested_epoch,served_epoch,origin_node_id,vec_id,row_locator,scan_heap_relation_oid,materialized_heap_tid",
-            validation_rule: "call_ec_spire_register_remote_row_materialization_with_exact_remote_identity",
-            failure_behavior: "fail_closed_report_unregistered_row",
-            status: "implementation_open",
-            recommendation: "reuse the ADR-065 catalog path instead of direct catalog DML",
-        },
-        SpireRemoteRowMaterializationMirrorSyncContractRow {
-            step_ordinal: 6,
-            step_name: "post_refresh_probe",
-            operator_input: "coordinator_index_oid,query_vector,top_k",
-            validation_rule: "SQL_index_scan_should_return_materialized_remote_rows_without_explicit_register_calls",
-            failure_behavior: "refresh_not_stage_d_ready",
-            status: "fixture_required",
-            recommendation: "add the no-explicit-register PG18 fixture before marking Stage D complete",
-        },
-    ]
-}
-
 pub(crate) unsafe fn remote_search_finalization_summary_row(
     index_relation: pg_sys::Relation,
     requested_epoch: u64,
@@ -10740,7 +10426,6 @@ mod production_executor_state_tests {
             SPIRE_REMOTE_PRODUCTION_REMOTE_INDEX_UNAVAILABLE,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_RESOLUTION_FAILED,
             SPIRE_REMOTE_PRODUCTION_REMOTE_HEAP_ROW_MISSING,
-            SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
         ];
 
         assert_eq!(rows.len(), categories.len(), "matrix categories should be unique");
@@ -10759,25 +10444,12 @@ mod production_executor_state_tests {
             .iter()
             .find(|row| row.failure_category == SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH)
             .expect("consistency mismatch row should exist");
-        let row_materialization = rows
-            .iter()
-            .find(|row| {
-                row.failure_category == SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION
-            })
-            .expect("row materialization row should exist");
 
         assert_eq!(local_timeout.strict_action, "cancel_query");
         assert_eq!(local_timeout.degraded_action, "cancel_query");
         assert_eq!(remote_timeout.strict_action, "fail_closed");
         assert_eq!(remote_timeout.degraded_action, "skip_node");
         assert_eq!(consistency_mismatch.degraded_action, "fail_closed");
-        assert_eq!(
-            row_materialization.next_executor_step,
-            SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION
-        );
-        assert!(row_materialization
-            .recommendation
-            .contains("missing or stale coordinator materialization mappings"));
     }
 
     #[test]

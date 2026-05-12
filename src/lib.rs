@@ -13418,86 +13418,6 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
-fn ec_spire_remote_search_row_materialization_contract() -> TableIterator<
-    'static,
-    (
-        name!(contract_item, &'static str),
-        name!(required_surface, &'static str),
-        name!(allowed_when, &'static str),
-        name!(blocked_status, &'static str),
-        name!(validator, &'static str),
-        name!(recommendation, &'static str),
-    ),
-> {
-    let rows = am::spire_remote_search_row_materialization_contract_rows();
-    TableIterator::new(rows.into_iter().map(|row| {
-        (
-            row.contract_item,
-            row.required_surface,
-            row.allowed_when,
-            row.blocked_status,
-            row.validator,
-            row.recommendation,
-        )
-    }))
-}
-
-#[pg_extern(stable, strict)]
-#[allow(clippy::type_complexity)]
-fn ec_spire_remote_search_row_materialization_mapping_contract() -> TableIterator<
-    'static,
-    (
-        name!(contract_item, &'static str),
-        name!(required_input, &'static str),
-        name!(validation_rule, &'static str),
-        name!(missing_or_invalid_behavior, &'static str),
-        name!(status, &'static str),
-        name!(recommendation, &'static str),
-    ),
-> {
-    let rows = am::spire_remote_search_row_materialization_mapping_contract_rows();
-    TableIterator::new(rows.into_iter().map(|row| {
-        (
-            row.contract_item,
-            row.required_input,
-            row.validation_rule,
-            row.missing_or_invalid_behavior,
-            row.status,
-            row.recommendation,
-        )
-    }))
-}
-
-#[pg_extern(stable, strict)]
-#[allow(clippy::type_complexity)]
-fn ec_spire_remote_row_materialization_mirror_sync_contract() -> TableIterator<
-    'static,
-    (
-        name!(step_ordinal, i64),
-        name!(step_name, &'static str),
-        name!(operator_input, &'static str),
-        name!(validation_rule, &'static str),
-        name!(failure_behavior, &'static str),
-        name!(status, &'static str),
-        name!(recommendation, &'static str),
-    ),
-> {
-    let rows = am::spire_remote_row_materialization_mirror_sync_contract_rows();
-    TableIterator::new(rows.into_iter().map(|row| {
-        (
-            i64::try_from(row.step_ordinal).expect("step ordinal should fit in i64"),
-            row.step_name,
-            row.operator_input,
-            row.validation_rule,
-            row.failure_behavior,
-            row.status,
-            row.recommendation,
-        )
-    }))
-}
-
-#[pg_extern(stable, strict)]
-#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_heap_resolution_summary(
     index_oid: pg_sys::Oid,
     requested_epoch: i64,
@@ -27825,12 +27745,6 @@ mod tests {
         let locator_contract_from = "FROM ec_spire_remote_search_row_locator_contract()";
         let identity_contract_from = "FROM ec_spire_remote_search_vector_identity_contract()";
         let heap_contract_from = "FROM ec_spire_remote_search_heap_resolution_contract()";
-        let materialization_contract_from =
-            "FROM ec_spire_remote_search_row_materialization_contract()";
-        let materialization_mapping_contract_from =
-            "FROM ec_spire_remote_search_row_materialization_mapping_contract()";
-        let mirror_sync_contract_from =
-            "FROM ec_spire_remote_row_materialization_mirror_sync_contract()";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {locator_contract_from}"))
             .expect("row locator contract count query should succeed")
             .expect("row locator contract count should exist");
@@ -27893,67 +27807,6 @@ mod tests {
         ))
         .expect("remote heap resolution locator query should succeed")
         .expect("remote heap resolution locator should exist");
-        let materialization_contract_count =
-            Spi::get_one::<i64>(&format!("SELECT count(*) {materialization_contract_from}"))
-                .expect("row materialization contract count query should succeed")
-                .expect("row materialization contract count should exist");
-        let remote_origin_blocker = Spi::get_one::<String>(&format!(
-            "SELECT blocked_status {materialization_contract_from} \
-             WHERE contract_item = 'remote_origin_heap_coordinate'"
-        ))
-        .expect("remote origin materialization blocker query should succeed")
-        .expect("remote origin materialization blocker should exist");
-        let remote_origin_validator = Spi::get_one::<String>(&format!(
-            "SELECT validator {materialization_contract_from} \
-             WHERE contract_item = 'remote_origin_heap_coordinate'"
-        ))
-        .expect("remote origin materialization validator query should succeed")
-        .expect("remote origin materialization validator should exist");
-        let shadow_required_surface = Spi::get_one::<String>(&format!(
-            "SELECT required_surface {materialization_contract_from} \
-             WHERE contract_item = 'remote_origin_am_delivery'"
-        ))
-        .expect("remote origin AM delivery surface query should succeed")
-        .expect("remote origin AM delivery surface should exist");
-        let materialization_mapping_count = Spi::get_one::<i64>(&format!(
-            "SELECT count(*) {materialization_mapping_contract_from}"
-        ))
-        .expect("row materialization mapping contract count query should succeed")
-        .expect("row materialization mapping contract count should exist");
-        let mapping_same_relation_rule = Spi::get_one::<String>(&format!(
-            "SELECT validation_rule {materialization_mapping_contract_from} \
-             WHERE contract_item = 'same_relation_materialized_tid'"
-        ))
-        .expect("same-relation mapping rule query should succeed")
-        .expect("same-relation mapping rule should exist");
-        let mapping_missing_behavior = Spi::get_one::<String>(&format!(
-            "SELECT missing_or_invalid_behavior {materialization_mapping_contract_from} \
-             WHERE contract_item = 'mapping_identity_key'"
-        ))
-        .expect("mapping missing behavior query should succeed")
-        .expect("mapping missing behavior should exist");
-        let no_scan_write_status = Spi::get_one::<String>(&format!(
-            "SELECT status {materialization_mapping_contract_from} \
-             WHERE contract_item = 'no_scan_time_heap_writes'"
-        ))
-        .expect("no-scan-write mapping status query should succeed")
-        .expect("no-scan-write mapping status should exist");
-        let mirror_sync_count =
-            Spi::get_one::<i64>(&format!("SELECT count(*) {mirror_sync_contract_from}"))
-                .expect("mirror sync contract count query should succeed")
-                .expect("mirror sync contract count should exist");
-        let mirror_profile_status = Spi::get_one::<String>(&format!(
-            "SELECT status {mirror_sync_contract_from} \
-             WHERE step_name = 'mirror_profile'"
-        ))
-        .expect("mirror profile status query should succeed")
-        .expect("mirror profile status should exist");
-        let mirror_fixture_status = Spi::get_one::<String>(&format!(
-            "SELECT status {mirror_sync_contract_from} \
-             WHERE step_name = 'post_refresh_probe'"
-        ))
-        .expect("mirror fixture status query should succeed")
-        .expect("mirror fixture status should exist");
 
         assert_eq!(row_count, 4);
         assert_eq!(identity_count, 10);
@@ -27970,29 +27823,6 @@ mod tests {
         assert_eq!(local_heap_owner, "coordinator_local_heap");
         assert_eq!(remote_heap_status, "requires_remote_heap_resolution");
         assert_eq!(remote_locator_policy, "opaque_origin_node_bytes");
-        assert_eq!(materialization_contract_count, 4);
-        assert_eq!(remote_origin_blocker, "requires_remote_row_materialization");
-        assert_eq!(
-            remote_origin_validator,
-            "must_not_assign_origin_heap_block_offset_to_xs_heaptid"
-        );
-        assert_eq!(
-            shadow_required_surface,
-            "same_indexed_heap_relation_shadow_row"
-        );
-        assert_eq!(materialization_mapping_count, 5);
-        assert_eq!(
-            mapping_same_relation_rule,
-            "materialized_tid_must_belong_to_index_scan_heap_relation"
-        );
-        assert_eq!(
-            mapping_missing_behavior,
-            "requires_remote_row_materialization"
-        );
-        assert_eq!(no_scan_write_status, "enforced_contract");
-        assert_eq!(mirror_sync_count, 6);
-        assert_eq!(mirror_profile_status, "required_before_refresh");
-        assert_eq!(mirror_fixture_status, "fixture_required");
     }
 
     #[pg_test]
@@ -32488,7 +32318,6 @@ mod tests {
             "remote_index_unavailable",
             "remote_heap_resolution_failed",
             "remote_heap_row_missing",
-            "requires_remote_row_materialization",
         ];
         for category in required_categories {
             let count = Spi::get_one::<i64>(&format!(
@@ -32530,27 +32359,11 @@ mod tests {
         )
         .expect("heap step query should succeed")
         .expect("heap step should exist");
-        let row_materialization_step = Spi::get_one::<String>(
-            "SELECT next_executor_step FROM ec_spire_remote_search_production_fault_matrix() \
-             WHERE failure_category = 'requires_remote_row_materialization'",
-        )
-        .expect("row materialization step query should succeed")
-        .expect("row materialization step should exist");
-        let row_materialization_note = Spi::get_one::<String>(
-            "SELECT recommendation FROM ec_spire_remote_search_production_fault_matrix() \
-             WHERE failure_category = 'requires_remote_row_materialization'",
-        )
-        .expect("row materialization recommendation query should succeed")
-        .expect("row materialization recommendation should exist");
-
         assert_eq!(local_timeout, "cancel_query");
         assert_eq!(remote_timeout, "skip_node");
         assert_eq!(executor_overload_step, "remote_executor_governance");
         assert_eq!(consistency_mismatch, "fail_closed");
         assert_eq!(heap_step, "remote_heap_resolution");
-        assert_eq!(row_materialization_step, "remote_row_materialization");
-        assert!(row_materialization_note
-            .contains("missing or stale coordinator materialization mappings"));
     }
 
     #[pg_test]
@@ -33150,10 +32963,10 @@ mod tests {
         assert_eq!(diagnostic_candidate_batches, 1);
         assert_eq!(diagnostic_candidate_rows, 1);
         assert_eq!(diagnostic_final_heap, "remote_ready");
-        assert_eq!(diagnostic_am_status, "requires_remote_row_materialization");
+        assert_eq!(diagnostic_am_status, "requires_custom_scan_tuple_delivery");
         assert_eq!(diagnostic_remote_origin_outputs, 1);
-        assert_eq!(diagnostic_next_blocker, "remote_row_materialization");
-        assert_eq!(diagnostic_status, "requires_remote_row_materialization");
+        assert_eq!(diagnostic_next_blocker, "custom_scan_tuple_delivery");
+        assert_eq!(diagnostic_status, "requires_custom_scan_tuple_delivery");
 
         loopback_client
             .batch_execute("DELETE FROM ec_spire_prod_scan_heap_remote_sql")
@@ -38072,18 +37885,6 @@ mod tests {
         ))
         .expect("operator budget entrypoint query should succeed")
         .expect("operator budget entrypoint should exist");
-        let row_materialization_entrypoint_action = Spi::get_one::<String>(&format!(
-            "SELECT next_action {operator_entrypoint_from} \
-             WHERE entrypoint_name = 'ec_spire_remote_search_row_materialization_contract'"
-        ))
-        .expect("operator row materialization entrypoint query should succeed")
-        .expect("operator row materialization entrypoint should exist");
-        let row_materialization_mapping_entrypoint_action = Spi::get_one::<String>(&format!(
-            "SELECT next_action {operator_entrypoint_from} \
-             WHERE entrypoint_name = 'ec_spire_remote_search_row_materialization_mapping_contract'"
-        ))
-        .expect("operator row materialization mapping entrypoint query should succeed")
-        .expect("operator row materialization mapping entrypoint should exist");
         let stage_e_fault_matrix_use = Spi::get_one::<String>(&format!(
             "SELECT operator_use {operator_entrypoint_from} \
              WHERE entrypoint_name = 'ec_spire_remote_search_stage_e_fault_matrix'"
@@ -38108,18 +37909,6 @@ mod tests {
         ))
         .expect("operator manifest freshness entrypoint query should succeed")
         .expect("operator manifest freshness entrypoint should exist");
-        let mirror_sync_use = Spi::get_one::<String>(&format!(
-            "SELECT operator_use {operator_entrypoint_from} \
-             WHERE entrypoint_name = 'ec_spire_remote_row_materialization_mirror_sync_contract'"
-        ))
-        .expect("operator mirror sync entrypoint query should succeed")
-        .expect("operator mirror sync entrypoint should exist");
-        let mirror_sync_action = Spi::get_one::<String>(&format!(
-            "SELECT next_action {operator_entrypoint_from} \
-             WHERE entrypoint_name = 'ec_spire_remote_row_materialization_mirror_sync_contract'"
-        ))
-        .expect("operator mirror sync action query should succeed")
-        .expect("operator mirror sync action should exist");
         let libpq_lifecycle_count =
             Spi::get_one::<i64>(&format!("SELECT count(*) {libpq_lifecycle_from}"))
                 .expect("libpq lifecycle count query should succeed")
@@ -38247,8 +38036,8 @@ mod tests {
             remote_dedupe_key,
             "global_vec_id_or_node_scoped_local_vec_id"
         );
-        assert_eq!(operator_entrypoint_count, 26);
-        assert_eq!(operator_entrypoint_reachable_count, 26);
+        assert_eq!(operator_entrypoint_count, 23);
+        assert_eq!(operator_entrypoint_reachable_count, 23);
         assert_eq!(
             search_gate_next_action,
             "resolve_reported_blocker_before_expect_result_rows"
@@ -38274,14 +38063,6 @@ mod tests {
         );
         assert_eq!(budget_entrypoint_use, "remote_executor_resource_governance");
         assert_eq!(
-            row_materialization_entrypoint_action,
-            "materialize_remote_origin_rows_into_coordinator_indexed_heap_before_am_delivery"
-        );
-        assert_eq!(
-            row_materialization_mapping_entrypoint_action,
-            "implement_epoch_scoped_materialized_row_mapping_provider_before_remote_am_delivery"
-        );
-        assert_eq!(
             stage_e_fault_matrix_use,
             "local_multi_instance_fault_fixture_contract"
         );
@@ -38296,11 +38077,6 @@ mod tests {
         assert_eq!(
             manifest_freshness_use,
             "stage_e_manifest_freshness_assertion"
-        );
-        assert_eq!(mirror_sync_use, "operator_owned_mirror_sync_contract");
-        assert_eq!(
-            mirror_sync_action,
-            "implement_mirror_profile_dry_run_then_refresh_before_stage_f_or_g"
         );
         assert_eq!(libpq_lifecycle_count, 2);
         assert_eq!(search_connection_policy, "per_query");

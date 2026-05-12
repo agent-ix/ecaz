@@ -274,9 +274,9 @@
                 local_heap_tid_output_count: 0,
                 remote_origin_output_count: 1,
                 am_deliverable_output_count: 0,
-                status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_REMOTE_ROW_MATERIALIZATION,
-                next_blocker: SPIRE_REMOTE_EXECUTOR_STEP_REMOTE_ROW_MATERIALIZATION,
-                recommendation: "materialize first",
+                status: SPIRE_REMOTE_FINAL_STATUS_REQUIRES_CUSTOM_SCAN_TUPLE_DELIVERY,
+                next_blocker: SPIRE_REMOTE_EXECUTOR_STEP_CUSTOM_SCAN_TUPLE_DELIVERY,
+                recommendation: "use CustomScan tuple delivery",
             },
             vec![SpireRemoteProductionScanOutputRow {
                 requested_epoch: 1,
@@ -296,45 +296,8 @@
         let error = production_scan_result_stream_am_outputs(&stream)
             .expect_err("remote-origin rows should block AM delivery");
 
-        assert!(error.contains("remote_row_materialization"));
+        assert!(error.contains("custom_scan_tuple_delivery"));
         assert!(error.contains("blocked"));
-    }
-
-    #[test]
-    fn production_scan_result_stream_am_outputs_accepts_materialized_remote_rows() {
-        let stream = production_scan_stream_for_am(
-            SpireRemoteProductionScanAmDeliverySummaryRow {
-                requested_epoch: 1,
-                output_count: 1,
-                local_heap_tid_output_count: 1,
-                remote_origin_output_count: 0,
-                am_deliverable_output_count: 1,
-                status: SPIRE_REMOTE_STATUS_READY,
-                next_blocker: SPIRE_REMOTE_NONE,
-                recommendation: SPIRE_REMOTE_NONE,
-            },
-            vec![SpireRemoteProductionScanOutputRow {
-                requested_epoch: 1,
-                served_epoch: 1,
-                node_id: 9,
-                heap_block: 70,
-                heap_offset: 5,
-                score: -1.75,
-                heap_lookup_owner: SPIRE_REMOTE_MATERIALIZED_HEAP_RESOLUTION,
-                vec_id: vec![1],
-                row_locator: vec![2],
-                tuple_payload_json: None,
-                tuple_payload_missing: false,
-            }],
-        );
-
-        assert_eq!(
-            production_scan_result_stream_am_outputs(&stream).unwrap(),
-            vec![SpireScanOutput {
-                heap_tid: tid(70, 5),
-                orderby_score: -1.75,
-            }]
-        );
     }
 
     #[test]
@@ -540,9 +503,9 @@
         let directory = SpirePlacementDirectory::from_entries(1, vec![placement]).unwrap();
 
         let error = ensure_local_heap_placement_directory_is_deliverable(&directory)
-            .expect_err("remote placements should require materialization");
+            .expect_err("remote placements should require CustomScan delivery");
 
-        assert!(error.contains("remote_row_materialization"));
+        assert!(error.contains("custom_scan_tuple_delivery"));
         assert!(error.contains("1 remote placement"));
         assert!(error.contains("node_id 9"));
     }

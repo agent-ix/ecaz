@@ -380,7 +380,7 @@ local-only path.
     materialization-specific blocker.
   - [ ] Run and attach packet-local logs for the full Stage E matrix against
     the CustomScan path.
-- [ ] Cleanup after CustomScan read and v1 writes are feature-complete.
+- [x] Cleanup after CustomScan read and v1 writes are feature-complete.
   - [x] Remove or migrate away from the vestigial
     `ec_spire_remote_row_materialization` table and
     `ec_spire_register_remote_row_materialization` function in the next
@@ -390,10 +390,16 @@ local-only path.
       `DROP TABLE IF EXISTS ec_spire_remote_row_materialization`, and keeps
       remote catalog cleanup diagnostics stable by reporting the retired
       row-materialization counter as zero without touching the dropped table.
-  - [ ] Remove dead AM cursor references to
+  - [x] Remove dead AM cursor references to
     `requires_remote_row_materialization`; the local-only AM path must keep its
     classifier logic but no longer reference the superseded materialization
     catalog.
+    - [x] Packet `30894` removes the superseded materialization/mirror-sync SQL
+      contract functions and operator-entrypoint rows, drops the catalog-backed
+      AM materialization provider, and changes remote-origin AM cursor
+      diagnostics to the CustomScan-oriented
+      `requires_custom_scan_tuple_delivery` /
+      `custom_scan_tuple_delivery` fail-closed status.
   - [x] Keep the catalog/register function until this cleanup packet rather
     than deleting it in the Step 0 docs rewrite, because the repository still
     has in-flight Shape-A code and an untracked `30802` mirror-sync packet in
@@ -1357,7 +1363,7 @@ Cleanup decision:
   to avoid deleting in-flight Shape-A code before the CustomScan path exists.
 - [x] Remove the materialization catalog/register function after CustomScan
   read and ADR-069 writes are feature-complete.
-- [ ] Remove dead
+- [x] Remove dead
   `requires_remote_row_materialization` CustomScan-adjacent references in the
   cleanup packet after the catalog/register cleanup lands.
 
