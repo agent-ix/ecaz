@@ -22138,6 +22138,78 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_dml_frontdoor_pk_select_customscan_local_sql() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_pk_select_customscan_local_sql \
+             (id bigint primary key, title text not null, embedding ecvector, \
+              source_identity bytea not null)",
+        )
+        .expect("DML PK SELECT CustomScan table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dml_pk_select_customscan_local_sql \
+                 (id, title, embedding, source_identity) VALUES \
+             (1111, 'customscan selected', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+              decode('11111111111111111111111111111111', 'hex'))",
+        )
+        .expect("DML PK SELECT CustomScan row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_pk_select_customscan_local_idx \
+             ON ec_spire_dml_pk_select_customscan_local_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML PK SELECT CustomScan ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_dml_pk_select_customscan_local_idx'::regclass)",
+        )
+        .expect("DML PK SELECT CustomScan active epoch query should succeed")
+        .expect("DML PK SELECT CustomScan active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_dml_pk_select_customscan_local_idx'::regclass, \
+                     int8send(1111::bigint)::bytea, 0, 2, {active_epoch}, \
+                     decode('11111111111111111111111111111111', 'hex'))"
+        ))
+        .expect("DML PK SELECT CustomScan placement row should be inserted");
+
+        let explain = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id, title \
+                       FROM ec_spire_dml_pk_select_customscan_local_sql \
+                      WHERE id = 1111",
+                    None,
+                    &[],
+                )
+                .expect("DML PK SELECT CustomScan EXPLAIN should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("DML PK SELECT CustomScan plan row should decode")
+                        .expect("DML PK SELECT CustomScan plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+        assert!(
+            explain.contains("Custom Scan (EcSpireDistributedScan)"),
+            "{explain}"
+        );
+
+        let selected = Spi::get_one::<String>(
+            "SELECT id::text || '|' || title \
+               FROM ec_spire_dml_pk_select_customscan_local_sql \
+              WHERE id = 1111",
+        )
+        .expect("DML PK SELECT CustomScan query should succeed")
+        .expect("DML PK SELECT CustomScan query should return a row");
+        assert_eq!(selected, "1111|customscan selected");
+    }
+
+    #[pg_test]
     #[should_panic(expected = "ec_spire coordinator select expected at most one row, got 2")]
     fn test_ec_spire_forward_coordinator_select_rejects_multirow_sql() {
         Spi::run(

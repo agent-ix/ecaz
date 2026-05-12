@@ -1213,6 +1213,11 @@ v1 write contract from ADR-069:
   - [x] Packet `30872` adds the DML CustomScan expression handoff helper that
     returns a typed primitive plan plus the raw PK value expression the planner
     will copy into `custom_exprs` for UPDATE, DELETE, and PK SELECT rewrites.
+  - [x] Packet `30873` wires the first transparent DML CustomScan path:
+    supported PK SELECT plans can choose `Custom Scan (EcSpireDistributedScan)`,
+    evaluate the PK expression at execution time, call the coordinator
+    PK-select tuple-payload primitive, and store the returned JSON payload into
+    the scan slot.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

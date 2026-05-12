@@ -1,4 +1,4 @@
-use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList, Spi};
 
 use std::{ffi::CString, ptr};
 
@@ -11,6 +11,14 @@ const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
 const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 32.0;
 const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 4.0;
+const CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT: u32 = 1;
+const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpireCustomScanPlanMode {
+    VectorOrderLimit,
+    DmlPkSelectTuplePayload,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SpireCustomScanStatusRow {
@@ -78,14 +86,20 @@ static mut CUSTOM_EXEC_METHODS: pg_sys::CustomExecMethods = pg_sys::CustomExecMe
 #[repr(C)]
 struct SpireCustomScanExecState {
     custom_scan_state: pg_sys::CustomScanState,
+    mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
     top_k: usize,
     query: Vec<f32>,
+    dml_pk_column: String,
+    dml_pk_value: Vec<u8>,
     tuple_payload_columns: Vec<String>,
     tuple_payload_inputs: Vec<Option<SpireCustomScanPayloadAttrInput>>,
     outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
     next_output: usize,
     loaded_outputs: bool,
+    dml_payload_loaded: bool,
+    dml_payload_emitted: bool,
+    dml_tuple_payload_json: Option<String>,
 }
 
 struct SpireCustomScanPayloadAttrInput {
@@ -257,6 +271,9 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     {
         unsafe { add_custom_scan_path(root, rel, index_oid, eligibility) };
     }
+    if let Some(index_oid) = unsafe { dml_pk_select_candidate_index_oid(root, rel, rte) } {
+        unsafe { add_dml_pk_select_custom_scan_path(root, rel, index_oid) };
+    }
 }
 
 #[pg_guard]
@@ -269,6 +286,20 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     custom_plans: *mut pg_sys::List,
 ) -> *mut pg_sys::Plan {
     unsafe {
+        let mode = custom_scan_mode_from_path(best_path).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan CustomPath is missing plan mode")
+        });
+        if mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
+            return plan_dml_pk_select_custom_path(
+                root,
+                rel,
+                best_path,
+                tlist,
+                clauses,
+                custom_plans,
+            );
+        }
+
         let top_k = custom_scan_top_k(root).unwrap_or(1);
         let query_expr = custom_scan_orderby_query_expr(root, rel).unwrap_or_else(|| {
             pgrx::error!(
@@ -296,7 +327,63 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
         custom_scan.scan.plan.parallel_safe = false;
         custom_scan.scan.plan.async_capable = false;
         custom_scan.scan.plan.targetlist = tlist;
-        custom_scan.scan.plan.qual = clauses;
+        custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
+        custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
+        custom_scan.flags = (*best_path).flags;
+        custom_scan.custom_plans = custom_plans;
+        custom_scan.custom_exprs = custom_exprs;
+        custom_scan.custom_private = pg_sys::lappend_oid(
+            pg_sys::lappend_oid(
+                pg_sys::lappend_oid(
+                    std::ptr::null_mut(),
+                    pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+                ),
+                custom_scan_index_oid_from_path(best_path),
+            ),
+            pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan LIMIT exceeds CustomScan plan-private range")
+            })),
+        );
+        custom_scan.custom_scan_tlist = std::ptr::null_mut();
+        custom_scan.custom_relids = std::ptr::null_mut();
+        custom_scan.methods = &raw const CUSTOM_SCAN_METHODS;
+        custom_scan.into_pg() as *mut pg_sys::Plan
+    }
+}
+
+unsafe fn plan_dml_pk_select_custom_path(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    best_path: *mut pg_sys::CustomPath,
+    tlist: *mut pg_sys::List,
+    clauses: *mut pg_sys::List,
+    custom_plans: *mut pg_sys::List,
+) -> *mut pg_sys::Plan {
+    unsafe {
+        let pk_value_expr = custom_scan_dml_pk_qual_value_expr(root, rel).unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan could not build DML PK SELECT expression handoff")
+        });
+        let custom_exprs = pg_sys::lappend(
+            std::ptr::null_mut(),
+            pg_sys::copyObjectImpl(pk_value_expr.cast()).cast(),
+        );
+        let mut custom_scan =
+            PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
+        custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        custom_scan.scan.plan.disabled_nodes = (*best_path).path.disabled_nodes;
+        custom_scan.scan.plan.startup_cost = (*best_path).path.startup_cost;
+        custom_scan.scan.plan.total_cost = (*best_path).path.total_cost;
+        custom_scan.scan.plan.plan_rows = (*best_path).path.rows;
+        custom_scan.scan.plan.plan_width = if !(*best_path).path.pathtarget.is_null() {
+            (*(*best_path).path.pathtarget).width
+        } else {
+            0
+        };
+        custom_scan.scan.plan.parallel_aware = false;
+        custom_scan.scan.plan.parallel_safe = false;
+        custom_scan.scan.plan.async_capable = false;
+        custom_scan.scan.plan.targetlist = tlist;
+        custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
         custom_scan.scan.scanrelid = (*(*best_path).path.parent).relid;
         custom_scan.flags = (*best_path).flags;
         custom_scan.custom_plans = custom_plans;
@@ -304,11 +391,9 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
         custom_scan.custom_private = pg_sys::lappend_oid(
             pg_sys::lappend_oid(
                 std::ptr::null_mut(),
-                pg_sys::list_nth_oid((*best_path).custom_private, 0),
+                pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT),
             ),
-            pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
-                pgrx::error!("EcSpireDistributedScan LIMIT exceeds CustomScan plan-private range")
-            })),
+            custom_scan_index_oid_from_path(best_path),
         );
         custom_scan.custom_scan_tlist = std::ptr::null_mut();
         custom_scan.custom_relids = std::ptr::null_mut();
@@ -370,6 +455,66 @@ unsafe fn custom_scan_candidate_index_oid(
     None
 }
 
+unsafe fn dml_pk_select_candidate_index_oid(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    rte: *mut pg_sys::RangeTblEntry,
+) -> Option<pg_sys::Oid> {
+    if root.is_null() || rel.is_null() || rte.is_null() {
+        return None;
+    }
+    let rel_ref = unsafe { rel.as_ref()? };
+    if rel_ref.reloptkind != pg_sys::RelOptKind::RELOPT_BASEREL {
+        return None;
+    }
+    if rel_ref.rtekind != pg_sys::RTEKind::RTE_RELATION {
+        return None;
+    }
+    let _ = unsafe { custom_scan_dml_pk_qual_value_expr(root, rel)? };
+
+    let ec_spire_am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    if ec_spire_am_oid == pg_sys::InvalidOid {
+        return None;
+    }
+
+    let index_list = unsafe { PgList::<pg_sys::IndexOptInfo>::from_pg(rel_ref.indexlist) };
+    for index_info in index_list.iter_ptr() {
+        let Some(index_info) = (unsafe { index_info.as_ref() }) else {
+            continue;
+        };
+        if index_info.relam == ec_spire_am_oid
+            && custom_scan_index_has_sql_placement(index_info.indexoid).unwrap_or(false)
+        {
+            return Some(index_info.indexoid);
+        }
+    }
+    None
+}
+
+fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> Result<bool, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT EXISTS (\
+                    SELECT 1 \
+                      FROM ec_spire_placement \
+                     WHERE index_oid = $1::oid)",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|e| format!("ec_spire CustomScan placement probe failed: {e}"))?
+            .map(|row| {
+                row["exists"]
+                    .value::<bool>()
+                    .map_err(|e| format!("ec_spire CustomScan placement probe decode failed: {e}"))?
+                    .ok_or_else(|| "ec_spire CustomScan placement probe returned NULL".to_owned())
+            })
+            .next()
+            .transpose()
+            .map(|value| value.unwrap_or(false))
+    })
+}
+
 unsafe fn add_custom_scan_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
@@ -405,7 +550,56 @@ unsafe fn add_custom_scan_path(
     custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
     custom_path.custom_paths = std::ptr::null_mut();
     custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
-    custom_path.custom_private = unsafe { pg_sys::lappend_oid(std::ptr::null_mut(), index_oid) };
+    custom_path.custom_private = unsafe {
+        pg_sys::lappend_oid(
+            pg_sys::lappend_oid(
+                std::ptr::null_mut(),
+                pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT),
+            ),
+            index_oid,
+        )
+    };
+    custom_path.methods = &raw const CUSTOM_PATH_METHODS;
+
+    unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
+}
+
+unsafe fn add_dml_pk_select_custom_scan_path(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+    index_oid: pg_sys::Oid,
+) {
+    if root.is_null() || rel.is_null() {
+        return;
+    }
+    let rel_ref = unsafe { rel.as_ref().expect("checked rel pointer") };
+    let mut custom_path =
+        unsafe { PgBox::<pg_sys::CustomPath>::alloc_node(pg_sys::NodeTag::T_CustomPath) };
+    custom_path.path.type_ = pg_sys::NodeTag::T_CustomPath;
+    custom_path.path.pathtype = pg_sys::NodeTag::T_CustomScan;
+    custom_path.path.parent = rel;
+    custom_path.path.pathtarget = rel_ref.reltarget;
+    custom_path.path.param_info = std::ptr::null_mut();
+    custom_path.path.parallel_aware = false;
+    custom_path.path.parallel_safe = false;
+    custom_path.path.parallel_workers = 0;
+    custom_path.path.rows = 1.0;
+    custom_path.path.disabled_nodes = 0;
+    custom_path.path.startup_cost = -1.0;
+    custom_path.path.total_cost = -1.0;
+    custom_path.path.pathkeys = std::ptr::null_mut();
+    custom_path.flags = pg_sys::CUSTOMPATH_SUPPORT_PROJECTION;
+    custom_path.custom_paths = std::ptr::null_mut();
+    custom_path.custom_restrictinfo = rel_ref.baserestrictinfo;
+    custom_path.custom_private = unsafe {
+        pg_sys::lappend_oid(
+            pg_sys::lappend_oid(
+                std::ptr::null_mut(),
+                pg_sys::Oid::from(CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT),
+            ),
+            index_oid,
+        )
+    };
     custom_path.methods = &raw const CUSTOM_PATH_METHODS;
 
     unsafe { pg_sys::add_path(rel, custom_path.into_pg() as *mut pg_sys::Path) };
@@ -532,6 +726,105 @@ unsafe fn custom_scan_query_expr_from_sort_expr(
     None
 }
 
+unsafe fn custom_scan_dml_pk_qual_value_expr(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<*mut pg_sys::Expr> {
+    if root.is_null() || rel.is_null() {
+        return None;
+    }
+    let root_ref = unsafe { root.as_ref()? };
+    let rel_ref = unsafe { rel.as_ref()? };
+    let query = unsafe { root_ref.parse.as_ref()? };
+    if query.commandType != pg_sys::CmdType::CMD_SELECT {
+        return None;
+    }
+    let rte = unsafe { custom_scan_range_table_entry(query, rel_ref.relid)? };
+    if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
+        return None;
+    }
+    let relation_context =
+        unsafe { super::dml_frontdoor_relation_context_catalog_row(rte.relid).ok()? };
+    if !relation_context.ec_spire_distributed_table {
+        return None;
+    }
+    let pk_column = relation_context.pk_column.as_deref()?;
+    let pk_attno = relation_context
+        .column_names
+        .iter()
+        .find_map(|(attno, name)| (name == pk_column).then_some(*attno))?;
+
+    if !rel_ref.baserestrictinfo.is_null() {
+        let restrict_infos =
+            unsafe { PgList::<pg_sys::RestrictInfo>::from_pg(rel_ref.baserestrictinfo) };
+        for restrict_info in restrict_infos.iter_ptr() {
+            let Some(restrict_info) = (unsafe { restrict_info.as_ref() }) else {
+                continue;
+            };
+            if let Some(value_expr) = unsafe {
+                custom_scan_dml_pk_value_expr_from_clause(
+                    restrict_info.clause,
+                    rel_ref.relid,
+                    pk_attno,
+                )
+            } {
+                return Some(value_expr);
+            }
+        }
+    }
+
+    let jointree = unsafe { query.jointree.as_ref()? };
+    unsafe {
+        custom_scan_dml_pk_value_expr_from_clause(jointree.quals.cast(), rel_ref.relid, pk_attno)
+    }
+}
+
+unsafe fn custom_scan_dml_pk_value_expr_from_clause(
+    clause: *mut pg_sys::Expr,
+    relid: pg_sys::Index,
+    pk_attno: pg_sys::AttrNumber,
+) -> Option<*mut pg_sys::Expr> {
+    if clause.is_null()
+        || unsafe { (*clause.cast::<pg_sys::Node>()).type_ } != pg_sys::NodeTag::T_OpExpr
+    {
+        return None;
+    }
+    let op_expr = clause.cast::<pg_sys::OpExpr>();
+    if !custom_scan_bigint_equality_opcode(unsafe { pg_sys::get_opcode((*op_expr).opno) }) {
+        return None;
+    }
+    let args = unsafe { PgList::<pg_sys::Expr>::from_pg((*op_expr).args) };
+    if args.len() != 2 {
+        return None;
+    }
+    let left = args.get_ptr(0)?;
+    let right = args.get_ptr(1)?;
+    if unsafe {
+        custom_scan_expr_is_relation_pk_var(left, relid, pk_attno)
+            && custom_scan_expr_is_dml_pk_value(right)
+    } {
+        return Some(right);
+    }
+    if unsafe {
+        custom_scan_expr_is_relation_pk_var(right, relid, pk_attno)
+            && custom_scan_expr_is_dml_pk_value(left)
+    } {
+        return Some(left);
+    }
+    None
+}
+
+unsafe fn custom_scan_range_table_entry(
+    query: &pg_sys::Query,
+    rtindex: pg_sys::Index,
+) -> Option<&pg_sys::RangeTblEntry> {
+    if rtindex == 0 || query.rtable.is_null() {
+        return None;
+    }
+    let rtable = unsafe { PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable) };
+    unsafe { rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?.as_ref() }
+}
+
 unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
     if expr.is_null() {
         return false;
@@ -541,7 +834,57 @@ unsafe fn custom_scan_expr_is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sy
         return false;
     }
     let var = unsafe { &*expr.cast::<pg_sys::Var>() };
-    u32::try_from(var.varno).ok() == Some(relid)
+    u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0
+}
+
+unsafe fn custom_scan_expr_is_relation_pk_var(
+    expr: *mut pg_sys::Expr,
+    relid: pg_sys::Index,
+    pk_attno: pg_sys::AttrNumber,
+) -> bool {
+    if expr.is_null() {
+        return false;
+    }
+    let node = expr.cast::<pg_sys::Node>();
+    if unsafe { (*node).type_ } != pg_sys::NodeTag::T_Var {
+        return false;
+    }
+    let var = unsafe { &*expr.cast::<pg_sys::Var>() };
+    u32::try_from(var.varno).ok() == Some(relid) && var.varlevelsup == 0 && var.varattno == pk_attno
+}
+
+unsafe fn custom_scan_expr_is_dml_pk_value(expr: *mut pg_sys::Expr) -> bool {
+    if expr.is_null() {
+        return false;
+    }
+    let node = expr.cast::<pg_sys::Node>();
+    match unsafe { (*node).type_ } {
+        pg_sys::NodeTag::T_Const => unsafe {
+            let const_expr = &*expr.cast::<pg_sys::Const>();
+            !const_expr.constisnull && custom_scan_is_bigint_compatible_oid(const_expr.consttype)
+        },
+        pg_sys::NodeTag::T_Param => unsafe {
+            let param = &*expr.cast::<pg_sys::Param>();
+            custom_scan_is_bigint_compatible_oid(param.paramtype)
+        },
+        _ => false,
+    }
+}
+
+fn custom_scan_is_bigint_compatible_oid(typoid: pg_sys::Oid) -> bool {
+    typoid == pg_sys::INT2OID || typoid == pg_sys::INT4OID || typoid == pg_sys::INT8OID
+}
+
+fn custom_scan_bigint_equality_opcode(opcode: pg_sys::Oid) -> bool {
+    opcode == pg_sys::Oid::from(pg_sys::F_INT8EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT84EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT82EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT48EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT28EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT4EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT42EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT24EQ)
+        || opcode == pg_sys::Oid::from(pg_sys::F_INT2EQ)
 }
 
 unsafe fn custom_scan_expr_is_query_value(expr: *mut pg_sys::Expr) -> bool {
@@ -582,12 +925,55 @@ unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::C
     unsafe { (*node).ss.ps.plan.cast::<pg_sys::CustomScan>() }
 }
 
+unsafe fn custom_scan_mode_from_path(
+    custom_path: *mut pg_sys::CustomPath,
+) -> Option<SpireCustomScanPlanMode> {
+    unsafe {
+        if custom_path.is_null() || (*custom_path).custom_private.is_null() {
+            return None;
+        }
+        custom_scan_mode_from_u32(pg_sys::list_nth_oid((*custom_path).custom_private, 0).to_u32())
+    }
+}
+
+unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath) -> pg_sys::Oid {
+    unsafe {
+        if custom_path.is_null() || (*custom_path).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan CustomPath is missing private index OID");
+        }
+        pg_sys::list_nth_oid((*custom_path).custom_private, 1)
+    }
+}
+
+unsafe fn custom_scan_mode_from_plan(
+    custom_scan: *mut pg_sys::CustomScan,
+) -> SpireCustomScanPlanMode {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan plan is missing private mode");
+        }
+        let raw = pg_sys::list_nth_oid((*custom_scan).custom_private, 0).to_u32();
+        custom_scan_mode_from_u32(raw)
+            .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan has unknown mode {raw}"))
+    }
+}
+
+fn custom_scan_mode_from_u32(raw: u32) -> Option<SpireCustomScanPlanMode> {
+    match raw {
+        CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT => Some(SpireCustomScanPlanMode::VectorOrderLimit),
+        CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT => {
+            Some(SpireCustomScanPlanMode::DmlPkSelectTuplePayload)
+        }
+        _ => None,
+    }
+}
+
 unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing private index OID");
         }
-        pg_sys::list_nth_oid((*custom_scan).custom_private, 0)
+        pg_sys::list_nth_oid((*custom_scan).custom_private, 1)
     }
 }
 
@@ -596,7 +982,7 @@ unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> u
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing private LIMIT");
         }
-        let raw = pg_sys::list_nth_oid((*custom_scan).custom_private, 1);
+        let raw = pg_sys::list_nth_oid((*custom_scan).custom_private, 2);
         usize::try_from(raw.to_u32())
             .unwrap_or_else(|_| pgrx::error!("EcSpireDistributedScan plan LIMIT is out of range"))
     }
@@ -784,14 +1170,20 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
             state,
             SpireCustomScanExecState {
                 custom_scan_state: std::mem::zeroed(),
+                mode: SpireCustomScanPlanMode::VectorOrderLimit,
                 index_oid: pg_sys::InvalidOid,
                 top_k: 0,
                 query: Vec::new(),
+                dml_pk_column: String::new(),
+                dml_pk_value: Vec::new(),
                 tuple_payload_columns: Vec::new(),
                 tuple_payload_inputs: Vec::new(),
                 outputs: Vec::new(),
                 next_output: 0,
                 loaded_outputs: false,
+                dml_payload_loaded: false,
+                dml_payload_emitted: false,
+                dml_tuple_payload_json: None,
             },
         );
         (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
@@ -809,12 +1201,21 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     unsafe {
         let state = node.cast::<SpireCustomScanExecState>();
         let custom_scan = custom_scan_plan(node);
+        (*state).mode = custom_scan_mode_from_plan(custom_scan);
         (*state).index_oid = custom_scan_index_oid_from_plan(custom_scan);
-        (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
-        (*state).query = custom_scan_query_from_plan(node, custom_scan);
         (*state).tuple_payload_columns = custom_scan_tuple_payload_columns(node, custom_scan);
         (*state).tuple_payload_inputs =
             custom_scan_payload_attr_inputs((*(*node).ss.ss_currentRelation).rd_att);
+        match (*state).mode {
+            SpireCustomScanPlanMode::VectorOrderLimit => {
+                (*state).top_k = custom_scan_top_k_from_plan(custom_scan);
+                (*state).query = custom_scan_query_from_plan(node, custom_scan);
+            }
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+                (*state).dml_pk_column = custom_scan_dml_pk_column(node);
+                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
+            }
+        }
     }
 }
 
@@ -850,6 +1251,9 @@ unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::Custo
         (*state).outputs.clear();
         (*state).next_output = 0;
         (*state).loaded_outputs = false;
+        (*state).dml_payload_loaded = false;
+        (*state).dml_payload_emitted = false;
+        (*state).dml_tuple_payload_json = None;
     }
 }
 
@@ -862,6 +1266,9 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
             pgrx::error!("EcSpireDistributedScan access method received null scan state");
         }
         let state = scan_state.cast::<SpireCustomScanExecState>();
+        if (*state).mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
+            return custom_scan_dml_pk_select_access(state, scan_state);
+        }
         custom_scan_ensure_outputs(state);
         loop {
             let Some(output) = (&(*state).outputs).get((*state).next_output) else {
@@ -893,6 +1300,27 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
                 return (*scan_state).ss_ScanTupleSlot;
             }
         }
+    }
+}
+
+unsafe fn custom_scan_dml_pk_select_access(
+    state: *mut SpireCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        custom_scan_ensure_dml_pk_select_payload(state);
+        if (*state).dml_payload_emitted {
+            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+        }
+        (*state).dml_payload_emitted = true;
+        let Some(payload_json) = (*state).dml_tuple_payload_json.as_deref() else {
+            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+        };
+        custom_scan_store_tuple_payload_json(
+            (*scan_state).ss_ScanTupleSlot,
+            payload_json,
+            &mut (*state).tuple_payload_inputs,
+        )
     }
 }
 
@@ -1037,6 +1465,153 @@ unsafe fn custom_scan_json_value_to_datum(
             attr_input.typioparam,
             attr_input.typmod,
         )
+    }
+}
+
+unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> String {
+    unsafe {
+        let relation = (*node).ss.ss_currentRelation;
+        if relation.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT missing scan relation");
+        }
+        let context = super::dml_frontdoor_relation_context_catalog_row((*relation).rd_id)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        context.pk_column.unwrap_or_else(|| {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT relation has no PK column")
+        })
+    }
+}
+
+unsafe fn custom_scan_dml_pk_value_from_plan(
+    node: *mut pg_sys::CustomScanState,
+    custom_scan: *mut pg_sys::CustomScan,
+) -> Vec<u8> {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT plan is missing PK expression");
+        }
+        let expr = pg_sys::list_nth((*custom_scan).custom_exprs, 0).cast::<pg_sys::Expr>();
+        let value = custom_scan_bigint_expr_value(node, expr);
+        super::dml_frontdoor_bigint_pk_value_bytes(value)
+    }
+}
+
+unsafe fn custom_scan_bigint_expr_value(
+    node: *mut pg_sys::CustomScanState,
+    expr: *mut pg_sys::Expr,
+) -> i64 {
+    unsafe {
+        if expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT expression is null");
+        }
+        match (*expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => {
+                let const_expr = &*expr.cast::<pg_sys::Const>();
+                if const_expr.constisnull {
+                    pgrx::error!("EcSpireDistributedScan DML PK SELECT constant PK is NULL");
+                }
+                custom_scan_bigint_datum_value(const_expr.constvalue, const_expr.consttype)
+            }
+            pg_sys::NodeTag::T_Param => {
+                let param = &*expr.cast::<pg_sys::Param>();
+                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                if expr_state.is_null() {
+                    pgrx::error!("EcSpireDistributedScan failed to initialize DML PK parameter");
+                }
+                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter has no evaluator")
+                });
+                let mut is_null = false;
+                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                if is_null {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter must not be NULL");
+                }
+                custom_scan_bigint_datum_value(datum, param.paramtype)
+            }
+            _ => pgrx::error!(
+                "EcSpireDistributedScan DML PK SELECT requires a constant or parameter bigint PK"
+            ),
+        }
+    }
+}
+
+unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::Oid) -> i64 {
+    unsafe {
+        match typoid {
+            pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
+            pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
+            pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
+            other => pgrx::error!(
+                "EcSpireDistributedScan DML PK SELECT unsupported PK type OID {}",
+                other.to_u32()
+            ),
+        }
+    }
+}
+
+unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanExecState) {
+    unsafe {
+        let state_ref = &mut *state;
+        if state_ref.dml_payload_loaded {
+            return;
+        }
+        if state_ref.dml_pk_column.is_empty() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT pk_column is missing");
+        }
+        if state_ref.dml_pk_value.is_empty() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT pk_value is missing");
+        }
+        if state_ref.tuple_payload_columns.is_empty() {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT projection is empty");
+        }
+        let requested_column_refs = state_ref
+            .tuple_payload_columns
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let tuple_payload_json = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT selected_count, tuple_payload_json \
+                       FROM ec_spire_forward_coordinator_select_tuple_payload(\
+                            $1::oid, $2::text, $3::bytea, $4::text[])",
+                    None,
+                    &[
+                        state_ref.index_oid.into(),
+                        state_ref.dml_pk_column.as_str().into(),
+                        state_ref.dml_pk_value.clone().into(),
+                        requested_column_refs.as_slice().into(),
+                    ],
+                )
+                .map_err(|e| format!("EcSpireDistributedScan DML PK SELECT primitive failed: {e}"))?
+                .map(|row| {
+                    let selected_count = row["selected_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "EcSpireDistributedScan DML PK SELECT selected_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "EcSpireDistributedScan DML PK SELECT selected_count is null"
+                                .to_owned()
+                        })?;
+                    let payload = row["tuple_payload_json"].value::<String>().map_err(|e| {
+                        format!("EcSpireDistributedScan DML PK SELECT payload decode failed: {e}")
+                    })?;
+                    Ok::<Option<String>, String>((selected_count == 1).then_some(payload).flatten())
+                })
+                .next()
+                .transpose()
+                .map(|value| {
+                    value.ok_or_else(|| {
+                        "EcSpireDistributedScan DML PK SELECT primitive returned no rows".to_owned()
+                    })
+                })?
+        })
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        state_ref.dml_tuple_payload_json = tuple_payload_json;
+        state_ref.dml_payload_loaded = true;
     }
 }
 
