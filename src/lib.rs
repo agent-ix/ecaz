@@ -19364,6 +19364,11 @@ mod tests {
         )
         .expect("placement identity index lookup should succeed")
         .expect("placement identity index lookup should return a row");
+        let index_oid_index_exists = Spi::get_one::<bool>(
+            "SELECT to_regclass('ec_spire_placement_by_index_oid') IS NOT NULL",
+        )
+        .expect("placement index_oid index lookup should succeed")
+        .expect("placement index_oid index lookup should return a row");
         let primary_key_columns = Spi::get_one::<String>(
             "SELECT string_agg(a.attname, ',' ORDER BY k.ord) \
                FROM pg_index i \
@@ -19416,10 +19421,66 @@ mod tests {
 
         assert!(table_exists);
         assert!(identity_index_exists);
+        assert!(index_oid_index_exists);
         assert_eq!(primary_key_columns, "index_oid,pk_value");
         assert_eq!(source_identity_check_count, 1);
         assert_eq!(node_id_check_count, 1);
         assert_eq!(stored_row, "01:2:7:5,02:0:7:5");
+    }
+
+    #[pg_test]
+    fn test_ec_spire_placement_index_oid_lookup_uses_index_sql() {
+        Spi::run(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             SELECT (4294960000 - (g % 97))::oid, \
+                    int8send(g::bigint)::bytea, \
+                    2, 7, 5, decode(md5(g::text), 'hex') \
+               FROM generate_series(1, 512) AS g",
+        )
+        .expect("unrelated placement rows should insert");
+        Spi::run(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('4294967285'::oid, int8send(9999::bigint)::bytea, \
+                     2, 7, 5, decode('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'hex'))",
+        )
+        .expect("target placement row should insert");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("disabling seqscan should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT 1 FROM ec_spire_placement \
+                      WHERE index_oid = '4294967285'::oid \
+                      LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("placement index_oid lookup explain should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("placement lookup plan row should decode")
+                        .expect("placement lookup plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+        let target_count = Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_spire_placement \
+              WHERE index_oid = '4294967285'::oid",
+        )
+        .expect("target placement count should succeed")
+        .expect("target placement count should exist");
+
+        assert_eq!(target_count, 1);
+        assert!(
+            plan.contains("ec_spire_placement_by_index_oid"),
+            "planner should use bounded index_oid lookup, got:\n{plan}"
+        );
     }
 
     #[pg_test]

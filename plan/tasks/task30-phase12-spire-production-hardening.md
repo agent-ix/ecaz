@@ -97,11 +97,17 @@ described by reviewer packet `30896`.
 
 ## Phase 12.3: Planner, Metadata, and Cost Hardening
 
-- [ ] Replace the `ec_spire_placement` planner eligibility seqscan with an
+- [x] Replace the `ec_spire_placement` planner eligibility seqscan with an
   indexed existence check against the placement primary key or a dedicated
   `index_oid` index.
-- [ ] Add regression coverage proving planner eligibility remains O(log N) or
+  - [x] Added `ec_spire_placement_by_index_oid` and changed the DML PK-select
+    CustomScan planner gate to use an explicit index scan for index presence.
+- [x] Add regression coverage proving planner eligibility remains O(log N) or
   otherwise bounded as placement rows grow.
+  - [x] `test_ec_spire_placement_index_oid_lookup_uses_index_sql` inserts
+    unrelated placement rows and asserts the `index_oid` lookup uses
+    `ec_spire_placement_by_index_oid`; the existing DML PK-select CustomScan
+    test still verifies planner replacement.
 - [ ] Add a per-snapshot relation-context cache keyed by heap/index relcache
   invalidation state.
 - [ ] Register relcache invalidation callbacks for the heap relation and its

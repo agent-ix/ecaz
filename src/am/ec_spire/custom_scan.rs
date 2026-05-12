@@ -16,6 +16,9 @@ const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
 const CUSTOM_SCAN_PLAN_MODE_DML_UPDATE: u32 = 3;
 const CUSTOM_SCAN_PLAN_MODE_DML_DELETE: u32 = 4;
 const EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO: pg_sys::AttrNumber = 1;
+const EC_SPIRE_PLACEMENT_RELNAME: &core::ffi::CStr = c"ec_spire_placement";
+const EC_SPIRE_PLACEMENT_BY_INDEX_OID_RELNAME: &core::ffi::CStr =
+    c"ec_spire_placement_by_index_oid";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpireCustomScanPlanMode {
@@ -606,13 +609,29 @@ unsafe fn dml_pk_select_candidate_index_oid(
 
 unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
     unsafe {
-        let placement_oid = pg_sys::RelnameGetRelid(c"ec_spire_placement".as_ptr());
+        let placement_oid = pg_sys::RelnameGetRelid(EC_SPIRE_PLACEMENT_RELNAME.as_ptr());
+        let placement_by_index_oid =
+            pg_sys::RelnameGetRelid(EC_SPIRE_PLACEMENT_BY_INDEX_OID_RELNAME.as_ptr());
         if placement_oid == pg_sys::InvalidOid {
+            return false;
+        }
+        if placement_by_index_oid == pg_sys::InvalidOid {
             return false;
         }
         let placement_relation =
             pg_sys::table_open(placement_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         if placement_relation.is_null() {
+            return false;
+        }
+        let placement_index = pg_sys::index_open(
+            placement_by_index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+        if placement_index.is_null() {
+            pg_sys::table_close(
+                placement_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            );
             return false;
         }
 
@@ -624,19 +643,43 @@ unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
             pg_sys::F_OIDEQ.into(),
             index_oid.into(),
         );
-        let scan = pg_sys::table_beginscan_catalog(placement_relation, 1, &mut scan_key);
+        let snapshot = pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot());
+        if snapshot.is_null() {
+            pg_sys::index_close(placement_index, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(
+                placement_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            );
+            return false;
+        }
+        pg_sys::PushActiveSnapshot(snapshot);
+        #[cfg(feature = "pg18")]
+        let scan = pg_sys::index_beginscan(
+            placement_relation,
+            placement_index,
+            snapshot,
+            ptr::null_mut(),
+            1,
+            0,
+        );
+        #[cfg(not(feature = "pg18"))]
+        let scan = pg_sys::index_beginscan(placement_relation, placement_index, snapshot, 1, 0);
         let slot = pg_sys::table_slot_create(placement_relation, std::ptr::null_mut());
         let found = if scan.is_null() || slot.is_null() {
             false
         } else {
-            pg_sys::table_scan_getnextslot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
+            pg_sys::index_rescan(scan, &mut scan_key, 1, ptr::null_mut(), 0);
+            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
         };
         if !scan.is_null() {
-            pg_sys::table_endscan(scan);
+            pg_sys::index_endscan(scan);
         }
         if !slot.is_null() {
             pg_sys::ExecDropSingleTupleTableSlot(slot);
         }
+        pg_sys::PopActiveSnapshot();
+        pg_sys::UnregisterSnapshot(snapshot);
+        pg_sys::index_close(placement_index, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         pg_sys::table_close(
             placement_relation,
             pg_sys::AccessShareLock as pg_sys::LOCKMODE,

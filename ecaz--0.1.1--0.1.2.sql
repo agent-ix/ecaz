@@ -9,3 +9,10 @@
 -- intentionally dropped during the upgrade.
 
 DROP TABLE IF EXISTS ec_spire_remote_row_materialization;
+
+-- Bound the DML PK-select CustomScan planner gate. The planner only needs to
+-- know whether ec_spire_placement has any row for a candidate index_oid, so a
+-- narrow leading-column index avoids scanning unrelated placement rows as the
+-- placement directory grows.
+CREATE INDEX IF NOT EXISTS ec_spire_placement_by_index_oid
+ON ec_spire_placement (index_oid);

@@ -231,6 +231,9 @@ CREATE TABLE ec_spire_placement (
 CREATE INDEX ec_spire_placement_by_identity
 ON ec_spire_placement (index_oid, source_identity);
 
+CREATE INDEX ec_spire_placement_by_index_oid
+ON ec_spire_placement (index_oid);
+
 CREATE TYPE ec_spire_placement_entry AS (
     pk_value bytea,
     node_id integer,
