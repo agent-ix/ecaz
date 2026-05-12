@@ -181,15 +181,21 @@ described by reviewer packet `30896`.
   - [x] identify SPIRE GIDs on a remote via `pg_prepared_xacts`;
   - [x] decide commit vs rollback from coordinator placement-directory state;
   - [x] verify the recovered remote row or cleanup result.
-- [ ] Consider and, if accepted, add
+- [x] Consider and, if accepted, add
   `ec_spire_recover_orphaned_prepared_xacts(node_id)` for operator recovery.
+  - [x] Decision: defer the helper for v1. ADR-069 and
+    `docs/SPIRE_DIAGNOSTICS.md` now state that remote `pg_prepared_xacts`
+    alone does not contain the affected primary key or coordinator transaction
+    outcome needed to safely choose `COMMIT PREPARED` versus
+    `ROLLBACK PREPARED`; operators must use the explicit placement-directory
+    runbook until SPIRE records durable prepared-transaction intent metadata.
 - [ ] Bring INSERT 2PC dispatch cancellation to parity with Stage C read
   cancellation:
   - [ ] bridge local `InterruptPending` / `QueryCancelPending` to the remote
     libpq/tokio cancellation path;
   - [ ] fixture local cancel or statement timeout during slow remote prepare;
   - [ ] assert remote prepared transactions are rolled back, not orphaned.
-- [ ] Add `max_prepared_transactions` readiness:
+- [x] Add `max_prepared_transactions` readiness:
   - [x] document it as required on every remote;
   - [x] check or warn during descriptor registration;
   - [x] wrap `PREPARE TRANSACTION` exhaustion with a SPIRE-named hint.

@@ -357,6 +357,14 @@ use `ROLLBACK PREPARED`. If the coordinator transaction outcome or affected
 primary key cannot be established, leave the prepared transaction in place
 for manual escalation instead of guessing.
 
+ADR-069 therefore does not add a v1
+`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. Remote
+`pg_prepared_xacts` exposes the GID but not the affected primary key or the
+coordinator transaction outcome needed by the recovery rule above. A helper may
+be reconsidered after the coordinator records durable prepared-transaction
+intent metadata that lets it prove the same commit/rollback decision without
+operator judgment.
+
 The remote shard exposes `ec_spire_remote_insert_tuple_payload(index_oid,
 row_payload, requested_columns)` as the typed INSERT endpoint the
 coordinator can call inside that prepared remote transaction. The endpoint

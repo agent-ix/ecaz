@@ -288,6 +288,14 @@ established, leave the prepared transaction unresolved and escalate with the
 GID, remote node id, and coordinator index OID. Do not bulk-resolve SPIRE GIDs
 from the remote side alone.
 
+There is intentionally no v1
+`ec_spire_recover_orphaned_prepared_xacts(node_id)` helper. The helper cannot
+determine the affected primary key or the coordinator transaction outcome from
+remote `pg_prepared_xacts` alone, and an automated bulk commit/rollback would
+be less safe than the explicit placement-directory runbook above. Reconsider a
+coordinator-side helper only after SPIRE records enough prepared-transaction
+intent metadata to make the same decision rule machine-checkable.
+
 ## Distributed DDL Ordering
 
 SPIRE v1 does not propagate DDL from the coordinator relation to remote shard
