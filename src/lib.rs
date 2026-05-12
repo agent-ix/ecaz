@@ -17931,6 +17931,28 @@ mod tests {
         next_step: &'static str,
     }
 
+    fn assert_stable_spire_prepared_gid(
+        gid: &str,
+        index_oid: pg_sys::Oid,
+        node_id: i32,
+        served_epoch: i64,
+    ) {
+        let gid_parts = gid.split('_').collect::<Vec<_>>();
+        assert_eq!(
+            gid_parts.len(),
+            7,
+            "SPIRE prepared GID should omit volatile backend pid: {gid}"
+        );
+        assert_eq!(&gid_parts[0..3], ["ec", "spire", "insert"]);
+        assert_eq!(gid_parts[3], u32::from(index_oid).to_string());
+        assert_eq!(gid_parts[4], node_id.to_string());
+        assert_eq!(gid_parts[5], served_epoch.to_string());
+        let top_xid = gid_parts[6]
+            .parse::<u32>()
+            .expect("prepared GID top transaction id should be numeric");
+        assert!(top_xid > 0, "prepared GID should carry a real top xid");
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn test_prepare_coordinator_insert_remote_sql(
         index_oid: pg_sys::Oid,
@@ -20696,7 +20718,10 @@ mod tests {
                 "DROP TABLE IF EXISTS ec_spire_insert_prepare_remote_sql; \
                  CREATE TABLE ec_spire_insert_prepare_remote_sql \
                      (id bigint primary key, title text not null, embedding ecvector, \
-                      source_identity bytea not null);",
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_insert_prepare_remote_idx \
+                     ON ec_spire_insert_prepare_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
             )
             .expect("loopback remote INSERT target should be created");
 
@@ -20775,6 +20800,7 @@ mod tests {
 
         assert_eq!(result.status, "remote_insert_prepared");
         assert_eq!(result.next_step, "local_placement_directory_write");
+        assert_stable_spire_prepared_gid(&result.prepared_gid, index_oid, 11, 5);
         assert_eq!(prepared_count, 1);
         assert_eq!(
             remote_visible_count, 0,
@@ -20885,6 +20911,7 @@ mod tests {
 
         assert_eq!(result.status, "remote_insert_prepared");
         assert_eq!(result.next_step, "local_placement_directory_write");
+        assert_stable_spire_prepared_gid(&result.prepared_gid, index_oid, 12, 5);
         assert_eq!(prepared_count, 1);
         assert_eq!(
             remote_visible_count, 0,
@@ -21045,6 +21072,7 @@ mod tests {
         assert_eq!(parts[4], active_epoch.to_string());
         assert_eq!(parts[5], "true");
         assert_eq!(parts[6], "true");
+        assert_stable_spire_prepared_gid(&prepared_gid, index_oid, 13, active_epoch);
         assert_eq!(prepared_count, 1);
         assert_eq!(
             remote_visible_count, 0,
@@ -21655,6 +21683,7 @@ mod tests {
         assert_eq!(parts[5], "true");
         assert_eq!(parts[6], "remote_delete_prepared_pending_local_commit");
         assert_eq!(parts[7], "await_local_commit");
+        assert_stable_spire_prepared_gid(&prepared_gid, index_oid, 16, active_epoch);
         assert_eq!(prepared_count, 1);
         assert_eq!(
             remote_visible_count, 1,

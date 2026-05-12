@@ -2191,14 +2191,12 @@ fn coordinator_insert_prepared_gid(
     served_epoch: u64,
 ) -> String {
     let transaction_id = unsafe { pg_sys::GetTopTransactionId() };
-    let process_id = unsafe { pg_sys::MyProcPid };
     format!(
-        "ec_spire_insert_{}_{}_{}_{}_{}",
+        "ec_spire_insert_{}_{}_{}_{}",
         u32::from(index_oid),
         node_id,
         served_epoch,
-        u32::from(transaction_id),
-        process_id
+        u32::from(transaction_id)
     )
 }
 

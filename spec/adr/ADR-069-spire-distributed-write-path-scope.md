@@ -101,6 +101,13 @@ The INSERT is atomic from the application's perspective:
   and then commits the remote prepared transaction. If anything between
   prepare and commit fails, the operator-resolution recovery path is
   the standard PostgreSQL prepared-transaction recovery flow.
+- SPIRE prepared-transaction GIDs use
+  `ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>`.
+  The `ec_spire_insert` prefix is historical and is shared by current
+  coordinator-routed INSERT and DELETE prepares. The GID deliberately omits
+  backend pid because a crashed backend pid is not a stable recovery key;
+  `top_xid` is allocated with `GetTopTransactionId()` when the remote prepare
+  starts so the local transaction has a durable identity.
 
 ### Coordinator-routed UPDATE (non-embedding columns)
 
@@ -291,7 +298,19 @@ coordinator transaction aborts before commit, the remote prepared
 transaction is rolled back; if the coordinator commits, the remote
 prepared transaction is committed. A failed callback resolution leaves the
 prepared transaction visible to normal PostgreSQL prepared-transaction
-operator recovery.
+operator recovery. Operators identify SPIRE prepared transactions on the
+remote with `pg_prepared_xacts.gid LIKE 'ec_spire_insert_%'`, parse the
+stable `(index_oid, node_id, served_epoch, top_xid)` identity from the GID,
+and resolve only after matching the coordinator transaction outcome to the
+placement-directory state for the affected primary key. For INSERT recovery,
+a committed coordinator transaction with the expected placement row means
+`COMMIT PREPARED`; an aborted or absent placement outcome means
+`ROLLBACK PREPARED`. For DELETE recovery, a committed coordinator
+transaction with the placement row removed means `COMMIT PREPARED`; if the
+placement row remains because the coordinator transaction did not commit,
+use `ROLLBACK PREPARED`. If the coordinator transaction outcome or affected
+primary key cannot be established, leave the prepared transaction in place
+for manual escalation instead of guessing.
 
 The remote shard exposes `ec_spire_remote_insert_tuple_payload(index_oid,
 row_payload, requested_columns)` as the typed INSERT endpoint the

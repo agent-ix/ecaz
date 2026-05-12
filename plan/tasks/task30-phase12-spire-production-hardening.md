@@ -138,12 +138,12 @@ described by reviewer packet `30896`.
   `DELETE-not-found is success` versus `DELETE-not-found is error`.
 - [ ] Implement and test the chosen DELETE collision behavior, including
   placement-directory idempotence.
-- [ ] Remove volatile backend pid from SPIRE prepared-transaction GIDs; use a
+- [x] Remove volatile backend pid from SPIRE prepared-transaction GIDs; use a
   stable `(index_oid, node_id, served_epoch, xid)`-style identity instead.
-- [ ] Add an orphaned prepared-transaction recovery runbook:
-  - [ ] identify SPIRE GIDs on a remote via `pg_prepared_xacts`;
-  - [ ] decide commit vs rollback from coordinator placement-directory state;
-  - [ ] verify the recovered remote row or cleanup result.
+- [x] Add an orphaned prepared-transaction recovery runbook:
+  - [x] identify SPIRE GIDs on a remote via `pg_prepared_xacts`;
+  - [x] decide commit vs rollback from coordinator placement-directory state;
+  - [x] verify the recovered remote row or cleanup result.
 - [ ] Consider and, if accepted, add
   `ec_spire_recover_orphaned_prepared_xacts(node_id)` for operator recovery.
 - [ ] Bring INSERT 2PC dispatch cancellation to parity with Stage C read

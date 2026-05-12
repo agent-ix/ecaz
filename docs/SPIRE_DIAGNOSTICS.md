@@ -196,6 +196,45 @@ cleanup run removes only unprotected tuples for cleanup-eligible epochs under
 the SPIRE publish lock. Schedule cleanup from an operator-controlled job during
 an acceptable pause window for publish-path work.
 
+## Prepared Transaction Recovery
+
+Coordinator-routed SPIRE writes use remote PostgreSQL prepared transactions.
+If a coordinator backend crashes after remote prepare and before the xact
+callback resolves the remote transaction, inspect the remote:
+
+```sql
+SELECT gid, prepared, owner, database
+  FROM pg_prepared_xacts
+ WHERE gid LIKE 'ec_spire_insert_%'
+ ORDER BY prepared;
+```
+
+SPIRE GIDs have the stable form
+`ec_spire_insert_<index_oid>_<node_id>_<served_epoch>_<top_xid>`. The
+`ec_spire_insert` prefix is historical and currently covers both remote INSERT
+and DELETE prepares. There is no backend pid in the GID; `top_xid` is the
+coordinator transaction identity to match against coordinator-side evidence.
+
+Resolve only after the affected primary key and coordinator outcome are known:
+
+1. On the coordinator, inspect `ec_spire_placement` for the parsed
+   `index_oid`, `node_id`, `served_epoch`, and the affected primary key.
+2. For INSERT recovery, commit the remote prepared transaction only when the
+   coordinator transaction committed and the expected placement row exists.
+   Roll it back when the coordinator transaction aborted or the placement row
+   is absent after the outcome is known.
+3. For DELETE recovery, commit the remote prepared transaction only when the
+   coordinator transaction committed and the placement row was removed. Roll it
+   back when the coordinator transaction aborted and the placement row remains.
+4. After `COMMIT PREPARED` or `ROLLBACK PREPARED`, re-query the remote row and
+   the coordinator placement row to verify the two sides match the intended
+   outcome.
+
+If the coordinator transaction outcome or affected primary key cannot be
+established, leave the prepared transaction unresolved and escalate with the
+GID, remote node id, and coordinator index OID. Do not bulk-resolve SPIRE GIDs
+from the remote side alone.
+
 ## Reading Notes
 
 - These functions inspect SPIRE partition-object storage, not PostgreSQL
