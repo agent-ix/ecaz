@@ -1577,6 +1577,9 @@ unsafe fn dml_frontdoor_query_has_join_shape(
     query: &pg_sys::Query,
     operation: SpireDmlFrontdoorOperation,
 ) -> bool {
+    // SELECT v1 must have exactly one range-table ref. UPDATE/DELETE v1 allow
+    // only the result relation in the jointree; FROM/USING relations make the
+    // shape a join even though baserel handoff skips those non-target rels.
     match operation {
         SpireDmlFrontdoorOperation::PkSelect => unsafe { single_range_table_ref(query).is_none() },
         SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => unsafe {

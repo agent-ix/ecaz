@@ -29021,9 +29021,15 @@ mod tests {
         .expect("DML replacement ec_spire index creation should succeed");
         Spi::run(
             "CREATE TABLE ec_spire_dml_replacement_other_sql \
-             (id bigint primary key)",
+             (id bigint primary key, embedding ecvector)",
         )
         .expect("DML replacement join helper table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_replacement_other_idx \
+             ON ec_spire_dml_replacement_other_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML replacement distributed join helper index creation should succeed");
 
         let select_replacement = "FROM ec_spire_dml_frontdoor_replacement_sql(\
              $$SELECT id, title FROM ec_spire_dml_replacement_sql WHERE id = 5$$)";
