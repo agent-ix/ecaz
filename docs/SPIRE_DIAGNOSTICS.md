@@ -297,6 +297,9 @@ The guard compares the current coordinator heap shape to
 `ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint` before
 opening remote libpq dispatch. If it reports schema drift, keep writes paused,
 apply matching DDL to every remote, refresh the affected descriptors, and retry.
+The `coordinator_insert_shape_fingerprint` name is historical: the field landed
+with coordinator-routed INSERT first, but the same guard covers INSERT, UPDATE,
+and DELETE remote write paths.
 Upgrade migration backfills the fingerprint for descriptor rows whose
 coordinator index still exists; rows left with the `unset` sentinel fail closed
 for coordinator-routed INSERT, UPDATE, and DELETE until the descriptor is

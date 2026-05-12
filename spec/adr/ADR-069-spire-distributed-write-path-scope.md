@@ -568,6 +568,10 @@ against that descriptor-bound value before remote dispatch. v1 does not add an
 independent DDL-window guard GUC or catalog flag: operators must use the
 pause/apply/refresh/resume sequence above, and the schema-drift fingerprint is
 the fail-closed safety net when that sequence is violated.
+The catalog field keeps its `insert` name for 0.1.x compatibility because it
+landed with the INSERT path first; the same descriptor-bound payload-shape
+contract now applies to INSERT, UPDATE, and DELETE. A 0.2.x catalog cleanup may
+rename it to `coordinator_write_shape_fingerprint` or another write-path name.
 
 The v1 fingerprint input is a canonical text representation of non-dropped heap
 columns ordered by `attnum`: column number, quoted column name, type OID,
@@ -578,9 +582,9 @@ the fingerprint for descriptors whose coordinator index still exists. A row
 that cannot be backfilled keeps the `unset` sentinel and coordinator-routed
 INSERT fails closed until the descriptor is registered again.
 
-The same pre-dispatch guard also covers coordinator-routed UPDATE and DELETE
-remote payload paths. UPDATE fails before remote mutation, and DELETE fails
-before remote 2PC prepare or placement-directory deletion.
+The same pre-dispatch guard covers coordinator-routed UPDATE and DELETE remote
+payload paths. UPDATE fails before remote mutation, and DELETE fails before
+remote 2PC prepare or placement-directory deletion.
 
 A future ADR may add coordinator-driven DDL propagation. v1 keeps DDL
 operator-managed.
