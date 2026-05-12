@@ -225,6 +225,13 @@ covered:
   no NUL in strings; PG `text` allows them.
 - `domain over base type` — does `jsonb_populate_record` honor
   domain checks?
+- `NULL` in a nullable column — `to_jsonb(NEW)` serializes JSON
+  `null`; `jsonb_populate_record` must round-trip to SQL NULL.
+  Worth confirming for both NULL → NULL and NULL-where-`NOT NULL`
+  → constraint error paths.
+- `DEFAULT`-valued columns left out of the INSERT — the trigger
+  should send the literal NEW value (already evaluated by PG),
+  not rely on the remote's DEFAULT clause. Worth a fixture.
 
 **Fix shape:**
 - One regression fixture per type listed, asserting byte-for-byte
