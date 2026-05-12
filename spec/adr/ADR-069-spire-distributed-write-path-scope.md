@@ -109,7 +109,11 @@ The INSERT is atomic from the application's perspective:
   because a crashed backend pid is not a stable recovery key; `top_xid` is
   allocated with `GetTopTransactionId()` when the remote prepare starts so the
   local transaction has a durable identity for correlation with logs and other
-  coordinator-side evidence.
+  coordinator-side evidence. This v1 GID shape permits multi-row INSERTs in one
+  coordinator transaction only when the per-row routing decisions target
+  different `node_id` values. Same-node multi-row INSERTs in one coordinator
+  transaction are unsupported until the async/batched dispatch work
+  consolidates multiple rows for one node into one prepared remote transaction.
 
 ### Coordinator-routed UPDATE (non-embedding columns)
 

@@ -17283,6 +17283,9 @@ mod tests {
             .expect("env-var test lock should not be poisoned")
     }
 
+    // Test-schema helper only: external loopback backends run in a different
+    // process from the pg_test runner, so env-var based conninfo secrets must
+    // be installed in that backend before trigger-dispatch fixtures run.
     #[pg_extern]
     fn ec_spire_test_set_env_var(key: String, value: String) -> bool {
         std::env::set_var(key, value);
