@@ -133,10 +133,11 @@ matching the row by the v1 canonical bigint primary-key bytes. This is the
 forwarding primitive. If the placement row points at local node `0`, the
 same helper applies the payload update directly to the coordinator heap
 instead of attempting remote dispatch. Transparent
-`UPDATE documents SET ... WHERE id = ...` still requires a
-ModifyTable/view-hook integration because remote-owned rows are not
-present in the coordinator heap and therefore cannot be captured by a
-normal row-level table trigger.
+`UPDATE documents SET ... WHERE id = ...` is implemented by a planner-hook
+plan-tree replacement: the supported statement is planned as a top-level
+`EcSpireDistributedScan` CustomScan that invokes this primitive directly,
+increments PostgreSQL's processed-row count from the primitive result, and
+returns no tuple.
 
 Non-embedding UPDATE has at-most-once visible semantics from the
 application's perspective: if the connection drops after the remote
@@ -176,6 +177,32 @@ local commit or abort, so the remote heap delete and placement-directory
 delete commit or roll back together. If the placement row points at local
 node `0`, the same helper deletes directly from the coordinator heap and
 removes the placement row without opening a remote transaction.
+
+Transparent `DELETE FROM documents WHERE id = ...` uses the same
+planner-hook plan-tree replacement shape as transparent UPDATE: the
+supported statement is planned as a top-level `EcSpireDistributedScan`
+CustomScan that invokes the delete primitive directly, increments
+PostgreSQL's processed-row count from the primitive result, and returns no
+tuple.
+
+### Transparent DML front-door limitations
+
+The v1 transparent UPDATE/DELETE front door intentionally bypasses
+PostgreSQL `ModifyTable` for supported single-row, bigint-PK statements.
+That is the integration point that lets SPIRE route remote-owned rows that
+are not present in the coordinator heap. The tradeoff is that v1 supports
+only plain rowcount semantics for the rewritten statements:
+
+- `RETURNING` is not supported on transparent distributed UPDATE/DELETE.
+- Coordinator table row-level triggers do not fire for transparent
+  distributed UPDATE/DELETE.
+- Statement-level transition tables are not populated for transparent
+  distributed UPDATE/DELETE.
+
+These constraints are part of the v1 contract rather than incidental
+implementation gaps. A future ADR may introduce a richer ModifyTable-like
+integration if SPIRE needs trigger or transition-table semantics for
+distributed rows.
 
 ### UPDATE of the embedding column
 
