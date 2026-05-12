@@ -251,6 +251,14 @@ the contract narrow.
 
 ### Bulk-load escape hatch (separate task)
 
+Coordinator-routed INSERT is the correctness-first default for ordinary
+application writes. It pays one remote transaction, one remote
+`PREPARE TRANSACTION`, one coordinator placement-directory write, and one
+remote prepared-transaction resolution per affected remote row. That cost buys
+atomic visibility between the remote heap row and the coordinator placement
+directory, but it is not the highest-throughput ingestion path for workloads
+that can tolerate a bounded post-write placement-registration window.
+
 For bulk-load workflows where coordinator-routed INSERT is a throughput
 bottleneck, applications may write **directly to remote shards** using
 a coordinator-provided classification helper:
@@ -280,7 +288,11 @@ The exact bulk-load CLI surface, batching primitives, and
 parallel-ingest mechanism are **out of scope for v1** and will be
 delivered in a separate task with its own packets. The coordinator-side
 classification helper and batch-register primitive are the only v1
-contracts.
+contracts. While the batch placement registration has not completed, those
+directly loaded rows are outside coordinator-routed SPIRE read eligibility; the
+bulk-load operator must either keep readers away from the partially registered
+dataset or accept that searches may omit rows whose placement entries are not
+yet visible.
 
 The same classification and placement-entry preparation used by
 coordinator-routed INSERT is exposed as

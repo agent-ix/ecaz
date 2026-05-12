@@ -185,7 +185,7 @@ described by reviewer packet `30896`.
 - [ ] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
   transport pattern as the read path, so M remote prepares do not serialize
   into M round trips.
-- [ ] Document the 2PC latency tradeoff and the bulk-load escape hatch for
+- [x] Document the 2PC latency tradeoff and the bulk-load escape hatch for
   applications that can tolerate post-write placement registration.
 
 ## Phase 12.5: Schema Drift, DDL, and Type Round-Trip Hardening
