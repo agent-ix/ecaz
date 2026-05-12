@@ -22210,6 +22210,15 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_custom_scan_dml_plan_private_copyobject_sql() {
+        let roundtrip = unsafe { am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test() };
+        assert_eq!(
+            roundtrip, "3|12345|title,status|",
+            "DML CustomScan plan-private metadata should survive copyObject"
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "ec_spire coordinator select expected at most one row, got 2")]
     fn test_ec_spire_forward_coordinator_select_rejects_multirow_sql() {
         Spi::run(

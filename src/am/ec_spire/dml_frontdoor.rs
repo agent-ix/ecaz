@@ -196,6 +196,8 @@ pub(crate) fn dml_frontdoor_hook_status_row() -> SpireDmlFrontdoorHookStatusRow 
         query_shape_classifier_enabled: true,
         query_shape_classifier_invoked_by_hook: classifier_invoked,
         unsupported_shape_fail_closed_enabled: true,
+        // True means supported UPDATE/DELETE shapes are planned as a
+        // CustomScan; per-mode executor dispatch still gates execution.
         plan_rewrite_enabled: true,
         last_classification_supported: last_supported,
         last_classification_kind: last_kind,

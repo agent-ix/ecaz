@@ -447,6 +447,9 @@ pub(crate) unsafe fn custom_scan_dml_replacement_plan(
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
+        // This replacement is not competing in path selection; the planner
+        // has already produced fallback_plan. Copy its cost fields so EXPLAIN
+        // remains roughly comparable until DML-specific costing exists.
         custom_scan.scan.plan.disabled_nodes = if fallback_plan.is_null() {
             0
         } else {
@@ -971,6 +974,9 @@ unsafe fn custom_scan_dml_plan_private(
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
     unsafe {
+        // PostgreSQL List instances are homogeneous by node/cell kind. Keep
+        // every DML custom_private slot as T_String; do not append OidList
+        // cells to this list.
         let mut custom_private =
             custom_scan_lappend_string(std::ptr::null_mut(), &mode.raw().to_string());
         custom_private =
@@ -982,6 +988,33 @@ unsafe fn custom_scan_dml_plan_private(
         custom_scan_lappend_string(
             custom_private,
             &custom_scan_dml_column_list_plan_private_json(projected_columns),
+        )
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> String {
+    unsafe {
+        let updated_columns = vec!["title".to_owned(), "status".to_owned()];
+        let projected_columns = Vec::<String>::new();
+        let custom_private = custom_scan_dml_plan_private(
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+            pg_sys::Oid::from(12_345),
+            &updated_columns,
+            &projected_columns,
+        );
+        let copied = pg_sys::copyObjectImpl(custom_private.cast()).cast::<pg_sys::List>();
+        let mode = custom_scan_plan_private_u32(copied, 0, "mode");
+        let index_oid = custom_scan_plan_private_u32(copied, 1, "index OID");
+        let updated = custom_scan_dml_column_list_from_plan_private(copied, 2, "updated columns");
+        let projected =
+            custom_scan_dml_column_list_from_plan_private(copied, 3, "projected columns");
+        format!(
+            "{}|{}|{}|{}",
+            mode,
+            index_oid,
+            updated.join(","),
+            projected.join(",")
         )
     }
 }
@@ -1069,8 +1102,17 @@ unsafe fn custom_scan_dml_column_list_from_plan(
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
             pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
         }
-        let custom_private = (*custom_scan).custom_private;
-        if (*custom_private).length <= offset {
+        custom_scan_dml_column_list_from_plan_private((*custom_scan).custom_private, offset, label)
+    }
+}
+
+unsafe fn custom_scan_dml_column_list_from_plan_private(
+    custom_private: *mut pg_sys::List,
+    offset: i32,
+    label: &str,
+) -> Vec<String> {
+    unsafe {
+        if custom_private.is_null() || (*custom_private).length <= offset {
             pgrx::error!("EcSpireDistributedScan DML plan is missing {label} metadata");
         }
         let raw =
