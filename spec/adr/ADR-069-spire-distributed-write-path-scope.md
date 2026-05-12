@@ -288,7 +288,11 @@ The exact bulk-load CLI surface, batching primitives, and
 parallel-ingest mechanism are **out of scope for v1** and will be
 delivered in a separate task with its own packets. The coordinator-side
 classification helper and batch-register primitive are the only v1
-contracts. While the batch placement registration has not completed, those
+contracts. Batch placement registration is transactional within the calling
+session: entries from one call become visible together at commit and are not
+visible after rollback. Partial visibility is therefore an operational boundary
+between committed bulk-load batches or tool runs, not within one registration
+transaction. While the batch placement registration has not committed, those
 directly loaded rows are outside coordinator-routed SPIRE read eligibility; the
 bulk-load operator must either keep readers away from the partially registered
 dataset or accept that searches may omit rows whose placement entries are not

@@ -204,11 +204,17 @@ affected remote row pays remote SQL, remote `PREPARE TRANSACTION`, coordinator
 placement-directory staging, and remote prepared-transaction resolution so the
 remote heap and coordinator placement state become visible atomically. For
 bulk ingestion where that per-row 2PC latency is too expensive, use the
-ADR-069 bulk-load escape hatch instead: classify rows on the coordinator, load
-them directly to the owning remotes in parallel, then batch-register placement
-entries on the coordinator. Until placement registration completes, those rows
-are not eligible for coordinator-routed SPIRE reads, so keep readers off the
-partially registered dataset or accept temporary omissions.
+ADR-069 bulk-load escape hatch instead: classify rows on the coordinator with
+`ec_spire_classify_centroid(...)`, load them directly to the owning remotes in
+parallel, then batch-register placement entries on the coordinator with
+`ec_spire_register_placement_batch(...)`. The batch registration is
+transactional within the calling session: placement entries from one call
+become visible together at commit, or not at all on rollback. Partial
+visibility concerns therefore sit between committed bulk-load batches or tool
+runs, not inside one registration transaction. Until placement registration
+commits, those rows are not eligible for coordinator-routed SPIRE reads, so
+keep readers off the partially registered dataset or accept temporary
+omissions.
 
 Every remote PostgreSQL instance used for coordinator-routed writes must set
 `max_prepared_transactions` above zero and leave enough free slots for peak
