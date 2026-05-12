@@ -21717,6 +21717,9 @@ mod tests {
         index_oid: u32,
         node_id: i32,
     ) -> i64 {
+        // The prefix pins coordinator-owned numeric identifiers before the
+        // served_epoch/top_xid suffix, so the wildcard cannot match
+        // user-supplied GID text across descriptors.
         client
             .query_one(
                 "SELECT count(*)::bigint \

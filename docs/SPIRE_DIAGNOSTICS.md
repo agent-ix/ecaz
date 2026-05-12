@@ -143,6 +143,15 @@ SPIRE 0.1.2 uses `EcSpireDistributedScan` as the production distributed read
 integration point. Remote-origin rows are delivered through CustomScan tuple
 payloads, not through coordinator-side AM mirror rows.
 
+Distributed table reads provide read-committed semantics only, even when the
+surrounding coordinator transaction is `REPEATABLE READ` or `SERIALIZABLE`.
+Remote statements run under remote PostgreSQL snapshots rather than the
+coordinator transaction snapshot, so a later distributed read in the same
+coordinator transaction can observe a newer committed remote row. Applications
+that require PostgreSQL's normal repeatable or serializable guarantees for
+distributed tables must add application-level locking or accept this v1
+limitation.
+
 Operator status labels changed with that pivot:
 
 | Superseded label | Current label | Meaning |
