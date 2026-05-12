@@ -490,17 +490,58 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
     unsafe {
         let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
         Some(plan_expr.and_then(|plan_expr| {
-            if plan_expr.primitive_plan.mode
-                == SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
-            {
-                Ok(plan_expr)
-            } else {
-                Err(
-                    "ec_spire DML frontdoor baserel expression handoff expected PK SELECT primitive plan"
-                        .to_owned(),
-                )
-            }
+            dml_frontdoor_primitive_plan_expr_require_mode(
+                plan_expr,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload,
+                "PK SELECT",
+            )
         }))
+    }
+}
+
+pub(crate) unsafe fn dml_frontdoor_update_primitive_plan_expr_from_baserel(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    unsafe {
+        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+        Some(plan_expr.and_then(|plan_expr| {
+            dml_frontdoor_primitive_plan_expr_require_mode(
+                plan_expr,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+                "UPDATE",
+            )
+        }))
+    }
+}
+
+pub(crate) unsafe fn dml_frontdoor_delete_primitive_plan_expr_from_baserel(
+    root: *mut pg_sys::PlannerInfo,
+    rel: *mut pg_sys::RelOptInfo,
+) -> Option<Result<SpireDmlFrontdoorPrimitivePlanExpr, String>> {
+    unsafe {
+        let plan_expr = dml_frontdoor_primitive_plan_expr_from_baserel(root, rel)?;
+        Some(plan_expr.and_then(|plan_expr| {
+            dml_frontdoor_primitive_plan_expr_require_mode(
+                plan_expr,
+                SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
+                "DELETE",
+            )
+        }))
+    }
+}
+
+fn dml_frontdoor_primitive_plan_expr_require_mode(
+    plan_expr: SpireDmlFrontdoorPrimitivePlanExpr,
+    expected_mode: SpireDmlFrontdoorCustomScanMode,
+    operation_name: &'static str,
+) -> Result<SpireDmlFrontdoorPrimitivePlanExpr, String> {
+    if plan_expr.primitive_plan.mode == expected_mode {
+        Ok(plan_expr)
+    } else {
+        Err(format!(
+            "ec_spire DML frontdoor baserel expression handoff expected {operation_name} primitive plan"
+        ))
     }
 }
 
@@ -2191,6 +2232,36 @@ mod tests {
     }
 
     #[test]
+    fn baserel_primitive_plan_mode_guard_names_expected_operation() {
+        let plan_expr = test_primitive_plan_expr(
+            SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload,
+        );
+        let error = match dml_frontdoor_primitive_plan_expr_require_mode(
+            plan_expr,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+            "UPDATE",
+        ) {
+            Ok(_plan_expr) => panic!("mismatched DML primitive mode should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            "ec_spire DML frontdoor baserel expression handoff expected UPDATE primitive plan"
+        );
+
+        let plan_expr = test_primitive_plan_expr(
+            SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+        );
+        assert!(dml_frontdoor_primitive_plan_expr_require_mode(
+            plan_expr,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload,
+            "UPDATE",
+        )
+        .is_ok());
+    }
+
+    #[test]
     fn query_layer_recognizes_bigint_const_and_param_values() {
         let mut bigint_const = pg_sys::Const::default();
         bigint_const.xpr.type_ = pg_sys::NodeTag::T_Const;
@@ -2363,6 +2434,25 @@ mod tests {
             updated_columns,
             projected_columns,
             embedding_columns,
+        }
+    }
+
+    fn test_primitive_plan_expr(
+        mode: SpireDmlFrontdoorCustomScanMode,
+    ) -> SpireDmlFrontdoorPrimitivePlanExpr {
+        SpireDmlFrontdoorPrimitivePlanExpr {
+            primitive_plan: SpireDmlFrontdoorPrimitivePlan {
+                index_oid: pg_sys::Oid::from(1),
+                mode,
+                primitive: dml_frontdoor_primitive_for_mode(mode),
+                pk_argument: SpireDmlFrontdoorPkArgument {
+                    pk_column: "id".to_owned(),
+                    value: SpireDmlFrontdoorPkValuePlan::ConstBigint(1),
+                },
+                updated_columns: Vec::new(),
+                projected_columns: Vec::new(),
+            },
+            pk_value_expr: std::ptr::null_mut(),
         }
     }
 }
