@@ -1,0 +1,21 @@
+2026-05-11 23:03:16.478 PDT [3707838] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-11 23:03:16.480 PDT [3707838] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/se95-fault-remote-statement-timeout/sockets/.s.PGSQL.39324"
+2026-05-11 23:03:16.486 PDT [3707844] LOG:  database system was shut down at 2026-05-11 23:03:15 PDT
+2026-05-11 23:03:16.490 PDT [3707838] LOG:  database system is ready to accept connections
+2026-05-11 23:03:16.907 PDT [3707869] ERROR:  canceling statement due to statement timeout
+2026-05-11 23:03:16.907 PDT [3707869] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-11 23:03:16.908 PDT [3707869] LOG:  could not receive data from client: Connection reset by peer
+2026-05-11 23:03:16.943 PDT [3707873] ERROR:  canceling statement due to statement timeout
+2026-05-11 23:03:16.943 PDT [3707873] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-11 23:03:16.981 PDT [3707879] ERROR:  canceling statement due to statement timeout
+2026-05-11 23:03:16.981 PDT [3707879] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-11 23:03:17.018 PDT [3707883] ERROR:  canceling statement due to statement timeout
+2026-05-11 23:03:17.018 PDT [3707883] STATEMENT:  SELECT pg_sleep(0.30)
+2026-05-11 23:03:17.018 PDT [3707883] LOG:  could not receive data from client: Connection reset by peer
+2026-05-11 23:03:17.123 PDT [3707838] LOG:  received fast shutdown request
+2026-05-11 23:03:17.129 PDT [3707838] LOG:  aborting any active transactions
+2026-05-11 23:03:17.129 PDT [3707838] LOG:  background worker "logical replication launcher" (PID 3707847) exited with exit code 1
+2026-05-11 23:03:17.129 PDT [3707842] LOG:  shutting down
+2026-05-11 23:03:17.132 PDT [3707842] LOG:  checkpoint starting: shutdown immediate
+2026-05-11 23:03:17.145 PDT [3707842] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.016 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-11 23:03:17.152 PDT [3707838] LOG:  database system is shut down

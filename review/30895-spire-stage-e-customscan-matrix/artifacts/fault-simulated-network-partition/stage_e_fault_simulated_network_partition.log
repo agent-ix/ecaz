@@ -1,0 +1,24 @@
+run_dir=/home/peter/dev/ecaz/target/spire-stage-e-network-partition-pg18-20260512T060201Z
+remote_ready_port=39318
+coord_port=39319
+missing_socket_dir=/home/peter/dev/ecaz/target/spire-stage-e-network-partition-pg18-20260512T060201Z/missing-socket
+matrix_row=simulated_network_partition,connect_failed,fail_closed,remote_transport_failed,skip_node,degraded_skipped,connect_failed_count+1; degraded_skipped_dispatch_count+1
+injection_command=EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_MISSING=host=/home/peter/dev/ecaz/target/spire-stage-e-network-partition-pg18-20260512T060201Z/missing-socket port=6543 dbname=postgres user=postgres connect_timeout=1
+query_command=tests.ec_spire_test_production_transport_probe_summary(..., 'strict')
+expected_status=remote_transport_failed
+expected_transport_failed_dispatch_count=1
+expected_degraded_skipped_dispatch_count=0
+expected_next_executor_step=production_transport_adapter
+observed_summary=spire_remote_fanout_executor_v1,2,2,1,1,connect_failed,1,0,none,production_transport_adapter,remote_transport_failed
+matrix_row=simulated_network_partition,connect_failed,fail_closed,remote_transport_failed,skip_node,degraded_skipped,connect_failed_count+1; degraded_skipped_dispatch_count+1
+injection_command=EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_STAGE_E_MISSING=host=/home/peter/dev/ecaz/target/spire-stage-e-network-partition-pg18-20260512T060201Z/missing-socket port=6543 dbname=postgres user=postgres connect_timeout=1
+query_command=tests.ec_spire_test_production_transport_probe_summary(..., 'degraded')
+expected_status=requires_compact_candidate_receive
+expected_transport_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=1
+expected_next_executor_step=compact_candidate_receive
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,0,none,1,1,connect_failed,compact_candidate_receive,requires_compact_candidate_receive
+strict_log=review/30895-spire-stage-e-customscan-matrix/artifacts/fault-simulated-network-partition/stage_e_fault_simulated_network_partition_strict.log
+degraded_log=review/30895-spire-stage-e-customscan-matrix/artifacts/fault-simulated-network-partition/stage_e_fault_simulated_network_partition_degraded.log
+stage_e_fault_simulated_network_partition_passed=true
+SPIRE Stage E simulated network partition PG18 fixture passed
