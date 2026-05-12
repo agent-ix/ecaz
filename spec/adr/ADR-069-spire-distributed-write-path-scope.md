@@ -655,6 +655,11 @@ when their use cases warrant. They are listed so the deferral is visible.
   change, automatically migrate those rows to their new shards.
 - **Multi-coordinator deployments** (future ADR). v1 assumes one
   coordinator.
+- **Automated orphaned prepared-transaction recovery helper** (future
+  ADR). A safe `ec_spire_recover_orphaned_prepared_xacts(node_id)` helper
+  requires durable coordinator-side intent metadata that records the GID,
+  affected primary key, and enough transaction outcome evidence to make the
+  documented manual commit/rollback rule machine-checkable.
 
 ## Consequences
 

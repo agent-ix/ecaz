@@ -120,6 +120,8 @@ pub(crate) struct SpireDmlFrontdoorPrimitiveInvocation {
     pub(crate) mode: SpireDmlFrontdoorCustomScanMode,
     pub(crate) primitive: &'static str,
     pub(crate) pk_column: String,
+    // ADR-069 v1 DML supports bigint PKs only; widen this when v2 admits UUID
+    // or composite PK encodings.
     pub(crate) pk_value: [u8; 8],
     pub(crate) updated_columns: Vec<String>,
     pub(crate) projected_columns: Vec<String>,
