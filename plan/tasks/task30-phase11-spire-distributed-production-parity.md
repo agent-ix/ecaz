@@ -1292,9 +1292,14 @@ v1 write contract from ADR-069:
       `ec_spire_forward_coordinator_update_tuple_payload(...)`, increments
       `estate->es_processed`, and keeps row-dependent SET expressions
       fail-closed for the documented v1 limitation.
-  - [ ] Wire DELETE executor dispatch to
+  - [x] Wire DELETE executor dispatch to
     `ec_spire_prepare_coordinator_delete_tuple_payload(...)`, increment
     `es_processed`, and return no tuple.
+    - [x] Packet `30887` routes DELETE `CustomScan` execution through
+      `ec_spire_prepare_coordinator_delete_tuple_payload(...)`, increments
+      `estate->es_processed` from the primitive's deleted count, returns no
+      tuple, and extends the plan-tree replacement fixture to prove local heap
+      row deletion, placement-row deletion, and `ROW_COUNT = 1`.
   - [ ] Add ADR-069 documentation for the v1 limitations implied by bypassing
     `ModifyTable`: no `RETURNING`, no row-level triggers on the distributed
     table, and no statement-level transition-table semantics.
