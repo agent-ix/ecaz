@@ -1276,16 +1276,22 @@ v1 write contract from ADR-069:
     target is a planner-hook plan-tree replacement that keeps
     `commandType = CMD_UPDATE` / `CMD_DELETE`, drops `ModifyTable`, and lets
     the CustomScan executor increment `estate->es_processed`.
-  - [ ] Scaffold the plan-tree replacement for supported UPDATE/DELETE shapes
+  - [x] Scaffold the plan-tree replacement for supported UPDATE/DELETE shapes
     while keeping executor branches fail-closed.
     - [x] Packet `30884` captures the UPDATE/DELETE primitive expression before
       the chained planner, replaces the returned `PlannedStmt.planTree` with a
       top-level `EcSpireDistributedScan` CustomScan carrying DML plan-private
       metadata, and proves the scaffold records `plan_tree_replaced_customscan`
       while actual UPDATE execution still fails closed at the executor guard.
-  - [ ] Wire UPDATE executor dispatch to
+  - [x] Wire UPDATE executor dispatch to
     `ec_spire_forward_coordinator_update_tuple_payload(...)`, increment
     `es_processed`, and return no tuple.
+    - [x] Packet `30886` carries UPDATE SET expressions through
+      `custom_exprs`, decodes the plan-private PK column, builds the
+      JSONB row payload for constant and parameter SET values, calls
+      `ec_spire_forward_coordinator_update_tuple_payload(...)`, increments
+      `estate->es_processed`, and keeps row-dependent SET expressions
+      fail-closed for the documented v1 limitation.
   - [ ] Wire DELETE executor dispatch to
     `ec_spire_prepare_coordinator_delete_tuple_payload(...)`, increment
     `es_processed`, and return no tuple.
