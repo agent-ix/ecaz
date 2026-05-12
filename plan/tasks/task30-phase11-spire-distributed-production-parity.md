@@ -345,13 +345,17 @@ local-only path.
   - [ ] PG18 fixture: INSERT at the coordinator, verify the row lands on the
     target remote, verify placement-directory state, and verify CustomScan
     SELECT returns the row.
-- [ ] Land coordinator-routed non-embedding UPDATE, DELETE, and PK-keyed SELECT.
-  - [ ] UPDATE non-embedding columns by placement-directory lookup and remote
+- [x] Land coordinator-routed non-embedding UPDATE, DELETE, and PK-keyed SELECT.
+  - [x] UPDATE non-embedding columns by placement-directory lookup and remote
     forwarding.
-  - [ ] DELETE through remote prepared DELETE plus placement-directory delete.
-  - [ ] PK-keyed SELECT through placement-directory lookup and remote SELECT.
-  - [ ] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
-  - [ ] Add PG18 fixtures per operation.
+  - [x] DELETE through remote prepared DELETE plus placement-directory delete.
+  - [x] PK-keyed SELECT through placement-directory lookup and remote SELECT.
+  - [x] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
+  - [x] Add PG18 fixtures per operation.
+    - [x] Packets `30838` through `30846` cover the coordinator primitives,
+      local-placement variants, and embedding-UPDATE rejection. Packets
+      `30873` through `30889` cover the transparent CustomScan front doors,
+      including remote-placement UPDATE and DELETE evidence.
 - [ ] Migrate Stage E fault and lifecycle fixtures onto the CustomScan path.
   - [ ] Preserve the existing 11 fault-matrix and 6 lifecycle-matrix cases
     where they already assert executor state and diagnostic SQL surfaces.
@@ -1282,7 +1286,7 @@ v1 write contract from ADR-069:
     plan-private metadata now has an explicit homogeneous-list contract and a
     PG `copyObject` roundtrip regression, while the plan-rewrite diagnostic and
     fallback-cost inheritance comments clarify scaffold semantics.
-- [ ] Replace supported UPDATE/DELETE `PlannedStmt.planTree` with a top-level
+- [x] Replace supported UPDATE/DELETE `PlannedStmt.planTree` with a top-level
   `EcSpireDistributedScan` CustomScan from the planner hook.
   - [x] Reviewer feedback in `30803` seq 004 rejects the earlier
     ModifyTable-under-scan and view/trigger wording for UPDATE/DELETE. The v1
