@@ -545,13 +545,15 @@ The v1 DDL ordering contract is:
 5. Resume writes only after all remotes report the expected descriptor state.
 
 Stage B endpoint identity / fingerprint already catches read-path schema drift
-between coordinator and remote at query time. Phase 12.5 tracks a separate
-write-path column-shape fingerprint so coordinator-routed INSERT can fail
-closed before remote dispatch when the coordinator and descriptor shapes
-diverge. v1 does not add an independent DDL-window guard GUC or catalog flag:
-operators must use the pause/apply/refresh/resume sequence above, and the
-schema-drift fingerprint is the planned fail-closed safety net when that
-sequence is violated.
+between coordinator and remote at query time. Phase 12.5 adds a separate
+write-path column-shape fingerprint:
+`ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint` records
+the coordinator heap column shape when a remote descriptor is registered or
+refreshed, and coordinator-routed INSERT compares the current coordinator shape
+against that descriptor-bound value before remote dispatch. v1 does not add an
+independent DDL-window guard GUC or catalog flag: operators must use the
+pause/apply/refresh/resume sequence above, and the schema-drift fingerprint is
+the fail-closed safety net when that sequence is violated.
 
 A future ADR may add coordinator-driven DDL propagation. v1 keeps DDL
 operator-managed.

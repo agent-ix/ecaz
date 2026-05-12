@@ -290,11 +290,15 @@ state, and only then resume writes. Bulk-load placement registration for the
 same relation should remain paused during the same window.
 
 There is no separate v1 DDL-window guard flag. The operational guard is the
-pause/apply/refresh/resume sequence; the Phase 12.5 schema-drift fingerprint is
-the planned fail-closed safety net for coordinator-routed writes when
-coordinator and remote column shapes diverge. Read-path endpoint identity
-mismatches continue to surface through the Stage B/Stage E remote fault
-diagnostics.
+pause/apply/refresh/resume sequence; the descriptor-bound Phase 12.5
+schema-drift fingerprint is the fail-closed safety net for coordinator-routed
+writes when the coordinator column shape changes without a descriptor refresh.
+The guard compares the current coordinator heap shape to
+`ec_spire_remote_node_descriptor.coordinator_insert_shape_fingerprint` before
+opening remote libpq dispatch. If it reports schema drift, keep writes paused,
+apply matching DDL to every remote, refresh the affected descriptors, and retry.
+Read-path endpoint identity mismatches continue to surface through the Stage
+B/Stage E remote fault diagnostics.
 
 ## Reading Notes
 

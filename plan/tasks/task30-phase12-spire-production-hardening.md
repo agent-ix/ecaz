@@ -220,8 +220,9 @@ described by reviewer packet `30896`.
 - [x] Decide whether a lightweight DDL window guard is needed to block writes
   while remote schemas are known to be inconsistent.
   - [x] Decision: no separate v1 DDL-window guard GUC/catalog flag; operators
-    must pause writes during DDL, and the Phase 12.5 schema-drift fingerprint
-    remains the planned fail-closed safety net for violated ordering.
+    must pause writes during DDL, and the descriptor-bound Phase 12.5
+    schema-drift fingerprint is now the fail-closed safety net for violated
+    ordering.
 
 ## Phase 12.6: Isolation, EvalPlanQual, and Negative DML Coverage
 
