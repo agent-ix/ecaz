@@ -1232,6 +1232,12 @@ v1 write contract from ADR-069:
     UPDATE/DELETE CustomScan routing can reuse the same frontdoor-owned
     extraction path. DML baserels that are not the query result relation now
     return `None` instead of surfacing as candidate errors.
+  - [x] Packet `30877` makes the `EcSpireDistributedScan` plan-mode plumbing
+    DML-neutral: UPDATE, DELETE, and PK SELECT have distinct CustomScan
+    private mode identifiers, and DML plan construction maps typed frontdoor
+    primitive modes back to those plan modes. UPDATE/DELETE path generation
+    remains disabled until the executor branches can call their coordinator
+    primitives.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
