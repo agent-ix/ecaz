@@ -231,6 +231,15 @@ does not reject the descriptor because secret-resolution and remote
 availability are already separately visible operator surfaces, but it must be
 treated as a write-readiness blocker before enabling coordinator-routed writes.
 
+If concurrent coordinator INSERTs refresh the same remote-node descriptor and a
+newer descriptor generation wins first, the older transaction fails with
+SQLSTATE `40001` (`serialization_failure`) and message
+`ec_spire_register_remote_node_descriptor descriptor_generation must advance
+existing descriptor_generation`. Retry the whole coordinator write after the
+winning descriptor refresh commits; the failed transaction has not published
+its placement row, and its remote prepared transaction is rolled back by the
+transaction callback.
+
 If a coordinator backend crashes after remote prepare and before the xact
 callback resolves the remote transaction, inspect the remote:
 

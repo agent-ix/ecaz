@@ -2032,8 +2032,11 @@ fn ec_spire_register_remote_node_descriptor(
     });
     let registered = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     if !registered {
-        pgrx::error!(
-            "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
+        pgrx::ereport!(
+            ERROR,
+            pgrx::PgSqlErrorCode::ERRCODE_T_R_SERIALIZATION_FAILURE,
+            "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation",
+            "Retry the whole coordinator write after the winning descriptor refresh commits."
         );
     }
     true
@@ -36366,9 +36369,6 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(
-        expected = "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
-    )]
     fn test_ec_spire_remote_node_descriptor_stale_generation_rejected() {
         Spi::run(
             "CREATE TABLE ec_spire_remote_node_desc_stale_gen_sql \
@@ -36410,13 +36410,43 @@ mod tests {
         .expect("first descriptor registration result should exist");
         assert!(first_result);
 
-        let _ = Spi::get_one::<bool>(&format!(
-            "SELECT ec_spire_register_remote_node_descriptor(\
-                     '{}'::oid, 2, 7, 'spire/remote/stale-generation', decode('02', 'hex'), \
-                     'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
-            u32::from(index_oid),
-            env!("CARGO_PKG_VERSION")
-        ));
+        let stale_generation_error = pg_sys::PgTryBuilder::new(|| {
+            let _ = Spi::get_one::<bool>(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                         '{}'::oid, 2, 7, 'spire/remote/stale-generation', decode('02', 'hex'), \
+                         'remote_spire_idx', 'active', {active_epoch}, {active_epoch}, '{}', 'none')",
+                u32::from(index_oid),
+                env!("CARGO_PKG_VERSION")
+            ));
+            "no_error".to_owned()
+        })
+        .catch_when(
+            pg_sys::errcodes::PgSqlErrorCode::ERRCODE_T_R_SERIALIZATION_FAILURE,
+            |cause| match cause {
+                pg_sys::panic::CaughtError::ErrorReport(report)
+                | pg_sys::panic::CaughtError::PostgresError(report) => {
+                    format!(
+                        "{}|{}",
+                        report.message(),
+                        report.detail().unwrap_or("")
+                    )
+                }
+                pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                    format!(
+                        "{}|{}",
+                        ereport.message(),
+                        ereport.detail().unwrap_or("")
+                    )
+                }
+            },
+        )
+        .catch_others(|cause| cause.rethrow())
+        .execute();
+
+        assert_eq!(
+            stale_generation_error,
+            "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation|Retry the whole coordinator write after the winning descriptor refresh commits."
+        );
     }
 
     #[pg_test]

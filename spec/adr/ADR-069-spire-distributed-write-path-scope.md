@@ -415,7 +415,13 @@ Descriptor refresh uses the remote endpoint's post-INSERT descriptor
 generation as a monotonic guard. If concurrent coordinator INSERTs for the
 same `(index_oid, node_id)` race and a newer descriptor generation wins
 first, the older transaction can fail to advance the descriptor and roll
-back. That is acceptable v1 behavior; callers should retry the INSERT.
+back. That race raises SQLSTATE `40001` (`serialization_failure`) with the
+message
+`ec_spire_register_remote_node_descriptor descriptor_generation must advance
+existing descriptor_generation`; callers should retry the whole coordinator
+write after the winning descriptor refresh commits. The failed transaction has
+not published its placement row, and the existing transaction callback rolls
+back its remote prepared transaction.
 Stage F can replace this with an explicit live-row compatibility check or
 per-node INSERT serialization if concurrent INSERT throughput requires it.
 
