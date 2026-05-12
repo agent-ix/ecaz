@@ -994,13 +994,13 @@ v1 write contract from ADR-069:
   - [x] Packet `30825` makes malformed array entries explicit, pins
     all-or-nothing batch behavior, and covers empty, duplicate, and invalid
     entries before coordinator-routed writes consume the primitive.
-- [ ] Coordinator-routed INSERT:
-  - [ ] classify embedding to target `node_id`;
+- [x] Coordinator-routed INSERT:
+  - [x] classify embedding to target `node_id`;
     - [x] Packet `30828` adds the side-effect-free
       `ec_spire_plan_coordinator_insert(...)` primitive that validates
       `pk_value`/`source_identity`, calls the active classifier, and returns the
       placement tuple fields the 2PC INSERT path will persist.
-  - [ ] forward remote INSERT through the Stage C transport;
+  - [x] forward remote INSERT through the Stage C transport;
     - [x] Packet `30829` adds the Stage C descriptor/secret/epoch-window
       readiness gate the mutating transport call will consume.
     - [x] Packet `30831` adds the remote-side
@@ -1008,7 +1008,7 @@ v1 write contract from ADR-069:
       requested_columns)` endpoint. The endpoint derives the heap relation from
       the remote SPIRE index, validates the explicit column list, projects JSON
       through PostgreSQL type input, and inserts the named tuple columns.
-  - [ ] use remote `PREPARE TRANSACTION`, local placement-directory write, and
+  - [x] use remote `PREPARE TRANSACTION`, local placement-directory write, and
     remote commit for atomicity;
     - [x] Packet `30830` adds the internal remote-prepare primitive: it opens
       Stage C libpq transport, runs remote INSERT SQL inside a remote
