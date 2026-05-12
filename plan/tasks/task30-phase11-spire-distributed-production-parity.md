@@ -1227,6 +1227,11 @@ v1 write contract from ADR-069:
     extraction is documented, relid overflow reports an explicit extraction
     error, and malformed DML PK SELECT candidates fail closed instead of being
     silently skipped.
+  - [x] Packet `30876` generalizes that baserel primitive-plan expression
+    handoff for UPDATE, DELETE, and PK SELECT so the future transparent
+    UPDATE/DELETE CustomScan routing can reuse the same frontdoor-owned
+    extraction path. DML baserels that are not the query result relation now
+    return `None` instead of surfacing as candidate errors.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
