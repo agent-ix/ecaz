@@ -310,7 +310,7 @@ local-only path.
       separate coordinator and remote PG18 clusters, registers the real remote
       endpoint fingerprint, asserts `Custom Scan (EcSpireDistributedScan)`,
       and verifies the returned projected tuple is the remote shard row.
-- [ ] Land the ADR-069 placement directory and coordinator-routed INSERT.
+- [x] Land the ADR-069 placement directory and coordinator-routed INSERT.
   - [x] Add `ec_spire_placement(index_oid, pk_value, node_id, centroid_id,
     served_epoch, source_identity)` with the required primary key and identity
     index.
@@ -332,9 +332,12 @@ local-only path.
     - [x] Packet `30825` hardens the primitive with explicit NULL-entry
       rejection, empty-batch/duplicate/constraint regression tests, and ADR
       notes for transaction and v1 entry-shape semantics.
-  - [ ] Route coordinator INSERT by classifying the embedding, forwarding the
+  - [x] Route coordinator INSERT by classifying the embedding, forwarding the
     row to the target remote, and atomically updating the placement directory
     with remote `PREPARE TRANSACTION` / local commit / remote commit.
+    - [x] Packet `30828` adds the side-effect-free coordinator INSERT
+      planning primitive that classifies the embedding and builds the placement
+      tuple fields.
     - [x] Packet `30829` adds the side-effect-free
       `ec_spire_plan_coordinator_insert_dispatch(...)` readiness primitive for
       the classified remote target. It reuses the Stage C
@@ -342,9 +345,23 @@ local-only path.
       checks the remote descriptor's served-epoch window, and reports the
       libpq/2PC dispatch action without opening a connection or mutating
       placement state.
-  - [ ] PG18 fixture: INSERT at the coordinator, verify the row lands on the
+    - [x] Packets `30830` through `30833` add remote prepared INSERT, the
+      tuple-payload endpoint, and
+      `ec_spire_prepare_coordinator_insert_tuple_payload(...)`; packets `30835`
+      through `30837` add and prove the transparent trigger front door.
+    - [x] Packet `30844` closes v1 source-identity and follow-up coverage.
+  - [x] PG18 fixture: INSERT at the coordinator, verify the row lands on the
     target remote, verify placement-directory state, and verify CustomScan
     SELECT returns the row.
+    - [x] Packet `30834` adds
+      `scripts/run_spire_multicluster_insert_read_after_customscan_pg18.sh`,
+      which verifies remote row creation, coordinator placement state, and
+      CustomScan read-after-insert across separate PG18 clusters.
+    - [x] Packet `30836` updates that smoke to rely on automatic descriptor
+      refresh instead of manual descriptor re-registration.
+    - [x] Packet `30891` reconciles the INSERT tracker after reviewer accepted
+      packets `30828` through `30837` plus `30844` as sufficient evidence for
+      coordinator-routed INSERT completion.
 - [x] Land coordinator-routed non-embedding UPDATE, DELETE, and PK-keyed SELECT.
   - [x] UPDATE non-embedding columns by placement-directory lookup and remote
     forwarding.
