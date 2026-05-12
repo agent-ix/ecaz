@@ -1265,6 +1265,10 @@ v1 write contract from ADR-069:
     PostgreSQL OID-list cells with string nodes, and PK SELECT payload requests
     use the tuple-slot-required column set while always including the PK column
     needed for qual evaluation.
+  - [x] Packet `30885` folds in 30883/30884 reviewer feedback: DML
+    plan-private metadata now has an explicit homogeneous-list contract and a
+    PG `copyObject` roundtrip regression, while the plan-rewrite diagnostic and
+    fallback-cost inheritance comments clarify scaffold semantics.
 - [ ] Replace supported UPDATE/DELETE `PlannedStmt.planTree` with a top-level
   `EcSpireDistributedScan` CustomScan from the planner hook.
   - [x] Reviewer feedback in `30803` seq 004 rejects the earlier
