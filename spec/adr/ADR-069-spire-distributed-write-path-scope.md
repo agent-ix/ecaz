@@ -320,11 +320,11 @@ because prepared transactions are disabled or capacity is exhausted, the
 coordinator wraps the remote error with a SPIRE-specific hint naming
 `max_prepared_transactions` as the readiness requirement. Remote descriptor
 registration performs a nonblocking preflight when the descriptor's
-`conninfo_secret_name` resolves: it warns if the remote is unreachable, if the
-setting cannot be read, or if the remote reports `max_prepared_transactions =
-0`. Registration remains nonblocking so secret rollout and descriptor rollout
-can remain decoupled, but the warning is a coordinator-routed write-readiness
-blocker for operators.
+`conninfo_secret_name` resolves: it emits a NOTICE-level operator message if
+the remote is unreachable, if the setting cannot be read, or if the remote
+reports `max_prepared_transactions = 0`. Registration remains nonblocking so
+secret rollout and descriptor rollout can remain decoupled, but the message is
+a coordinator-routed write-readiness blocker for operators.
 
 The mutating executor's first internal 2PC primitive sends the remote
 INSERT inside a remote transaction, issues `PREPARE TRANSACTION`, and

@@ -1924,7 +1924,7 @@ fn ec_spire_register_remote_node_descriptor(
     if let Some(warning) =
         am::spire_remote_prepared_transaction_registration_warning(&conninfo_secret_name, node_id)
     {
-        pgrx::warning!("{warning}");
+        pgrx::notice!("{warning}");
     }
 
     let index_relation =
@@ -8238,6 +8238,8 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
     })
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let Some((node_id, served_epoch)) = placement else {
+        // Negative node_id is a result-row sentinel for "no routing happened";
+        // it is never written to ec_spire_placement.
         return TableIterator::once((
             index_oid,
             pk_value,

@@ -217,12 +217,13 @@ instance. Changing the setting requires a PostgreSQL restart. When a remote
 `PREPARE TRANSACTION` fails because prepared transactions are disabled or the
 slot pool is exhausted, SPIRE wraps the remote error with a hint naming this
 readiness requirement. Remote descriptor registration performs a nonblocking
-preflight when `conninfo_secret_name` is resolvable: it warns if the remote
-cannot be reached, if `SHOW max_prepared_transactions` cannot be read, or if
-the value is zero. The warning does not reject the descriptor because
-secret-resolution and remote availability are already separately visible
-operator surfaces, but it must be treated as a write-readiness blocker before
-enabling coordinator-routed writes.
+preflight when `conninfo_secret_name` is resolvable: it emits a NOTICE-level
+operator message if the remote cannot be reached, if
+`SHOW max_prepared_transactions` cannot be read, or if the value is zero. The
+message is visible to the registering client and normal PostgreSQL logging; it
+does not reject the descriptor because secret-resolution and remote
+availability are already separately visible operator surfaces, but it must be
+treated as a write-readiness blocker before enabling coordinator-routed writes.
 
 If a coordinator backend crashes after remote prepare and before the xact
 callback resolves the remote transaction, inspect the remote:

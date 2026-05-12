@@ -2405,11 +2405,14 @@ fn postgres_prepare_transaction_capacity_failure(
     sqlstate: Option<&str>,
     message: &str,
 ) -> bool {
+    if sqlstate == Some("55000") {
+        return true;
+    }
     let message = message.to_ascii_lowercase();
     let capacity_message = message.contains("prepared transactions are disabled")
         || message.contains("maximum number of prepared transactions")
         || message.contains("max_prepared_transactions");
-    capacity_message && matches!(sqlstate, Some("53300" | "53400" | "55000") | None)
+    capacity_message && matches!(sqlstate, Some("53300" | "53400") | None)
 }
 
 fn spire_remote_prepare_transaction_error(
@@ -11307,6 +11310,10 @@ mod production_executor_state_tests {
         assert!(postgres_prepare_transaction_capacity_failure(
             Some("55000"),
             "prepared transactions are disabled"
+        ));
+        assert!(postgres_prepare_transaction_capacity_failure(
+            Some("55000"),
+            "object not in prerequisite state"
         ));
         assert!(postgres_prepare_transaction_capacity_failure(
             Some("53300"),
