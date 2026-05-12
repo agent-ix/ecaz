@@ -120,6 +120,32 @@ Read flow under ADR-067 CustomScan:
 4. The application receives a result set with rows from any shard,
    sorted by vector distance, with no awareness of distribution.
 
+### Distributed read isolation
+
+SPIRE v1 distributed reads return virtual tuple payloads produced by remote
+shard queries. The coordinator-side `EcSpireDistributedScan` node does not
+carry a coordinator heap tuple identity for remote rows, so PostgreSQL's normal
+EvalPlanQual recheck machinery cannot re-fetch and re-validate the remote
+origin row.
+
+The v1 contract is therefore intentionally narrower than a single-heap
+PostgreSQL scan:
+
+- Remote vector reads and remote PK-keyed reads are dispatched to remote
+  backends as independent remote statements.
+- A coordinator transaction running at `REPEATABLE READ` or `SERIALIZABLE`
+  does not export its snapshot to those remote statements.
+- If the remote row changes between two coordinator statements in the same
+  transaction, the later remote dispatch may observe the newer remote row even
+  at coordinator `REPEATABLE READ` or `SERIALIZABLE`.
+- `EcSpireDistributedScan`'s recheck callback remains unconditional for v1; it
+  reports that the already-returned virtual payload is usable, not that the
+  remote heap row has been revalidated under coordinator snapshot semantics.
+
+Applications that require strict serializable semantics across shards must use
+an application-level consistency boundary for v1, such as routing the read to
+the shard owner directly or quiescing conflicting writes around the read.
+
 ### Endpoint contract extension
 
 The Stage B remote endpoint contract returns a candidate envelope with

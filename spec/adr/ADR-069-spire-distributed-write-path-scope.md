@@ -488,9 +488,11 @@ the query to the owning remote, and returns the row. This is one
 round-trip per PK lookup; for high-volume PK reads, application-side
 caching is appropriate.
 
-PK-keyed reads do not use CustomScan; they go through a coordinator-side
-write/read forwarding mechanism that shares the placement-directory
-lookup with INSERT/UPDATE/DELETE.
+PK-keyed reads use the coordinator-side read forwarding primitive that shares
+the placement-directory lookup with INSERT/UPDATE/DELETE. Transparent
+`SELECT ... WHERE id = ...` is implemented as an `EcSpireDistributedScan`
+CustomScan plan-tree replacement that invokes that primitive and returns the
+tuple payload directly to the executor.
 They are read-only and idempotent: if a connection drops mid-read, callers
 can retry safely. The primitive rejects multi-row matches as schema drift,
 because v1 PK lookup expects at most one row for the canonical primary-key
@@ -504,10 +506,18 @@ and forwards remote placements to
 `ec_spire_remote_select_tuple_payload(...)` through the same descriptor,
 conninfo-secret, epoch-window, timeout, and advisory-governance dispatch path
 used by UPDATE. The primitive returns a JSON tuple payload for the requested
-columns; transparent `SELECT ... WHERE pk = ...` integration remains a
-planner/view-hook follow-up.
+columns.
 Packet `30846` adds the defensive `selected_count > 1` guard for both local
 and remote branches.
+
+Remote PK-keyed reads inherit the ADR-068 v1 distributed-read isolation
+contract. The remote lookup runs as an independent remote statement rather than
+under the coordinator transaction snapshot, and the CustomScan recheck callback
+does not perform an EvalPlanQual rerun against the remote heap row. A
+coordinator transaction at `REPEATABLE READ` or `SERIALIZABLE` can therefore
+observe a remote update committed after an earlier PK-keyed read in the same
+coordinator transaction. Packet `30937` pins that accepted v1 behavior with a
+PG18 fixture covering `READ COMMITTED`, `REPEATABLE READ`, and `SERIALIZABLE`.
 
 ## Cross-shard non-PK reads
 

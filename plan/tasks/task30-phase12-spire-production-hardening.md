@@ -233,14 +233,14 @@ described by reviewer packet `30896`.
 
 ## Phase 12.6: Isolation, EvalPlanQual, and Negative DML Coverage
 
-- [ ] Document the v1 distributed read isolation contract in ADR-068/ADR-069:
+- [x] Document the v1 distributed read isolation contract in ADR-068/ADR-069:
   distributed CustomScan virtual tuples do not get PostgreSQL's normal
   EvalPlanQual rerun semantics.
-- [ ] Add fixtures for SERIALIZABLE / REPEATABLE READ / READ COMMITTED
+- [x] Add fixtures for SERIALIZABLE / REPEATABLE READ / READ COMMITTED
   distributed PK SELECT behavior and pin the expected v1 outcome.
-- [ ] Decide whether `ec_spire_custom_scan_recheck` should remain
+- [x] Decide whether `ec_spire_custom_scan_recheck` should remain
   unconditional for v1 or re-run the primitive for a subset of read paths.
-  - [ ] Exit criterion: the decision packet must include an isolation fixture
+  - [x] Exit criterion: the decision packet must include an isolation fixture
     that demonstrates the stale-row/EvalPlanQual behavior under at least
     SERIALIZABLE and states the accepted v1 contract in ADR-068 or ADR-069.
 - [x] Add negative classifier fixtures for unsupported PK predicate shapes:

@@ -30224,6 +30224,184 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_remote_pk_select_isolation_contract_sql() {
+        let _env_lock = env_var_test_lock();
+        const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_ISOLATION_PK_SELECT";
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut setup_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback setup connection should succeed");
+        setup_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("setup backend should receive conninfo secret env var");
+        setup_client
+            .batch_execute(
+                "DO $$ \
+                 DECLARE idx oid := to_regclass('ec_spire_remote_pk_select_isolation_coord_idx'); \
+                 BEGIN \
+                     IF idx IS NOT NULL THEN \
+                         DELETE FROM ec_spire_placement WHERE index_oid = idx; \
+                         DELETE FROM ec_spire_remote_node_descriptor \
+                          WHERE coordinator_index_oid = idx; \
+                     END IF; \
+                 END $$; \
+                 DROP TABLE IF EXISTS ec_spire_remote_pk_select_isolation_remote_sql; \
+                 DROP TABLE IF EXISTS ec_spire_remote_pk_select_isolation_coord_sql; \
+                 CREATE TABLE ec_spire_remote_pk_select_isolation_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_remote_pk_select_isolation_remote_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (2606, 'isolation before', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('606162636465666768696a6b6c6d6e6f', 'hex')); \
+                 CREATE INDEX ec_spire_remote_pk_select_isolation_remote_idx \
+                     ON ec_spire_remote_pk_select_isolation_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_remote_pk_select_isolation_coord_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_remote_pk_select_isolation_coord_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('707172737475767778797a7b7c7d7e7f', 'hex')); \
+                 CREATE INDEX ec_spire_remote_pk_select_isolation_coord_idx \
+                     ON ec_spire_remote_pk_select_isolation_coord_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback isolation fixture should be created");
+
+        let active_epoch = setup_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_remote_pk_select_isolation_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("isolation active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("isolation active epoch should decode");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut setup_client,
+            "ec_spire_remote_pk_select_isolation_remote_idx",
+        );
+        setup_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_remote_pk_select_isolation_coord_idx'::regclass, \
+                     31, 41, 'spire/remote/isolation_pk_select', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_remote_pk_select_isolation_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 INSERT INTO ec_spire_placement \
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                 VALUES ('ec_spire_remote_pk_select_isolation_coord_idx'::regclass, \
+                         int8send(2606::bigint)::bytea, 31, 2, {active_epoch}, \
+                         decode('606162636465666768696a6b6c6d6e6f', 'hex'))",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("isolation descriptor and placement should be registered");
+
+        let mut plan_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback plan connection should succeed");
+        plan_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("plan backend should receive conninfo secret env var");
+        let plan_lines = plan_client
+            .query(
+                "EXPLAIN (COSTS OFF) \
+                 SELECT id, title \
+                   FROM ec_spire_remote_pk_select_isolation_coord_sql \
+                  WHERE id = 2606",
+                &[],
+            )
+            .expect("remote PK SELECT isolation EXPLAIN should succeed")
+            .into_iter()
+            .map(|row| {
+                row.try_get::<_, String>(0)
+                    .expect("remote PK SELECT isolation plan row should decode")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            plan_lines.contains("Custom Scan (EcSpireDistributedScan)"),
+            "{plan_lines}"
+        );
+
+        for (isolation_level, after_title) in [
+            ("READ COMMITTED", "isolation after read committed"),
+            ("REPEATABLE READ", "isolation after repeatable read"),
+            ("SERIALIZABLE", "isolation after serializable"),
+        ] {
+            let mut reset_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                .expect("loopback reset connection should succeed");
+            reset_client
+                .execute(
+                    "UPDATE ec_spire_remote_pk_select_isolation_remote_sql \
+                        SET title = 'isolation before' \
+                      WHERE id = 2606",
+                    &[],
+                )
+                .expect("remote isolation fixture reset should succeed");
+
+            let mut reader = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                .expect("loopback reader connection should succeed");
+            reader
+                .execute(
+                    "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                    &[&SECRET_KEY, &loopback_conninfo],
+                )
+                .expect("reader backend should receive conninfo secret env var");
+            reader
+                .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation_level}"))
+                .expect("isolation reader transaction should begin");
+
+            let first_title = reader
+                .query_one(
+                    "SELECT title \
+                       FROM ec_spire_remote_pk_select_isolation_coord_sql \
+                      WHERE id = 2606",
+                    &[],
+                )
+                .expect("first remote PK SELECT should succeed")
+                .try_get::<_, String>(0)
+                .expect("first remote PK SELECT title should decode");
+            assert_eq!(first_title, "isolation before", "{isolation_level}");
+
+            let mut writer = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+                .expect("loopback writer connection should succeed");
+            writer
+                .execute(
+                    "UPDATE ec_spire_remote_pk_select_isolation_remote_sql \
+                        SET title = $1 \
+                      WHERE id = 2606",
+                    &[&after_title],
+                )
+                .expect("remote concurrent update should commit");
+
+            let second_title = reader
+                .query_one(
+                    "SELECT title \
+                       FROM ec_spire_remote_pk_select_isolation_coord_sql \
+                      WHERE id = 2606",
+                    &[],
+                )
+                .expect("second remote PK SELECT should succeed")
+                .try_get::<_, String>(0)
+                .expect("second remote PK SELECT title should decode");
+            assert_eq!(second_title, after_title, "{isolation_level}");
+
+            reader
+                .batch_execute("COMMIT")
+                .expect("isolation reader transaction should commit");
+        }
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send() {
         for value in [0_i64, 5, -5, i64::MAX, i64::MIN] {
             let pg_hex = Spi::get_one::<String>(&format!(
