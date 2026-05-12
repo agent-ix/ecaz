@@ -2473,34 +2473,32 @@ fn postgres_error_message_with_detail(error: &postgres::Error) -> String {
     message
 }
 
-fn coordinator_insert_current_shape_fingerprint(index_oid: pg_sys::Oid) -> Result<String, String> {
+fn coordinator_write_current_shape_fingerprint(index_oid: pg_sys::Oid) -> Result<String, String> {
     let sql = format!(
         "SELECT ec_spire_coordinator_index_shape_fingerprint('{}'::oid::regclass) AS fingerprint",
         u32::from(index_oid)
     );
     Spi::get_one::<String>(sql.as_str())
-        .map_err(|e| {
-            format!("ec_spire coordinator insert shape fingerprint read failed: {e}")
-        })?
+        .map_err(|e| format!("ec_spire coordinator write shape fingerprint read failed: {e}"))?
         .ok_or_else(|| {
-            "ec_spire coordinator insert shape fingerprint returned no row for index".to_owned()
+            "ec_spire coordinator write shape fingerprint returned no row for index".to_owned()
         })
 }
 
-fn validate_coordinator_insert_shape_fingerprint(
+fn validate_coordinator_write_shape_fingerprint(
+    operation: &str,
     index_oid: pg_sys::Oid,
     descriptor_fingerprint: &str,
 ) -> Result<(), String> {
     if descriptor_fingerprint == SPIRE_REMOTE_NONE || descriptor_fingerprint == "unset" {
-        return Err(
-            "ec_spire coordinator insert schema drift guard is missing descriptor fingerprint; refresh remote node descriptors before coordinator-routed INSERT"
-                .to_owned(),
-        );
+        return Err(format!(
+            "ec_spire coordinator {operation} schema drift guard is missing descriptor fingerprint; refresh remote node descriptors before coordinator-routed writes"
+        ));
     }
-    let current_fingerprint = coordinator_insert_current_shape_fingerprint(index_oid)?;
+    let current_fingerprint = coordinator_write_current_shape_fingerprint(index_oid)?;
     if current_fingerprint != descriptor_fingerprint {
         return Err(format!(
-            "ec_spire coordinator insert schema drift detected for index_oid {}: descriptor fingerprint {} does not match current coordinator fingerprint {}; pause writes, apply matching DDL on every remote, refresh descriptors, then retry",
+            "ec_spire coordinator {operation} schema drift detected for index_oid {}: descriptor fingerprint {} does not match current coordinator fingerprint {}; pause writes, apply matching DDL on every remote, refresh descriptors, then retry",
             u32::from(index_oid),
             descriptor_fingerprint,
             current_fingerprint
@@ -2523,7 +2521,8 @@ pub(crate) unsafe fn coordinator_insert_prepare_remote_sql(
             node_id, dispatch.status
         ));
     }
-    validate_coordinator_insert_shape_fingerprint(
+    validate_coordinator_write_shape_fingerprint(
+        "insert",
         dispatch.index_oid,
         &dispatch.coordinator_insert_shape_fingerprint,
     )?;
@@ -2642,6 +2641,11 @@ pub(crate) unsafe fn coordinator_update_remote_tuple_payload(
             node_id, dispatch.status
         ));
     }
+    validate_coordinator_write_shape_fingerprint(
+        "update",
+        dispatch.index_oid,
+        &dispatch.coordinator_insert_shape_fingerprint,
+    )?;
     let remote_sql = coordinator_update_remote_tuple_payload_sql(
         &dispatch.remote_index_regclass,
         pk_column,
@@ -2696,6 +2700,11 @@ pub(crate) unsafe fn coordinator_delete_prepare_remote_tuple_payload(
             node_id, dispatch.status
         ));
     }
+    validate_coordinator_write_shape_fingerprint(
+        "delete",
+        dispatch.index_oid,
+        &dispatch.coordinator_insert_shape_fingerprint,
+    )?;
     let remote_sql =
         coordinator_delete_remote_tuple_payload_sql(&dispatch.remote_index_regclass, pk_column, pk_value)?;
 

@@ -204,9 +204,13 @@ described by reviewer packet `30896`.
   - [x] `test_ec_spire_schema_drift_fails_before_dispatch_sql` alters only the
     coordinator table and asserts the schema-drift error leaves no remote row
     and no SPIRE prepared transaction.
-- [ ] Extend descriptor-bound schema-drift coverage to coordinator-routed
+- [x] Extend descriptor-bound schema-drift coverage to coordinator-routed
   UPDATE and DELETE payload paths, or document why INSERT-only remains the
   accepted v1 boundary.
+  - [x] The pre-dispatch guard now runs for remote UPDATE and DELETE as well
+    as INSERT; `test_ec_spire_update_delete_schema_drift_guard_sql` asserts
+    remote UPDATE leaves the row unchanged and remote DELETE leaves the remote
+    row, placement row, and prepared transaction state untouched.
 - [x] Add round-trip fixtures for non-trivial trigger payload types:
   - [x] `numeric` / `decimal` precision;
   - [x] `timestamptz` timezone and value preservation;

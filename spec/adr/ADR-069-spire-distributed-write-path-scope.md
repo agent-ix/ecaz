@@ -564,10 +564,9 @@ the fingerprint for descriptors whose coordinator index still exists. A row
 that cannot be backfilled keeps the `unset` sentinel and coordinator-routed
 INSERT fails closed until the descriptor is registered again.
 
-This guard is currently INSERT-scoped. Coordinator-routed UPDATE and DELETE use
-related descriptor and payload paths, so Phase 12 tracks a follow-up to extend
-schema-drift coverage there or explicitly document why INSERT-only remains the
-accepted v1 boundary.
+The same pre-dispatch guard also covers coordinator-routed UPDATE and DELETE
+remote payload paths. UPDATE fails before remote mutation, and DELETE fails
+before remote 2PC prepare or placement-directory deletion.
 
 A future ADR may add coordinator-driven DDL propagation. v1 keeps DDL
 operator-managed.

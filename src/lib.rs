@@ -22355,6 +22355,164 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_spire_update_delete_schema_drift_guard_sql() {
+        let _env_lock = env_var_test_lock();
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback client connection should succeed");
+        loopback_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var(\
+                     'EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_UPDATE_DELETE_SCHEMA_DRIFT', \
+                     $1)",
+                &[&loopback_conninfo],
+            )
+            .expect("loopback backend should receive conninfo secret env var");
+        loopback_client
+            .batch_execute(
+                "DROP TABLE IF EXISTS ec_spire_ud_schema_drift_remote; \
+                 DROP TABLE IF EXISTS ec_spire_ud_schema_drift_coord; \
+                 CREATE TABLE ec_spire_ud_schema_drift_remote \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_ud_schema_drift_remote \
+                     (id, title, embedding, source_identity) VALUES \
+                 (701, 'update before drift', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('101112131415161718191a1b1c1d1e1f', 'hex')), \
+                 (702, 'delete before drift', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('202122232425262728292a2b2c2d2e2f', 'hex')); \
+                 CREATE INDEX ec_spire_ud_schema_drift_remote_idx \
+                     ON ec_spire_ud_schema_drift_remote USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_ud_schema_drift_coord \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_ud_schema_drift_coord \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                  decode('303132333435363738393a3b3c3d3e3f', 'hex')); \
+                 CREATE INDEX ec_spire_ud_schema_drift_coord_idx \
+                     ON ec_spire_ud_schema_drift_coord USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback update/delete schema drift fixtures should be created");
+
+        let active_epoch = loopback_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass)",
+                &[],
+            )
+            .expect("active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("active epoch should decode");
+        let remote_identity_hex = loopback_client
+            .query_one(
+                "SELECT profile_fingerprint \
+                   FROM ec_spire_remote_search_endpoint_identity(\
+                        'ec_spire_ud_schema_drift_remote_idx'::regclass::oid)",
+                &[],
+            )
+            .expect("remote identity query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote identity should decode");
+        loopback_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     27, 31, 'spire/remote/update_delete_schema_drift', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_ud_schema_drift_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 INSERT INTO ec_spire_placement \
+                     (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+                 VALUES \
+                     ('ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                      int8send(701::bigint)::bytea, 27, 2, {active_epoch}, \
+                      decode('101112131415161718191a1b1c1d1e1f', 'hex')), \
+                     ('ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                      int8send(702::bigint)::bytea, 27, 2, {active_epoch}, \
+                      decode('202122232425262728292a2b2c2d2e2f', 'hex')); \
+                 ALTER TABLE ec_spire_ud_schema_drift_coord \
+                     ADD COLUMN coord_only text",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("descriptor, placements, and coordinator-only DDL should succeed");
+
+        let update_error = loopback_client
+            .batch_execute(
+                "SELECT * FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     'id', \
+                     int8send(701::bigint)::bytea, \
+                     jsonb_build_object('title', 'update after drift'), \
+                     ARRAY['title']::text[])",
+            )
+            .expect_err("coordinator-only DDL should trip update schema drift guard");
+        let delete_error = loopback_client
+            .batch_execute(
+                "SELECT * FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+                     'ec_spire_ud_schema_drift_coord_idx'::regclass, \
+                     'id', \
+                     int8send(702::bigint)::bytea)",
+            )
+            .expect_err("coordinator-only DDL should trip delete schema drift guard");
+        let update_message = update_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| update_error.to_string());
+        let delete_message = delete_error
+            .as_db_error()
+            .map(|db_error| db_error.message().to_owned())
+            .unwrap_or_else(|| delete_error.to_string());
+        let remote_summary = loopback_client
+            .query_one(
+                "SELECT \
+                    (SELECT title FROM ec_spire_ud_schema_drift_remote WHERE id = 701) \
+                    || '|' || \
+                    (SELECT count(*)::text FROM ec_spire_ud_schema_drift_remote WHERE id = 702)",
+                &[],
+            )
+            .expect("remote update/delete drift summary query should succeed")
+            .try_get::<_, String>(0)
+            .expect("remote update/delete drift summary should decode");
+        let prepared_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE 'ec_spire_insert_%'",
+                &[],
+            )
+            .expect("prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("prepared xact count should decode");
+        let placement_count = loopback_client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = 'ec_spire_ud_schema_drift_coord_idx'::regclass \
+                    AND pk_value IN (int8send(701::bigint)::bytea, int8send(702::bigint)::bytea)",
+                &[],
+            )
+            .expect("placement count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("placement count should decode");
+
+        assert!(
+            update_message.contains("coordinator update schema drift detected"),
+            "{update_message}"
+        );
+        assert!(
+            delete_message.contains("coordinator delete schema drift detected"),
+            "{delete_message}"
+        );
+        assert_eq!(remote_summary, "update before drift|1");
+        assert_eq!(prepared_count, 0);
+        assert_eq!(placement_count, 2);
+    }
+
+    #[pg_test]
     fn test_ec_spire_forward_coordinator_update_tuple_payload_sql() {
         let _env_lock = env_var_test_lock();
         let loopback_conninfo = current_pg_test_loopback_conninfo();
