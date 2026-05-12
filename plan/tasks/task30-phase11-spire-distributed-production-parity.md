@@ -1260,6 +1260,29 @@ v1 write contract from ADR-069:
     typed boundary. UPDATE/DELETE execution remains disabled, but their future
     executor branches now have the same index/mode/primitive/PK/column payload
     object shape.
+  - [x] Packet `30883` repairs the live DML PK SELECT CustomScan path before
+    plan-tree replacement work: DML plan-private metadata no longer mixes
+    PostgreSQL OID-list cells with string nodes, and PK SELECT payload requests
+    use the tuple-slot-required column set while always including the PK column
+    needed for qual evaluation.
+- [ ] Replace supported UPDATE/DELETE `PlannedStmt.planTree` with a top-level
+  `EcSpireDistributedScan` CustomScan from the planner hook.
+  - [x] Reviewer feedback in `30803` seq 004 rejects the earlier
+    ModifyTable-under-scan and view/trigger wording for UPDATE/DELETE. The v1
+    target is a planner-hook plan-tree replacement that keeps
+    `commandType = CMD_UPDATE` / `CMD_DELETE`, drops `ModifyTable`, and lets
+    the CustomScan executor increment `estate->es_processed`.
+  - [ ] Scaffold the plan-tree replacement for supported UPDATE/DELETE shapes
+    while keeping executor branches fail-closed.
+  - [ ] Wire UPDATE executor dispatch to
+    `ec_spire_forward_coordinator_update_tuple_payload(...)`, increment
+    `es_processed`, and return no tuple.
+  - [ ] Wire DELETE executor dispatch to
+    `ec_spire_prepare_coordinator_delete_tuple_payload(...)`, increment
+    `es_processed`, and return no tuple.
+  - [ ] Add ADR-069 documentation for the v1 limitations implied by bypassing
+    `ModifyTable`: no `RETURNING`, no row-level triggers on the distributed
+    table, and no statement-level transition-table semantics.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
