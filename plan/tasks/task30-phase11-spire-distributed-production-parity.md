@@ -1238,6 +1238,10 @@ v1 write contract from ADR-069:
     primitive modes back to those plan modes. UPDATE/DELETE path generation
     remains disabled until the executor branches can call their coordinator
     primitives.
+  - [x] Packet `30878` folds 30876 reviewer feedback into the DML frontdoor:
+    the join-shape helper now documents SELECT vs UPDATE/DELETE semantics, and
+    the replacement-decision fixture proves `UPDATE ... FROM distributed_other`
+    still rejects as `unsupported_join_shape`.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
