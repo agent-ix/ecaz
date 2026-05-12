@@ -1274,6 +1274,11 @@ v1 write contract from ADR-069:
     the CustomScan executor increment `estate->es_processed`.
   - [ ] Scaffold the plan-tree replacement for supported UPDATE/DELETE shapes
     while keeping executor branches fail-closed.
+    - [x] Packet `30884` captures the UPDATE/DELETE primitive expression before
+      the chained planner, replaces the returned `PlannedStmt.planTree` with a
+      top-level `EcSpireDistributedScan` CustomScan carrying DML plan-private
+      metadata, and proves the scaffold records `plan_tree_replaced_customscan`
+      while actual UPDATE execution still fails closed at the executor guard.
   - [ ] Wire UPDATE executor dispatch to
     `ec_spire_forward_coordinator_update_tuple_payload(...)`, increment
     `es_processed`, and return no tuple.
