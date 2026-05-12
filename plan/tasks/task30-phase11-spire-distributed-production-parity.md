@@ -373,13 +373,24 @@ local-only path.
       local-placement variants, and embedding-UPDATE rejection. Packets
       `30873` through `30889` cover the transparent CustomScan front doors,
       including remote-placement UPDATE and DELETE evidence.
-- [ ] Migrate Stage E fault and lifecycle fixtures onto the CustomScan path.
-  - [ ] Preserve the existing 11 fault-matrix and 6 lifecycle-matrix cases
+- [x] Migrate Stage E fault and lifecycle fixtures onto the CustomScan path.
+  - [x] Preserve the existing 11 fault-matrix and 6 lifecycle-matrix cases
     where they already assert executor state and diagnostic SQL surfaces.
-  - [ ] Replace only the subset that exercised the AM cursor or
+  - [x] Replace only the subset that exercised the AM cursor or
     materialization-specific blocker.
-  - [ ] Run and attach packet-local logs for the full Stage E matrix against
+    - [x] Packets `30892` and `30894` remove the materialization catalog,
+      register function, mirror-sync contract rows, and AM
+      `requires_remote_row_materialization` blocker path. The Stage E fixtures
+      now assert tuple-payload/CustomScan readiness plus executor-state
+      outcomes, not the superseded AM cursor materialization path.
+  - [x] Run and attach packet-local logs for the full Stage E matrix against
     the CustomScan path.
+    - [x] Packet `30895` records a current multicluster
+      `EcSpireDistributedScan` read proof, then reruns all 11 Stage E
+      strict/degraded fault cases and all 6 lifecycle cases with packet-local
+      logs. The CustomScan proof records
+      `Custom Scan (EcSpireDistributedScan)`, `read_row=10,remote alpha`, and
+      tuple payload `ready,2,{"id": 10, "title": "remote alpha"}`.
 - [x] Cleanup after CustomScan read and v1 writes are feature-complete.
   - [x] Remove or migrate away from the vestigial
     `ec_spire_remote_row_materialization` table and
@@ -1456,7 +1467,7 @@ Goal: prove distributed correctness locally before AWS.
       `stage_e_lifecycle_{lifecycle_case}_{mode}.log`, and chooses the
       non-root unreachable-conninfo connect-failure mechanism for simulated
       network partitions.
-- [ ] Verification: packet-local logs for every fault case, with explicit
+- [x] Verification: packet-local logs for every fault case, with explicit
   strict failure and degraded skip counts.
   - [x] Packet `30778` starts the runtime matrix with the simulated network
     partition case: one ready remote plus one unreachable conninfo, strict
@@ -1529,6 +1540,20 @@ Goal: prove distributed correctness locally before AWS.
     sanitized `remote_query_failed` category, strict fails closed, and degraded
     skips the failed dispatch while keeping the ready remote moving.
     Remaining Stage E lifecycle rows still need fixture logs.
+  - [x] Packet `30895` reruns the complete CustomScan-pivot Stage E fault
+    matrix with packet-local strict/degraded logs for:
+    `simulated_network_partition`, `epoch_mismatch`, `version_skew`,
+    `fingerprint_mismatch`, `missing_or_reindexed_remote_index`,
+    `connection_reset_mid_batch`, `local_cancel`,
+    `local_statement_timeout`, `remote_backend_termination`, `remote_oom`,
+    and `remote_statement_timeout`.
+  - [x] Packet `30895` also reruns all lifecycle rows with packet-local
+    strict/degraded logs:
+    `create_index_concurrently_missing_descriptor`,
+    `create_index_concurrently_new_descriptor`,
+    `drop_remote_index_before_fanout`, `drop_remote_index_in_flight`,
+    `reindex_remote_index_before_fanout`, and
+    `reindex_remote_index_in_flight`.
 
 ### Stage F: Multi-Store / Multi-NVMe Hardening
 
