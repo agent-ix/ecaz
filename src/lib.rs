@@ -22213,7 +22213,7 @@ mod tests {
     fn test_ec_spire_custom_scan_dml_plan_private_copyobject_sql() {
         let roundtrip = unsafe { am::spire_custom_scan_dml_plan_private_copy_roundtrip_for_test() };
         assert_eq!(
-            roundtrip, "3|12345|title,status|",
+            roundtrip, "3|12345|title,status||id",
             "DML CustomScan plan-private metadata should survive copyObject"
         );
     }
@@ -28655,15 +28655,34 @@ mod tests {
     fn test_ec_spire_dml_plan_tree_replace_scaffold() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_plan_replace_sql \
-             (id bigint primary key, title text not null, embedding ecvector)",
+             (id bigint primary key, title text not null, body text, embedding ecvector)",
         )
         .expect("DML plan replacement table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dml_plan_replace_sql \
+                 (id, title, body, embedding) VALUES \
+             (5, 'before', 'body before', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
+        )
+        .expect("DML plan replacement seed row should be inserted");
         Spi::run(
             "CREATE INDEX ec_spire_dml_plan_replace_idx \
              ON ec_spire_dml_plan_replace_sql USING ec_spire \
              (embedding ecvector_spire_ip_ops)",
         )
         .expect("DML plan replacement ec_spire index creation should succeed");
+        let active_epoch = Spi::get_one::<i64>(
+            "SELECT active_epoch FROM \
+             ec_spire_index_hierarchy_snapshot('ec_spire_dml_plan_replace_idx'::regclass)",
+        )
+        .expect("DML plan replacement active epoch query should succeed")
+        .expect("DML plan replacement active epoch should exist");
+        Spi::run(&format!(
+            "INSERT INTO ec_spire_placement \
+                 (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
+             VALUES ('ec_spire_dml_plan_replace_idx'::regclass, int8send(5::bigint)::bytea, \
+                     0, 2, {active_epoch}, decode('000102030405060708090a0b0c0d0e0f', 'hex'))"
+        ))
+        .expect("DML plan replacement local placement row should be inserted");
 
         Spi::run(
             "EXPLAIN (COSTS OFF) \
@@ -28689,13 +28708,54 @@ mod tests {
         .expect("DML DELETE plan replacement hook action should exist");
         assert_eq!(action, "plan_tree_replaced_customscan");
 
-        let execution_error = pg_sys::PgTryBuilder::new(|| {
+        Spi::run(
+            "DO $$ \
+             DECLARE row_count bigint; \
+             BEGIN \
+                 UPDATE ec_spire_dml_plan_replace_sql \
+                    SET title = 'updated', body = 'body updated' \
+                  WHERE id = 5; \
+                 GET DIAGNOSTICS row_count = ROW_COUNT; \
+                 IF row_count != 1 THEN \
+                     RAISE EXCEPTION 'unexpected DML CustomScan row count %', row_count; \
+                 END IF; \
+             END $$",
+        )
+        .expect("DML UPDATE CustomScan execution should succeed");
+        let tuple = Spi::get_one::<String>(
+            "SELECT title || '|' || body \
+               FROM ec_spire_dml_plan_replace_sql \
+              WHERE id = 5",
+        )
+        .expect("DML plan replacement tuple query should succeed")
+        .expect("DML plan replacement tuple should exist");
+        assert_eq!(tuple, "updated|body updated");
+
+        Spi::run(
+            "PREPARE ec_spire_dml_plan_replace_update(text, text) AS \
+             UPDATE ec_spire_dml_plan_replace_sql \
+                SET title = $1, body = $2 \
+              WHERE id = 5",
+        )
+        .expect("DML parameterized UPDATE should prepare");
+        Spi::run("EXECUTE ec_spire_dml_plan_replace_update('param updated', 'param body updated')")
+            .expect("DML parameterized UPDATE CustomScan execution should succeed");
+        let tuple = Spi::get_one::<String>(
+            "SELECT title || '|' || body \
+               FROM ec_spire_dml_plan_replace_sql \
+              WHERE id = 5",
+        )
+        .expect("DML parameterized tuple query should succeed")
+        .expect("DML parameterized tuple should exist");
+        assert_eq!(tuple, "param updated|param body updated");
+
+        let expression_error = pg_sys::PgTryBuilder::new(|| {
             Spi::run(
                 "UPDATE ec_spire_dml_plan_replace_sql \
-                    SET title = 'updated' \
+                    SET title = title || 'x' \
                   WHERE id = 5",
             )
-            .expect("DML plan replacement execution should fail closed");
+            .expect("DML row-dependent UPDATE should fail closed");
             "no_error".to_owned()
         })
         .catch_others(|cause| match cause {
@@ -28705,8 +28765,8 @@ mod tests {
         })
         .execute();
         assert_eq!(
-            execution_error,
-            "EcSpireDistributedScan DML UPDATE/DELETE executor path is not wired yet"
+            expression_error,
+            "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
         );
     }
 

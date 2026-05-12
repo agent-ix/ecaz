@@ -119,6 +119,7 @@ struct SpireCustomScanExecState {
     dml_pk_value: Vec<u8>,
     dml_updated_columns: Vec<String>,
     dml_projected_columns: Vec<String>,
+    dml_update_value_exprs: Vec<*mut pg_sys::Expr>,
     tuple_payload_columns: Vec<String>,
     tuple_payload_inputs: Vec<Option<SpireCustomScanPayloadAttrInput>>,
     outputs: Vec<super::SpireRemoteProductionScanOutputRow>,
@@ -396,10 +397,7 @@ unsafe fn plan_dml_custom_path(
                 plan_expr.primitive_plan.mode
             )
         }
-        let custom_exprs = pg_sys::lappend(
-            std::ptr::null_mut(),
-            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
-        );
+        let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
@@ -424,6 +422,7 @@ unsafe fn plan_dml_custom_path(
         custom_scan.custom_private = custom_scan_dml_plan_private(
             mode,
             custom_scan_index_oid_from_path(best_path),
+            &plan_expr.primitive_plan.pk_argument.pk_column,
             &plan_expr.primitive_plan.updated_columns,
             &plan_expr.primitive_plan.projected_columns,
         );
@@ -434,16 +433,29 @@ unsafe fn plan_dml_custom_path(
     }
 }
 
+unsafe fn custom_scan_dml_custom_exprs_from_plan_expr(
+    plan_expr: &super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
+) -> *mut pg_sys::List {
+    unsafe {
+        let mut custom_exprs = pg_sys::lappend(
+            std::ptr::null_mut(),
+            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
+        );
+        for expr in &plan_expr.updated_value_exprs {
+            custom_exprs =
+                pg_sys::lappend(custom_exprs, pg_sys::copyObjectImpl((*expr).cast()).cast());
+        }
+        custom_exprs
+    }
+}
+
 pub(crate) unsafe fn custom_scan_dml_replacement_plan(
     plan_expr: super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
     fallback_plan: *mut pg_sys::Plan,
 ) -> *mut pg_sys::Plan {
     unsafe {
         let mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
-        let custom_exprs = pg_sys::lappend(
-            std::ptr::null_mut(),
-            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
-        );
+        let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
         let mut custom_scan =
             PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
         custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
@@ -479,6 +491,7 @@ pub(crate) unsafe fn custom_scan_dml_replacement_plan(
         custom_scan.custom_private = custom_scan_dml_plan_private(
             mode,
             plan_expr.primitive_plan.index_oid,
+            &plan_expr.primitive_plan.pk_argument.pk_column,
             &plan_expr.primitive_plan.updated_columns,
             &plan_expr.primitive_plan.projected_columns,
         );
@@ -580,7 +593,7 @@ unsafe fn dml_pk_select_candidate_index_oid(
         super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)?
     } {
         Ok(plan_expr) => plan_expr,
-        Err(err) => pgrx::error!("{err}"),
+        Err(_err) => return None,
     };
     if plan_expr.primitive_plan.mode
         != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
@@ -970,6 +983,7 @@ unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) 
 unsafe fn custom_scan_dml_plan_private(
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
+    pk_column: &str,
     updated_columns: &[String],
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
@@ -988,7 +1002,8 @@ unsafe fn custom_scan_dml_plan_private(
         custom_scan_lappend_string(
             custom_private,
             &custom_scan_dml_column_list_plan_private_json(projected_columns),
-        )
+        );
+        custom_scan_lappend_string(custom_private, pk_column)
     }
 }
 
@@ -1000,6 +1015,7 @@ pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> S
         let custom_private = custom_scan_dml_plan_private(
             SpireCustomScanPlanMode::DmlUpdateTuplePayload,
             pg_sys::Oid::from(12_345),
+            "id",
             &updated_columns,
             &projected_columns,
         );
@@ -1009,12 +1025,14 @@ pub(crate) unsafe fn custom_scan_dml_plan_private_copy_roundtrip_for_test() -> S
         let updated = custom_scan_dml_column_list_from_plan_private(copied, 2, "updated columns");
         let projected =
             custom_scan_dml_column_list_from_plan_private(copied, 3, "projected columns");
+        let pk_column = custom_scan_dml_pk_column_from_plan_private(copied);
         format!(
-            "{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}",
             mode,
             index_oid,
             updated.join(","),
-            projected.join(",")
+            projected.join(","),
+            pk_column
         )
     }
 }
@@ -1135,6 +1153,29 @@ fn custom_scan_dml_column_list_from_plan_private_json(
         ));
     }
     Ok(columns)
+}
+
+unsafe fn custom_scan_dml_pk_column_from_plan(custom_scan: *mut pg_sys::CustomScan) -> String {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata");
+        }
+        custom_scan_dml_pk_column_from_plan_private((*custom_scan).custom_private)
+    }
+}
+
+unsafe fn custom_scan_dml_pk_column_from_plan_private(custom_private: *mut pg_sys::List) -> String {
+    unsafe {
+        if custom_private.is_null() || (*custom_private).length <= 4 {
+            pgrx::error!("EcSpireDistributedScan DML plan is missing PK column metadata");
+        }
+        let pk_column =
+            custom_scan_string_node_value(pg_sys::list_nth(custom_private, 4).cast(), "PK column");
+        if pk_column.is_empty() {
+            pgrx::error!("EcSpireDistributedScan DML plan PK column metadata is empty");
+        }
+        pk_column
+    }
 }
 
 fn custom_scan_validate_dml_column_metadata(
@@ -1464,6 +1505,7 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
                 dml_pk_value: Vec::new(),
                 dml_updated_columns: Vec::new(),
                 dml_projected_columns: Vec::new(),
+                dml_update_value_exprs: Vec::new(),
                 tuple_payload_columns: Vec::new(),
                 tuple_payload_inputs: Vec::new(),
                 outputs: Vec::new(),
@@ -1514,10 +1556,18 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
             }
             SpireCustomScanPlanMode::DmlUpdateTuplePayload
             | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+                (*state).dml_pk_column = custom_scan_dml_pk_column_from_plan(custom_scan);
+                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
                 (*state).dml_updated_columns =
                     custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
                 (*state).dml_projected_columns =
                     custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
+                if (*state).mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
+                    (*state).dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_plan(
+                        custom_scan,
+                        (*state).dml_updated_columns.len(),
+                    );
+                }
                 custom_scan_validate_dml_column_metadata(
                     (*state).mode,
                     &(*state).dml_updated_columns,
@@ -1591,12 +1641,14 @@ unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
         if (*state).mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
             return custom_scan_dml_pk_select_access(state, scan_state);
         }
+        if (*state).mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
+            return custom_scan_dml_update_access(state, scan_state);
+        }
         if matches!(
             (*state).mode,
-            SpireCustomScanPlanMode::DmlUpdateTuplePayload
-                | SpireCustomScanPlanMode::DmlDeleteTuplePayload
+            SpireCustomScanPlanMode::DmlDeleteTuplePayload
         ) {
-            pgrx::error!("EcSpireDistributedScan DML UPDATE/DELETE executor path is not wired yet");
+            pgrx::error!("EcSpireDistributedScan DML DELETE executor path is not wired yet");
         }
         custom_scan_ensure_outputs(state);
         loop {
@@ -1650,6 +1702,23 @@ unsafe fn custom_scan_dml_pk_select_access(
             payload_json,
             &mut (*state).tuple_payload_inputs,
         )
+    }
+}
+
+unsafe fn custom_scan_dml_update_access(
+    state: *mut SpireCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+) -> *mut pg_sys::TupleTableSlot {
+    unsafe {
+        if !(*state).dml_payload_emitted {
+            let updated_count = custom_scan_execute_dml_update(state, scan_state);
+            let estate = (*scan_state).ps.state;
+            if !estate.is_null() {
+                (*estate).es_processed = (*estate).es_processed.saturating_add(updated_count);
+            }
+            (*state).dml_payload_emitted = true;
+        }
+        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
     }
 }
 
@@ -1825,6 +1894,35 @@ unsafe fn custom_scan_dml_pk_value_from_plan(
     }
 }
 
+unsafe fn custom_scan_dml_update_value_exprs_from_plan(
+    custom_scan: *mut pg_sys::CustomScan,
+    expected_count: usize,
+) -> Vec<*mut pg_sys::Expr> {
+    unsafe {
+        if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE plan is missing value expressions");
+        }
+        let custom_exprs = (*custom_scan).custom_exprs;
+        let expected_len = i32::try_from(expected_count.saturating_add(1)).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE expression list is too wide")
+        });
+        if (*custom_exprs).length != expected_len {
+            pgrx::error!(
+                "EcSpireDistributedScan DML UPDATE plan expression count does not match updated columns"
+            );
+        }
+        let mut exprs = Vec::with_capacity(expected_count);
+        for offset in 1..expected_len {
+            let expr = pg_sys::list_nth(custom_exprs, offset).cast::<pg_sys::Expr>();
+            if expr.is_null() {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE plan has null value expression");
+            }
+            exprs.push(expr);
+        }
+        exprs
+    }
+}
+
 unsafe fn custom_scan_bigint_expr_value(
     node: *mut pg_sys::CustomScanState,
     expr: *mut pg_sys::Expr,
@@ -1875,6 +1973,167 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
                 other.to_u32()
             ),
         }
+    }
+}
+
+unsafe fn custom_scan_execute_dml_update(
+    state: *mut SpireCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+) -> u64 {
+    unsafe {
+        let state_ref = &mut *state;
+        let invocation =
+            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
+        {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE got non-update primitive mode");
+        }
+        if state_ref.dml_update_value_exprs.len() != invocation.updated_columns.len() {
+            pgrx::error!(
+                "EcSpireDistributedScan DML UPDATE value expression count does not match updated columns"
+            );
+        }
+        let row_payload_json = custom_scan_dml_update_row_payload_json(
+            scan_state.cast::<pg_sys::CustomScanState>(),
+            &invocation.updated_columns,
+            &state_ref.dml_update_value_exprs,
+        );
+        let updated_column_refs = invocation
+            .updated_columns
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let updated_count = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT remote_updated_count \
+                       FROM ec_spire_forward_coordinator_update_tuple_payload(\
+                            $1::oid, $2::text, $3::bytea, $4::jsonb, $5::text[])",
+                    None,
+                    &[
+                        invocation.index_oid.into(),
+                        invocation.pk_column.as_str().into(),
+                        invocation.pk_value.clone().into(),
+                        row_payload_json.as_str().into(),
+                        updated_column_refs.as_slice().into(),
+                    ],
+                )
+                .map_err(|e| format!("EcSpireDistributedScan DML UPDATE primitive failed: {e}"))?
+                .map(|row| {
+                    row["remote_updated_count"]
+                        .value::<i64>()
+                        .map_err(|e| {
+                            format!(
+                                "EcSpireDistributedScan DML UPDATE updated_count decode failed: {e}"
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            "EcSpireDistributedScan DML UPDATE updated_count is null".to_owned()
+                        })
+                })
+                .next()
+                .transpose()
+                .map(|value| {
+                    value.ok_or_else(|| {
+                        "EcSpireDistributedScan DML UPDATE primitive returned no rows".to_owned()
+                    })
+                })?
+        })
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        u64::try_from(updated_count).unwrap_or_else(|_| {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE returned a negative updated_count")
+        })
+    }
+}
+
+unsafe fn custom_scan_dml_update_row_payload_json(
+    node: *mut pg_sys::CustomScanState,
+    updated_columns: &[String],
+    value_exprs: &[*mut pg_sys::Expr],
+) -> String {
+    unsafe {
+        if updated_columns.len() != value_exprs.len() {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE payload column/value width mismatch");
+        }
+        let mut payload = serde_json::Map::with_capacity(updated_columns.len());
+        for (column, expr) in updated_columns.iter().zip(value_exprs.iter().copied()) {
+            let value = custom_scan_dml_update_expr_json_value(node, expr);
+            payload.insert(column.clone(), value);
+        }
+        serde_json::Value::Object(payload).to_string()
+    }
+}
+
+unsafe fn custom_scan_dml_update_expr_json_value(
+    node: *mut pg_sys::CustomScanState,
+    expr: *mut pg_sys::Expr,
+) -> serde_json::Value {
+    unsafe {
+        if expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE value expression is null");
+        }
+        match (*expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => {
+                let const_expr = &*expr.cast::<pg_sys::Const>();
+                if const_expr.constisnull {
+                    serde_json::Value::Null
+                } else {
+                    custom_scan_dml_update_datum_json_value(
+                        const_expr.constvalue,
+                        const_expr.consttype,
+                    )
+                }
+            }
+            pg_sys::NodeTag::T_Param => {
+                let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                if expr_state.is_null() {
+                    pgrx::error!(
+                        "EcSpireDistributedScan failed to initialize DML UPDATE parameter"
+                    );
+                }
+                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan DML UPDATE parameter has no evaluator")
+                });
+                let mut is_null = false;
+                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                if is_null {
+                    serde_json::Value::Null
+                } else {
+                    let typoid = pg_sys::exprType(expr.cast());
+                    custom_scan_dml_update_datum_json_value(datum, typoid)
+                }
+            }
+            _ => pgrx::error!(
+                "EcSpireDistributedScan DML UPDATE supports only constant or parameter SET values in v1"
+            ),
+        }
+    }
+}
+
+unsafe fn custom_scan_dml_update_datum_json_value(
+    datum: pg_sys::Datum,
+    typoid: pg_sys::Oid,
+) -> serde_json::Value {
+    unsafe {
+        if typoid == pg_sys::InvalidOid {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE value has invalid type OID");
+        }
+        let mut typoutput = pg_sys::InvalidOid;
+        let mut typisvarlena = false;
+        pg_sys::getTypeOutputInfo(typoid, &mut typoutput, &mut typisvarlena);
+        let mut flinfo = std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init();
+        pg_sys::fmgr_info(typoutput, &mut flinfo);
+        let output = pg_sys::OutputFunctionCall(&mut flinfo, datum);
+        if output.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML UPDATE type output returned NULL");
+        }
+        let value = std::ffi::CStr::from_ptr(output)
+            .to_str()
+            .unwrap_or_else(|_| {
+                pgrx::error!("EcSpireDistributedScan DML UPDATE output value is not UTF-8")
+            })
+            .to_owned();
+        serde_json::Value::String(value)
     }
 }
 

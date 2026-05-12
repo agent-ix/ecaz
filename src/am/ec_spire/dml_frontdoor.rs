@@ -125,6 +125,7 @@ pub(crate) struct SpireDmlFrontdoorPrimitiveInvocation {
 pub(crate) struct SpireDmlFrontdoorPrimitivePlanExpr {
     pub(crate) primitive_plan: SpireDmlFrontdoorPrimitivePlan,
     pub(crate) pk_value_expr: *mut pg_sys::Expr,
+    pub(crate) updated_value_exprs: Vec<*mut pg_sys::Expr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,6 +463,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
         }
     };
     let detail = unsafe { dml_frontdoor_query_detail_with_relation(query, &relation)? };
+    let updated_value_exprs = detail.updated_value_exprs.clone();
     let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
         "ec_spire DML frontdoor CustomScan expression handoff requires a PK value expression"
             .to_owned()
@@ -476,6 +478,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_catalog_row(
         primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
             primitive_plan,
             pk_value_expr,
+            updated_value_exprs,
         })
     }))
 }
@@ -517,6 +520,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
             &relation,
         )?;
         let pk_value_expr = detail.pk_value_expr;
+        let updated_value_exprs = detail.updated_value_exprs.clone();
         let decision = dml_frontdoor_replacement_decision_from_shape(
             target_relation_oid,
             relation.index_oid,
@@ -534,6 +538,7 @@ pub(crate) unsafe fn dml_frontdoor_primitive_plan_expr_from_baserel(
             primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
                 primitive_plan,
                 pk_value_expr,
+                updated_value_exprs,
             })
         }))
     }
@@ -887,6 +892,7 @@ struct SpireDmlFrontdoorQueryDetail {
     pk_value: SpireDmlFrontdoorPredicateValue,
     pk_value_expr: Option<*mut pg_sys::Expr>,
     updated_columns: Vec<String>,
+    updated_value_exprs: Vec<*mut pg_sys::Expr>,
     projected_columns: Vec<String>,
 }
 
@@ -931,11 +937,19 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
     };
     let predicate =
         unsafe { dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context) };
-    let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
+        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
     };
+    let updated_columns = updated_targets
+        .iter()
+        .map(|(column, _expr)| column.clone())
+        .collect::<Vec<_>>();
+    let updated_value_exprs = updated_targets
+        .iter()
+        .map(|(_column, expr)| *expr)
+        .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
     } else {
@@ -947,6 +961,7 @@ unsafe fn dml_frontdoor_query_detail_with_relation(
         pk_value: predicate.value,
         pk_value_expr: predicate.value_expr,
         updated_columns,
+        updated_value_exprs,
         projected_columns,
     })
 }
@@ -1010,11 +1025,19 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         )
         .unwrap_or_else(|| dml_frontdoor_pk_predicate(query_ref, target_rtindex, &query_context))
     };
-    let updated_columns = if operation == SpireDmlFrontdoorOperation::Update {
-        unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
+    let updated_targets = if operation == SpireDmlFrontdoorOperation::Update {
+        unsafe { dml_frontdoor_target_column_exprs(query_ref.targetList, &query_context) }
     } else {
         Vec::new()
     };
+    let updated_columns = updated_targets
+        .iter()
+        .map(|(column, _expr)| column.clone())
+        .collect::<Vec<_>>();
+    let updated_value_exprs = updated_targets
+        .iter()
+        .map(|(_column, expr)| *expr)
+        .collect::<Vec<_>>();
     let projected_columns = if operation == SpireDmlFrontdoorOperation::PkSelect {
         unsafe { dml_frontdoor_target_columns(query_ref.targetList, &query_context) }
     } else {
@@ -1050,6 +1073,7 @@ unsafe fn dml_frontdoor_query_detail_from_baserel(
         pk_value: predicate.value,
         pk_value_expr: predicate.value_expr,
         updated_columns,
+        updated_value_exprs,
         projected_columns,
     })
 }
@@ -2063,6 +2087,18 @@ unsafe fn dml_frontdoor_target_columns(
     target_list: *mut pg_sys::List,
     context: &SpireDmlFrontdoorQueryContext<'_>,
 ) -> Vec<String> {
+    unsafe {
+        dml_frontdoor_target_column_exprs(target_list, context)
+            .into_iter()
+            .map(|(column, _expr)| column)
+            .collect()
+    }
+}
+
+unsafe fn dml_frontdoor_target_column_exprs(
+    target_list: *mut pg_sys::List,
+    context: &SpireDmlFrontdoorQueryContext<'_>,
+) -> Vec<(String, *mut pg_sys::Expr)> {
     if target_list.is_null() {
         return Vec::new();
     }
@@ -2080,12 +2116,12 @@ unsafe fn dml_frontdoor_target_columns(
             .iter()
             .find_map(|(attno, name)| (*attno == target_entry.resno).then(|| (*name).to_owned()))
         {
-            columns.push(column);
+            columns.push((column, target_entry.expr));
             continue;
         }
         if !target_entry.resname.is_null() {
             if let Ok(column) = unsafe { CStr::from_ptr(target_entry.resname) }.to_str() {
-                columns.push(column.to_owned());
+                columns.push((column.to_owned(), target_entry.expr));
             }
         }
     }
@@ -2509,6 +2545,7 @@ mod tests {
                 projected_columns: Vec::new(),
             },
             pk_value_expr: std::ptr::null_mut(),
+            updated_value_exprs: Vec::new(),
         }
     }
 }
