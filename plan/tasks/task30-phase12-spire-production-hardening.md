@@ -104,6 +104,9 @@ described by reviewer packet `30896`.
     bytes via `textsend(...)` and named composite bytes via `record_send(...)`.
   - [x] Empty projection fixture proves typed transport returns aligned empty
     metadata/value arrays without falling back to JSON.
+  - [x] All v1 distributed table column classes that blocked the JSON bridge
+    now have endpoint-level typed transport coverage; negotiation can proceed
+    without a known scalar/array/composite/domain/NULL type-class gap.
 - [ ] Measure tuple-heavy read throughput before and after typed transport.
 - [ ] After compatibility is sufficient, remove the JSON endpoint from the
   production path and drop the `serde_json` dependency if no other runtime path

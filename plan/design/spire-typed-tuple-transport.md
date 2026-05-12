@@ -71,6 +71,20 @@ Reasons to prefer per-attribute binary values:
 Binary composite/record transport remains a later optimization candidate only
 if per-attribute framing proves too expensive after P1/P3 measurement.
 
+Empty projections are a supported typed-transport shape. When
+`requested_columns` is empty, the endpoint returns aligned empty metadata,
+NULL, value, and format arrays with `tuple_transport = 'pg_binary_attr_v1'`.
+The coordinator may use this shape to validate row existence without paying
+projection conversion cost.
+
+Named composite table columns use the column type's normal `record_send` bytes
+and preserve the named composite type OID in `payload_type_oids`. Anonymous
+computed composite projections are outside the v1 table-column projection
+contract; the v1 endpoint accepts heap column names, not arbitrary SELECT-list
+expressions. If a future projection surface admits anonymous `record` values,
+that packet must either reconstruct field metadata on the coordinator or reject
+anonymous composites with a stable diagnostic.
+
 ## Endpoint Shape
 
 Add a sibling read endpoint beside the JSON endpoint:
@@ -142,6 +156,15 @@ Coordinator selection rules:
   extension version that does not advertise typed support.
 - JSON fallback is not allowed for a new remote that advertises
   `pg_binary_attr_v1` but fails typed metadata validation.
+
+The advertised capability is protocol-level, not a guarantee that every future
+projection on that remote has binary I/O support. A typed-capable remote may
+still reject a specific requested column with `unsupported_type_binary_io` if
+that column's type lacks a usable binary send function. For v1,
+`tuple_transport_default` is the build's hardcoded preferred default rather
+than a per-descriptor operator setting; a future debugging or version-skew
+packet can add a descriptor writer surface if forcing JSON per remote becomes
+necessary.
 
 ## JSON Fallback Window
 
