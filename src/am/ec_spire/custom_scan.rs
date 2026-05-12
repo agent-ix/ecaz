@@ -13,6 +13,7 @@ const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 32.0;
 const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 4.0;
 const CUSTOM_SCAN_PLAN_MODE_VECTOR_ORDER_LIMIT: u32 = 1;
 const CUSTOM_SCAN_PLAN_MODE_DML_PK_SELECT: u32 = 2;
+const EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO: pg_sys::AttrNumber = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpireCustomScanPlanMode {
@@ -483,7 +484,7 @@ unsafe fn dml_pk_select_candidate_index_oid(
             continue;
         };
         if index_info.relam == ec_spire_am_oid
-            && custom_scan_index_has_sql_placement(index_info.indexoid).unwrap_or(false)
+            && unsafe { custom_scan_index_has_sql_placement(index_info.indexoid) }
         {
             return Some(index_info.indexoid);
         }
@@ -491,28 +492,45 @@ unsafe fn dml_pk_select_candidate_index_oid(
     None
 }
 
-fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> Result<bool, String> {
-    Spi::connect(|client| {
-        client
-            .select(
-                "SELECT EXISTS (\
-                    SELECT 1 \
-                      FROM ec_spire_placement \
-                     WHERE index_oid = $1::oid)",
-                None,
-                &[index_oid.into()],
-            )
-            .map_err(|e| format!("ec_spire CustomScan placement probe failed: {e}"))?
-            .map(|row| {
-                row["exists"]
-                    .value::<bool>()
-                    .map_err(|e| format!("ec_spire CustomScan placement probe decode failed: {e}"))?
-                    .ok_or_else(|| "ec_spire CustomScan placement probe returned NULL".to_owned())
-            })
-            .next()
-            .transpose()
-            .map(|value| value.unwrap_or(false))
-    })
+unsafe fn custom_scan_index_has_sql_placement(index_oid: pg_sys::Oid) -> bool {
+    unsafe {
+        let placement_oid = pg_sys::RelnameGetRelid(c"ec_spire_placement".as_ptr());
+        if placement_oid == pg_sys::InvalidOid {
+            return false;
+        }
+        let placement_relation =
+            pg_sys::table_open(placement_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        if placement_relation.is_null() {
+            return false;
+        }
+
+        let mut scan_key = std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init();
+        pg_sys::ScanKeyInit(
+            &mut scan_key,
+            EC_SPIRE_PLACEMENT_INDEX_OID_ATTNO,
+            pg_sys::BTEqualStrategyNumber as pg_sys::StrategyNumber,
+            pg_sys::F_OIDEQ.into(),
+            index_oid.into(),
+        );
+        let scan = pg_sys::table_beginscan_catalog(placement_relation, 1, &mut scan_key);
+        let slot = pg_sys::table_slot_create(placement_relation, std::ptr::null_mut());
+        let found = if scan.is_null() || slot.is_null() {
+            false
+        } else {
+            pg_sys::table_scan_getnextslot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
+        };
+        if !scan.is_null() {
+            pg_sys::table_endscan(scan);
+        }
+        if !slot.is_null() {
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+        }
+        pg_sys::table_close(
+            placement_relation,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+        found
+    }
 }
 
 unsafe fn add_custom_scan_path(
