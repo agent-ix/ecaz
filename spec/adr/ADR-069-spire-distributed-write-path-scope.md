@@ -428,6 +428,10 @@ not published its placement row, and the existing transaction callback rolls
 back its remote prepared transaction.
 Stage F can replace this with an explicit live-row compatibility check or
 per-node INSERT serialization if concurrent INSERT throughput requires it.
+Packet `30938` pins the current retry behavior with a two-backend fixture:
+two coordinator INSERT transactions target the same descriptor generation, the
+winner commits, the loser raises SQLSTATE `40001`, and the loser's prepared
+remote transaction is rolled back without publishing a placement row.
 
 `ec_spire_register_placement_batch` runs inside the caller's
 transaction. A primary-key conflict, catalog constraint violation, or

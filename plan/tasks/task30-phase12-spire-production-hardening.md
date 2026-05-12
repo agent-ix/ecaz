@@ -141,11 +141,16 @@ described by reviewer packet `30896`.
 
 ## Phase 12.4: Coordinator-Routed Write and 2PC Hardening
 
-- [ ] Add a concurrent INSERT descriptor-generation-race fixture:
-  - [ ] fire N parallel coordinator INSERTs targeting the same descriptor;
-  - [ ] assert exactly one succeeds under the current v1 guard or implement
+- [x] Add a concurrent INSERT descriptor-generation-race fixture:
+  - [x] fire N parallel coordinator INSERTs targeting the same descriptor;
+  - [x] assert exactly one succeeds under the current v1 guard or implement
     accepted retry behavior;
-  - [ ] assert failed attempts leave no orphaned remote prepared transactions.
+  - [x] assert failed attempts leave no orphaned remote prepared transactions.
+    - [x] `test_ec_spire_insert_descriptor_race_sql`
+      holds one coordinator INSERT transaction open after remote prepare,
+      drives a second same-descriptor INSERT to the documented
+      `serialization_failure` retry path, and asserts only the winner's remote
+      row and placement row remain with no SPIRE prepared xacts.
 - [x] Pin a stable SQLSTATE for descriptor refresh races and document the safe
   retry contract in ADR-069.
 - [x] Decide the concurrent DELETE collision policy in ADR-069:

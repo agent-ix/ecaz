@@ -7960,9 +7960,11 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
             .transpose()?
             .unwrap_or(false);
         if !descriptor_refreshed {
-            return Err(
-                "ec_spire coordinator insert descriptor refresh did not advance descriptor_generation"
-                    .to_owned(),
+            pgrx::ereport!(
+                ERROR,
+                pgrx::PgSqlErrorCode::ERRCODE_T_R_SERIALIZATION_FAILURE,
+                "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation",
+                "Retry the whole coordinator write after the winning descriptor refresh commits."
             );
         }
         client
@@ -21701,6 +21703,299 @@ mod tests {
         );
         assert_eq!(prepared_count, 1);
         assert_eq!(descriptor_row, "18|true|true|true");
+    }
+
+    struct InsertDescriptorRaceResult {
+        rows: u64,
+        sqlstate: Option<String>,
+        message: String,
+        detail: Option<String>,
+    }
+
+    fn spire_insert_prepared_count(
+        client: &mut postgres::Client,
+        index_oid: u32,
+        node_id: i32,
+    ) -> i64 {
+        client
+            .query_one(
+                "SELECT count(*)::bigint \
+                   FROM pg_prepared_xacts \
+                  WHERE gid LIKE $1",
+                &[&format!("ec_spire_insert_{}_{}_%", index_oid, node_id)],
+            )
+            .expect("SPIRE prepared xact count query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("SPIRE prepared xact count should decode")
+    }
+
+    #[pg_test]
+    fn test_ec_spire_insert_descriptor_race_sql() {
+        let _env_lock = env_var_test_lock();
+        const SECRET_KEY: &str =
+            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_COORDINATOR_INSERT_DESCRIPTOR_RACE";
+        const SECRET_NAME: &str = "spire/remote/coordinator_insert_descriptor_race";
+        let loopback_conninfo = current_pg_test_loopback_conninfo();
+        let _conninfo_secret = ScopedEnvVar::set(SECRET_KEY, &loopback_conninfo);
+        let mut setup_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("loopback setup connection should succeed");
+        setup_client
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("setup backend should receive conninfo secret env var");
+        setup_client
+            .batch_execute(
+                "DO $$ \
+                 DECLARE idx oid := to_regclass('ec_spire_coord_insert_descriptor_race_idx'); \
+                 BEGIN \
+                     IF idx IS NOT NULL THEN \
+                         DELETE FROM ec_spire_placement WHERE index_oid = idx; \
+                         DELETE FROM ec_spire_remote_node_descriptor \
+                          WHERE coordinator_index_oid = idx; \
+                     END IF; \
+                 END $$; \
+                 DROP TABLE IF EXISTS ec_spire_coord_insert_descriptor_race_remote_sql; \
+                 DROP TABLE IF EXISTS ec_spire_coord_insert_descriptor_race_sql; \
+                 CREATE TABLE ec_spire_coord_insert_descriptor_race_remote_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 CREATE INDEX ec_spire_coord_insert_descriptor_race_remote_idx \
+                     ON ec_spire_coord_insert_descriptor_race_remote_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops); \
+                 CREATE TABLE ec_spire_coord_insert_descriptor_race_sql \
+                     (id bigint primary key, title text not null, embedding ecvector, \
+                      source_identity bytea not null); \
+                 INSERT INTO ec_spire_coord_insert_descriptor_race_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (1, 'coordinator seed', encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                     decode('808182838485868788898a8b8c8d8e8f', 'hex')); \
+                 CREATE INDEX ec_spire_coord_insert_descriptor_race_idx \
+                     ON ec_spire_coord_insert_descriptor_race_sql USING ec_spire \
+                     (embedding ecvector_spire_ip_ops);",
+            )
+            .expect("loopback descriptor-race fixtures should be created");
+
+        let index_oid = setup_client
+            .query_one(
+                "SELECT 'ec_spire_coord_insert_descriptor_race_idx'::regclass::oid",
+                &[],
+            )
+            .expect("descriptor-race index oid query should succeed")
+            .try_get::<_, u32>(0)
+            .expect("descriptor-race index oid should decode");
+        let active_epoch = setup_client
+            .query_one(
+                "SELECT active_epoch FROM \
+                 ec_spire_index_hierarchy_snapshot(\
+                     'ec_spire_coord_insert_descriptor_race_idx'::regclass)",
+                &[],
+            )
+            .expect("descriptor-race active epoch query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("descriptor-race active epoch should decode");
+        let selected_pid = setup_client
+            .query_one(
+                "SELECT child_pid \
+                   FROM ec_spire_index_routing_centroid_snapshot(\
+                        'ec_spire_coord_insert_descriptor_race_idx'::regclass) r \
+                   CROSS JOIN LATERAL ( \
+                        SELECT sum(q.value * c.value)::real AS score \
+                          FROM unnest(ARRAY[1.0, 0.0]::real[]) WITH ORDINALITY q(value, ord) \
+                          JOIN unnest(r.centroid) WITH ORDINALITY c(value, ord) USING (ord) \
+                   ) scored \
+                  WHERE parent_kind = 'root' AND child_kind = 'leaf' \
+                  ORDER BY scored.score DESC, centroid_index, child_pid \
+                  LIMIT 1",
+                &[],
+            )
+            .expect("descriptor-race selected pid query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("descriptor-race selected pid should decode");
+        setup_client
+            .batch_execute(&format!(
+                "SELECT tests.ec_spire_test_rewrite_placement_node(\
+                     'ec_spire_coord_insert_descriptor_race_idx'::regclass, \
+                     {selected_pid}, 32)"
+            ))
+            .expect("descriptor-race placement rewrite should succeed");
+        let remote_identity_hex = loopback_remote_index_identity_hex(
+            &mut setup_client,
+            "ec_spire_coord_insert_descriptor_race_remote_idx",
+        );
+        setup_client
+            .batch_execute(&format!(
+                "SELECT ec_spire_register_remote_node_descriptor(\
+                     'ec_spire_coord_insert_descriptor_race_idx'::regclass, \
+                     32, 51, '{SECRET_NAME}', \
+                     decode('{remote_identity_hex}', 'hex'), \
+                     'ec_spire_coord_insert_descriptor_race_remote_idx', \
+                     'active', {active_epoch}, {active_epoch}, '{}', ''); \
+                 SELECT ec_spire_enable_coordinator_insert(\
+                     'ec_spire_coord_insert_descriptor_race_sql'::regclass, \
+                     'ec_spire_coord_insert_descriptor_race_idx'::regclass, \
+                     'id', 'embedding', 'source_identity')",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .expect("descriptor-race descriptor and trigger should be enabled");
+
+        let mut winner = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+            .expect("descriptor-race winner connection should succeed");
+        winner
+            .execute(
+                "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                &[&SECRET_KEY, &loopback_conninfo],
+            )
+            .expect("winner backend should receive conninfo secret env var");
+        winner
+            .batch_execute("BEGIN")
+            .expect("winner transaction should begin");
+        let winner_rows = winner
+            .execute(
+                "INSERT INTO ec_spire_coord_insert_descriptor_race_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (707, 'descriptor race winner', \
+                     encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                     decode('909192939495969798999a9b9c9d9e9f', 'hex'))",
+                &[],
+            )
+            .expect("winner coordinator INSERT should stage before commit");
+        assert_eq!(winner_rows, 0, "BEFORE trigger suppresses heap insert");
+        assert_eq!(
+            spire_insert_prepared_count(&mut setup_client, index_oid, 32),
+            1
+        );
+
+        let loser_conninfo = loopback_conninfo.clone();
+        let loser_handle = std::thread::spawn(move || {
+            let mut loser = postgres::Client::connect(&loser_conninfo, postgres::NoTls)
+                .expect("descriptor-race loser connection should succeed");
+            loser
+                .execute(
+                    "SELECT tests.ec_spire_test_set_env_var($1::text, $2::text)",
+                    &[&SECRET_KEY, &loser_conninfo],
+                )
+                .expect("loser backend should receive conninfo secret env var");
+            loser
+                .batch_execute("SET lock_timeout = '15s'; SET statement_timeout = '30s'; BEGIN")
+                .expect("loser transaction should begin");
+            let insert_result = loser.execute(
+                "INSERT INTO ec_spire_coord_insert_descriptor_race_sql \
+                     (id, title, embedding, source_identity) VALUES \
+                 (708, 'descriptor race loser', \
+                     encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42), \
+                     decode('a0a1a2a3a4a5a6a7a8a9aaabacadaeaf', 'hex'))",
+                &[],
+            );
+            let result = match insert_result {
+                Ok(rows) => InsertDescriptorRaceResult {
+                    rows,
+                    sqlstate: None,
+                    message: "ok".to_owned(),
+                    detail: None,
+                },
+                Err(error) => {
+                    let db_error = error.as_db_error();
+                    InsertDescriptorRaceResult {
+                        rows: 0,
+                        sqlstate: db_error.map(|error| error.code().code().to_owned()),
+                        message: db_error
+                            .map(|error| error.message().to_owned())
+                            .unwrap_or_else(|| error.to_string()),
+                        detail: db_error.and_then(|error| error.detail().map(str::to_owned)),
+                    }
+                }
+            };
+            let _ = loser.batch_execute("ROLLBACK");
+            result
+        });
+
+        let wait_started = Instant::now();
+        while spire_insert_prepared_count(&mut setup_client, index_oid, 32) < 2 {
+            assert!(
+                wait_started.elapsed() < Duration::from_secs(10),
+                "loser should reach remote PREPARE before blocking on descriptor refresh"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        winner
+            .batch_execute("COMMIT")
+            .expect("winner transaction should commit");
+        let loser_result = loser_handle
+            .join()
+            .expect("descriptor-race loser thread should join");
+
+        let prepared_wait_started = Instant::now();
+        while spire_insert_prepared_count(&mut setup_client, index_oid, 32) != 0 {
+            assert!(
+                prepared_wait_started.elapsed() < Duration::from_secs(10),
+                "descriptor-race callbacks should resolve all remote prepared xacts"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let remote_visibility_summary = setup_client
+            .query_one(
+                "WITH winner AS ( \
+                     SELECT selected_count \
+                       FROM ec_spire_remote_select_tuple_payload(\
+                            'ec_spire_coord_insert_descriptor_race_remote_idx'::regclass, \
+                            'id', int8send(707::bigint)::bytea, ARRAY['id']::text[]) \
+                 ), loser AS ( \
+                     SELECT selected_count \
+                       FROM ec_spire_remote_select_tuple_payload(\
+                            'ec_spire_coord_insert_descriptor_race_remote_idx'::regclass, \
+                            'id', int8send(708::bigint)::bytea, ARRAY['id']::text[]) \
+                 ) \
+                 SELECT (SELECT selected_count::text FROM winner) || '|' || \
+                        (SELECT selected_count::text FROM loser)",
+                &[],
+            )
+            .expect("descriptor-race remote visibility query should succeed")
+            .try_get::<_, String>(0)
+            .expect("descriptor-race remote visibility summary should decode");
+        let placement_summary = setup_client
+            .query_one(
+                "SELECT count(*) FILTER (WHERE pk_value = int8send(707::bigint)::bytea)::text \
+                        || '|' || \
+                        count(*) FILTER (WHERE pk_value = int8send(708::bigint)::bytea)::text \
+                   FROM ec_spire_placement \
+                  WHERE index_oid = 'ec_spire_coord_insert_descriptor_race_idx'::regclass \
+                    AND pk_value IN (int8send(707::bigint)::bytea, \
+                                     int8send(708::bigint)::bytea)",
+                &[],
+            )
+            .expect("descriptor-race placement query should succeed")
+            .try_get::<_, String>(0)
+            .expect("descriptor-race placement summary should decode");
+        let descriptor_generation = setup_client
+            .query_one(
+                "SELECT descriptor_generation::bigint \
+                   FROM ec_spire_remote_node_descriptor \
+                  WHERE coordinator_index_oid = \
+                        'ec_spire_coord_insert_descriptor_race_idx'::regclass \
+                    AND node_id = 32",
+                &[],
+            )
+            .expect("descriptor-race descriptor generation query should succeed")
+            .try_get::<_, i64>(0)
+            .expect("descriptor-race descriptor generation should decode");
+
+        assert_eq!(loser_result.rows, 0);
+        assert_eq!(loser_result.sqlstate.as_deref(), Some("40001"));
+        assert_eq!(
+            loser_result.message,
+            "ec_spire_register_remote_node_descriptor descriptor_generation must advance existing descriptor_generation"
+        );
+        assert_eq!(
+            loser_result.detail.as_deref(),
+            Some("Retry the whole coordinator write after the winning descriptor refresh commits.")
+        );
+        assert_eq!(remote_visibility_summary, "1|0");
+        assert_eq!(placement_summary, "1|0");
+        assert_eq!(descriptor_generation, 52);
     }
 
     #[pg_test]
