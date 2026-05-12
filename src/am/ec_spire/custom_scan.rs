@@ -1025,6 +1025,88 @@ fn custom_scan_validate_dml_column_metadata(
     Ok(())
 }
 
+fn custom_scan_dml_frontdoor_mode_for_plan_mode(
+    mode: SpireCustomScanPlanMode,
+) -> Result<super::SpireDmlFrontdoorCustomScanMode, String> {
+    match mode {
+        SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+            Ok(super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload)
+        }
+        SpireCustomScanPlanMode::DmlUpdateTuplePayload => {
+            Ok(super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload)
+        }
+        SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+            Ok(super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload)
+        }
+        SpireCustomScanPlanMode::VectorOrderLimit => {
+            Err("EcSpireDistributedScan vector plan mode has no DML primitive".to_owned())
+        }
+    }
+}
+
+fn custom_scan_dml_primitive_name(mode: SpireCustomScanPlanMode) -> Result<&'static str, String> {
+    match mode {
+        SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
+            Ok("ec_spire_forward_coordinator_select_tuple_payload")
+        }
+        SpireCustomScanPlanMode::DmlUpdateTuplePayload => {
+            Ok("ec_spire_forward_coordinator_update_tuple_payload")
+        }
+        SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+            Ok("ec_spire_prepare_coordinator_delete_tuple_payload")
+        }
+        SpireCustomScanPlanMode::VectorOrderLimit => {
+            Err("EcSpireDistributedScan vector plan mode has no DML primitive".to_owned())
+        }
+    }
+}
+
+fn custom_scan_dml_primitive_invocation_from_parts(
+    index_oid: pg_sys::Oid,
+    mode: SpireCustomScanPlanMode,
+    pk_column: &str,
+    pk_value: &[u8],
+    updated_columns: &[String],
+    projected_columns: &[String],
+) -> Result<super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation, String> {
+    if index_oid == pg_sys::InvalidOid {
+        return Err(
+            "EcSpireDistributedScan DML primitive invocation requires index OID".to_owned(),
+        );
+    }
+    if pk_column.is_empty() {
+        return Err(
+            "EcSpireDistributedScan DML primitive invocation requires PK column".to_owned(),
+        );
+    }
+    if pk_value.is_empty() {
+        return Err("EcSpireDistributedScan DML primitive invocation requires PK value".to_owned());
+    }
+    custom_scan_validate_dml_column_metadata(mode, updated_columns, projected_columns)?;
+    Ok(super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation {
+        index_oid,
+        mode: custom_scan_dml_frontdoor_mode_for_plan_mode(mode)?,
+        primitive: custom_scan_dml_primitive_name(mode)?,
+        pk_column: pk_column.to_owned(),
+        pk_value: pk_value.to_vec(),
+        updated_columns: updated_columns.to_vec(),
+        projected_columns: projected_columns.to_vec(),
+    })
+}
+
+fn custom_scan_dml_primitive_invocation(
+    state: &SpireCustomScanExecState,
+) -> Result<super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation, String> {
+    custom_scan_dml_primitive_invocation_from_parts(
+        state.index_oid,
+        state.mode,
+        &state.dml_pk_column,
+        &state.dml_pk_value,
+        &state.dml_updated_columns,
+        &state.dml_projected_columns,
+    )
+}
+
 unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_private.is_null() {
@@ -1637,17 +1719,15 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
         if state_ref.dml_payload_loaded {
             return;
         }
-        if state_ref.dml_pk_column.is_empty() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT pk_column is missing");
+        let invocation =
+            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+        if invocation.mode
+            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        {
+            pgrx::error!("EcSpireDistributedScan DML PK SELECT got non-select primitive mode");
         }
-        if state_ref.dml_pk_value.is_empty() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT pk_value is missing");
-        }
-        if state_ref.tuple_payload_columns.is_empty() {
-            pgrx::error!("EcSpireDistributedScan DML PK SELECT projection is empty");
-        }
-        let requested_column_refs = state_ref
-            .tuple_payload_columns
+        let requested_column_refs = invocation
+            .projected_columns
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
@@ -1659,9 +1739,9 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
                             $1::oid, $2::text, $3::bytea, $4::text[])",
                     None,
                     &[
-                        state_ref.index_oid.into(),
-                        state_ref.dml_pk_column.as_str().into(),
-                        state_ref.dml_pk_value.clone().into(),
+                        invocation.index_oid.into(),
+                        invocation.pk_column.as_str().into(),
+                        invocation.pk_value.clone().into(),
                         requested_column_refs.as_slice().into(),
                     ],
                 )
@@ -1868,6 +1948,66 @@ mod tests {
             )
             .expect_err("DELETE with updated columns should fail"),
             "EcSpireDistributedScan DML DELETE plan must not carry column payload metadata"
+        );
+    }
+
+    #[test]
+    fn custom_scan_dml_primitive_invocation_uses_plan_metadata() {
+        let pk_value = vec![0, 0, 0, 0, 0, 0, 0, 5];
+        let projected = vec!["id".to_owned(), "title".to_owned()];
+        let invocation = custom_scan_dml_primitive_invocation_from_parts(
+            pg_sys::Oid::from(42),
+            SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
+            "id",
+            &pk_value,
+            &[],
+            &projected,
+        )
+        .expect("PK SELECT invocation should build");
+
+        assert_eq!(invocation.index_oid, pg_sys::Oid::from(42));
+        assert_eq!(
+            invocation.mode,
+            SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+        );
+        assert_eq!(
+            invocation.primitive,
+            "ec_spire_forward_coordinator_select_tuple_payload"
+        );
+        assert_eq!(invocation.pk_column, "id");
+        assert_eq!(invocation.pk_value, pk_value);
+        assert!(invocation.updated_columns.is_empty());
+        assert_eq!(invocation.projected_columns, projected);
+    }
+
+    #[test]
+    fn custom_scan_dml_primitive_invocation_rejects_incomplete_state() {
+        let error = custom_scan_dml_primitive_invocation_from_parts(
+            pg_sys::InvalidOid,
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+            "id",
+            &[0, 0, 0, 0, 0, 0, 0, 5],
+            &["title".to_owned()],
+            &[],
+        )
+        .expect_err("missing index OID should fail");
+        assert_eq!(
+            error,
+            "EcSpireDistributedScan DML primitive invocation requires index OID"
+        );
+
+        let error = custom_scan_dml_primitive_invocation_from_parts(
+            pg_sys::Oid::from(42),
+            SpireCustomScanPlanMode::DmlUpdateTuplePayload,
+            "id",
+            &[0, 0, 0, 0, 0, 0, 0, 5],
+            &[],
+            &[],
+        )
+        .expect_err("UPDATE without column metadata should fail");
+        assert_eq!(
+            error,
+            "EcSpireDistributedScan DML UPDATE plan requires updated columns"
         );
     }
 
