@@ -6706,188 +6706,6 @@ fn ec_spire_remote_catalog_lifecycle_contract() -> TableIterator<
     }))
 }
 
-#[pg_extern(strict)]
-fn ec_spire_register_remote_row_materialization(
-    index_oid: pg_sys::Oid,
-    requested_epoch: i64,
-    served_epoch: i64,
-    origin_node_id: i32,
-    vec_id: Vec<u8>,
-    row_locator: Vec<u8>,
-    scan_heap_relation_oid: pg_sys::Oid,
-    materialized_heap_block: i64,
-    materialized_heap_offset: i32,
-) -> bool {
-    if requested_epoch <= 0 {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization requested_epoch must be greater than 0"
-        );
-    }
-    if served_epoch <= 0 {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization served_epoch must be greater than 0"
-        );
-    }
-    if origin_node_id <= 0 {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization origin_node_id must be greater than 0"
-        );
-    }
-    if vec_id.is_empty() {
-        pgrx::error!("ec_spire_register_remote_row_materialization vec_id must be nonempty");
-    }
-    if row_locator.is_empty() {
-        pgrx::error!("ec_spire_register_remote_row_materialization row_locator must be nonempty");
-    }
-    if materialized_heap_block < 0 || materialized_heap_block > i64::from(u32::MAX) {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization materialized_heap_block is out of range"
-        );
-    }
-    if materialized_heap_offset <= 0 || materialized_heap_offset > i32::from(u16::MAX) {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization materialized_heap_offset is out of range"
-        );
-    }
-
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_register_remote_row_materialization")
-    };
-    let indexed_heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    if indexed_heap_oid != scan_heap_relation_oid {
-        pgrx::error!(
-            "ec_spire_register_remote_row_materialization scan_heap_relation_oid must match the indexed heap relation"
-        );
-    }
-
-    let result = Spi::connect_mut(|client| {
-        client
-            .update(
-                "INSERT INTO ec_spire_remote_row_materialization \
-                 (coordinator_index_oid, requested_epoch, served_epoch, origin_node_id, \
-                  vec_id, row_locator, scan_heap_relation_oid, materialized_heap_block, \
-                  materialized_heap_offset, status, materialized_at_micros) \
-                 VALUES ($1::oid, $2::bigint, $3::bigint, $4::integer, $5::bytea, \
-                         $6::bytea, $7::oid, $8::bigint, $9::integer, 'ready', \
-                         (extract(epoch from clock_timestamp()) * 1000000)::bigint) \
-                 ON CONFLICT (coordinator_index_oid, requested_epoch, served_epoch, \
-                              origin_node_id, vec_id, row_locator) DO UPDATE SET \
-                     scan_heap_relation_oid = EXCLUDED.scan_heap_relation_oid, \
-                     materialized_heap_block = EXCLUDED.materialized_heap_block, \
-                     materialized_heap_offset = EXCLUDED.materialized_heap_offset, \
-                     status = EXCLUDED.status, \
-                     materialized_at_micros = EXCLUDED.materialized_at_micros",
-                None,
-                &[
-                    index_oid.into(),
-                    requested_epoch.into(),
-                    served_epoch.into(),
-                    origin_node_id.into(),
-                    vec_id.into(),
-                    row_locator.into(),
-                    scan_heap_relation_oid.into(),
-                    materialized_heap_block.into(),
-                    materialized_heap_offset.into(),
-                ],
-            )
-            .map_err(|e| format!("ec_spire remote row materialization upsert failed: {e}"))?;
-        Ok::<(), String>(())
-    });
-    result.unwrap_or_else(|e| pgrx::error!("{e}"));
-    true
-}
-
-#[pg_extern(stable, strict)]
-#[allow(clippy::type_complexity)]
-fn ec_spire_remote_row_materialization_catalog(
-    index_oid: pg_sys::Oid,
-) -> TableIterator<
-    'static,
-    (
-        name!(requested_epoch, i64),
-        name!(served_epoch, i64),
-        name!(origin_node_id, i32),
-        name!(vec_id, Vec<u8>),
-        name!(row_locator, Vec<u8>),
-        name!(scan_heap_relation_oid, pg_sys::Oid),
-        name!(materialized_heap_block, i64),
-        name!(materialized_heap_offset, i32),
-        name!(status, String),
-        name!(materialized_at_micros, i64),
-    ),
-> {
-    let index_relation = unsafe {
-        open_valid_ec_spire_index(index_oid, "ec_spire_remote_row_materialization_catalog")
-    };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-
-    let rows = Spi::connect(|client| {
-        client
-            .select(
-                "SELECT requested_epoch::bigint, served_epoch::bigint, \
-                        origin_node_id::integer, vec_id, row_locator, \
-                        scan_heap_relation_oid, materialized_heap_block::bigint, \
-                        materialized_heap_offset::integer, status, \
-                        materialized_at_micros::bigint \
-                   FROM ec_spire_remote_row_materialization \
-                  WHERE coordinator_index_oid = $1::oid \
-                  ORDER BY requested_epoch, served_epoch, origin_node_id, vec_id, row_locator",
-                None,
-                &[index_oid.into()],
-            )
-            .map_err(|e| format!("ec_spire remote row materialization catalog read failed: {e}"))?
-            .map(|row| {
-                Ok::<_, String>((
-                    row["requested_epoch"]
-                        .value::<i64>()
-                        .map_err(|e| format!("requested_epoch decode failed: {e}"))?
-                        .ok_or_else(|| "requested_epoch is null".to_owned())?,
-                    row["served_epoch"]
-                        .value::<i64>()
-                        .map_err(|e| format!("served_epoch decode failed: {e}"))?
-                        .ok_or_else(|| "served_epoch is null".to_owned())?,
-                    row["origin_node_id"]
-                        .value::<i32>()
-                        .map_err(|e| format!("origin_node_id decode failed: {e}"))?
-                        .ok_or_else(|| "origin_node_id is null".to_owned())?,
-                    row["vec_id"]
-                        .value::<Vec<u8>>()
-                        .map_err(|e| format!("vec_id decode failed: {e}"))?
-                        .ok_or_else(|| "vec_id is null".to_owned())?,
-                    row["row_locator"]
-                        .value::<Vec<u8>>()
-                        .map_err(|e| format!("row_locator decode failed: {e}"))?
-                        .ok_or_else(|| "row_locator is null".to_owned())?,
-                    row["scan_heap_relation_oid"]
-                        .value::<pg_sys::Oid>()
-                        .map_err(|e| format!("scan_heap_relation_oid decode failed: {e}"))?
-                        .ok_or_else(|| "scan_heap_relation_oid is null".to_owned())?,
-                    row["materialized_heap_block"]
-                        .value::<i64>()
-                        .map_err(|e| format!("materialized_heap_block decode failed: {e}"))?
-                        .ok_or_else(|| "materialized_heap_block is null".to_owned())?,
-                    row["materialized_heap_offset"]
-                        .value::<i32>()
-                        .map_err(|e| format!("materialized_heap_offset decode failed: {e}"))?
-                        .ok_or_else(|| "materialized_heap_offset is null".to_owned())?,
-                    row["status"]
-                        .value::<String>()
-                        .map_err(|e| format!("status decode failed: {e}"))?
-                        .ok_or_else(|| "status is null".to_owned())?,
-                    row["materialized_at_micros"]
-                        .value::<i64>()
-                        .map_err(|e| format!("materialized_at_micros decode failed: {e}"))?
-                        .ok_or_else(|| "materialized_at_micros is null".to_owned())?,
-                ))
-            })
-            .collect::<Result<Vec<_>, String>>()
-    })
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-    TableIterator::new(rows.into_iter())
-}
-
 #[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
@@ -6927,11 +6745,7 @@ fn ec_spire_remote_catalog_orphan_summary() -> TableIterator<
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
                                           WHERE l.oid = e.coordinator_index_oid)) \
                         AS manifest_entry_orphan_count, \
-                     (SELECT count(*)::bigint \
-                        FROM ec_spire_remote_row_materialization r \
-                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
-                                          WHERE l.oid = r.coordinator_index_oid)) \
-                        AS row_materialization_orphan_count, \
+                     0::bigint AS row_materialization_orphan_count, \
                      (SELECT count(*)::bigint \
                         FROM ec_spire_placement p \
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
@@ -7038,11 +6852,7 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
                                           WHERE l.oid = e.coordinator_index_oid)) \
                         AS manifest_entry_removed_count, \
-                     (SELECT count(*)::bigint \
-                        FROM ec_spire_remote_row_materialization r \
-                       WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
-                                          WHERE l.oid = r.coordinator_index_oid)) \
-                        AS row_materialization_removed_count, \
+                     0::bigint AS row_materialization_removed_count, \
                      (SELECT count(*)::bigint \
                         FROM ec_spire_placement p \
                        WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
@@ -7096,23 +6906,6 @@ fn ec_spire_remote_catalog_orphan_cleanup() -> TableIterator<
                 &[],
             )
             .map_err(|e| format!("ec_spire placement orphan cleanup failed: {e}"))?;
-        client
-            .update(
-                "WITH live_spire_index AS ( \
-                     SELECT c.oid \
-                       FROM pg_class c \
-                       JOIN pg_am am ON am.oid = c.relam \
-                      WHERE c.relkind = 'i' AND am.amname = 'ec_spire' \
-                 ) \
-                 DELETE FROM ec_spire_remote_row_materialization r \
-                  WHERE NOT EXISTS (SELECT 1 FROM live_spire_index l \
-                                     WHERE l.oid = r.coordinator_index_oid)",
-                None,
-                &[],
-            )
-            .map_err(|e| {
-                format!("ec_spire remote row materialization orphan cleanup failed: {e}")
-            })?;
         client
             .update(
                 "WITH live_spire_index AS ( \
@@ -7206,10 +6999,7 @@ fn ec_spire_remote_catalog_index_cleanup(
                        FROM ec_spire_remote_epoch_manifest_entry \
                       WHERE coordinator_index_oid = $1::oid) \
                         AS manifest_entry_removed_count, \
-                    (SELECT count(*)::bigint \
-                       FROM ec_spire_remote_row_materialization \
-                      WHERE coordinator_index_oid = $1::oid) \
-                        AS row_materialization_removed_count, \
+                    0::bigint AS row_materialization_removed_count, \
                     (SELECT count(*)::bigint \
                        FROM ec_spire_placement \
                       WHERE index_oid = $1::oid) \
@@ -7273,16 +7063,6 @@ fn ec_spire_remote_catalog_index_cleanup(
                 &[index_oid.into()],
             )
             .map_err(|e| format!("ec_spire placement index cleanup failed: {e}"))?;
-        client
-            .update(
-                "DELETE FROM ec_spire_remote_row_materialization \
-                  WHERE coordinator_index_oid = $1::oid",
-                None,
-                &[index_oid.into()],
-            )
-            .map_err(|e| {
-                format!("ec_spire remote catalog row materialization cleanup failed: {e}")
-            })?;
         client
             .update(
                 "DELETE FROM ec_spire_remote_epoch_manifest_applied \
@@ -33396,180 +33176,6 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_spire_prod_scan_am_delivers_materialized_remote_row() {
-        let _env_lock = env_var_test_lock();
-        let loopback_conninfo = current_pg_test_loopback_conninfo();
-        let _conninfo_secret = ScopedEnvVar::set(
-            "EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_SCAN_AM_MATERIALIZED",
-            &loopback_conninfo,
-        );
-        let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
-            .expect("loopback client connection should succeed");
-        loopback_client
-            .batch_execute(
-                "DROP TABLE IF EXISTS ec_spire_prod_scan_am_materialized_remote_sql; \
-                 CREATE TABLE ec_spire_prod_scan_am_materialized_remote_sql \
-                     (id bigint primary key, embedding ecvector); \
-                 INSERT INTO ec_spire_prod_scan_am_materialized_remote_sql (id, embedding) VALUES \
-                     (10, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-                     (20, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)); \
-                 CREATE INDEX ec_spire_prod_scan_am_materialized_remote_idx \
-                     ON ec_spire_prod_scan_am_materialized_remote_sql USING ec_spire \
-                     (embedding ecvector_spire_ip_ops) \
-                     WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
-            )
-            .expect("loopback remote AM materialization fixture should be created");
-        let remote_active_epoch = loopback_client
-            .query_one(
-                "SELECT active_epoch FROM \
-                 ec_spire_index_hierarchy_snapshot('ec_spire_prod_scan_am_materialized_remote_idx'::regclass)",
-                &[],
-            )
-            .expect("remote active epoch query should succeed")
-            .try_get::<_, i64>(0)
-            .expect("remote active epoch should decode");
-        let remote_leaf_pids = loopback_client
-            .query_one(
-                "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
-                 ec_spire_index_leaf_snapshot('ec_spire_prod_scan_am_materialized_remote_idx'::regclass)",
-                &[],
-            )
-            .expect("remote leaf pid query should succeed")
-            .try_get::<_, Vec<i64>>(0)
-            .expect("remote leaf pids should decode");
-        let remote_identity_hex = loopback_remote_index_identity_hex(
-            &mut loopback_client,
-            "ec_spire_prod_scan_am_materialized_remote_idx",
-        );
-
-        Spi::run(
-            "CREATE TABLE ec_spire_prod_scan_am_materialized_coord_sql \
-             (id bigint primary key, embedding ecvector)",
-        )
-        .expect("coordinator table creation should succeed");
-        Spi::run(
-            "INSERT INTO ec_spire_prod_scan_am_materialized_coord_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42)), \
-             (2, encode_to_ecvector(ARRAY[-1.0, 0.0], 4, 42)), \
-             (900, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42))",
-        )
-        .expect("coordinator insert should succeed");
-        Spi::run(
-            "CREATE INDEX ec_spire_prod_scan_am_materialized_coord_idx \
-             ON ec_spire_prod_scan_am_materialized_coord_sql USING ec_spire \
-             (embedding ecvector_spire_ip_ops) \
-             WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq')",
-        )
-        .expect("coordinator index creation should succeed");
-
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass::oid",
-        )
-        .expect("coordinator index oid query should succeed")
-        .expect("coordinator index oid should exist");
-        let active_epoch = Spi::get_one::<i64>(
-            "SELECT active_epoch FROM \
-             ec_spire_index_hierarchy_snapshot('ec_spire_prod_scan_am_materialized_coord_idx'::regclass)",
-        )
-        .expect("coordinator active epoch query should succeed")
-        .expect("coordinator active epoch should exist");
-        let coord_leaf_pids = Spi::get_one::<Vec<i64>>(
-            "SELECT array_agg(leaf_pid ORDER BY leaf_pid) FROM \
-             ec_spire_index_leaf_snapshot('ec_spire_prod_scan_am_materialized_coord_idx'::regclass)",
-        )
-        .expect("coordinator leaf pid query should succeed")
-        .expect("coordinator leaf pids should exist");
-        assert_eq!(remote_active_epoch, active_epoch);
-        assert_eq!(remote_leaf_pids, coord_leaf_pids);
-        assert_eq!(coord_leaf_pids.len(), 2);
-        let materialized_tid =
-            heap_tid_for_row("ec_spire_prod_scan_am_materialized_coord_sql", 900);
-
-        unsafe {
-            for pid in &coord_leaf_pids {
-                am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
-            }
-        }
-        let register_result = Spi::get_one::<bool>(&format!(
-            "SELECT ec_spire_register_remote_node_descriptor(\
-                     '{}'::oid, 2, 81, 'spire/remote/scan-am-materialized', \
-                     decode('{remote_identity_hex}', 'hex'), \
-                     'ec_spire_prod_scan_am_materialized_remote_idx', 'active', {active_epoch}, \
-                     {active_epoch}, '{}', 'none')",
-            u32::from(index_oid),
-            env!("CARGO_PKG_VERSION")
-        ))
-        .expect("remote descriptor registration should succeed")
-        .expect("remote descriptor registration result should exist");
-        assert!(register_result);
-
-        let pid_array = coord_leaf_pids
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        let heap_candidates_from = format!(
-            "FROM ec_spire_remote_search_libpq_executor_heap_candidates(\
-                 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass, \
-                 {active_epoch}, ARRAY[1.0, 0.0]::real[], \
-                 ARRAY[{pid_array}]::bigint[], 1, 'strict')"
-        );
-        let remote_heap_count =
-            Spi::get_one::<i64>(&format!("SELECT count(*) {heap_candidates_from}"))
-                .expect("remote heap candidate count query should succeed")
-                .expect("remote heap candidate count should exist");
-        let served_epoch = Spi::get_one::<i64>(&format!(
-            "SELECT served_epoch {heap_candidates_from} LIMIT 1"
-        ))
-        .expect("served epoch query should succeed")
-        .expect("served epoch should exist");
-        let origin_node_id =
-            Spi::get_one::<i64>(&format!("SELECT node_id {heap_candidates_from} LIMIT 1"))
-                .expect("origin node query should succeed")
-                .expect("origin node should exist");
-        let vec_id =
-            Spi::get_one::<Vec<u8>>(&format!("SELECT vec_id {heap_candidates_from} LIMIT 1"))
-                .expect("remote vec_id query should succeed")
-                .expect("remote vec_id should exist");
-        let row_locator = Spi::get_one::<Vec<u8>>(&format!(
-            "SELECT row_locator {heap_candidates_from} LIMIT 1"
-        ))
-        .expect("remote row locator query should succeed")
-        .expect("remote row locator should exist");
-        assert_eq!(remote_heap_count, 1);
-        assert_eq!(origin_node_id, 2);
-
-        let materialized_registered = Spi::get_one::<bool>(&format!(
-            "SELECT ec_spire_register_remote_row_materialization(\
-                 'ec_spire_prod_scan_am_materialized_coord_idx'::regclass, \
-                 {active_epoch}, {served_epoch}, {origin_node_id}, \
-                 decode('{}', 'hex'), decode('{}', 'hex'), \
-                 'ec_spire_prod_scan_am_materialized_coord_sql'::regclass, {}, {})",
-            hex::encode(vec_id),
-            hex::encode(row_locator),
-            materialized_tid.block_number,
-            materialized_tid.offset_number
-        ))
-        .expect("remote row materialization registration should succeed")
-        .expect("remote row materialization registration result should exist");
-        assert!(materialized_registered);
-
-        Spi::run("SET LOCAL enable_seqscan = off").expect("seqscan disable should succeed");
-        Spi::run("SET LOCAL ec_spire.max_candidate_rows = 1")
-            .expect("candidate limit SET should succeed");
-        let returned_id = Spi::get_one::<i64>(
-            "SELECT id \
-             FROM ec_spire_prod_scan_am_materialized_coord_sql \
-             ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[] \
-             LIMIT 1",
-        )
-        .expect("AM materialized remote query should succeed")
-        .expect("AM materialized remote query should return one row");
-
-        assert_eq!(returned_id, 900);
-    }
-
-    #[pg_test]
     fn test_ec_spire_production_transport_probe_overlaps_ready_remotes() {
         let loopback_conninfo = current_pg_test_loopback_conninfo();
         let rows = am::spire_remote_search_production_transport_probe_for_test(vec![
@@ -38783,73 +38389,6 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_spire_remote_row_materialization_catalog_register() {
-        Spi::run(
-            "CREATE TABLE ec_spire_row_materialization_catalog_sql \
-             (id bigint primary key, embedding ecvector)",
-        )
-        .expect("row materialization catalog table creation should succeed");
-        Spi::run(
-            "INSERT INTO ec_spire_row_materialization_catalog_sql (id, embedding) VALUES \
-             (1, encode_to_ecvector(ARRAY[1.0, 0.0], 4, 42))",
-        )
-        .expect("row materialization catalog insert should succeed");
-        Spi::run(
-            "CREATE INDEX ec_spire_row_materialization_catalog_idx \
-             ON ec_spire_row_materialization_catalog_sql USING ec_spire \
-             (embedding ecvector_spire_ip_ops) WITH (nlists = 1)",
-        )
-        .expect("row materialization catalog index creation should succeed");
-        let ctid = Spi::get_one::<String>(
-            "SELECT ctid::text FROM ec_spire_row_materialization_catalog_sql WHERE id = 1",
-        )
-        .expect("row materialization catalog ctid query should succeed")
-        .expect("row materialization catalog ctid should exist");
-        let tid_parts = ctid
-            .trim_start_matches('(')
-            .trim_end_matches(')')
-            .split(',')
-            .map(|value| {
-                value
-                    .parse::<i64>()
-                    .expect("row materialization ctid part should parse")
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(tid_parts.len(), 2);
-
-        let registered = Spi::get_one::<bool>(&format!(
-            "SELECT ec_spire_register_remote_row_materialization(\
-                 'ec_spire_row_materialization_catalog_idx'::regclass, \
-                 7, 7, 9, '\\x0102'::bytea, '\\x03'::bytea, \
-                 'ec_spire_row_materialization_catalog_sql'::regclass, {}, {})",
-            tid_parts[0], tid_parts[1]
-        ))
-        .expect("row materialization catalog register query should succeed")
-        .expect("row materialization catalog register result should exist");
-        let catalog_from =
-            "FROM ec_spire_remote_row_materialization_catalog('ec_spire_row_materialization_catalog_idx'::regclass)";
-        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {catalog_from}"))
-            .expect("row materialization catalog count query should succeed")
-            .expect("row materialization catalog count should exist");
-        let status = Spi::get_one::<String>(&format!("SELECT status {catalog_from}"))
-            .expect("row materialization catalog status query should succeed")
-            .expect("row materialization catalog status should exist");
-        let materialized_tid = Spi::get_one::<String>(&format!(
-            "SELECT materialized_heap_block::text || ',' || materialized_heap_offset::text {catalog_from}"
-        ))
-        .expect("row materialization catalog tid query should succeed")
-        .expect("row materialization catalog tid should exist");
-
-        assert!(registered);
-        assert_eq!(row_count, 1);
-        assert_eq!(status, "ready");
-        assert_eq!(
-            materialized_tid,
-            format!("{},{}", tid_parts[0], tid_parts[1])
-        );
-    }
-
-    #[pg_test]
     fn test_ec_spire_remote_catalog_orphan_cleanup() {
         Spi::run("SELECT * FROM ec_spire_remote_catalog_orphan_cleanup()")
             .expect("initial orphan cleanup should succeed");
@@ -38881,15 +38420,6 @@ mod tests {
                      'ready', 'include_remote_node', 'ready')",
         )
         .expect("orphan manifest entry insert should succeed");
-        Spi::run(
-            "INSERT INTO ec_spire_remote_row_materialization \
-             (coordinator_index_oid, requested_epoch, served_epoch, origin_node_id, vec_id, \
-              row_locator, scan_heap_relation_oid, materialized_heap_block, \
-              materialized_heap_offset, status, materialized_at_micros) \
-             VALUES ('4294967294'::oid, 1, 1, 2, '\\x01'::bytea, '\\x02'::bytea, \
-                     '4294967292'::oid, 10, 1, 'ready', 1)",
-        )
-        .expect("orphan row materialization insert should succeed");
         Spi::run(
             "INSERT INTO ec_spire_placement \
              (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
@@ -38951,10 +38481,10 @@ mod tests {
         assert_eq!(descriptor_orphan_count, 1);
         assert_eq!(manifest_orphan_count, 1);
         assert_eq!(manifest_entry_orphan_count, 1);
-        assert_eq!(row_materialization_orphan_count, 1);
+        assert_eq!(row_materialization_orphan_count, 0);
         assert_eq!(placement_orphan_count, 1);
         assert_eq!(summary_status, "orphaned_remote_catalog_rows");
-        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1]);
+        assert_eq!(cleanup_counts, vec![1, 1, 1, 0, 1]);
         assert_eq!(post_cleanup_status, "ready");
     }
 
@@ -39008,15 +38538,6 @@ mod tests {
         )
         .expect("index cleanup applied manifest entry insert should succeed");
         Spi::run(
-            "INSERT INTO ec_spire_remote_row_materialization \
-             (coordinator_index_oid, requested_epoch, served_epoch, origin_node_id, vec_id, \
-              row_locator, scan_heap_relation_oid, materialized_heap_block, \
-              materialized_heap_offset, status, materialized_at_micros) \
-             VALUES ('4294967293'::oid, 1, 1, 3, '\\x01'::bytea, '\\x02'::bytea, \
-                     '4294967292'::oid, 10, 1, 'ready', 1)",
-        )
-        .expect("index cleanup row materialization insert should succeed");
-        Spi::run(
             "INSERT INTO ec_spire_placement \
              (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
              VALUES ('4294967293'::oid, decode('01', 'hex'), 3, 7, 1, \
@@ -39069,7 +38590,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(cleanup_counts, vec![1, 1, 1, 1, 1, 1, 1]);
+        assert_eq!(cleanup_counts, vec![1, 1, 1, 0, 1, 1, 1]);
         assert_eq!(cleanup_status, "removed_index_remote_catalog_rows");
         assert_eq!(post_cleanup_count, 0);
         assert_eq!(post_applied_cleanup_count, 0);
@@ -39148,15 +38669,6 @@ mod tests {
         ))
         .expect("drop event applied manifest entry insert should succeed");
         Spi::run(&format!(
-            "INSERT INTO ec_spire_remote_row_materialization \
-             (coordinator_index_oid, requested_epoch, served_epoch, origin_node_id, vec_id, \
-              row_locator, scan_heap_relation_oid, materialized_heap_block, \
-              materialized_heap_offset, status, materialized_at_micros) \
-             VALUES ('{index_oid_u32}'::oid, 1, 1, 4, '\\x01'::bytea, '\\x02'::bytea, \
-                     '4294967292'::oid, 10, 1, 'ready', 1)"
-        ))
-        .expect("drop event row materialization insert should succeed");
-        Spi::run(&format!(
             "INSERT INTO ec_spire_placement \
              (index_oid, pk_value, node_id, centroid_id, served_epoch, source_identity) \
              VALUES ('{index_oid_u32}'::oid, decode('01', 'hex'), 4, 7, 1, \
@@ -39173,8 +38685,6 @@ mod tests {
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest \
                   WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_remote_epoch_manifest_entry \
-                  WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
-                (SELECT count(*) FROM ec_spire_remote_row_materialization \
                   WHERE coordinator_index_oid = '{index_oid_u32}'::oid) + \
                 (SELECT count(*) FROM ec_spire_placement \
                   WHERE index_oid = '{index_oid_u32}'::oid) + \

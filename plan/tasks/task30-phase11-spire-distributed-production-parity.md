@@ -364,15 +364,20 @@ local-only path.
   - [ ] Run and attach packet-local logs for the full Stage E matrix against
     the CustomScan path.
 - [ ] Cleanup after CustomScan read and v1 writes are feature-complete.
-  - [ ] Remove or migrate away from the vestigial
+  - [x] Remove or migrate away from the vestigial
     `ec_spire_remote_row_materialization` table and
     `ec_spire_register_remote_row_materialization` function in the next
     extension upgrade script.
+    - [x] Packet `30892` removes the bootstrap table, drops the public
+      register/catalog pgrx externs, adds `ecaz--0.1.1--0.1.2.sql` with
+      `DROP TABLE IF EXISTS ec_spire_remote_row_materialization`, and keeps
+      remote catalog cleanup diagnostics stable by reporting the retired
+      row-materialization counter as zero without touching the dropped table.
   - [ ] Remove dead AM cursor references to
     `requires_remote_row_materialization`; the local-only AM path must keep its
     classifier logic but no longer reference the superseded materialization
     catalog.
-  - [ ] Keep the catalog/register function until this cleanup packet rather
+  - [x] Keep the catalog/register function until this cleanup packet rather
     than deleting it in the Step 0 docs rewrite, because the repository still
     has in-flight Shape-A code and an untracked `30802` mirror-sync packet in
     the local worktree.
@@ -1330,12 +1335,14 @@ v1 write contract from ADR-069:
 
 Cleanup decision:
 
-- [ ] Keep `ec_spire_remote_row_materialization` and
+- [x] Keep `ec_spire_remote_row_materialization` and
   `ec_spire_register_remote_row_materialization` temporarily for migration and
   to avoid deleting in-flight Shape-A code before the CustomScan path exists.
-- [ ] Remove the materialization catalog/register function and dead
+- [x] Remove the materialization catalog/register function after CustomScan
+  read and ADR-069 writes are feature-complete.
+- [ ] Remove dead
   `requires_remote_row_materialization` CustomScan-adjacent references in the
-  cleanup packet after CustomScan read and ADR-069 writes are feature-complete.
+  cleanup packet after the catalog/register cleanup lands.
 
 ### Stage E: Multi-Instance Epoch, Lifecycle, and Fault Matrix
 
