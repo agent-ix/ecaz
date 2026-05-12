@@ -1255,6 +1255,11 @@ v1 write contract from ADR-069:
     each DML mode receives the expected column payload shape: UPDATE requires
     updated columns only, DELETE carries no column payload metadata, and PK
     SELECT requires projected columns only.
+  - [x] Packet `30882` builds the executor-ready DML primitive invocation from
+    CustomScan runtime state and routes the live PK SELECT branch through that
+    typed boundary. UPDATE/DELETE execution remains disabled, but their future
+    executor branches now have the same index/mode/primitive/PK/column payload
+    object shape.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
