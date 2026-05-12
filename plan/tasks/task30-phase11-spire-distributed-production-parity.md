@@ -1222,6 +1222,11 @@ v1 write contract from ADR-069:
     baserestrictinfo-aware PK SELECT expression extraction into the DML
     frontdoor module and keeping the CustomScan planner path on that typed
     primitive-plan handoff instead of a parallel predicate parser.
+  - [x] Packet `30875` folds 30874 review follow-ups into the same DML
+    frontdoor extraction boundary: hook-time RestrictInfo vs diagnostic Query
+    extraction is documented, relid overflow reports an explicit extraction
+    error, and malformed DML PK SELECT candidates fail closed instead of being
+    silently skipped.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.

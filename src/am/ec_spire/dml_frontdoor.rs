@@ -440,7 +440,15 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
         {
             return None;
         }
-        let target_rtindex = i32::try_from(rel_ref.relid).ok()?;
+        let target_rtindex = match i32::try_from(rel_ref.relid) {
+            Ok(target_rtindex) => target_rtindex,
+            Err(_err) => {
+                return Some(Err(
+                    "ec_spire DML frontdoor baserel expression handoff relid exceeds planner rtindex range"
+                        .to_owned(),
+                ));
+            }
+        };
         let target_relation_oid =
             dml_frontdoor_relation_oid_from_rtable(query_ref, target_rtindex)?;
         let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
@@ -454,15 +462,20 @@ pub(crate) unsafe fn dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(
         };
         let detail =
             dml_frontdoor_pk_select_query_detail_from_baserel(root_ref.parse, rel_ref, &relation)?;
-        let pk_value_expr = detail.pk_value_expr.ok_or_else(|| {
-            "ec_spire DML frontdoor baserel expression handoff requires a PK value expression"
-                .to_owned()
-        });
+        let pk_value_expr = detail.pk_value_expr;
         let decision = dml_frontdoor_replacement_decision_from_shape(
             target_relation_oid,
             relation.index_oid,
             detail,
         );
+        if !decision.supported || decision.custom_scan_mode != "coordinator_pk_select_tuple_payload"
+        {
+            return None;
+        }
+        let pk_value_expr = pk_value_expr.ok_or_else(|| {
+            "ec_spire DML frontdoor baserel expression handoff requires a PK value expression"
+                .to_owned()
+        });
         let primitive_plan = dml_frontdoor_primitive_plan_from_replacement_decision(&decision);
         Some(pk_value_expr.and_then(|pk_value_expr| {
             primitive_plan.map(|primitive_plan| SpireDmlFrontdoorPrimitivePlanExpr {
@@ -850,6 +863,8 @@ unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
         column_names: &column_names,
         embedding_columns: &embedding_columns,
     };
+    // set_rel_pathlist_hook sees planner-normalized RestrictInfo clauses;
+    // diagnostic SQL helpers operate on a freshly analyzed Query jointree.
     let predicate = unsafe {
         dml_frontdoor_pk_predicate_from_baserestrictinfo(
             rel.baserestrictinfo,
@@ -864,16 +879,14 @@ unsafe fn dml_frontdoor_pk_select_query_detail_from_baserel(
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
+    let has_join = unsafe {
+        dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
+    };
     let shape = classify_dml_frontdoor_shape(SpireDmlFrontdoorShapeInput {
         operation: SpireDmlFrontdoorOperation::PkSelect,
         ec_spire_distributed_table: query_context.ec_spire_distributed_table,
-        single_table: target_rtindex > 0
-            && !unsafe {
-                dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
-            },
-        has_join: unsafe {
-            dml_frontdoor_query_has_join_shape(query_ref, SpireDmlFrontdoorOperation::PkSelect)
-        },
+        single_table: target_rtindex > 0 && !has_join,
+        has_join,
         has_subquery: dml_frontdoor_query_has_subquery_shape(query_ref),
         has_returning: !query_ref.returningList.is_null(),
         pk_column: query_context.pk_column,

@@ -506,7 +506,7 @@ unsafe fn dml_pk_select_candidate_index_oid(
         super::dml_frontdoor_pk_select_primitive_plan_expr_from_baserel(root, rel)?
     } {
         Ok(plan_expr) => plan_expr,
-        Err(_err) => return None,
+        Err(err) => pgrx::error!("{err}"),
     };
     if plan_expr.primitive_plan.mode
         != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
