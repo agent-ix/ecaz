@@ -32,27 +32,42 @@ described by reviewer packet `30896`.
 - Billion-scale product claims.
 - Multi-coordinator HA, coordinator election, and cross-shard embedding UPDATE
   moves. These remain Phase 12+ or later ADR scope unless explicitly reopened.
+- ADR-069 deferred items, including cross-shard non-vector queries, DDL
+  propagation, foreign keys, sequences, rebalance, and multi-coordinator
+  deployments, remain later ADR scope unless explicitly reopened.
 - Bulk-load product tooling beyond primitives or fixtures needed to harden the
   v1 coordinator-routed write path.
 
 ## Phase 12.1: Tracker and Operator-Compatibility Reconciliation
 
-- [ ] Reconcile stale parent checkboxes in the Phase 11 task file where child
+- [x] Reconcile stale parent checkboxes in the Phase 11 task file where child
   evidence is complete, especially Stage B endpoint, Stage C executor, and
   Stage D CustomScan parent rows.
-- [ ] Add a 0.1.1 -> 0.1.2 migration comment explaining why
+  - [x] Reviewer packet `30910` closes Phase 11 and records the disposition of
+    every remaining open box as done, moved to Phase 12, or moved to Phase 13.
+- [x] Add a 0.1.1 -> 0.1.2 migration comment explaining why
   `ec_spire_remote_row_materialization` was created in the previous migration
   and dropped after the Shape-A -> Shape-B CustomScan pivot.
-- [ ] Document the diagnostic status-string rename:
+  - [x] `ecaz--0.1.1--0.1.2.sql` now explains the Shape-A AM mirror origin and
+    the Shape-B CustomScan removal.
+- [x] Document the diagnostic status-string rename:
   `requires_remote_row_materialization` ->
   `requires_custom_scan_tuple_delivery`.
-- [ ] Document dropped mirror-sync / row-materialization operator-entrypoint
+  - [x] `docs/SPIRE_DIAGNOSTICS.md` records the old and current labels plus the
+    `remote_row_materialization` -> `custom_scan_tuple_delivery` blocker rename.
+- [x] Document dropped mirror-sync / row-materialization operator-entrypoint
   rows so operator monitoring can adjust expected row counts.
-- [ ] Schedule the 0.2.x compatibility cleanup that removes zero-valued
+  - [x] `docs/SPIRE_DIAGNOSTICS.md` records the removed row-materialization and
+    mirror-sync contract rows in `ec_spire_remote_operator_entrypoint_contract()`.
+- [x] Schedule the 0.2.x compatibility cleanup that removes zero-valued
   `row_materialization_*` shim columns from remote catalog cleanup diagnostics.
-- [ ] Cross-link packet `30895` to the earlier Stage E matrix definition
+  - [x] `docs/SPIRE_DIAGNOSTICS.md` documents the 0.1.x shim window and the
+    future 0.2.x removal point.
+- [x] Cross-link packet `30895` to the earlier Stage E matrix definition
   packets (`30770`, `30772`, `30773`) so each fault/lifecycle case has a
   durable definition and evidence trail.
+  - [x] `docs/SPIRE_DIAGNOSTICS.md` links `30895` evidence to `30770`,
+    `30772`, and `30773`.
 
 ## Phase 12.2: Typed Tuple Transport and JSON Retirement
 
@@ -64,6 +79,11 @@ described by reviewer packet `30896`.
 - [ ] Add endpoint negotiation so CustomScan prefers typed tuple transport when
   the remote advertises support and falls back to JSON only during the
   migration window.
+  - [ ] Exit criterion: the JSON fallback may remain production-reachable for
+    one minor-version compatibility window after the typed endpoint release;
+    removal requires all scalar, array, composite, NULL, and domain fixture
+    classes to pass through typed transport and a reviewer-accepted packet that
+    names any unsupported type gaps.
 - [ ] Switch `EcSpireDistributedScan` tuple slot delivery from
   `serde_json`/text input to typed binary datum construction.
 - [ ] Remove or retire the scalar-only JSON gate for arrays/composites once the
@@ -135,6 +155,10 @@ described by reviewer packet `30896`.
   growth.
 - [ ] Evaluate partitioning `ec_spire_placement` by `index_oid` if contention
   evidence shows shared-table hot pages.
+  - [ ] Exit criterion: choose the fixture's writer count and p99 latency
+    threshold before running it; partition only if packet-local evidence crosses
+    that threshold or shows lock waits/deadlocks attributable to shared-table
+    placement pages.
 - [ ] Migrate wide-fanout INSERT 2PC dispatch to the same async/pipelined
   transport pattern as the read path, so M remote prepares do not serialize
   into M round trips.
@@ -176,6 +200,9 @@ described by reviewer packet `30896`.
   distributed PK SELECT behavior and pin the expected v1 outcome.
 - [ ] Decide whether `ec_spire_custom_scan_recheck` should remain
   unconditional for v1 or re-run the primitive for a subset of read paths.
+  - [ ] Exit criterion: the decision packet must include an isolation fixture
+    that demonstrates the stale-row/EvalPlanQual behavior under at least
+    SERIALIZABLE and states the accepted v1 contract in ADR-068 or ADR-069.
 - [ ] Add negative classifier fixtures for unsupported PK predicate shapes:
   - [ ] `$1::numeric` outside int8 range;
   - [ ] `$1::int8 IS NULL` with stable SQLSTATE;

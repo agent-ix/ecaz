@@ -137,6 +137,39 @@ identity contract. Global `0x02` vec IDs dedupe across nodes. Existing local
 unrelated local sequences from different nodes cannot silently collapse into one
 candidate.
 
+## Distributed CustomScan Compatibility
+
+SPIRE 0.1.2 uses `EcSpireDistributedScan` as the production distributed read
+integration point. Remote-origin rows are delivered through CustomScan tuple
+payloads, not through coordinator-side AM mirror rows.
+
+Operator status labels changed with that pivot:
+
+| Superseded label | Current label | Meaning |
+| --- | --- | --- |
+| `requires_remote_row_materialization` | `requires_custom_scan_tuple_delivery` | A remote-origin row reached a path that cannot deliver it as a coordinator heap TID; use the CustomScan tuple delivery path. |
+| `remote_row_materialization` | `custom_scan_tuple_delivery` | The next blocker is the CustomScan tuple-delivery integration point, not a mirror-row catalog. |
+
+The row-materialization and mirror-sync SQL contract entrypoints were removed
+with the Shape-A AM mirror path. Operators should no longer expect rows for
+`ec_spire_remote_search_row_materialization_contract`,
+`ec_spire_remote_search_row_materialization_mapping_contract`, or the
+operator-owned mirror-sync contract in
+`ec_spire_remote_operator_entrypoint_contract()`. The surviving entrypoint
+contract rows cover descriptor, manifest, libpq executor, pipeline, and
+CustomScan-compatible read/write diagnostics.
+
+Remote catalog cleanup functions keep the `row_materialization_*` result
+columns as a 0.1.x compatibility shim, but they always report `0` after the
+0.1.1 -> 0.1.2 upgrade drops `ec_spire_remote_row_materialization`. A future
+0.2.x cleanup may remove those zero-valued columns once operator consumers have
+had a full minor-version window to stop reading them.
+
+Packet `30895` reran the full Stage E CustomScan matrix after the cleanup. The
+matrix definitions remain anchored in packets `30770` (fault matrix), `30772`
+(lifecycle matrix), and `30773` (per-case artifact convention), with packet
+`30895` providing the current CustomScan evidence trail.
+
 ## Maintenance And Cleanup
 
 SPIRE maintenance uses epoch publication. The operator-controlled periodic-job
