@@ -1335,7 +1335,12 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         };
     let (pk_value_bytes, status, error, next_step) =
         match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
-            Ok(bytes) => (Some(bytes), "primitive_plan_ready", None, "wire planner hook to DML CustomScan executor replacement"),
+            Ok(bytes) => (
+                Some(bytes.to_vec()),
+                "primitive_plan_ready",
+                None,
+                "wire planner hook to DML CustomScan executor replacement",
+            ),
             Err(error) => (
                 None,
                 "primitive_plan_requires_runtime_params",

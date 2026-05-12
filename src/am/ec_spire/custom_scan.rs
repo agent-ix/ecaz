@@ -120,7 +120,7 @@ struct SpireCustomScanExecState {
     top_k: usize,
     query: Vec<f32>,
     dml_pk_column: String,
-    dml_pk_value: Vec<u8>,
+    dml_pk_value: [u8; 8],
     dml_updated_columns: Vec<String>,
     dml_projected_columns: Vec<String>,
     dml_update_value_exprs: Vec<*mut pg_sys::Expr>,
@@ -1379,7 +1379,7 @@ fn custom_scan_dml_primitive_invocation_from_parts(
     index_oid: pg_sys::Oid,
     mode: SpireCustomScanPlanMode,
     pk_column: &str,
-    pk_value: &[u8],
+    pk_value: [u8; 8],
     updated_columns: &[String],
     projected_columns: &[String],
 ) -> Result<super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation, String> {
@@ -1393,16 +1393,13 @@ fn custom_scan_dml_primitive_invocation_from_parts(
             "EcSpireDistributedScan DML primitive invocation requires PK column".to_owned(),
         );
     }
-    if pk_value.is_empty() {
-        return Err("EcSpireDistributedScan DML primitive invocation requires PK value".to_owned());
-    }
     custom_scan_validate_dml_column_metadata(mode, updated_columns, projected_columns)?;
     Ok(super::dml_frontdoor::SpireDmlFrontdoorPrimitiveInvocation {
         index_oid,
         mode: custom_scan_dml_frontdoor_mode_for_plan_mode(mode)?,
         primitive: custom_scan_dml_primitive_name(mode)?,
         pk_column: pk_column.to_owned(),
-        pk_value: pk_value.to_vec(),
+        pk_value,
         updated_columns: updated_columns.to_vec(),
         projected_columns: projected_columns.to_vec(),
     })
@@ -1415,7 +1412,7 @@ fn custom_scan_dml_primitive_invocation(
         state.index_oid,
         state.mode,
         &state.dml_pk_column,
-        &state.dml_pk_value,
+        state.dml_pk_value,
         &state.dml_updated_columns,
         &state.dml_projected_columns,
     )
@@ -1619,7 +1616,7 @@ unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
                 top_k: 0,
                 query: Vec::new(),
                 dml_pk_column: String::new(),
-                dml_pk_value: Vec::new(),
+                dml_pk_value: [0; 8],
                 dml_updated_columns: Vec::new(),
                 dml_projected_columns: Vec::new(),
                 dml_update_value_exprs: Vec::new(),
@@ -2015,7 +2012,7 @@ unsafe fn custom_scan_dml_pk_column(node: *mut pg_sys::CustomScanState) -> Strin
 unsafe fn custom_scan_dml_pk_value_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
-) -> Vec<u8> {
+) -> [u8; 8] {
     unsafe {
         if custom_scan.is_null() || (*custom_scan).custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan DML plan is missing PK expression");
@@ -2127,7 +2124,7 @@ unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -
                     &[
                         invocation.index_oid.into(),
                         invocation.pk_column.as_str().into(),
-                        invocation.pk_value.clone().into(),
+                        invocation.pk_value.to_vec().into(),
                     ],
                 )
                 .map_err(|e| format!("EcSpireDistributedScan DML DELETE primitive failed: {e}"))?
@@ -2195,7 +2192,7 @@ unsafe fn custom_scan_execute_dml_update(
                     &[
                         invocation.index_oid.into(),
                         invocation.pk_column.as_str().into(),
-                        invocation.pk_value.clone().into(),
+                        invocation.pk_value.to_vec().into(),
                         row_payload_json.as_str().into(),
                         updated_column_refs.as_slice().into(),
                     ],
@@ -2350,7 +2347,7 @@ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanEx
                     &[
                         invocation.index_oid.into(),
                         invocation.pk_column.as_str().into(),
-                        invocation.pk_value.clone().into(),
+                        invocation.pk_value.to_vec().into(),
                         requested_column_refs.as_slice().into(),
                     ],
                 )
@@ -2547,13 +2544,13 @@ mod tests {
 
     #[test]
     fn custom_scan_dml_primitive_invocation_uses_plan_metadata() {
-        let pk_value = vec![0, 0, 0, 0, 0, 0, 0, 5];
+        let pk_value = [0, 0, 0, 0, 0, 0, 0, 5];
         let projected = vec!["id".to_owned(), "title".to_owned()];
         let invocation = custom_scan_dml_primitive_invocation_from_parts(
             pg_sys::Oid::from(42),
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
             "id",
-            &pk_value,
+            pk_value,
             &[],
             &projected,
         )
@@ -2580,7 +2577,7 @@ mod tests {
             pg_sys::InvalidOid,
             SpireCustomScanPlanMode::DmlUpdateTuplePayload,
             "id",
-            &[0, 0, 0, 0, 0, 0, 0, 5],
+            [0, 0, 0, 0, 0, 0, 0, 5],
             &["title".to_owned()],
             &[],
         )
@@ -2594,7 +2591,7 @@ mod tests {
             pg_sys::Oid::from(42),
             SpireCustomScanPlanMode::DmlUpdateTuplePayload,
             "id",
-            &[0, 0, 0, 0, 0, 0, 0, 5],
+            [0, 0, 0, 0, 0, 0, 0, 5],
             &[],
             &[],
         )
@@ -2611,7 +2608,7 @@ mod tests {
             pg_sys::Oid::from(42),
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
             "id",
-            &[0, 0, 0, 0, 0, 0, 0, 5],
+            [0, 0, 0, 0, 0, 0, 0, 5],
             &[],
             &["title".to_owned()],
         )
@@ -2641,7 +2638,7 @@ mod tests {
             pg_sys::Oid::from(42),
             SpireCustomScanPlanMode::DmlPkSelectTuplePayload,
             "id",
-            &[0, 0, 0, 0, 0, 0, 0, 5],
+            [0, 0, 0, 0, 0, 0, 0, 5],
             &[],
             &["id".to_owned(), "title".to_owned()],
         )

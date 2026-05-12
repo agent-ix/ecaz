@@ -148,8 +148,14 @@ described by reviewer packet `30896`.
     including zero-count empty projected-column metadata.
     `test_ec_spire_custom_scan_dml_plan_private_copyobject_sql` covers
     copyObject round-trip behavior.
-- [ ] Replace trivial per-row/per-statement PK-byte `Vec<u8>` allocations with
+- [x] Replace trivial per-row/per-statement PK-byte `Vec<u8>` allocations with
   stack `[u8; 8]` or caller-owned buffers where profiling shows pressure.
+  - [x] DML frontdoor and CustomScan bigint PK bytes now use `[u8; 8]`
+    through plan construction, runtime parameter evaluation, invocation
+    metadata, and executor state. The remaining `Vec<u8>` conversion is at the
+    PostgreSQL `bytea` boundary for SPI/pg_extern calls. Focused PG18 checks:
+    `test_ec_spire_dml_frontdoor_pk_value_bytes_match_int8send` and
+    `test_ec_spire_dml_frontdoor_primitive_plan_from_decision`.
 
 ## Phase 12.4: Coordinator-Routed Write and 2PC Hardening
 
