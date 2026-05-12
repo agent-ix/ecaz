@@ -1242,6 +1242,10 @@ v1 write contract from ADR-069:
     the join-shape helper now documents SELECT vs UPDATE/DELETE semantics, and
     the replacement-decision fixture proves `UPDATE ... FROM distributed_other`
     still rejects as `unsupported_join_shape`.
+  - [x] Packet `30879` adds explicit UPDATE and DELETE baserel primitive-plan
+    wrapper surfaces alongside the already-wired PK SELECT wrapper, with a
+    shared mode guard that produces operation-specific fail-closed errors if a
+    future planner path asks for the wrong DML primitive mode.
 - [ ] Bulk-load tooling, cross-shard embedding moves, cross-shard non-vector
   scatter-gather, DDL propagation, and multi-coordinator deployments remain out
   of Phase 11 scope unless a later accepted ADR reopens them.
