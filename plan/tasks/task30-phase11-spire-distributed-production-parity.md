@@ -1063,7 +1063,7 @@ v1 write contract from ADR-069:
 	      coverage for the trigger's `to_jsonb(NEW)` / remote
 	      `jsonb_populate_record(...)` payload shape and documents the v1
 	      bigint-PK / `ecvector` / bytea trigger constraints in ADR-069.
-- [ ] Coordinator-routed non-embedding UPDATE:
+- [x] Coordinator-routed non-embedding UPDATE:
   - [x] lookup `node_id` from the placement directory;
   - [x] forward UPDATE to the owning remote;
   - [x] add PG18 coverage for the forwarding primitive.
@@ -1078,10 +1078,14 @@ v1 write contract from ADR-069:
     - [x] Packet `30845` adds focused UPDATE primitive edge coverage for
       multi-column local updates and missing placement rows before a
       transparent front door calls the helper.
-  - [ ] wire transparent `UPDATE ... WHERE pk = ...` into a ModifyTable/view
-    hook; row-level table triggers cannot capture remote-owned rows because the
-    coordinator heap row is suppressed by the INSERT trigger.
-- [ ] Coordinator-routed DELETE:
+  - [x] wire transparent `UPDATE ... WHERE pk = ...` into the top-level
+    `EcSpireDistributedScan` plan-tree replacement path.
+    - [x] Packet `30886` wires local-placement transparent UPDATE through the
+      CustomScan executor and validates rowcount semantics.
+    - [x] Packet `30889` adds remote-placement transparent UPDATE coverage:
+      `EXPLAIN` records `plan_tree_replaced_customscan`, execution reports
+      `ROW_COUNT = 1`, and the owning remote row is updated.
+- [x] Coordinator-routed DELETE:
   - [x] lookup `node_id` from the placement directory;
   - [x] use remote prepared DELETE plus local placement-directory delete;
   - [x] add PG18 coverage for the forwarding primitive.
@@ -1093,10 +1097,16 @@ v1 write contract from ADR-069:
     - [x] Packet `30842` accepts placement rows with `node_id = 0` and applies
       those deletes directly to the coordinator heap while removing the
       placement row in the same local transaction.
-  - [ ] wire transparent `DELETE ... WHERE pk = ...` into a ModifyTable/view
-    hook; row-level table triggers cannot capture remote-owned rows because the
-    coordinator heap row is suppressed by the INSERT trigger.
-- [ ] PK-keyed SELECT:
+  - [x] wire transparent `DELETE ... WHERE pk = ...` into the top-level
+    `EcSpireDistributedScan` plan-tree replacement path.
+    - [x] Packet `30887` wires local-placement transparent DELETE through the
+      CustomScan executor and validates rowcount, heap-row deletion, and
+      placement-row deletion.
+    - [x] Packet `30889` adds remote-placement transparent DELETE coverage:
+      `EXPLAIN` records `plan_tree_replaced_customscan`, execution reports
+      `ROW_COUNT = 1`, the placement row is removed, and the remote delete is
+      prepared until transaction resolution.
+- [x] PK-keyed SELECT:
   - [x] lookup `node_id` from the placement directory;
   - [x] forward SELECT to the owning remote;
   - [x] add PG18 coverage.
@@ -1108,9 +1118,12 @@ v1 write contract from ADR-069:
     - [x] Packet `30846` adds the defensive `selected_count > 1` guard so
       PK SELECT fails closed on duplicate-key/schema-drift results before a
       transparent front door consumes the primitive.
-  - [ ] wire transparent `SELECT ... WHERE pk = ...` into the coordinator
-    planner/view hook; the primitive is the dispatch operation that front door
-    should call.
+  - [x] wire transparent `SELECT ... WHERE pk = ...` into the coordinator
+    planner hook through the PK SELECT `EcSpireDistributedScan` path; the
+    primitive is the dispatch operation that the front door calls.
+    - [x] Packets `30873` through `30883` wire and harden the transparent
+      PK SELECT CustomScan path, including tuple-payload slot delivery and
+      remote/local placement coverage.
 - [x] Reject embedding-changing UPDATE with the exact ADR-069 error and hint.
   - [x] Packet `30841` rejects updates to the indexed `ec_spire` embedding
     column in `ec_spire_forward_coordinator_update_tuple_payload(...)` before
